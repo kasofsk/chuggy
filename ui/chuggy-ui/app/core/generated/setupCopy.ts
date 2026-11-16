@@ -311,10 +311,6 @@ export interface SetupCopy {
     readonly workspace: unknown;
     readonly project: unknown;
   };
-  readonly "setup-step-north-star": {
-    readonly project: unknown;
-    readonly section: unknown;
-  };
   readonly "setup-app-portal": Record<never, never>;
   readonly "setup-app-worker": Record<never, never>;
   readonly "setup-step-apps-none": {
@@ -428,15 +424,6 @@ export interface SetupCopy {
     readonly invites: unknown;
   };
   readonly "setup-mend-workspace-when": Record<never, never>;
-  readonly "setup-mend-north-star-tell": {
-    readonly page: unknown;
-    readonly edit: unknown;
-    readonly section: unknown;
-    readonly save: unknown;
-  };
-  readonly "setup-mend-north-star-when": {
-    readonly section: unknown;
-  };
   readonly "setup-mend-grant-tell": {
     readonly app: unknown;
     readonly account: unknown;

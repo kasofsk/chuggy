@@ -69,7 +69,7 @@ const consolePageRunnersPath = "runners";
 const consolePageSettingsPaths: Readonly<
   Record<ConsolePageSettingsSection, string>
 > = {
-  ProjectLead: "settings/lead",
+  ProjectLead: "settings/threads",
   ProjectPlacement: "settings/placement",
   ProjectPools: "settings/pools",
   ProjectPermissions: "settings/permissions",
@@ -222,7 +222,7 @@ export function consolePageOf(
 const consolePageSectionWords: Readonly<
   Record<ConsolePageSettingsSection, readonly [Copy, Copy]>
 > = {
-  ProjectLead: [{ id: "settings-nav-project" }, { id: "settings-nav-lead" }],
+  ProjectLead: [{ id: "settings-nav-project" }, { id: "settings-nav-threads" }],
   ProjectPlacement: [
     { id: "settings-nav-project" },
     { id: "settings-nav-placement" },

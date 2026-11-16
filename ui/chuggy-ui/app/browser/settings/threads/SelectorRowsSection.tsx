@@ -35,7 +35,7 @@ export interface SelectorRowsChrome {
 
 export function SelectorRowsSection(
   props: SelectorRowsChrome & {
-    readonly name: "limits" | "models";
+    readonly name: "models";
     readonly children: ReactNode;
   },
 ): ReactNode {

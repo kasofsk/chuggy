@@ -1,6 +1,6 @@
 /**
- * The project's lead settings: what it is running under, the setting groups a
- * reader edits one at a time, and every revision that got it here.
+ * The project's thread settings: what its threads run under, the setting groups
+ * a reader edits one at a time, and every revision that got it here.
  *
  * A WRITE THE REVISION MOVED UNDER IS NOT RETRIED. The route answers `409` with
  * the settings that moved; the section names the revision and stops, and the
@@ -13,9 +13,6 @@
  * revision's Restore both go through `selectorSettingsWriting.ts`'s one door,
  * so the overrides no section draws are carried by each of them alike — the
  * same door the Lead page's strip writes mode and dispatch mode through.
- *
- * A subsidized lead's model and effort are the profile's, read from the
- * effective settings and not edited here.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -24,13 +21,8 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { SelectorProjectSettingsResponse } from "../../../../../src/contract/responses.ts";
-import {
-  projectLeadFound,
-  projectLeadPresent,
-} from "../../core/projectLead.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import {
-  selectorSettingsModelPinned,
   selectorSettingsSectionCleared,
   selectorSettingsSectionRestored,
   selectorSettingsTextNames,
@@ -49,11 +41,6 @@ import { usePanelState } from "../api.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useNowMs } from "../Freshness.tsx";
-import { useLead, useLeadAbsenceLine } from "../LeadPage.tsx";
-import {
-  SessionRunnerNotice,
-  useSessionRunnerShort,
-} from "../sessionPlacement.tsx";
 import {
   selectorSettingsShown,
   useSelectorSettingsDraft,
@@ -63,13 +50,10 @@ import type {
   SelectorSettingsShown,
   SelectorSettingsWriting,
 } from "../selectorSettingsWriting.ts";
-import { Notice } from "../ui/Notice.tsx";
-import { SelectorLimitsSection } from "./lead/SelectorLimitsSection.tsx";
-import { SelectorModelsSection } from "./lead/SelectorModelsSection.tsx";
-import type { SelectorModelsSubsidy } from "./lead/SelectorModelsSection.tsx";
-import type { SelectorRowsChrome } from "./lead/SelectorRowsSection.tsx";
-import { SelectorRevisions } from "./lead/SelectorRevisions.tsx";
-import { SelectorTextSection } from "./lead/SelectorTextSection.tsx";
+import { SelectorModelsSection } from "./threads/SelectorModelsSection.tsx";
+import type { SelectorRowsChrome } from "./threads/SelectorRowsSection.tsx";
+import { SelectorRevisions } from "./threads/SelectorRevisions.tsx";
+import { SelectorTextSection } from "./threads/SelectorTextSection.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ProjectDeletion } from "./UnrunDeletion.tsx";
 
@@ -82,8 +66,6 @@ type SelectorSettingsWriter = SelectorSettingsSectionName | "revisions";
 interface SelectorSettingsSectionChrome {
   readonly draft: SelectorSettingsDraft;
   readonly settings: SelectorProjectSettingsResponse;
-  /** The month's subsidy spend, where the lead read answers it. */
-  readonly subsidy: SelectorModelsSubsidy | undefined;
   readonly editing: SelectorSettingsSectionName | undefined;
   readonly writing: SelectorSettingsWriting<SelectorSettingsWriter>;
   readonly onChange: (draft: SelectorSettingsDraft) => void;
@@ -92,12 +74,12 @@ interface SelectorSettingsSectionChrome {
   readonly onCancel: (name: SelectorSettingsSectionName) => void;
 }
 
-/** A section of rows' chrome, as the page holds it for the section named. */
-function selectorRowsChrome(
+/** The Models section's chrome, as the page holds it. */
+function selectorModelsChrome(
   chrome: SelectorSettingsSectionChrome,
-  name: "limits" | "models",
   savable: boolean,
 ): SelectorRowsChrome {
+  const name = "models";
   return {
     draft: chrome.draft,
     faults: selectorSettingsWrite(chrome.draft).faults,
@@ -137,7 +119,7 @@ function SelectorSettingsSections(props: {
           draft={chrome.draft}
           effective={
             chrome.settings.effective[name] ??
-            text({ id: "lead-settings-effective-none" })
+            text({ id: "settings-threads-effective-none" })
           }
           editing={editing === name}
           editable={editing === undefined}
@@ -159,15 +141,7 @@ function SelectorSettingsSections(props: {
           onReload={chrome.writing.reload}
         />
       ))}
-      <SelectorLimitsSection
-        {...selectorRowsChrome(chrome, "limits", savable)}
-        settings={chrome.settings}
-      />
-      <SelectorModelsSection
-        {...selectorRowsChrome(chrome, "models", savable)}
-        pinned={selectorSettingsModelPinned(chrome.settings.effective)}
-        subsidy={chrome.subsidy}
-      />
+      <SelectorModelsSection {...selectorModelsChrome(chrome, savable)} />
     </>
   );
 }
@@ -185,14 +159,9 @@ function SelectorSettingsForm(props: {
   const [editing, setEditing] = useState<
     SelectorSettingsSectionName | undefined
   >(undefined);
-  const lead = useLead(props.partition);
   const chrome: SelectorSettingsSectionChrome = {
     draft: held.draft,
     settings: props.settings,
-    subsidy:
-      lead.state === "Ready"
-        ? projectLeadFound(lead.value)?.subsidy
-        : undefined,
     editing,
     writing,
     onChange: held.setDraft,
@@ -244,38 +213,9 @@ function SelectorSettingsHistory(props: {
   );
 }
 
-/** What stands above the settings where the project has no lead: they say how
- * a lead would dispatch, and there is none here to do it, for the reason and
- * with the runner notice the lead page draws. */
-function SelectorSettingsUnled(props: {
-  readonly partition: PartitionIdentity;
-}): ReactNode {
+export function ThreadSettingsPage(): ReactNode {
   const text = useCopyText();
-  const nowMs = useNowMs();
-  const read = useLead(props.partition);
-  const line = useLeadAbsenceLine(props.partition, read, nowMs);
-  const runner = useSessionRunnerShort(props.partition, "lead", "project");
-  if (projectLeadPresent(read) !== false) return null;
-  return (
-    <Notice
-      tone="info"
-      heading={text({ id: "lead-no-lead" })}
-      {...(line === undefined ? {} : { detail: line })}
-    >
-      {runner === undefined ? null : (
-        <SessionRunnerNotice
-          partition={props.partition}
-          session="Lead"
-          short={runner}
-        />
-      )}
-    </Notice>
-  );
-}
-
-export function LeadSettingsPage(): ReactNode {
-  const text = useCopyText();
-  const params = useParams({ from: settingsRoutes.project.lead });
+  const params = useParams({ from: settingsRoutes.project.threads });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
     project: params.project,
@@ -283,19 +223,18 @@ export function LeadSettingsPage(): ReactNode {
   const state = usePanelState(selectorSettingsQuery(partition));
   return (
     <SettingsPage
-      title={text({ id: "lead-settings-title" })}
+      title={text({ id: "settings-threads-title" })}
       chips={
         state.state === "Ready" ? (
           <span className="text-ink-3 text-sm tabular-nums">
             {text({
-              id: "lead-settings-revision",
+              id: "settings-threads-revision",
               args: { revision: String(state.value.revision) },
             })}
           </span>
         ) : null
       }
     >
-      <SelectorSettingsUnled partition={partition} />
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
         <SelectorSettingsForm partition={partition} settings={state.value} />

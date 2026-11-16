@@ -1,5 +1,5 @@
-/* The lead's settings and the strip that leads its own page: the status
-   strip, the shape a prose setting is read in, the limits grid and the
+/* The thread settings and the strip that leads the Lead page: the status
+   strip, the shape a prose setting is read in, the rows grid and the
    revisions list. Everything a utility can state is stated as one; what is
    here is the grids and the states a data attribute carries. */
 
@@ -76,11 +76,6 @@
     line-height: var(--leading-prose);
   }
 
-  .selector-prose[data-mono] {
-    font-family: var(--font-mono);
-    font-size: var(--mono-optical);
-  }
-
   .selector-limits {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -131,11 +126,6 @@
     border-radius: var(--radius-circle);
     background: var(--tone-live);
     flex: none;
-  }
-
-  .selector-pinned {
-    display: flex;
-    min-width: 8em;
   }
 
   .selector-was {
@@ -201,11 +191,6 @@
 
   .selector-diff-row > dt {
     color: var(--ink-3);
-  }
-
-  .selector-diff-row[data-mono] > dd {
-    font-family: var(--font-mono);
-    font-size: var(--mono-optical);
   }
 
   .selector-before {

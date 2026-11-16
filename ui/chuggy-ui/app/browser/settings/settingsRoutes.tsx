@@ -20,7 +20,7 @@ import type { ReactNode } from "react";
 
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import { ProjectlessFrame } from "../ProjectCreation.tsx";
-import { LeadSettingsPage } from "./LeadSettingsPage.tsx";
+import { ThreadSettingsPage } from "./ThreadSettingsPage.tsx";
 import { MyRunnerPage } from "./MyRunnerPage.tsx";
 import { PlacementSettingsPage } from "./PlacementSettingsPage.tsx";
 import { PoolsSettingsPage } from "./PoolsSettingsPage.tsx";
@@ -36,7 +36,11 @@ import { UsageSettingsPage } from "./UsageSettingsPage.tsx";
 function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
   const getParentRoute = (): TParent => parent;
   return [
-    createRoute({ getParentRoute, path: "/lead", component: LeadSettingsPage }),
+    createRoute({
+      getParentRoute,
+      path: "/threads",
+      component: ThreadSettingsPage,
+    }),
     createRoute({
       getParentRoute,
       path: "/placement",
@@ -131,7 +135,7 @@ export function projectSettingsRoutes<TParent extends AnyRoute>(
     path: "/",
     beforeLoad: ({ params }) => {
       redirect({
-        to: settingsRoutes.project.lead,
+        to: settingsRoutes.project.threads,
         params,
         replace: true,
         throw: true,

@@ -208,7 +208,7 @@ const projectGroups = [
   [
     "Project atlas-web",
     [
-      "Lead /acme-co/atlas-web/settings/lead",
+      "Chats /acme-co/atlas-web/settings/threads",
       "Placement /acme-co/atlas-web/settings/placement",
       "Pools /acme-co/atlas-web/settings/pools",
       "Permissions /acme-co/atlas-web/settings/permissions",
@@ -242,7 +242,7 @@ const workspaceGroups = [
 test.each([
   {
     bare: "/acme-co/atlas-web/settings",
-    first: "/acme-co/atlas-web/settings/lead",
+    first: "/acme-co/atlas-web/settings/threads",
   },
   {
     bare: "/tenants/acme-co/settings",
@@ -290,7 +290,10 @@ test("outside a project the navigation draws the workspace's group alone, every 
 });
 
 test.each([
-  { address: "/acme-co/atlas-web/settings/lead", group: "Project atlas-web" },
+  {
+    address: "/acme-co/atlas-web/settings/threads",
+    group: "Project atlas-web",
+  },
   {
     address: "/acme-co/atlas-web/settings/placement",
     group: "Project atlas-web",
