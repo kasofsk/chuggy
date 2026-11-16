@@ -232,7 +232,7 @@ function finalizerHoldLogMetrics(
 }
 
 /** The fields of one forge reply a line carries, flat beside the act's own. */
-function finalizerReplyFields(
+function finalizerProcessLogReplyFields(
   reply: ChangeProposalForgeReply | undefined,
 ): Record<string, string | number | boolean> {
   if (reply === undefined) return {};
@@ -266,7 +266,7 @@ export function finalizerProcessLog(
         request: answered.request,
         act: answered.act,
         outcome: answered.outcome,
-        ...finalizerReplyFields(answered.reply),
+        ...finalizerProcessLogReplyFields(answered.reply),
       });
     },
     holdRecorded: (recorded) => {

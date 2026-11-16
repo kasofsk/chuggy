@@ -1392,7 +1392,9 @@ export async function finalizerChangeProposalUpdateRecord(
 const changeProposalAnswerCharsMax = 2048;
 
 /** One forge answer as its row keeps it, flat beside the time it was asked. */
-function changeProposalAnswerDocument(answer: ChangeProposalAnswer): string {
+function finalizerChangeProposalAnswerRecordDocument(
+  answer: ChangeProposalAnswer,
+): string {
   const reply = answer.reply;
   return JSON.stringify({
     outcome: answer.outcome,
@@ -1419,7 +1421,7 @@ export async function finalizerChangeProposalAnswerRecord(
   act: ChangeProposalAnsweredAct,
   answer: ChangeProposalAnswer,
 ): Promise<ChangeProposalWritten> {
-  const document = changeProposalAnswerDocument(answer);
+  const document = finalizerChangeProposalAnswerRecordDocument(answer);
   if (textCodePointsCount(document) > changeProposalAnswerCharsMax)
     return { wrote: "Nothing" };
   if (!(await finalizerChangeProposalClaimStands(client, claim)))
