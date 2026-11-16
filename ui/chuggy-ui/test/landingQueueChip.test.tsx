@@ -18,9 +18,9 @@ afterEach(cleanup);
 
 const repository = "https://github.com/acme/widgets.git";
 
-const holderWords = `Lands next: #4 holds refs/heads/release in ${repository}, 1 of 3 in its queue`;
+const holderWords = `Finalizes next: #4 holds refs/heads/release in ${repository}, 1 of 3 in its queue`;
 
-const waiterWords = `Waiting 3 of 3 to land: #4 holds ${repository}'s default branch`;
+const waiterWords = `Waiting 3 of 3 to finalize: #4 holds ${repository}'s default branch`;
 
 test("a holder's chip draws the merge mark and 1/total, and is named as landing next on its queue's target", () => {
   renderCopied(
@@ -78,7 +78,7 @@ test("a place from a cut read draws its total as a least, and names it so", () =
     />,
   );
   const chip = screen.getByRole("img", {
-    name: `Waiting 3 of at least 3 to land: #4 holds ${repository}'s default branch`,
+    name: `Waiting 3 of at least 3 to finalize: #4 holds ${repository}'s default branch`,
   });
   expect(chip.textContent).toBe("3/3+");
 });

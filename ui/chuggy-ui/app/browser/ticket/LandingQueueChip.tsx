@@ -47,7 +47,7 @@ export function LandingQueueChip(props: {
   const words = text(landingQueuePlaceWords(place));
   const chip = (
     <span
-      className={`${pillLookClassName({ tone })} landing-queue-chip`}
+      className={`${pillLookClassName({ tone })} finalization-queue-chip`}
       role="img"
       aria-label={words}
       title={props.inLink === true ? words : undefined}

@@ -11,6 +11,7 @@ lead-session-open = Open
 lead-session-closed = Closed
 lead-absence-since = { $label } · since { $time }
 lead-absence-until = { $label } · until { $time }
+lead-absence-off = { $label } · credentials off
 lead-absence-manual = { -ticket(case: "upper", form: "plural") } are { -dispatch(form: "ed") } by hand
 
 lead-attention-monitoring = Monitoring
@@ -126,9 +127,9 @@ lead-mode-action-resume = Resume
 
 lead-dispatch-name = { -dispatch(case: "upper") }
 lead-dispatch-automatic = Automatic
-# spells -approval: approving a dispatch, never a landing
+# spells -approval: approving a dispatch, never a finalization
 lead-dispatch-approval = { -dispatch(case: "upper") } approval
-# spells -approval: approving a dispatch, never a landing
+# spells -approval: approving a dispatch, never a finalization
 lead-dispatch-action-require = Require { -dispatch } approval
 lead-dispatch-action-automatic = { -dispatch(case: "upper") } automatically
 

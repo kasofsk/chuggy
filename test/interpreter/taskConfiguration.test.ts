@@ -3,7 +3,7 @@ import { test } from "node:test";
 import {
   allTaskConfigurationFaults,
   authoredTaskConfigurationReadiness,
-} from "../../src/interpreter/taskConfiguration.ts";
+} from "../../src/contract/taskConfiguration.ts";
 import {
   briefingLineCharsMax,
   commandLinesMax,

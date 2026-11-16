@@ -1,6 +1,6 @@
 ## The repositories page, a repository's page, adding one, and connecting
-## GitHub: `RepositoriesPage.tsx`, `repositories/`, the forge's two landings,
-## and the core modules they draw from.
+## GitHub: `RepositoriesPage.tsx`, `repositories/`, the two pages the forge
+## returns to, and the core modules they draw from.
 
 ## The words a refusal that says nothing about the repository is drawn as.
 
@@ -18,18 +18,21 @@ repositories-not-installed = Not installed
 repositories-github-unavailable = { -github } unavailable
 repositories-more = { $count } more
 
-## What a person brings back from the forge, and the two landings it returns to.
+## What a person brings back from the forge, and the two pages it returns to.
 
 repositories-return-declined = Declined
 repositories-return-partial = Partial
 repositories-return-requested = Requested
 # The forge spent the code before the api could read what it reaches.
 repositories-return-spent = Start again
-repositories-setup-title = Setup
-repositories-callback-title = { -github }
-repositories-connecting = Connecting
-repositories-setup-unexpected = Not expected
+repositories-connecting-title = Connecting { -github }
+repositories-connecting = Finishing the connection…
+repositories-setup-unexpected-title = { -github } sent you back unexpectedly
+repositories-setup-unexpected = This tab did not send you to { -github }, so it cannot tell where to take you.
+repositories-setup-unexpected-next = Go home and start again from there.
 repositories-setup-updated = Back from { -github }
+repositories-setup-updated-continue = Continue to go back to where you were.
+repositories-setup-updated-home = Go home to carry on.
 repositories-home = Home
 repositories-continue = Continue
 
@@ -50,7 +53,6 @@ repositories-none = No { -repository } bound
 repositories-add = Add
 repositories-add-how = Create one on { -github }, install both apps on it, then Add
 repositories-bound-caption = Bound { -repository(form: "plural") }
-repositories-col-repository = { -repository(case: "upper") }
 repositories-bound = Bound
 repositories-unbind = Unbind
 repositories-offers-withheld = { -workspace(case: "upper", form: "a") } { -role-admin } adds { -repository(form: "plural") }
@@ -59,6 +61,14 @@ repositories-offers-not-configured = { -github } not configured · ask an operat
 repositories-offers-connect = Connect a { -github } account first
 repositories-offers-portal-missing = No account has the { -portal-app }
 repositories-offers-worker-missing = { -worker-app(case: "upper") } missing · { $account }
+
+## The numbered steps to a first repository.
+
+repositories-steps = Connecting a { -repository }
+repositories-step-connect = Connect a { -github } account
+repositories-step-install-worker = Install the { -worker-app }
+repositories-step-add = Add a { -repository }
+repositories-step-done = Done
 
 ## The worker app's reach on a bound row, and the picker's roster.
 
@@ -113,10 +123,14 @@ repositories-unbind-line = New { -ticket(form: "plural") } can't name { $reposit
 repositories-not-bound = Not bound
 repositories-writing = Writing
 repositories-written = Written
-repositories-landing-title = { -landing(case: "upper") }
-repositories-landing-about = How a finished { -ticket } { -landing(form: "s") }. { -ticket(case: "upper", form: "a") } may choose otherwise.
+repositories-finalization-title = { -finalization(case: "upper") }
+repositories-finalization-about = How a finished { -ticket } is { -finalization(form: "ed") }. { -ticket(case: "upper", form: "a") } may choose otherwise.
 repositories-workflow-files = Workflow files
 repositories-workflow-files-about = Lets { -run(form: "plural") } change workflow files · App needs Workflows
+# spells -run: a GitHub Actions run, not a stage's
+repositories-workflow-runs = Workflow runs
+# spells -run: a GitHub Actions run, not a stage's
+repositories-workflow-runs-about = Lets { -run(form: "plural") } start and read workflow runs · App needs Actions
 repositories-off = Off
 repositories-on = On
 repositories-configurations-title = { -configuration(case: "upper", form: "plural") }
@@ -128,7 +142,6 @@ repositories-col-configuration = { -configuration(case: "upper") }
 # The worker a workload runs on, never the worker app.
 repositories-col-worker = { -workload(case: "upper") } worker
 repositories-col-stages = { -stage(case: "upper", form: "plural") }
-repositories-col-approval = { -approval(case: "upper") }
 repositories-incomplete = Incomplete
 repositories-catalog-work = { $work } of { $count ->
     [one] { $count } { -workload }
@@ -164,5 +177,6 @@ repositories-fault-duplicate-name = Name declared twice
 repositories-fault-duplicate-path = File listed twice
 repositories-fault-reference-absent = Referenced file missing
 repositories-fault-too-many-references = Too many referenced files
+repositories-fault-approval-outside-plan = { -approval(case: "upper") } outside { -evaluation-plan(form: "a") }
 repositories-fault-chars = { $chars } of { $charsMax } characters
 repositories-fault-reference-named = Missing { $reference }

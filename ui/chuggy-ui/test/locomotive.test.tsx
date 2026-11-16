@@ -15,6 +15,9 @@ import type { SessionHolder, SessionPhase } from "../app/core/sessionHolder.ts";
 import { App } from "../app/browser/App.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { Locomotive } from "../app/browser/ui/Locomotive.tsx";
+import locomotiveSheet from "../app/browser/ui/Locomotive.css?raw";
+import tokenSheet from "../app/styles/tokens.css?raw";
+import { sheetDeclared, sheetRules } from "./sheet.ts";
 import { styleless } from "./styleless.ts";
 import { renderCopied } from "./copied.tsx";
 
@@ -57,6 +60,28 @@ test("the locomotive draws an animated sprite and carries an accessible name, wi
   expect(frameIndexes.size).toBeGreaterThan(1);
   expect(view.container.querySelector("[style]")).toBeNull();
   styleless();
+});
+
+test("every pixel of the locomotive is filled from a token the tokens define", () => {
+  renderCopied(<Locomotive />);
+  const rules = sheetRules(locomotiveSheet, []);
+  const rects = Array.from(
+    screen
+      .getByRole("img", { name: /chuggy/i })
+      .querySelectorAll("svg.locomotive-sprite rect"),
+  );
+  const filled = new Set(
+    rects.map((rect) => {
+      expect(rect.hasAttribute("fill")).toBe(false);
+      return sheetDeclared(rules, rect, "fill");
+    }),
+  );
+  expect(filled.size).toBeGreaterThan(1);
+  for (const fill of filled) {
+    const token = /^var\((--locomotive-[a-z-]+)\)$/u.exec(fill)?.[1];
+    expect(token, fill).toBeDefined();
+    expect(tokenSheet).toContain(`${token ?? ""}: #`);
+  }
 });
 
 test("the Loading card draws the locomotive", () => {

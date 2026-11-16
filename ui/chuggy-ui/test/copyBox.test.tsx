@@ -1,7 +1,9 @@
 /**
  * The box a text is copied from, over both ways its text breaks: the whole
  * text as code under what is said of it, the control that puts exactly that
- * text on the clipboard, and no control where no clipboard is held.
+ * text on the clipboard, and no control where no clipboard is held. A folded
+ * box draws its bar alone until the bar is pressed, closes again on a second
+ * press, and copies the whole text either way.
  */
 
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
@@ -77,4 +79,62 @@ test("a box under no clipboard draws its text and no control", () => {
   );
   expect(view.container.querySelector("code")?.textContent).toBe(text);
   expect(screen.queryByRole("button")).toBeNull();
+});
+
+/** A folded box under a clipboard that keeps what it is handed. */
+function foldedCopied(): string[] {
+  const copied: string[] = [];
+  renderCopied(
+    <CopyProvider
+      write={(written) => {
+        copied.push(written);
+        return Promise.resolve(true);
+      }}
+    >
+      <CopyBox
+        about="Paste into Claude Code"
+        text={text}
+        copyLabel="Copy prompt"
+        breaks="words"
+        folded
+      />
+    </CopyProvider>,
+  );
+  return copied;
+}
+
+function bar(): HTMLElement {
+  return screen.getByRole("button", { name: "Paste into Claude Code" });
+}
+
+test("a folded box starts as its bar alone, with none of its text drawn", () => {
+  foldedCopied();
+  expect(document.querySelector("code")).toBeNull();
+  expect(screen.queryByText(text)).toBeNull();
+  expect(bar().getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getByRole("button", { name: "Copy prompt" })).toBeDefined();
+});
+
+test("a folded box's bar opens its whole text, broken as asked, and folds it again", () => {
+  foldedCopied();
+  fireEvent.click(bar());
+  const code = document.querySelector("code");
+  expect(code?.textContent).toBe(text);
+  expect(code?.classList.contains("wrap-anywhere")).toBe(true);
+  expect(bar().getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(bar());
+  expect(document.querySelector("code")).toBeNull();
+  expect(bar().getAttribute("aria-expanded")).toBe("false");
+});
+
+test("a folded box's control copies the whole text without opening it, and opening it is no copy", async () => {
+  const copied = foldedCopied();
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Copy prompt" }));
+    await Promise.resolve();
+  });
+  expect(copied).toStrictEqual([text]);
+  expect(document.querySelector("code")).toBeNull();
+  fireEvent.click(bar());
+  expect(copied).toStrictEqual([text]);
 });

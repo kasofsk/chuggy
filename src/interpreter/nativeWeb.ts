@@ -52,7 +52,7 @@ import {
   type NativeActionAsked,
 } from "./nativeActionAnswer.ts";
 import { assertNever } from "../domain/assertNever.ts";
-import type { ApprovalApprovers } from "./workloadConfiguration.ts";
+import type { ApprovalApprovers } from "../contract/workloadConfiguration.ts";
 import { phaseTags, type Phase } from "../domain/phase.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import type {
@@ -75,7 +75,7 @@ import {
   type LeadInquiryRecord,
   type LeadInquiryStore,
 } from "./leadInquiry.ts";
-import type { Partition } from "./projectStore.ts";
+import type { NamedPartition, Partition } from "./projectStore.ts";
 import type {
   NativeActionKind,
   NativeActionResolution,
@@ -105,11 +105,11 @@ import {
   ticketCommandedCheckStage,
   ticketCommandedCheckStageNote,
   ticketConfigurationReadiness,
-  ticketProgramShort,
+  ticketRunsLessThanPlanned,
 } from "./authoring.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import { asBriefFinalization, type DraftBrief } from "./ticketBrief.ts";
-import { catalogSelectedFinalizer } from "./workloadConfiguration.ts";
+import { catalogSelectedFinalizer } from "../contract/workloadConfiguration.ts";
 import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import {
   dispatchNeedsExecutionHeadroom,
@@ -163,7 +163,7 @@ import {
 } from "./runEvidence.ts";
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import type { AttemptEvidence } from "./executionScheduler.ts";
-import type { RunStepEvidence } from "./runEvidence.ts";
+import type { RunCredentialAbsence, RunStepEvidence } from "./runEvidence.ts";
 import { type PublicInstant } from "./publicResource.ts";
 import { hostedRunsGranted, memberAuthorities } from "./projectAccess.ts";
 import { projectAbilities } from "./projectAbilities.ts";
@@ -200,6 +200,7 @@ import {
   sessionHeldWalk,
   sessionHeldWalkAsks,
   type LeadAbsence,
+  type LeadHeld,
   type LeadRead,
   type LeadReadStore,
   type LeadRefused,
@@ -310,7 +311,7 @@ export interface ProjectInventory {
 }
 
 export interface ProjectInventoryPage {
-  readonly projects: readonly Partition[];
+  readonly projects: readonly NamedPartition[];
   readonly nextAfter?: Partition;
 }
 
@@ -366,11 +367,14 @@ export interface RunStepFailureResource {
   readonly attempt: AttemptId;
   /** The text its worker kept, which is read on the attempt's own route. */
   readonly error?: { readonly bytes: number };
+  /** The credential not delivered and why, present with `RunCredentialAbsent` alone. */
+  readonly absent?: RunCredentialAbsence;
 }
 
-/** An escalation the scheduler resumes by itself once its usage pauses end, and when the latest ends where one still holds. */
+/** An escalation usage pauses hold: when the latest ends where one still holds, which the scheduler resumes it by itself at, or `off` where a task waits only on credentials turned off and it never resumes by itself. */
 export interface TicketUsageResumeResource {
   readonly until?: PublicInstant;
+  readonly off?: true;
 }
 
 /**
@@ -387,7 +391,7 @@ export interface TicketEscalationResource {
   readonly lost?: RunnerLossResource;
   /** Present where the wall is a task whose run stopped at a failed step. */
   readonly failed?: RunStepFailureResource;
-  /** Present where the scheduler resumes it by itself once its usage pauses end. */
+  /** Present where usage pauses hold its rate-limited tasks. */
   readonly usageResume?: TicketUsageResumeResource;
 }
 
@@ -457,6 +461,8 @@ export interface TicketResource {
   readonly revision: number;
   /** The authority subject of the member whose first authoring revision filed the ticket. */
   readonly creator?: string;
+  /** The member the ticket's next execution is placed for: the member who took it, else its creator. */
+  readonly owner?: string;
   readonly phase: Phase;
   readonly sequence: number;
   readonly changedAt: PublicInstant;
@@ -570,6 +576,33 @@ export interface NativeActionPage {
   readonly nextAfter?: NativeActionPosition;
 }
 
+/**
+ * One action a ticket has had, open or settled. A resolution is what an
+ * answered action carries alone, and who answered it and when is recorded of
+ * an answered evaluation approval alone; the execution is the one an
+ * evaluation approval asked about.
+ */
+export type TicketNativeActionRecord = {
+  readonly action: string;
+  readonly kind: NativeActionKind;
+  readonly authorizingSequence: number;
+  readonly execution?: ExecutionId;
+} & (
+  | { readonly state: "Open" | "Withdrawn" }
+  | {
+      readonly state: "Resolved";
+      readonly resolution: NativeActionResolution;
+      readonly answeredBy?: Principal;
+      readonly answeredAt?: PublicInstant;
+    }
+);
+
+/** One page of a ticket's actions, oldest fence first, and where the next one resumes. */
+export interface TicketNativeActionHistoryPage {
+  readonly actions: readonly TicketNativeActionRecord[];
+  readonly nextAfter?: NativeActionPosition;
+}
+
 export const nativeActionPageLimitMax = 100;
 
 export function checkedNativeActionPageQuery(
@@ -600,7 +633,7 @@ export interface ProjectResource {
   readonly nextAfter?: TicketId;
   readonly nextRecentActivityAfter?: TicketActivityPosition;
   readonly nextNumberAfter?: TicketNumberPosition;
-  /** How many tickets the search or creator matched across the project, where the read named either. */
+  /** How many tickets the search, creator or owner matched across the project, where the read named one. */
   readonly matched?: number;
 }
 
@@ -631,6 +664,8 @@ export interface ProjectReadQuery {
   readonly search?: string;
   /** Only the tickets this member filed, as a ticket's `creator` names them. */
   readonly creator?: Principal;
+  /** Only the tickets this member owns, as a ticket's `owner` names them. */
+  readonly owner?: Principal;
   /** Only the tickets `ticketActiveFinishedHours` names active. */
   readonly active?: boolean;
   /** Only the members of this epic. */
@@ -712,7 +747,7 @@ export function checkedProjectReadQuery(
   return query;
 }
 
-/** Refuses a search that is untrimmed or past its bound, and a creator no principal could be. */
+/** Refuses a search that is untrimmed or past its bound, and a creator or owner no principal could be. */
 function checkedProjectReadQueryNarrowing(query: ProjectReadQuery): void {
   if (
     query.search !== undefined &&
@@ -723,6 +758,7 @@ function checkedProjectReadQueryNarrowing(query: ProjectReadQuery): void {
       `ticket search must be from 1 to ${String(ticketSearchCharsMax)} characters, trimmed`,
     );
   if (query.creator !== undefined) asPrincipal(query.creator);
+  if (query.owner !== undefined) asPrincipal(query.owner);
 }
 
 /** The ticket a search names by number, where it is a whole number with or without a leading `#`. */
@@ -754,6 +790,12 @@ export interface NativeReadStore {
     partition: Partition,
     query: NativeActionPageQuery,
   ): Promise<NativeActionAskedPage>;
+  /** A page of every action the ticket has had, or nothing where the project holds no such ticket. */
+  ticketNativeActionHistory(
+    partition: Partition,
+    ticket: TicketId,
+    query: NativeActionPageQuery,
+  ): Promise<TicketNativeActionHistoryPage | undefined>;
   /** What one action asks of whoever answers it, open or not, or nothing where the project holds no such action. */
   nativeActionAsked(
     partition: Partition,
@@ -844,6 +886,12 @@ export interface NativeWeb extends NativeEpics {
     query: NativeActionPageQuery,
     viaSession?: SessionId,
   ): Promise<AuthorizedResult<NativeActionPage>>;
+  ticketNativeActionHistory(
+    principal: Principal,
+    partition: Partition,
+    ticket: TicketId,
+    query: NativeActionPageQuery,
+  ): Promise<TicketNativeActionHistoryPage | undefined>;
   operationalStatus(
     principal: Principal,
     partition: Partition,
@@ -1378,6 +1426,7 @@ async function nativeDraftBriefLanded(
     readonly configurationRevision: ConfigurationRevisionId;
     readonly brief: DraftBrief;
     readonly selection?: ConfigurationSelection;
+    readonly overrides?: ConfigurationOverrides;
   },
 ): Promise<NativeDraftBriefLanded> {
   if (input.brief.finalization !== undefined)
@@ -1392,6 +1441,7 @@ async function nativeDraftBriefLanded(
       : catalogSelectedFinalizer(
           JSON.parse(configuration.canonical),
           input.selection,
+          input.overrides,
         )?.finalizer?.finalization;
   return finalization === undefined
     ? { brief: input.brief }
@@ -1539,7 +1589,13 @@ async function nativeSubmitRunsLessThanPlan(
   );
   return (
     readiness.readiness === "Ready" &&
-    ticketProgramShort(readiness.ticket, revision.program)
+    ticketRunsLessThanPlanned(
+      revision.canonical,
+      revision.overrides,
+      revision.selection,
+      readiness.ticket,
+      revision.program,
+    )
   );
 }
 
@@ -1941,11 +1997,25 @@ function nativeTicketMethods(
   access: ProjectAccess,
   reads: NativeReadStore,
   agents: NativeActionAgents,
-): Pick<NativeWeb, "ticket" | "ticketNativeActions" | "nativeActions"> {
+): Pick<
+  NativeWeb,
+  | "ticket"
+  | "ticketNativeActions"
+  | "nativeActions"
+  | "ticketNativeActionHistory"
+> {
   return {
     ticket: authorizedProjectRead(access, (partition, ticket) =>
       reads.ticket(partition, ticket),
     ),
+    ticketNativeActionHistory: async (principal, partition, ticket, query) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? undefined
+        : reads.ticketNativeActionHistory(
+            partition,
+            ticket,
+            checkedNativeActionPageQuery(query),
+          ),
     ticketNativeActions: async (principal, partition, ticket, viaSession) => {
       if ((await access.authorize(principal, partition, "Read")) === undefined)
         return undefined;
@@ -2157,7 +2227,7 @@ async function nativeLeadRefusalStanding(
   access: ProjectAccess,
   ports: NativeLeadPorts,
   partition: Partition,
-): Promise<LeadAbsence | undefined> {
+): Promise<LeadHeld | LeadRefused | undefined> {
   if ((await ports.settings.projectSettings(partition)).mode === "Paused")
     return leadPaused;
   if (
@@ -2168,16 +2238,19 @@ async function nativeLeadRefusalStanding(
   return ports.leads.leadRefusal(partition);
 }
 
-/** The refusal a lead holding a session is drawn with: the one kept, where nothing outranks it. */
-async function nativeLeadSessionRefusal(
+/**
+ * What a lead holding a session is drawn with from the same standing a project
+ * holding none answers its absence from: what holds it, where that project
+ * would answer `Paused` or `SelectorNotGranted`, or else the refusal kept.
+ */
+async function nativeLeadSessionSelectorStanding(
   access: ProjectAccess,
   ports: NativeLeadPorts,
   partition: Partition,
-): Promise<{ readonly refusal?: LeadRefused }> {
+): Promise<{ readonly held?: LeadHeld; readonly refusal?: LeadRefused }> {
   const standing = await nativeLeadRefusalStanding(access, ports, partition);
-  return standing !== undefined && "since" in standing
-    ? { refusal: standing }
-    : {};
+  if (standing === undefined) return {};
+  return "since" in standing ? { refusal: standing } : { held: standing };
 }
 
 /** A subsidized lead's tenant's spend this month and its cap, and nothing for a lead run as its own. */
@@ -2240,7 +2313,7 @@ function nativeLeadSessionMethods(
           standing.session,
           sessionStoreStreamsAnswered,
         ),
-        ...(await nativeLeadSessionRefusal(access, ports, partition)),
+        ...(await nativeLeadSessionSelectorStanding(access, ports, partition)),
         ...(await nativeLeadSubsidy(ports, partition)),
       };
     },
@@ -2801,6 +2874,10 @@ function nativeThreadReadMethods(
           ? {}
           : { nextBefore: found.nextBefore }),
         streams: found.streams,
+        jobsStanding: found.jobsStanding,
+        ...(found.chatHostCapabilities === undefined
+          ? {}
+          : { chatHostCapabilities: found.chatHostCapabilities }),
       };
     },
   };
@@ -3085,7 +3162,12 @@ function nativeProjectionMethods(
   operationalReads?: OperationalReadStore,
 ): Pick<
   NativeWeb,
-  "operation" | "project" | "ticket" | "ticketNativeActions" | "nativeActions"
+  | "operation"
+  | "project"
+  | "ticket"
+  | "ticketNativeActions"
+  | "nativeActions"
+  | "ticketNativeActionHistory"
 > {
   return {
     operation: authorizedProjectRead(access, (partition, operation) =>

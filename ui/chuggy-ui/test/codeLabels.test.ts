@@ -36,11 +36,11 @@ import {
   resumePoints,
   runStepEvidences,
   ticketLandingStates,
+  workerHeldCredentialAbsences,
   type EscalationKind,
   type GitEvidenceLabel,
 } from "../../../src/contract/rosters.ts";
 import {
-  approvalLabel,
   blockedReasonLabel,
   changeProposalCreationLabel,
   changeProposalMergeabilityLabel,
@@ -96,8 +96,8 @@ const ticketActionNames: readonly TicketActionName[] = [
   "Dispatch",
   "Resume",
   "Revoke",
-  "Approve",
-  "Decline",
+  "ApproveEvaluation",
+  "Reject",
   "Release",
 ];
 
@@ -409,7 +409,16 @@ test("a job lost on its runner names the runner and how often it was resumed", (
 test("a run stopped at a failed step names the step, and setup says where its fix goes to a reader who can make it", () => {
   const labels = new Set<string>();
   for (const evidence of runStepEvidences) {
-    const failed = { evidence, execution: "execution-1", attempt: "attempt-1" };
+    const failed = {
+      evidence,
+      execution: "execution-1",
+      attempt: "attempt-1",
+      ...(evidence === "RunCredentialAbsent"
+        ? {
+            absent: { credential: "chuggy.github", reason: "NotHeld" as const },
+          }
+        : {}),
+    };
     for (const kind of [
       "WorkFailureEscalated",
       "EvaluationBlockedEscalated",
@@ -426,19 +435,23 @@ test("a run stopped at a failed step names the step, and setup says where its fi
         ? "Fix it under Overrides · Setup, then Resume"
         : evidence === "RunDiskLow"
           ? "Free space on its runner, then Resume"
-          : undefined,
+          : evidence === "RunCredentialAbsent"
+            ? "Have chuggy.github held or issued here, then Resume"
+            : undefined,
     );
     expect(textOf(runStepLine(failed, false))).toBe(
       evidence === "RunDiskLow"
         ? "Free space on its runner, then Resume"
-        : undefined,
+        : evidence === "RunCredentialAbsent"
+          ? "Have chuggy.github held or issued here, then Resume"
+          : undefined,
     );
     for (const said of [
       copyTextEn(runStepLabel(evidence)),
       textOf(runStepLine(failed, true)) ?? "",
     ]) {
       expect(said.length).toBeLessThanOrEqual(copyBudgetChars);
-      expect(said).not.toMatch(/[.:;]/u);
+      expect(said.replace("chuggy.github", "")).not.toMatch(/[.:;]/u);
     }
   }
   expect([...labels]).toEqual([
@@ -448,7 +461,53 @@ test("a run stopped at a failed step names the step, and setup says where its fi
     "Push failed",
     "Timed out",
     "Disk low",
+    "Credential missing",
   ]);
+});
+
+/**
+ * A run ended for a credential not delivered names that credential and says
+ * what to change, a sentence of its own for every reason the contract gives,
+ * to any reader; one that names no credential is said by its label alone.
+ */
+test("a credential not delivered names the credential and what to change for each reason", () => {
+  const lines = new Map<string, string | undefined>();
+  for (const reason of workerHeldCredentialAbsences) {
+    const failed = {
+      evidence: "RunCredentialAbsent" as const,
+      execution: "execution-1",
+      attempt: "attempt-1",
+      absent: { credential: "chuggy.github", reason },
+    };
+    const line = textOf(runStepLine(failed, false));
+    expect(textOf(runStepLine(failed, true))).toBe(line);
+    expect(line).toContain("chuggy.github");
+    expect(line?.length).toBeLessThanOrEqual(copyBudgetChars);
+    expect(line?.replace("chuggy.github", "")).not.toMatch(/[.:;]/u);
+    lines.set(reason, line);
+  }
+  expect(Object.fromEntries(lines)).toStrictEqual({
+    NotGranted: "Let its workload mint chuggy.github, then Resume",
+    NotHeld: "Have chuggy.github held or issued here, then Resume",
+    NotEnabled: "Enable chuggy.github for its project or repository",
+    IssuerRefused: "See why chuggy.github's issuer refused it, then Resume",
+    WorkerTooOld: "Update its worker to take chuggy.github, then Resume",
+  });
+  const unnamed = {
+    evidence: "RunCredentialAbsent" as const,
+    execution: "execution-1",
+    attempt: "attempt-1",
+  };
+  expect(runStepLine(unnamed, true)).toBeUndefined();
+  expect(
+    copyTextEn(
+      escalationDetail({
+        kind: "WorkFailureEscalated",
+        resumeAt: "ResumeWork",
+        failed: unnamed,
+      }),
+    ),
+  ).toBe("Credential missing");
 });
 
 /** The continuation path's evidence is drawn from the git roster, the third
@@ -490,15 +549,16 @@ test("the escalation's one line names the finalization wall where the read carri
         resumeAt: "ResumeFinalization",
       }),
     ),
-  ).toBe("Landing unavailable");
+  ).toBe("Finalization unavailable");
 });
 
 /**
  * A push the repository declined clears only once something there changes, so
  * its hold says what, and a workflow refusal names the settings the
- * Repositories page holds; every other hold is said by its label alone.
+ * Repositories page holds; a target no run may merge in clears once a person
+ * lands the branch; every other hold is said by its label alone.
  */
-test("a declined push and an unread one say what to change before a resume, and no other hold does", () => {
+test("a declined push, an unread one and a target no run may merge in say what to change before a resume, and no other hold does", () => {
   expect(
     copyTextEn(finalizationUnavailableKindLabel("PromotionDeclined")),
   ).toBe("Push declined");
@@ -522,6 +582,10 @@ test("a declined push and an unread one say what to change before a resume, and 
     [
       "PromotionWorkflowsRefused",
       "Turn on Workflow files and the App's Workflows, then Resume",
+    ],
+    [
+      "TargetPathsRefused",
+      "Merge its branch into the target yourself, then Resume",
     ],
   ]);
   for (const [, line] of said) {
@@ -564,8 +628,8 @@ test("a wall names the exits the page draws, and none where it draws none", () =
   expect(textOf(wallExitLine(["Resume", "Revoke"]))).toBe(
     "only Revoke exits this wall",
   );
-  expect(textOf(wallExitLine(["Resume", "Approve", "Decline"]))).toBe(
-    "only Approve or Decline exit this wall",
+  expect(textOf(wallExitLine(["Resume", "ApproveEvaluation", "Reject"]))).toBe(
+    "only Approve or Reject exit this wall",
   );
   expect(textOf(wallExitLine(["Resume"]))).toBe(undefined);
   expect(textOf(wallExitLine([]))).toBe(undefined);
@@ -593,7 +657,7 @@ test("every resume point draws the effect the machine gives it", () => {
     ["ResumeWork", "Re-runs the work · new artifact"],
     ["ResumeRework", "Reworks · new artifact"],
     ["ResumeEvaluation", "Re-runs evaluation from stage 1"],
-    ["ResumeFinalization", "Re-runs landing"],
+    ["ResumeFinalization", "Re-runs finalization"],
   ]);
 });
 
@@ -714,8 +778,6 @@ test("every finalization and approval label is inside the budget", () => {
     ...briefGitMergePolicies.map((each) =>
       copyTextEn(gitMergePolicyEffect(each)),
     ),
-    copyTextEn(approvalLabel(true)),
-    copyTextEn(approvalLabel(false)),
   ];
   for (const label of drawn) {
     expect(label.length).toBeGreaterThan(0);
@@ -742,7 +804,7 @@ test("a finalization's kind, a git merge's mode and its policy are each named as
   ).toStrictEqual([
     "Merges the work into the target branch",
     "Opens a pull request a person merges",
-    "Lands nothing",
+    "Finalizes onto nothing",
   ]);
   expect(
     briefGitMergeModes.map((each) => copyTextEn(gitMergeModeLabel(each))),
@@ -759,15 +821,10 @@ test("a finalization's kind, a git merge's mode and its policy are each named as
   expect(
     briefGitMergePolicies.map((each) => copyTextEn(gitMergePolicyEffect(each))),
   ).toStrictEqual([
-    "Lands as soon as it is accepted",
-    "Lands alone on its reference, evaluated on what it lands",
-    "Evaluated over the tickets ahead, lands if its base held",
+    "Finalizes as soon as it is accepted",
+    "Finalizes alone on its reference, evaluated on the result",
+    "Evaluated over the tickets ahead, finalizes if its base held",
   ]);
-});
-
-test("an approval reads as one noun", () => {
-  expect(copyTextEn(approvalLabel(true))).toBe("Required");
-  expect(copyTextEn(approvalLabel(false))).toBe("Not required");
 });
 
 /** A push with no target lands on the branch the work was done on, which is a
@@ -783,7 +840,7 @@ test("a finalization read back names its reference, and a proposal names the def
     policy: "Serialized",
   } as const;
   expect(copyTextEn(finalizationLine({ ...push, target }))).toBe(
-    "Push · lands on refs/heads/main",
+    "Push · finalizes onto refs/heads/main",
   );
   expect(copyTextEn(finalizationLine(push))).toBe("Push");
   expect(copyTextEn(finalizationLine({ kind: "PullRequest", target }))).toBe(
@@ -811,7 +868,7 @@ const labelOfKind: Readonly<Record<EscalationKind, string>> = {
   EvaluationFailureEscalated: "Rework budget exhausted",
   WorkExecutionUnavailableEscalated: "Run unavailable",
   EvaluationBlockedEscalated: "Evaluation blocked",
-  FinalizationUnavailableEscalated: "Landing unavailable",
+  FinalizationUnavailableEscalated: "Finalization unavailable",
 };
 
 test.each(escalationKinds)("the label for %s says what it says", (kind) => {
@@ -872,6 +929,12 @@ test("an escalation the scheduler resumes once its usage pauses end says so, and
   }
 });
 
+test("an escalation credentials turned off hold says so, and never that it resumes by itself", () => {
+  const said = copyTextEn(usageResumeLine({ off: true }, 0));
+  expect(said).toBe("Credentials off");
+  expect(said).not.toMatch(/automatically/iu);
+});
+
 /** Each switch over a roster, walked whole, and whether each member has a
  * message of its own: a landing's two waits are one word to a reader, and
  * nothing else is. */
@@ -889,7 +952,7 @@ const codeSwitches: readonly (readonly [string, readonly Copy[], boolean])[] = [
     [...leadAbsencesUntimed, ...leadAdmissionRefusals].map(leadAbsenceLabel),
     true,
   ],
-  ["landing states", ticketLandingStates.map(ticketLandingStateLabel), false],
+  ["landing states", ticketLandingStates.map(ticketLandingStateLabel), true],
   [
     "landing failures",
     finalizationFailureKinds.map(finalizationFailureKindLabel),
@@ -951,7 +1014,6 @@ const codeSwitches: readonly (readonly [string, readonly Copy[], boolean])[] = [
     briefGitMergePolicies.map(gitMergePolicyEffect),
     true,
   ],
-  ["approvals", [true, false].map(approvalLabel), true],
   ["ticket actions", ticketActionNames.map(ticketActionLabel), true],
   [
     "resume points",
@@ -977,14 +1039,6 @@ test.each(codeSwitches)(
       expect(new Set(labels.map((label) => label.id)).size).toBe(labels.length);
   },
 );
-
-/** The two waits a landing stands at are one word to a reader, so one
- * message. */
-test("a landing's two waits share their one message", () => {
-  expect(ticketLandingStateLabel("AwaitingApproval")).toStrictEqual(
-    ticketLandingStateLabel("AwaitingMerge"),
-  );
-});
 
 /** The lines a reader is shown name no part of the machine they cannot see. */
 test("a follow under way names no actor, mailbox or sequence", () => {

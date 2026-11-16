@@ -36,6 +36,7 @@ const identity: SessionBearerIdentity = {
   kind: "Thread",
   principal: asPrincipal("issuer-subject"),
   scope: "Project",
+  capabilities: ["ProjectRead"],
 };
 
 /**
@@ -73,7 +74,7 @@ function authorities(
   };
 }
 
-test("a session bearer authorizes as its session's principal, names the session and carries its partition and scope", async () => {
+test("a session bearer authorizes as its session's principal, names the session and carries its partition, scope and capabilities", async () => {
   const offered: string[] = [];
   const secret = mintedSecret();
   const { oidc, sessions } = authorities(offered, { session: identity });
@@ -89,6 +90,7 @@ test("a session bearer authorizes as its session's principal, names the session 
         session: identity.session,
         partition: identity.partition,
         scope: identity.scope,
+        capabilities: identity.capabilities,
       },
     },
   });

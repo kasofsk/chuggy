@@ -28,6 +28,7 @@ import {
   first,
   flags,
   lines,
+  mcp,
   mint,
   next,
   probes,
@@ -116,18 +117,43 @@ test("a machine that could not take a runner, or lacks what this program cannot 
       },
       "found: the runner has no Claude login on this machine: nothing is at ",
     ],
-    [
-      (on) => {
-        on.machine.has("npm", false);
-      },
-      "found: the runner package is not installed at a version chuggy setup can use, and npm did not answer",
-    ],
   ];
   for (const [lack, found] of lacks) {
     const on = await stood();
     lack(on);
     await unchanged(on, found);
     assert.equal(settings(on), undefined, found);
+  }
+});
+
+test("a machine mcp has not put the runner package on stops runner before anything is changed, with or without npm, which runner asks nothing to install, and names mcp, which installs it, and the run after finishes the job", async () => {
+  for (const npm of [true, false]) {
+    const on = await stood("InCluster", false);
+    on.machine.has("npm", npm);
+    const done = await ran(on);
+    assert.equal(done.code, 0, done.stdout);
+    assert.deepEqual(done.lines.slice(-4), [
+      "found: the runner package, chuggy-linux, is not installed here",
+      "tell: The runner package, chuggy-linux, is installed by the MCP step, which gives your agent chuggy's tools for acme/widgets, and it is not here at a version this step can use, so nothing was changed on this machine. With your yes I will install it and name its MCP server in Claude Code here, and then set up the runner. Tell me if you want me to go ahead.",
+      `rule: Run node ${program} mcp ${flags} only once the person says yes to chuggy-linux and chuggy's MCP server on this machine.`,
+      "next: stop",
+    ]);
+    assert.deepEqual(
+      words(on, "npm").filter((argv) => argv[0] === "i"),
+      [],
+    );
+    assert.deepEqual(
+      acts(on).filter((act) => changing.has(act)),
+      [],
+    );
+    assert.deepEqual(on.installation.writes, []);
+    assert.equal(settings(on), undefined);
+    on.machine.has("npm");
+    assert.equal((await ran(on, mcp)).code, 0);
+    cleared(on);
+    const after = await ran(on);
+    assert.equal(after.code, 0, after.stdout);
+    assert.equal(after.lines.at(-1), next, after.stdout);
   }
 });
 
@@ -177,7 +203,7 @@ test("a user the runner package bars from docker is asked podman alone, and wher
   assert.deepEqual(done.lines.slice(1, 5), [
     found.engine,
     found.login,
-    did.package,
+    found.package,
     did.settings,
   ]);
   assert.deepEqual(done.lines.slice(-2), [found.live, next]);

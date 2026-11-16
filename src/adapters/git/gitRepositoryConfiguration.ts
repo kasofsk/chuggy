@@ -91,7 +91,7 @@ import {
   type RepositoryDeclarationEntry,
   type RepositoryDeclarationFile,
   type RepositoryDeclarationListing,
-} from "../../interpreter/repositoryDeclaration.ts";
+} from "../../contract/repositoryDeclaration.ts";
 import type {
   RepositoryDeclarationSnapshotRead,
   RepositoryDeclarationSnapshotRequest,

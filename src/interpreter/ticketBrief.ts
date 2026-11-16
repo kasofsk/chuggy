@@ -110,7 +110,7 @@ import type { Partition } from "./projectStore.ts";
 import {
   taskConfigurationLineFault,
   taskConfigurationLineUnreadable,
-} from "./taskConfiguration.ts";
+} from "../contract/taskConfiguration.ts";
 
 declare const briefTitleBrand: unique symbol;
 declare const briefIntentBrand: unique symbol;

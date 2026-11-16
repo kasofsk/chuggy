@@ -121,7 +121,7 @@ import type {
   RepositoryConfigurationSnapshotRead,
   RepositoryDefaultBranchRead,
 } from "../../src/interpreter/repositoryConfiguration.ts";
-import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
+import { repositoryDeclarationRoot } from "../../src/contract/repositoryDeclaration.ts";
 import type { RepositoryDeclarationSnapshotRequest } from "../../src/interpreter/repositoryDeclarationSnapshot.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
@@ -472,6 +472,7 @@ function fixtureBinding(given: FixturePorts): ProjectRepositoryBound {
       policy: "Direct",
     },
     pipelinesWritable: false,
+    pipelinesRunnable: false,
     ...(given.retiredAt === undefined ? {} : { retiredAt: given.retiredAt }),
   };
 }
@@ -1464,6 +1465,7 @@ test("what a project binds is its readers' to read and nobody else's", async () 
           boundAt: "2026-09-11T01:00:00Z",
           landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           pipelinesWritable: false,
+          pipelinesRunnable: false,
           configured: false,
         },
       ],
@@ -2189,6 +2191,7 @@ test("the listing answers what the project holds for each binding, and marks it 
       boundAt: "2026-09-11T01:00:00Z",
       landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       pipelinesWritable: false,
+      pipelinesRunnable: false,
     };
     assert.deepEqual(listed.result === "Repositories" && listed.repositories, [
       configurationsHeld === undefined
@@ -2245,6 +2248,7 @@ const listedBinding = {
   boundAt: "2026-09-11T01:00:00Z",
   landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
   pipelinesWritable: false,
+  pipelinesRunnable: false,
   configured: false,
 } as const;
 
