@@ -26,6 +26,7 @@ import {
   threadHideRequestSchema,
   leadInquirySchema,
   selectorProposalReviewSchema,
+  projectThemeSchema,
 } from "./requests.ts";
 import {
   operationalStatusResponseSchema,
@@ -70,6 +71,8 @@ import {
   ownedThemeSchema,
   ownedThemesResponseSchema,
   themeChoiceResponseSchema,
+  projectThemeResponseSchema,
+  projectAppearanceResponseSchema,
 } from "./responses.ts";
 
 function endpointInteger(name: string, fallback?: number) {
@@ -471,6 +474,36 @@ export const nativeHttpEndpoints = {
   clearThemeChoice: {
     method: "DELETE",
     path: nativeHttpRoutes.themeChoice,
+  },
+  viewProjectTheme: {
+    method: "GET",
+    path: nativeHttpRoutes.projectTheme,
+    response: projectThemeResponseSchema,
+  },
+  writeProjectTheme: {
+    method: "PUT",
+    path: nativeHttpRoutes.projectTheme,
+    body: projectThemeSchema,
+    response: projectThemeResponseSchema,
+  },
+  viewProjectThemeOverride: {
+    method: "GET",
+    path: nativeHttpRoutes.projectThemeOverride,
+    response: themeChoiceResponseSchema,
+  },
+  writeProjectThemeOverride: {
+    method: "PUT",
+    path: nativeHttpRoutes.projectThemeOverride,
+    body: themeChoiceSchema,
+  },
+  clearProjectThemeOverride: {
+    method: "DELETE",
+    path: nativeHttpRoutes.projectThemeOverride,
+  },
+  viewProjectAppearance: {
+    method: "GET",
+    path: nativeHttpRoutes.projectAppearance,
+    response: projectAppearanceResponseSchema,
   },
 } as const;
 

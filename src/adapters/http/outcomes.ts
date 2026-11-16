@@ -228,11 +228,19 @@ import type {
 } from "../../interpreter/appearance.ts";
 import type { ThemeChoice } from "../../contract/appearance.ts";
 import type {
+  ProjectAppearanceView,
+  ProjectThemeOverrideChosen,
+  ProjectThemeView,
+  ProjectThemeWritten,
+} from "../../interpreter/projectAppearance.ts";
+import type {
   AgentAccountsResponse,
   AgentPause,
   OwnedThemeResponse,
   OwnedThemesResponse,
   ThemeChoiceResponse,
+  ProjectThemeResponse,
+  ProjectAppearanceResponse,
   ChatHostCredentialsResponse,
   ChatHostResponse,
   ExecutionPlacementResponse,
@@ -1811,6 +1819,61 @@ export function themeChosenResponse(result: ThemeChosen): NativeHttpResponse {
     default:
       return assertNever(result);
   }
+}
+
+/** A project's default theme, and whether the caller may change it. */
+export function projectThemeBody(view: ProjectThemeView): ProjectThemeResponse {
+  return {
+    ...(view.document === undefined ? {} : { document: view.document }),
+    administers: view.administers,
+  };
+}
+
+/** A project's default written or cleared, answering it as it now stands, or refused by the contrast rule. */
+export function projectThemeWrittenResponse(
+  result: ProjectThemeWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "ContrastInsufficient":
+      return themeContrastRefusedResponse(result);
+    case "Written":
+    case "Unchanged":
+      return response(200, projectThemeBody(result.view));
+    default:
+      return assertNever(result);
+  }
+}
+
+/** The caller's own theme for a project, absent where they hold none. */
+export function projectThemeOverrideBody(
+  choice: ThemeChoice | undefined,
+): ThemeChoiceResponse {
+  return choice === undefined ? {} : { choice: { ...choice } };
+}
+
+/** The caller's own theme for a project written or cleared, or refused as their global choice is. */
+export function projectThemeOverrideChosenResponse(
+  result: ProjectThemeOverrideChosen,
+): NativeHttpResponse {
+  return result === "NotFound" ? notFound() : themeChosenResponse(result);
+}
+
+/** The theme a project wears for the caller, the layer it came from, and each layer's own value. */
+export function projectAppearanceBody(
+  view: ProjectAppearanceView,
+): ProjectAppearanceResponse {
+  const { override, projectDefault, global } = view.layers;
+  return {
+    theme: view.theme,
+    layer: view.layer,
+    layers: {
+      ...(override === undefined ? {} : { override: { ...override } }),
+      ...(projectDefault === undefined ? {} : { projectDefault }),
+      ...(global === undefined ? {} : { global: { ...global } }),
+    },
+  };
 }
 
 /** An allowlist addition: made, or a runner or a readable active project that is not there, or the allowlist at its bound. */

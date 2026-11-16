@@ -130,6 +130,22 @@ export const themeChoiceSchema = z.discriminatedUnion("kind", [
 ]);
 export type ThemeChoice = z.infer<typeof themeChoiceSchema>;
 
+/** The built-in a console wears where no layer names a theme. */
+export const builtInThemeDefault: BuiltInThemeId = "chuggy";
+
+/**
+ * The layers a project's theme is resolved through for one person, highest
+ * first: their own for the project, the project's default, their global
+ * choice, and the built-in default.
+ */
+export const themeLayers = [
+  "ProjectOverride",
+  "ProjectDefault",
+  "Global",
+  "BuiltInDefault",
+] as const;
+export type ThemeLayer = (typeof themeLayers)[number];
+
 /** The least contrast text needs against the ground it is drawn on. */
 export const themeContrastTextMin = 4.5;
 

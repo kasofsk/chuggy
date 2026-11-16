@@ -461,3 +461,9 @@ export const ownedThemeDeleteFunction = "delete_owned_theme";
 export const themeChoiceReadFunction = "read_theme_choice";
 /** One person's global theme choice written whole, or cleared. */
 export const themeChoiceWriteFunction = "write_theme_choice";
+/** One project's default theme written whole, or cleared, and who set it. */
+export const projectThemeSetFunction = "set_project_theme";
+/** One person's theme for one project, none where they hold none. */
+export const projectThemeOverrideReadFunction = "read_project_theme_override";
+/** One person's theme for one project written whole, or cleared. */
+export const projectThemeOverrideWriteFunction = "write_project_theme_override";

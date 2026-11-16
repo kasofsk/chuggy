@@ -120,6 +120,23 @@ const unrunDeletionBeneath: Readonly<Record<string, string>> = {
     "the selector's cursor, a position and no row of the project's",
 };
 
+/** Every relation keyed by a project that goes with the project row, by the cascade its key to it carries, rather than by a delete of the door's. */
+const unrunDeletionCascaded: readonly string[] = [
+  "project_theme",
+  "project_theme_override",
+];
+
+/** Every relation whose key to `project` is deleted with the row it names. */
+async function projectCascadedRelations(): Promise<readonly string[]> {
+  const found = await harness.query(
+    `SELECT DISTINCT c.conrelid::regclass::text AS relname FROM pg_constraint c
+      WHERE c.contype='f' AND c.confrelid='public.project'::regclass
+        AND c.confdeltype='c'
+      ORDER BY 1`,
+  );
+  return found.map((row) => String(row["relname"]));
+}
+
 /** Every relation carrying both a tenant and a project column, partitions read through their parent. */
 async function projectKeyedRelations(): Promise<readonly string[]> {
   const found = await harness.query(
@@ -201,9 +218,11 @@ test("every relation keyed by a project is emptied by its deletion or reached on
   const unaccounted = keyed.filter(
     (relation) =>
       !deleted.includes(relation) &&
+      !unrunDeletionCascaded.includes(relation) &&
       !Object.hasOwn(unrunDeletionBeneath, relation),
   );
   assert.deepEqual(unaccounted, []);
+  assert.deepEqual(await projectCascadedRelations(), unrunDeletionCascaded);
   for (const relation of deleted)
     assert.ok(keyed.includes(relation), `${relation} is keyed by a project`);
   for (const relation of holdings)
@@ -235,6 +254,11 @@ test("a project that released nothing is deleted with its drafts, bindings, conf
     [partition.tenant, partition.project],
   );
   await harness.query(
+    `SELECT set_project_theme($1,$2,'{}','Member','alice'),
+            write_project_theme_override($1,$2,'alice','ember',NULL)`,
+    [partition.tenant, partition.project],
+  );
+  await harness.query(
     `INSERT INTO epic(tenant,project,number,revision,title,description,visibility)
      VALUES($1,$2,1,1,'Epic','About','Active')`,
     [partition.tenant, partition.project],
@@ -249,6 +273,8 @@ test("a project that released nothing is deleted with its drafts, bindings, conf
     "project_repository_bind_operation",
     "operation",
     "project_owner_fallback",
+    "project_theme",
+    "project_theme_override",
     "epic",
   ])
     assert.ok((before[relation] ?? 0) > 0, `${relation} holds a row first`);

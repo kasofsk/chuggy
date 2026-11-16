@@ -55,6 +55,8 @@ const wipeKept = [
   "project_repository",
   "project_repository_bind_operation",
   "project_session_placement",
+  "project_theme",
+  "project_theme_override",
   "project_vacancy",
   "recovery_epoch",
   "repository_action",

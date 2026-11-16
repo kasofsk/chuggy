@@ -95,7 +95,7 @@ export interface AppearanceService {
 }
 
 /** The refusal the contrast rule makes of `document`, or none where it passes. */
-function appearanceContrastRefused(
+export function appearanceContrastRefused(
   document: ThemeDocument,
 ): ThemeContrastRefused | undefined {
   const failures = themeContrastFailures(document);

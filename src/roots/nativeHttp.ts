@@ -58,6 +58,7 @@ import {
   composeExecutionPlacement,
   composeProjectInbox,
   composeProjectOwnerFallback,
+  composeProjectAppearance,
   composeTicketTakes,
   composeThreadLimits,
   composeMemberChat,
@@ -1710,6 +1711,7 @@ async function main(): Promise<void> {
     nativeUnrunDeletions(pool, access, erasure),
     nativeTicketTakes(pool, access, authenticationConfig.issuer),
     appearanceService(postgresAppearance(pool)),
+    composeProjectAppearance(pool, access),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

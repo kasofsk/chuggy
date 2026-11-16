@@ -257,6 +257,11 @@ import {
   ownedThemeWrittenResponse,
   themeChoiceResponse,
   themeChosenResponse,
+  projectAppearanceBody,
+  projectThemeBody,
+  projectThemeOverrideBody,
+  projectThemeOverrideChosenResponse,
+  projectThemeWrittenResponse,
   personalRunnerDeregisteredResponse,
   unrunDeletedResponse,
   unrunDeletionStandingResponse,
@@ -290,7 +295,11 @@ import type { WorkerPoolRegistrationService } from "../../interpreter/workerPool
 import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegistration.ts";
 import type { AgentAccountService } from "../../interpreter/agentAccount.ts";
 import type { AppearanceService } from "../../interpreter/appearance.ts";
-import { themeNumberSchema } from "../../contract/appearance.ts";
+import type { ProjectAppearanceService } from "../../interpreter/projectAppearance.ts";
+import {
+  themeNumberSchema,
+  type ThemeDocument,
+} from "../../contract/appearance.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
@@ -1942,14 +1951,99 @@ function registerThemeChoice(
   });
 }
 
-/** What a person keeps of their own in no workspace: their agent accounts and their appearance. */
+/**
+ * A project's appearance: its default theme, read under `Read` and written
+ * whole or cleared under `Administer`; the caller's own theme for it, read,
+ * written whole and cleared under `Read`; and the theme it resolves to for
+ * the caller.
+ */
+function registerProjectAppearance(
+  app: FastifyInstance,
+  appearance: ProjectAppearanceService,
+): void {
+  registerPlacement(
+    app,
+    nativeHttpRoutes.projectTheme,
+    {
+      read: (principal, partition) => appearance.theme(principal, partition),
+      write: (principal, partition, document: ThemeDocument | undefined) =>
+        appearance.writeTheme(principal, partition, document),
+    },
+    (body) => nativeHttpEndpoints.writeProjectTheme.body.parse(body).document,
+    projectThemeBody,
+    projectThemeWrittenResponse,
+  );
+  app.get(nativeHttpRoutes.projectAppearance, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      placementReadResponse(
+        await appearance.resolved(principalOf(request), partitionOf(request)),
+        projectAppearanceBody,
+      ),
+    );
+  });
+  registerProjectThemeOverride(app, appearance);
+}
+
+/** The caller's own theme for a project: read, written whole, and cleared. */
+function registerProjectThemeOverride(
+  app: FastifyInstance,
+  appearance: ProjectAppearanceService,
+): void {
+  const path = nativeHttpRoutes.projectThemeOverride;
+  app.get(path, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      placementReadResponse(
+        await appearance.override(principalOf(request), partitionOf(request)),
+        projectThemeOverrideBody,
+      ),
+    );
+  });
+  app.put(
+    path,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const choice = nativeHttpEndpoints.writeProjectThemeOverride.body.parse(
+        request.body,
+      );
+      nativeHttpSend(
+        reply,
+        projectThemeOverrideChosenResponse(
+          await appearance.chooseOverride(
+            principalOf(request),
+            partitionOf(request),
+            choice,
+          ),
+        ),
+      );
+    },
+  );
+  app.delete(path, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      projectThemeOverrideChosenResponse(
+        await appearance.chooseOverride(
+          principalOf(request),
+          partitionOf(request),
+          undefined,
+        ),
+      ),
+    );
+  });
+}
+
+/** What a person keeps of their own in no workspace, their agent accounts and their appearance, and how each project appears to them. */
 function registerOwnSettings(
   app: FastifyInstance,
   agentAccounts: AgentAccountService | undefined,
   appearance: AppearanceService | undefined,
+  projectAppearance: ProjectAppearanceService | undefined,
 ): void {
   if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
   if (appearance !== undefined) registerAppearance(app, appearance);
+  if (projectAppearance !== undefined)
+    registerProjectAppearance(app, projectAppearance);
 }
 
 /**
@@ -3682,6 +3776,7 @@ export function createNativeHttpApp(
   deletions?: UnrunDeletions,
   takes?: TicketTakes,
   appearance?: AppearanceService,
+  projectAppearance?: ProjectAppearanceService,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   registerCapacity(app, limits.concurrentRequestsMax);
@@ -3717,7 +3812,7 @@ export function createNativeHttpApp(
   registerPlacements(app, placement, sessionPlacement, ownerFallback);
   registerActions(app, actionReports, actionReach);
   registerTicketDoors(app, landings, landingQueues, takes);
-  registerOwnSettings(app, agentAccounts, appearance);
+  registerOwnSettings(app, agentAccounts, appearance, projectAppearance);
   registerFailures(app);
   return app;
 }

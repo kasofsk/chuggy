@@ -42,6 +42,7 @@ import {
   personalRunnerProjectSchema,
   personalRunnerRedemptionSchema,
   projectOwnerFallbackSchema,
+  projectThemeSchema,
   registrationTokenRequestSchema,
 } from "./requests.ts";
 import { epicWriteRequestSchema } from "./epics.ts";
@@ -68,6 +69,7 @@ function nativeHttpContractDocumentSchemas(): unknown {
     ),
     sessionPlacement: nativeHttpContractDocumentInput(sessionPlacementSchema),
     ownerFallback: nativeHttpContractDocumentInput(projectOwnerFallbackSchema),
+    projectTheme: nativeHttpContractDocumentInput(projectThemeSchema),
     personalRunnerProject: nativeHttpContractDocumentInput(
       personalRunnerProjectSchema,
     ),
@@ -166,6 +168,13 @@ const ticketSubReadNotes = {
 };
 
 /** Where a project's work and sessions run, and the runners that take it. */
+/** What the document says of how a console looks: a person's own themes and a project's. */
+const appearanceNotes = {
+  appearance: `a caller reads and writes their own themes and their own global choice alone, keyed by their principal and no workspace, and no route names another principal: a theme is a document, created under a number never given to another theme and answered with it, read, written whole, which is also how it is renamed, and deleted; a caller holds at most ${String(themesOwnedMax)}, and a creation past that is refused ThemeLimitReached; a document is refused InvalidRequest where it fails its schema and ThemeContrastInsufficient where it draws a pair below the contrast the pair needs; the choice is a built-in by its id or a theme of the caller's by its number, written whole, refused ThemeNotFound where it names none of theirs, and cleared; deleting the theme it names clears it, and a caller holding none reads no choice`,
+  projectAppearance:
+    "a project wears for each reader the first theme of four layers that names one: their own for the project, the project's default, their global choice, and the built-in default; the project's default is a document the project keeps, not a reference, read by anyone who may read the project, written whole and cleared by an administrator, and refused as a theme of a person's own is; a reader's own for the project is a built-in by its id or a theme of theirs by its number, written whole, refused ThemeNotFound where it names none of theirs, cleared, and read and written by that reader alone; deleting the theme it names clears it; the resolved read answers the document that applies, the layer it came from and each layer's own value, a layer naming a theme that no longer exists answered as unset",
+};
+
 const runnerNotes = {
   executionPlacement:
     "where a project's work and evaluations run is decided per kind by the deployment's override for the project, else the project's own placement, else the deployment's default; an administrator writes both routes whole, and choosing InCluster needs the tenant's hosted grant, as a session on that route does",
@@ -278,7 +287,7 @@ export function nativeHttpContractDocument(): unknown {
     repositoryConfigurations:
       "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it, and is asked for again through its own route, which runs it for a live binding the project holds no configuration from and no bootstrap of its own that still releases and otherwise answers what the project holds; a bootstrap is one revision per repository, named for it, and never rewritten, so two requests racing author it once and a repository meeting its own whose text differs, worded otherwise or outgrown by the release rule, defers as BootstrapDiffers until it declares its own; a ticket releases under a repository's bootstrap in that repository alone",
     ...runnerNotes,
-    appearance: `a caller reads and writes their own themes and their own global choice alone, keyed by their principal and no workspace, and no route names another principal: a theme is a document, created under a number never given to another theme and answered with it, read, written whole, which is also how it is renamed, and deleted; a caller holds at most ${String(themesOwnedMax)}, and a creation past that is refused ThemeLimitReached; a document is refused InvalidRequest where it fails its schema and ThemeContrastInsufficient where it draws a pair below the contrast the pair needs; the choice is a built-in by its id or a theme of the caller's by its number, written whole, refused ThemeNotFound where it names none of theirs, and cleared; deleting the theme it names clears it, and a caller holding none reads no choice`,
+    ...appearanceNotes,
     actionReports:
       "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, a verified request its scheme reads no outcome in is answered Ignored and records nothing, and a request that proves nothing is not found",
     ...ticketSubReadNotes,
