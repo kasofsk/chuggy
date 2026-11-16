@@ -17,6 +17,8 @@ import type {
 } from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
+import { postgresTicketTakes } from "../../src/adapters/postgres/ticketTake.ts";
 import { id } from "../domain/fixtures.ts";
 import { encodeEntry } from "../../src/interpreter/wire.ts";
 import { plainDefinitionOf } from "../actor/harness.ts";
@@ -677,6 +679,154 @@ test("a project's open actions are its own, and an empty project lists none", as
   });
 });
 
+/** A further escalation of a ticket already projected, raised at `sequence` and offering both answers. */
+async function seedFurtherEscalation(
+  partition: Partition,
+  label: string,
+  ticket: number,
+  sequence: number,
+): Promise<string> {
+  await seedEntry(partition, label, sequence);
+  await subject.harness.query(
+    `INSERT INTO native_action
+       (tenant,project,action,authorizing_seq,effect_position,ticket,
+        action_version,kind,escalation,required_capability)
+     VALUES ($1,$2,$3,$4,0,$5,$4,'TicketEscalation','WorkFailureEscalated','ResolveTicket')`,
+    [partition.tenant, partition.project, label, sequence, ticket],
+  );
+  for (const offered of ["Resume", "Revoke"])
+    await subject.harness.query(
+      `INSERT INTO native_action_resolution (tenant,project,action,resolution)
+       VALUES ($1,$2,$3,$4)`,
+      [partition.tenant, partition.project, label, offered],
+    );
+  return label;
+}
+
+/** Settles one action as `state`, with `resolution` where it was answered. */
+async function settleAction(
+  partition: Partition,
+  action: string,
+  state: "Resolved" | "Withdrawn",
+  resolution: string | null,
+): Promise<void> {
+  await subject.harness.query(
+    `UPDATE native_action SET state=$4, resolution=$5
+      WHERE tenant=$1 AND project=$2 AND action=$3`,
+    [partition.tenant, partition.project, action, state, resolution],
+  );
+}
+
+/**
+ * Ticket 1 with an escalation resumed, one withdrawn and one open, raised in
+ * that order, and ticket 2 with an escalation of its own.
+ */
+async function seedActionHistory(label: string): Promise<Partition> {
+  const partition = await postgresHarnessProject(subject.harness.store, label);
+  const resumed = await seedOpenAction(
+    subject.harness,
+    partition,
+    `${label}-resumed`,
+    {
+      ticket: 1,
+      sequence: 1,
+      escalation: "WorkFailureEscalated",
+      offers: ["Resume", "Revoke"],
+    },
+  );
+  await settleAction(partition, resumed, "Resolved", "Resume");
+  const withdrawn = await seedFurtherEscalation(
+    partition,
+    `${label}-withdrawn`,
+    1,
+    2,
+  );
+  await settleAction(partition, withdrawn, "Withdrawn", null);
+  await seedFurtherEscalation(partition, `${label}-open`, 1, 3);
+  await seedOpenAction(subject.harness, partition, `${label}-elsewhere`, {
+    ticket: 2,
+    sequence: 4,
+    escalation: "WorkFailureEscalated",
+    offers: ["Resume", "Revoke"],
+  });
+  return partition;
+}
+
+test("a ticket's action history reads its resumed, withdrawn and open actions oldest first, with their resolutions", async () => {
+  const label = "native-history";
+  const partition = await seedActionHistory(label);
+  const reads = postgresNativeReads(subject.pool);
+  assert.deepEqual(
+    await reads.ticketNativeActionHistory(partition, id(1), { limit: 10 }),
+    {
+      actions: [
+        {
+          action: `${label}-resumed`,
+          kind: "TicketEscalation",
+          authorizingSequence: 1,
+          state: "Resolved",
+          resolution: "Resume",
+        },
+        {
+          action: `${label}-withdrawn`,
+          kind: "TicketEscalation",
+          authorizingSequence: 2,
+          state: "Withdrawn",
+        },
+        {
+          action: `${label}-open`,
+          kind: "TicketEscalation",
+          authorizingSequence: 3,
+          state: "Open",
+        },
+      ],
+    },
+  );
+  assert.deepEqual(
+    (await reads.ticketNativeActions(partition, id(1)))?.map(
+      ({ action }) => action,
+    ),
+    [`${label}-open`],
+  );
+  assert.equal(
+    await reads.ticketNativeActionHistory(partition, id(9), { limit: 2 }),
+    undefined,
+  );
+});
+
+test("a ticket's action history pages behind its bound, and a page past its last action is empty", async () => {
+  const label = "native-history-paged";
+  const partition = await seedActionHistory(label);
+  const reads = postgresNativeReads(subject.pool);
+  const first = await reads.ticketNativeActionHistory(partition, id(1), {
+    limit: 2,
+  });
+  assert.deepEqual(
+    first?.actions.map(({ action }) => action),
+    [`${label}-resumed`, `${label}-withdrawn`],
+  );
+  assert.deepEqual(first.nextAfter, {
+    authorizingSequence: 2,
+    action: `${label}-withdrawn`,
+  });
+  const next = await reads.ticketNativeActionHistory(partition, id(1), {
+    after: first.nextAfter,
+    limit: 2,
+  });
+  assert.deepEqual(
+    next?.actions.map(({ action }) => action),
+    [`${label}-open`],
+  );
+  assert.equal(next.nextAfter, undefined);
+  assert.deepEqual(
+    await reads.ticketNativeActionHistory(partition, id(1), {
+      after: { authorizingSequence: 3, action: `${label}-open` },
+      limit: 2,
+    }),
+    { actions: [] },
+  );
+});
+
 test("a stored answer the kind cannot ask for stops both reads", async () => {
   const partition = await postgresHarnessProject(
     subject.harness.store,
@@ -1323,6 +1473,79 @@ test("a creator's list is the tickets that member filed, paged in every order wi
       { tickets: expected, matched: [3, 3, 3] },
       `the ${order ?? "default"} order`,
     );
+});
+
+test("a ticket's detail read answers the member who took it as its owner and keeps its creator, and one nobody took is owned by its creator", async () => {
+  const partition = await seedCreators("native-owner-detail");
+  const reads = postgresNativeReads(subject.pool);
+  const ownerOf = async (ticket: number) => {
+    const own = await reads.ticket(partition, id(ticket));
+    assert.ok(own !== undefined);
+    assert.equal("owner" in own, own.owner !== undefined);
+    return [own.creator, own.owner];
+  };
+  assert.deepEqual(await ownerOf(1), ["filer", "filer"]);
+  assert.deepEqual(await ownerOf(2), [undefined, undefined]);
+  await postgresTicketTakes(subject.pool).write(
+    partition,
+    id(1),
+    "Take",
+    memberAuthority(asPrincipal("taker")),
+  );
+  assert.deepEqual(await ownerOf(1), ["filer", "taker"]);
+});
+
+test("a ticket's owner is the member who took it, else its creator, on both pages and under the owner filter", async () => {
+  const partition = await seedFiled("native-owners");
+  const alice = asPrincipal("alice");
+  const bob = asPrincipal("bob");
+  const dave = asPrincipal("dave");
+  const takes = postgresTicketTakes(subject.pool);
+  for (const [ticket, taker] of [
+    [1, bob],
+    [4, dave],
+  ] as const)
+    assert.deepEqual(
+      await takes.write(partition, id(ticket), "Take", memberAuthority(taker)),
+      { stored: "Taken", owner: taker },
+    );
+  const reads = postgresNativeReads(subject.pool);
+  const owners = [
+    [1, "alice", "bob"],
+    [2, "bob", "bob"],
+    [3, "alice", "alice"],
+    [4, undefined, "dave"],
+    [5, undefined, undefined],
+    [12, "alice", "alice"],
+    [121, "bob", "bob"],
+  ];
+  for (const order of ["Identity", "RecentActivity"] as const) {
+    const page = await reads.project(partition, { limit: 10, order });
+    assert.deepEqual(
+      page.result === "Found"
+        ? page.project.tickets
+            .map((each) => [each.ticket, each.creator, each.owner])
+            .sort(([left], [right]) => Number(left) - Number(right))
+        : undefined,
+      owners,
+      `the ${order} page answers what the detail read does`,
+    );
+  }
+  for (const [owner, expected] of [
+    [bob, [1, 2, 121]],
+    [alice, [3, 12]],
+    [dave, [4]],
+  ] as const)
+    assert.deepEqual(
+      await searchWalked(partition, { owner }, 1),
+      { tickets: expected, matched: expected.map(() => expected.length) },
+      owner,
+    );
+  assert.deepEqual(
+    await searchWalked(partition, { owner: bob, creator: alice }, 100),
+    { tickets: [1], matched: [1] },
+    "an owner composes with a creator",
+  );
 });
 
 test("a creator composes with a phase filter and a search, and one who filed nothing lists nothing", async () => {

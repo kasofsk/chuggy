@@ -18,6 +18,7 @@ import {
   createWorkerPlaneApp,
   type SessionPlaneService,
 } from "../adapters/http/workerPlaneServer.ts";
+import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
 import { postgresForgeInstallations } from "../adapters/postgres/forgeInstallation.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresProjectRepositoryLanding } from "../adapters/postgres/repositoryBinding.ts";
@@ -25,6 +26,7 @@ import { workerPlaneRole } from "../adapters/postgres/schema.ts";
 import { reporterSecretBytes } from "../adapters/reporters/secretFile.ts";
 import { postgresSessionLivePublisher } from "../adapters/postgres/sessionLive.ts";
 import { postgresSessionPlane } from "../adapters/postgres/sessionPlane.ts";
+import { postgresThreadJobWakes } from "../adapters/postgres/thread.ts";
 import {
   postgresWorkerPlaneAuthority,
   postgresWorkerAttemptHeartbeats,
@@ -39,6 +41,14 @@ import {
   postgresWorkerTasks,
 } from "../adapters/postgres/workerPlane.ts";
 import { workerPlaneUploadBytesMax } from "../contract/http.ts";
+import {
+  credentialResolver,
+  type CredentialIssuer,
+} from "../interpreter/credentialIssuers.ts";
+import {
+  checkedProjectAccessSettings,
+  projectAccessTimeoutMsDefault,
+} from "../interpreter/projectAccess.ts";
 import { silentSchedulerTelemetry } from "../interpreter/executionScheduler.ts";
 import { executionSchedulerIngest } from "../interpreter/executionSchedulerReport.ts";
 import {
@@ -52,15 +62,16 @@ import {
 } from "../interpreter/sessionLiveAllowance.ts";
 import type { SessionLivePublishPort } from "../interpreter/sessionPlane.ts";
 import { sessionSchedulerDefaults } from "../interpreter/sessionScheduler.ts";
+import type { ThreadJobWakeService } from "../interpreter/threadWake.ts";
 import {
   workerPlaneCredentialMinting,
   type WorkerPlaneCredentialMinting,
 } from "../interpreter/workerPlaneCredentials.ts";
+import { workflowRunsCredentialIssuer } from "../interpreter/workflowRunsCredential.ts";
 import {
+  heldCredentialIssuer,
   heldCredentialRoster,
   heldCredentialSecret,
-  workerPlaneHeldCredentials,
-  type WorkerPlaneHeldCredentials,
 } from "../interpreter/workerPlaneHeldCredentials.ts";
 import {
   planeEnvironmentPositive as positive,
@@ -69,25 +80,49 @@ import {
 import { planeStopping } from "./planeStopping.ts";
 
 /**
- * The session half of this plane, over the same pool and the same artifact
- * store the run half already holds. The ports are one adapter because they are
- * one bearer: a plane holding some of them and not others could only answer a
- * session wrongly, so the composition is whole or the field is absent.
- *
- * THE LEASE DEFAULTS TO WHAT OPENS IT. The scheduler opens a session attempt's
- * lease under `sessionSchedulerDefaults.attemptLeaseSecs` and this plane renews
- * it, so taking that same value is the two tiers agreeing by construction; a
- * deployment that moves one moves both, by naming each.
+ * How a chat host's thread attempt wakes its own thread, composed only where
+ * the plane is told the project access its checks ask, because a wake the
+ * plane could not check is one it does not make.
+ */
+function planeSessionWakes(
+  pool: ReturnType<typeof postgresPool>,
+): ThreadJobWakeService | undefined {
+  const readUrl = process.env["CHUG_WORKER_PLANE_KETO_READ_URL"];
+  if (readUrl === undefined || readUrl.length === 0) return undefined;
+  return {
+    store: postgresThreadJobWakes(pool),
+    access: ketoProjectAccess(
+      checkedProjectAccessSettings({
+        readUrl,
+        requestTimeoutMs: positive(
+          "CHUG_WORKER_PLANE_KETO_TIMEOUT_MS",
+          projectAccessTimeoutMsDefault,
+        ),
+      }),
+    ),
+    clock: { nowIso: () => new Date().toISOString() },
+  };
+}
+
+/**
+ * The session half of this plane, over the run half's pool and artifact store,
+ * composed whole or not at all because its ports are one bearer and a partial
+ * one could only answer a session wrongly. Its lease defaults to
+ * `sessionSchedulerDefaults.attemptLeaseSecs`, the value the scheduler opens a
+ * session attempt's lease under, so a deployment that moves one moves both.
  */
 function planeSessions(
   pool: ReturnType<typeof postgresPool>,
   artifacts: ArtifactStore,
 ): SessionPlaneService {
   const sessions = postgresSessionPlane(pool);
+  const wakes = planeSessionWakes(pool);
   return {
     authority: sessions,
     heartbeats: sessions,
     references: sessions,
+    standings: sessions,
+    ...(wakes === undefined ? {} : { wakes }),
     turns: sessions,
     settlements: sessions,
     watches: sessions,
@@ -187,17 +222,24 @@ function planeForgeOptions(): GithubInstallationTokensOptions | undefined {
   );
 }
 
+/** What this plane mints with its forge app: a pod's git credential, and the credential that runs its repository's workflows. */
+interface PlaneForgeCredentials {
+  readonly minting: WorkerPlaneCredentialMinting;
+  readonly workflowRuns: CredentialIssuer;
+}
+
 /**
- * The minting a pod's credential routes answer from, or nothing where this
- * deployment holds no app key and a pod resolves what its launcher mounted for
- * the repository it works in.
+ * The minting a pod's credential routes answer from, and the issuer of the
+ * workflow runs credential, or nothing where this deployment holds no app key:
+ * a pod then resolves what its launcher mounted for the repository it works in,
+ * and the workflow runs credential is served by no issuer.
  * A key this process could not sign with refuses the start, leaving no pool
  * open behind it: minting that fails at every attempt is worse than not minting
  * at all, because the pods cannot tell the two apart.
  */
 async function planeCredentials(
   pool: ReturnType<typeof postgresPool>,
-): Promise<WorkerPlaneCredentialMinting | undefined> {
+): Promise<PlaneForgeCredentials | undefined> {
   const options = planeForgeOptions();
   if (options === undefined) return undefined;
   const verdict = await githubInstallationTokensPrecondition(options).check(
@@ -208,19 +250,18 @@ async function planeCredentials(
     throw new Error(`${forgeAppKeyFileVariable}: ${verdict.why}`);
   }
   const bindings = postgresProjectRepositoryLanding(pool);
-  return workerPlaneCredentialMinting({
-    tokens: mintedRepositoryTokens({
-      forge: githubForgeId,
-      app: workerPodForgeApp,
-      repositoryHost: githubRepositoryHost,
-      installations: postgresForgeInstallations(pool),
-      tokens: githubInstallationTokens(
-        githubInstallationTokensSettled(options),
-      ),
-      bindings,
-    }),
+  const tokens = mintedRepositoryTokens({
+    forge: githubForgeId,
+    app: workerPodForgeApp,
+    repositoryHost: githubRepositoryHost,
+    installations: postgresForgeInstallations(pool),
+    tokens: githubInstallationTokens(githubInstallationTokensSettled(options)),
     bindings,
   });
+  return {
+    minting: workerPlaneCredentialMinting({ tokens, bindings }),
+    workflowRuns: workflowRunsCredentialIssuer({ tokens, bindings }),
+  };
 }
 
 /**
@@ -238,21 +279,18 @@ async function planeHeldCredentialText(
 }
 
 /**
- * What the held-credential route answers from, or nothing where the roster is
- * absent or empty. Every file the roster names is read once before the plane
- * starts, as the app key is, so a deployment that mounted the wrong path
+ * The file roster's issuer, or none where no roster is named. Every file the
+ * roster names is read once before the plane starts, as the app key is, so a
+ * deployment that mounted the wrong path
  * refuses to start rather than answering an outage at every request; it is
  * read again on every request after that.
  */
-async function planeHeldCredentials(): Promise<
-  WorkerPlaneHeldCredentials | undefined
-> {
+async function planeHeldCredentials(): Promise<readonly CredentialIssuer[]> {
   const encoded = process.env[heldCredentialsVariable];
-  if (encoded === undefined || encoded.length === 0) return undefined;
+  if (encoded === undefined || encoded.length === 0) return [];
   const roster = heldCredentialRoster(encoded);
   if (roster.read === "Refused")
     throw new Error(`${heldCredentialsVariable} ${roster.why}`);
-  if (roster.held.length === 0) return undefined;
   for (const entry of roster.held)
     if (
       heldCredentialSecret(await planeHeldCredentialText(entry.file)) ===
@@ -261,11 +299,11 @@ async function planeHeldCredentials(): Promise<
       throw new Error(
         `${heldCredentialsVariable} holds ${entry.credential} for ${entry.partition.tenant}/${entry.partition.project} in a file that is not a readable, non-empty regular file`,
       );
-  return workerPlaneHeldCredentials(roster.held, planeHeldCredentialText);
+  return [heldCredentialIssuer(roster.held, planeHeldCredentialText)];
 }
 
 async function main(): Promise<void> {
-  const heldCredentials = await planeHeldCredentials();
+  const held = await planeHeldCredentials();
   const pool = postgresPool(required("CHUG_WORKER_PLANE_DATABASE_URL"));
   const uploadBytesMax = positive(
     "CHUG_WORKER_PLANE_UPLOAD_BYTES_MAX",
@@ -275,7 +313,7 @@ async function main(): Promise<void> {
     root: required("CHUG_WORKER_PLANE_ARTIFACT_ROOT"),
     writeBytesMax: uploadBytesMax,
   });
-  const credentials = await planeCredentials(pool);
+  const forge = await planeCredentials(pool);
   const app = createWorkerPlaneApp({
     authority: postgresWorkerPlaneAuthority(pool),
     tasks: postgresWorkerTasks(pool),
@@ -306,8 +344,10 @@ async function main(): Promise<void> {
         ),
     },
     sessions: planeSessions(pool, artifacts),
-    ...(credentials === undefined ? {} : { credentials }),
-    ...(heldCredentials === undefined ? {} : { heldCredentials }),
+    ...(forge === undefined ? {} : { credentials: forge.minting }),
+    heldCredentials: credentialResolver(
+      forge === undefined ? held : [...held, forge.workflowRuns],
+    ),
     uploadBytesMax,
     ready: async () => {
       try {

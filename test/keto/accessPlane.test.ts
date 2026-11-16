@@ -682,13 +682,22 @@ test("a member of a tenant whose `admins` holds its `members` reads `administer`
     },
   });
   assert.deepEqual(await callerTenants.callerTenants(member), {
-    tenants: [{ tenant, roles: ["Member"], administer: true }],
+    tenants: [
+      { tenant, displayName: tenant, roles: ["Member"], administer: true },
+    ],
     truncated: false,
   });
   await ketoHarnessWithSiteAdministrator(async (administrator) => {
     const linked = await memberedTenant("caller-site", administrator);
     assert.deepEqual(await callerTenants.callerTenants(administrator), {
-      tenants: [{ tenant: linked, roles: ["Member"], administer: false }],
+      tenants: [
+        {
+          tenant: linked,
+          displayName: linked,
+          roles: ["Member"],
+          administer: false,
+        },
+      ],
       truncated: false,
     });
   });

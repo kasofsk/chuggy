@@ -3,7 +3,7 @@ import {
   repositoryConfigurationRoot,
 } from "../contract/configurationDocument.ts";
 import { repositoryConfigurationNameCharsMax } from "../contract/http.ts";
-import { isRepositoryDeclarationPath } from "./repositoryDeclaration.ts";
+import { isRepositoryDeclarationPath } from "../contract/repositoryDeclaration.ts";
 declare const repositoryConfigurationNameBrand: unique symbol;
 declare const repositoryConfigurationPathBrand: unique symbol;
 

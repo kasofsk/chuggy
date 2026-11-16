@@ -39,7 +39,7 @@ import {
   type WorkerPoolRunner,
   type WorkerPoolSession,
 } from "../../src/interpreter/workerPoolAssignment.ts";
-import type { ContainerExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
+import type { ContainerExecutionRequirement } from "../../src/contract/executionRequirement.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
   asProjectId,

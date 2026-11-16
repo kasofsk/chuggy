@@ -356,12 +356,57 @@ function TicketRunTranscript(props: {
   );
 }
 
-function TicketRunDetailsFields(props: {
+/** What the run spent, from its model to its tokens. */
+function TicketRunDetailsSpent(props: {
   readonly details: TicketRunDetailsFacts;
 }): ReactNode {
   const { details } = props;
   const text = useCopyText();
   const none = text({ id: "ticket-value-none" });
+  return (
+    <>
+      <Field
+        name={text({ id: "ticket-field-model" })}
+        absent={details.model === undefined}
+      >
+        {details.model ?? none}
+      </Field>
+      {details.credential === undefined ? null : (
+        <Field name={text({ id: "ticket-run-credential" })}>
+          {details.credential}
+        </Field>
+      )}
+      <Field
+        name={text({ id: "ticket-field-turns" })}
+        absent={details.turns === undefined}
+      >
+        {details.turns ?? none}
+      </Field>
+      <Field
+        name={text({ id: "ticket-field-api-time" })}
+        absent={details.apiTime === undefined}
+      >
+        {details.apiTime === undefined ? (
+          none
+        ) : (
+          <Figure figure={details.apiTime} />
+        )}
+      </Field>
+      <Field
+        name={text({ id: "ticket-field-tokens" })}
+        absent={details.tokens === undefined}
+      >
+        {details.tokens ?? none}
+      </Field>
+    </>
+  );
+}
+
+function TicketRunDetailsFields(props: {
+  readonly details: TicketRunDetailsFacts;
+}): ReactNode {
+  const { details } = props;
+  const text = useCopyText();
   return (
     <Fields>
       {details.runner === undefined ? null : (
@@ -392,34 +437,7 @@ function TicketRunDetailsFields(props: {
       <Field name={text({ id: "ticket-field-attempts" })}>
         {details.attempts}
       </Field>
-      <Field
-        name={text({ id: "ticket-field-model" })}
-        absent={details.model === undefined}
-      >
-        {details.model ?? none}
-      </Field>
-      <Field
-        name={text({ id: "ticket-field-turns" })}
-        absent={details.turns === undefined}
-      >
-        {details.turns ?? none}
-      </Field>
-      <Field
-        name={text({ id: "ticket-field-api-time" })}
-        absent={details.apiTime === undefined}
-      >
-        {details.apiTime === undefined ? (
-          none
-        ) : (
-          <Figure figure={details.apiTime} />
-        )}
-      </Field>
-      <Field
-        name={text({ id: "ticket-field-tokens" })}
-        absent={details.tokens === undefined}
-      >
-        {details.tokens ?? none}
-      </Field>
+      <TicketRunDetailsSpent details={details} />
       <Field name={text({ id: "ticket-run-id-field" })}>
         <Identity label={details.execution} />
       </Field>

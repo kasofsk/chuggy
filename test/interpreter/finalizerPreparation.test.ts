@@ -15,7 +15,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { asTicketId } from "../../src/domain/ids.ts";
-import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import {
   asFinalizationAttemptId,
   asFinalizerOwnerId,
@@ -72,13 +71,8 @@ const partition = {
   project: asProjectId("project-prepare"),
 };
 
-/** One passed work execution of a named spawn, over the configuration a case names. */
-function workOf(
-  canonical: string,
-  marker = "a",
-  spawn = "spawn-a",
-  task = 1,
-): HandoffWork {
+/** One passed work execution of a named spawn, under the revision its marker names. */
+function workOf(marker = "a", spawn = "spawn-a", task = 1): HandoffWork {
   return {
     execution: asExecutionId(`execution-${marker}`),
     attempt: asAttemptId(`attempt-${marker}`),
@@ -86,7 +80,6 @@ function workOf(
     task,
     manifest: asResultManifestId(`manifest-${marker}`),
     configuration: { revision: `revision-${marker}`, digest: digestOf(marker) },
-    canonical: asCanonicalConfiguration(canonical),
   };
 }
 
@@ -113,12 +106,9 @@ function sourceOf(marker: string): HandoffSource {
   };
 }
 
-/** The configuration every supersession fixture pins, so no case there turns on the revision. */
-const oneConfiguration = '{"image":"i","version":1}';
-
 /** The plainest gathering there is: one passed execution and one artifact. */
 const plain: HandoffGathering = {
-  work: [workOf(oneConfiguration)],
+  work: [workOf()],
   artifacts: [artifactOf("one.txt")],
   sources: [],
 };
@@ -126,9 +116,9 @@ const plain: HandoffGathering = {
 /** One spawn's fan-out of two passed executions, which is where two sources genuinely conflict. */
 const fanned: HandoffGathering = {
   work: [
-    workOf(oneConfiguration, "a", "spawn-one", 1),
+    workOf("a", "spawn-one", 1),
     {
-      ...workOf(oneConfiguration, "a", "spawn-one", 2),
+      ...workOf("a", "spawn-one", 2),
       execution: asExecutionId("execution-d"),
       attempt: asAttemptId("attempt-d"),
       manifest: asResultManifestId("manifest-d"),
@@ -141,9 +131,9 @@ const fanned: HandoffGathering = {
 /** Three passed spawns of one ticket, latest first, as a reworked ticket's gather hands them over. */
 const reworked: HandoffGathering = {
   work: [
-    workOf(oneConfiguration, "c", "spawn-three", 5),
-    workOf(oneConfiguration, "b", "spawn-two", 3),
-    workOf(oneConfiguration, "a", "spawn-one", 1),
+    workOf("c", "spawn-three", 5),
+    workOf("b", "spawn-two", 3),
+    workOf("a", "spawn-one", 1),
   ],
   artifacts: [],
   sources: [sourceOf("c"), sourceOf("b"), sourceOf("a")],
@@ -165,10 +155,7 @@ test("a rework supersedes the work it re-ran, and the latest spawn alone is prep
 test("a superseded spawn's artifacts are dropped rather than read as a second declaration", () => {
   const accepted = handoffAccepted(
     handoffSuperseded({
-      work: [
-        workOf(oneConfiguration, "c", "spawn-three", 5),
-        workOf(oneConfiguration, "a", "spawn-one", 1),
-      ],
+      work: [workOf("c", "spawn-three", 5), workOf("a", "spawn-one", 1)],
       artifacts: [artifactOf("one.txt", 1, "c"), artifactOf("one.txt", 2, "a")],
       sources: [],
     }),
@@ -203,9 +190,9 @@ const spawnOrders: readonly (readonly number[])[] = [
 
 test("the spawn elected is the one holding the highest task, in whatever order the rows arrive", () => {
   const spawns = [
-    workOf(oneConfiguration, "d", "spawn-two", 2),
-    workOf(oneConfiguration, "e", "spawn-nine", 9),
-    workOf(oneConfiguration, "f", "spawn-ten", 10),
+    workOf("d", "spawn-two", 2),
+    workOf("e", "spawn-nine", 9),
+    workOf("f", "spawn-ten", 10),
   ];
   for (const order of spawnOrders) {
     const work = order.flatMap((at) => spawns[at] ?? []);
@@ -236,7 +223,11 @@ test("a gathering with one passed execution is a candidate's worth of artifacts"
   const accepted = handoffAccepted(plain);
   if (accepted.accepted !== "Handoff") assert.fail(JSON.stringify(accepted));
   assert.deepEqual(accepted.handoff.manifests, ["manifest-a"]);
-  assert.equal(accepted.handoff.approvalRequired, false);
+  assert.deepEqual(
+    Object.keys(accepted.handoff).sort(),
+    ["artifacts", "configuration", "kind", "manifests"],
+    "a handoff carries no approval policy",
+  );
   assert.equal(accepted.handoff.configuration.revision, "revision-a");
 });
 
@@ -258,28 +249,10 @@ test("a passed execution with no handoff at all is still a candidate", () => {
   assert.deepEqual(accepted.handoff.artifacts, []);
 });
 
-test("the approval policy is read off the pinned revision, and an unreadable one is refused", () => {
-  const asked = handoffAccepted({
-    ...plain,
-    work: [workOf('{"finalizationApprovalRequired":true,"image":"i"}')],
-  });
-  if (asked.accepted !== "Handoff") assert.fail(JSON.stringify(asked));
-  assert.equal(asked.handoff.approvalRequired, true);
-  const unreadable = handoffAccepted({
-    ...plain,
-    work: [workOf('{"finalizationApprovalRequired":"yes","image":"i"}')],
-  });
-  assert.deepEqual(unreadable, {
-    accepted: "Refused",
-    refusal: "ApprovalPolicyUnreadable",
-    configuration: { revision: "revision-a", digest: digestOf("a") },
-  });
-});
-
 test("every refusal names the revision an attempt must pin, and none of them is a hold", () => {
   const refusals = [
     handoffAccepted({
-      work: [workOf('{"image":"i"}', "a"), workOf('{"image":"j"}', "c")],
+      work: [workOf("a"), workOf("c")],
       artifacts: plain.artifacts,
       sources: [],
     }),
@@ -313,7 +286,7 @@ test("every refusal names the revision an attempt must pin, and none of them is 
     handoffAccepted({
       ...plain,
       work: Array.from({ length: candidateExecutionsMax + 1 }, () =>
-        workOf('{"image":"i"}', "a"),
+        workOf("a"),
       ),
     }),
   ];
@@ -370,7 +343,6 @@ const record: Omit<AttemptRecord, "attemptDigest"> = {
   },
   strategy: "Merge",
   configuration: { revision: "revision-a", digest: digestOf("a") },
-  approvalRequired: false,
   outcome: "Prepared",
   candidate: asGitObjectId(commitOf("b")),
 };
@@ -398,9 +370,9 @@ test("an attempt's canonical bytes bind it to the request and to the bundle it p
 /**
  * An attempt over a target the remote did not hold binds the base ref it was
  * read from, and one with none keeps the bytes every stored attempt was
- * digested over.
+ * digested over, `false` still standing where an approval policy was spelled.
  */
-test("an attempt's canonical bytes bind the base ref of an unheld target, and are unchanged without one", () => {
+test("an attempt's canonical bytes bind the base ref of an unheld target, and are unchanged without one or an approval policy", () => {
   const bytes = canonicalFinalizationAttempt(record);
   assert.equal(
     bytes,

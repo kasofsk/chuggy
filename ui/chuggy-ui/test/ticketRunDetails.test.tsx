@@ -7,6 +7,7 @@ import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import {
   runAttempt,
   runDigest,
+  runEvidenceOf,
   runPageDrawn,
   runSummary,
   runTotals,
@@ -163,6 +164,41 @@ test("a run its fabric opened again counts every attempt it took", async () => {
     ),
   );
   expect(field(drawn, "Attempts")).toBe("2");
+});
+
+/** An attempt whose run's totals name the credential it ran on. */
+function runAttemptNamed(attempt: string, number: number, credential: string) {
+  return runAttempt(attempt, {
+    number,
+    run: runEvidenceOf(2, {
+      totals: { ...runTotals(100_000), credential },
+    }),
+  });
+}
+
+test("a run's details name each credential its attempts ran on once, after its model, and none where no attempt named one", async () => {
+  const drawn = await details(
+    passed(
+      [
+        runAttemptNamed("a0", 1, "max-1"),
+        runAttemptNamed("a1", 2, "max-2"),
+        runAttemptNamed("a2", 3, "max-1"),
+      ],
+      [],
+    ),
+  );
+  expect(field(drawn, "Credential")).toBe("max-1, max-2");
+  const names = [...drawn.querySelectorAll("dt")].map(
+    (name) => name.textContent,
+  );
+  expect(names.indexOf("Credential")).toBe(names.indexOf("Model") + 1);
+  cleanup();
+  const unnamed = await details(
+    passed([runAttempt("a1", { openedAt, endedAt })], [agentResult]),
+  );
+  expect(
+    within(unnamed).queryByText("Credential", { selector: "dt" }),
+  ).toBeNull();
 });
 
 /** A run registered at midnight and opened at once, taken where a case says. */

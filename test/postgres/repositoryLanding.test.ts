@@ -1,7 +1,8 @@
 /**
- * A repository's landing default and whether its jobs may write its pipeline
- * definitions, against a real server: the columns, the narrowed immutability
- * trigger, the fenced write, and the listing that answers both.
+ * A repository's landing default, whether its jobs may write its pipeline
+ * definitions and whether they may start and read its pipeline runs, against
+ * a real server: the columns, the narrowed immutability trigger, the fenced
+ * write, and the listing that answers them.
  */
 
 import assert from "node:assert/strict";
@@ -386,7 +387,7 @@ test("a binding's landing and pipeline definitions are the columns an update may
   await harness.query(
     `UPDATE project_repository
         SET landing_kind='GitMerge',landing_mode='Push',landing_policy='Serialized',
-            pipelines_writable=true
+            pipelines_writable=true,pipelines_runnable=true
       WHERE tenant=$1 AND project=$2 AND repository=$3`,
     [bound.partition.tenant, bound.partition.project, bound.repository],
   );
@@ -395,8 +396,134 @@ test("a binding's landing and pipeline definitions are the columns an update may
     asRepositoryId(bound.repository),
   );
   assert.deepEqual(
-    [read?.landing, read?.pipelinesWritable],
-    [serialized, true],
+    [read?.landing, read?.pipelinesWritable, read?.pipelinesRunnable],
+    [serialized, true, true],
+  );
+});
+
+test("a binding starts without its pipeline runs, and a write allows them and answers the row", async () => {
+  const bound = await fixture("runs-written");
+  const repository = asRepositoryId(bound.repository);
+  assert.equal(
+    (await landingStore().landing(bound.partition, repository))
+      ?.pipelinesRunnable,
+    false,
+  );
+  const written = await landingStore().setLanding({
+    partition: bound.partition,
+    repository,
+    expected: pullRequest,
+    landing: pullRequest,
+    pipelinesWritable: unchanged,
+    pipelinesRunnable: { expected: false, wanted: true },
+  });
+  assert.deepEqual(
+    written.outcome === "Written"
+      ? [written.binding.pipelinesWritable, written.binding.pipelinesRunnable]
+      : written.outcome,
+    [false, true],
+  );
+  assert.equal(
+    (await landingStore().landing(bound.partition, repository))
+      ?.pipelinesRunnable,
+    true,
+  );
+  assert.deepEqual(
+    (
+      await postgresProjectRepositoryBindings(pool).bindings(bound.partition)
+    ).map((row) => row.pipelinesRunnable),
+    [true],
+  );
+});
+
+test("a write naming no pipeline runs moves the other settings and leaves the runs as they stand", async () => {
+  const bound = await fixture("runs-untouched");
+  const repository = asRepositoryId(bound.repository);
+  await landingStore().setLanding({
+    partition: bound.partition,
+    repository,
+    expected: pullRequest,
+    landing: pullRequest,
+    pipelinesWritable: unchanged,
+    pipelinesRunnable: { expected: false, wanted: true },
+  });
+  const written = await landingStore().setLanding({
+    partition: bound.partition,
+    repository,
+    expected: pullRequest,
+    landing: push,
+    pipelinesWritable: { expected: false, wanted: true },
+  });
+  assert.deepEqual(
+    written.outcome === "Written"
+      ? [
+          written.binding.landing,
+          written.binding.pipelinesWritable,
+          written.binding.pipelinesRunnable,
+        ]
+      : written.outcome,
+    [push, true, true],
+  );
+  const read = await landingStore().landing(bound.partition, repository);
+  assert.deepEqual(
+    [read?.landing, read?.pipelinesWritable, read?.pipelinesRunnable],
+    [push, true, true],
+  );
+});
+
+test("a write against pipeline runs that moved answers the row that stands and moves nothing", async () => {
+  const bound = await fixture("runs-moved");
+  const repository = asRepositoryId(bound.repository);
+  await landingStore().setLanding({
+    partition: bound.partition,
+    repository,
+    expected: pullRequest,
+    landing: pullRequest,
+    pipelinesWritable: unchanged,
+    pipelinesRunnable: { expected: false, wanted: true },
+  });
+  const stale = await landingStore().setLanding({
+    partition: bound.partition,
+    repository,
+    expected: pullRequest,
+    landing: push,
+    pipelinesWritable: unchanged,
+    pipelinesRunnable: { expected: false, wanted: false },
+  });
+  assert.deepEqual(
+    stale.outcome === "LandingMoved"
+      ? [stale.binding.landing, stale.binding.pipelinesRunnable]
+      : stale.outcome,
+    [pullRequest, true],
+  );
+  const read = await landingStore().landing(bound.partition, repository);
+  assert.deepEqual(
+    [read?.landing, read?.pipelinesRunnable],
+    [pullRequest, true],
+    "a refused write moves no setting",
+  );
+});
+
+test("the landing door refuses pipeline runs named as wanted without the value read", async () => {
+  const bound = await fixture("runs-half");
+  await assert.rejects(
+    () =>
+      pool.query(
+        `SELECT outcome FROM set_project_repository_landing(
+           $1,$2,$3,'PullRequest',NULL,NULL,'PullRequest',NULL,NULL,
+           false,false,NULL,true)`,
+        [bound.partition.tenant, bound.partition.project, bound.repository],
+      ),
+    /written as read and as wanted, or not at all/u,
+  );
+  assert.equal(
+    (
+      await landingStore().landing(
+        bound.partition,
+        asRepositoryId(bound.repository),
+      )
+    )?.pipelinesRunnable,
+    false,
   );
 });
 

@@ -15,6 +15,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { nativeHttpPageItemsMax } from "../../../src/contract/http.ts";
 
+import { ConsoleWriteToasts } from "../app/browser/consoleWrite.tsx";
 import { EpicGraphTab } from "../app/browser/epic/EpicGraphTab.tsx";
 import { EpicHistoryTab } from "../app/browser/epic/EpicHistoryTab.tsx";
 import { EpicOverviewTab } from "../app/browser/epic/EpicOverviewTab.tsx";
@@ -75,7 +76,7 @@ test("a tab switch reads nothing again, since the layout made every read", async
   rerender(<EpicTicketsTab />);
   await settled();
   rerender(<EpicGraphTab ticket={undefined} onTicket={() => undefined} />);
-  await screen.findByRole("group", {
+  await screen.findByRole("list", {
     name: "Tickets of the epic and what they wait on",
   });
   rerender(<EpicHistoryTab />);
@@ -100,7 +101,7 @@ test("the overview draws the description and neither the graph nor the summary",
 });
 
 function header(): HTMLElement {
-  const drawn = document.querySelector<HTMLElement>("header.ticket-header");
+  const drawn = document.querySelector<HTMLElement>("header.page-header");
   if (drawn === null) throw new Error("the header is drawn");
   return drawn;
 }
@@ -159,7 +160,7 @@ async function menuOpened(): Promise<HTMLElement> {
   return screen.getByRole("menu");
 }
 
-test("an archived epic says so beside its title and offers to reactivate it", async () => {
+test("an archived epic says so beside its status and offers to reactivate it", async () => {
   epicServing.view = { ...epicView, visibility: "Archived" };
   await epicPageDrawn(abilitiesEvery);
   expect(within(header()).getByText("Archived")).toBeTruthy();
@@ -188,6 +189,33 @@ test("the menu's Archive asks first, then revises the epic archived at the revis
     expected: 3,
     content: { visibility: "Archived", tickets: [4, 5] },
   });
+});
+
+test("an archive that lands says so in a success toast, since its question and its menu have closed", async () => {
+  await epicPageDrawn(abilitiesEvery, {
+    written: () => answer({ epic: 7, revision: 4 }),
+    tab: (
+      <>
+        <EpicOverviewTab />
+        <ConsoleWriteToasts />
+      </>
+    ),
+  });
+  fireEvent.click(
+    within(await menuOpened()).getByRole("menuitem", { name: "Archive" }),
+  );
+  await settled();
+  fireEvent.click(
+    within(
+      screen.getByRole("dialog", { name: "Archive this epic?" }),
+    ).getByRole("button", { name: "Archive" }),
+  );
+  await settled();
+  const toast = document.querySelector(".toast");
+  expect(toast?.getAttribute("data-tone")).toBe("Success");
+  expect(toast?.querySelector(".toast-line")?.textContent).toBe(
+    "Epic 7 archived",
+  );
 });
 
 test("a reader who may not write is offered no edit and no archive", async () => {
@@ -222,7 +250,7 @@ test("the notes link the escalated member", async () => {
 test("the sticky bar holding the status and the title shows once the header has scrolled away", async () => {
   const report = intersectionObserverStubbed();
   await epicPageDrawn(abilitiesNone);
-  const bar = document.querySelector<HTMLElement>(".ticket-sticky-bar");
+  const bar = document.querySelector<HTMLElement>(".page-header-sticky-bar");
   expect(bar?.hidden).toBe(true);
   act(() => {
     report(false);

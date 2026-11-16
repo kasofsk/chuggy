@@ -25,7 +25,7 @@ import { panelFtl } from "./generated/panelFtl.ts";
 import { permissionsFtl } from "./generated/permissionsFtl.ts";
 import { projectFtl } from "./generated/projectFtl.ts";
 import { repositoriesFtl } from "./generated/repositoriesFtl.ts";
-import { repositoryLandingFtl } from "./generated/repositoryLandingFtl.ts";
+import { repositoryFinalizationFtl } from "./generated/repositoryFinalizationFtl.ts";
 import { runnersFtl } from "./generated/runnersFtl.ts";
 import { sentencesFtl } from "./generated/sentencesFtl.ts";
 import { sessionFtl } from "./generated/sessionFtl.ts";
@@ -65,7 +65,7 @@ export const copyCatalogEn: readonly string[] = [
   permissionsFtl,
   projectFtl,
   repositoriesFtl,
-  repositoryLandingFtl,
+  repositoryFinalizationFtl,
   runnersFtl,
   sentencesFtl,
   sessionFtl,

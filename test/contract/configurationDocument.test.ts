@@ -52,7 +52,7 @@ import {
 import {
   repositoryConfigurationReferences,
   type RepositoryConfigurationReferenced,
-} from "../../src/interpreter/repositoryConfigurationReference.ts";
+} from "../../src/contract/repositoryConfigurationReference.ts";
 import { pickFrom, randomOf, type Random } from "../random/random.ts";
 
 const schemaTakes = new Ajv2020({ strict: true, allErrors: true }).compile(
@@ -126,6 +126,7 @@ const heldFaults = [
   "ConfigurationInvalid:CatalogNameUnknown",
   "ConfigurationInvalid:StageNameTooLong",
   "ConfigurationInvalid:ApprovalAsWork",
+  "ApprovalOutsidePlan",
 ];
 
 /** Asserts the schema takes a file the import takes, and refuses one the import refuses but for a held fault. */
@@ -288,7 +289,6 @@ const shapes: readonly unknown[] = [
         renderer: "Image",
       },
     ],
-    finalizationApprovalRequired: true,
   },
   {
     ...configuration,
@@ -334,10 +334,9 @@ const shapes: readonly unknown[] = [
   {
     ...configuration,
     outputs: [{ name: "unreadable", renderer: "Image" }],
-    finalizationApprovalRequired: "yes",
     evaluation: [{ purpose: "Check", checks: ["true"] }],
   },
-  { ...configuration, outputs: "not a list", finalizationApprovalRequired: 1 },
+  { ...configuration, outputs: "not a list" },
   {
     ...configuration,
     worker: { mode: codex, setup: [], files: [] },
@@ -414,7 +413,6 @@ test("a catalog's finalizer names a landing mode under version 2 and a whole fin
     }),
     catalogFinalizing(3, {
       finalization: { kind: "PullRequest", target: "refs/heads/main" },
-      approvalRequired: true,
     }),
     catalogFinalizing(3, {}),
   ]) {
@@ -810,6 +808,23 @@ const heldRules: readonly (readonly [unknown, string])[] = [
     JSON.parse(catalogStageNamed(2, "\u{1F600}".repeat(33))),
     "ConfigurationInvalid:StageNameTooLong",
   ],
+  [
+    declared({ ...configuration, finalizationApprovalRequired: false }),
+    "ApprovalOutsidePlan",
+  ],
+  [
+    JSON.parse(catalogFinalizing(2, { approvalRequired: true })),
+    "ApprovalOutsidePlan",
+  ],
+  [
+    JSON.parse(
+      catalogFinalizing(3, {
+        finalization: { kind: "PullRequest", target: "refs/heads/main" },
+        approvalRequired: false,
+      }),
+    ),
+    "ApprovalOutsidePlan",
+  ],
 ];
 
 test("a file refused for a rule the schema cannot state the schema takes, and every such rule has one", () => {
@@ -1048,7 +1063,7 @@ const outputsSkipped: readonly (readonly [unknown, "Refused" | "Held"])[] = [
   [{ ...outputEntry, name: "\u{1F600}".repeat(33) }, "Held"],
 ];
 
-test("the outputs shape the schema shows is the one their reader takes, and approval is shown as a boolean", () => {
+test("the outputs shape the schema shows is the one their reader takes, and no approval at landing is offered", () => {
   for (const renderer of ["UnifiedDiff", "Markdown", "Json", "Text"]) {
     const entry = { ...outputEntry, renderer };
     assert.ok(outputRead(entry) && outputShapeTakes(entry), renderer);
@@ -1060,9 +1075,38 @@ test("the outputs shape the schema shows is the one their reader takes, and appr
     assert.ok(!outputRead(entry), context);
     assert.equal(outputShapeTakes(entry), skipped === "Held", context);
   }
-  assert.deepEqual(publishedField("finalizationApprovalRequired", "anyOf", 0), {
-    type: "boolean",
-  });
+  assert.ok(
+    !Object.hasOwn(
+      publishedAt(
+        "properties",
+        "configuration",
+        "oneOf",
+        publishedVersion(1),
+        "properties",
+      ),
+      "finalizationApprovalRequired",
+    ),
+  );
+  for (const version of [2, 3])
+    assert.deepEqual(
+      publishedAt(
+        "properties",
+        "configuration",
+        "oneOf",
+        publishedVersion(version),
+        "properties",
+        "finalizers",
+        "additionalProperties",
+        "properties",
+        "approvalRequired",
+      ),
+      {
+        type: "boolean",
+        deprecated: true,
+        description:
+          "Refused on import. A person's approval is an Approval evaluator in a plan.",
+      },
+    );
 });
 
 /** References the distribution grammar spells, each a shape a project's image is named by. */

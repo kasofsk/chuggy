@@ -32,8 +32,13 @@ import { afterEach, beforeEach, expect, vi } from "vitest";
 import { toJSONSchema } from "zod";
 import type { z } from "zod";
 
+import {
+  builtInThemeDefault,
+  builtInThemes,
+} from "../../../src/contract/appearance.ts";
 import { ticketActionReachResponseSchema } from "../../../src/contract/actionReach.ts";
 import {
+  accessCallerAccountSchema,
   accessCallerTenantsSchema,
   accessInviteLinksSchema,
   accessSiteTenantsSchema,
@@ -48,6 +53,8 @@ import {
 } from "../../../src/contract/accessPlane.ts";
 import {
   agentAccountsResponseSchema,
+  projectAppearanceResponseSchema,
+  themeChoiceResponseSchema,
   agenticRefusalsResponseSchema,
   chatAbilitiesResponseSchema,
   chatHostResponseSchema,
@@ -82,6 +89,8 @@ import {
   projectResponseSchema,
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
+  projectDeletionResponseSchema,
+  tenantDeletionResponseSchema,
   sessionPlacementResponseSchema,
   threadResponseSchema,
   threadsResponseSchema,
@@ -326,7 +335,9 @@ const consoleReads: readonly ConsoleRead[] = [
   {
     path: consoleReadAt("/api/v1/projects"),
     schema: projectInventoryResponseSchema,
-    body: () => ({ projects: [consolePartition] }),
+    body: () => ({
+      projects: [{ ...consolePartition, name: consolePartition.project }],
+    }),
   },
   {
     path: consoleReadAt(projectPath),
@@ -414,6 +425,11 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadAt(`${projectPath}/owner-fallback`),
     schema: projectOwnerFallbackResponseSchema,
     body: () => ({ administers: false }),
+  },
+  {
+    path: consoleReadAt(`${projectPath}/deletion`),
+    schema: projectDeletionResponseSchema,
+    body: () => ({ held: ["ReleasedTicket"] }),
   },
   {
     path: consoleReadAt(`${projectPath}/hosted-runs`),
@@ -599,6 +615,20 @@ const consoleReads: readonly ConsoleRead[] = [
     }),
   },
   {
+    path: consoleReadAt(`${projectPath}/appearance`),
+    schema: projectAppearanceResponseSchema,
+    body: () => ({
+      theme: builtInThemes[builtInThemeDefault],
+      layer: "BuiltInDefault",
+      layers: {},
+    }),
+  },
+  {
+    path: consoleReadAt("/api/v1/appearance/choice"),
+    schema: themeChoiceResponseSchema,
+    body: () => ({}),
+  },
+  {
     path: consoleReadAt("/api/v1/agent-accounts"),
     schema: agentAccountsResponseSchema,
     body: () => ({
@@ -612,6 +642,11 @@ const consoleReads: readonly ConsoleRead[] = [
         readings: [],
       })),
     }),
+  },
+  {
+    path: consoleReadAt(`${tenantPath}/deletion`),
+    schema: tenantDeletionResponseSchema,
+    body: () => ({ held: ["Project"] }),
   },
   {
     path: consoleReadAt(`${tenantPath}/chat-host`),
@@ -646,6 +681,16 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadAt("/access/v1/workspaces"),
     schema: accessCallerTenantsSchema,
     body: () => ({ tenants: [], truncated: false }),
+  },
+  {
+    path: consoleReadAt("/access/v1/account"),
+    schema: accessCallerAccountSchema,
+    body: () => ({
+      subject: "subject-one",
+      principal: "issuer subject-one",
+      githubLogin: "ada-lovelace",
+      email: "ada@example.com",
+    }),
   },
   {
     path: consoleReadAt(`${accessTenantPath}/abilities`),

@@ -33,6 +33,7 @@ import {
   unanswered,
 } from "./permissionsFixture.tsx";
 import { readFailedLines } from "../readFailedLines.ts";
+import { tableCards } from "../tableText.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -67,6 +68,20 @@ test("a workspace manager sees its four permissions in roster order, each naming
     { name: "Change permissions", holders: ["Workspace admins"] },
   ]);
   expect(sectionDrawn("Site")).toBe(false);
+});
+
+test("each permission is a card titled by its name, its holders labelled under it", async () => {
+  await drawPermissions();
+  expect(
+    tableCards(within(sectionOf("Workspace")).getByRole("table")),
+  ).toStrictEqual(
+    [
+      "Grant Admin",
+      "Grant Member",
+      "Grant hosted runs",
+      "Change permissions",
+    ].map((title) => ({ title, labels: ["Held by"], actionsLast: false })),
+  );
 });
 
 test("the table's columns are the permission and who holds it, under no title of the section's own", async () => {
