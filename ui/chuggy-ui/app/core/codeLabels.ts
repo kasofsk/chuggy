@@ -849,9 +849,6 @@ export function resumeActionEffect(
   }
 }
 
-/** What the edit screen does, which is revise the draft and release it again. */
-export const ticketEditEffect: Copy = { id: "codes-edit-effect" };
-
 /** An answer a ticket offers, in the word its button says. */
 export function ticketActionLabel(action: TicketActionName): Copy {
   switch (action) {
