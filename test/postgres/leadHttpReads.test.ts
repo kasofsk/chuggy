@@ -168,7 +168,6 @@ function leadApp(subject: string, selector?: string) {
     undefined,
     undefined,
     undefined,
-    undefined,
     {
       leads,
       store: storeReads,

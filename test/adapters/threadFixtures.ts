@@ -3,7 +3,6 @@ import { asInstallationId } from "../../src/domain/ids.ts";
 import type { RepositoryOnboarding } from "../../src/interpreter/repositoryOnboarding.ts";
 import type { ProjectCreation } from "../../src/interpreter/projectCreation.ts";
 import type { SessionPlacementAdministration } from "../../src/interpreter/sessionPlacement.ts";
-import type { SelectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 import type { ProjectInbox } from "../../src/interpreter/projectInbox.ts";
 import {
   asPrincipal,
@@ -116,7 +115,6 @@ export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   operationalStatus: unserved("operational status"),
   hostedRuns: unserved("hosted runs"),
   abilities: unserved("abilities"),
-  selectorOperationalContext: unserved("selector operational context"),
   outputContent: unserved("output content"),
   uploadProjectArtifact: unserved("upload project artifact"),
   projectArtifact: unserved("project artifact"),
@@ -137,7 +135,6 @@ export function servedNativeHttpApp(
   onboarding?: RepositoryOnboarding,
   creation?: ProjectCreation,
   sessionPlacement?: SessionPlacementAdministration,
-  proposalReviews?: SelectorProposalReviews,
   inbox?: ProjectInbox,
 ) {
   return createNativeHttpApp(
@@ -169,7 +166,6 @@ export function servedNativeHttpApp(
     creation,
     undefined,
     sessionPlacement,
-    proposalReviews,
     undefined,
     undefined,
     undefined,
