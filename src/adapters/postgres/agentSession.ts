@@ -5,8 +5,8 @@
  *
  * EVERY MOVE IS ONE SERVER FUNCTION AND THIS FILE DECIDES NOTHING. A session's
  * admission rules — one lead per project, a member's open threads within their
- * limit, an inquiry's parent — are a partial index and a boundary body, so an
- * adapter that checked them first would be a second opinion racing the first.
+ * limit — are a partial index and a boundary body, so an adapter that checked
+ * them first would be a second opinion racing the first.
  * The account and cluster a session draws are not arguments either: the server
  * takes them from the project's own capacity account, because a caller naming
  * them could name another project's.
@@ -104,7 +104,7 @@ async function agentSessionOpen(
   const opened = await pool.query<{ opened: string | null }>(
     sql`SELECT open_agent_session(
       ${opening.partition.tenant},${opening.partition.project},${opening.session},
-      ${opening.kind},${opening.principal},${opening.parent ?? null},
+      ${opening.kind},${opening.principal},NULL,
       ${[...opening.capabilities]}::text[],${opening.credentialSlot},
       ${opening.systemPrompt ?? null})::text AS opened`,
   );

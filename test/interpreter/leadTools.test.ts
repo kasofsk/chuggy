@@ -27,7 +27,6 @@ import {
   leadToolAllowlist,
   sessionSystemPromptCharsMax,
 } from "../../src/interpreter/leadTools.ts";
-import { inquiryCapabilities } from "../../src/interpreter/inquiry.ts";
 import type { SelectorResolvedSettings } from "../../src/interpreter/selector.ts";
 import { threadCapabilitiesDefault } from "../../src/interpreter/thread.ts";
 
@@ -104,14 +103,13 @@ test("origination, revoking, updating, dispatching and offering are admitted for
   );
 });
 
-/** Work moves onto a member's runner and account only by that member's own act, so taking and returning are a thread's and never a lead's or an inquiry's. */
-test("a thread holds take_ticket and return_ticket, and no lead or inquiry roster holds either", () => {
+/** Work moves onto a member's runner and account only by that member's own act, so taking and returning are a thread's and never a lead's. */
+test("a thread holds take_ticket and return_ticket, and no lead roster holds either", () => {
   for (const tool of ["take_ticket", "return_ticket"] as const) {
     const named = `${chuggyToolPrefix}${tool}`;
     assert.ok(chuggyToolNames(threadCapabilitiesDefault).includes(named), tool);
     assert.ok(!chuggyToolNames(leadSessionCapabilities).includes(named), tool);
     assert.ok(!leadToolAllowlist.includes(named), tool);
-    assert.ok(!chuggyToolNames(inquiryCapabilities).includes(named), tool);
   }
 });
 

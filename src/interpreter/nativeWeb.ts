@@ -63,17 +63,6 @@ import type {
   Submission,
 } from "./operationInbox.ts";
 import type { OperationInbox } from "./operationInbox.ts";
-import {
-  leadInquiryAsked,
-  leadInquiryEntry,
-  leadInquiryTurnInput,
-  type LeadInquiriesRead,
-  type LeadInquiryAsked,
-  type LeadInquiryEntry,
-  type LeadInquiryRead,
-  type LeadInquiryRecord,
-  type LeadInquiryStore,
-} from "./leadInquiry.ts";
 import type { NamedPartition, Partition } from "./projectStore.ts";
 import type {
   NativeActionKind,
@@ -273,7 +262,6 @@ import {
   type ThreadsRead,
 } from "./threadRead.ts";
 import {
-  inquiriesAnsweredMax,
   isBoundedText,
   threadsAnsweredMax,
   ticketSearchCharsMax,
@@ -1164,24 +1152,6 @@ export interface NativeWeb extends NativeEpics {
     partition: Partition,
     input: { readonly session: SessionId; readonly hidden: boolean },
   ): Promise<ThreadHiding>;
-  leadInquiries(
-    principal: Principal,
-    partition: Partition,
-  ): Promise<LeadInquiriesRead>;
-  leadInquiry(
-    principal: Principal,
-    partition: Partition,
-    session: SessionId,
-  ): Promise<LeadInquiryRead>;
-  askLead(
-    principal: Principal,
-    partition: Partition,
-    input: {
-      readonly session: SessionId;
-      readonly turn: SessionTurnId;
-      readonly question: string;
-    },
-  ): Promise<LeadInquiryAsked>;
 }
 
 function submissionAccess(command: NativeSubmittedCommand): ProjectAccessKind {
@@ -2444,24 +2414,6 @@ async function nativeThreadEntries(
   );
 }
 
-/** One page of inquiries as the wire names it, asking the authority once per distinct asker. */
-async function nativeInquiryEntries(
-  access: ProjectAccess,
-  partition: Partition,
-  records: readonly LeadInquiryRecord[],
-  reader: Principal,
-): Promise<readonly LeadInquiryEntry[]> {
-  const askers = await memberAuthorities(
-    access,
-    partition,
-    records.map((record) => record.principal),
-    inquiriesAnsweredMax,
-  );
-  return records.map((record) =>
-    leadInquiryEntry(record, reader, askers.get(record.principal)?.subject),
-  );
-}
-
 /**
  * Opening a thread of the caller's own, which is `Mutate` and takes the key its
  * client minted rather than a session: the definer is idempotent on the key,
@@ -2994,85 +2946,6 @@ function nativeLeadReadMethods(
 }
 
 /**
- * The three ways a member reaches the lead's inquiries: the two reads gated on
- * `Read`, and asking on `Mutate`, because an inquiry is a turn, and on what the
- * inquiry's route needs of the asker too — `./leadInquiry.ts`'s header carries
- * the argument. THE ASKER IS THE AUTHORITY'S OWN SUBJECT and comes from the
- * authorization this door already did, never from the body: a question whose
- * asker the caller chose would name whoever they liked on a document the lead
- * reads.
- */
-function nativeLeadInquiryMethods(
-  access: ProjectAccess,
-  inquiries?: LeadInquiryStore,
-  routes?: SessionRouteReads,
-): Pick<NativeWeb, "leadInquiries" | "leadInquiry" | "askLead"> {
-  const composed = (): LeadInquiryStore => {
-    if (inquiries === undefined)
-      throw new Error("native web: no lead inquiry port was composed");
-    return inquiries;
-  };
-  return {
-    leadInquiries: async (principal, partition) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { result: "NotFound" };
-      const found = await composed().inquiries(partition, inquiriesAnsweredMax);
-      return {
-        result: "Found",
-        inquiries: await nativeInquiryEntries(
-          access,
-          partition,
-          found,
-          principal,
-        ),
-      };
-    },
-    leadInquiry: async (principal, partition, session) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { result: "NotFound" };
-      const found = await composed().inquiry(partition, session);
-      if (found === undefined) return { result: "NotFound" };
-      const [inquiry] = await nativeInquiryEntries(
-        access,
-        partition,
-        [found],
-        principal,
-      );
-      if (inquiry === undefined) return { result: "NotFound" };
-      return { result: "Found", inquiry };
-    },
-    askLead: async (principal, partition, input) => {
-      const authority = await access.authorize(principal, partition, "Mutate");
-      if (authority === undefined) return { result: "NotFound" };
-      const spend = await sessionSpendRoute(
-        access,
-        composedSessionRoutes(routes),
-        principal,
-        partition,
-        "Inquiry",
-      );
-      if (spend.spend !== "Admitted") return { result: spend.spend };
-      return leadInquiryAsked(
-        await composed().open({
-          partition,
-          principal,
-          session: input.session,
-          turn: input.turn,
-          question: leadInquiryTurnInput({
-            question: input.question,
-            asker: authority.subject,
-          }),
-          route: spend.route,
-          subsidized: spend.subsidized,
-        }),
-        input.session,
-        input.turn,
-      );
-    },
-  };
-}
-
-/**
  * The thread side of the boundary, whose reads and whose doors reach it as one.
  * A member's own chat reaches the same doors through an access of its own.
  */
@@ -3247,7 +3120,6 @@ export function nativeWeb(
   runEvidenceContents?: RunEvidenceContentPort,
   leads?: NativeLeadPorts,
   threads?: NativeThreadPorts,
-  inquiries?: LeadInquiryStore,
   sessionRoutes?: SessionRouteReads,
   projectArtifacts?: ProjectArtifactPort,
   projectArtifactMinting?: ProjectArtifactMinting,
@@ -3261,7 +3133,6 @@ export function nativeWeb(
     hostedRuns: nativeHostedRunsMethod(access),
     abilities: (principal, partition) =>
       projectAbilities(access, principal, partition),
-    ...nativeLeadInquiryMethods(access, inquiries, sessionRoutes),
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
       access,
       repositoryConfigurationImports,

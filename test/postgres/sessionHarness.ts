@@ -36,7 +36,10 @@ import {
   type SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
 import type { SessionPlaneService } from "../../src/adapters/http/workerPlaneServer.ts";
-import type { AgentSessionStore } from "../../src/interpreter/agentSession.ts";
+import type {
+  AgentSessionOpening,
+  AgentSessionStore,
+} from "../../src/interpreter/agentSession.ts";
 import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
 import {
   asPrincipal,
@@ -234,6 +237,31 @@ export interface SessionRigOpening {
   readonly systemPromptOwn?: boolean;
 }
 
+/**
+ * Opens a session forked from `parent` through `open_agent_session` itself,
+ * since no port of the API opens a fork and the boundary still keeps one.
+ */
+export async function sessionRigForkOpen(
+  rig: SessionRig,
+  opening: AgentSessionOpening & { readonly parent: SessionId },
+): Promise<string | undefined> {
+  const [row] = await rig.harness.query(
+    `SELECT open_agent_session($1,$2,$3,$4,$5,$6,$7::text[],$8,$9)::text AS opened`,
+    [
+      opening.partition.tenant,
+      opening.partition.project,
+      opening.session,
+      opening.kind,
+      opening.principal,
+      opening.parent,
+      [...opening.capabilities],
+      opening.credentialSlot,
+      opening.systemPrompt ?? null,
+    ],
+  );
+  return typeof row?.["opened"] === "string" ? row["opened"] : undefined;
+}
+
 /** Opens one session, refusing anything but the arm the case expected. */
 export async function sessionRigSession(
   rig: SessionRig,
@@ -242,18 +270,21 @@ export async function sessionRigSession(
   opening: SessionRigOpening = {},
 ): Promise<SessionId> {
   const session = asSessionId(`session-${label}-${randomUUID()}`);
-  const opened = await rig.sessions.open({
+  const opens: AgentSessionOpening = {
     partition,
     session,
     kind: opening.kind ?? "Lead",
     principal: asPrincipal(opening.principal ?? `principal-${label}`),
-    ...(opening.parent === undefined ? {} : { parent: opening.parent }),
     capabilities: opening.capabilities ?? ["RepositoryRead"],
     credentialSlot: opening.credentialSlot ?? "claude-code",
     ...(opening.systemPrompt === undefined
       ? {}
       : { systemPrompt: opening.systemPrompt }),
-  });
+  };
+  const opened =
+    opening.parent === undefined
+      ? await rig.sessions.open(opens)
+      : await sessionRigForkOpen(rig, { ...opens, parent: opening.parent });
   if (opened !== "Opened")
     throw new Error(`session rig: opening ${label} answered ${opened}`);
   if (opening.autoCompactWindow !== undefined)

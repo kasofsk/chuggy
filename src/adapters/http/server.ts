@@ -139,7 +139,6 @@ import {
   parsePartition,
   parseSelectorProjectSettings,
   parseSubmission,
-  parseLeadInquiry,
   parseThreadHide,
   parseThreadMessage,
   parseThreadOfferReply,
@@ -214,9 +213,6 @@ import {
   sessionContextResponse,
   runTurnsResponse,
   submissionResponse,
-  askLeadResponse,
-  leadInquiriesResponse,
-  leadInquiryResponse,
   closeThreadResponse,
   hideThreadResponse,
   renameThreadResponse,
@@ -393,9 +389,6 @@ type InitialNativeWeb = Pick<
   | "closeThread"
   | "renameThread"
   | "hideThread"
-  | "leadInquiries"
-  | "leadInquiry"
-  | "askLead"
 >;
 
 /** Sends one response the outcome mappers built, headers and all. */
@@ -2898,32 +2891,6 @@ function registerThreadWrites(
   );
 }
 
-function registerLeadInquiries(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-): void {
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.leadInquiries,
-    (_request, principal, partition) => web.leadInquiries(principal, partition),
-    leadInquiriesResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.leadInquiry,
-    (request, principal, partition) =>
-      web.leadInquiry(principal, partition, registerEndpointSession(request)),
-    leadInquiryResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.askLead,
-    (request, principal, partition) =>
-      web.askLead(principal, partition, parseLeadInquiry(request.body)),
-    (result, partition) => askLeadResponse(partition, result),
-  );
-}
-
 /** The reads and writes a project keeps beside its tickets and threads. */
 function registerProjectViews(
   app: FastifyInstance,
@@ -3501,7 +3468,6 @@ export function createNativeHttpApp(
   registerThreadWrites(app, web);
   if (threadLimits !== undefined) registerThreadLimits(app, threadLimits);
   if (chat !== undefined) registerMemberChat(app, chat, threadLive);
-  registerLeadInquiries(app, web);
   registerProjectViews(app, web);
   registerRunners(app, nativeHttpPartitionRoot, workerPools, personalRunners);
   registerPlacements(app, placement, sessionPlacement, ownerFallback);

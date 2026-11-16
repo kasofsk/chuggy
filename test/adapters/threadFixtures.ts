@@ -66,19 +66,6 @@ export const unservedEpics: Pick<
 };
 
 /**
- * The three inquiry methods a suite that never asks the lead still has to
- * supply, for the same reason: the app takes one boundary and not three.
- */
-export const unservedLeadInquiries: Pick<
-  NativeWeb,
-  "leadInquiries" | "leadInquiry" | "askLead"
-> = {
-  leadInquiries: unserved("lead inquiries"),
-  leadInquiry: unserved("lead inquiry"),
-  askLead: unserved("ask lead"),
-};
-
-/**
  * Every method the app takes, none of them served. A suite spreads it and then
  * writes the few methods its own cases are about, so what a case exercises is
  * exactly what it wrote.
@@ -86,7 +73,6 @@ export const unservedLeadInquiries: Pick<
 export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   ...unservedThreads,
   ...unservedEpics,
-  ...unservedLeadInquiries,
   ...unreadableLeadReads(),
   cancel: unserved("cancel"),
   configuration: unserved("configuration"),

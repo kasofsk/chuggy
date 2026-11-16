@@ -1018,20 +1018,6 @@ export type PersonalRunnerPriority = (typeof personalRunnerPriorities)[number];
 export const hostedRunsNotGrantedCode = "HostedRunsNotGranted";
 
 /**
- * What the inquiry door answers a question of a subsidized lead whose tenant
- * or deployment has spent this month's subsidy, shared as the hosted-runs
- * code is.
- */
-export const subsidyExhaustedCode = "SubsidyExhausted";
-
-/**
- * What the inquiry door answers a question of a lead whose project offers a
- * subsidized lead while the standing one still runs on the footing it was
- * opened on, shared as the hosted-runs code is.
- */
-export const leadNotSubsidizedCode = "LeadNotSubsidized";
-
-/**
  * What a release or an update answers a caller whose draft runs less than its
  * configuration plans — a stage or an evaluator of the plan left out — where
  * the caller does not hold the project permit to skip planned evaluations. A

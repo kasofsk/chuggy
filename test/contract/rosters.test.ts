@@ -108,7 +108,6 @@ import {
   agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
   imageMediaTypes,
-  inquiryObjectivesFixedCharsMax,
   leadObjectivesFixedCharsMax,
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
@@ -140,7 +139,6 @@ import {
 import { runTurnsPageLimitMax } from "../../src/contract/runTurns.ts";
 import type { RunTotals } from "../../src/interpreter/runEvidence.ts";
 import { projectChangeKinds } from "../../src/contract/events.ts";
-import { inquiryObjectivesFixedChars } from "../../src/interpreter/inquiry.ts";
 import { leadObjectivesFixedChars } from "../../src/interpreter/leadTools.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import {
@@ -944,18 +942,5 @@ test("a lead's own objectives fit the room the observation bound leaves them", (
   assert.ok(
     leadObjectivesFixedChars <= leadObjectivesFixedCharsMax,
     "the standing instructions outgrew what a turn's input makes room for",
-  );
-});
-
-/**
- * An inquiry's objectives are the lead's plus what being a fork means, and the
- * two kinds share one column whose bound is generated from
- * `sessionPromptCeilings`. The contract may not read the sentence this ceiling
- * is meant to contain, so the case is here.
- */
-test("what an inquiry adds to a lead's objectives fits the room the column leaves it", () => {
-  assert.ok(
-    inquiryObjectivesFixedChars <= inquiryObjectivesFixedCharsMax,
-    "the fork's own instructions outgrew what the objectives column makes room for",
   );
 });

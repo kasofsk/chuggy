@@ -111,8 +111,6 @@
     "lead": "/api/v1/tenants/:tenant/projects/:project/lead",
     "leadTranscript": "/api/v1/tenants/:tenant/projects/:project/lead/transcript",
     "leadContext": "/api/v1/tenants/:tenant/projects/:project/lead/context",
-    "leadInquiries": "/api/v1/tenants/:tenant/projects/:project/lead/inquiries",
-    "leadInquiry": "/api/v1/tenants/:tenant/projects/:project/lead/inquiries/:session",
     "executions": "/api/v1/tenants/:tenant/projects/:project/executions",
     "execution": "/api/v1/tenants/:tenant/projects/:project/executions/:execution",
     "outputContent": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal",
@@ -3113,27 +3111,6 @@
         }
       },
       "required": ["repository"],
-      "additionalProperties": false
-    },
-    "leadInquiry": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "session": {
-          "type": "string",
-          "minLength": 1
-        },
-        "turn": {
-          "type": "string",
-          "minLength": 1
-        },
-        "question": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        }
-      },
-      "required": ["session", "turn", "question"],
       "additionalProperties": false
     },
     "selectorProjectSettings": {
