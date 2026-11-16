@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setTimeout as wait } from "node:timers/promises";
 
-import { nativeHttpClient } from "../../src/adapters/http/client.ts";
 import {
   presentedAccessToken,
   type AccessTokenSource,
@@ -11,7 +10,6 @@ import {
   clientCredentialsMonotonicMs,
   clientCredentialsTokenSource,
 } from "../../src/adapters/http/clientCredentials.ts";
-import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 
 const tokenUrl = "https://auth.example/oauth2/token";
 
@@ -337,36 +335,6 @@ test("a grant response of empty chunks, more of them than the read bound, is ref
   await assert.rejects(source.token(AbortSignal.timeout(1_000)), /read bound/u);
 });
 
-test("the native client presents the replacement token, not the first one", async () => {
-  const driven = drivenTokenSource({
-    refreshMarginMs: 60_000,
-    mintCooldownMs: 5_000,
-    expiresInSeconds: 900,
-  });
-  const presented: (string | null)[] = [];
-  const inventory = JSON.stringify({ projects: [] });
-  const client = nativeHttpClient({
-    baseUrl: "https://native.example/",
-    accessToken: driven.source,
-    requestTimeoutMs: 1_000,
-    responseBytesMax: 10_000,
-    fetch: (_input, init) => {
-      presented.push(new Headers(init?.headers).get("authorization"));
-      return Promise.resolve(
-        new Response(inventory, {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      );
-    },
-  });
-  const principal = asPrincipal("selector");
-  await client.projectInventory(principal, undefined, 1);
-  driven.advance(841_000);
-  await client.projectInventory(principal, undefined, 1);
-  assert.deepEqual(presented, ["Bearer token-1", "Bearer token-2"]);
-});
-
 test("an invalidated token is minted again, and only that one", async () => {
   const driven = drivenTokenSource({
     refreshMarginMs: 60_000,
@@ -402,30 +370,13 @@ test("a refusal that never stops costs one grant per cooldown, not one per read"
     mintCooldownMs: 5_000,
     expiresInSeconds: 900,
   });
-  let refused = 0;
-  const client = nativeHttpClient({
-    baseUrl: "https://native.example/",
-    accessToken: driven.source,
-    requestTimeoutMs: 1_000,
-    responseBytesMax: 10_000,
-    fetch: () => {
-      refused += 1;
-      return Promise.resolve(
-        new Response(JSON.stringify({ error: { code: "Unauthenticated" } }), {
-          status: 401,
-        }),
-      );
-    },
-  });
-  const principal = asPrincipal("selector");
-  const read = async (): Promise<void> => {
-    await assert.rejects(client.projectInventory(principal, undefined, 1));
-  };
-  for (let attempt = 0; attempt < 20; attempt += 1) await read();
-  assert.equal(refused, 1);
+  assert.equal(await driven.source.token(bounded()), "token-1");
+  driven.source.invalidate("token-1");
+  for (let attempt = 0; attempt < 20; attempt += 1)
+    await assert.rejects(driven.source.token(bounded()));
   assert.equal(driven.minted.length, 1);
   driven.advance(5_000);
-  await read();
+  assert.equal(await driven.source.token(bounded()), "token-2");
   assert.equal(driven.minted.length, 2);
 });
 

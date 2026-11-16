@@ -55,7 +55,6 @@ test("every control-plane root reports an absent schema as could-not-run", async
       wakesPerPassMax: 1,
     };
     const runtimes = [
-      roots.selectorProcess({}, requirements, config),
       roots.schedulerProcess({}, {}, wakes, identity, requirements, config),
       roots.ticketServiceProcess(
         {},
@@ -89,7 +88,7 @@ test("every control-plane root reports an absent schema as could-not-run", async
       outcome.precondition,
       outcome.verdict,
     ]),
-    Array.from({ length: 4 }, () => [
+    Array.from({ length: 3 }, () => [
       "CouldNotRun",
       "schema-compatible",
       "Refused",
@@ -110,17 +109,10 @@ const successfulProcessProgram = `
     const requirements = { pool };
     const config = { idleIntervalMilliseconds: 1000, shutdownDrainMilliseconds: 1000 };
     const identity = { owner: 'owner', recoveryEpoch: 'epoch', cluster: 'cluster' };
-    let selectorPasses = 0;
     let sessionPasses = 0;
     let executionPasses = 0;
     /** Each pass's first call, in the order the scheduler's tick made them. */
     const order = [];
-    const selectorService = {
-      runOnce: async () => {
-        selectorPasses += 1;
-        return { reached: [], failures: [] };
-      },
-    };
     let wakePasses = 0;
     const schedulerWakes = {
       store: {
@@ -196,7 +188,6 @@ const successfulProcessProgram = `
       metrics: finalizerTelemetry.silentFinalizerTelemetry,
     };
     const runtimes = [
-      roots.selectorProcess(selectorService, requirements, config),
       roots.schedulerProcess(schedulerService, sessionService, schedulerWakes, identity, requirements, config),
       roots.ticketServiceProcess(
         ticketService,
@@ -209,13 +200,13 @@ const successfulProcessProgram = `
     const outcomes = [];
     for (const runtime of runtimes) outcomes.push(await runtime.start());
     ${programUntil(
-      "[selectorPasses, wakePasses, sessionPasses, ticketPasses, finalizerPasses].every((passes) => passes > 0)",
+      "[wakePasses, sessionPasses, ticketPasses, finalizerPasses].every((passes) => passes > 0)",
       "a loop never reached its ports",
     )}
     const health = runtimes.map((runtime) => runtime.health());
     for (const runtime of runtimes) await runtime.stop();
     process.stdout.write(JSON.stringify({
-      outcomes, health, selectorPasses, sessionPasses, executionPasses, wakePasses,
+      outcomes, health, sessionPasses, executionPasses, wakePasses,
       order: order.slice(0, 3),
     }));
   `;
@@ -234,7 +225,6 @@ test("every control-plane responsibility starts, passes and stops against its po
   const found = JSON.parse(result.stdout) as {
     readonly outcomes: readonly unknown[];
     readonly health: readonly unknown[];
-    readonly selectorPasses: number;
     readonly sessionPasses: number;
     readonly executionPasses: number;
     readonly wakePasses: number;
@@ -242,18 +232,17 @@ test("every control-plane responsibility starts, passes and stops against its po
   };
   assert.deepEqual(
     found.outcomes,
-    Array.from({ length: 4 }, () => ({
+    Array.from({ length: 3 }, () => ({
       started: "Started",
     })),
   );
   assert.deepEqual(
     found.health,
-    Array.from({ length: 4 }, () => ({
+    Array.from({ length: 3 }, () => ({
       live: true,
       ready: true,
     })),
   );
-  assert.ok(found.selectorPasses > 0);
   assert.ok(
     found.sessionPasses > 0,
     "the scheduler process took a tick without a session pass in it",
@@ -482,60 +471,6 @@ test("a change wider than one pass reads reaches an operator, and the loop lives
   );
 });
 
-const admissionProgram = `
-    const roots = await import('./src/roots/controlPlane.ts');
-    const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
-    const rows = schema.currentRuntimeSchemaContract.required;
-    const requirements = { pool: { query: async () => ({ rows }) } };
-    const config = { idleIntervalMilliseconds: 1, shutdownDrainMilliseconds: 1000 };
-    const web = { tenant: 'acme', project: 'web' };
-    const refused = { reached: [web], failures: [{ phase: 'HostedRunsNotGranted', partition: web }] };
-    const undecided = { reached: [web], failures: [{ phase: 'AdmissionUndecided', partition: web }] };
-    const offline = { reached: [web], failures: [{ phase: 'RunnerOffline', partition: web }] };
-    const elsewhere = { reached: [], failures: [] };
-    const served = { reached: [web], failures: [] };
-    /** One run per pass: refused on every pass that reaches it, served, refused, undecided twice, then offline. */
-    const passes = [refused, refused, elsewhere, refused, served, refused, undecided, undecided, offline];
-    let pass = 0;
-    let finished;
-    const scripted = new Promise((resolve) => { finished = resolve; });
-    const service = {
-      runOnce: async () => {
-        const run = passes[pass] ?? elsewhere;
-        pass += 1;
-        if (pass === passes.length) finished();
-        return run;
-      },
-    };
-    const runtime = roots.selectorProcess(service, requirements, config);
-    await runtime.start();
-    await scripted;
-    await runtime.stop();
-  `;
-
-test("a project passed over because its lead may not run reaches an operator once per change", async () => {
-  const result = await execute(
-    process.execPath,
-    [
-      "--experimental-strip-types",
-      "--input-type=module",
-      "--eval",
-      admissionProgram,
-    ],
-    { cwd: process.cwd() },
-  );
-  const refused =
-    "selector: acme/web HostedRunsNotGranted: its tenant grants this selector no hosted runs, so its lead does not run";
-  const undecided =
-    "selector: acme/web AdmissionUndecided: the project authority or the database could not say whether its lead may run";
-  const offline =
-    "selector: acme/web RunnerOffline: its lead runs on the project's runners and none has polled lately, so its lead does not run";
-  assert.deepEqual(
-    result.stderr.split("\n").filter((line) => line.startsWith("selector:")),
-    [refused, refused, undecided, offline],
-  );
-});
-
 test("a contained fault reaches an operator on stderr and leaves the loop live", async () => {
   const result = await execute(
     process.execPath,
@@ -552,63 +487,6 @@ test("a contained fault reaches an operator on stderr and leaves the loop live",
     result.stderr.includes(
       "ticket service: acme/web ActivationFailed: journal is illegal to replay",
     ),
-  );
-});
-
-/** The composed root is driven against a real database in `test/postgres/leadDoors.test.ts`. */
-test("the selector process refuses to start without every door a decision opens", async () => {
-  const program = `
-    const roots = await import('./src/roots/controlPlane.ts');
-    const answer = (permitted) => ({
-      query: async (query) => {
-        const text = typeof query === 'string' ? query : query.text;
-        if (text.includes('current_user'))
-          return { rows: [{ current_role: 'chuggy_selector_service' }] };
-        return { rows: [
-          { door: 'enqueue_lead_turn(text,text,text,text,text)', permitted },
-          { door: 'read_lead_turn(text)', permitted: true },
-        ] };
-      },
-    });
-    const signal = new AbortController().signal;
-    const read = async (pool) => {
-      const answers = [];
-      for (const precondition of roots.selectorProcessPreconditions(pool))
-        answers.push({
-          name: precondition.name,
-          met: (await precondition.check(signal).catch(() => ({ met: 'Undecided' }))).met,
-        });
-      return answers;
-    };
-    process.stdout.write(JSON.stringify({
-      granted: await read(answer(true)),
-      refused: await read(answer(false)),
-    }));
-  `;
-  const result = await execute(
-    process.execPath,
-    ["--experimental-strip-types", "--input-type=module", "--eval", program],
-    { cwd: process.cwd() },
-  );
-  const found = JSON.parse(result.stdout) as {
-    granted: readonly { name: string; met: string }[];
-    refused: readonly { name: string; met: string }[];
-  };
-  assert.deepEqual(
-    found.granted.map((answer) => [answer.name, answer.met]),
-    [
-      ["database-role", "Met"],
-      ["selector-lead-doors", "Met"],
-    ],
-    "the composed selector process installs the doors check beside the role check",
-  );
-  assert.deepEqual(
-    found.refused.map((answer) => [answer.name, answer.met]),
-    [
-      ["database-role", "Met"],
-      ["selector-lead-doors", "Refused"],
-    ],
-    "a half-granted migration is a selector that refuses to start, not one that runs blind",
   );
 });
 

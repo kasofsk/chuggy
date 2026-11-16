@@ -84,8 +84,7 @@
     "provision:access-defaults": "node --experimental-strip-types src/roots/provisionAccessDefaults.ts",
     "provision:session": "node --experimental-strip-types src/roots/provisionAgentSession.ts",
     "bind:project-repository": "node --experimental-strip-types src/roots/bindProjectRepository.ts",
-    "import:repository-configurations": "node --experimental-strip-types src/roots/configurationImporter.ts",
-    "start:selector": "node --experimental-strip-types src/roots/selector.ts"
+    "import:repository-configurations": "node --experimental-strip-types src/roots/configurationImporter.ts"
   },
   "dependencies": {
     "@ts-safeql/sql-tag": "^0.2.2",

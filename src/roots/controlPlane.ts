@@ -34,14 +34,9 @@ import {
   type TicketServiceRuntimeConfig,
   type TicketServiceRuntimeService,
 } from "../interpreter/ticketServiceRun.ts";
-import type {
-  SelectorLeadRuntime,
-  SelectorRuntimeService,
-} from "../compose.ts";
 import {
   composeFinalizerService,
   composeForgeRepositoryMinting,
-  composeSelectorRuntime,
   composeTicketServiceCredentials,
   type FinalizerServiceRuntime,
 } from "../compose.ts";
@@ -57,7 +52,6 @@ import {
   postgresPool,
   type PostgresLimits,
 } from "../adapters/postgres/pool.ts";
-import { postgresLeadDoorsRefused } from "../adapters/postgres/leadMailbox.ts";
 import { postgresProjectDecision } from "../adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "../adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../adapters/postgres/projectStore.ts";
@@ -79,7 +73,6 @@ import {
 } from "../adapters/git/gitPrerequisites.ts";
 import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
 import { postgresSessionScheduler } from "../adapters/postgres/sessionScheduler.ts";
-import { postgresSubsidizedLeadPrecondition } from "../adapters/postgres/sessionPlacement.ts";
 import { postgresThreadWakes } from "../adapters/postgres/thread.ts";
 import {
   postgresFailedLanding,
@@ -105,7 +98,6 @@ import { postgresWorkerPoolRoster } from "../adapters/postgres/workerPool.ts";
 import {
   finalizerRole,
   schedulerRole,
-  selectorServiceRole,
   ticketServiceRole,
 } from "../adapters/postgres/schema.ts";
 import { postgresDomainConfigurationPrecondition } from "../adapters/postgres/domainConfiguration.ts";
@@ -129,15 +121,6 @@ import { postgresJournalLegality } from "../adapters/postgres/journal.ts";
 import type { Config } from "../domain/config.ts";
 import { checkedReworkCap, type ReworkCap } from "../interpreter/reworkCap.ts";
 import { asOwnerId } from "../interpreter/projectStore.ts";
-import {
-  selectorAdmissionChanges,
-  type SelectorAdmissionPhase,
-  type SelectorAdmissionReported,
-  type SelectorAdmissionSkip,
-  type SelectorIdentityFactory,
-  type SelectorRuntimeConfig,
-  type SelectorRuntimeSource,
-} from "../interpreter/selectorRuntime.ts";
 import type { TicketServiceConfig } from "../interpreter/ticketService.ts";
 import type { FinalizerConfig } from "../interpreter/finalizer.ts";
 
@@ -233,53 +216,6 @@ function processPreconditions(
     ...controlPlanePreconditions(requirements.pool),
     ...(requirements.additional ?? []),
   ];
-}
-
-/** Why a project's lead is not run, as an operator reads it beside the phase. */
-const selectorProcessAdmissionWhy: Readonly<
-  Record<SelectorAdmissionPhase, string>
-> = {
-  HostedRunsNotGranted:
-    "its tenant grants this selector no hosted runs, so its lead does not run",
-  RunnerOffline:
-    "its lead runs on the project's runners and none has polled lately, so its lead does not run",
-  UsagePaused:
-    "its lead runs on the project's runners and every live one is paused for its owner's Claude account, so its lead does not run",
-  SubsidyExhausted:
-    "its lead is subsidized and its tenant or the deployment has spent this month's subsidy, so its lead does not run until the month turns",
-  AdmissionUndecided:
-    "the project authority or the database could not say whether its lead may run",
-};
-
-function selectorProcessAdmissionLine(skip: SelectorAdmissionSkip): string {
-  return `selector: ${skip.partition.tenant}/${skip.partition.project} ${skip.phase}: ${selectorProcessAdmissionWhy[skip.phase]}\n`;
-}
-
-/**
- * Drives the selector's own pass. A project newly passed over because its lead
- * may not run is a lead that stops, so it reaches stderr the way a contained
- * ticket service fault does.
- */
-export function selectorProcess(
-  service: SelectorRuntimeService,
-  requirements: ControlPlaneRequirements,
-  config: ServiceRuntimeConfig,
-): ServiceRuntime {
-  let admissions: SelectorAdmissionReported = new Map();
-  return serviceRuntime(
-    {
-      run: async () => {
-        const result = await service.runOnce();
-        const admitted = selectorAdmissionChanges(admissions, result);
-        admissions = admitted.reported;
-        for (const skip of admitted.changed)
-          process.stderr.write(selectorProcessAdmissionLine(skip));
-      },
-    },
-    systemPacing,
-    processPreconditions(requirements),
-    config,
-  );
 }
 
 /** The line an operator reads for one thing a scheduler pass could not mend, naming the attempt it was about. */
@@ -399,91 +335,6 @@ export function finalizerProcess(
     processPreconditions(requirements),
     config,
   );
-}
-
-export interface SelectorProcessRootConfig {
-  readonly database: ProcessDatabaseConfig;
-  readonly runtime: ServiceRuntimeConfig;
-  readonly selector?: SelectorRuntimeConfig;
-  /**
-   * Where the project authority is. The runtime asks it whether a project's
-   * tenant grants a lead run in cluster hosted runs, which no row in this
-   * database says.
-   */
-  readonly access: ProjectAccessSettings;
-}
-
-/**
- * Owns the selector-role pool and composes the independently deployable
- * selector process, the lead host included: every door a decision opens is on
- * this pool, so the host is built where the pool is.
- */
-export function selectorProcessRoot(
-  config: SelectorProcessRootConfig,
-  source: SelectorRuntimeSource,
-  lead: SelectorLeadRuntime,
-  identities: SelectorIdentityFactory,
-  additional: readonly RuntimePrecondition[] = [],
-): ServiceRuntime {
-  const pool = processPool(config.database);
-  const service = composeSelectorRuntime(
-    pool,
-    source,
-    lead,
-    ketoProjectAccess(config.access),
-    identities,
-    config.selector,
-  );
-  return ownedProcess(
-    pool,
-    selectorProcess(
-      service,
-      {
-        pool,
-        additional: selectorProcessPreconditions(pool, [
-          ...additional,
-          postgresSubsidizedLeadPrecondition(pool, lead.policy.subsidizedLead),
-        ]),
-      },
-      config.runtime,
-    ),
-  );
-}
-
-/**
- * What the selector process must be able to do before it takes a decision: it
- * must be the role it claims, and it must hold every door a decision opens.
- */
-export function selectorProcessPreconditions(
-  pool: pg.Pool,
-  additional: readonly RuntimePrecondition[] = [],
-): readonly RuntimePrecondition[] {
-  return [
-    postgresRolePrecondition(pool, selectorServiceRole),
-    leadMailboxPrivilegePrecondition(pool),
-    ...additional,
-  ];
-}
-
-/**
- * Whether this process may open the doors a decision needs. A readiness check
- * asked a host whether it felt able to answer; a privilege check asks the
- * database whether this role is allowed to ask at all, which is the thing that
- * silently fails on a migration that granted one door and not the next.
- */
-function leadMailboxPrivilegePrecondition(pool: pg.Pool): RuntimePrecondition {
-  return {
-    name: "selector-lead-doors",
-    check: async (signal) => {
-      signal.throwIfAborted();
-      const refused = await postgresLeadDoorsRefused(pool);
-      signal.throwIfAborted();
-      return runtimePreconditionAnswer(
-        refused.length === 0,
-        `this role may not execute ${refused.join(", ")}`,
-      );
-    },
-  };
 }
 
 export interface TicketServiceProcessRootConfig {
