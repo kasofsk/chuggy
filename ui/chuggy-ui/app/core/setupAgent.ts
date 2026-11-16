@@ -7,9 +7,10 @@
  * The server signs in through the store the worker contract's
  * `signInStore.ts` defines, which is where this program keeps its own
  * sign-in, so a person this program signed in is signed in for the server
- * too and nothing here signs in at all. `mcp` installs the runner package
- * where none that a later step can use is found, which is why `runner` finds
- * it installed, and then has Claude Code's own `claude mcp add` name the
+ * too and nothing here signs in at all. `mcp` installs the platform's runner
+ * package where none it can use is found, on Linux none that a later step can
+ * use, which is why `runner` finds it installed there, and then has Claude
+ * Code's own `claude mcp add` name the
  * server in the folder's local configuration, removing first one of the same
  * name there that names something else. Both change the machine, so `mcp` is
  * offered and never run unasked.
@@ -21,16 +22,17 @@
  * the one the agent runs over one of the same name in either other, and one
  * shared with the checkout over the person's own. The step is done where the
  * server the agent would run names this project of this site, run by the
- * program of the package `mcp` installs, on every platform: it keeps its
- * sign-ins in the store, and a Mac's own package keeps them elsewhere where
- * the person set a configuration directory.
+ * program of the package `mcp` installs, which is the platform's own: each
+ * keeps its sign-ins in the store.
  */
 
 import { z } from "zod";
 
-import { runnerPackageOffered } from "./runners.ts";
+import { runnerPackages } from "./runners.ts";
+import type { RunnerPackage } from "./runners.ts";
 import type { SetupAsked } from "./setupArguments.ts";
-import type { SetupPorts } from "./setupPorts.ts";
+import { setupPlatformServed } from "./setupPorts.ts";
+import type { SetupPlatform, SetupPorts } from "./setupPorts.ts";
 import type { SetupReport } from "./setupReport.ts";
 import { setupActedStop, setupPackageReady } from "./setupRunner.ts";
 import {
@@ -45,17 +47,38 @@ import type { SetupRunnerNote, SetupServerEnded } from "./setupRunnerSaid.ts";
 import { setupSessionSite } from "./setupStore.ts";
 import { setupFlat } from "./setupText.ts";
 
-/** The runner package `mcp` would install, by the name its program goes by. */
-export const setupServerProgram = runnerPackageOffered.program;
+/** A runner package `mcp` installs and runs the server with, and the oldest of it `mcp` leaves a machine on. */
+export interface SetupServerPackage {
+  readonly offered: RunnerPackage;
+  readonly least: string;
+}
+
+/**
+ * The package `mcp` installs on each platform. Linux's least is the oldest
+ * any later step's command can use, so `runner` and `chat-host` find it
+ * installed; a Mac's is the first whose `mcp` keeps its sign-ins in the store.
+ */
+export const setupServerPackages: Readonly<
+  Record<SetupPlatform, SetupServerPackage>
+> = {
+  linux: { offered: runnerPackages.linux, least: setupChatPackageLeast },
+  darwin: { offered: runnerPackages.darwin, least: "0.23.0" },
+};
+
+/** The platform the program runs on, which `setupRun` has already refused where it is not one served. */
+export function setupServerPlatform(ports: SetupPorts): SetupPlatform {
+  const platform = setupPlatformServed(ports.surroundings.platform);
+  if (platform === undefined)
+    throw new Error(`unserved platform ${ports.surroundings.platform}`);
+  return platform;
+}
+
+function setupServerPackage(ports: SetupPorts): SetupServerPackage {
+  return setupServerPackages[setupServerPlatform(ports)];
+}
 
 /** The name the server is given in the agent's configuration. */
 export const setupServerName = "chuggy";
-
-/**
- * The oldest runner package `mcp` leaves a machine on: the oldest any later
- * step's command can use, so `runner` and `chat-host` find it installed.
- */
-export const setupServerPackageLeast = setupChatPackageLeast;
 
 /** Past any configuration Claude Code keeps for a person. */
 export const setupAgentConfigBytesMax = 67_108_864;
@@ -177,7 +200,7 @@ function setupServerNames(
   if (!read.success) return false;
   const { command, args = [] } = read.data;
   const program = command.slice(command.lastIndexOf("/") + 1);
-  if (program !== setupServerProgram) return false;
+  if (program !== setupServerPackage(ports).offered.program) return false;
   if (command.includes("/") && ports.disk.kind(command) !== "File")
     return false;
   const wanted = setupServerArguments(at);
@@ -252,19 +275,25 @@ async function setupServerHad(
   return { ended: "Served" };
 }
 
-/** Whether the runner package here is one `mcp` leaves as it is, looked for and not touched. */
-export async function setupMcpPackaged(ports: SetupPorts): Promise<boolean> {
-  if (ports.surroundings.home === undefined) return false;
+/** What `mcp` finds of the platform's runner package here: one it leaves as it is, one it replaces, or none. */
+export type SetupMcpPackaged = "Current" | "Behind" | "Absent";
+
+/** The platform's runner package here as `mcp` would find it, looked for and not touched. */
+export async function setupMcpPackaged(
+  ports: SetupPorts,
+): Promise<SetupMcpPackaged> {
+  if (ports.surroundings.home === undefined) return "Absent";
+  const { offered, least } = setupServerPackage(ports);
   const found = (
     await setupPackageProbed(
       ports,
       setupRunnerPlaces(ports.surroundings),
-      setupServerPackageLeast,
+      least,
+      offered,
     )
   ).found;
-  return (
-    found !== undefined && setupPackageCurrent(found, setupServerPackageLeast)
-  );
+  if (found === undefined) return "Absent";
+  return setupPackageCurrent(found, least) ? "Current" : "Behind";
 }
 
 /** One run of `mcp`, to its report, at the site it was given or the one remembered. */
@@ -277,11 +306,13 @@ export async function setupServer(
   if (site === undefined) return { report: "SiteUnknown" };
   const at: SetupServerFor = { site, workspace, project };
   const notes: SetupRunnerNote[] = [];
+  const { offered, least } = setupServerPackage(ports);
   const packaged = await setupPackageReady(
     ports,
     setupRunnerPlaces(ports.surroundings),
     notes,
-    setupServerPackageLeast,
+    least,
+    offered,
   );
   const ended =
     "stop" in packaged

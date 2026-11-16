@@ -25,7 +25,7 @@ import { identitySchema } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 
 import { runnerPackageOffered, runnerRegisterCommand } from "./runners.ts";
-import type { RunnerKind } from "./runners.ts";
+import type { RunnerKind, RunnerPackage } from "./runners.ts";
 import { SetupMachineError } from "./setupPorts.ts";
 import type {
   SetupChildEnded,
@@ -418,21 +418,22 @@ export function setupPackageCurrent(
   return at < 0 || (had[at] ?? 0) > (floor[at] ?? 0);
 }
 
-function setupCommandIn(prefix: string): string {
-  return setupPath(prefix, "bin", setupProgram);
+function setupCommandIn(prefix: string, offered: RunnerPackage): string {
+  return setupPath(prefix, "bin", offered.program);
 }
 
 function setupPackageIn(
   ports: SetupPorts,
   prefix: string,
+  offered: RunnerPackage,
 ): SetupPackageFound | undefined {
-  const command = setupCommandIn(prefix);
+  const command = setupCommandIn(prefix, offered);
   if (ports.disk.kind(command) !== "File") return undefined;
   const manifest = setupPath(
     prefix,
     "lib",
     "node_modules",
-    setupProgram,
+    offered.program,
     "package.json",
   );
   const read = setupVersionSchema.safeParse(
@@ -449,11 +450,12 @@ function setupPrefixRead(printed: string | undefined): string | undefined {
     : undefined;
 }
 
-/** Where the runner package is: under the prefix npm installs machine-wide, or under the person's own, and where both hold one, the one a run can use, none older than `least`. */
+/** Where the runner package `offered` is: under the prefix npm installs machine-wide, or under the person's own, and where both hold one, the one a run can use, none older than `least`. */
 export async function setupPackageProbed(
   ports: SetupPorts,
   places: SetupRunnerPlaces,
   least: string,
+  offered: RunnerPackage,
 ): Promise<SetupPackageProbe> {
   const prefix = setupPrefixRead(
     await ports.process.read(
@@ -467,8 +469,8 @@ export async function setupPackageProbed(
     ports.disk.writable(setupPath(prefix, "lib", "node_modules")) &&
     ports.disk.writable(setupPath(prefix, "bin"));
   const held = [
-    prefix === undefined ? undefined : setupPackageIn(ports, prefix),
-    setupPackageIn(ports, places.own),
+    prefix === undefined ? undefined : setupPackageIn(ports, prefix, offered),
+    setupPackageIn(ports, places.own, offered),
   ].filter((there) => there !== undefined);
   const found =
     held.find((there) => setupPackageCurrent(there, least)) ?? held[0];
@@ -487,8 +489,9 @@ function setupInstallPrefix(
 export function setupInstallCommandPath(
   places: SetupRunnerPlaces,
   probe: SetupPackageProbe,
+  offered: RunnerPackage,
 ): string {
-  return setupCommandIn(setupInstallPrefix(places, probe));
+  return setupCommandIn(setupInstallPrefix(places, probe), offered);
 }
 
 /** The package where an install puts one, whatever its version, or nothing where there is none. */
@@ -496,16 +499,18 @@ export function setupPackageInstalled(
   ports: SetupPorts,
   places: SetupRunnerPlaces,
   probe: SetupPackageProbe,
+  offered: RunnerPackage,
 ): SetupPackageFound | undefined {
-  return setupPackageIn(ports, setupInstallPrefix(places, probe));
+  return setupPackageIn(ports, setupInstallPrefix(places, probe), offered);
 }
 
-/** The console's own install command, word for word, with the person's own prefix named where the machine's is not theirs to write. */
+/** The console's own install command for `offered`, word for word, with the person's own prefix named where the machine's is not theirs to write. */
 export function setupInstallCommand(
   places: SetupRunnerPlaces,
   probe: SetupPackageProbe,
+  offered: RunnerPackage,
 ): readonly string[] {
-  const words = runnerPackageOffered.installCommand.split(" ");
+  const words = offered.installCommand.split(" ");
   return probe.mine
     ? words
     : [...words.slice(0, -1), "--prefix", places.own, ...words.slice(-1)];
