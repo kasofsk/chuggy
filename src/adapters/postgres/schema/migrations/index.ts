@@ -198,6 +198,7 @@ import { migration197 } from "./197-ticket-proposed-landing.ts";
 import { migration198 } from "./198-agentic-refusal-change-retired.ts";
 import { migration199 } from "./199-thread-ticket-wakes.ts";
 import { migration200 } from "./200-project-thread-settings.ts";
+import { migration201 } from "./201-queued-landings.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -401,4 +402,5 @@ export const migrations: readonly Migration[] = [
   migration198,
   migration199,
   migration200,
+  migration201,
 ];
