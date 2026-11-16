@@ -473,7 +473,12 @@ test("two presses whose answers are released last first leave the last press cho
   expect(rootAccent()).toBe(accentOf(builtInThemes.ember));
 });
 
-test("an earlier press refused leaves a later one standing", async () => {
+/** Harbour pressed and then Ember, outside any project, each write held
+ * until its answer is released. */
+async function harbourThenEmberPressed(): Promise<{
+  readonly harbour: ReturnType<typeof heldAnswer>;
+  readonly ember: ReturnType<typeof heldAnswer>;
+}> {
   routeParams = { tenant: atlas.tenant } as PartitionIdentity;
   const harbour = heldAnswer();
   const ember = heldAnswer();
@@ -491,6 +496,11 @@ test("an earlier press refused leaves a later one standing", async () => {
       within(group("Theme")).getByRole("radio", { name: "Ember" }),
     );
   });
+  return { harbour, ember };
+}
+
+test("an earlier press refused leaves a later one standing", async () => {
+  const { harbour, ember } = await harbourThenEmberPressed();
   await turned(() => {
     harbour.release(refusedNotFound());
   });
@@ -505,23 +515,7 @@ test("an earlier press refused leaves a later one standing", async () => {
 });
 
 test("a later press refused puts back the earlier one the server kept", async () => {
-  routeParams = { tenant: atlas.tenant } as PartitionIdentity;
-  const harbour = heldAnswer();
-  const ember = heldAnswer();
-  await themeDrawn(
-    { global: undefined, override: undefined, projectDefault: undefined },
-    answeredInTurn([harbour.answered, ember.answered]),
-  );
-  await turned(() => {
-    fireEvent.click(
-      within(group("Theme")).getByRole("radio", { name: "Harbour" }),
-    );
-  });
-  await turned(() => {
-    fireEvent.click(
-      within(group("Theme")).getByRole("radio", { name: "Ember" }),
-    );
-  });
+  const { harbour, ember } = await harbourThenEmberPressed();
   await turned(() => {
     harbour.release(answer(undefined, 204));
   });
