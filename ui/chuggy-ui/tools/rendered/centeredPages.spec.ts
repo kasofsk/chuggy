@@ -45,8 +45,9 @@ const centeredPageCases: readonly CenteredPageCase[] = [
     name: "an invite link opened signed out",
     route: "/invite#t0ken",
     signedIn: false,
-    title: "You are invited to chuggy",
-    primary: (within) => within.getByRole("button", { name: "Sign in" }),
+    title: "Your own chuggy workspace",
+    primary: (within) =>
+      within.getByRole("button", { name: "Sign in with GitHub" }),
   },
   {
     name: "the forge's setup landing",

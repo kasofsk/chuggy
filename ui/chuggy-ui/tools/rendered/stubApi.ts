@@ -26,6 +26,7 @@ import {
 import {
   accessCallerAccountSchema,
   accessCallerTenantsSchema,
+  accessInviteLinkSummarySchema,
   accessProjectPeopleSchema,
   accessSiteAbilitiesSchema,
 } from "../../../../src/contract/accessPlane.ts";
@@ -672,6 +673,12 @@ export const stubApiReads: readonly StubApiRead[] = [
   stubApiRead(`${projectPath}/deletion`, projectDeletionResponseSchema, {
     held: [],
   }),
+  stubApiRead(
+    "/access/v1/invite-links/summaries",
+    accessInviteLinkSummarySchema,
+    { state: "Open", kind: "Workspace" },
+    "POST",
+  ),
   stubApiRead("/access/v1/site/abilities", accessSiteAbilitiesSchema, {
     administer: false,
     createAccount: false,
