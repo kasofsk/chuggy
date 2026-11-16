@@ -32,6 +32,7 @@ import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
 import { fallbackIntervalMs } from "../app/core/projectFallback.ts";
 import { streamGraceMs } from "../app/browser/stream.tsx";
 import {
+  repositoriesConnectPath,
   repositoryAddHow,
   repositoryRosterPolledMs,
   repositoryRosterRereadsMax,
@@ -207,6 +208,7 @@ const bindings = {
 };
 
 const boundRow = {
+  id: "101",
   name: "chuggy",
   fullName: "kasofsk/chuggy",
   url: boundUrl,
@@ -215,6 +217,7 @@ const boundRow = {
 };
 
 const freeRow = {
+  id: "102",
   name: "scratch",
   fullName: "gdoteof/scratch",
   url: freeUrl,
@@ -227,17 +230,19 @@ const freeRow = {
  * worker installation grants what the portal's on its account does, so no row
  * is marked unless a case says the worker app lacks one. */
 const granted: Readonly<Record<string, unknown>> = {
-  "11": { truncated: true, repositories: [boundRow] },
-  "12": { truncated: false, repositories: [boundRow] },
-  "13": { truncated: false, repositories: [freeRow] },
-  "14": { truncated: false, repositories: [freeRow] },
+  "11": { truncated: true, selection: "Selected", repositories: [boundRow] },
+  "12": { truncated: false, selection: "Selected", repositories: [boundRow] },
+  "13": { truncated: false, selection: "Selected", repositories: [freeRow] },
+  "14": { truncated: false, selection: "Selected", repositories: [freeRow] },
 };
 
 function grantedBy(url: string): unknown {
   const found = Object.entries(granted).find(([id]) =>
     url.includes(`/forge-installations/${id}/`),
   );
-  return found?.[1] ?? { truncated: false, repositories: [] };
+  return (
+    found?.[1] ?? { truncated: false, selection: "Selected", repositories: [] }
+  );
 }
 
 interface Sent {
@@ -639,7 +644,9 @@ test("the picker asks every account's listing of one app at once, the portal app
       if (ids.every((one) => asked.has(one))) held.release(answer({}));
       return held.answered.then(() =>
         answer(
-          id === "14" ? { truncated: false, repositories: [] } : grantedBy(url),
+          id === "14"
+            ? { truncated: false, selection: "Selected", repositories: [] }
+            : grantedBy(url),
         ),
       );
     },
@@ -839,7 +846,8 @@ test("under its roster the picker says a missing repository is granted on GitHub
 /** The roster that lists nothing is the one whose reader most needs the way. */
 test("a roster that lists nothing still carries the line and its link", async () => {
   await openPickerAtProject({
-    granting: () => answer({ truncated: false, repositories: [] }),
+    granting: () =>
+      answer({ truncated: false, selection: "Selected", repositories: [] }),
   });
   expect(pickerRows()).toStrictEqual([]);
   const { line, link } = portalGrant();
@@ -877,7 +885,9 @@ function workerAnswering(
  */
 test("a repository the worker app does not grant is marked on its row, with the worker app's page under the roster", async () => {
   await openPickerAtProject(
-    workerAnswering(() => answer({ truncated: false, repositories: [] })),
+    workerAnswering(() =>
+      answer({ truncated: false, selection: "Selected", repositories: [] }),
+    ),
   );
   expect(pickerRows()).toStrictEqual([
     "kasofsk/chuggyBoundWorker app missing",
@@ -902,7 +912,10 @@ test("a repository the worker app does not grant is marked on its row, with the 
 test.each<readonly [string, () => Response]>([
   ["did not answer", () => answer({}, 503)],
   ["is withheld", () => answer({}, 404)],
-  ["is partial", () => answer({ truncated: true, repositories: [] })],
+  [
+    "is partial",
+    () => answer({ truncated: true, selection: "Selected", repositories: [] }),
+  ],
 ])(
   "a worker listing that %s marks no row and takes no roster down",
   async (_how, answered) => {
@@ -917,7 +930,8 @@ test.each<readonly [string, () => Response]>([
 );
 
 /** A listing that is all of what an installation grants, and grants nothing. */
-const lacking = (): Response => answer({ truncated: false, repositories: [] });
+const lacking = (): Response =>
+  answer({ truncated: false, selection: "Selected", repositories: [] });
 
 /** The mark is the worker app's and says nothing of the project, so a row this
  * project does not bind carries it as one it binds does. */
@@ -1408,6 +1422,7 @@ async function rosterIntervalPassed(): Promise<void> {
 
 /** A repository granted on gdoteof after the picker first read its roster. */
 const lateRow = {
+  id: "103",
   name: "late",
   fullName: "gdoteof/late",
   url: "https://forge.test/gdoteof/late",
@@ -1417,7 +1432,11 @@ const lateRow = {
 
 /** What gdoteof's portal installation lists once the late grant has reached it. */
 const lateListed = (): Response =>
-  answer({ truncated: false, repositories: [freeRow, lateRow] });
+  answer({
+    truncated: false,
+    selection: "Selected",
+    repositories: [freeRow, lateRow],
+  });
 
 /** The roster the worker app lacks kasofsk's repository on, before and after
  * the late grant is listed. */
@@ -1773,6 +1792,7 @@ test("a reading the open picker makes by itself keeps the filter, the row in foc
 /** A repository granted on kasofsk after the picker first read its roster,
  * which the forge lists ahead of every other. */
 const aheadRow = {
+  id: "104",
   name: "ahead",
   fullName: "kasofsk/ahead",
   url: "https://forge.test/kasofsk/ahead",
@@ -1806,12 +1826,21 @@ function forgeListing(): {
         if (url.includes("/11/repositories"))
           return (
             forge.held?.() ??
-            answer({ truncated: true, repositories: kasofsk() })
+            answer({
+              truncated: true,
+              selection: "Selected",
+              repositories: kasofsk(),
+            })
           );
         if (url.includes("/12/repositories"))
-          return answer({ truncated: false, repositories: kasofsk() });
+          return answer({
+            truncated: false,
+            selection: "Selected",
+            repositories: kasofsk(),
+          });
         return answer({
           truncated: false,
+          selection: "Selected",
           repositories: forge.scratch ? [freeRow] : [],
         });
       },
@@ -1867,7 +1896,11 @@ test("an opening's first reading lists a repository ahead of what the last openi
   await settled();
   expect(pickerRows()).toStrictEqual(twoDrawn);
   reopened.release(
-    answer({ truncated: true, repositories: [aheadRow, boundRow] }),
+    answer({
+      truncated: true,
+      selection: "Selected",
+      repositories: [aheadRow, boundRow],
+    }),
   );
   await settled();
   expect(pickerRows()).toStrictEqual(aheadAfter);
@@ -2298,6 +2331,94 @@ test("with no account, the page offers Connect GitHub under its line, returning 
     returnPath: projectPath,
     installs: [],
   });
+});
+
+/** The workspace's people as the reader reads them: the reader an
+ * administrator, and whoever else `others` names. */
+function peopleOf(
+  others: readonly { readonly tenantRoles: readonly string[] }[],
+  over: Readonly<Record<string, unknown>> = {},
+): unknown {
+  const person = (subject: string, mine: boolean, tenantRoles: unknown) => ({
+    subject,
+    mine,
+    tenantRoles,
+    hostedRuns: false,
+    personalRunners: false,
+    unscopedChat: true,
+    projects: [],
+  });
+  return {
+    tenant: projectPartition.tenant,
+    projects: [projectPartition.project],
+    people: [
+      person("me", true, ["Admin"]),
+      ...others.map((other, index) =>
+        person(`other-${String(index)}`, false, other.tenantRoles),
+      ),
+    ],
+    otherIssuers: 0,
+    truncated: false,
+    ...over,
+  };
+}
+
+/** The page drawn at its own address asking for Connect GitHub, with no
+ * account and the workspace's people answered by `people`. */
+async function drawAskingConnect(
+  people: () => Response,
+): Promise<readonly Sent[]> {
+  history.pushState({}, "", repositoriesConnectPath(projectPath));
+  return drawPage({
+    claimed: noAccount,
+    described: { apps: forgeApps, authorization: client },
+    over: (served) =>
+      ((url: string, init?: RequestInit) =>
+        url.endsWith("/people")
+          ? Promise.resolve(people())
+          : served(url, init)) as typeof fetch,
+  });
+}
+
+test("a sole administrator asked to connect is sent to the forge once, returning to the page without the ask", async () => {
+  await drawAskingConnect(() => answer(peopleOf([{ tenantRoles: [] }])));
+  expect(location.pathname + location.search).toBe(projectPath);
+  expect(held.redirects).toHaveLength(1);
+  const url = new URL(held.redirects[0] ?? "");
+  expect(`${url.origin}${url.pathname}`).toBe(client.authorizeUrl);
+  expect(
+    JSON.parse(sessionStorage.getItem(forgeAuthorizeTransactionKey) ?? "{}"),
+  ).toMatchObject({ returnPath: projectPath, installs: [] });
+  await settled();
+  expect(held.redirects).toHaveLength(1);
+});
+
+test.each<readonly [string, () => Response]>([
+  [
+    "another administrator",
+    () => answer(peopleOf([{ tenantRoles: ["Admin"] }])),
+  ],
+  ["a list cut short", () => answer(peopleOf([], { truncated: true }))],
+  ["another issuer", () => answer(peopleOf([], { otherIssuers: 1 }))],
+  ["a failed read", () => answer({}, 500)],
+])(
+  "an ask to connect beside %s loses the ask and waits for the press",
+  async (_beside, people) => {
+    await drawAskingConnect(people);
+    expect(location.pathname + location.search).toBe(projectPath);
+    expect(held.redirects).toStrictEqual([]);
+    expect(offered("Connect GitHub")).toBe(true);
+  },
+);
+
+test("a page not asked to connect does not read the workspace's people", async () => {
+  history.pushState({}, "", projectPath);
+  const sent = await drawPage({
+    claimed: noAccount,
+    described: { apps: forgeApps, authorization: client },
+  });
+  expect(sent.some((request) => request.url.endsWith("/people"))).toBe(false);
+  expect(held.redirects).toStrictEqual([]);
 });
 
 /** Back from a page at the forge can show this one again exactly as it was

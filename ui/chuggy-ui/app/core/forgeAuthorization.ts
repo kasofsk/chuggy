@@ -241,6 +241,22 @@ function forgeAuthorizationLacking(
 }
 
 /**
+ * The account a worker install goes to, which is the one account the answer
+ * reaches lacking the worker app, and none where it reaches several: the
+ * install is sent to one account or to the forge's own choice of them.
+ */
+export function forgeAuthorizationWorkerless(
+  answered: ForgeAuthorizationResponse,
+): string | undefined {
+  const lacking = answered.accounts.filter((account) =>
+    account.apps.some(
+      (held) => held.app === "worker" && held.claim === "Missing",
+    ),
+  );
+  return lacking.length === 1 ? lacking[0]?.account : undefined;
+}
+
+/**
  * The app whose install a redeemed press goes on to, which is none where the
  * press has been sent on to that install already.
  */

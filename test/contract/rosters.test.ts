@@ -66,6 +66,7 @@ import {
   forgeAccountProofs,
   forgeAppClaims,
   forgeInstallationPermissions,
+  forgeRepositorySelections,
   forgeApps,
   forgeCredentialPermissions,
   forgeIds,
@@ -97,7 +98,10 @@ import {
   allForgeAccountProofs,
   allForgeAppClaims,
 } from "../../src/interpreter/forgeAuthorization.ts";
-import { allForgeInstallationPermissions } from "../../src/interpreter/forgeDirectory.ts";
+import {
+  allForgeInstallationPermissions,
+  allForgeRepositorySelections,
+} from "../../src/interpreter/forgeDirectory.ts";
 import { allProjectRepositoryConfigurationsDeferrals } from "../../src/interpreter/repositoryOnboarding.ts";
 import {
   allRepositoryConfigurationImportAbsences,
@@ -854,6 +858,7 @@ test("every session and refusal roster restates the interpreter's own", () => {
     forgeInstallationPermissions,
     allForgeInstallationPermissions,
   );
+  assert.deepEqual(forgeRepositorySelections, allForgeRepositorySelections);
   assert.deepEqual(
     projectRepositoryConfigurationDeferrals,
     allProjectRepositoryConfigurationsDeferrals,

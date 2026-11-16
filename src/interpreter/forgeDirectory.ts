@@ -94,8 +94,9 @@ export interface ForgeInstallationDirectory {
   ): Promise<ForgeInstallationPermissionsRead>;
 }
 
-/** One repository an installation grants, in the terms a reader chooses between them by. */
+/** One repository an installation grants, in the terms a reader chooses between them by, `id` being the forge's number for it as digits. */
 export interface ForgeRepositorySummary {
+  readonly id: string;
   readonly name: ForgeRepositoryName;
   readonly fullName: string;
   readonly url: string;
@@ -103,8 +104,15 @@ export interface ForgeRepositorySummary {
   readonly private: boolean;
 }
 
+/** Whether an installation was given every repository on its account or chosen ones. */
+export const allForgeRepositorySelections = ["All", "Selected"] as const;
+
+export type ForgeRepositorySelection =
+  (typeof allForgeRepositorySelections)[number];
+
 /**
- * What enumerating an installation's repositories came to. `truncated` says the
+ * What enumerating an installation's repositories came to, with the number of
+ * the account they stand on where one is listed. `truncated` says the
  * installation grants more than this deployment will page for, so a reader that
  * cannot find what it wants knows to narrow rather than to conclude the
  * repository is absent.
@@ -114,6 +122,8 @@ export type ForgeRepositoriesRead =
       readonly read: "Repositories";
       readonly repositories: readonly ForgeRepositorySummary[];
       readonly truncated: boolean;
+      readonly selection: ForgeRepositorySelection;
+      readonly accountId?: ForgeAccountId;
     }
   | { readonly read: "Denied" }
   | { readonly read: "Unavailable" };

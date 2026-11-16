@@ -151,6 +151,7 @@ import { asBriefFinalization } from "../../src/interpreter/ticketBrief.ts";
 import {
   asForgeAccount,
   asForgeApp,
+  asForgeAccountId,
   asForgeId,
   asForgeInstallationId,
   asForgeRepositoryName,
@@ -2278,6 +2279,7 @@ test("a tenant's installations and what one grants say whether they are all of i
       result: "Repositories",
       repositories: [
         {
+          id: "1296269",
           name: asForgeRepositoryName("chuggy"),
           fullName: "kasofsk/chuggy",
           url: onboardingRepository,
@@ -2286,10 +2288,15 @@ test("a tenant's installations and what one grants say whether they are all of i
         },
       ],
       truncated: false,
+      selection: "Selected",
+      accountId: asForgeAccountId("1"),
     }).body,
   );
   assert.equal(repositories.truncated, false);
+  assert.equal(repositories.selection, "Selected");
+  assert.equal(repositories.accountId, "1");
   assert.deepEqual(repositories.repositories[0], {
+    id: "1296269",
     name: "chuggy",
     fullName: "kasofsk/chuggy",
     url: onboardingRepository,
@@ -2580,6 +2587,7 @@ test("each onboarding listing refuses one row past the bound it answers under", 
     }),
   );
   const granted = {
+    id: "1296269",
     name: "chuggy",
     fullName: "kasofsk/chuggy",
     url: onboardingRepository,
@@ -2589,6 +2597,7 @@ test("each onboarding listing refuses one row past the bound it answers under", 
   assert.throws(() =>
     forgeRepositoriesResponseSchema.parse({
       truncated: true,
+      selection: "Selected",
       repositories: Array.from(
         { length: forgeRepositoriesAnsweredMax + 1 },
         () => granted,

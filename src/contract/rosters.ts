@@ -514,6 +514,11 @@ export const forgeInstallationPermissions = ["Current", "Behind"] as const;
 export type ForgeInstallationPermissionsName =
   (typeof forgeInstallationPermissions)[number];
 
+/** Whether an installation was given every repository on its account or chosen ones. */
+export const forgeRepositorySelections = ["All", "Selected"] as const;
+export type ForgeRepositorySelectionName =
+  (typeof forgeRepositorySelections)[number];
+
 /** Why a bound repository came away from the configuration step with no configurations of its own. */
 export const projectRepositoryConfigurationDeferrals = [
   "NotConfigured",
