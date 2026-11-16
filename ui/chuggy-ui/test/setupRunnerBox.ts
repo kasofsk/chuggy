@@ -14,6 +14,7 @@
  * act and answers as told.
  */
 
+import { setupPluginId } from "../app/core/setupProgram.ts";
 import { SetupMachineError } from "../app/core/setupPorts.ts";
 import type { SetupChildEnded, SetupDiskPort } from "../app/core/setupPorts.ts";
 import type { SetupEngine } from "../app/core/setupRunnerSaid.ts";
@@ -95,6 +96,8 @@ export interface RunnerBox {
   after: (act: BoxAct) => void;
   /** What `npm prefix -g` prints, or nothing where npm does not answer. */
   prefix: string | undefined;
+  /** What `claude plugin list --json` prints, which has chuggy's plugin installed and on unless a case says otherwise, or nothing where claude does not answer. */
+  plugins: string | undefined;
   /** The version of the package's current release, which an install puts here. */
   release: string;
   engines: Record<SetupEngine, "Yes" | "No" | "Absent">;
@@ -130,6 +133,15 @@ export function runnerBox(): RunnerBox {
     answers: new Map(),
     after: () => undefined,
     prefix: boxPrefix,
+    plugins: JSON.stringify([
+      {
+        id: setupPluginId,
+        version: "0.1.0",
+        scope: "user",
+        enabled: true,
+        installPath: [boxHome, ".claude", "plugins", "chuggy"].join("/"),
+      },
+    ]),
     release: boxVersion,
     engines: { docker: "Yes", podman: "Absent" },
     services: true,

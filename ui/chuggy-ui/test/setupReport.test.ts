@@ -18,7 +18,11 @@ import { expect, test } from "vitest";
 
 import { repositoryConfigurationRoot as root } from "../../../src/contract/configurationDocument.ts";
 import { setupConfigurationPath } from "../app/core/setupConfiguration.ts";
-import { setupAnswersNone, setupAsked } from "../app/core/setupArguments.ts";
+import {
+  setupAnswersNone,
+  setupAsked,
+  setupPluginSkip,
+} from "../app/core/setupArguments.ts";
 import type { SetupAnswers } from "../app/core/setupArguments.ts";
 import {
   setupNextStop,
@@ -36,6 +40,7 @@ import { copyPseudoBundleOf } from "../app/copy/copyPseudo.ts";
 import type { Copy } from "../app/core/copy.ts";
 import type {
   SetupFault,
+  SetupPluginEnded,
   SetupProjectEnded,
   SetupBindAnswered,
   SetupTicketAnswered,
@@ -83,6 +88,7 @@ const held = setupSignInEndings.filter(
 
 /** A checklist's steps, one in each state and two with nothing to say. */
 const steps: readonly SetupStepSaid[] = [
+  { step: "plugin", state: "done", detail: { id: "setup-step-plugin-on" } },
   { step: "workspace", state: "done", detail: "acme" },
   { step: "project", state: "done", detail: "acme/widgets" },
   {
@@ -239,6 +245,18 @@ const things: {
       workspace: "acme",
       project: "widgets",
     },
+    {
+      thing: "Offer",
+      command: "Plugin",
+      tell: { id: "setup-mend-plugin-offer" },
+      when: { id: "setup-offer-plugin-when" },
+    },
+    {
+      thing: "Offer",
+      command: "Plugin",
+      tell: { id: "setup-mend-plugin-offer-off" },
+      when: { id: "setup-offer-plugin-when" },
+    },
   ],
   Ask: [
     {
@@ -351,6 +369,28 @@ const projectEndings: readonly SetupProjectEnded[] = [
     refusal: { id: "project-creation-refusal-taken" },
     again: false,
   },
+];
+
+/** How a run of `plugin` can end: on by each of the ways there to it, and each way short of it. */
+const pluginEndings: readonly SetupPluginEnded[] = [
+  { ended: "On", did: "Installed", folder: "/home/me/.claude/plugins/chuggy" },
+  { ended: "On", did: "Updated", folder: "/home/me/it's here" },
+  { ended: "On", did: "Enabled", folder: "/home/me/.claude/plugins/chuggy" },
+  { ended: "Claudeless" },
+  { ended: "Old", version: "2.1.200", least: "2.1.287" },
+  { ended: "Old", version: undefined, least: "2.1.287" },
+  {
+    ended: "Failed",
+    act: "PluginInstall",
+    failed: { how: "Exit", exit: 1, excerpt: "manifest missing" },
+  },
+  {
+    ended: "Failed",
+    act: "PluginMarketplaceAdd",
+    failed: { how: "Unstarted" },
+  },
+  { ended: "Unlisted" },
+  { ended: "Off" },
 ];
 
 const developmentPath = setupConfigurationPath;
@@ -631,6 +671,7 @@ const roster: {
           ended,
         })),
   ),
+  Plugin: pluginEndings.map((ended) => ({ report: "Plugin", site, ended })),
   Configuration: configurationEndings.map((ended) => ({
     report: "Configuration",
     ended,
@@ -861,8 +902,14 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
     report.report === "Ticket"
   )
     return carried(report.checklist, answers);
+  if (report.report === "Plugin")
+    return report.ended.ended === "On"
+      ? { workspace: answers.workspace, project: answers.project }
+      : { ...answers, plugin: setupPluginSkip };
   if (report.report === "Checklist") {
     const thing = report.next.thing;
+    if (thing.thing === "Offer" && thing.command === "Plugin")
+      return report.next.carried;
     return thing.thing === "Offer" ||
       thing.thing === "Name" ||
       thing.thing === "Brief" ||
@@ -988,7 +1035,7 @@ test("a report of a run not signed in that does not stop names no command in a r
   }
 });
 
-test("the reports that end on a command are the ones a run moves on from by itself: an argument to mend, a sign-in to open or wait on, and a sign-in the site refused", () => {
+test("the reports that end on a command are the ones a run moves on from by itself: an argument to mend, a sign-in to open or wait on, a sign-in the site refused, and a run of plugin, which goes on to the checklist", () => {
   const running = new Set(
     sessions
       .filter(
@@ -1005,6 +1052,7 @@ test("the reports that end on a command are the ones a run moves on from by itse
   );
   expect([...running].toSorted()).toEqual([
     "AskedWrongly",
+    "Plugin",
     "SignInEnded/SignedIn",
     "SignInEnded/SiteChanged",
     "SignInEnded/WorkspacesUnread",
@@ -1128,6 +1176,7 @@ test("signed in, the bare command prints what was found, each step in columns, a
   expect(setupReportLines(report, machineScript, copyTextEn)).toEqual([
     `site: ${site}, signed in`,
     "found: this folder's remote github.com/acme-org/widgets is added to no project the site shows you, so it proposes none",
+    "step: plugin      done     Claude Code here has chuggy's plugin, on",
     "step: workspace   done     acme",
     "step: project     done     acme/widgets",
     "step: mcp         todo     Claude Code here has no chuggy MCP server for acme/widgets",
@@ -1170,11 +1219,16 @@ test("no checklist ends on a command: whatever comes next waits on the person, a
       setupSteps.length,
     );
     const rules = lines.filter((text) => text.startsWith("rule: "));
+    const thing = report.next.thing;
     expect(rules, said).toHaveLength(
-      report.next.thing.thing === "Done" ? 0 : 1,
+      thing.thing === "Done"
+        ? 0
+        : thing.thing === "Offer" && thing.command === "Plugin"
+          ? 2
+          : 1,
     );
     expect(commands(lines), said).toHaveLength(rules.length);
-    if (rules.length > 0) expect(lines.at(-2), said).toBe(rules[0]);
+    if (rules.length > 0) expect(lines.at(-2), said).toBe(rules.at(-1));
   }
 });
 
@@ -1380,7 +1434,7 @@ test("a checklist exits zero whatever is next, and one where a read failed", () 
   expect(exits("Hand")).toEqual([0]);
   expect(exits("Ask")).toEqual([0, 0]);
   expect(exits("Name")).toEqual([0, 0]);
-  expect(exits("Offer")).toEqual([0, 0, 0, 0]);
+  expect(exits("Offer")).toEqual([0, 0, 0, 0, 0, 0]);
   expect(exits("Failed")).toEqual([1, 1]);
 });
 
@@ -2359,4 +2413,91 @@ test("a run of bind says what it asked and what the site answered under the site
     expect(lines).toEqual([alone[0], ...said, ...alone.slice(1)]);
     expect(setupReportExit(report)).toBe(setupReportExit(report.checklist));
   }
+});
+
+const pluginOffer = things.Offer.find(
+  (thing) => thing.command === "Plugin",
+) as SetupThing;
+
+test("signed in, the plugin is offered under two rules: plugin once the person says yes, and the checklist past it if they say no", () => {
+  expect(ended(pluginOffer)).toEqual([
+    "tell: The first step is chuggy's plugin for Claude Code. It adds two skills to Claude Code: one that sets chuggy up with you, and one that files tickets. It is installed with Claude Code's own commands, for you alone: they write your Claude Code user settings and clone the plugin into the plugins folder of ~/.claude, and the plugin runs nothing. With your yes I will install it. Tell me yes to go ahead, or no to go on without it.",
+    `rule: Run node ${machineScript} plugin only once the person says yes to chuggy's plugin in Claude Code.`,
+    `rule: Run node ${machineScript} --plugin skip only if the person says no to chuggy's plugin in Claude Code.`,
+    stop,
+  ]);
+  expect(ended(pluginOffer, both).slice(1, 3)).toEqual([
+    `rule: Run node ${machineScript} plugin ${flags} only once the person says yes to chuggy's plugin in Claude Code.`,
+    `rule: Run node ${machineScript} ${flags} --plugin skip only if the person says no to chuggy's plugin in Claude Code.`,
+  ]);
+});
+
+test("a run given --plugin skip carries it on every command it prints, whatever is next", () => {
+  const skipped: SetupAnswers = { ...both, plugin: setupPluginSkip };
+  for (const thing of Object.values(things).flat())
+    for (const named of commands(
+      setupReportLines(
+        checklist(thing, skipped),
+        machineScript,
+        copyTextEn,
+        skipped,
+      ),
+    ))
+      expect(named.argv.join(" "), JSON.stringify(thing)).toMatch(
+        / --plugin skip(?: |$)/u,
+      );
+});
+
+test("a run of plugin that left it on says what it did and how to remove it, hands the agent the setup skill where sessions read it from, and names the checklist without the way past", () => {
+  const report: SetupReport = {
+    report: "Plugin",
+    site,
+    ended: { ended: "On", did: "Installed", folder: "/home/me/plugin" },
+  };
+  expect(
+    setupReportLines(report, machineScript, copyTextEn, {
+      ...both,
+      plugin: setupPluginSkip,
+    }),
+  ).toEqual([
+    "did: installed chuggy's plugin in Claude Code for you; a Claude Code session started from now on has its setup skill as /chuggy:setup, and claude plugin uninstall chuggy@chuggy removes it",
+    "rule: Read /home/me/plugin/skills/setup/SKILL.md now and follow it for the rest of setup. Where it and a rule: line of chuggy setup differ, the rule: line wins.",
+    `next: node ${machineScript} ${flags} --site ${site}`,
+  ]);
+  expect(setupReportExit(report)).toBe(0);
+});
+
+test("a run of plugin that did not leave it on says why and names the checklist past the plugin's step", () => {
+  const said = pluginEndings
+    .filter((ended) => ended.ended !== "On")
+    .map((ended) => {
+      const report: SetupReport = { report: "Plugin", site, ended };
+      expect(setupReportExit(report)).toBe(0);
+      return setupReportLines(report, machineScript, copyTextEn, both);
+    });
+  const next = `next: node ${machineScript} ${flags} --plugin skip --site ${site}`;
+  for (const lines of said) expect(lines.at(-1)).toBe(next);
+  expect(said.map((lines) => lines.slice(0, -1))).toEqual([
+    [
+      "found: no claude command answered here, so setup goes on without chuggy's plugin",
+    ],
+    [
+      "found: Claude Code here is 2.1.200, and the plugin's commands need 2.1.287 or later, so setup goes on without chuggy's plugin",
+    ],
+    [
+      "found: Claude Code here did not say its version, and the plugin's commands need 2.1.287 or later, so setup goes on without chuggy's plugin",
+    ],
+    [
+      "found: installing chuggy's plugin in Claude Code ended with exit 1, saying: manifest missing, so setup goes on without chuggy's plugin",
+    ],
+    [
+      "found: adding chuggy's plugin marketplace to Claude Code could not be started, so setup goes on without chuggy's plugin",
+    ],
+    [
+      "found: Claude Code's commands ended well and its list of plugins does not show chuggy@chuggy, so setup goes on without chuggy's plugin",
+    ],
+    [
+      "found: chuggy@chuggy is installed and still off after Claude Code was asked to turn it on, so setup goes on without chuggy's plugin",
+    ],
+  ]);
 });

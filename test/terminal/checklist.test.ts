@@ -15,6 +15,8 @@
  */
 
 import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { setupSteps } from "../../ui/chuggy-ui/app/core/setupReport.ts";
@@ -25,6 +27,7 @@ import {
   saidLandingSite,
   saidMember,
   saidMemberSite,
+  saidPluginOn,
   saidStages,
   saidViewer,
   saidViewerSite,
@@ -43,7 +46,7 @@ import type {
   SetupSiteRead,
 } from "../../ui/chuggy-ui/test/setupSite.ts";
 
-import { browsed, dialect, program } from "./program.ts";
+import { browsed, dialect, program, shellWords } from "./program.ts";
 import type { Ran } from "./program.ts";
 import type { StandIn } from "./standIn.ts";
 import { read, ruled, said, signed } from "./checklistSigned.ts";
@@ -51,7 +54,7 @@ import { read, ruled, said, signed } from "./checklistSigned.ts";
 const stepLine = /^step: (\w+) +(\w+)(?: +(\S.*))?$/u;
 
 /** The steps a run printed, every one of them and in their order, each as how it stands and the words beside it. */
-function steps(done: Ran): readonly (readonly [string, string])[] {
+function stepsAll(done: Ran): readonly (readonly [string, string])[] {
   const printed = done.lines.flatMap((text) => {
     const [, step = "", state = "", detail = ""] = stepLine.exec(text) ?? [];
     return step === "" ? [] : [[step, state, detail] as const];
@@ -62,6 +65,13 @@ function steps(done: Ran): readonly (readonly [string, string])[] {
     done.stdout,
   );
   return printed.map(([, state, detail]) => [state, detail]);
+}
+
+/** The steps a run printed past the plugin's, which is on. */
+function steps(done: Ran): readonly (readonly [string, string])[] {
+  const [plugin, ...past] = stepsAll(done);
+  assert.deepEqual(plugin, saidPluginOn, done.stdout);
+  return past;
 }
 
 test("a site set up one thing further at a time, from nothing to a landed first ticket, is printed as it stands at each, with an address of the site's to go to wherever a page is what mends it, and no command but this one again or, where the project is lacking, project with its name, or where the repository holds no configuration, configuration for the project, or where the project has no ticket yet, ticket for the project", async () => {
@@ -113,6 +123,42 @@ test("a site set up one thing further at a time, from nothing to a landed first 
     );
     if (stage === "Landed") assert.deepEqual(said(done, "rule"), []);
     else assert.deepEqual(await ruled(done), [], stage);
+  }
+});
+
+test("signed in where Claude Code here has no chuggy plugin, the plugin is offered first, plugin named under the person's yes and the checklist past it under their no, and that command, split by a shell and run, has the workspace step next and the way past on every command it prints", async () => {
+  const session = await signed();
+  rmSync(join(session.machine.bin, "claude"));
+  const offered = await read(session, setupSiteAt("Nothing"));
+  assert.equal(offered.code, 0, offered.stdout);
+  assert.deepEqual(stepsAll(offered)[0], [
+    "todo",
+    "Claude Code here has no chuggy plugin",
+  ]);
+  const yes = `Run node ${program} plugin only once the person says yes to chuggy's plugin in Claude Code.`;
+  const no = ` only if the person says no to chuggy's plugin in Claude Code.`;
+  const [, ruledNo = ""] = said(offered, "rule");
+  assert.deepEqual(said(offered, "rule"), [yes, ruledNo], offered.stdout);
+  assert.equal(ruledNo.endsWith(no), true, ruledNo);
+  assert.equal(offered.lines.at(-1), "next: stop");
+  const [runner, script, ...skip] = await shellWords(
+    ruledNo.slice("Run ".length, -no.length),
+  );
+  assert.deepEqual(
+    [runner, script, ...skip],
+    ["node", program, "--plugin", "skip"],
+  );
+  for (const stage of setupSiteStages) {
+    const past = await read(session, setupSiteAt(stage), skip);
+    const [plugin, ...rest] = stepsAll(past);
+    assert.deepEqual(plugin, ["done", "passed over without chuggy's plugin"]);
+    assert.deepEqual(rest, saidStages[stage], stage);
+    if (stage === "Nothing")
+      assert.deepEqual(said(past, "rule"), [
+        `Run node ${program} --plugin skip only once the person says their workspace is made.`,
+      ]);
+    for (const rule of said(past, "rule"))
+      assert.match(rule, / --plugin skip(?: |$)/u, stage);
   }
 });
 

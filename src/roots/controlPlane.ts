@@ -37,6 +37,7 @@ import {
 import {
   composeFinalizerService,
   composeForgeRepositoryMinting,
+  composeSchedulerBriefingReads,
   composeTicketServiceCredentials,
   type FinalizerServiceRuntime,
 } from "../compose.ts";
@@ -56,7 +57,6 @@ import { postgresProjectDecision } from "../adapters/postgres/projectDecision.ts
 import { postgresProjectDiscovery } from "../adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../adapters/postgres/projectStore.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
-import { postgresReadOnlyRepositories } from "../adapters/postgres/repositoryBinding.ts";
 import { postgresExecutionSourceHistory } from "../adapters/postgres/executionSourceHistory.ts";
 import { executionSourceObservation } from "../interpreter/executionSourceObservation.ts";
 import {
@@ -74,26 +74,14 @@ import {
 import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
 import { postgresSessionScheduler } from "../adapters/postgres/sessionScheduler.ts";
 import { postgresThreadWakes } from "../adapters/postgres/thread.ts";
-import {
-  postgresFailedLanding,
-  postgresPriorEvaluationReports,
-  postgresPriorWorkReports,
-} from "../adapters/postgres/evaluationReports.ts";
 import { postgresEvaluationStack } from "../adapters/postgres/evaluationStack.ts";
 import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
 import { evaluationStackSpawn } from "../interpreter/evaluationStackSpawn.ts";
 import { postgresTicketLandings } from "../adapters/postgres/ticketLandings.ts";
-import {
-  postgresDependencyPins,
-  postgresDependencyResults,
-} from "../adapters/postgres/dependencyDeliveries.ts";
+import { postgresDependencyResults } from "../adapters/postgres/dependencyDeliveries.ts";
 import { gitCommitAncestry } from "../adapters/git/gitCommitAncestry.ts";
-import {
-  dependencyDeliveriesRead,
-  dependencyPinning,
-} from "../interpreter/dependencyDelivery.ts";
+import { dependencyPinning } from "../interpreter/dependencyDelivery.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
-import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
 import { postgresWorkerPoolRoster } from "../adapters/postgres/workerPool.ts";
 import {
   finalizerRole,
@@ -457,6 +445,7 @@ export interface SchedulerProcessRootConfig {
     | "priorEvaluationReports"
     | "failedLanding"
     | "readOnlyRepositories"
+    | "northStar"
     | "dependencyDeliveries"
     | "ticketBriefs"
     | "bindings"
@@ -501,18 +490,7 @@ export function schedulerProcessRootService(
     ...service,
     access: ketoProjectAccess(access),
     store: postgresExecutionScheduler(pool),
-    configurations: postgresPinnedConfigurations(pool),
-    priorWorkReports: postgresPriorWorkReports(pool),
-    priorEvaluationReports: postgresPriorEvaluationReports(pool),
-    failedLanding: postgresFailedLanding(pool),
-    readOnlyRepositories: postgresReadOnlyRepositories(pool),
-    dependencyDeliveries: dependencyDeliveriesRead({
-      pinned: postgresDependencyPins(pool),
-      landings: postgresTicketLandings(pool),
-      briefs: postgresTicketBrief(pool),
-    }),
-    ticketBriefs: postgresTicketBrief(pool),
-    bindings: postgresProjectRepositoryBinding(pool),
+    ...composeSchedulerBriefingReads(pool),
     workerPools: postgresWorkerPoolRoster(pool),
   };
 }

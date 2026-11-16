@@ -48,8 +48,8 @@ setup-rule-ticket = Run { $command } with { $title } and a short title for what 
 ## The arguments, asked wrongly. Each flag and command word is the program's own.
 
 # spells -run: to run is a verb here
-setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound } or as { $filed }
-setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project } and { $wait }, { $name } with { $made }, { $replace } with { $chatHost }, { $test } with { $configuration }, and { $title }, { $intent } and { $chosen } with { $filed }, each once with a value, and no other flag
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $filed } or as { $plugged }
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin } and { $wait }, { $name } with { $made }, { $replace } with { $chatHost }, { $test } with { $configuration }, and { $title }, { $intent } and { $chosen } with { $filed }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
@@ -59,6 +59,7 @@ setup-asked-project-name = { $made } takes { $workspace } and { $name }, both: t
 setup-asked-brief = { $filed } takes { $title } and { $intent }, both: what the { -ticket } is called, and what the person wants done
 setup-asked-test = { $flag } takes the command that tests this { -repository }, on one line, as { $configuration } writes it
 setup-asked-replace = { $flag } takes the short id of your { -chat-host }, as your { -personal-runner(case: "upper", form: "plural") } page shows it
+setup-asked-plugin = { $flag } takes only { $skip }
 
 ## A machine the program is not served on, or a Node too old to run it.
 
@@ -216,6 +217,10 @@ setup-step-unconfigured = { $repository } is added, its { -configuration } not r
 # spells -run: to run is a verb here
 setup-step-mcp-named = { -claude-code } here runs { -brand-name }'s MCP server for { $project }
 setup-step-mcp-none = { -claude-code } here has no { -brand-name } MCP server for { $project }
+setup-step-plugin-on = { -claude-code } here has { -brand-name }'s plugin, on
+setup-step-plugin-off = { -claude-code } here has { -brand-name }'s plugin, off
+setup-step-plugin-none = { -claude-code } here has no { -brand-name } plugin
+setup-step-plugin-skipped = passed over without { -brand-name }'s plugin
 setup-step-runner-offline = registered, not running
 setup-step-runner-live = live
 # spells -work-stage: the work in general
@@ -347,6 +352,41 @@ setup-mend-mcp-offer-absent = The next step is { -brand-name }'s tools in your a
 # spells -agent: the person's own coding agent, not one of chuggy's
 # spells -configuration: Claude Code's own settings, not a chuggy configuration
 setup-mend-mcp-offer-behind = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and the one installed here is not at a version { setup-program } uses. With your yes I will install the one it uses with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
+
+## The plugin step, which the plugin command does in Claude Code with the
+## person's yes, and passes over on their no.
+
+setup-offer-plugin-when = once the person says yes to { -brand-name }'s plugin in { -claude-code }
+# spells -run: to run is a verb here
+setup-rule-plugin-skip = Run { $command } only if the person says no to { -brand-name }'s plugin in { -claude-code }.
+setup-mend-plugin-adds = It adds two skills to { -claude-code }: one that sets { -brand-name } up with you, and one that files { -ticket(form: "plural") }.
+# spells -run: to run is a verb here
+# spells -claude: ~/.claude is a path
+setup-mend-plugin-does = It is installed with { -claude-code }'s own commands, for you alone: they write your { -claude-code } user settings and clone the plugin into the plugins folder of ~/.claude, and the plugin runs nothing.
+setup-mend-plugin-offer = The first step is { -brand-name }'s plugin for { -claude-code }. { setup-mend-plugin-adds } { setup-mend-plugin-does } With your yes I will install it. Tell me yes to go ahead, or no to go on without it.
+# spells -turn: to turn on is a verb here
+setup-mend-plugin-offer-off = The first step is { -brand-name }'s plugin for { -claude-code }, which is installed here and off. { setup-mend-plugin-adds } { setup-mend-plugin-does } With your yes I will update it and turn it on. Tell me yes to go ahead, or no to go on without it.
+
+## A run of the plugin command: the plugin on and its setup skill handed to
+## the agent, or why it is not, which passes the step over.
+
+# spells -brand-name: /chuggy:setup is the skill's command
+setup-plugin-did = { $did ->
+    [Installed] installed
+    [Updated] updated
+   *[Enabled] turned on
+} { -brand-name }'s plugin in { -claude-code } for you; a { -claude-code } session started from now on has its setup skill as /chuggy:setup, and { $uninstall } removes it
+setup-rule-skill = Read { $skill } now and follow it for the rest of setup. Where it and a rule: line of { setup-program } differ, the rule: line wins.
+setup-plugin-passed = { $found }, so setup goes on without { -brand-name }'s plugin
+# spells -claude: claude is the command's name
+setup-plugin-claudeless = no claude command answered here
+setup-plugin-old = { $said ->
+    [said] { -claude-code } here is { $version }
+   *[unsaid] { -claude-code } here did not say its version
+}, and the plugin's commands need { $least } or later
+setup-plugin-unlisted = { -claude-code }'s commands ended well and its list of plugins does not show { $plugin }
+# spells -turn: to turn on is a verb here
+setup-plugin-off = { $plugin } is installed and still off after { -claude-code } was asked to turn it on
 
 ## A run of the project command. A refusal is the console form's own word for
 ## it, handed in as the message the form draws.

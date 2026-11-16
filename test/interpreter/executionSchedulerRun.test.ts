@@ -382,6 +382,7 @@ function serviceWith(
       repositories: () =>
         Promise.resolve({ read: "Repositories", repositories: [] }),
     },
+    northStar: { northStar: () => Promise.resolve({ read: "NorthStar" }) },
     dependencyDeliveries: {
       deliveries: () => Promise.resolve({ read: "Deliveries", deliveries: [] }),
     },
@@ -1607,6 +1608,50 @@ test("the project's other repositories read for this execution reach its briefin
   assert.ok(
     placements[0]?.invocation.briefing.text.includes(
       `${briefingLabels.readOnlyRepositories} ${sibling}`,
+    ),
+  );
+});
+
+test("a project's North Star that cannot be read holds the attempt instead", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  assert.equal(
+    await executionSchedulerLaunch(
+      {
+        ...service,
+        northStar: {
+          northStar: () => Promise.resolve({ read: "Unavailable" as const }),
+        },
+      },
+      epoch,
+    ),
+    0,
+  );
+  assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
+});
+
+test("the North Star read for this execution's project reaches its briefing", async () => {
+  const placements: AttemptPlacement[] = [];
+  const asked: unknown[] = [];
+  await executionSchedulerLaunch(
+    {
+      ...placingService([], placements),
+      northStar: {
+        northStar: (partitionRead) => {
+          asked.push(partitionRead);
+          return Promise.resolve({
+            read: "NorthStar" as const,
+            northStar: "plain Python with no dependencies",
+          });
+        },
+      },
+    },
+    epoch,
+  );
+  assert.deepEqual(asked, [partition]);
+  assert.ok(
+    placements[0]?.invocation.briefing.text.includes(
+      "plain Python with no dependencies",
     ),
   );
 });
