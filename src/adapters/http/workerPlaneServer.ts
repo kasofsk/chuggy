@@ -39,6 +39,7 @@ import {
   sessionPlaneRoutes,
   sessionReferenceSchema,
   sessionStandingSchema,
+  sessionTicketWakesChoiceSchema,
   sessionWakeSchema,
   sessionTurnAnswerSchema,
   sessionTurnFailureSchema,
@@ -46,6 +47,10 @@ import {
   sessionTurnStoppedSchema,
   type SessionPlaneRouteName,
 } from "../../contract/sessionPlane.ts";
+import {
+  threadTicketWakesEffective,
+  type ThreadTicketWakes,
+} from "../../contract/threadWake.ts";
 import {
   contractVersionRefusalStatus,
   workerContractImplements,
@@ -98,6 +103,7 @@ import {
   type SessionReferenceBound,
   type SessionReferencePort,
   type SessionStandingPort,
+  type SessionTicketWakesPort,
   type SessionStoreQueryPort,
   type SessionStoreRecordPort,
   type SessionTurnAnswered,
@@ -417,6 +423,11 @@ export const sessionPlaneServed = {
     stored: false,
     bodyBytesMax: planeJsonObjectBytesMax(),
   },
+  ticketWakes: {
+    caller: "Session",
+    stored: false,
+    bodyBytesMax: planeJsonObjectBytesMax(),
+  },
   wake: {
     caller: "Session",
     stored: false,
@@ -570,6 +581,7 @@ export interface SessionPlaneService {
   readonly heartbeatLeaseSecs: number;
   readonly references: SessionReferencePort;
   readonly standings: SessionStandingPort;
+  readonly ticketWakes: SessionTicketWakesPort;
   /**
    * How a thread's attempt on a chat host wakes its own thread, absent where
    * the plane was composed without the project access its checks ask, which
@@ -1512,18 +1524,26 @@ function sessionTurnKindTold(
  * the field would load its project's settings, so it is never answered the
  * facts without it.
  */
-function sessionFactsRoute(register: SessionRegistrar): void {
-  register("facts", (request, reply, { identity }) => {
+function sessionFactsRoute(
+  register: SessionRegistrar,
+  sessions: SessionPlaneService,
+): void {
+  register("facts", async (request, reply, { identity, secret }) => {
     if (
       identity.systemPromptOwn === true &&
       !workerContractImplements("SystemPromptOwn", workerContractPeer(request))
     )
-      return Promise.resolve(
-        reply
-          .code(contractVersionRefusalStatus)
-          .send(contractVersionRefusal(workerContractSystemPromptsOwn)),
-      );
-    return Promise.resolve({
+      return reply
+        .code(contractVersionRefusalStatus)
+        .send(contractVersionRefusal(workerContractSystemPromptsOwn));
+    const ticketWakes =
+      identity.kind === "Thread"
+        ? await sessions.ticketWakes.readTicketWakes({
+            secret,
+            generation: identity.generation,
+          })
+        : undefined;
+    return {
       tenant: identity.partition.tenant,
       project: identity.partition.project,
       session: identity.session,
@@ -1548,7 +1568,35 @@ function sessionFactsRoute(register: SessionRegistrar): void {
       ...(identity.shellCredentialHanded === true
         ? { shellCredentialHanded: true }
         : {}),
+      ...(ticketWakes === undefined
+        ? {}
+        : { ticketWakes: sessionTicketWakesAnswer(ticketWakes) }),
+    };
+  });
+}
+
+/** A thread's ticket wake settings as the plane answers them, with the setting that follows from them. */
+function sessionTicketWakesAnswer(wakes: ThreadTicketWakes) {
+  return { ...wakes, effective: threadTicketWakesEffective(wakes) };
+}
+
+/** A thread's own live attempt chooses whether it is woken for its tickets, and is answered what follows. */
+function sessionTicketWakesRoute(
+  register: SessionRegistrar,
+  sessions: SessionPlaneService,
+): void {
+  register("ticketWakes", async (request, reply, caller) => {
+    const offered = sessionTicketWakesChoiceSchema.safeParse(request.body);
+    if (!offered.success) return reply.code(400).send({ action: "stop" });
+    const thread = offered.data.thread;
+    const chosen = await sessions.ticketWakes.chooseTicketWakes({
+      secret: caller.secret,
+      generation: caller.identity.generation,
+      ...(thread === null ? {} : { thread }),
     });
+    return chosen.chosen === "Recorded"
+      ? reply.code(200).send(sessionTicketWakesAnswer(chosen.wakes))
+      : reply.code(409).send({ action: "stop", reason: chosen.chosen });
   });
 }
 
@@ -2077,10 +2125,11 @@ export function createWorkerPlaneApp(
       sessionPlaneServed,
     );
     sessionCredentialRoute(registerSession, service);
-    sessionFactsRoute(registerSession);
+    sessionFactsRoute(registerSession, sessions);
     sessionHeartbeatRoute(registerSession, sessions);
     sessionReferenceRoute(registerSession, sessions);
     sessionStandingRoute(registerSession, sessions);
+    sessionTicketWakesRoute(registerSession, sessions);
     sessionWakeRoute(registerSession, sessions);
     sessionTurnRoute(registerSession, sessions);
     sessionSettleRoutes(registerSession, sessions);

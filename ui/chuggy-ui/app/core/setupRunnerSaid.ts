@@ -16,6 +16,8 @@
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyArgument, CopyHanded, CopyId } from "./copy.ts";
 import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
+import type { SetupFit } from "./setupFit.ts";
+import { setupCommandLine } from "./setupText.ts";
 
 /** Where a run was for, as its lines name it: a project of a workspace for `runner`, and for `chat-host` the workspace alone; `workspaceName` is the workspace's display name, where the run read it. */
 export interface SetupRunnerAt {
@@ -140,7 +142,9 @@ export type SetupRunnerAct =
   | "ServiceChat"
   | "Reload"
   | "Start"
-  | "Restart";
+  | "Restart"
+  | "ColimaStop"
+  | "ColimaStart";
 
 /**
  * What the runner package's `register` says where it refuses, by the words of
@@ -259,7 +263,15 @@ export type SetupRunnerNote =
   /** The agent's MCP configuration names chuggy's server for the project, as it was found or once this run added it. */
   | { readonly note: "ServerFound" | "ServerAdded"; readonly path: string }
   /** On a Mac, that docker's VM is the person's to keep running: `start` starts it whenever they log in. */
-  | { readonly note: "Colima"; readonly start: string };
+  | { readonly note: "Colima"; readonly start: string }
+  /** A command this run ran of Colima, as the offer named it. */
+  | { readonly note: "ColimaRan"; readonly command: string }
+  /** What Colima's VM has once this run changed it, each nothing where it was not read. */
+  | {
+      readonly note: "ColimaVm";
+      readonly memoryMib: number | undefined;
+      readonly amd64: boolean | undefined;
+    };
 
 /**
  * What the runner package's own check looks at, by the names it prints them
@@ -442,6 +454,21 @@ export type SetupRunnerStop =
       readonly stop: "ReplaceMismatched";
       readonly short: string;
       readonly live: boolean;
+    }
+  /** On Apple silicon, Colima's VM runs no amd64 and macOS has no Rosetta for it, which `install` installs. */
+  | { readonly stop: "Rosettaless"; readonly install: string }
+  /** Colima's VM runs no amd64 and cannot be given Rosetta as it is: `remove` and `make` make it again, each run by the person. */
+  | {
+      readonly stop: "Rebuild";
+      readonly why: "Qemu" | "Unrosetta";
+      readonly remove: string;
+      readonly make: string;
+    }
+  /** Colima's VM, changed by this run, is still short of what a job needs: what it has, nothing where it was not read. */
+  | {
+      readonly stop: "ColimaShort";
+      readonly memoryMib: number | undefined;
+      readonly amd64: boolean | undefined;
     };
 
 /** How a run of `mcp` ended: the agent's configuration names the server, or it stopped. */
@@ -834,7 +861,128 @@ export function setupRunnerNoteSaid(
     case "ServerFound":
     case "ServerAdded":
       return setupServerNoteSaid(note, setupRunnerNamed(at));
+    case "ColimaRan":
+    case "ColimaVm":
+      return setupColimaNoteSaid(note);
   }
+}
+
+/** What Colima's VM has, as a line says it. */
+function setupColimaHas(
+  memoryMib: number | undefined,
+  amd64: boolean | undefined,
+): Copy {
+  return {
+    id: "setup-runner-colima-has",
+    args: {
+      memory: memoryMib === undefined ? "unsaid" : "said",
+      has:
+        memoryMib === undefined
+          ? ""
+          : quantityFigureCopy(memoryMibFigure(memoryMib)),
+      amd64: amd64 === undefined ? "unsaid" : amd64 ? "yes" : "no",
+    },
+  };
+}
+
+function setupColimaNoteSaid(
+  note: Extract<SetupRunnerNote, { readonly note: "ColimaRan" | "ColimaVm" }>,
+): SetupRunnerNoteSaid {
+  return note.note === "ColimaRan"
+    ? [
+        "did",
+        { id: "setup-runner-note-colima-ran", args: { command: note.command } },
+      ]
+    : [
+        "found",
+        {
+          id: "setup-runner-note-colima-vm",
+          args: { has: setupColimaHas(note.memoryMib, note.amd64) },
+        },
+      ];
+}
+
+/** The stop a fit is where only the person can mend it, with each command they run as its line, or nothing where it is no such fit. */
+export function setupFitStopOf(
+  fit: SetupFit,
+):
+  | Extract<SetupRunnerStop, { readonly stop: "Rosettaless" | "Rebuild" }>
+  | undefined {
+  switch (fit.fit) {
+    case "Rosettaless":
+      return { stop: "Rosettaless", install: setupCommandLine(fit.install) };
+    case "Rebuild":
+      return {
+        stop: "Rebuild",
+        why: fit.why,
+        remove: setupCommandLine(fit.commands[0] ?? []),
+        make: setupCommandLine(fit.commands[1] ?? []),
+      };
+    case "Room":
+    case "Small":
+    case "Colima":
+      return undefined;
+  }
+}
+
+/** What the person is told to do of a stop only they can mend, and what that waits on. */
+export function setupFitToldSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "Rosettaless" | "Rebuild" }>,
+  unchanged: boolean,
+): { readonly told: Copy; readonly when: Copy } {
+  const was = unchanged ? "yes" : "no";
+  return stop.stop === "Rosettaless"
+    ? {
+        told: {
+          id: "setup-runner-rosettaless-told",
+          args: { install: stop.install, unchanged: was },
+        },
+        when: { id: "setup-runner-rosettaless-when" },
+      }
+    : {
+        told: {
+          id: "setup-runner-rebuild-told",
+          args: {
+            why: stop.why === "Qemu" ? "qemu" : "unrosetta",
+            remove: stop.remove,
+            make: stop.make,
+            unchanged: was,
+          },
+        },
+        when: { id: "setup-runner-rebuild-when" },
+      };
+}
+
+/** A stop of Colima's VM, as it is said. */
+function setupColimaStopSaid(
+  stop: Extract<
+    SetupRunnerStop,
+    { readonly stop: "Rosettaless" | "Rebuild" | "ColimaShort" }
+  >,
+): SetupRunnerStopSaid {
+  if (stop.stop === "ColimaShort")
+    return {
+      found: {
+        id: "setup-runner-colima-short-found",
+        args: { has: setupColimaHas(stop.memoryMib, stop.amd64) },
+      },
+      tell: { id: "setup-runner-colima-short-tell" },
+      when: { id: "setup-runner-when-try-again" },
+      again: "Again",
+    };
+  const { told, when } = setupFitToldSaid(stop, true);
+  return {
+    found:
+      stop.stop === "Rosettaless"
+        ? { id: "setup-runner-rosettaless-found" }
+        : {
+            id: "setup-runner-rebuild-found",
+            args: { why: stop.why === "Qemu" ? "qemu" : "unrosetta" },
+          },
+    tell: { id: "setup-runner-fit-tell", args: { told } },
+    when,
+    again: "Again",
+  };
 }
 
 function setupSettingsNoteSaid(
@@ -1089,6 +1237,8 @@ const setupActs: Readonly<Record<SetupRunnerAct, CopyId>> = {
   Reload: "setup-runner-act-reload",
   Start: "setup-runner-act-start",
   Restart: "setup-runner-act-restart",
+  ColimaStop: "setup-runner-act-colima-stop",
+  ColimaStart: "setup-runner-act-colima-start",
 };
 
 /** An act as a sentence names it, `upper` where the act begins the sentence. */
@@ -1768,6 +1918,10 @@ export function setupRunnerStopSaid(
     case "ChatHostHeld":
     case "ReplaceMismatched":
       return setupHeldSaid(stop);
+    case "Rosettaless":
+    case "Rebuild":
+    case "ColimaShort":
+      return setupColimaStopSaid(stop);
   }
 }
 
@@ -1787,6 +1941,8 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 {
     case "ChatHostHeld":
     case "ReplaceMismatched":
     case "Unpackaged":
+    case "Rosettaless":
+    case "Rebuild":
       return 0;
     case "Unread":
       return stop.outcome === "Refused" ? 0 : 1;
@@ -1802,6 +1958,7 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 {
     case "NotLive":
     case "ChatMintRefused":
     case "ChatHostNotLive":
+    case "ColimaShort":
       return 1;
   }
 }

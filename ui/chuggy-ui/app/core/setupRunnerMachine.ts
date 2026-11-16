@@ -28,6 +28,14 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 
 import { runnerPackages, runnerRegisterCommand } from "./runners.ts";
 import type { RunnerKind, RunnerPackage } from "./runners.ts";
+import {
+  setupEngineSpareMib,
+  setupFitEngineMib,
+  setupFitOf,
+  setupJobMemoryMib,
+  setupMacRead,
+} from "./setupFit.ts";
+import type { SetupFit, SetupFitProbes, SetupMac } from "./setupFit.ts";
 import { SetupMachineError, setupPlatformOf } from "./setupPorts.ts";
 import type {
   SetupChildEnded,
@@ -249,7 +257,7 @@ const setupServicesProbe = [
   "Version",
 ];
 
-/** What starts Colima, the VM docker runs in on a Mac, which is the person's to start and never this program's. */
+/** What starts Colima, the VM docker runs in on a Mac, as it is: the person's to run where a yes to `runner` would change nothing of it. */
 export const setupColimaStart = ["colima", "start"] as const;
 
 /** What starts Colima whenever the person logs in, as chuggy-darwin's `install-agent` says it. */
@@ -449,17 +457,11 @@ export function setupSettingsChatText(
   return `${JSON.stringify(settings, null, 2)}\n`;
 }
 
-/** The memory, in MiB, a job that names none runs with on a runner, as the plane gives it; a suite holds this to the plane's own. */
-export const setupJobMemoryMib = 4_096;
-
 /** The memory, in MiB, the runner package gives the chat host for each session where its settings name none. */
 export const setupChatSessionMemoryMib = 2_048;
 
 /** The most sessions at once setup sizes a chat host to. */
 export const setupChatSessionsMax = 4;
-
-/** The memory, in MiB, a chat host is sized to leave the engine beside a job and its own sessions. */
-export const setupEngineSpareMib = 1_024;
 
 /** What a chat host here would hold, as a yes to it leaves the settings naming. */
 export interface SetupChatSize {
@@ -512,22 +514,86 @@ const setupEngineMemorySchemas = {
     .transform((info) => info.host.memTotal),
 } as const;
 
+/** The name docker's info gives the machine it runs on, which in Colima is the VM's profile ID. */
+const setupEngineMachineSchema = z.object({ Name: z.string() });
+
 const setupBytesPerMib = 2 ** 20;
+
+/** What the engine says of itself that a run goes by: its memory, in whole MiB, which on a Mac is Colima's VM's, and docker's machine name; each nothing where it did not say. */
+export interface SetupEngineInfo {
+  readonly memoryMib: number | undefined;
+  readonly machine: string | undefined;
+}
+
+/** What the engine says of itself, asked once. */
+export async function setupEngineInfoRead(
+  ports: SetupPorts,
+  engine: SetupEngine,
+): Promise<SetupEngineInfo> {
+  const printed = setupJson(
+    await ports.process.read(
+      setupEngineInfo[engine],
+      setupProbeWaitMs,
+      setupChildBytesMax,
+    ),
+  );
+  const memory = setupEngineMemorySchemas[engine].safeParse(printed);
+  const machine = setupEngineMachineSchema.safeParse(printed);
+  return {
+    memoryMib: memory.success
+      ? Math.floor(memory.data / setupBytesPerMib)
+      : undefined,
+    machine:
+      engine === "docker" && machine.success ? machine.data.Name : undefined,
+  };
+}
 
 /** The memory the engine reports, in whole MiB, which on a Mac is Colima's VM's; nothing where it did not say. */
 export async function setupEngineMemoryRead(
   ports: SetupPorts,
   engine: SetupEngine,
 ): Promise<number | undefined> {
-  const printed = await ports.process.read(
-    setupEngineInfo[engine],
-    setupProbeWaitMs,
-    setupChildBytesMax,
-  );
-  const parsed = setupEngineMemorySchemas[engine].safeParse(setupJson(printed));
-  return parsed.success
-    ? Math.floor(parsed.data / setupBytesPerMib)
-    : undefined;
+  return (await setupEngineInfoRead(ports, engine)).memoryMib;
+}
+
+/** The reads of the machine what a job needs of it is read through. */
+export function setupFitProbesOf(ports: SetupPorts): SetupFitProbes {
+  return {
+    read: (command) =>
+      ports.process.read(command, setupProbeWaitMs, setupChildBytesMax),
+    text: (path) => ports.disk.text(path, setupTextBytesMax),
+    home: ports.surroundings.home,
+    colimaHome: ports.surroundings.colimaHome,
+  };
+}
+
+/**
+ * What this machine is short of for a job naming no memory or platform, read
+ * of the engine `engine` where one is to be asked, and on a Mac of Colima too,
+ * with the engine's memory as it reported it.
+ */
+export async function setupFitRead(
+  ports: SetupPorts,
+  engine: SetupEngine | undefined,
+): Promise<{
+  readonly fit: SetupFit;
+  readonly engineMib: number | undefined;
+  readonly mac: SetupMac | undefined;
+}> {
+  const info =
+    engine === undefined
+      ? { memoryMib: undefined, machine: undefined }
+      : await setupEngineInfoRead(ports, engine);
+  const platform = setupPlatformOf(ports.surroundings);
+  const mac =
+    platform === "darwin"
+      ? await setupMacRead(setupFitProbesOf(ports), info.machine)
+      : undefined;
+  return {
+    fit: setupFitOf(platform, mac, info.memoryMib),
+    engineMib: info.memoryMib,
+    mac,
+  };
 }
 
 /** The limits the package's guide writes in the settings it shows, which have no default of the package's own. */
@@ -735,8 +801,10 @@ export interface SetupRunnerHere {
   readonly chat: boolean;
   /** The kind of Claude credential work here would run on: the one the settings name, a subscription's where there are none, and nothing where they were not read. */
   readonly claude: SetupClaudeKind | undefined;
-  /** What a chat host here would hold, where a runner could be put here. */
+  /** What a chat host here would hold, where a runner could be put here or will be once a yes changes Colima. */
   readonly chatSize: SetupChatSize | undefined;
+  /** What this machine is short of for a job naming no memory or platform. */
+  readonly fit: SetupFit;
 }
 
 /** One part of a registration's file name as the package writes it: letters, digits and `-` as themselves, and every other octet by its number. */
@@ -867,15 +935,26 @@ export async function setupRunnerHere(
   );
   const open = room.room === "Open";
   const chat = settings.settings === "Read" ? settings.chat : {};
+  const { fit, engineMib } = await setupFitRead(ports, setupRoomEngine(room));
+  const sized = open || fit.fit === "Colima";
   return {
     room,
     held: open && setupPoolFiles(ports, places, partition).length > 0,
     chat: open && setupChatFiles(ports, places, partition.tenant).length > 0,
     claude: setupClaudeHere(settings),
-    chatSize: open
-      ? setupChatSized(await setupEngineMemoryRead(ports, room.engine), chat)
+    chatSize: sized
+      ? setupChatSized(setupFitEngineMib(fit, engineMib), chat)
       : undefined,
+    fit,
   };
+}
+
+/** The engine a room is read of for what a job needs: the one that answered, or on a Mac docker, which Colima runs, whether or not it answered. */
+function setupRoomEngine(room: SetupRunnerRoom): SetupEngine | undefined {
+  if (room.room === "Open") return room.engine;
+  return room.room === "Engineless" && room.start !== undefined
+    ? "docker"
+    : undefined;
 }
 
 /** The service of a registration's file, as the package names it and where it writes it: a systemd unit by its name, or a launchd agent by its label. */

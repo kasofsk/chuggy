@@ -150,6 +150,7 @@ export function portsOf(script: string): SetupPorts {
       home,
       configHome: process.env["XDG_CONFIG_HOME"],
       claudeHome: process.env["CLAUDE_CONFIG_DIR"],
+      colimaHome: process.env["COLIMA_HOME"],
       user: process.getuid === undefined ? undefined : String(process.getuid()),
     },
   };

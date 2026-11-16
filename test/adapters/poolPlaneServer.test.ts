@@ -359,6 +359,7 @@ function runnerCalls(): {
   readonly agents: unknown[];
   readonly credentials: unknown[];
   readonly hosted: unknown[];
+  readonly ticketWakes: unknown[];
   readonly runners: WorkerPoolRunners;
 } {
   const named: unknown[] = [];
@@ -367,6 +368,7 @@ function runnerCalls(): {
   const agents: unknown[] = [];
   const credentials: unknown[] = [];
   const hosted: unknown[] = [];
+  const ticketWakes: unknown[] = [];
   return {
     named,
     advertised,
@@ -374,6 +376,7 @@ function runnerCalls(): {
     agents,
     credentials,
     hosted,
+    ticketWakes,
     runners: {
       named: (
         caller: PoolPlaneIdentity,
@@ -383,8 +386,10 @@ function runnerCalls(): {
         agentsAdvertised,
         credentialsNamed,
         sessionCapabilities,
+        ticketWakesNamed,
       ) => {
         hosted.push([caller.kind, sessionCapabilities]);
+        ticketWakes.push([caller.kind, ticketWakesNamed]);
         named.push([caller.kind, runner]);
         advertised.push([caller.kind, capabilities]);
         ceilings.push([caller.kind, ceiling]);
@@ -2337,6 +2342,24 @@ test("a chat host's declared idle bound is recorded on its claim as named and la
   }
 });
 
+/** What the runner a poll ending in `suffix` named was recorded as, the poll having been answered. */
+async function pollRecorded(
+  headers: Record<string, string>,
+  suffix: string,
+): Promise<ReturnType<typeof runnerCalls>> {
+  const recorded = runnerCalls();
+  const answered = await createPoolPlaneApp(
+    plane(
+      calls().ports,
+      authority("Allow"),
+      openingsRecorded().store,
+      recorded.runners,
+    ),
+  ).inject({ method: "GET", url: `${polling([], 0, 1)}${suffix}`, headers });
+  assert.equal(answered.statusCode, 200, suffix);
+  return recorded;
+}
+
 test("a chat host's poll names the capabilities its threads may hold as it wrote them, a pool's is not read, and a set naming one twice is refused", async () => {
   const set = ["RunCommands", "ProjectRead"] as const;
   const query = `&${workerPoolPollQuery.sessionCapabilities}=`;
@@ -2354,16 +2377,7 @@ test("a chat host's poll names the capabilities its threads may hold as it wrote
       ["Dedicated", undefined],
     ],
   ] as const) {
-    const recorded = runnerCalls();
-    const answered = await createPoolPlaneApp(
-      plane(
-        calls().ports,
-        authority("Allow"),
-        openingsRecorded().store,
-        recorded.runners,
-      ),
-    ).inject({ method: "GET", url: `${polling([], 0, 1)}${suffix}`, headers });
-    assert.equal(answered.statusCode, 200, suffix);
+    const recorded = await pollRecorded(headers, suffix);
     assert.deepEqual(recorded.hosted, [kept], suffix);
   }
   const refused = await createPoolPlaneApp(
@@ -2371,6 +2385,27 @@ test("a chat host's poll names the capabilities its threads may hold as it wrote
   ).inject({
     method: "GET",
     url: `${polling([], 0, 1)}${query}ProjectRead,ProjectRead`,
+    headers: hostSpeaking,
+  });
+  assert.equal(refused.statusCode, 400);
+});
+
+test("a chat host's poll names its threads' ticket wakes as it wrote them, none where it named none, a pool's is not read, and anything but On or Off is refused", async () => {
+  const query = `&${workerPoolPollQuery.ticketWakes}=`;
+  for (const [headers, suffix, kept] of [
+    [hostSpeaking, `${query}On`, ["ChatHost", "On"]],
+    [hostSpeaking, `${query}Off`, ["ChatHost", "Off"]],
+    [hostSpeaking, "", ["ChatHost", undefined]],
+    [speaking, `${query}On`, ["Dedicated", undefined]],
+  ] as const) {
+    const recorded = await pollRecorded(headers, suffix);
+    assert.deepEqual(recorded.ticketWakes, [kept], suffix);
+  }
+  const refused = await createPoolPlaneApp(
+    plane(calls().ports, authority("Allow"), openingsRecorded().store),
+  ).inject({
+    method: "GET",
+    url: `${polling([], 0, 1)}${query}on`,
     headers: hostSpeaking,
   });
   assert.equal(refused.statusCode, 400);

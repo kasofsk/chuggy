@@ -399,6 +399,7 @@ test("on a Mac the MCP step and the runner, with or without the chat host, offer
     chat: false,
     chatSize: setupChatSized(engineRoomy, {}),
     claude: "Subscription",
+    fit: { fit: "Room" },
   };
   for (const lack of [
     { lacks: "Runner", chat: false },
@@ -893,6 +894,7 @@ function here(
     chat,
     chatSize,
     claude: "Subscription",
+    fit: { fit: "Room" },
   };
   return saidThing(
     setupNext(lacking(lack), setupAnswersNone, platform, looked).thing,
@@ -1079,6 +1081,7 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
           chat: false,
           chatSize: setupChatSized(engineRoomy, {}),
           claude,
+          fit: { fit: "Room" },
         }),
       );
       return thing.thing === "Offer" ? thing.tell : "";

@@ -203,6 +203,7 @@ test("a job wake's turn is derived from the session and the event together, and 
     session,
     route: "Pool",
     runner: "Live",
+    ticketWakes: {},
   });
   assert.ok(!ticketTurn.startsWith(`${threadJobWakeTurnPrefix}-`));
   assert.throws(() => threadJobWakeTurn(session, ""), RangeError);

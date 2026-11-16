@@ -250,6 +250,8 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       1,
       "Again",
     ],
+    ["stopping Colima's VM ended with exit 1, saying: it said why", 1, "Again"],
+    ["starting Colima's VM ended with exit 1, saying: it said why", 1, "Again"],
     [
       "removing the other chuggy MCP server from Claude Code's configuration for this folder ended with exit 1, saying: it said why",
       1,
@@ -522,6 +524,37 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Again",
     ],
   ],
+  Rosettaless: [
+    [
+      "Colima's VM on this Apple-silicon Mac runs no amd64 images, and macOS has no Rosetta to run them with",
+      0,
+      "Again",
+    ],
+  ],
+  Rebuild: [
+    [
+      "Colima's VM runs no amd64 images and is a QEMU one, which cannot use Rosetta",
+      0,
+      "Again",
+    ],
+    [
+      "Colima's VM runs no amd64 images and asks for Rosetta and still runs none",
+      0,
+      "Again",
+    ],
+  ],
+  ColimaShort: [
+    [
+      "once started again, Colima's VM has 2 GiB and runs no amd64 images, still short of what a run naming no memory or platform needs",
+      1,
+      "Again",
+    ],
+    [
+      "once started again, Colima's VM did not say its memory and did not say whether it runs amd64 images, still short of what a run naming no memory or platform needs",
+      1,
+      "Again",
+    ],
+  ],
 };
 
 test("every stop is said by what was found, exits zero where it waits on the person and one where something failed, and names the command its rule waits on", () => {
@@ -583,6 +616,8 @@ test("only a stop made before the run's first act says nothing was changed, whic
     "LoginMissing",
     "NotAdmin",
     "Npmless",
+    "Rebuild",
+    "Rosettaless",
     "Serviceless",
     "SettingsUnread",
     "Unpackaged",
@@ -742,6 +777,9 @@ test("each thing a run found is said as found and each thing it did as did, in w
     `did: set ${rosterUnit}, which was running, to start when you log in`,
     `did: started ${rosterUnit}, which also starts when you log in`,
   ]);
+});
+
+test("each kind of note is said as found, as did or as a tell, by its kind alone", () => {
   const words = Object.fromEntries(
     Object.entries(runnerNotes).map(([kind, notes]) => [
       kind,
@@ -783,6 +821,8 @@ test("each thing a run found is said as found and each thing it did as did, in w
     Started: ["did"],
     Restarted: ["did"],
     Colima: ["tell"],
+    ColimaRan: ["did"],
+    ColimaVm: ["found"],
   });
 });
 

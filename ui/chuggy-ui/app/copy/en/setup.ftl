@@ -441,7 +441,7 @@ setup-mend-package-newer = If the { -runner } package here, { $program }, is old
 # spells -brief-check: to check is a verb here
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-live-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds a registration for that { -project }. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the { -site } no longer knows that registration, so work on your { -ticket(form: "plural") } runs on this machine { $runs }, { $job } a { -run }.{ $chat ->
+setup-mend-runner-live-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds a registration for that { -project }. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the { -site } no longer knows that registration, so work on your { -ticket(form: "plural") } runs on this machine { $runs }, { $job } a { -run }.{ $fit }{ $chat ->
     [with] { " " }{ $ask } Tell me yes to go ahead, and whether you want the { -chat-host } too.
    *[without] { " " }Tell me yes to go ahead.
 }
@@ -463,7 +463,7 @@ setup-mend-chat-host-short = { $said ->
 # spells -run: to run is a verb here
 setup-mend-runner-elsewhere = Open { $page }, press { $add } and do what it shows on the machine that will run the work. Tell me once the { -runner } is running.
 setup-mend-runner-instead = For { -runner(form: "a") } on another machine instead, open { $page } there, press { $add } and do what it shows, and tell me once it is running.
-setup-mend-runner-offer = { setup-next-runner }. I can make this machine one. { $put }{ $chat ->
+setup-mend-runner-offer = { setup-next-runner }. I can make this machine one. { $put }{ $fit }{ $chat ->
     [with] { " " }{ $ask } Tell me yes to go ahead, and whether you want the { -chat-host } too.
    *[without] { " " }Tell me yes to go ahead.
 } For { -runner(form: "a") } on another machine instead, that machine's own browser opens { $page }, where you press { $add } and do what it shows.
@@ -498,6 +498,38 @@ setup-mend-runner-engineless = { setup-next-runner }, in containers. This machin
 setup-mend-runner-engineless-colima = { setup-next-runner }, in containers. This machine cannot be one yet: Docker did not answer here. On a Mac, Docker runs in Colima, which { $start } starts without a password. Tell me once Docker answers you here. { $instead }
 setup-mend-runner-docker = { setup-next-runner }, in containers. This machine cannot be one yet. { $why } { $state }. { $mend } { $instead }
 setup-mend-runner-or-running = { $when }, or that { -runner(form: "a") } is running
+setup-mend-runner-fit = { setup-next-runner }, in containers. This machine cannot be one yet. { $told } { $instead }
+setup-mend-fit-job = the { $job } { -run(form: "a") } naming no memory needs, and { $spare } for the container engine beside it
+# spells -run: to run is a verb here
+setup-mend-fit-small = { " " }{ $machine ->
+    [mac] This Mac has { $has }, and Colima's VM is given at most half of it, less than { setup-mend-fit-job }, so this machine has no room for such { -run(form: "a") }: run it on another machine.
+   *[engine] Here { $engine } has { $has }, less than { setup-mend-fit-job }, so this machine has no room for such { -run(form: "a") }: run it on another machine.
+}
+# spells -run: to run is a verb here
+setup-mend-fit-colima = { " " }{ $vm ->
+    [none] Docker runs in Colima on a Mac, and Colima has no VM here yet. With your yes I first make one with { $gives ->
+        [both] { $target } and Rosetta for the amd64 images { -run(form: "a") } naming no platform needs
+       *[memory] { $target }
+    }, room for { setup-mend-fit-job }: { $commands }.
+   *[vm] { $short ->
+        [both] Colima's VM here has { $has }, short of { setup-mend-fit-job }, and runs no amd64 images, which { -run(form: "a") } naming no platform needs.
+        [memory] Colima's VM here has { $has }, short of { setup-mend-fit-job }.
+        [amd64] Colima's VM here runs no amd64 images, which { -run(form: "a") } naming no platform needs.
+       *[none] Colima's VM here is stopped.
+    } With your yes I first { $vm ->
+        [running] stop it, which stops its containers, and start it again
+       *[stopped] start it
+    }{ $gives ->
+        [both] { " " }with { $target } and Rosetta
+        [memory] { " " }with { $target }
+        [rosetta] { " " }with Rosetta
+       *[none] { "" }
+    }: { $commands }.
+}
+setup-mend-fit-commands = { $first }{ $then ->
+    [then] , then { $second }
+   *[alone] { "" }
+}
 
 ## The ticket's step.
 

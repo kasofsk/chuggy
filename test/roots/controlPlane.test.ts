@@ -382,6 +382,7 @@ const truncatedWakeProgram = `
       resource: '11',
       principal: 'oidc:' + session,
       session,
+      ticketWakes: { thread: 'On' },
     });
     let advanced = 0;
     const wakes = {

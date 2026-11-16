@@ -2104,6 +2104,11 @@ const sessionHeaviest: Readonly<
     payload: planeJsonHeaviest({ standing: false }),
     status: 204,
   },
+  ticketWakes: {
+    headers: json,
+    payload: planeJsonHeaviest({ thread: "Off" }),
+    status: 200,
+  },
   wake: {
     headers: json,
     payload: planeJsonHeaviest({

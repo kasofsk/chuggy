@@ -7,6 +7,11 @@
  * was filed from for one of the first; a thread's own attempt on its member's
  * chat host wakes it for one of the second, about a job, a watch or a timer
  * that thread set.
+ *
+ * A TICKET WAKE REACHES A THREAD ONLY WHERE ITS SETTING IS `On`: the thread's
+ * own choice where it made one, else its member's chat host's setting as that
+ * host last named it on a poll, else `Off`. A ticket wake that does not reach
+ * its thread is not kept for later. The job wakes ask no setting.
  */
 export const allThreadTicketWakeReasons = [
   "TicketRefused",
@@ -38,3 +43,20 @@ export const allThreadWakeReasons = [
   ...allThreadJobWakeReasons,
 ] as const;
 export type ThreadWakeReason = (typeof allThreadWakeReasons)[number];
+
+/** Whether ticket wakes reach a thread, as a thread chooses it and as a chat host names it. */
+export const threadTicketWakeSettings = ["On", "Off"] as const;
+export type ThreadTicketWakeSetting = (typeof threadTicketWakeSettings)[number];
+
+/** A thread's own choice and its member's chat host's setting, each absent where none was made. */
+export interface ThreadTicketWakes {
+  readonly thread?: ThreadTicketWakeSetting;
+  readonly host?: ThreadTicketWakeSetting;
+}
+
+/** The setting a thread's ticket wakes follow: its own choice, else its host's, else `Off`. */
+export function threadTicketWakesEffective(
+  wakes: ThreadTicketWakes,
+): ThreadTicketWakeSetting {
+  return wakes.thread ?? wakes.host ?? "Off";
+}

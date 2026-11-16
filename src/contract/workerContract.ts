@@ -170,6 +170,8 @@ export const workerContractFeatures = {
   TargetMerge: undefined,
   /** A work task may name the paths its push may not change, a field a pod that does not implement it refuses its whole answer over. */
   PushPathsRefused: undefined,
+  /** A session plane that takes a thread's choice of whether it is woken for its tickets, answers it in a thread's facts, and reads a chat host's setting on its poll. */
+  ThreadTicketWakes: undefined,
 } as const satisfies Readonly<
   Record<string, WorkerContractVersion | undefined>
 >;

@@ -339,18 +339,20 @@ function poolAssignmentNamed(request: FastifyRequest): string | undefined {
   return named.success ? named.data : undefined;
 }
 
-/** What a poll's query asks: what it holds, its room for each kind of work, and a chat host's idle bound and its threads' capabilities where it named them. */
+/** What a poll's query asks: what it holds, its room for each kind of work, and a chat host's idle bound, its threads' capabilities and their ticket wakes where it named them. */
 function poolPollQueryAsked(
   query: ReturnType<ReturnType<typeof workerPoolPollQuerySchema>["parse"]>,
 ): WorkerPoolAskedQuery {
   const idleSecs = query[workerPoolPollQuery.idleSecs];
   const sessionCapabilities = query[workerPoolPollQuery.sessionCapabilities];
+  const ticketWakes = query[workerPoolPollQuery.ticketWakes];
   return {
     held: query[workerPoolPollQuery.held],
     wanted: query[workerPoolPollQuery.wanted],
     wantedSessions: query[workerPoolPollQuery.wantedSessions],
     ...(idleSecs === undefined ? {} : { idleSecs }),
     ...(sessionCapabilities === undefined ? {} : { sessionCapabilities }),
+    ...(ticketWakes === undefined ? {} : { ticketWakes }),
   };
 }
 

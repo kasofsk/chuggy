@@ -82,12 +82,18 @@
  * on each poll as `workerPoolPollQuery.sessionCapabilities`. A thread it claims
  * runs under its roster intersected with that set, in its facts and in what
  * the API admits its bearer to; a host naming none leaves the roster whole.
+ *
+ * A HOST'S SETTINGS MAY NAME WHETHER ITS THREADS ARE WOKEN FOR THEIR TICKETS,
+ * which it sends on each poll as `workerPoolPollQuery.ticketWakes`. A thread
+ * that made no choice of its own follows the setting its member's host last
+ * named; a host naming none leaves such a thread unwoken.
  */
 
 import { z } from "zod";
 
 import { textUtf8Bytes } from "./http.ts";
 import { sessionEndedSchema } from "./sessionPlane.ts";
+import { threadTicketWakeSettings } from "./threadWake.ts";
 import { workerContractVersionOf } from "./workerContract.ts";
 import {
   workerPoolAssignmentIdentitySchema,
@@ -115,9 +121,10 @@ export const chatHostCredentialSchema = z.strictObject({
   name: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u),
 });
 
-/** What a host's settings name that chuggy reads: the capabilities its threads may hold, absent where it names none. */
+/** What a host's settings name that chuggy reads: the capabilities its threads may hold and whether they are woken for their tickets, each absent where it names none. */
 export const chatHostSettingsSchema = z.strictObject({
   sessionCapabilities: workerPoolSessionCapabilitiesSchema.exactOptional(),
+  ticketWakes: z.enum(threadTicketWakeSettings).exactOptional(),
 });
 
 /** Start the session the pool's poll handed the host under `assignment`, on the credential it names where it names one, and in the directory kept for the thread it names where it names one, as the poll named it. */
