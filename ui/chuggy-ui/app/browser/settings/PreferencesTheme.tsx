@@ -15,7 +15,8 @@
  * so one write is in flight and one waits for each of the two, however fast
  * the presses come.
  * Only the last press's answer reads again or puts back, and what it puts back
- * is what the server held when it was sent.
+ * is what the server holds: the reads as the first press found them, with each
+ * landed write's choice resolved on them in turn.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -142,15 +143,15 @@ function themeReadKeys(
  * neither. */
 const themeReplaced: ApiResult<undefined> = { outcome: "Ok", value: undefined };
 
-/** The write under `mutationKey` sent with `worn` put on the reads first,
- * after every earlier press's write has answered, and not sent where a later
- * press to the same write was made by then; where it is refused and no press
- * followed it, the reads are put back to what the server held. */
+/** The write under `mutationKey` sent with the reads `chosen` resolves put on
+ * them first, after every earlier press's write has answered, and not sent
+ * where a later press to the same write was made by then; where it is refused
+ * and no press followed it, the reads are put back to what the server holds. */
 async function themeHeldWhile(
   client: QueryClient,
   partition: PartitionIdentity | undefined,
   mutationKey: readonly unknown[],
-  worn: (held: ThemeHeld) => void,
+  chosen: (held: ThemeHeld) => ThemeHeld,
   write: () => Promise<ApiResult<undefined>>,
 ): Promise<ApiResult<undefined>> {
   const turn = themeTurnOf(client);
@@ -167,8 +168,7 @@ async function themeHeldWhile(
     );
     const held = themeHeldOf(client, partition);
     if (first) turn.kept = held;
-    worn(held);
-    return themeHeldOf(client, partition);
+    themeHeldPut(client, partition, chosen(held));
   });
   turn.worn = wearing.catch(() => undefined);
   let replaced = false;
@@ -184,7 +184,8 @@ async function themeHeldWhile(
   } finally {
     turn.unanswered -= 1;
     if (turn.pressedLast.get(target) === press) turn.pressedLast.delete(target);
-    if (answered?.outcome === "Ok" && !replaced) turn.kept = await wearing;
+    if (answered?.outcome === "Ok" && !replaced && turn.kept !== undefined)
+      turn.kept = chosen(turn.kept);
     else if (press === turn.pressed && turn.kept !== undefined)
       themeHeldPut(client, partition, turn.kept);
   }
@@ -211,30 +212,27 @@ function themeGlobalWrite(
   const mutationKey = consoleWriteKey("theme-choice");
   return {
     mutationKey,
-    write: (ports, choice, client) =>
-      themeHeldWhile(
+    write: (ports, choice, client) => {
+      const document =
+        choice.kind === "Owned"
+          ? owned.find((theme) => theme.theme === choice.theme)
+          : undefined;
+      if (document !== undefined)
+        client.setQueryData(ownedThemeQuery(document.theme).queryKey, document);
+      return themeHeldWhile(
         client,
         partition,
         mutationKey,
-        (held) => {
-          client.setQueryData(themeChoiceQuery().queryKey, { choice });
-          const document =
-            choice.kind === "Owned"
-              ? owned.find((theme) => theme.theme === choice.theme)
-              : undefined;
-          if (document !== undefined)
-            client.setQueryData(
-              ownedThemeQuery(document.theme).queryKey,
-              document,
-            );
-          if (partition !== undefined && held.appearance !== undefined)
-            client.setQueryData(
-              projectAppearanceQuery(partition).queryKey,
-              themeGlobalChosen(held.appearance, choice, owned),
-            );
-        },
+        (held) => ({
+          choice: { choice },
+          appearance:
+            held.appearance === undefined
+              ? undefined
+              : themeGlobalChosen(held.appearance, choice, owned),
+        }),
         () => apiWriteThemeChoice(ports, choice),
-      ),
+      );
+    },
     refusal: themeRefusalOf,
     landed: (client) => themeReread(client, partition),
   };
@@ -256,13 +254,13 @@ function themeOverrideWrite(
         client,
         partition,
         mutationKey,
-        (held) => {
-          if (held.appearance !== undefined)
-            client.setQueryData(
-              projectAppearanceQuery(partition).queryKey,
-              themeOverrideChosen(held.appearance, choice, owned),
-            );
-        },
+        (held) => ({
+          choice: held.choice,
+          appearance:
+            held.appearance === undefined
+              ? undefined
+              : themeOverrideChosen(held.appearance, choice, owned),
+        }),
         () => apiWriteProjectThemeOverride(ports, partition, choice),
       ),
     refusal: themeRefusalOf,

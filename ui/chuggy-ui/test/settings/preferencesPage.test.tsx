@@ -607,3 +607,53 @@ test("a global choice queued behind a write is sent even when the project row is
   expect(checkedIn("Theme")).toBe("Ember");
   expect(checkedIn("In this project")).toBe("High contrast");
 });
+
+test("what a refusal puts back is what the server holds, even after an earlier refused press to the other write", async () => {
+  const global = heldAnswer();
+  const ember = heldAnswer();
+  const contrast = heldAnswer();
+  const held: Held = {
+    global: undefined,
+    override: undefined,
+    projectDefault: undefined,
+  };
+  await themeDrawn(
+    held,
+    answeredInTurn([global.answered, ember.answered, contrast.answered]),
+  );
+  await turned(() => {
+    fireEvent.click(
+      within(group("Theme")).getByRole("radio", { name: "Harbour" }),
+    );
+  });
+  await turned(() => {
+    fireEvent.click(
+      within(group("In this project")).getByRole("radio", { name: "Ember" }),
+    );
+  });
+  await turned(() => {
+    global.release(refusedNotFound());
+  });
+  await turned(() => {
+    fireEvent.click(
+      within(group("In this project")).getByRole("radio", {
+        name: "High contrast",
+      }),
+    );
+  });
+  await turned(() => {
+    ember.release(answer(undefined, 204));
+  });
+  await turned(() => {
+    contrast.release(refusedNotFound());
+  });
+  await settled();
+  expect(held).toStrictEqual({
+    global: undefined,
+    override: { kind: "BuiltIn", theme: "ember" },
+    projectDefault: undefined,
+  });
+  expect(checkedIn("Theme")).toBe("Chuggy");
+  expect(checkedIn("In this project")).toBe("Ember");
+  expect(rootAccent()).toBe(accentOf(builtInThemes.ember));
+});
