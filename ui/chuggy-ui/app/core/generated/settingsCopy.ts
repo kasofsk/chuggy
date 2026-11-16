@@ -118,7 +118,25 @@ export interface SettingsCopy {
   readonly "settings-invite-link-expired": Record<never, never>;
   readonly "settings-invite-brand": Record<never, never>;
   readonly "settings-invite-needed": Record<never, never>;
-  readonly "settings-invite-invited": Record<never, never>;
+  readonly "settings-invite-reading": Record<never, never>;
+  readonly "settings-invite-own-title": Record<never, never>;
+  readonly "settings-invite-own-from": {
+    readonly inviter: unknown;
+  };
+  readonly "settings-invite-own": Record<never, never>;
+  readonly "settings-invite-join-title": {
+    readonly workspace: unknown;
+  };
+  readonly "settings-invite-join-from": {
+    readonly inviter: unknown;
+    readonly role: unknown;
+  };
+  readonly "settings-invite-join": {
+    readonly role: unknown;
+    readonly workspace: unknown;
+  };
+  readonly "settings-invite-ended": Record<never, never>;
+  readonly "settings-invite-sign-in-github": Record<never, never>;
   readonly "settings-invite-joining": Record<never, never>;
   readonly "settings-invite-not-valid": Record<never, never>;
   readonly "settings-invite-sign-in": Record<never, never>;

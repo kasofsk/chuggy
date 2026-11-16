@@ -2,7 +2,9 @@
  * The invite page drawn as the console's root mounts it, under `StrictMode`
  * and the console's cache and over the holder's doubles, against a plane a
  * case scripts: what it sent the plane of a token, the buttons it draws, and
- * the page taken down and mounted again in the same document.
+ * the page taken down and mounted again in the same document. A summary is
+ * answered apart from every other request, a tenant's link from octo-maker
+ * unless a case says otherwise.
  */
 
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -25,6 +27,16 @@ import { answer, scriptedFetch, settled } from "./screenHarness.tsx";
 import type { SentRequest } from "./screenHarness.tsx";
 
 const redemptionPath = "/access/v1/invite-links/redemptions";
+const summaryPath = "/access/v1/invite-links/summaries";
+
+/** What a tenant's open link is summarized as. */
+export const inviteJoinSummary = {
+  state: "Open",
+  kind: "Tenant",
+  displayName: "Acme Co",
+  role: "Member",
+  mintedBy: "octo-maker",
+};
 
 /** What a tenant's link answers its redemption with. */
 export const inviteGranted = {
@@ -65,13 +77,18 @@ export async function inviteOpened(
   at: Parameters<typeof inviteBrowser>[0],
   served: {
     readonly answered?: (request: SentRequest) => Response | Promise<Response>;
+    readonly summarized?: (
+      request: SentRequest,
+    ) => Response | Promise<Response>;
     readonly configuration?: ConsoleConfiguration;
   } = {},
 ): Promise<InviteOpened> {
   const { browser, holder } = inviteBrowser(at);
   const { session, signIns } = inviteSession(phase, served.configuration);
-  const scripted = scriptedFetch(
-    served.answered ?? (() => answer(inviteGranted)),
+  const answered = served.answered ?? (() => answer(inviteGranted));
+  const summarized = served.summarized ?? (() => answer(inviteJoinSummary));
+  const scripted = scriptedFetch((request) =>
+    request.url.endsWith(summaryPath) ? summarized(request) : answered(request),
   );
   vi.stubGlobal("fetch", scripted.fetch);
   const client = consoleQueryClient();
@@ -95,6 +112,15 @@ export function inviteRedemptionsSent(
 ): readonly unknown[] {
   return sent
     .filter((request) => request.url.endsWith(redemptionPath))
+    .map((request) => request.body);
+}
+
+/** What the page sent the plane of a token to summarize, a body a read, in order. */
+export function inviteSummariesSent(
+  sent: readonly SentRequest[],
+): readonly unknown[] {
+  return sent
+    .filter((request) => request.url.endsWith(summaryPath))
     .map((request) => request.body);
 }
 
