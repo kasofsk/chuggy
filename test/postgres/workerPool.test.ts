@@ -694,12 +694,12 @@ const poolPlaneColumns = [
   [
     "personal_runner",
     "SELECT",
-    "agents_advertised,capabilities,credentials_named,executions_polled_at,memory_ceiling_mib,owner,principal,runner_package,runner_version,tenant",
+    "agents_advertised,capabilities,credentials_named,executions_polled_at,memory_ceiling_mib,memory_room_mib,owner,principal,runner_package,runner_version,tenant",
   ],
   [
     "personal_runner",
     "UPDATE",
-    "agents_advertised,capabilities,credentials_named,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
+    "agents_advertised,capabilities,credentials_named,executions_polled_at,last_polled_at,memory_ceiling_mib,memory_room_mib,runner_package,runner_version",
   ],
   ["personal_runner_project", "SELECT", "owner,priority,project,tenant"],
   ["project", "SELECT", "lifecycle,project,tenant"],
@@ -728,7 +728,7 @@ const poolPlaneColumns = [
  * attempt's invocation, the digest a bearer is checked against and a pool's
  * client are none of them. A session's launch is read whole, and a pool's
  * liveness and the runner, capabilities, memory ceiling and credentials its
- * poll named, and whether a personal runner's capabilities advertise its
+ * poll named, a personal runner's memory room, and whether a personal runner's capabilities advertise its
  * agents, are all of its row the plane writes, as a chat host's liveness,
  * runner and credentials are of its, while a pool's registrant is the account its claims spend and a press
  * is read and spent by the claim it lets through, as a personal runner's
@@ -849,11 +849,11 @@ test("a pool is listed live only while its newest poll of either kind is inside 
       [partition.tenant, partition.project, pool, secsAgo],
     );
   assert.deepEqual(await listed(), { polled: false, live: false });
-  await assignments.polled(current, false);
+  await assignments.polled(current, false, undefined);
   assert.deepEqual(await listed(), { polled: false, live: false });
-  await assignments.polled(stale, true);
+  await assignments.polled(stale, true, undefined);
   assert.deepEqual(await listed(), { polled: false, live: false });
-  await assignments.polled(current, true);
+  await assignments.polled(current, true, undefined);
   assert.deepEqual(await listed(), { polled: true, live: true });
   assert.deepEqual(
     await rig.harness.query(

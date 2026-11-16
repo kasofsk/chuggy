@@ -187,8 +187,16 @@ export interface ExecutionSummary {
   readonly personalRunnerWait?: PersonalRunnerWait;
   /** The pause that ends first of those holding every `Live` runner it waits on, present only where every one of them is held. */
   readonly paused?: AgentAccountPause;
+  /** The largest memory room of the `Live` runners it waits on and the memory it needs, present only where every one of them named a room above nothing and below that, and none is paused. */
+  readonly personalRunnerRoom?: PersonalRunnerRoom;
   /** The earlier execution of the ticket whose passing verdict settled this one rather than a run, its task and the work cycle it ran in. */
   readonly carriedFrom?: ExecutionCarrySource;
+}
+
+/** The memory, in MiB, a short runner has free and an execution needs. */
+export interface PersonalRunnerRoom {
+  readonly freeMib: number;
+  readonly neededMib: number;
 }
 
 export interface ExecutionCarrySource {

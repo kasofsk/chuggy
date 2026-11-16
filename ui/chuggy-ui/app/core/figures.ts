@@ -36,7 +36,7 @@
 
 import type { RunTotals } from "../../../../src/contract/responses.ts";
 import type { RunRollupBasis, RunTime } from "./runTotals.ts";
-import type { Copy, CopyOrData } from "./copy.ts";
+import type { Copy, CopyOrData, CopyText } from "./copy.ts";
 
 export const figureKinds = [
   "Cost",
@@ -351,6 +351,43 @@ export function bytesSetFigure(bytes: number): Figure {
       id: "figures-unit-kibibytes",
     });
   return countFigure(bytes, { id: "figures-unit-bytes" });
+}
+
+const mebibytesPerGibibyte = 1024;
+
+/** Tenths in a whole, the finest a size in GiB is read to. */
+const tenthsPerWhole = 10;
+
+/** A figure that is a number and the unit it is read in. */
+export type QuantityFigure = Extract<Figure, { kind: "Quantity" }>;
+
+/**
+ * A size of memory a runner has free or a job needs, in GiB to the tenth from
+ * a GiB up, whole where the tenth is nothing, and in whole MiB below a GiB.
+ */
+export function memoryMibFigure(mib: number): QuantityFigure {
+  if (mib < mebibytesPerGibibyte)
+    return {
+      kind: "Quantity",
+      text: groupedDigits(mib),
+      unit: { id: "figures-unit-mebibytes" },
+    };
+  const tenths = Math.round((mib * tenthsPerWhole) / mebibytesPerGibibyte);
+  const whole = groupedDigits(Math.trunc(tenths / tenthsPerWhole));
+  const tenth = tenths % tenthsPerWhole;
+  return {
+    kind: "Quantity",
+    text: tenth === 0 ? whole : `${whole}.${String(tenth)}`,
+    unit: { id: "figures-unit-gibibytes" },
+  };
+}
+
+/** A quantity as the words of a line it stands in, its number and its unit as `Figure` draws them. */
+export function quantityFigureText(
+  figure: QuantityFigure,
+  text: CopyText,
+): string {
+  return `${figure.text} ${text(figure.unit)}`;
 }
 
 function clockOf(at: Date): string {

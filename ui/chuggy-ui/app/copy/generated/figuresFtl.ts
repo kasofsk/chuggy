@@ -49,6 +49,7 @@ figures-unit-hours = h
 figures-unit-minutes = min
 figures-unit-seconds = s
 figures-unit-milliseconds = ms
+figures-unit-gibibytes = GiB
 figures-unit-mebibytes = MiB
 figures-unit-kibibytes = KiB
 figures-unit-bytes = bytes

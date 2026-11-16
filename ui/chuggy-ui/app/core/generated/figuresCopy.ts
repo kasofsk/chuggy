@@ -56,6 +56,7 @@ export interface FiguresCopy {
   readonly "figures-unit-minutes": Record<never, never>;
   readonly "figures-unit-seconds": Record<never, never>;
   readonly "figures-unit-milliseconds": Record<never, never>;
+  readonly "figures-unit-gibibytes": Record<never, never>;
   readonly "figures-unit-mebibytes": Record<never, never>;
   readonly "figures-unit-kibibytes": Record<never, never>;
   readonly "figures-unit-bytes": Record<never, never>;

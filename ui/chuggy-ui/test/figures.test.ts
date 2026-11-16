@@ -21,6 +21,8 @@ import {
   instantFigure,
   instantFigureAtMs,
   instantText,
+  memoryMibFigure,
+  quantityFigureText,
   shareFigure,
   sharePartFigure,
   sinceFigure,
@@ -276,4 +278,16 @@ test("a part short of a whole percent reads as under one, where a share rounded 
   expect(textOf(sharePartFigure(0.004))).toBe("<1");
   expect(textOf(sharePartFigure(0))).toBe("0");
   expect(textOf(sharePartFigure(0.349))).toBe("34");
+});
+
+test("a size of memory reads in GiB to the tenth from a GiB, whole where the tenth is nothing, and in MiB below", () => {
+  expect(quantityFigureText(memoryMibFigure(1_434), copyTextEn)).toBe(
+    "1.4 GiB",
+  );
+  expect(quantityFigureText(memoryMibFigure(4_096), copyTextEn)).toBe("4 GiB");
+  expect(quantityFigureText(memoryMibFigure(1_024), copyTextEn)).toBe("1 GiB");
+  expect(quantityFigureText(memoryMibFigure(512), copyTextEn)).toBe("512 MiB");
+  expect(quantityFigureText(memoryMibFigure(1_023), copyTextEn)).toBe(
+    "1,023 MiB",
+  );
 });

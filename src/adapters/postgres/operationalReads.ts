@@ -50,6 +50,7 @@ import {
   type LatestExecutionPage,
   type OperationalReadStore,
   type OutputDefinition,
+  type PersonalRunnerRoom,
   type ResultArtifactResource,
 } from "../../interpreter/operationsView.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
@@ -529,12 +530,15 @@ interface ExecutionRunnerRow {
   readonly off: boolean;
   readonly reasons: string[] | null;
   readonly admitted_by_press: boolean | null;
+  readonly memory_room_mib: string | null;
+  readonly memory_mib: string;
 }
 
-/** What one execution waits on of its owner's runners, and the pause holding them where one holds every one. */
+/** What one execution waits on of its owner's runners, the pause holding them where one holds every one, and the memory they are short of where every one is. */
 interface ExecutionRunnerWait {
   readonly wait: PersonalRunnerWait;
   readonly paused?: AgentAccountPause;
+  readonly room?: PersonalRunnerRoom;
 }
 
 /**
@@ -543,7 +547,8 @@ interface ExecutionRunnerWait {
  * listing its project, matching its requirement and fitting its memory, sized
  * at `memoryMibDefault` where it names none), with whether that runner polled
  * for executions within the deferral's window, whether it is offered the
- * attempt's agent, and its pause by the credentials it named. This fourth of
+ * attempt's agent, its pause by the credentials it named, the memory room its
+ * last poll named, and the memory the execution needs. This fourth of
  * the five copies of the claim's predicate `./personalRunner.ts` counts is
  * held to the claim's answers in `test/postgres/workerPoolClaim.test.ts`.
  */
@@ -564,7 +569,9 @@ async function executionsRunnerRows(
                     ELSE to_char(held.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text
                END AS paused_until,
                COALESCE(held.reasons='{off}'::text[],false) AS off,
-               held.reasons,held.admitted_by_press
+               held.reasons,held.admitted_by_press,
+               r.memory_room_mib::text AS memory_room_mib,
+               COALESCE(e.memory_mib,${memoryMibDefault}::bigint)::text AS memory_mib
           FROM execution e
           JOIN execution_attempt a
             ON a.tenant=e.tenant AND a.project=e.project AND a.execution=e.execution
@@ -627,10 +634,27 @@ export function executionRunnerPausedEvery(
   )[0];
 }
 
+/** The largest room of `live` and the memory the execution needs, where every one named a room above nothing and below that, and nothing where any did not. */
+function executionRunnerWaitRoom(
+  live: readonly Pick<ExecutionRunnerRow, "memory_room_mib" | "memory_mib">[],
+): PersonalRunnerRoom | undefined {
+  const [first] = live;
+  if (first === undefined) return undefined;
+  const neededMib = projectRowCounter(first.memory_mib, "execution memory");
+  const rooms = live.map((row) =>
+    row.memory_room_mib === null
+      ? 0
+      : projectRowCounter(row.memory_room_mib, "runner memory room"),
+  );
+  if (rooms.some((room) => room <= 0 || room >= neededMib)) return undefined;
+  return { freeMib: Math.max(...rooms), neededMib };
+}
+
 /**
  * What an execution waits on of the runners `rows` names: a live one offered
- * its agent, and the pause ending first where every such one is held; or else
- * under `Strict` an offline one offered it, or runners none of which is.
+ * its agent, and the pause ending first where every such one is held, or else
+ * the memory they are short of where every such one is; or else under
+ * `Strict` an offline one offered it, or runners none of which is.
  */
 function executionRunnerWaitOf(
   rows: readonly ExecutionRunnerRow[],
@@ -640,7 +664,9 @@ function executionRunnerWaitOf(
   const live = rows.filter((row) => row.live === true && row.offered === true);
   if (live.length > 0) {
     const paused = executionRunnerPausedEvery(live.map(executionRunnerPause));
-    return { wait: "Live", ...(paused === undefined ? {} : { paused }) };
+    if (paused !== undefined) return { wait: "Live", paused };
+    const room = executionRunnerWaitRoom(live);
+    return { wait: "Live", ...(room === undefined ? {} : { room }) };
   }
   if (asWorkerPoolOwnerFallback(first.owner_fallback) !== "Strict")
     return undefined;
@@ -795,6 +821,7 @@ async function executionPageAnswered(
       ...(takenAt === undefined ? {} : { takenAt }),
       ...(wait === undefined ? {} : { personalRunnerWait: wait.wait }),
       ...(wait?.paused === undefined ? {} : { paused: wait.paused }),
+      ...(wait?.room === undefined ? {} : { personalRunnerRoom: wait.room }),
       ...(carriedFrom === undefined ? {} : { carriedFrom }),
     };
   });
