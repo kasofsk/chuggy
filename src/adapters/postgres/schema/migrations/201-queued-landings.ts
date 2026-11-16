@@ -15,8 +15,8 @@ import { stackLandingsFunction, type Migration } from "../shared.ts";
 
 const landings = `public.${stackLandingsFunction}(in_tenant text, in_project text, in_repository text, in_target text, in_tip text, in_limit integer)`;
 
-export const migration200: Migration = {
-  version: 200,
+export const migration201: Migration = {
+  version: 201,
   name: "a stack's landings follow a proposal merged through the forge's merge queue",
   statements: [
     `CREATE OR REPLACE FUNCTION ${landings}
