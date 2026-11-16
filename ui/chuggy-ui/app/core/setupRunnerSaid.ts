@@ -15,7 +15,6 @@
 
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyArgument, CopyHanded, CopyId } from "./copy.ts";
-import { runnerPackageOffered, runnerPackages } from "./runners.ts";
 
 /** Where a run was for, as its lines name it: a project of a workspace for `runner`, and for `chat-host` the workspace alone; `workspaceName` is the workspace's display name, where the run read it. */
 export interface SetupRunnerAt {
@@ -250,7 +249,9 @@ export type SetupRunnerNote =
       readonly unit: string;
     }
   /** The agent's MCP configuration names chuggy's server for the project, as it was found or once this run added it. */
-  | { readonly note: "ServerFound" | "ServerAdded"; readonly path: string };
+  | { readonly note: "ServerFound" | "ServerAdded"; readonly path: string }
+  /** On a Mac, that docker's VM is the person's to keep running: `start` starts it whenever they log in. */
+  | { readonly note: "Colima"; readonly start: string };
 
 /**
  * What the runner package's own check looks at, by the names it prints them
@@ -303,7 +304,6 @@ export type SetupRunnerRead =
 
 /** Why a run stopped short of a runner the site sees live. */
 export type SetupRunnerStop =
-  | { readonly stop: "Mac" }
   | {
       readonly stop: "Unread";
       readonly read: SetupRunnerRead;
@@ -311,7 +311,12 @@ export type SetupRunnerStop =
     }
   | { readonly stop: "NotAdmin" }
   | { readonly stop: "Serviceless"; readonly guide: string }
-  | { readonly stop: "Engineless"; readonly asked: readonly SetupEngineAsked[] }
+  | {
+      readonly stop: "Engineless";
+      readonly asked: readonly SetupEngineAsked[];
+      /** The command that starts the engine's VM, where it runs in one of the person's. */
+      readonly start: string | undefined;
+    }
   | {
       readonly stop: "DockerBarred";
       /** This machine's user the run is, by number, where the machine numbers them. */
@@ -329,9 +334,10 @@ export type SetupRunnerStop =
       readonly guide: string;
     }
   | { readonly stop: "Npmless" }
-  /** `runner` found no runner package it can use, which `mcp` installs: `found` is the one there, older than `least` or of a version that cannot be read. */
+  /** `runner` found no runner package it can use, which `mcp` installs: `program` is the platform's package, and `found` the one there, older than `least` or of a version that cannot be read. */
   | {
       readonly stop: "Unpackaged";
+      readonly program: string;
       readonly found:
         | { readonly command: string; readonly version: string | undefined }
         | undefined;
@@ -413,6 +419,8 @@ export type SetupRunnerStop =
       readonly credential: SetupClaudeCredential;
       readonly settings: string;
       readonly login: string;
+      /** What restarts every runner service of this machine's. */
+      readonly restart: string;
     }
   | { readonly stop: "ChatHostNotLive"; readonly waitedSecs: number }
   /** The person's chat host is another machine, `short` as the console shows it, which `chat-host` registers this machine in place of only where `--replace` names it. */
@@ -426,11 +434,6 @@ export type SetupRunnerStop =
       readonly stop: "ReplaceMismatched";
       readonly short: string;
       readonly live: boolean;
-    }
-  /** `chat-host` on a machine that is not the package's platform: the person registers one by hand from `page`, the workspace's personal runners page at the site. */
-  | {
-      readonly stop: "MacChatHost";
-      readonly page: string;
     };
 
 /** How a run of `mcp` ended: the agent's configuration names the server, or it stopped. */
@@ -454,7 +457,7 @@ export interface SetupRunnerStopSaid {
 }
 
 /** A note as its word and its text. */
-export type SetupRunnerNoteSaid = readonly ["found" | "did", Copy];
+export type SetupRunnerNoteSaid = readonly ["found" | "did" | "tell", Copy];
 
 /** A program by its name, and by its version where it said one. */
 function setupVersioned(
@@ -487,7 +490,8 @@ type SetupServiceNote = Extract<
       | "Running"
       | "Enabled"
       | "Started"
-      | "Restarted";
+      | "Restarted"
+      | "Colima";
   }
 >;
 
@@ -533,6 +537,11 @@ function setupServiceNoteSaid(note: SetupServiceNote): SetupRunnerNoteSaid {
       return [
         "did",
         { id: "setup-runner-note-restarted", args: { unit: note.unit } },
+      ];
+    case "Colima":
+      return [
+        "tell",
+        { id: "setup-runner-note-colima", args: { start: note.start } },
       ];
   }
 }
@@ -746,7 +755,6 @@ export function setupRunnerNoteSaid(
   note: SetupRunnerNote,
   at: SetupRunnerAt,
 ): SetupRunnerNoteSaid {
-  const project = setupRunnerNamed(at);
   switch (note.note) {
     case "Engine":
       return [
@@ -785,7 +793,7 @@ export function setupRunnerNoteSaid(
     case "PoolGone":
     case "Registered":
     case "Checked":
-      return setupPoolNoteSaid(note, project);
+      return setupPoolNoteSaid(note, setupRunnerNamed(at));
     case "Unit":
     case "UnitWritten":
     case "Linger":
@@ -794,6 +802,7 @@ export function setupRunnerNoteSaid(
     case "Enabled":
     case "Started":
     case "Restarted":
+    case "Colima":
       return setupServiceNoteSaid(note);
     case "ProjectLive":
     case "Hosted":
@@ -809,7 +818,7 @@ export function setupRunnerNoteSaid(
       return setupChatNoteSaid(note, at);
     case "ServerFound":
     case "ServerAdded":
-      return setupServerNoteSaid(note, project);
+      return setupServerNoteSaid(note, setupRunnerNamed(at));
   }
 }
 
@@ -868,14 +877,16 @@ function setupEngineNone({ engine, answered }: SetupEngineAsked): Copy {
 }
 
 function setupEnginelessSaid(
-  asked: readonly SetupEngineAsked[],
+  stop: Extract<SetupRunnerStop, { readonly stop: "Engineless" }>,
 ): SetupRunnerStopSaid {
+  const { asked, start } = stop;
+  const none = setupEnginesNone(asked);
   return {
     found: setupJoined("setup-runner-engine-each", asked.map(setupEngineNone)),
-    tell: {
-      id: "setup-runner-engineless-tell",
-      args: { none: setupEnginesNone(asked) },
-    },
+    tell:
+      start === undefined
+        ? { id: "setup-runner-engineless-tell", args: { none } }
+        : { id: "setup-runner-engineless-colima-tell", args: { start } },
     when: { id: "setup-runner-engineless-when" },
     again: "Again",
   };
@@ -1106,9 +1117,7 @@ function setupUnpackagedSaid(
   project: string,
 ): SetupRunnerStopSaid {
   const { found, least } = stop;
-  const program = setupProgramOf(
-    found?.command ?? runnerPackageOffered.program,
-  );
+  const program = setupProgramOf(found?.command ?? stop.program);
   return {
     found:
       found === undefined
@@ -1302,7 +1311,6 @@ function setupMachineSaid(
     SetupRunnerStop,
     {
       readonly stop:
-        | "Mac"
         | "Serviceless"
         | "SettingsUnread"
         | "LoginMissing"
@@ -1312,16 +1320,6 @@ function setupMachineSaid(
   >,
 ): SetupRunnerStopSaid {
   switch (stop.stop) {
-    case "Mac":
-      return {
-        found: { id: "setup-runner-mac-found" },
-        tell: {
-          id: "setup-runner-mac-tell",
-          args: { program: runnerPackages.darwin.program },
-        },
-        when: { id: "setup-runner-mac-when" },
-        again: "Status",
-      };
     case "Serviceless":
       return {
         found: {
@@ -1504,9 +1502,6 @@ function setupChatMintSaid(
   };
 }
 
-/** Restarts every runner service of this machine's, each of which reads the runner's settings only as it starts. */
-const setupRestartAll = `systemctl --user restart '${runnerPackages.linux.program}-*.service'`;
-
 /**
  * A credential a chat host cannot be handed, and how a copy is put where it
  * can be: a subscription's at the login's own place, any other in a directory
@@ -1549,7 +1544,7 @@ function setupChatLoginSaid(
                   settings,
                 },
               },
-        restart: setupRestartAll,
+        restart: stop.restart,
       },
     },
     when: { id: "setup-runner-chat-login-when", args: { credential } },
@@ -1689,7 +1684,6 @@ export function setupRunnerStopSaid(
 ): SetupRunnerStopSaid {
   const project = setupRunnerNamed(at);
   switch (stop.stop) {
-    case "Mac":
     case "Serviceless":
     case "SettingsUnread":
     case "LoginMissing":
@@ -1706,7 +1700,7 @@ export function setupRunnerStopSaid(
         again: "Again",
       };
     case "Engineless":
-      return setupEnginelessSaid(stop.asked);
+      return setupEnginelessSaid(stop);
     case "DockerBarred":
       return setupDockerBarredSaid(stop);
     case "Act":
@@ -1738,25 +1732,12 @@ export function setupRunnerStopSaid(
     case "ChatHostHeld":
     case "ReplaceMismatched":
       return setupHeldSaid(stop);
-    case "MacChatHost":
-      return {
-        found: { id: "setup-runner-mac-chat-found" },
-        tell: {
-          id: "setup-runner-mac-chat-tell",
-          args: { byHand: setupChatByHand(stop.page) },
-        },
-        when: { id: "setup-mend-chat-host-when" },
-        again: "Status",
-      };
   }
 }
 
-/** Zero where a stop waits on the person, one where something failed, two where the program cannot do this here. */
-export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
+/** Zero where a stop waits on the person, and one where something failed. */
+export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 {
   switch (stop.stop) {
-    case "Mac":
-    case "MacChatHost":
-      return 2;
     case "NotAdmin":
     case "Serviceless":
     case "Engineless":

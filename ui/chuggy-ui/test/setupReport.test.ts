@@ -60,11 +60,16 @@ import { setupRunnerStopSaid } from "../app/core/setupRunnerSaid.ts";
 import { machineScript } from "./setupMachine.ts";
 import type { SetupRunnerAt } from "../app/core/setupRunnerSaid.ts";
 import {
+  rosterColimaAtLogin,
   rosterChatHostStops,
   rosterRunnerStops,
+  runnerNotes,
   runnerNotesAll,
   runnerStopsAll,
 } from "./setupRunnerRoster.ts";
+
+/** Every note a run can say on any end: the Colima line is said only once a Mac's runner is live. */
+const runNotes = runnerNotesAll.filter((note) => note.note !== "Colima");
 
 const site = "https://chuggy.example";
 const next = `next: node ${machineScript}`;
@@ -510,11 +515,6 @@ function stopsOf(at: SetupRunnerAt): typeof runnerStopsAll {
   return runnerStopsAll.filter((one) => !others.includes(one.stop));
 }
 
-/** Whether a stop is said before any site is asked. */
-function siteless(stop: (typeof runnerStopsAll)[number]): boolean {
-  return stop.stop === "Mac" || stop.stop === "MacChatHost";
-}
-
 function checklist(
   thing: SetupThing,
   carried: SetupAnswers = setupAnswersNone,
@@ -651,11 +651,10 @@ const roster: {
       ...(project === undefined ? [] : [{ ended: "Hosted" as const }]),
     ].map((ended) => ({
       report: "Runner",
-      site:
-        ended.ended === "Stopped" && siteless(ended.stop) ? undefined : site,
+      site,
       workspace,
       project,
-      notes: runnerNotesAll,
+      notes: runNotes,
       ended,
     })),
   ),
@@ -685,7 +684,7 @@ const roster: {
           site,
           workspace,
           project,
-          notes: runnerNotesAll,
+          notes: runNotes,
           ended,
         })),
   ),
@@ -719,7 +718,7 @@ const roster: {
       report: "RunnerOut",
       workspace,
       project,
-      notes: runnerNotesAll,
+      notes: runNotes,
       out,
     })),
   ),
@@ -1508,24 +1507,39 @@ test("a run of runner that stopped says what it found and did, then the stop as 
   }
 });
 
-test("a run of runner says each thing it found and did in the order it met them, under the site it is signed in to, and a Mac is said with no site asked", () => {
+test("a run of runner says each thing it found and did in the order it met them, under the site it is signed in to", () => {
   for (const report of roster.Runner) {
     const lines = setupReportLines(report, machineScript, copyTextEn);
     const head = report.site === undefined ? [] : [`site: ${site}, signed in`];
     expect(lines.slice(0, head.length), JSON.stringify(report.ended)).toEqual(
       head,
     );
-    expect(
-      lines.slice(head.length, head.length + runnerNotesAll.length),
-    ).toEqual(
+    expect(lines.slice(head.length, head.length + runNotes.length)).toEqual(
       lines
-        .slice(head.length, head.length + runnerNotesAll.length)
+        .slice(head.length, head.length + runNotes.length)
         .filter((text) => /^(?:found|did): /u.test(text)),
     );
   }
-  expect(roster.Runner.filter((one) => one.site === undefined)).toHaveLength(
-    pairs.reduce((count, at) => count + stopsOf(at).filter(siteless).length, 0),
+});
+
+test("a Mac's runner live tells the person that Colima has to run for it, and how it starts at login, before the checklist next", () => {
+  const lines = setupReportLines(
+    {
+      report: "Runner",
+      site,
+      workspace: "acme",
+      project: "widgets",
+      notes: runnerNotes.Colima,
+      ended: { ended: "Live" },
+    },
+    machineScript,
+    copyTextEn,
   );
+  expect(lines.slice(0, 2)).toEqual([
+    `site: ${site}, signed in`,
+    `tell: Docker runs in Colima on this Mac, which has to be running for the runner's services to work, and after a restart is not until it is started again. ${rosterColimaAtLogin} starts it whenever you log in.`,
+  ]);
+  expect(lines[2]).toMatch(/^next: /u);
 });
 
 /** What a report says that only a run that had done nothing can say. */
@@ -1561,7 +1575,7 @@ test("a run of runner that a lost sign-in ends says everything it had found and 
       both,
     );
     expect(lines.slice(0, -ending.length), said).toEqual(
-      went.slice(1, 1 + runnerNotesAll.length),
+      went.slice(1, 1 + runNotes.length),
     );
     expect(setupReportExit(report), said).toBe(setupReportExit(report.out));
   }

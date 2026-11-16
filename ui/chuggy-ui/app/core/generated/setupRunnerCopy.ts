@@ -4,7 +4,6 @@
 /** Each message's variables, by name. */
 export interface SetupRunnerCopy {
   readonly "setup-runner-unchanged": Record<never, never>;
-  readonly "setup-runner-mac-none": Record<never, never>;
   readonly "setup-runner-picked-up": Record<never, never>;
   readonly "setup-runner-unknown": Record<never, never>;
   readonly "setup-runner-when-try-again": Record<never, never>;
@@ -109,6 +108,9 @@ export interface SetupRunnerCopy {
     readonly project: unknown;
     readonly path: unknown;
   };
+  readonly "setup-runner-note-colima": {
+    readonly start: unknown;
+  };
   readonly "setup-runner-note-linger": Record<never, never>;
   readonly "setup-runner-note-linger-on": Record<never, never>;
   readonly "setup-runner-note-linger-on-unread": Record<never, never>;
@@ -188,6 +190,9 @@ export interface SetupRunnerCopy {
   readonly "setup-runner-engineless-tell": {
     readonly none: unknown;
   };
+  readonly "setup-runner-engineless-colima-tell": {
+    readonly start: unknown;
+  };
   readonly "setup-runner-engineless-when": Record<never, never>;
   readonly "setup-runner-docker-why": {
     readonly job: unknown;
@@ -257,15 +262,6 @@ export interface SetupRunnerCopy {
   };
   readonly "setup-runner-not-admin-tell": {
     readonly project: unknown;
-  };
-  readonly "setup-runner-mac-found": Record<never, never>;
-  readonly "setup-runner-mac-tell": {
-    readonly program: unknown;
-  };
-  readonly "setup-runner-mac-when": Record<never, never>;
-  readonly "setup-runner-mac-chat-found": Record<never, never>;
-  readonly "setup-runner-mac-chat-tell": {
-    readonly byHand: unknown;
   };
   readonly "setup-runner-serviceless-found": {
     readonly command: unknown;

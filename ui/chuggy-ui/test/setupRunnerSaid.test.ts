@@ -7,7 +7,7 @@
 import { expect, test } from "vitest";
 
 import { copyTextEn } from "../app/copy/catalog.ts";
-import { runnerPackageOffered } from "../app/core/runners.ts";
+import { runnerPackages } from "../app/core/runners.ts";
 import {
   setupCheckFirst,
   setupRegisterRefusal,
@@ -17,6 +17,7 @@ import {
   setupRunnerStopExit,
   setupRunnerStopSaid as setupRunnerStopCopy,
 } from "../app/core/setupRunnerSaid.ts";
+import { setupRestartAll } from "../app/core/setupRunnerMachine.ts";
 import type {
   SetupRegisterRefusal,
   SetupRunnerAt,
@@ -86,17 +87,11 @@ function said(kind: Kind): readonly (readonly [string, number, string])[] {
 const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   Unpackaged: [
     ["the runner package, chuggy-linux, is not installed here", 0, "Mcp"],
+    ["the runner package, chuggy-darwin, is not installed here", 0, "Mcp"],
     [
       "the runner package here is chuggy-linux 0.13.0, and chuggy setup needs 0.14.0 or later",
       0,
       "Mcp",
-    ],
-  ],
-  Mac: [
-    [
-      "this machine is a Mac, and chuggy setup puts a runner only on Linux",
-      2,
-      "Status",
     ],
   ],
   Unread: [
@@ -158,6 +153,7 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Again",
     ],
     ["podman did not answer you without a password", 0, "Again"],
+    ["docker did not answer you without a password", 0, "Again"],
   ],
   DockerBarred: [
     [
@@ -526,16 +522,9 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Again",
     ],
   ],
-  MacChatHost: [
-    [
-      "this machine is a Mac, and chuggy setup makes a machine your chat host only on Linux",
-      2,
-      "Status",
-    ],
-  ],
 };
 
-test("every stop is said by what was found, exits zero where it waits on the person and one where something failed, and names runner again but for a machine no runner can be put on", () => {
+test("every stop is said by what was found, exits zero where it waits on the person and one where something failed, and names the command its rule waits on", () => {
   for (const kind of Object.keys(all) as Kind[])
     expect(said(kind), kind).toEqual(all[kind]);
 });
@@ -592,8 +581,6 @@ test("only a stop made before the run's first act says nothing was changed, whic
     "DockerBarred",
     "Engineless",
     "LoginMissing",
-    "Mac",
-    "MacChatHost",
     "NotAdmin",
     "Npmless",
     "Serviceless",
@@ -794,6 +781,7 @@ test("each thing a run found is said as found and each thing it did as did, in w
     Enabled: ["did"],
     Started: ["did"],
     Restarted: ["did"],
+    Colima: ["tell"],
   });
 });
 
@@ -863,7 +851,7 @@ test("with no Claude login the person is told what login the runner needs, where
   if (missing === undefined) throw new Error("no LoginMissing in the roster");
   expect(setupRunnerStopSaid(missing, widgets)).toEqual({
     found: `the runner has no Claude login on this machine: nothing is at ${boxLogin}`,
-    tell: `The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackageOffered.guideAddress}. Tell me once one is there.`,
+    tell: `The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackages.linux.guideAddress}. Tell me once one is there.`,
     when: "once the person says the runner's Claude login is on this machine",
     again: "Again",
   });
@@ -980,7 +968,9 @@ test("the package refusing the Node it was run under is a refusal that lasts, wh
     expect(setupRunnerStopSaid(stop, widgets), stop.stop).toMatchObject(
       lasting,
     );
-  expect(setupRunnerStopSaid(stops[0] ?? { stop: "Mac" }, widgets).found).toBe(
+  expect(
+    setupRunnerStopSaid(stops[0] ?? { stop: "NotAdmin" }, widgets).found,
+  ).toBe(
     "registering this machine ended with exit 1: the runner package needs a newer Node than the node this machine's PATH finds first",
   );
 });
@@ -1127,17 +1117,34 @@ test("--replace naming another chat host than the person's is a stop of its own,
   });
 });
 
-test("chat-host off Linux says so, changes nothing, and gives the by-hand steps from the workspace's personal runners page, naming the checklist next", () => {
-  const [mac] = runnerStops.MacChatHost.map((stop) =>
-    setupRunnerStopSaid(stop, acme),
+test("on a Mac, an engine that did not answer is told to start Colima, the end says Colima has to run and how it starts at login, and the services restart through launchctl", () => {
+  const colima = runnerStops.Engineless.find(
+    (stop) => stop.start !== undefined,
   );
-  expect(mac).toEqual({
-    found:
-      "this machine is a Mac, and chuggy setup makes a machine your chat host only on Linux",
-    tell: `chuggy setup makes a machine your chat host only on Linux and cannot make this one it, so nothing was changed on this machine. To make it your chat host by hand, open ${rosterMyRunners}, press Register chat host, choose the machine and run the commands it shows. Tell me once it is running.`,
-    when: "once the person says their chat host is running",
-    again: "Status",
-  });
+  if (colima === undefined) throw new Error("no Engineless on a Mac");
+  expect(setupRunnerStopSaid(colima, widgets).tell).toContain("colima start");
+  expect(
+    runnerNotes.Colima.map((note) => setupRunnerNoteSaid(note, widgets)),
+  ).toEqual([
+    [
+      "tell",
+      "Docker runs in Colima on this Mac, which has to be running for the runner's services to work, and after a restart is not until it is started again. brew services start colima starts it whenever you log in.",
+    ],
+  ]);
+  expect(
+    setupRestartAll(
+      {
+        settings: boxSettings,
+        login: boxLogin,
+        pools: boxPools,
+        units: "/Users/me/Library/LaunchAgents",
+        own: boxOwn,
+      },
+      { platform: "darwin", domain: "gui/501" },
+    ),
+  ).toBe(
+    `for agent in '/Users/me/Library/LaunchAgents'/chuggy-darwin.*.plist; do launchctl kickstart -k gui/501/"$(basename "$agent" .plist)"; done`,
+  );
 });
 
 test("of a run for a workspace alone, a withheld permit, a read the site hides and the chat host seen live are said of the workspace, and nothing is said of a project's work", () => {

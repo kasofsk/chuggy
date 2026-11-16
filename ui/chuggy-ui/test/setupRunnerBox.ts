@@ -1,13 +1,13 @@
 /**
- * A Linux machine as `runner` meets one, with nothing real in it: its paths
+ * A Linux machine, or a Mac, as `runner` meets one, with nothing real in it: its paths
  * are a map, and each program the command runs is answered here as the real
  * one was found to answer, doing to the map and to the site what the real one
  * does.
  *
  * The runner package's own rules are written here a second time on purpose,
  * from the package and not from the program: how a pool file, the file of the
- * person's chat host and their units are named, what `register`, `doctor`
- * and `install-service` print, and that a registration is a redemption at the
+ * person's chat host and their units or agents are named, what `register`,
+ * `doctor`, `install-service` and `install-agent` print, how launchd answers, and that a registration is a redemption at the
  * site. A case that moved one of them in
  * the program alone finds this box disagreeing with it. What a case wants to
  * go otherwise it names in `answers`, and the box then does nothing for that
@@ -27,6 +27,11 @@ export const boxSettings = `${boxConfig}/chuggy-linux/runner.json`;
 export const boxLogin = `${boxConfig}/chuggy-linux/claude/token`;
 export const boxPools = `${boxConfig}/chuggy/pools`;
 export const boxUnits = `${boxConfig}/systemd/user`;
+/** Where chuggy-darwin keeps a Mac's settings and login, and where its agents are. */
+export const boxMacSupport = `${boxHome}/Library/Application Support/chuggy-darwin`;
+export const boxMacSettings = `${boxMacSupport}/runner.json`;
+export const boxMacLogin = `${boxMacSupport}/claude/token`;
+export const boxAgents = `${boxHome}/Library/LaunchAgents`;
 /** Where npm installs machine-wide on this machine, and the person's own prefix. */
 export const boxPrefix = "/usr/local";
 export const boxOwn = `${boxHome}/.local`;
@@ -57,7 +62,12 @@ export type BoxAct =
   | "linger"
   | "lingerOn"
   | "mcpAdd"
-  | "mcpRemove";
+  | "mcpRemove"
+  | "domain"
+  | "agent"
+  | "unload"
+  | "load"
+  | "kick";
 
 /** The acts that change the machine or the site, in the order a first run does them for the project's runner. */
 export const boxActs = [
@@ -110,6 +120,8 @@ export interface RunnerBox {
   /** Whether a service that is started stays up, and whether one that is up polls, which is what the site sees as live. */
   stays: boolean;
   polls: boolean;
+  /** Whether launchd answers for the person's desktop session, which it does where they are logged in at the Mac's screen. */
+  desktop: boolean;
   /** What `doctor` prints aside and exits with, where a case has it find something. */
   doctor: { readonly aside: string; readonly exit: number } | undefined;
 }
@@ -150,6 +162,7 @@ export function runnerBox(): RunnerBox {
     units: new Map(),
     stays: true,
     polls: true,
+    desktop: true,
     doctor: undefined,
   };
 }
@@ -217,9 +230,44 @@ export function boxChatUnitName(tenant: string, member: string): string {
   return `chuggy-linux-${boxNamePart(tenant)}.${boxNamePart(member)}.chat.host.service`;
 }
 
-function unitOf(file: string): string {
+/** The label chuggy-darwin gives the agent of a file: its name less `.json`, after the package's. */
+export function boxAgentLabel(file: string): string {
   const base = file.slice(file.lastIndexOf("/") + 1).replace(/\.json$/u, "");
-  return `chuggy-linux-${base}.service`;
+  return `chuggy-darwin.${base}`;
+}
+
+/** The package a machine runs, where it keeps its settings and services, and the service it names for a file. */
+interface BoxPackage {
+  readonly program: "chuggy-linux" | "chuggy-darwin";
+  readonly settings: string;
+  readonly login: string;
+  readonly units: string;
+  readonly unitOf: (file: string) => string;
+  readonly unitPath: (file: string) => string;
+}
+
+function boxPackageOf(platform: string): BoxPackage {
+  if (platform === "darwin")
+    return {
+      program: "chuggy-darwin",
+      settings: boxMacSettings,
+      login: boxMacLogin,
+      units: boxAgents,
+      unitOf: boxAgentLabel,
+      unitPath: (file) => `${boxAgents}/${boxAgentLabel(file)}.plist`,
+    };
+  const unitOf = (file: string) => {
+    const base = file.slice(file.lastIndexOf("/") + 1).replace(/\.json$/u, "");
+    return `chuggy-linux-${base}.service`;
+  };
+  return {
+    program: "chuggy-linux",
+    settings: boxSettings,
+    login: boxLogin,
+    units: boxUnits,
+    unitOf,
+    unitPath: (file) => `${boxUnits}/${unitOf(file)}`,
+  };
 }
 
 /** What each act is run as, by the words that tell them apart after the program's own name. */
@@ -238,6 +286,13 @@ const told: readonly (readonly [BoxAct, string, readonly string[]])[] = [
   ["register", "chuggy-linux", ["register"]],
   ["doctor", "chuggy-linux", ["doctor"]],
   ["service", "chuggy-linux", ["install-service"]],
+  ["register", "chuggy-darwin", ["register"]],
+  ["doctor", "chuggy-darwin", ["doctor"]],
+  ["service", "chuggy-darwin", ["install-agent"]],
+  ["domain", "launchctl", ["print"]],
+  ["unload", "launchctl", ["bootout"]],
+  ["load", "launchctl", ["bootstrap"]],
+  ["kick", "launchctl", ["kickstart", "-k"]],
   ["mcpAdd", "claude", ["mcp", "add", "--scope", "local"]],
   ["mcpRemove", "claude", ["mcp", "remove", "--scope", "local"]],
 ];
@@ -246,10 +301,13 @@ export function boxActOf(command: readonly string[]): BoxAct | undefined {
   const [program = "", ...rest] = command;
   const name = program.slice(program.lastIndexOf("/") + 1);
   const words = rest.filter((word) => word !== "--user");
-  return told.find(
+  const act = told.find(
     ([, runs, first]) =>
       runs === name && first.every((word, at) => words[at] === word),
   )?.[0];
+  return act === "domain" && (words[1] ?? "").split("/").length > 2
+    ? "agent"
+    : act;
 }
 
 /** The person's Claude Code configuration as the box holds it, or an empty one. */
@@ -347,17 +405,21 @@ export function boxServing(
 
 /** Whether the package a command is run from is new enough to know `--chat`, as its manifest says. */
 function boxTakesChat(box: RunnerBox, program: string): boolean {
-  const prefix = program.slice(0, -"/bin/chuggy-linux".length);
+  const name = program.slice(program.lastIndexOf("/") + 1);
+  const prefix = program.slice(0, -`/bin/${name}`.length);
   const manifest = box.paths.get(
-    `${prefix}/lib/node_modules/chuggy-linux/package.json`,
+    `${prefix}/lib/node_modules/${name}/package.json`,
   );
   const version = /"version":"(\d+)\.(\d+)\./u.exec(manifest ?? "");
-  return Number(version?.[1] ?? 0) > 0 || Number(version?.[2] ?? 0) >= 35;
+  const least = name === "chuggy-darwin" ? 23 : 35;
+  return Number(version?.[1] ?? 0) > 0 || Number(version?.[2] ?? 0) >= least;
 }
 
 interface BoxWorld {
   readonly site: () => SetupSite;
   readonly origin: string;
+  /** The platform the machine is, which names the package that runs on it. */
+  readonly platform: string;
 }
 
 /** A registration, as a pool's or with `--chat` as the person's chat host: the token redeemed at the site, and the file the package names for what it answered. */
@@ -391,10 +453,18 @@ function registered(
   const file = chat
     ? boxChatFile(held.tenant, held.owner ?? "")
     : boxPoolFile(held.tenant, held.project ?? "");
-  const unit = unitOf(file);
-  const serves = box.paths.has(`${boxUnits}/${unit}`);
+  const at = boxPackageOf(world.platform);
+  const unit = at.unitOf(file);
+  const serves = box.paths.has(at.unitPath(file));
   const wrote = box.paths.has(file) ? "replaced" : "wrote";
   box.paths.set(file, JSON.stringify(answer.body));
+  if (at.program === "chuggy-darwin")
+    return exited(
+      0,
+      serves
+        ? `${wrote} ${file}; chuggy denies the pool's earlier registration, so its agent stops until it is restarted:\n  launchctl kickstart -k ${boxDomain(box)}/${unit}\n`
+        : `${wrote} ${file}; next:\n  chuggy-darwin doctor --pool ${file}\n  chuggy-darwin install-agent --pool ${file}\n`,
+    );
   return exited(
     0,
     serves
@@ -404,13 +474,15 @@ function registered(
 }
 
 /** What `doctor` prints of a pool's file, or of a chat host's, which it checks for what the chat host runs too. */
-function checks(file: string): readonly string[] {
+function checks(at: BoxPackage, file: string): readonly string[] {
   const pool = file.slice(file.lastIndexOf("/") + 1).replace(/\.json$/u, "");
   const ok = [
     `ok    pool file: ${file} names pool ${pool.replaceAll(".", "/")}`,
-    `ok    runner configuration: ${boxSettings}: concurrencyMax 1, sessionsMax 2`,
-    "ok    runtime directory: /run/user/1000/chuggy-linux",
-    `ok    Claude credential: Subscription, from the Claude token file ${boxLogin}, this runner's own`,
+    `ok    runner configuration: ${at.settings}: concurrencyMax 1, sessionsMax 2`,
+    at.program === "chuggy-darwin"
+      ? "ok    Colima: docker answers from the colima context"
+      : "ok    runtime directory: /run/user/1000/chuggy-linux",
+    `ok    Claude credential: Subscription, from the Claude token file ${at.login}, this runner's own`,
     "ok    container engine: docker at unix:///var/run/docker.sock lists 0 of this pool's containers",
     "ok    job network: chuggy-jobs is missing, and a run makes it",
     "ok    pool token: issued by https://auth.example/oauth2/token",
@@ -419,7 +491,7 @@ function checks(file: string): readonly string[] {
   return file.endsWith(".chat.host.json")
     ? [
         ...ok,
-        `ok    chat credential directory: ${boxLogin} is alone in its directory, which the chat supervisor is given read-only`,
+        `ok    chat credential directory: ${at.login} is alone in its directory, which the chat supervisor is given read-only`,
         "ok    chat settings: sessionsMax 4, sessionMemoryMib 2048, idleSecs 600",
         "ok    chat supervisor: none is running",
         "ok    chat image: ghcr.io/kasofsk/chuggy-chat is here",
@@ -427,13 +499,17 @@ function checks(file: string): readonly string[] {
     : ok;
 }
 
-function checked(box: RunnerBox, file: string): SetupChildEnded {
-  const ok = checks(file);
-  if (!box.paths.has(boxSettings))
+function checked(
+  box: RunnerBox,
+  at: BoxPackage,
+  file: string,
+): SetupChildEnded {
+  const ok = checks(at, file);
+  if (!box.paths.has(at.settings))
     return exited(
       1,
       `${ok[0] ?? ""}\n`,
-      `FAIL  runner configuration: ${boxSettings} is missing\n`,
+      `FAIL  runner configuration: ${at.settings} is missing\n`,
     );
   return box.doctor === undefined
     ? exited(0, `${ok.join("\n")}\n`)
@@ -452,7 +528,7 @@ function served(
   program: string,
   file: string,
 ): SetupChildEnded {
-  const unit = unitOf(file);
+  const unit = boxPackageOf("linux").unitOf(file);
   const path = `${boxUnits}/${unit}`;
   if (box.paths.has(path)) {
     const serves = /^ExecStart=.* --pool (\S+)$/mu.exec(
@@ -474,22 +550,68 @@ function served(
   );
 }
 
+/** The agent `install-agent` writes for a file, which runs the copy of the package the command is. */
+export function boxAgentText(program: string, file: string): string {
+  const copy = program.slice(0, -"/bin/chuggy-darwin".length);
+  return `<plist><dict><key>ProgramArguments</key><array><string>/opt/homebrew/bin/node</string><string>${copy}/lib/node_modules/chuggy-darwin/cli.mjs</string><string>run</string><string>--pool</string><string>${file}</string></array></dict></plist>\n`;
+}
+
+/** The agent of a file written over any of its label that serves the same file, and one that serves another refused, as chuggy-darwin refuses it. */
+function agentServed(
+  box: RunnerBox,
+  program: string,
+  file: string,
+): SetupChildEnded {
+  const label = boxAgentLabel(file);
+  const path = `${boxAgents}/${label}.plist`;
+  const serves = /<string>--pool<\/string><string>([^<]*)<\/string>/u.exec(
+    box.paths.get(path) ?? "",
+  )?.[1];
+  if (box.paths.has(path) && serves !== file)
+    return exited(
+      1,
+      "",
+      `${path} serves ${serves ?? "no pool file this runner named"}, not ${file}; remove that agent if it is stale, or rename the pool file\n`,
+    );
+  box.paths.set(path, boxAgentText(program, file));
+  const domain = boxDomain(box);
+  return exited(
+    0,
+    `wrote ${path}; start it, and Colima at login, with:\n  launchctl bootout ${domain}/${label}\n  launchctl bootstrap ${domain} ${path}\n  brew services start colima\n`,
+  );
+}
+
 /** What the site sees once the unit `name` is up and polls: a runner of every project this machine is registered for as live, or, for the unit of the person's chat host, that host where its file names it. */
 function polled(box: RunnerBox, world: BoxWorld, name: string): void {
   const site = world.site();
   for (const [tenant, host] of site.chat) {
-    if (name !== boxChatUnitName(tenant, site.member)) continue;
-    const file = box.paths.get(boxChatFile(tenant, site.member)) ?? "{}";
-    const { clientId } = JSON.parse(file) as { readonly clientId?: string };
+    const file = boxChatFile(tenant, site.member);
+    if (
+      name !== boxChatUnitName(tenant, site.member) &&
+      name !== boxAgentLabel(file)
+    )
+      continue;
+    const held = box.paths.get(file) ?? "{}";
+    const { clientId } = JSON.parse(held) as { readonly clientId?: string };
     if (host.id === clientId) host.live = true;
   }
-  if (!name.endsWith(`.${boxPoolName}.service`)) return;
+  if (
+    !name.endsWith(`.${boxPoolName}.service`) &&
+    !name.endsWith(`.${boxPoolName}`)
+  )
+    return;
   for (const project of site.projects)
     if (project.pools.includes(boxPoolName)) project.runner = "Live";
 }
 
-function up(box: RunnerBox, world: BoxWorld, name: string, enable: boolean) {
-  if (!box.paths.has(`${boxUnits}/${name}`))
+function up(
+  box: RunnerBox,
+  world: BoxWorld,
+  name: string,
+  enable: boolean,
+  path = `${boxUnits}/${name}`,
+) {
+  if (!box.paths.has(path))
     return exited(
       1,
       "",
@@ -512,6 +634,66 @@ function unitSaid(
   if (asks === "enabled")
     return exited(is ? 0 : 1, is ? "enabled\n" : "disabled\n");
   return exited(is ? 0 : 3, is ? "active\n" : "inactive\n");
+}
+
+/** The domain launchd answers for this user: the desktop session's where they are logged in at the screen, and the background one always. */
+function boxDomain(box: RunnerBox): string {
+  return box.desktop ? "gui/1000" : "user/1000";
+}
+
+/** How launchd answers a `print`, a `bootout`, a `bootstrap` or a `kickstart`: an agent known by its label in the one domain this user's agents load into, `units` holding it as loaded where it is enabled. */
+function launchd(
+  box: RunnerBox,
+  world: BoxWorld,
+  act: "domain" | "agent" | "unload" | "load" | "kick",
+  command: readonly string[],
+): SetupChildEnded {
+  const target = command.at(-1) ?? "";
+  if (act === "domain")
+    return target === boxDomain(box)
+      ? exited(
+          0,
+          `${target} = {\n\ttype = ${box.desktop ? "login" : "background"}\n}\n`,
+        )
+      : exited(
+          113,
+          "",
+          "Bad request.\nCould not find domain for port identifier.\n",
+        );
+  if (act === "load") {
+    const domain = command.at(-2) ?? "";
+    const label = target.slice(target.lastIndexOf("/") + 1, -".plist".length);
+    const unit = box.units.get(label);
+    if (domain !== boxDomain(box) || !box.paths.has(target))
+      return exited(5, "", "Bootstrap failed: 5: Input/output error\n");
+    if (unit?.enabled === true)
+      return exited(5, "", "Bootstrap failed: 17: File exists\n");
+    return up(box, world, label, true, `${boxAgents}/${label}.plist`);
+  }
+  const at = target.lastIndexOf("/");
+  const [domain, label] = [target.slice(0, at), target.slice(at + 1)];
+  const unit = box.units.get(label);
+  if (domain !== boxDomain(box) || unit?.enabled !== true)
+    return act === "unload"
+      ? exited(3, "", "Boot-out failed: 3: No such process\n")
+      : exited(
+          113,
+          "",
+          `Could not find service "${label}" in domain for user gui: 1000\n`,
+        );
+  switch (act) {
+    case "agent":
+      return exited(
+        0,
+        `${target} = {\n\tactive count = ${unit.active ? 1 : 0}\n\tpath = ${boxAgents}/${label}.plist\n\tstate = ${unit.active ? "running" : "not running"}\n}\n`,
+      );
+    case "unload":
+      unit.enabled = false;
+      unit.active = false;
+      return exited(0);
+    case "kick":
+      return up(box, world, label, false, `${boxAgents}/${label}.plist`);
+  }
 }
 
 function engine(box: RunnerBox, name: SetupEngine): SetupChildEnded {
@@ -561,9 +743,11 @@ function done(
     case "register":
       return registered(box, world, command);
     case "doctor":
-      return checked(box, last);
+      return checked(box, boxPackageOf(world.platform), last);
     case "service":
-      return served(box, command[0] ?? "", last);
+      return world.platform === "darwin"
+        ? agentServed(box, command[0] ?? "", last)
+        : served(box, command[0] ?? "", last);
     case "reload":
       return exited(0);
     case "enabled":
@@ -583,6 +767,12 @@ function done(
       return boxServed(box, command, true);
     case "mcpRemove":
       return boxServed(box, command, false);
+    case "domain":
+    case "agent":
+    case "unload":
+    case "load":
+    case "kick":
+      return launchd(box, world, act, command);
   }
 }
 

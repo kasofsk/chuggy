@@ -19,6 +19,7 @@ import { expect, test } from "vitest";
 import { setupConfigurationPath } from "../app/core/setupConfiguration.ts";
 import type { TicketLandingResponse } from "../../../src/contract/responses.ts";
 import type { SetupMcpPackaged } from "../app/core/setupAgent.ts";
+import type { SetupPlatform } from "../app/core/setupPorts.ts";
 import { setupAnswersNone } from "../app/core/setupArguments.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import { repositoryGrantLines } from "../app/core/projectRepositories.ts";
@@ -347,7 +348,7 @@ function toldOf(said: SaidThing): string {
   return said.tell;
 }
 
-test("on a Mac the MCP step offers the Mac's own package, and the runner and chat-host offers still name the Linux one", () => {
+test("on a Mac the MCP step, the runner and the chat host offer the Mac's own package, as Linux's offer Linux's", () => {
   const mcp = (packaged: SetupMcpPackaged) =>
     toldOf(
       saidThing(
@@ -384,10 +385,9 @@ test("on a Mac the MCP step offers the Mac's own package, and the runner and cha
         saidThing(
           setupNext(lacking(lack), setupAnswersNone, "linux", looked).thing,
         ),
-      ),
+      ).replaceAll("chuggy-linux", "chuggy-darwin"),
     );
-    expect(tell).toContain("chuggy-linux");
-    expect(tell).not.toContain("chuggy-darwin");
+    expect(tell).toContain("chuggy-darwin");
   }
 });
 
@@ -842,10 +842,11 @@ function here(
   room: SetupRunnerRoom,
   held = false,
   chat = false,
+  platform: SetupPlatform = "linux",
 ): SaidThing {
   const looked: SetupRunnerHere = { room, held, chat, claude: "Subscription" };
   return saidThing(
-    setupNext(lacking(lack), setupAnswersNone, "linux", looked).thing,
+    setupNext(lacking(lack), setupAnswersNone, platform, looked).thing,
   );
 }
 
@@ -880,7 +881,7 @@ test("with neither a runner of the project nor the person's chat host, the offer
   );
 });
 
-test("with the project's work provided for and no chat host of the person's, a machine that could take one is offered as theirs by chat-host for the workspace, never as a runner of the project too, and otherwise they are told the page, the press and each runner package's own commands that make another machine it", () => {
+test("with the project's work provided for and no chat host of the person's, a machine that could take one is offered as theirs by chat-host for the workspace, never as a runner of the project too, and on a Mac by the Mac's own package", () => {
   const chats =
     "Your chats in acme/widgets run only on your chat host, one machine of yours, and you have none yet.";
   const yours = `${chats} I can make this machine it: that puts here the runner package, chuggy-linux, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan.`;
@@ -890,10 +891,9 @@ test("with the project's work provided for and no chat host of the person's, a m
   expect(here({ lacks: "ChatHost" }, roomy, true)).toEqual(
     chatOffered(`${yours} Tell me yes to go ahead.`),
   );
-  expect(here({ lacks: "ChatHost" }, { room: "Mac" })).toEqual(
-    hand(
-      `Your chats in acme/widgets run only on your chat host, one machine of yours, and you have none yet; chuggy setup cannot make this machine it. On the machine that will be it, ${chatByHand}. Tell me once it is running.`,
-      "once the person says their chat host is running",
+  expect(here({ lacks: "ChatHost" }, roomy, false, false, "darwin")).toEqual(
+    chatOffered(
+      `${yours.replace("chuggy-linux", "chuggy-darwin")} Tell me yes to go ahead.`,
     ),
   );
 });
@@ -907,16 +907,8 @@ test("a chat host registered and not running is offered to be started here only 
   expect(here({ lacks: "ChatHostLive" }, roomy)).toEqual(mends.ChatHostLive[1]);
 });
 
-test("where this machine could not take a runner the person is told why instead, and nothing is offered: a Mac, user services that do not answer, no engine", () => {
+test("where this machine could not take a runner the person is told why instead, and nothing is offered: user services that do not answer, no engine, and on a Mac, Colima not started", () => {
   const running = "once the person says the runner is running";
-  expect(
-    here({ lacks: "Runner", chat: false, named: true }, { room: "Mac" }),
-  ).toEqual(
-    hand(
-      `${runnerIs}. This machine is a Mac and chuggy setup puts a runner only on Linux, but a Mac runs one with chuggy-darwin, added by hand: open ${pages}/settings/workspace/runner, press Register runner, choose Mac and do what it shows there, then press Add a project and choose widgets, so the runner takes its work. Tell me once the runner is running.`,
-      running,
-    ),
-  );
   expect(
     here(
       { lacks: "Runner", chat: false, named: true },
@@ -937,6 +929,7 @@ test("where this machine could not take a runner the person is told why instead,
           { engine: "docker", answered: "No" },
           { engine: "podman", answered: "Absent" },
         ],
+        start: undefined,
       },
     ),
   ).toEqual(
@@ -945,6 +938,21 @@ test("where this machine could not take a runner the person is told why instead,
       "once the person says a container engine answers them on this machine, or that a runner is running",
     ),
   );
+  expect(
+    here(
+      { lacks: "Runner", chat: false, named: true },
+      {
+        room: "Engineless",
+        asked: [{ engine: "docker", answered: "No" }],
+        start: "colima start",
+      },
+      false,
+      false,
+      "darwin",
+    ),
+  ).toMatchObject({
+    tell: `${runnerIs}, in containers. This machine cannot be one yet: Docker did not answer here. On a Mac, Docker runs in Colima, which colima start starts without a password. Tell me once Docker answers you here. For a runner on another machine instead, open ${pages}/settings/workspace/runner there, press Register runner and do what it shows, then press Add a project and choose widgets, so the runner takes its work, and tell me once it is running.`,
+  });
 });
 
 test("a user the runner package bars from docker is told the package's reason and its way out before any runner is offered here, and the page for another machine", () => {
@@ -991,7 +999,7 @@ test("a runner registered and not running is offered to be started here only whe
       "A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.",
     ),
   );
-  for (const room of [roomy, { room: "Mac" }, { room: "Serviceless" }] as const)
+  for (const room of [roomy, { room: "Serviceless" }] as const)
     expect(here({ lacks: "RunnerLive", chat: false }, room), room.room).toEqual(
       mends.RunnerLive[1],
     );

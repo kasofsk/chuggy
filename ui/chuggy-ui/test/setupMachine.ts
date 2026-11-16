@@ -566,7 +566,11 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
         Promise.resolve(
           boxRan(
             machine.box,
-            { site: () => machine.world, origin: machineSite },
+            {
+              site: () => machine.world,
+              origin: machineSite,
+              platform: machine.platform,
+            },
             command,
           ),
         ),

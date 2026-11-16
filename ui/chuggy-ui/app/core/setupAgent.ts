@@ -8,12 +8,11 @@
  * `signInStore.ts` defines, which is where this program keeps its own
  * sign-in, so a person this program signed in is signed in for the server
  * too and nothing here signs in at all. `mcp` installs the platform's runner
- * package where none it can use is found, on Linux none that a later step can
- * use, which is why `runner` finds it installed there, and then has Claude
- * Code's own `claude mcp add` name the
- * server in the folder's local configuration, removing first one of the same
- * name there that names something else. Both change the machine, so `mcp` is
- * offered and never run unasked.
+ * package where none that a later step can use is found, which is why
+ * `runner` finds it installed, and then has Claude Code's own
+ * `claude mcp add` name the server in the folder's local configuration,
+ * removing first one of the same name there that names something else. Both
+ * change the machine, so `mcp` is offered and never run unasked.
  *
  * The configuration is read and never written here: Claude Code keeps a
  * folder's local servers and the person's own in one file, under the folder
@@ -31,7 +30,7 @@ import { z } from "zod";
 import { runnerPackages } from "./runners.ts";
 import type { RunnerPackage } from "./runners.ts";
 import type { SetupAsked } from "./setupArguments.ts";
-import { setupPlatformServed } from "./setupPorts.ts";
+import { setupPlatformOf } from "./setupPorts.ts";
 import type { SetupPlatform, SetupPorts } from "./setupPorts.ts";
 import type { SetupReport } from "./setupReport.ts";
 import { setupActedStop, setupPackageReady } from "./setupRunner.ts";
@@ -39,13 +38,18 @@ import {
   setupChatPackageLeast,
   setupChildBytesMax,
   setupPackageCurrent,
+  setupPackageLeasts,
   setupPackageProbed,
   setupProbeWaitMs,
   setupRunnerPlaces,
+  setupVersionLater,
 } from "./setupRunnerMachine.ts";
 import type { SetupRunnerNote, SetupServerEnded } from "./setupRunnerSaid.ts";
 import { setupSessionSite } from "./setupStore.ts";
 import { setupFlat } from "./setupText.ts";
+
+/** The first chuggy-darwin whose `mcp` keeps its sign-ins in the store. */
+const setupDarwinStoreLeast = "0.23.0";
 
 /** A runner package `mcp` installs and runs the server with, and the oldest of it `mcp` leaves a machine on. */
 export interface SetupServerPackage {
@@ -54,27 +58,26 @@ export interface SetupServerPackage {
 }
 
 /**
- * The package `mcp` installs on each platform. Linux's least is the oldest
- * any later step's command can use, so `runner` and `chat-host` find it
- * installed; a Mac's is the first whose `mcp` keeps its sign-ins in the store.
+ * The package `mcp` installs on each platform. Each least is at least the
+ * oldest any later step's command can use, so `runner` and `chat-host` find
+ * it installed; a Mac's is also at least the first chuggy-darwin whose `mcp`
+ * keeps its sign-ins in the store.
  */
 export const setupServerPackages: Readonly<
   Record<SetupPlatform, SetupServerPackage>
 > = {
   linux: { offered: runnerPackages.linux, least: setupChatPackageLeast },
-  darwin: { offered: runnerPackages.darwin, least: "0.23.0" },
+  darwin: {
+    offered: runnerPackages.darwin,
+    least: setupVersionLater(
+      setupPackageLeasts.darwin.chat,
+      setupDarwinStoreLeast,
+    ),
+  },
 };
 
-/** The platform the program runs on, which `setupRun` has already refused where it is not one served. */
-export function setupServerPlatform(ports: SetupPorts): SetupPlatform {
-  const platform = setupPlatformServed(ports.surroundings.platform);
-  if (platform === undefined)
-    throw new Error(`unserved platform ${ports.surroundings.platform}`);
-  return platform;
-}
-
 function setupServerPackage(ports: SetupPorts): SetupServerPackage {
-  return setupServerPackages[setupServerPlatform(ports)];
+  return setupServerPackages[setupPlatformOf(ports.surroundings)];
 }
 
 /** The name the server is given in the agent's configuration. */

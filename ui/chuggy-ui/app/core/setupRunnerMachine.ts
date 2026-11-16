@@ -8,9 +8,10 @@
  * whether a service is there and running. Nothing of that is kept by this
  * program, so every run reads it again. The names are the runner package's
  * own, since it has no command that says them: where it keeps its settings,
- * its Claude login, its registrations and its units, how it names a pool file
- * for a project and the file of the person's chat host in a workspace, and
- * the unit for either. A settings file is read for the engine and the Claude
+ * its Claude login, its registrations and its services' files, how it names a
+ * pool file for a project and the file of the person's chat host in a
+ * workspace, and the service of either: a systemd user unit on Linux, a
+ * launchd agent on a Mac. A settings file is read for the engine and the Claude
  * credential it names and for nothing else, the chat host's file for the id
  * the site holds that host by and for nothing else, and a pool's registration
  * and a Claude credential's file are never read at all, only looked for. The
@@ -24,11 +25,12 @@ import { z } from "zod";
 import { identitySchema } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 
-import { runnerPackageOffered, runnerRegisterCommand } from "./runners.ts";
+import { runnerPackages, runnerRegisterCommand } from "./runners.ts";
 import type { RunnerKind, RunnerPackage } from "./runners.ts";
-import { SetupMachineError } from "./setupPorts.ts";
+import { SetupMachineError, setupPlatformOf } from "./setupPorts.ts";
 import type {
   SetupChildEnded,
+  SetupPlatform,
   SetupPorts,
   SetupSurroundings,
 } from "./setupPorts.ts";
@@ -56,17 +58,13 @@ export const setupChildBytesMax = 65_536;
 /** Past any settings file, package manifest or unit a person would write. */
 const setupTextBytesMax = 65_536;
 
-const setupProgram = runnerPackageOffered.program;
-
-/** The platform `runner` sets a runner up on, which is the one the console's package runs on. */
-export const setupRunnerPlatform = "linux";
-
 /** Where the runner package keeps its things on this machine, each a whole path. */
 export interface SetupRunnerPlaces {
   readonly settings: string;
   /** Where the runner's Claude login is kept unless its settings name another place: alone in a directory of its own, which a chat host is handed whole. */
   readonly login: string;
   readonly pools: string;
+  /** Where the package writes the file of each service it runs: its systemd user units on Linux, its launchd agents on a Mac. */
   readonly units: string;
   /** The prefix of the person's own the package is installed under where the machine's is not theirs to write. */
   readonly own: string;
@@ -76,22 +74,40 @@ function setupPath(...parts: readonly string[]): string {
   return parts.join("/");
 }
 
-/** The package's places under the person's configuration directory, which is the one they set where it is a whole path and the usual one in their home otherwise. */
+/**
+ * The package's places: on Linux under the person's configuration directory,
+ * the one they set where it is a whole path and the usual one in their home
+ * otherwise. On a Mac under their Library, but for the pool files, which
+ * chuggy-darwin keeps in `~/.config` whatever configuration directory is set.
+ */
 export function setupRunnerPlaces(
   surroundings: SetupSurroundings,
 ): SetupRunnerPlaces {
   const { home, configHome } = surroundings;
   if (home === undefined) throw new SetupMachineError({ fault: "Homeless" });
+  const own = setupPath(home, ".local");
+  const platform = setupPlatformOf(surroundings);
+  const program = runnerPackages[platform].program;
+  if (platform === "darwin") {
+    const support = setupPath(home, "Library", "Application Support", program);
+    return {
+      settings: setupPath(support, "runner.json"),
+      login: setupPath(support, "claude", "token"),
+      pools: setupPath(home, ".config", "chuggy", "pools"),
+      units: setupPath(home, "Library", "LaunchAgents"),
+      own,
+    };
+  }
   const config =
     configHome !== undefined && configHome.startsWith("/")
       ? configHome.replace(/\/+$/u, "")
       : setupPath(home, ".config");
   return {
-    settings: setupPath(config, setupProgram, "runner.json"),
-    login: setupPath(config, setupProgram, "claude", "token"),
+    settings: setupPath(config, program, "runner.json"),
+    login: setupPath(config, program, "claude", "token"),
     pools: setupPath(config, "chuggy", "pools"),
     units: setupPath(config, "systemd", "user"),
-    own: setupPath(home, ".local"),
+    own,
   };
 }
 
@@ -154,17 +170,19 @@ const setupEngineProbes: Readonly<Record<SetupEngine, readonly string[]>> = {
 
 /**
  * Where a runner could be put: here, with the engine that answered; or not
- * here, because the machine is not the package's platform, its user services
- * did not answer, no engine did, or the package bars this user from docker
- * and nothing else is theirs to use.
+ * here, because its user services did not answer, no engine did, or the
+ * package bars this user from docker and nothing else is theirs to use. Only
+ * Linux has the first and the last: a Mac's runner has launchd, and docker in
+ * Colima for any user.
  */
 export type SetupRunnerRoom =
   | { readonly room: "Open"; readonly engine: SetupEngine }
-  | { readonly room: "Mac" }
   | { readonly room: "Serviceless" }
   | {
       readonly room: "Engineless";
       readonly asked: readonly SetupEngineAsked[];
+      /** The command that starts the engine without a password where it runs in a VM of the person's, as docker does in Colima on a Mac. */
+      readonly start: string | undefined;
     }
   | {
       readonly room: "DockerBarred";
@@ -218,7 +236,7 @@ async function setupEngineRoom(
     if (answer.answered === "Yes") return { room: "Open", engine };
     asked.push(answer);
   }
-  return { room: "Engineless", asked };
+  return { room: "Engineless", asked, start: undefined };
 }
 
 /** Asks the user's service manager for its own version, which it answers only where it is running for this user. */
@@ -230,13 +248,37 @@ const setupServicesProbe = [
   "Version",
 ];
 
-/** Whether this machine could take a runner, asking the one engine the runner's settings name where there are any, and otherwise each the package would take from this user. */
+/** What starts Colima, the VM docker runs in on a Mac, which is the person's to start and never this program's. */
+export const setupColimaStart = ["colima", "start"] as const;
+
+/** What starts Colima whenever the person logs in, as chuggy-darwin's `install-agent` says it. */
+export const setupColimaAtLogin = [
+  "brew",
+  "services",
+  "start",
+  "colima",
+] as const;
+
+/**
+ * Whether this machine could take a runner: on a Mac whether docker, the one
+ * engine chuggy-darwin runs, answers. On Linux it asks the one engine the
+ * runner's settings name where there are any, and otherwise each the package
+ * would take from this user.
+ */
 export async function setupRunnerRoom(
   ports: SetupPorts,
   named: SetupSettingsNamed | undefined,
 ): Promise<SetupRunnerRoom> {
-  if (ports.surroundings.platform !== setupRunnerPlatform)
-    return { room: "Mac" };
+  if (setupPlatformOf(ports.surroundings) === "darwin") {
+    const asked = await setupEngineAsked(ports, "docker");
+    return asked.answered === "Yes"
+      ? { room: "Open", engine: "docker" }
+      : {
+          room: "Engineless",
+          asked: [asked],
+          start: setupColimaStart.join(" "),
+        };
+  }
   if (!setupWell(await setupProbed(ports, setupServicesProbe)))
     return { room: "Serviceless" };
   return setupEngineRoom(ports, named);
@@ -359,10 +401,14 @@ export function setupSettingsRead(
 /** The limits the package's guide writes in the settings it shows, which have no default of the package's own. */
 const setupGuideLimits = { timeoutSecsMax: 7_200, outputBytesMax: 1_048_576 };
 
-/** The settings a machine with none is given: the package's guide's own, with the engine that answered and where the Claude login is. */
-export function setupSettingsText(engine: SetupEngine, login: string): string {
+/** The settings a machine with none is given: the package's guide's own, with where the Claude login is and, on Linux, the engine that answered; chuggy-darwin's settings have no engine to name. */
+export function setupSettingsText(
+  platform: SetupPlatform,
+  engine: SetupEngine,
+  login: string,
+): string {
   const settings = {
-    engine,
+    ...(platform === "darwin" ? {} : { engine }),
     concurrencyMax: 1,
     sessionsMax: 2,
     claudeTokenFile: login,
@@ -402,6 +448,19 @@ export const setupPackageLeast = "0.14.0";
 /** The first version of the runner package that registers a chat host, which a run that sets one up leaves a machine on. */
 export const setupChatPackageLeast = "0.35.0";
 
+/**
+ * The oldest of each platform's runner package a run can use: `pool` for the
+ * project's runner alone, `chat` where the person's chat host is set up too.
+ * Linux's are the two above; chuggy-darwin's are its first release with every
+ * command a run uses.
+ */
+export const setupPackageLeasts: Readonly<
+  Record<SetupPlatform, { readonly pool: string; readonly chat: string }>
+> = {
+  linux: { pool: setupPackageLeast, chat: setupChatPackageLeast },
+  darwin: { pool: "0.23.0", chat: "0.23.0" },
+};
+
 function setupVersionParts(version: string): readonly number[] {
   return version.split(/[.+-]/u, 3).map(Number);
 }
@@ -416,6 +475,13 @@ export function setupPackageCurrent(
   const floor = setupVersionParts(least);
   const at = had.findIndex((part, index) => part !== floor[index]);
   return at < 0 || (had[at] ?? 0) > (floor[at] ?? 0);
+}
+
+/** The later of two versions, as `setupPackageCurrent` orders them. */
+export function setupVersionLater(one: string, other: string): string {
+  return setupPackageCurrent({ command: "", version: one }, other)
+    ? one
+    : other;
 }
 
 function setupCommandIn(prefix: string, offered: RunnerPackage): string {
@@ -516,19 +582,17 @@ export function setupInstallCommand(
     : [...words.slice(0, -1), "--prefix", places.own, ...words.slice(-1)];
 }
 
-/** The console's own register command, word for word, as a pool's or as the person's chat host, run as the installed command by its whole path. */
+/** The console's own register command for `offered`, word for word, as a pool's or as the person's chat host, run as the installed command by its whole path. */
 export function setupRegisterCommand(
+  offered: RunnerPackage,
   command: string,
   site: string,
   token: string,
   kind: Exclude<RunnerKind, "Personal">,
 ): readonly string[] {
-  const [, ...rest] = runnerRegisterCommand(
-    runnerPackageOffered,
-    site,
-    token,
-    kind,
-  ).split(" ");
+  const [, ...rest] = runnerRegisterCommand(offered, site, token, kind).split(
+    " ",
+  );
   return [command, ...rest];
 }
 
@@ -656,18 +720,11 @@ function setupClaudeHere(
   }
 }
 
-/** Looks at the machine as `runner` would before it did anything, and changes nothing; a Mac is asked nothing at all. */
+/** Looks at the machine as `runner` would before it did anything, and changes nothing. */
 export async function setupRunnerHere(
   ports: SetupPorts,
   partition: PartitionIdentity,
 ): Promise<SetupRunnerHere> {
-  if (ports.surroundings.platform !== setupRunnerPlatform)
-    return {
-      room: { room: "Mac" },
-      held: false,
-      chat: false,
-      claude: undefined,
-    };
   const places = setupRunnerPlaces(ports.surroundings);
   const settings = setupSettingsRead(ports, places);
   const room = await setupRunnerRoom(
@@ -683,13 +740,14 @@ export async function setupRunnerHere(
   };
 }
 
-/** The service of a registration's file, as the package names it and where it writes it. */
+/** The service of a registration's file, as the package names it and where it writes it: a systemd unit by its name, or a launchd agent by its label. */
 export interface SetupUnit {
   readonly name: string;
   readonly path: string;
 }
 
 export function setupUnitOf(
+  platform: SetupPlatform,
   places: SetupRunnerPlaces,
   file: SetupFile,
 ): SetupUnit {
@@ -697,7 +755,12 @@ export function setupUnitOf(
     file.path.lastIndexOf("/") + 1,
     -setupPoolFileSuffix.length,
   );
-  const name = `${setupProgram}-${base}.service`;
+  const program = runnerPackages[platform].program;
+  if (platform === "darwin") {
+    const name = `${program}.${base}`;
+    return { name, path: setupPath(places.units, `${name}.plist`) };
+  }
+  const name = `${program}-${base}.service`;
   return { name, path: setupPath(places.units, name) };
 }
 
@@ -717,9 +780,13 @@ export const setupRunnerCommands = {
     "--pool",
     file.path,
   ],
-  service: (command: string, file: SetupFile): readonly string[] => [
+  service: (
+    platform: SetupPlatform,
+    command: string,
+    file: SetupFile,
+  ): readonly string[] => [
     command,
-    "install-service",
+    platform === "darwin" ? "install-agent" : "install-service",
     "--pool",
     file.path,
   ],
@@ -737,7 +804,83 @@ export const setupRunnerCommands = {
     "restart",
     unit.name,
   ],
+  /** An agent unloaded, whose failure says only that it was not loaded. */
+  unload: (domain: string, unit: SetupUnit): readonly string[] => [
+    "launchctl",
+    "bootout",
+    `${domain}/${unit.name}`,
+  ],
+  load: (domain: string, unit: SetupUnit): readonly string[] => [
+    "launchctl",
+    "bootstrap",
+    domain,
+    unit.path,
+  ],
+  kick: (domain: string, unit: SetupUnit): readonly string[] => [
+    "launchctl",
+    "kickstart",
+    "-k",
+    `${domain}/${unit.name}`,
+  ],
 } as const;
+
+/**
+ * The launchd domain chuggy-darwin loads an agent into: the person's desktop
+ * session's where launchd answers for one, and their background session's
+ * otherwise, as `install-agent` chooses it.
+ */
+export async function setupAgentDomain(ports: SetupPorts): Promise<string> {
+  const user = ports.surroundings.user ?? "";
+  const desktop = await setupProbed(ports, [
+    "launchctl",
+    "print",
+    `gui/${user}`,
+  ]);
+  return `${setupWell(desktop) ? "gui" : "user"}/${user}`;
+}
+
+/**
+ * Whether an agent is loaded in `domain` and running, and the one word launchd
+ * said of its state: empty where it is not loaded or said no word, and nothing
+ * where launchctl could not be run.
+ */
+export async function setupAgentIs(
+  ports: SetupPorts,
+  domain: string,
+  unit: SetupUnit,
+): Promise<{
+  readonly loaded: boolean;
+  readonly is: boolean;
+  readonly said: string | undefined;
+}> {
+  const ended = await setupProbed(ports, [
+    "launchctl",
+    "print",
+    `${domain}/${unit.name}`,
+  ]);
+  if (ended.ended !== "Exited")
+    return { loaded: false, is: false, said: undefined };
+  if (!setupWell(ended)) return { loaded: false, is: false, said: "" };
+  const said = /^\s*state = ([a-z-]+)$/mu.exec(ended.out)?.[1] ?? "";
+  return { loaded: true, is: said === "running", said };
+}
+
+/** Where a machine's runner services are: on Linux, or on a Mac in the launchd domain they are loaded in. */
+export type SetupServicesAt =
+  | { readonly platform: "linux" }
+  | { readonly platform: "darwin"; readonly domain: string };
+
+/** Restarts every runner service of this machine's, each of which reads the runner's settings only as it starts: on a Mac, each agent by the label its file is named for. */
+export function setupRestartAll(
+  places: SetupRunnerPlaces,
+  at: SetupServicesAt,
+): string {
+  const program = runnerPackages[at.platform].program;
+  if (at.platform === "linux")
+    return `systemctl --user restart '${program}-*.service'`;
+  const agents = `'${places.units.replaceAll("'", "'\\''")}'/${program}.*.plist`;
+  return `for agent in ${agents}; do launchctl kickstart -k ${at.domain}/"$(basename "$agent" .plist)"; done`;
+}
 
 /**
  * Whether a unit is what `verb` asks, and the one word the service manager said

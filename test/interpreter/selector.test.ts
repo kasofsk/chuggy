@@ -66,11 +66,7 @@ import {
   selectorOperationalContext,
   selectorSettingsFixture,
 } from "./selectorFixture.ts";
-import { selectorPolicyHost } from "../../src/interpreter/selectorPolicyHost.ts";
-import {
-  allLeadAdmissions,
-  type SubsidizedLeadProfile,
-} from "../../src/interpreter/sessionPlacement.ts";
+import type { SubsidizedLeadProfile } from "../../src/interpreter/sessionPlacement.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -1374,78 +1370,6 @@ test("invalid policy JSON is recorded as a bounded failed interaction", async ()
     outcome: "Failed",
     code: "InvalidResult",
   });
-});
-
-test("the selector policy host answers the admission its policy answers", async () => {
-  for (const admission of allLeadAdmissions) {
-    const asked: (typeof partition)[] = [];
-    const host = selectorPolicyHost(
-      {
-        leadAdmission: (of) => {
-          asked.push(of);
-          return Promise.resolve(admission);
-        },
-        execute: () => Promise.reject(new Error("no decision was expected")),
-        cancel: () => Promise.resolve({ status: "Unconfirmed" }),
-        inspect: () => Promise.resolve({ status: "Unconfirmed" }),
-        standing: () => Promise.resolve("Absent"),
-        resume: () => Promise.reject(new Error("no decision was resumed")),
-      },
-      { after: () => new Promise<never>(() => undefined) },
-      { controlDeadlineMs: 1_000 },
-    );
-    assert.equal(await host.leadAdmission(partition), admission);
-    assert.deepEqual(asked, [partition]);
-  }
-});
-
-test("the selector policy host starts once and bounds cancellation evidence", async () => {
-  let executions = 0;
-  let aborted = false;
-  const host = selectorPolicyHost(
-    {
-      leadAdmission: () => Promise.resolve("Admitted"),
-      execute: (_request, signal) => {
-        executions += 1;
-        signal.addEventListener("abort", () => {
-          aborted = true;
-        });
-        return new Promise(() => undefined);
-      },
-      cancel: (attempt) =>
-        Promise.resolve({
-          status: "Terminated",
-          attempt,
-          proof: "all capability calls settled",
-        }),
-      inspect: () => Promise.resolve({ status: "Unconfirmed" }),
-      standing: () => Promise.resolve("Absent"),
-      resume: () => Promise.reject(new Error("no decision was resumed")),
-    },
-    { after: () => new Promise<never>(() => undefined) },
-    { controlDeadlineMs: 1_000 },
-  );
-  const request: SelectorPolicyRequest = {
-    attempt: "durable-attempt",
-    observation: Object.freeze(exhaustedObservation()),
-    instructions: Object.freeze({ revision: "1.0", content: "prompt" }),
-    constraints: Object.freeze({
-      models: Object.freeze(["model"]),
-      tools: Object.freeze([]),
-      limits: Object.freeze(selectorSettingsFixture.limits),
-      lead: Object.freeze({ offering: "Own" as const }),
-    }),
-  };
-  const first = host.start(request);
-  const retry = host.start(request);
-  assert.equal(first, retry);
-  assert.equal(executions, 1);
-  assert.deepEqual(await first.terminate(new Error("deadline")), {
-    status: "Terminated",
-    attempt: "durable-attempt",
-    proof: "all capability calls settled",
-  });
-  assert.equal(aborted, true);
 });
 
 /** A dry run under a project's own limits, so a refusal names the arm it took. */

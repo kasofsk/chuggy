@@ -21,7 +21,7 @@ import {
   apiMintWorkerPoolToken,
 } from "../app/core/apiRoutes.ts";
 import {
-  runnerPackageOffered,
+  runnerPackages,
   runnerRegisterCommand,
   runnerTokenLifetimeSecs,
 } from "../app/core/runners.ts";
@@ -54,12 +54,17 @@ import {
 import type { SetupMachine } from "./setupMachine.ts";
 import {
   boxActOf,
+  boxAgentLabel,
+  boxAgentText,
+  boxAgents,
   boxChatFile,
   boxChatUnitName,
   boxFolder,
   boxHome,
   boxLogin,
   boxLoginSecret,
+  boxMacLogin,
+  boxMacSettings,
   boxOwn,
   boxPoolFile,
   boxPoolName,
@@ -74,7 +79,11 @@ import {
   exited,
 } from "./setupRunnerBox.ts";
 import type { BoxAct } from "./setupRunnerBox.ts";
-import { rosterLines, rosterLingerRefusal } from "./setupRunnerRoster.ts";
+import {
+  rosterColimaAtLogin,
+  rosterLines,
+  rosterLingerRefusal,
+} from "./setupRunnerRoster.ts";
 import {
   setupSiteAt,
   setupSiteChatAdded,
@@ -303,7 +312,7 @@ test("where the person's chats run on a chat host and they have none, runner mak
   expect(hosting).toEqual([
     command,
     ...runnerRegisterCommand(
-      runnerPackageOffered,
+      runnerPackages.linux,
       machineSite,
       token,
       "ChatHost",
@@ -349,7 +358,7 @@ test("a second run where the project's runner and the person's chat host are bot
 
 test("a package older than the person's chat host needs, or of a version that cannot be read, is installed again by mcp with the console's own command, and runner then finds it and goes on to the person's chat host", async () => {
   const manifest = `${boxPrefix}/lib/node_modules/chuggy-linux/package.json`;
-  const words = runnerPackageOffered.installCommand.split(" ");
+  const words = runnerPackages.linux.installCommand.split(" ");
   for (const [held, said] of [
     [JSON.stringify({ version: "0.13.0" }), "chuggy-linux 0.13.0"],
     ["{", "chuggy-linux"],
@@ -784,7 +793,7 @@ test("the registration token is one word of register's arguments, which are the 
   const [token = ""] = machine.world.secrets;
   expect(token).toMatch(/^[\w-]{43}$/u);
   const [, ...words] = runnerRegisterCommand(
-    runnerPackageOffered,
+    runnerPackages.linux,
     machineSite,
     token,
     "Pool",
@@ -800,7 +809,7 @@ test("the registration token is one word of register's arguments, which are the 
 });
 
 test("mcp installs the package by the console's own command word for word where the machine's prefix is this person's to write, and under their own prefix where it is not, where runner then finds it", async () => {
-  const words = runnerPackageOffered.installCommand.split(" ");
+  const words = runnerPackages.linux.installCommand.split(" ");
   const installs = (machine: SetupMachine) =>
     machine.box.ran.filter((run) => boxActOf(run) === "install");
   const mine = await bare();
@@ -927,7 +936,7 @@ test("with no Claude login the run stops before anything is changed, says what l
       signedIn,
       found.engine,
       `found: the runner has no Claude login on this machine: nothing is at ${boxLogin}`,
-      `tell: The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackageOffered.guideAddress}. Tell me once one is there.`,
+      `tell: The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackages.linux.guideAddress}. Tell me once one is there.`,
       again(
         "once the person says the runner's Claude login is on this machine",
       ),
@@ -954,7 +963,7 @@ test("a machine whose user services do not answer, or where no container engine 
     lines: [
       signedIn,
       "found: this machine's user services did not answer systemctl --user",
-      `tell: chuggy setup runs the runner as a service of yours, and this machine's user services did not answer, so nothing was changed on this machine. The runner's guide says how it is run by hand: ${runnerPackageOffered.guideAddress}. Tell me if you want me to try again.`,
+      `tell: chuggy setup runs the runner as a service of yours, and this machine's user services did not answer, so nothing was changed on this machine. The runner's guide says how it is run by hand: ${runnerPackages.linux.guideAddress}. Tell me if you want me to try again.`,
       again(asksAgain),
       stop,
     ],
@@ -1097,7 +1106,7 @@ test("a settings file that does not read as the runner's stops the run before an
       lines: [
         signedIn,
         `found: ${boxSettings} is there and does not read as the runner's settings`,
-        `tell: The runner's settings file, ${boxSettings}, is there, and chuggy setup could not read from it which engine and which Claude credential the runner uses, so nothing was changed on this machine. The runner's guide says what the file holds: ${runnerPackageOffered.guideAddress}. Tell me once it is mended.`,
+        `tell: The runner's settings file, ${boxSettings}, is there, and chuggy setup could not read from it which engine and which Claude credential the runner uses, so nothing was changed on this machine. The runner's guide says what the file holds: ${runnerPackages.linux.guideAddress}. Tell me once it is mended.`,
         again(`once the person says ${boxSettings} is mended`),
         stop,
       ],
@@ -1967,24 +1976,160 @@ test("a read the site hides once the run has acted is the person's to take up as
   ]);
 });
 
-test("on a Mac runner says it cannot set one up and names no page, before it asks a site anything or looks at the machine, signed in or not", async () => {
-  const lines = [
-    "found: this machine is a Mac, and chuggy setup puts a runner only on Linux",
-    "tell: chuggy setup puts a runner only on Linux and cannot set one up here, so nothing was changed on this machine. A Mac runs one with chuggy-darwin, added by hand, and a Linux machine runs one too. Tell me once one is running.",
-    `rule: Run node ${machineScript} ${flags} only once the person says a runner is running.`,
-    stop,
-  ];
-  const signed = await fresh();
-  const stranger = setupMachine();
-  for (const machine of [signed, stranger]) {
-    machine.platform = "darwin";
-    expect(await ran(machine)).toEqual({ exit: 2, lines });
-    expect(machine.asked).toEqual([]);
-    expect(machine.box.ran).toEqual([]);
-    expect(machine.box.read).toEqual([]);
-    expect(machine.lock).toBeUndefined();
-  }
-  expect(lines.join("\n")).not.toMatch(/https?:|\/runners/u);
+/** A Mac signed in to the same site, its Claude login at chuggy-darwin's place, and chuggy-darwin installed by `mcp` where `served`. */
+async function mac(served = true): Promise<SetupMachine> {
+  const machine = await machineSignedIn(
+    projectOnly(setupSiteAt("Configured")),
+    false,
+  );
+  machine.platform = "darwin";
+  machine.box.paths.set(boxMacLogin, boxLoginSecret);
+  if (served) boxServing(machine.box, machineServing, "chuggy-darwin");
+  return machine;
+}
+
+const macCommand = `${boxPrefix}/bin/chuggy-darwin`;
+const agent = boxAgentLabel(pool);
+const macSaid = rosterLines({
+  command: macCommand,
+  settings: boxMacSettings,
+  login: boxMacLogin,
+  pool,
+  unit: agent,
+  chat,
+  chatUnit: boxAgentLabel(chat),
+  program: "chuggy-darwin",
+});
+const colima = `tell: Docker runs in Colima on this Mac, which has to be running for the runner's services to work, and after a restart is not until it is started again. ${rosterColimaAtLogin} starts it whenever you log in.`;
+
+test("on a Mac runner takes Linux's path through chuggy-darwin: settings with no engine in its Application Support, a registration, its check and its launchd agent loaded where launchd answers for the person's desktop, and once live tells the person Colima has to run", async () => {
+  const machine = await mac();
+  expect(await ran(machine)).toEqual({
+    exit: 0,
+    lines: [
+      signedIn,
+      macSaid.found.engine,
+      macSaid.found.login,
+      macSaid.found.package,
+      macSaid.did.settings,
+      macSaid.did.pool,
+      macSaid.found.check,
+      macSaid.did.unit,
+      macSaid.did.started,
+      live,
+      colima,
+      next,
+    ],
+  });
+  expect(machine.box.acts).toEqual([
+    "docker",
+    "register",
+    "doctor",
+    "service",
+    "domain",
+    "agent",
+    "unload",
+    "load",
+    "domain",
+    "agent",
+  ]);
+  expect(machine.box.ran.filter((run) => run[0] === "launchctl")).toEqual([
+    ["launchctl", "print", "gui/1000"],
+    ["launchctl", "print", `gui/1000/${agent}`],
+    ["launchctl", "bootout", `gui/1000/${agent}`],
+    ["launchctl", "bootstrap", "gui/1000", `${boxAgents}/${agent}.plist`],
+    ["launchctl", "print", "gui/1000"],
+    ["launchctl", "print", `gui/1000/${agent}`],
+  ]);
+  expect(machine.box.ran.filter((run) => run[0] === macCommand)).toEqual([
+    [
+      macCommand,
+      ...runnerRegisterCommand(
+        runnerPackages.darwin,
+        machineSite,
+        machine.world.secrets.find((secret) =>
+          machine.box.ran.flat().includes(`--token=${secret}`),
+        ) ?? "",
+        "Pool",
+      )
+        .split(" ")
+        .slice(1),
+    ],
+    [macCommand, "doctor", "--pool", pool],
+    [macCommand, "install-agent", "--pool", pool],
+  ]);
+  expect(machine.box.paths.get(`${boxAgents}/${agent}.plist`)).toBe(
+    boxAgentText(macCommand, pool),
+  );
+  expect(JSON.parse(machine.box.paths.get(boxMacSettings) ?? "")).toEqual({
+    concurrencyMax: 1,
+    sessionsMax: 2,
+    claudeTokenFile: boxMacLogin,
+    timeoutSecsMax: 7200,
+    outputBytesMax: 1_048_576,
+    environment: {},
+    network: "chuggy-jobs",
+  });
+  expect(machine.box.paths.has(boxSettings)).toBe(false);
+});
+
+test("on a Mac a second run finds the agent running and loads nothing, and a person not at the screen has the agent loaded into their background session", async () => {
+  const machine = await mac();
+  await ran(machine);
+  machine.box.acts.length = 0;
+  machine.sent.length = 0;
+  expect((await ran(machine)).lines).toEqual([
+    signedIn,
+    macSaid.found.engine,
+    macSaid.found.settings,
+    macSaid.found.login,
+    macSaid.found.package,
+    macSaid.found.pool,
+    macSaid.found.check,
+    macSaid.found.unit,
+    macSaid.found.running,
+    live,
+    colima,
+    next,
+  ]);
+  expect(machine.box.acts).toEqual([
+    "docker",
+    "doctor",
+    "service",
+    "domain",
+    "agent",
+  ]);
+  expect(writes(machine)).toEqual([]);
+
+  const background = await mac();
+  background.box.desktop = false;
+  expect((await ran(background)).exit).toBe(0);
+  expect(background.box.ran.filter((run) => boxActOf(run) === "load")).toEqual([
+    ["launchctl", "bootstrap", "user/1000", `${boxAgents}/${agent}.plist`],
+  ]);
+});
+
+test("on a Mac runner installs nothing: without chuggy-darwin it stops on the MCP step, which installs it, having changed nothing", async () => {
+  const machine = await mac(false);
+  const done = await ran(machine);
+  expect(done.lines.slice(-4, -2)).toEqual([
+    "found: the runner package, chuggy-darwin, is not installed here",
+    "tell: The runner package, chuggy-darwin, is installed by the MCP step, which gives your agent chuggy's tools for acme/widgets, and it is not here at a version this step can use, so nothing was changed on this machine. With your yes I will install it and name its MCP server in Claude Code here, and then set up the runner. Tell me if you want me to go ahead.",
+  ]);
+  expect(done.lines.at(-2)).toContain(" mcp --workspace acme");
+  expect(machine.box.acts).toEqual(["docker"]);
+  expect(writes(machine)).toEqual([]);
+});
+
+test("on a Mac where docker does not answer, runner tells the person to start Colima and changes nothing", async () => {
+  const machine = await mac();
+  machine.box.engines.docker = "No";
+  const done = await ran(machine);
+  expect(done.lines.slice(1, 3)).toEqual([
+    "found: docker did not answer you without a password",
+    "tell: A runner does its work in containers, and Docker did not answer on this machine, so nothing was changed on this machine. On a Mac, Docker runs in Colima, which colima start starts without a password. Tell me once Docker answers you.",
+  ]);
+  expect(machine.box.acts).toEqual(["docker"]);
 });
 
 test("not signed in, runner does nothing to the machine and says what the bare command says, with the project carried", async () => {
@@ -2239,14 +2384,15 @@ test("the bare command says why this machine cannot take a runner where it canno
   expect(
     await told((machine) => {
       machine.platform = "darwin";
+      machine.box.engines.docker = "No";
       boxServing(machine.box, machineServing, "chuggy-darwin");
     }),
   ).toEqual([
-    `tell: ${runnerIs}. This machine is a Mac and chuggy setup puts a runner only on Linux, but a Mac runs one with chuggy-darwin, added by hand`.slice(
+    `tell: ${runnerIs}, in containers. This machine cannot be one yet: Docker did not answer here. On a Mac, Docker runs in Colima`.slice(
       0,
       tellHead,
     ),
-    [],
+    ["docker"],
   ]);
   expect(
     await told((machine) => {
@@ -2645,28 +2791,51 @@ test("a workspace that does not let the person register a chat host stops chat-h
   expect(writes(machine)).toEqual([chatMint]);
 });
 
-test("off Linux chat-host says so before it asks a site anything or looks at the machine, and gives the by-hand steps from the workspace's personal runners page at the site named or remembered", async () => {
-  const page = `${machineSite}/tenants/acme/settings/runner`;
-  const lines = [
-    "found: this machine is a Mac, and chuggy setup makes a machine your chat host only on Linux",
-    `tell: chuggy setup makes a machine your chat host only on Linux and cannot make this one it, so nothing was changed on this machine. To make it your chat host by hand, open ${page}, press Register chat host, choose the machine and run the commands it shows. Tell me once it is running.`,
-    `rule: Run node ${machineScript} --workspace acme only once the person says their chat host is running.`,
-    stop,
-  ];
-  const signed = await fresh();
-  const stranger = setupMachine();
-  for (const [machine, argv] of [
-    [signed, chatHost],
-    [stranger, [...chatHost, "--site", machineSite]],
-  ] as const) {
-    machine.platform = "darwin";
-    expect(await ran(machine, argv)).toEqual({ exit: 2, lines });
-    expect(machine.asked).toEqual([]);
-    expect(machine.box.ran).toEqual([]);
-    expect(machine.box.read).toEqual([]);
-    expect(machine.lock).toBeUndefined();
-  }
-  expect(lines.join("\n")).not.toContain("/acme/widgets/");
+test("on a Mac chat-host installs chuggy-darwin, registers this machine as the person's chat host and loads its launchd agent, and once live tells the person Colima has to run", async () => {
+  const machine = await mac(false);
+  const chatAgent = boxAgentLabel(chat);
+  expect((await ran(machine, chatHost)).lines).toEqual([
+    signedIn,
+    macSaid.found.engine,
+    macSaid.found.login,
+    macSaid.did.package,
+    macSaid.did.settings,
+    macSaid.did.chat,
+    macSaid.found.chatCheck,
+    macSaid.did.chatUnit,
+    macSaid.did.chatStarted,
+    chatLiveHere,
+    colima,
+    chatNext,
+  ]);
+  expect(machine.box.acts).toEqual([
+    "docker",
+    "install",
+    "register",
+    "doctor",
+    "service",
+    "domain",
+    "agent",
+    "unload",
+    "load",
+    "domain",
+    "agent",
+  ]);
+
+  expect(machine.box.ran.filter((run) => boxActOf(run) === "install")).toEqual([
+    runnerPackages.darwin.installCommand.split(" "),
+  ]);
+  expect(
+    machine.box.ran
+      .filter((run) => boxActOf(run) === "register")
+      .at(-1)
+      ?.at(-1),
+  ).toBe("--chat");
+  expect(machine.box.paths.get(`${boxAgents}/${chatAgent}.plist`)).toBe(
+    boxAgentText(macCommand, chat),
+  );
+  expect(machine.world.chat.get("acme")?.live).toBe(true);
+  expect(writes(machine)).toEqual([chatMint]);
 });
 
 test("chat-host is not read without a workspace, with a project, or with --replace that is no id a line could carry back", async () => {

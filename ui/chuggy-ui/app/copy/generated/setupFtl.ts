@@ -456,10 +456,10 @@ setup-mend-runner-elsewhere = Open { $page }, press { $add } and do what it show
 setup-mend-runner-instead = For { -runner(form: "a") } on another machine instead, open { $page } there, press { $add } and do what it shows, { $serves }, and tell me once it is running.
 setup-mend-runner-offer = { setup-next-runner }. I can make this machine one. { $put } Tell me yes to go ahead. For { -runner(form: "a") } on another machine instead, that machine's own browser opens { $page }, where you press { $add } and do what it shows, { $serves }.
 # spells -run: to run is a verb here
-setup-mend-runner-mac = { setup-next-runner }. This machine is a Mac and { setup-runner-mac-none }, but a Mac runs one with { $program }, added by hand: open { $page }, press { $add }, choose Mac and do what it shows there, { $serves }. Tell me once the { -runner } is running.
-# spells -run: to run is a verb here
 setup-mend-runner-serviceless = { setup-next-runner }. { setup-program } runs one as a background service of yours, and this machine's user services did not answer, so it cannot set one up here. { $elsewhere }
 setup-mend-runner-engineless = { setup-next-runner }, in containers. This machine cannot be one yet: { $none } here without a password. { setup-runner-engine-needs-password } Tell me once one answers you here. { $instead }
+# spells -run: to run is a verb here
+setup-mend-runner-engineless-colima = { setup-next-runner }, in containers. This machine cannot be one yet: Docker did not answer here. On a Mac, Docker runs in Colima, which { $start } starts without a password. Tell me once Docker answers you here. { $instead }
 setup-mend-runner-docker = { setup-next-runner }, in containers. This machine cannot be one yet. { $why } { $state }. { $mend } { $instead }
 setup-mend-runner-or-running = { $when }, or that { -runner(form: "a") } is running
 
