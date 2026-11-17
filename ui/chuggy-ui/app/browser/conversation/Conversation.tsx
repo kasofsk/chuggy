@@ -64,6 +64,11 @@
  * its foot only while the reader is at it, and its own control returns them
  * there and pins it again.
  *
+ * WHAT CHANGES IS SAID ALOUD IN A LOG OF ITS OWN, which nobody sees and
+ * `conversationAnnounced` fills: a reply once as it begins and once whole, and
+ * nothing for history read in above, so the column itself is never a live
+ * region and no fragment of a reply is said as it streams.
+ *
  * HOW WIDE THE COLUMN IS AND HOW LARGE ITS TEXT ARE THE MOUNT'S TO SAY, through
  * the custom properties `conversation.css` reads, so a pane that gives the
  * conversation the whole frame sets it as a column to read and this file knows
@@ -105,6 +110,9 @@ import type {
   ConversationAttachRefusal,
 } from "../../core/conversationAttachments.ts";
 import { conversationCommandTyped } from "../../core/conversationCommand.ts";
+import { conversationAnnounced } from "../../core/conversationAnnounced.ts";
+import type { ConversationAnnouncement } from "../../core/conversationAnnounced.ts";
+import { copyOrDataText } from "../../core/copy.ts";
 import {
   conversationExchangeNamed,
   conversationExchangeParts,
@@ -548,6 +556,71 @@ function ConversationBottom(): ReactNode {
   );
 }
 
+/** The most changes the log holds; an older one leaves it, which says nothing. */
+const conversationAnnouncementsMax = 8;
+
+/** One change the log holds, keyed by its place in every change said. */
+interface ConversationAnnouncementHeld {
+  readonly key: number;
+  readonly lines: ConversationAnnouncement;
+}
+
+interface ConversationAnnouncementsSeen {
+  /** What the column held at the last draw, undefined while it was read. */
+  readonly exchanges: readonly ConversationExchange[] | undefined;
+  readonly said: readonly ConversationAnnouncementHeld[];
+  readonly count: number;
+}
+
+/** The changes said so far, newest last, from each draw's exchanges against
+ * the last draw's. */
+function useConversationAnnouncements(
+  exchanges: readonly ConversationExchange[] | undefined,
+): readonly ConversationAnnouncementHeld[] {
+  const [seen, setSeen] = useState<ConversationAnnouncementsSeen>({
+    exchanges,
+    said: [],
+    count: 0,
+  });
+  if (seen.exchanges !== exchanges) {
+    const lines = conversationAnnounced(seen.exchanges, exchanges ?? []);
+    setSeen(
+      lines === undefined
+        ? { ...seen, exchanges }
+        : {
+            exchanges,
+            said: [...seen.said, { key: seen.count, lines }].slice(
+              -conversationAnnouncementsMax,
+            ),
+            count: seen.count + 1,
+          },
+    );
+  }
+  return seen.said;
+}
+
+/** The log the conversation's changes are said in, drawn for nobody. */
+function ConversationAnnouncements(props: {
+  readonly exchanges: readonly ConversationExchange[] | undefined;
+}): ReactNode {
+  const text = useCopyText();
+  const said = useConversationAnnouncements(props.exchanges);
+  return (
+    <div
+      role="log"
+      aria-live="polite"
+      aria-label={text({ id: "conversation-region" })}
+      className="visually-hidden"
+    >
+      {said.map((held) => (
+        <p key={held.key}>
+          {held.lines.map((line) => copyOrDataText(text, line)).join("\n")}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 /** Nothing said yet: the column's own name and one line about it, held in the
  * middle of the empty space above the composer. */
 function ConversationEmpty(props: {
@@ -746,11 +819,12 @@ export function Conversation(props: ConversationProps): ReactNode {
     onSending: setSending,
     attachments,
   });
-  const composed = props.composer !== undefined;
+  const heard = reading ? undefined : props.exchanges;
   const inset = props.pane === true ? "px-4 py-4" : "";
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="conversation flex h-full min-h-0 flex-col">
+        <ConversationAnnouncements exchanges={heard} />
         <ConversationViewport>
           <div
             className={`conversation-column mx-auto flex w-full flex-col gap-6 ${inset}`}
@@ -765,7 +839,7 @@ export function Conversation(props: ConversationProps): ReactNode {
               workOpen={props.workOpen === true}
               paced={props.paced === true}
               named={conversationIndicatedNamed(activeExchanges, indicator)}
-              engine={composed}
+              engine={props.composer !== undefined}
               image={props.image}
               offer={props.offer}
             >

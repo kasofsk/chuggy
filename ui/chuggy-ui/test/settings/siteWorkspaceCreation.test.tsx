@@ -27,6 +27,7 @@ import {
 import type { DrawnStrict } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { styleless } from "../styleless.ts";
+import { dialogFields } from "./inviteDialogDrawn.ts";
 import { permissionsTenant } from "./permissionsFixture.tsx";
 import {
   creationsSent,
@@ -144,17 +145,9 @@ function pressedOutside(): void {
 test("New workspace opens a dialog of that name at a form's width: the name, the owner's fields under their word, the box, and Cancel then Create", async () => {
   await opened();
   expect(dialog().classList.contains("max-w-measure")).toBe(true);
-  expect(
-    within(dialog())
-      .getAllByRole("textbox")
-      .map((input) => input.getAttribute("aria-label")),
-  ).toStrictEqual(Object.keys(owner));
+  expect(dialogFields(dialog())).toStrictEqual(Object.keys(owner));
   const owned = within(dialog()).getByRole("group", { name: "Owner" });
-  expect(
-    within(owned)
-      .getAllByRole("textbox")
-      .map((input) => input.getAttribute("aria-label")),
-  ).toStrictEqual(["GitHub username", "Email"]);
+  expect(dialogFields(owned)).toStrictEqual(["GitHub username", "Email"]);
   expect(owned.contains(checkbox())).toBe(true);
   expect(formDrawn()).toStrictEqual(["", "", "", true]);
   expect(

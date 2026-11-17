@@ -241,8 +241,15 @@ export const namedProjectSchema = z.strictObject({
 });
 export type NamedProject = z.infer<typeof namedProjectSchema>;
 
+/** A project as the inventory lists it: named, and the artifact it names its icon where it names one. */
+export const inventoryProjectSchema = z.strictObject({
+  ...namedProjectSchema.shape,
+  icon: identitySchema.optional(),
+});
+export type InventoryProject = z.infer<typeof inventoryProjectSchema>;
+
 export const projectInventoryResponseSchema = z.strictObject({
-  projects: page(namedProjectSchema),
+  projects: page(inventoryProjectSchema),
   nextCursor: z.string().optional(),
 });
 export type ProjectInventoryResponse = z.infer<
@@ -3269,6 +3276,14 @@ export const projectAppearanceResponseSchema = z.strictObject({
 export type ProjectAppearanceResponse = z.infer<
   typeof projectAppearanceResponseSchema
 >;
+
+/** The artifacts a project names its icon and its banner, each absent where it names none, and whether this caller may change them. */
+export const projectImagesResponseSchema = z.strictObject({
+  icon: identitySchema.optional(),
+  banner: identitySchema.optional(),
+  administers: z.boolean(),
+});
+export type ProjectImagesResponse = z.infer<typeof projectImagesResponseSchema>;
 
 /**
  * What retiring a credential of the caller's own account is refused with while

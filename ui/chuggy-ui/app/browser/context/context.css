@@ -693,7 +693,8 @@
     grid-column: 1 / -1;
   }
 
-  /* A thread's panel: beside its conversation, or in its place on a phone. */
+  /* A thread's panel: beside its conversation, or in its place where the page
+     is narrow. */
 
   .context-beside {
     flex-direction: row;
@@ -731,7 +732,7 @@
     overflow-y: auto;
   }
 
-  @media (max-width: 40em) {
+  @container page (max-width: 40em) {
     .context-beside[data-open="true"] > [role="region"] {
       display: none;
     }

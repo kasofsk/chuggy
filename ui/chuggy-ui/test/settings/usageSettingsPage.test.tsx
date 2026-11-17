@@ -5,7 +5,8 @@
  * credential it is drawn by marked Off where it is, turned off once the reader
  * confirms it and on at a press, and retired once the reader confirms it; its
  * thresholds and options written whole, a threshold outside the wire's bounds
- * refused in its own box before anything is sent.
+ * refused in its own box before anything is sent, Save offered once something
+ * moved, a landing said in a success toast and a refusal where focus moves.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -14,6 +15,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { nativeHttpBasePath } from "../../../../src/contract/http.ts";
+import { ConsoleWriteToasts } from "../../app/browser/consoleWrite.tsx";
 import { UsageSettingsPage } from "../../app/browser/settings/UsageSettingsPage.tsx";
 import { copyTextEn } from "../../app/copy/catalog.ts";
 import { copyOrDataText } from "../../app/core/copy.ts";
@@ -29,6 +31,7 @@ import {
 import type { SentRequest } from "../screenHarness.tsx";
 import { leadPartition } from "../leadFixture.ts";
 import { resizeObserverStubbed } from "../resizeObserver.ts";
+import { toastsDrawn } from "../toastsDrawn.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 
 const readAtMs = Date.parse("2026-10-03T10:00:00Z");
@@ -100,6 +103,8 @@ interface Drawing {
   retireStatus?: number;
   /** Where set, the status turning a credential off is answered with. */
   offStatus?: number;
+  /** Where set, the status a write of the settings is answered with. */
+  settingsStatus?: number;
 }
 
 let drawing: Drawing = { pressed: false };
@@ -115,7 +120,13 @@ afterEach(() => {
 });
 
 async function drawUsage(): Promise<readonly SentRequest[]> {
-  const drawn = await drawnStrict(<UsageSettingsPage />, (request) => {
+  const page = (
+    <>
+      <UsageSettingsPage />
+      <ConsoleWriteToasts />
+    </>
+  );
+  const drawn = await drawnStrict(page, (request) => {
     const path = request.url.split("?")[0] ?? "";
     if (path === accountsPath)
       return answer(accounts(drawing.pressed, drawing.claude));
@@ -126,7 +137,13 @@ async function drawUsage(): Promise<readonly SentRequest[]> {
             { error: { code: "NotHardPaused", message: "No limit" } },
             drawing.pressStatus,
           );
-    if (path.endsWith("/settings")) return answer(undefined, 204);
+    if (path.endsWith("/settings"))
+      return drawing.settingsStatus === undefined
+        ? answer(undefined, 204)
+        : answer(
+            { error: { code: "Fault", message: "Fault" } },
+            drawing.settingsStatus,
+          );
     if (path.endsWith("/off"))
       return drawing.offStatus === undefined
         ? answer(undefined, 204)
@@ -620,7 +637,7 @@ test.each(["0", "101", "8.5", ""])(
   async (value) => {
     const sent = await drawUsage();
     const section = await editing("Codex");
-    typed(section, "Weekly window", value);
+    typed(section, "Weekly window pauses at", value);
     expect(sectionOf("Codex").textContent).toContain("Whole percent, 1 to 100");
     const save = within(section).getByRole<HTMLButtonElement>("button", {
       name: "Save changes",
@@ -633,8 +650,8 @@ test.each(["0", "101", "8.5", ""])(
 test("an agent's thresholds and options are written whole, at either end of the bounds", async () => {
   const sent = await drawUsage();
   const section = await editing("Codex");
-  typed(section, "Five-hour window", "1");
-  typed(section, "Weekly window", "100");
+  typed(section, "Five-hour window pauses at", "1");
+  typed(section, "Weekly window pauses at", "100");
   await turned(() => {
     fireEvent.click(
       within(section).getByRole("checkbox", {
@@ -656,6 +673,56 @@ test("an agent's thresholds and options are written whole, at either end of the 
   expect(
     within(sectionOf("Codex")).queryByRole("button", { name: "Save changes" }),
   ).toBeNull();
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Codex account settings saved" },
+  ]);
+});
+
+function saveIn(section: HTMLElement): HTMLButtonElement {
+  return within(section).getByRole<HTMLButtonElement>("button", {
+    name: "Save changes",
+  });
+}
+
+test("each threshold is named by the label drawn over its box, and its fault is bound to it", async () => {
+  await drawUsage();
+  const section = await editing("Codex");
+  const box = within(section).getByRole<HTMLInputElement>("textbox", {
+    name: "Weekly window pauses at",
+  });
+  expect(box.labels?.[0]?.htmlFor).toBe(box.id);
+  expect(box.hasAttribute("aria-label")).toBe(false);
+  typed(section, "Weekly window pauses at", "0");
+  expect(box.getAttribute("aria-invalid")).toBe("true");
+  const fault = document.getElementById(
+    box.getAttribute("aria-describedby") ?? "",
+  );
+  expect(fault?.textContent).toBe("Whole percent, 1 to 100");
+});
+
+test("Save is not offered until a threshold or the option moved, and not once it is moved back", async () => {
+  await drawUsage();
+  const section = await editing("Codex");
+  expect(saveIn(section).disabled).toBe(true);
+  typed(section, "Weekly window pauses at", "80");
+  expect(saveIn(section).disabled).toBe(false);
+  typed(section, "Weekly window pauses at", "90");
+  expect(saveIn(section).disabled).toBe(true);
+});
+
+test("a write refused says so above the section's actions, moves focus there, keeps the form open, and toasts nothing", async () => {
+  drawing = { pressed: false, settingsStatus: 500 };
+  const sent = await drawUsage();
+  const section = await editing("Codex");
+  typed(section, "Weekly window pauses at", "80");
+  await press("Save changes");
+  await settled();
+  expect(written(sent)).toHaveLength(1);
+  const refusal = section.querySelector(".notice-danger");
+  expect(refusal).not.toBeNull();
+  expect(document.activeElement?.contains(refusal)).toBe(true);
+  expect(saveIn(section).disabled).toBe(false);
+  expect(toastsDrawn()).toStrictEqual([]);
 });
 
 test("an agent's lead is offered no option, since it always pauses with the account", async () => {

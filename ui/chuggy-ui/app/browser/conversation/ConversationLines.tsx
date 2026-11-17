@@ -23,8 +23,9 @@
  * that the turn is working nor how it ended; what it took arrives beside the
  * control when the mailbox says.
  *
- * THE WORD IS A STATUS. A reader who cannot see the text arriving is told when
- * the turn begins to work and when it is answered, and of no word in between.
+ * THE WORD IS NOT A STATUS. What a reader who cannot see the text arriving is
+ * told is the conversation's log, `conversationAnnounced`: the reply as it
+ * begins and whole as it settles, which a word said beside it would repeat.
  */
 
 import { Fragment, useEffect, useState } from "react";
@@ -321,7 +322,7 @@ export function ConversationMetaLine(props: {
       </span>
       <p className="flex flex-wrap items-baseline gap-2">
         <span
-          role="status"
+          data-word
           className={
             drawn.worded ? conversationStandingInk(standing) : "visually-hidden"
           }

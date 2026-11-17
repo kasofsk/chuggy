@@ -20,7 +20,7 @@ import type { EpicForm } from "../../core/epics.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { EpicFormPanel } from "../EpicForm.tsx";
 import type { EpicFormFaulted } from "../EpicForm.tsx";
-import { readValue } from "../ticket/TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import { Input } from "../ui/Input.tsx";
 import { Textarea } from "../ui/Textarea.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";

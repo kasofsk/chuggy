@@ -66,6 +66,7 @@ ticket-tab-runs = { -run(case: "upper", form: "plural") }
 ticket-tab-configuration = { -configuration(case: "upper") }
 ticket-tab-usage = Usage
 ticket-tabs-nav-label = { -ticket(case: "upper") }
+ticket-state-announced = { -ticket(case: "upper") } is now { $state }
 ticket-header-merged-into = Merged into { $base }
 ticket-header-waiting-lead = Waiting for the { -lead }
 ticket-header-waiting-dispatch = Waiting for { -dispatch }

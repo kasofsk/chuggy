@@ -133,7 +133,7 @@ function stoppedWhile(
 /** The ink the word under the last answer is drawn in. */
 function wordInk(container: HTMLElement): string | undefined {
   const words = container.querySelectorAll(
-    '.conversation-meta p [role="status"]:not(.visually-hidden)',
+    ".conversation-meta p [data-word]:not(.visually-hidden)",
   );
   return words.item(words.length - 1).className;
 }

@@ -1,7 +1,7 @@
 /**
  * The ticket header as drawn: a label for every state that is never only a
  * colour, the bar that stands in for the header once it scrolls away, the
- * epics under the title, and the Runs tab's count.
+ * epics under the title, and the status a change of state is said in.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -10,10 +10,7 @@ import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import {
-  TicketHeader,
-  TicketTabs,
-} from "../app/browser/ticket/TicketHeader.tsx";
+import { TicketHeader } from "../app/browser/ticket/TicketHeader.tsx";
 import { TicketStateLabel } from "../app/browser/ticket/TicketStateLabel.tsx";
 import type { TicketListStanding } from "../app/core/ticketListView.ts";
 import { intersectionObserverStubbed } from "./intersectionObserver.ts";
@@ -138,49 +135,41 @@ test("the epics the header is given are drawn in it, after the title", () => {
   ).toBeTruthy();
 });
 
-test("Runs carries its count once the page holds a run, and the tabs are the same either way", () => {
-  const partition = { tenant: "acme", project: "atlas" };
-  const drawn = (
-    runCount: number | undefined,
-    runCountCut = false,
-  ): readonly string[] => {
-    renderCopied(
-      <TicketTabs
-        partition={partition}
-        ticket={335}
-        runCount={runCount}
-        runCountCut={runCountCut}
-        runsWithin={false}
-      />,
-    );
-    const names = screen
-      .getAllByRole("link")
-      .map((link) => link.textContent ?? "");
-    cleanup();
-    return names;
-  };
-  expect(drawn(undefined)).toStrictEqual([
-    "Overview",
-    "Runs",
-    "Configuration",
-    "Usage",
-  ]);
-  expect(drawn(0)).toStrictEqual([
-    "Overview",
-    "Runs",
-    "Configuration",
-    "Usage",
-  ]);
-  expect(drawn(6)).toStrictEqual([
-    "Overview",
-    "Runs6",
-    "Configuration",
-    "Usage",
-  ]);
-  expect(drawn(50, true)).toStrictEqual([
-    "Overview",
-    "Runs50+",
-    "Configuration",
-    "Usage",
-  ]);
+function headerOf(standing: TicketListStanding): ReactNode {
+  return (
+    <TicketHeader
+      ticket={335}
+      title="Lock the contract"
+      standing={standing}
+      fragment={{ fragment: "None" }}
+      nowMs={0}
+      actions={null}
+      epics={null}
+      notes={null}
+    />
+  );
+}
+
+test("a change of state is said once through a status, and the state the page opens on is not", () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  const view = renderCopied(headerOf("Ready"));
+  const status = screen.getByRole("status");
+  expect(status.classList.contains("visually-hidden")).toBe(true);
+  expect(status.textContent).toBe("");
+  view.rerender(headerOf("Ready"));
+  expect(status.textContent).toBe("");
+  view.rerender(headerOf("Work"));
+  expect(status.textContent).toBe("Ticket is now Working");
+  const changes = new MutationObserver(() => undefined);
+  changes.observe(status, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+  });
+  view.rerender(headerOf("Work"));
+  expect(changes.takeRecords()).toStrictEqual([]);
+  changes.disconnect();
+  view.rerender(headerOf("Done"));
+  expect(screen.getByRole("status")).toBe(status);
+  expect(status.textContent).toBe("Ticket is now Done");
 });

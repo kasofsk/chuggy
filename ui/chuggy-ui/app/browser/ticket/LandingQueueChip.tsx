@@ -20,7 +20,7 @@ import { landingQueuesQuery } from "../../core/ticketQueries.ts";
 import { usePanelState } from "../api.ts";
 import { pillLookClassName } from "../ui/Pill.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
-import { readValue } from "./TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 
 import "./ticket.css";

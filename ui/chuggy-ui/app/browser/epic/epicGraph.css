@@ -681,12 +681,35 @@
     gap: var(--space-2);
   }
 
-  /* At phone width the graph takes the screen, the selected ticket rising
-     in the sheet, and a layer's cards stand two to a row. */
-  @media (max-width: 40em) {
+  /* The way to the Tickets tab, drawn only where the page is narrow. */
+  .epic-graph-as-list {
+    display: none;
+    margin: 0;
+    font-size: var(--text-sm);
+  }
+
+  /* Where the page is narrow the graph takes its width, the side panel under
+     it where the screen is wide enough to draw one rather than the sheet.
+     The drawing keeps a layer's cards in one row at a card's width and pans
+     sideways inside its box; it never scrolls up or down itself, so a swipe
+     up or down scrolls the page. */
+  @container page (max-width: 40em) {
     .epic-graph {
       grid-template-columns: minmax(0, 1fr);
-      grid-template-areas: "graph";
+      grid-template-areas: none;
+    }
+
+    .epic-graph-panel,
+    .epic-graph-side {
+      grid-area: auto;
+    }
+
+    .epic-graph-panel {
+      order: -1;
+    }
+
+    .epic-graph-as-list {
+      display: block;
     }
 
     .epic-graph-toggles .epic-graph-key-count {
@@ -697,21 +720,30 @@
       margin-inline-start: 0;
     }
 
+    .epic-graph-pan {
+      overflow-x: auto;
+      overflow-y: hidden;
+      overscroll-behavior-x: contain;
+    }
+
+    .epic-graph-drawing {
+      width: max-content;
+      min-width: 100%;
+    }
+
     .epic-graph-layers {
       padding-inline: var(--space-2);
     }
 
     .epic-graph-cards {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      flex-wrap: nowrap;
     }
 
-    .epic-graph-cards[data-goal] {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    .epic-graph-cards > li {
-      min-width: 0;
+    .epic-graph-cards > li,
+    .epic-graph-cards[data-goal] > li {
+      flex: none;
+      width: var(--width-epic-graph-card);
+      max-width: none;
     }
   }
 }

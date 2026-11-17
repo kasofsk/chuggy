@@ -286,6 +286,10 @@ interface ThreadConversationProps {
   readonly named?: boolean;
   /** What a page draws beside the conversation from the transcript it walks. */
   readonly beside?: ((held: LeadTranscriptHeld) => ReactNode) | undefined;
+  /** The line a page draws in the composer's place where the reader can send
+   * the thread nothing, which stands aside for a box still holding text a
+   * refusal handed back. */
+  readonly unavailable?: ReactNode;
 }
 
 /** What a thread's composer is made from, out of its own read. */
@@ -367,6 +371,17 @@ export function MemberThreadConversation(
   );
 }
 
+/** What the conversation ends on: the reader's own thread's foot, or the
+ * page's line where it draws one. */
+function threadFootDrawn(
+  foot: Pick<ConversationProps, "composer" | "unsendable">,
+  unavailable: ReactNode,
+): Pick<ConversationProps, "composer" | "unsendable"> {
+  return unavailable === undefined || foot.composer?.holds === true
+    ? foot
+    : { unsendable: unavailable };
+}
+
 /** The thread's exchanges with what is being sent over them, and whether the
  * walk is still reading toward its first draw. */
 function useThreadSent(
@@ -438,12 +453,15 @@ function ThreadConversationAt(
               ? conversationExchangesWaiting(exchanges)
               : exchanges
           }
-          {...(thread.mine
-            ? props.foot({
-                ...sends.composer,
-                focusOnMount: props.named === true,
-              })
-            : {})}
+          {...threadFootDrawn(
+            thread.mine
+              ? props.foot({
+                  ...sends.composer,
+                  focusOnMount: props.named === true,
+                })
+              : {},
+            props.unavailable,
+          )}
           reading={reading}
           {...(props.image === undefined ? {} : { image: props.image })}
           {...(props.offer === undefined ? {} : { offer: props.offer })}

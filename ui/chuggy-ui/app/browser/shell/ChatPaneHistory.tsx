@@ -1,8 +1,8 @@
 /**
  * Every thread the reader can reach — their own, then a divider, then
  * everyone else's; and in the reader's own chat, the threads projects keep of
- * theirs, each a way to its project. A thread's page offers it behind a
- * control of its own, and the chat pane as a dialog its menu opens.
+ * theirs, each a way to its project. The reader's own chat offers it behind
+ * a control of its own, and the chat pane as a dialog its menu opens.
  *
  * This is the whole of what the Threads page used to be. The listing is a way
  * to choose which thread is held rather than a screen of its own, and the
@@ -13,20 +13,15 @@
 
 import { Link, useRouter } from "@tanstack/react-router";
 import { DropdownMenu } from "radix-ui";
-import { useState } from "react";
 import type { ReactNode } from "react";
 
-import type {
-  ThreadEntryResponse,
-  ThreadResponse,
-} from "../../../../../src/contract/responses.ts";
+import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
 import type { ThreadStanding } from "../../../../../src/contract/rosters.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { copyOrDataText } from "../../core/copy.ts";
 import type { Copy } from "../../core/copy.ts";
 import { agoText } from "../../core/figures.ts";
 import { memberChatRoutes } from "../../core/memberChat.ts";
-import { sessionCapabilitiesSaid } from "../../core/sessionCapabilities.ts";
 import type { MemberChatProjectThread } from "../../core/memberChat.ts";
 import { navRoutes } from "../../core/shellNav.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
@@ -35,30 +30,15 @@ import {
   threadsByStanding,
   threadStandingLabel,
 } from "../../core/threads.ts";
-import { threadStandingTone } from "../../core/tones.ts";
-import { ConsoleWriteRefusedWords } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";
-import { currentOrigin } from "../ports.ts";
 import { useProjectNamed } from "../projectNamed.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
-import { CopySaid, useCopyPress } from "../ui/CopyButton.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
-import { Notice } from "../ui/Notice.tsx";
-import { Pill } from "../ui/Pill.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
-import {
-  ChatPaneHeaderRow,
-  ChatPaneIcon,
-  ChatPaneMark,
-} from "./chatPaneIcons.tsx";
+import { ChatPaneIcon } from "./chatPaneIcons.tsx";
 import type { ChatPaneGlyphName } from "./chatPaneIcons.tsx";
-import {
-  ThreadEntryRename,
-  useThreadEntryActions,
-} from "../thread/ThreadEntryLabel.tsx";
-import type { ThreadEntryActions } from "../thread/ThreadEntryLabel.tsx";
 
 import "./shell.css";
 
@@ -425,98 +405,6 @@ export function ChatPaneCloseConfirm(props: {
   );
 }
 
-/** What of a thread its actions read, which a listing's entry and the
- * thread's own read both carry, and whether it is kept running and what it
- * may do on its owner's chat host, which only its own read says. */
-export type ChatPaneThreadNamed = Pick<
-  ThreadEntryResponse,
-  "session" | "title" | "mine" | "state"
-> &
-  Partial<Pick<ThreadResponse, "jobsStanding" | "chatHostCapabilities">>;
-
-/** The thread's title as its own page's heading, its standing said beside it. */
-function ChatPaneThreadTitle(props: {
-  readonly thread: ChatPaneThreadNamed;
-}): ReactNode {
-  const text = useCopyText();
-  return (
-    <>
-      <h1 className="text-ink-1 font-strong min-w-0 truncate text-md">
-        {copyOrDataText(text, threadLabel(props.thread))}
-      </h1>
-      <span className="flex shrink-0 px-2">
-        <Pill tone={threadStandingTone(props.thread.state)} emphasis>
-          {text(threadStandingLabel(props.thread.state))}
-        </Pill>
-      </span>
-      {props.thread.jobsStanding === true ? (
-        <span className="flex shrink-0 pr-2">
-          <Tooltip
-            trigger="abbreviation"
-            text={{ id: "chat-kept-running-detail" }}
-          >
-            <span>
-              <Pill tone="live">{text({ id: "chat-kept-running" })}</Pill>
-            </span>
-          </Tooltip>
-        </span>
-      ) : null}
-      {props.thread.chatHostCapabilities === undefined ? null : (
-        <span className="flex shrink-0 pr-2">
-          <Tooltip
-            trigger="abbreviation"
-            text={text({
-              id: "chat-host-capabilities-detail",
-              args: {
-                capabilities: sessionCapabilitiesSaid(
-                  text,
-                  props.thread.chatHostCapabilities,
-                ),
-              },
-            })}
-          >
-            <span>
-              <Pill tone="neutral">
-                {text({ id: "chat-host-capabilities" })}
-              </Pill>
-            </span>
-          </Tooltip>
-        </span>
-      )}
-    </>
-  );
-}
-
-const chatPaneThreadMenuLabel: Copy = { id: "chat-actions" };
-
-/** The control the thread's menu opens from, named for a reader who does not
- * see its glyph. */
-function ChatPaneThreadMenuTrigger(): ReactNode {
-  const text = useCopyText();
-  return (
-    <Tooltip trigger="control" text={chatPaneThreadMenuLabel}>
-      <DropdownMenu.Trigger
-        className={`${buttonLookClassName({ size: "icon", variant: "quiet" })} shrink-0`}
-      >
-        <ChatPaneIcon glyph="more" label={text(chatPaneThreadMenuLabel)} />
-      </DropdownMenu.Trigger>
-    </Tooltip>
-  );
-}
-
-/** One item of the thread's menu: its glyph, then its name. */
-function ChatPaneThreadItemFace(props: {
-  readonly glyph: ChatPaneGlyphName;
-  readonly label: string;
-}): ReactNode {
-  return (
-    <>
-      <ChatPaneMark glyph={props.glyph} />
-      {props.label}
-    </>
-  );
-}
-
 /** The address of the thread's own page, wherever the thread is kept. */
 export function useThreadPageHref(
   home: ThreadHome,
@@ -534,139 +422,4 @@ export function useThreadPageHref(
           params: { tenant: home.tenant, session },
         })
     ).href;
-}
-
-/**
- * What is done to the thread, behind one control beside its title: Copy link,
- * which stays open to say it copied; and Rename and Close where the reader may
- * change the thread.
- */
-function ChatPaneThreadMenu(props: {
-  readonly home: ThreadHome;
-  readonly session: string;
-  readonly actions: ThreadEntryActions;
-  readonly changes: boolean;
-  readonly onConfirming: () => void;
-}): ReactNode {
-  const text = useCopyText();
-  const copy = useCopyPress();
-  const { home, session } = props;
-  const pageHref = useThreadPageHref(home, session);
-  const renames = props.actions.renameable && props.changes;
-  const closes = props.actions.closable && props.changes;
-  return (
-    <>
-      <DropdownMenu.Root modal={false}>
-        <ChatPaneThreadMenuTrigger />
-        <DropdownMenu.Portal>
-          <MenuContent sideOffset={4} align="start">
-            {copy === undefined ? null : (
-              <DropdownMenu.Item
-                className={menuItemClassName}
-                onSelect={(event) => {
-                  event.preventDefault();
-                  copy.press(new URL(pageHref(), currentOrigin()).href);
-                }}
-              >
-                <ChatPaneThreadItemFace
-                  glyph={copy.copied ? "copied" : "link"}
-                  label={text(
-                    copy.copied
-                      ? { id: "chat-copied" }
-                      : { id: "chat-copy-link" },
-                  )}
-                />
-              </DropdownMenu.Item>
-            )}
-            {renames ? (
-              <DropdownMenu.Item
-                className={menuItemClassName}
-                onSelect={props.actions.startRename}
-              >
-                <ChatPaneThreadItemFace
-                  glyph="rename"
-                  label={text({ id: "chat-rename" })}
-                />
-              </DropdownMenu.Item>
-            ) : null}
-            {closes ? (
-              <DropdownMenu.Item
-                className={menuItemClassName}
-                onSelect={props.onConfirming}
-              >
-                <ChatPaneThreadItemFace
-                  glyph="close"
-                  label={text({ id: "chat-close" })}
-                />
-              </DropdownMenu.Item>
-            ) : null}
-          </MenuContent>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
-      {copy === undefined ? null : <CopySaid copied={copy.copied} />}
-    </>
-  );
-}
-
-/**
- * The thread a page holds, at the start of the bar over it: its title, and
- * beside it the menu of what is done to it. While a rename is
- * open the editor takes the title's place and the menu stands aside for it;
- * what closing asks and what either was refused for go under the row.
- */
-export function ChatPaneThreadActions(props: {
-  readonly home: ThreadHome;
-  readonly thread: ChatPaneThreadNamed;
-  /** The reader may change no thread, so Rename and Close are not offered. */
-  readonly viewOnly?: boolean;
-}): ReactNode {
-  const actions = useThreadEntryActions(props.home, props.thread);
-  const [confirming, setConfirming] = useState(false);
-  return (
-    <>
-      <div className="flex min-w-0 flex-1 items-center">
-        {actions.renaming ? (
-          <ThreadEntryRename
-            initial={props.thread.title ?? ""}
-            actions={actions}
-          />
-        ) : (
-          <>
-            <ChatPaneThreadTitle thread={props.thread} />
-            <ChatPaneThreadMenu
-              home={props.home}
-              session={props.thread.session}
-              actions={actions}
-              changes={props.viewOnly !== true}
-              onConfirming={() => {
-                setConfirming(true);
-              }}
-            />
-          </>
-        )}
-      </div>
-      {confirming && !actions.renaming ? (
-        <ChatPaneHeaderRow>
-          <ChatPaneCloseConfirm
-            mine={props.thread.mine}
-            busy={actions.busy}
-            onConfirm={() => {
-              setConfirming(false);
-              actions.close();
-            }}
-            onCancel={() => {
-              setConfirming(false);
-            }}
-          />
-        </ChatPaneHeaderRow>
-      ) : null}
-      {actions.refused === undefined ? null : (
-        <ChatPaneHeaderRow>
-          <Notice tone="danger" inline>
-            <ConsoleWriteRefusedWords refused={actions.refused} />
-          </Notice>
-        </ChatPaneHeaderRow>
-      )}
-    </>
-  );
 }

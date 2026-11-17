@@ -219,3 +219,35 @@ export function themeRefusalOf(failure: ApiFailure): Copy {
     args: { lead: { id: "settings-preferences-theme-unsaved" }, rest },
   };
 }
+
+/** The theme in use where the reader is, and the theme of theirs it is,
+ * where it is one: inside a project its resolved theme, outside every one
+ * their global choice. The editor copies the first and edits the second. */
+export function themeInUseOf(
+  global: ThemeChoice | undefined,
+  appearance: ProjectAppearanceResponse | undefined,
+  owned: readonly OwnedThemeResponse[],
+): {
+  readonly theme: ThemeDocument;
+  readonly own: OwnedThemeResponse | undefined;
+} {
+  const choice =
+    appearance === undefined
+      ? global
+      : appearance.layer === "ProjectOverride"
+        ? appearance.layers.override
+        : appearance.layer === "Global"
+          ? appearance.layers.global
+          : undefined;
+  const own =
+    choice?.kind === "Owned"
+      ? owned.find((held) => held.theme === choice.theme)
+      : undefined;
+  return {
+    theme:
+      appearance?.theme ??
+      themeResolvedDocument(global, owned) ??
+      builtInThemes[builtInThemeDefault],
+    own,
+  };
+}

@@ -17,6 +17,7 @@ ui-no-match = No match
 ui-reload = Reload
 ui-required = Required
 ui-save = Save changes
+ui-saving = Saving…
 # What a toast is announced as, before its tone's word and its line.
 ui-toasts = Notification
 # The landmark the toasts arrive in, with the keys that move focus to it.

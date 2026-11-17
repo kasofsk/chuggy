@@ -51,7 +51,8 @@ import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { TicketInstructions } from "./TicketInstructions.tsx";
-import { readValue, useTicketPageHeld } from "./TicketPageHeld.tsx";
+import { useTicketPageHeld } from "./TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 import { TicketSlot } from "./TicketSlot.tsx";
 import { dependencyStandingOf } from "./TicketStateChip.tsx";
@@ -441,7 +442,7 @@ function TicketDraftOverview(props: {
   );
 }
 
-export function TicketOverviewTab(): ReactNode {
+export function TicketOverview(): ReactNode {
   const held = useTicketPageHeld();
   if (held.draft !== undefined)
     return <TicketDraftOverview held={held} draft={held.draft} />;

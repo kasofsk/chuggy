@@ -29,6 +29,7 @@ import { Disclosure } from "../ui/Disclosure.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";
+import { EpicTabHeading } from "./EpicTabs.tsx";
 import type { EpicPageHeld } from "./EpicPageHeld.tsx";
 
 import "./epicHistory.css";
@@ -190,6 +191,7 @@ export function EpicHistoryTab(): ReactNode {
   const held = useEpicPageHeld();
   return (
     <section className="epic-history-tab">
+      <EpicTabHeading tab="epics-tab-history" />
       <EpicHistoryPage state={held.historyState} held={held} />
     </section>
   );

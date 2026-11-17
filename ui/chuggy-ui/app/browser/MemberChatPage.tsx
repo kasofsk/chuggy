@@ -1,7 +1,8 @@
 /**
  * The reader's own chat at their tenant, outside every project: a thread of
- * it as a column to read under a bar that names it, or the composer whose
- * first message opens one, and the history of their threads beside the bar.
+ * it as a column to read under a head that names it and the chat host it runs
+ * on, or the composer whose first message opens one, and the history of their
+ * threads among the head's controls.
  *
  * IT IS DRAWN ONLY WHERE THE WORKSPACE LETS THE READER CHAT OUTSIDE A PROJECT.
  * Every door of it answers as absent otherwise, so the page says who gives it
@@ -14,12 +15,14 @@
  * NO STREAM NAMES ANY OF IT. The listing and the thread drawn are polled, and
  * what the reader changes here is read again at once.
  *
- * A thread's bar offers its Context, which opens what the thread's model holds
- * beside the conversation, as a project thread's page does.
+ * A thread's head offers its Context, which opens what the thread's model
+ * holds beside the conversation, as a project thread's page does. A thread
+ * that takes no more messages says so in its composer's place, with the way
+ * to a new one.
  */
 
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { ReactNode } from "react";
 
 import type { ThreadEntryResponse } from "../../../../src/contract/responses.ts";
@@ -35,22 +38,17 @@ import {
   memberChatWithheld,
 } from "../core/memberChat.ts";
 import type { MemberChatProjectThread } from "../core/memberChat.ts";
-import {
-  ContextToggle,
-  ThreadContextPanel,
-} from "./context/SessionContext.tsx";
+import { settingsRoutes } from "../core/settingsNav.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { PanelUnready } from "./DataPanel.tsx";
 import { clipboardWritten, elapsedMs, syntaxWorkerOpened } from "./ports.ts";
 import { SettingsListingWithheld } from "./settings/SettingsListing.tsx";
 import { ChatPaneIcon } from "./shell/chatPaneIcons.tsx";
-import {
-  ChatPaneHistory,
-  ChatPaneThreadActions,
-} from "./shell/ChatPaneHistory.tsx";
+import { ChatPaneHistory } from "./shell/ChatPaneHistory.tsx";
 import { TopBar } from "./shell/TopBar.tsx";
 import { StreamPortsProvider } from "./stream.tsx";
 import { MemberThreadConversation } from "./thread/ThreadConversation.tsx";
+import { ThreadPageDrawn } from "./thread/ThreadPageDrawn.tsx";
 import {
   useChatAbilities,
   useMemberChatThreads,
@@ -60,11 +58,14 @@ import { useMemberThreadSend } from "./thread/threadSend.tsx";
 import { buttonLookClassName } from "./ui/Button.tsx";
 import { CopyProvider } from "./ui/copyHeld.tsx";
 import { MarkdownProvider } from "./ui/markdownHeld.ts";
+import { PageHeader } from "./ui/PageHeader.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 import "./shell/shell.css";
 
-/** The bar's frame with no project in it, the page filling what is left. */
+/** The bar's frame with no project in it, the page filling what is left. What
+ * is left is the page's container, named `page` as the shell names its own,
+ * since no shell draws this one. */
 function MemberChatFrame(props: {
   readonly tenant: string;
   readonly children: ReactNode;
@@ -75,7 +76,7 @@ function MemberChatFrame(props: {
         <StreamPortsProvider>
           <div className="bg-surface-0 grid h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
             <TopBar partition={undefined} chat={props.tenant} />
-            <main className="flex min-h-0 min-w-0 flex-col">
+            <main className="chat-page @container/page flex min-h-0 min-w-0 flex-col">
               {props.children}
             </main>
           </div>
@@ -85,21 +86,19 @@ function MemberChatFrame(props: {
   );
 }
 
-/** The row over the page: what it holds, then the way to a new chat and the
- * history. */
-function MemberChatBar(props: {
+/** What the page offers beside a thread's menu: the way to a new chat where
+ * it holds a thread, and the history. */
+function MemberChatOffers(props: {
   readonly tenant: string;
   readonly session: string | undefined;
   readonly own: readonly ThreadEntryResponse[];
   readonly projects: readonly MemberChatProjectThread[];
-  readonly children: ReactNode;
 }): ReactNode {
   const text = useCopyText();
   const navigate = useNavigate();
   const { tenant } = props;
   return (
-    <header className="border-edge flex min-w-0 flex-wrap items-center gap-1 border-b px-4 py-2">
-      {props.children}
+    <>
       {props.session === undefined ? null : (
         <Tooltip trigger="control" text={{ id: "chat-new" }}>
           <Link
@@ -122,7 +121,21 @@ function MemberChatBar(props: {
           });
         }}
       />
-    </header>
+    </>
+  );
+}
+
+/** The reader's chat host, which every thread here runs on, linked to the
+ * page where it is registered. */
+function MemberChatHostLink(props: { readonly tenant: string }): ReactNode {
+  const text = useCopyText();
+  return (
+    <Link
+      to={settingsRoutes.workspace.myRunner}
+      params={{ tenant: props.tenant }}
+    >
+      {text({ id: "chat-page-host" })}
+    </Link>
   );
 }
 
@@ -166,55 +179,37 @@ function MemberChatThread(props: {
 }): ReactNode {
   const text = useCopyText();
   const state = useMemberThread(props.tenant, props.session);
-  const home = { scope: "Member", tenant: props.tenant } as const;
-  const [context, setContext] = useState(false);
+  if (state.state !== "Ready")
+    return (
+      <div className="chat-page-head">
+        <PageHeader
+          title={text({ id: "chat-heading" })}
+          overflow={<MemberChatOffers {...props} />}
+        />
+        <PanelUnready state={state} />
+      </div>
+    );
   return (
-    <>
-      <MemberChatBar {...props}>
-        {state.state === "Ready" ? (
-          <>
-            <div className="flex min-w-0 flex-1 flex-wrap items-center">
-              <ChatPaneThreadActions home={home} thread={state.value} />
-            </div>
-            <ContextToggle open={context} onToggle={setContext} />
-          </>
-        ) : (
-          <h1 className="text-ink-1 font-strong min-w-0 flex-1 truncate text-md">
-            {text({ id: "chat-heading" })}
-          </h1>
-        )}
-      </MemberChatBar>
-      {state.state === "Ready" ? (
-        <div
-          className="chat-reading context-beside flex min-h-0 min-w-0 flex-1"
-          data-open={context}
-        >
-          <MemberThreadConversation
-            tenant={props.tenant}
-            thread={state.value}
-            named
-            beside={
-              context
-                ? (held) => (
-                    <ThreadContextPanel
-                      home={home}
-                      thread={state.value}
-                      held={held}
-                      onClose={() => {
-                        setContext(false);
-                      }}
-                    />
-                  )
-                : undefined
-            }
-          />
-        </div>
-      ) : (
-        <div className="p-4">
-          <PanelUnready state={state} />
-        </div>
+    <ThreadPageDrawn
+      home={{ scope: "Member", tenant: props.tenant }}
+      thread={state.value}
+      meta={<MemberChatHostLink tenant={props.tenant} />}
+      offers={<MemberChatOffers {...props} />}
+      forward={
+        <Link to={memberChatRoutes.chat} params={{ tenant: props.tenant }}>
+          {text({ id: "chat-new" })}
+        </Link>
+      }
+      conversation={(drawn) => (
+        <MemberThreadConversation
+          tenant={props.tenant}
+          thread={state.value}
+          named
+          unavailable={drawn.unavailable}
+          beside={drawn.beside}
+        />
       )}
-    </>
+    />
   );
 }
 
@@ -242,16 +237,20 @@ function MemberChatOpen(props: {
     );
   return (
     <>
-      <MemberChatBar
-        tenant={tenant}
-        session={undefined}
-        own={own}
-        projects={projects}
-      >
-        <h1 className="text-ink-1 font-strong min-w-0 flex-1 truncate text-md">
-          {text({ id: "chat-new" })}
-        </h1>
-      </MemberChatBar>
+      <div className="chat-page-head">
+        <PageHeader
+          title={text({ id: "chat-new" })}
+          meta={<MemberChatHostLink tenant={tenant} />}
+          overflow={
+            <MemberChatOffers
+              tenant={tenant}
+              session={undefined}
+              own={own}
+              projects={projects}
+            />
+          }
+        />
+      </div>
       <div className="chat-reading flex min-h-0 min-w-0 flex-1 flex-col">
         <MemberChatFirst
           tenant={tenant}

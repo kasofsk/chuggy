@@ -124,6 +124,14 @@ function recorded(reached: string[], port: string): never {
   ) as never;
 }
 
+/** A project's themes and images, each recording every door. */
+function projectAppearanceRecorded(reached: string[]): never {
+  return {
+    themes: recorded(reached, "projectAppearance"),
+    images: recorded(reached, "projectImages"),
+  } as never;
+}
+
 /** A member's chat whose tenant answers `opens` as `granted` without counting as a port reached, recording every other door. */
 function memberChatRecorded(reached: string[], granted: boolean): never {
   const doors: Record<string | symbol, unknown> = recorded(reached, "chat");
@@ -204,7 +212,7 @@ function scopedApp(
     },
     recorded(reached, "takes"),
     recorded(reached, "appearance"),
-    recorded(reached, "projectAppearance"),
+    projectAppearanceRecorded(reached),
   );
 }
 

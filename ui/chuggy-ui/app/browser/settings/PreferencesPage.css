@@ -1,8 +1,8 @@
 /* The preferences page: its sections in one column, a section's choices
    stacked in it, each choice's options wrapping onto as many rows as the
-   column needs. In a narrow column every
-   option is given a finger's height, its ring still 1em and drawn in the
-   middle of it, where the focus ring is drawn too. */
+   column needs. In a narrow column every option, and each action beside the
+   theme picker, is given a finger's height, an option's ring still 1em and
+   drawn in the middle of it, where the focus ring is drawn too. */
 
 @layer page {
   .preferences {
@@ -22,6 +22,12 @@
 
   .preferences-theme {
     display: grid;
+    gap: var(--space-2);
+  }
+
+  .preferences-theme-making {
+    display: flex;
+    flex-wrap: wrap;
     gap: var(--space-2);
   }
 
@@ -68,6 +74,10 @@
 
     .preferences-section [role="radiogroup"] > span {
       gap: 0;
+    }
+
+    .preferences-theme-making .btn {
+      min-height: var(--height-touch);
     }
   }
 }

@@ -102,9 +102,10 @@ export interface ConsoleWrite<V, T> {
   ) => Promise<unknown>;
   readonly refused?: (error: ConsoleWriteRefused, variables: V) => void;
   /** The line the shell's toast says once the write has landed, for a write
-   * whose effect is not drawn where its reader is looking. A write whose
-   * screen draws what it changed says nothing more of it, and a check made
-   * before sending is no write, so neither can toast. */
+   * whose effect is not drawn where its reader is looking, and for a settings
+   * save, whose one confirmation it is. Any other write whose screen draws
+   * what it changed says nothing more of it, and a check made before sending
+   * is no write, so neither can toast. */
   readonly landedUnseen?: (value: T, variables: V) => CopyOrData;
 }
 

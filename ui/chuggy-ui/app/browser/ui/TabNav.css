@@ -4,7 +4,6 @@
    outline is drawn inside it. */
 
 @layer ui {
-  /* jscpd:ignore-start — the ticket page's tabs, lifted rule for rule so adopting this draws them unchanged */
   .tab-nav {
     min-width: 0;
     overflow-x: auto;
@@ -60,7 +59,6 @@
     font-size: var(--text-xs);
     line-height: var(--leading-dense);
   }
-  /* jscpd:ignore-end — the lifted tabs end here */
 
   .tab-nav-tab:focus-visible {
     outline-offset: var(--focus-inset);

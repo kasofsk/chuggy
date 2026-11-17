@@ -124,7 +124,25 @@
     font-weight: var(--weight-medium);
   }
 
-  .selector-mark {
+  /* An open row is its field, over the key's column and the value's, beside
+     the alias menu where it has one; its edit mark is drawn before the
+     field's label. */
+  .selector-limit > .form-field,
+  .selector-limit > .selector-pinned {
+    grid-column: 1 / span 2;
+  }
+
+  .selector-limit[data-aliased] > .form-field {
+    grid-column: auto;
+  }
+
+  .selector-limit[data-edited] .form-field-label::before {
+    content: "";
+    align-self: center;
+  }
+
+  .selector-mark,
+  .selector-limit[data-edited] .form-field-label::before {
     display: inline-block;
     width: 0.4em;
     height: 0.4em;
@@ -153,13 +171,6 @@
     justify-content: flex-end;
     font-size: var(--text-sm);
     color: var(--ink-3);
-  }
-
-  .selector-fault {
-    grid-column: 1 / -1;
-    text-align: right;
-    font-size: var(--text-xs);
-    color: var(--tone-fail);
   }
 
   .selector-revision {

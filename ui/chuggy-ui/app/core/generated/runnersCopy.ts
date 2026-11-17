@@ -175,8 +175,7 @@ export interface RunnersCopy {
   readonly "runners-fallback-none-about": Record<never, never>;
   readonly "runners-fallback-strict-about": Record<never, never>;
   readonly "runners-fallback-preferred-about": Record<never, never>;
-  readonly "runners-writing": Record<never, never>;
-  readonly "runners-written": Record<never, never>;
+  readonly "runners-fallback-saved": Record<never, never>;
   readonly "runners-placement-title": Record<never, never>;
   readonly "runners-placement-about": Record<never, never>;
   readonly "runners-placement-col-kind": Record<never, never>;
@@ -187,6 +186,7 @@ export interface RunnersCopy {
   readonly "runners-placement-evaluation": Record<never, never>;
   readonly "runners-placement-chat": Record<never, never>;
   readonly "runners-placement-lead": Record<never, never>;
+  readonly "runners-placement-saved": Record<never, never>;
   readonly "runners-placement-landed": Record<never, never>;
   readonly "runners-placement-unhosted": Record<never, never>;
 }
