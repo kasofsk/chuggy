@@ -24,7 +24,8 @@ export interface SelectorRowsChrome {
   readonly faults: Readonly<Record<string, Copy>>;
   readonly editing: boolean;
   readonly editable: boolean;
-  readonly savable: boolean;
+  /** The draft can be written as it stands. */
+  readonly ready: boolean;
   readonly saved: SelectorSettingsShown | undefined;
   readonly onChange: (draft: SelectorSettingsDraft) => void;
   readonly onEdit: () => void;
@@ -49,6 +50,7 @@ export function SelectorRowsSection(
       title={text(section.title)}
       about={text(section.about)}
       inherited={selectorSettingsSectionInherited(draft, name)}
+      changed={changed > 0}
       footLead={
         <Figure
           figure={countFigure(changed, {

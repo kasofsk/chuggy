@@ -38,6 +38,7 @@ import type {
   SelectorSettingsModelPinned,
 } from "../../../core/selectorSettingsForm.ts";
 import { useCopyText } from "../../../copy/CopyProvider.tsx";
+import { FormField } from "../../ui/FormField.tsx";
 import { Input } from "../../ui/Input.tsx";
 import { Picker } from "../../ui/Picker.tsx";
 import { Pill } from "../../ui/Pill.tsx";
@@ -62,7 +63,6 @@ interface SelectorModelRow {
 function SelectorModelTyped(props: {
   readonly row: SelectorModelRow;
   readonly label: string;
-  readonly describedBy: string;
 }): ReactNode {
   const text = useCopyText();
   const row = props.row;
@@ -70,13 +70,13 @@ function SelectorModelTyped(props: {
     row.onChange(selectorSettingsModelTyped(row.draft, row.name, value));
   };
   return (
-    <span className="flex items-center gap-2">
+    <>
       <Input
+        labelShown
         label={props.label}
         value={row.draft.models[row.name]}
         placeholder={text({ id: "lead-settings-default" })}
-        invalid={row.fault !== undefined}
-        {...(row.fault === undefined ? {} : { describedBy: props.describedBy })}
+        {...(row.fault === undefined ? {} : { error: text(row.fault) })}
         onChange={typed}
       />
       <Picker
@@ -89,7 +89,7 @@ function SelectorModelTyped(props: {
         }))}
         onChoose={typed}
       />
-    </span>
+    </>
   );
 }
 
@@ -101,20 +101,30 @@ function SelectorEffortChosen(props: {
   const text = useCopyText();
   const row = props.row;
   return (
-    <Picker
+    <FormField
       label={props.label}
-      value={row.draft.models[row.name]}
-      options={[
-        { value: "", text: text({ id: "lead-settings-default" }) },
-        ...sessionEfforts.map((effort) => ({
-          value: effort,
-          text: text(selectorSettingsEffortLabel(effort)),
-        })),
-      ]}
-      onChoose={(value) => {
-        row.onChange(selectorSettingsModelTyped(row.draft, row.name, value));
-      }}
-    />
+      {...(row.fault === undefined ? {} : { error: text(row.fault) })}
+    >
+      {(field) => (
+        <Picker
+          label={props.label}
+          field={field}
+          value={row.draft.models[row.name]}
+          options={[
+            { value: "", text: text({ id: "lead-settings-default" }) },
+            ...sessionEfforts.map((effort) => ({
+              value: effort,
+              text: text(selectorSettingsEffortLabel(effort)),
+            })),
+          ]}
+          onChoose={(value) => {
+            row.onChange(
+              selectorSettingsModelTyped(row.draft, row.name, value),
+            );
+          }}
+        />
+      )}
+    </FormField>
   );
 }
 
@@ -126,15 +136,16 @@ function SelectorModelPinned(props: {
 }): ReactNode {
   const text = useCopyText();
   return (
-    <span className="selector-pinned">
+    <div className="selector-pinned">
       <Input
+        labelShown
         label={props.label}
         value={copyOrDataText(text, props.pinned)}
         readOnly
         disabled
         describedBy={props.row.pinnedBy}
       />
-    </span>
+    </div>
   );
 }
 
@@ -157,7 +168,6 @@ function SelectorModelPill(props: {
 function SelectorModelControl(props: {
   readonly row: SelectorModelRow;
   readonly label: string;
-  readonly faultId: string;
 }): ReactNode {
   const row = props.row;
   if (row.pinned !== undefined)
@@ -167,11 +177,7 @@ function SelectorModelControl(props: {
   return selectorSettingsModelRowIsEffort(row.name) ? (
     <SelectorEffortChosen row={row} label={props.label} />
   ) : (
-    <SelectorModelTyped
-      row={row}
-      label={props.label}
-      describedBy={props.faultId}
-    />
+    <SelectorModelTyped row={row} label={props.label} />
   );
 }
 
@@ -180,31 +186,35 @@ function SelectorModel(props: { readonly row: SelectorModelRow }): ReactNode {
   const row = props.row;
   const label = text(selectorSettingsModelLabel(row.name));
   const edited = selectorSettingsModelEdited(row.draft, row.name);
-  const faultId = useId();
+  const aliased =
+    row.editing &&
+    row.pinned === undefined &&
+    !selectorSettingsModelRowIsEffort(row.name);
   return (
-    <div className="selector-limit" data-edited={edited ? "" : undefined}>
-      <span className="selector-limit-key">
-        {edited ? <i className="selector-mark" aria-hidden="true" /> : null}
-        {label}
-      </span>
+    <div
+      className="selector-limit"
+      data-edited={edited ? "" : undefined}
+      data-aliased={aliased ? "" : undefined}
+    >
       {row.editing ? (
-        <SelectorModelControl row={row} label={label} faultId={faultId} />
+        <SelectorModelControl row={row} label={label} />
       ) : (
-        <span>
-          {copyOrDataText(
-            text,
-            row.pinned ?? selectorSettingsModelValue(row.draft, row.name),
-          )}
-        </span>
+        <>
+          <span className="selector-limit-key">
+            {edited ? <i className="selector-mark" aria-hidden="true" /> : null}
+            {label}
+          </span>
+          <span>
+            {copyOrDataText(
+              text,
+              row.pinned ?? selectorSettingsModelValue(row.draft, row.name),
+            )}
+          </span>
+        </>
       )}
       <span className="selector-was">
         <SelectorModelPill row={row} />
       </span>
-      {row.fault === undefined ? null : (
-        <span id={faultId} className="selector-fault">
-          {text(row.fault)}
-        </span>
-      )}
     </div>
   );
 }

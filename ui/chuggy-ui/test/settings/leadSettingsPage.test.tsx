@@ -20,6 +20,7 @@ import { renderCopied } from "../copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
+import { ConsoleWriteToasts } from "../../app/browser/consoleWrite.tsx";
 import { LeadSettingsPage } from "../../app/browser/settings/LeadSettingsPage.tsx";
 import {
   leadAutoCompactWindowTokensMax,
@@ -39,6 +40,7 @@ import { leadBody, leadPartition } from "../leadFixture.ts";
 import { sessionPlacementBody } from "../sessionPlacementFixture.ts";
 import type { SessionPlacementResponse } from "../../../../src/contract/responses.ts";
 import { styleless } from "../styleless.ts";
+import { toastsDrawn } from "../toastsDrawn.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
@@ -185,6 +187,7 @@ async function drawSettings(
       transport={openedStream().ports.fetch}
     >
       <LeadSettingsPage />
+      <ConsoleWriteToasts />
     </ScreenHarness>,
   );
   await settled();
@@ -215,6 +218,11 @@ function edit(title: string): void {
 
 function save(): void {
   press("Save changes");
+}
+
+/** The North Star typed as `value`, which is what offers its Save. */
+function starTyped(value: string): void {
+  fireEvent.change(box("North Star"), { target: { value } });
 }
 
 /** A box is reached by its role: the section around it answers to the same
@@ -381,8 +389,52 @@ test("saving a section writes every override whole, under the read revision", as
     expectedRevision: 12,
     overrides: { northStar: "ship the lead page" },
   });
-  expect(within(sectionOf("North Star")).getByText("Written · 13"));
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "North Star saved · Revision 13" },
+  ]);
   expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+});
+
+test("a section's Save is offered once its draft moved, and not once it is moved back", async () => {
+  await drawSettings();
+  await turned(() => {
+    edit("North Star");
+  });
+  const saveButton = () =>
+    within(sectionOf("North Star")).getByRole<HTMLButtonElement>("button", {
+      name: "Save changes",
+    });
+  expect(saveButton().disabled).toBe(true);
+  await turned(() => {
+    starTyped("ship the lead page");
+  });
+  expect(saveButton().disabled).toBe(false);
+  await turned(() => {
+    starTyped("ship the console");
+  });
+  expect(saveButton().disabled).toBe(true);
+});
+
+test("an open section's box and each open row's box are named by the label drawn over them", async () => {
+  await drawSettings();
+  await turned(() => {
+    edit("North Star");
+  });
+  for (const named of [box("North Star")]) {
+    expect(named.labels?.[0]?.htmlFor).toBe(named.id);
+    expect(named.hasAttribute("aria-label")).toBe(false);
+  }
+  await turned(() => {
+    press("Cancel");
+  });
+  await turned(() => {
+    edit("Limits");
+  });
+  for (const label of ["Tokens", "Dispatches", "Compaction window"]) {
+    const named = box(label);
+    expect(named.labels?.[0]?.textContent, label).toBe(label);
+    expect(named.hasAttribute("aria-label"), label).toBe(false);
+  }
 });
 
 /** A limit is read in the unit a person states it in, and never in the wire's
@@ -617,7 +669,7 @@ test("a faulted box is described by the text that names its fault", async () => 
     });
   });
   const described = box("Tokens").getAttribute("aria-describedby");
-  const fault = document.querySelector(".selector-fault");
+  const fault = document.querySelector(".form-field-error");
   expect(fault?.id).toBe(described);
   expect(fault?.textContent).not.toBe("");
 });
@@ -918,9 +970,14 @@ test("a revision that moved under the write is named and not retried", async () 
   await turned(() => {
     edit("North Star");
   });
+  await turned(() => {
+    starTyped("ship the lead page");
+  });
   await turned(save);
   await settled();
   expect(within(sectionOf("North Star")).getByText("Conflict · 14"));
+  expect(document.activeElement?.textContent).toContain("Conflict · 14");
+  expect(toastsDrawn()).toStrictEqual([]);
   expect(
     (server.written() as { readonly expectedRevision: number })
       .expectedRevision,
@@ -946,6 +1003,9 @@ test("a conflict that names its mover reads who and when, not the bare revision"
   await turned(() => {
     edit("North Star");
   });
+  await turned(() => {
+    starTyped("ship the lead page");
+  });
   await turned(save);
   await settled();
   const section = sectionOf("North Star");
@@ -969,16 +1029,16 @@ test("a second save is made against the revision the first one produced", async 
       return { body: settingsBody(revision, {}), status: 200 };
     },
   });
-  await turned(() => {
-    edit("North Star");
-  });
-  await turned(save);
-  await settled();
-  await turned(() => {
-    edit("North Star");
-  });
-  await turned(save);
-  await settled();
+  for (const typed of ["first", "second"]) {
+    await turned(() => {
+      edit("North Star");
+    });
+    await turned(() => {
+      starTyped(typed);
+    });
+    await turned(save);
+    await settled();
+  }
   expect(
     server
       .writes()
@@ -1138,6 +1198,9 @@ test("text typed while a save is in flight survives the answer", async () => {
     edit("North Star");
   });
   await turned(() => {
+    starTyped("ship the lead page");
+  });
+  await turned(() => {
     save();
     fireEvent.change(box("North Star"), {
       target: { value: "typed while the save was in flight" },
@@ -1244,6 +1307,9 @@ test("Restore writes that revision's overrides under the current revision", asyn
       limits: { tokensPerDecision: 12_000_000 },
     },
   });
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Restored as revision 16" },
+  ]);
 });
 
 /** Restore is the Revisions card's own write, so a refusal is said on the

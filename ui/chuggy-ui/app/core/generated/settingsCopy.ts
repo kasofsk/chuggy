@@ -114,6 +114,7 @@ export interface SettingsCopy {
   readonly "settings-people-identities": Record<never, never>;
   readonly "settings-people-identity": Record<never, never>;
   readonly "settings-people-workspace": Record<never, never>;
+  readonly "settings-people-applied": Record<never, never>;
   readonly "settings-people-projects": Record<never, never>;
   readonly "settings-people-every-project": Record<never, never>;
   readonly "settings-people-edit-named": {
@@ -263,9 +264,7 @@ export interface SettingsCopy {
     readonly workspace: unknown;
   };
   readonly "settings-rename-workspace-label": Record<never, never>;
-  readonly "settings-rename-workspace": Record<never, never>;
-  readonly "settings-rename-workspace-writing": Record<never, never>;
-  readonly "settings-rename-workspace-written": Record<never, never>;
+  readonly "settings-rename-workspace-saved": Record<never, never>;
   readonly "settings-delete-workspace-title": Record<never, never>;
   readonly "settings-delete-workspace-about": Record<never, never>;
   readonly "settings-delete-workspace": Record<never, never>;

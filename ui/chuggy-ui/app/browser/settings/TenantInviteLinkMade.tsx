@@ -28,9 +28,10 @@ export function TenantInviteLinkMade(props: {
   const address = inviteLinkAddress(currentOrigin(), props.minted.token);
   return (
     <div className="grid gap-2">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
         <Input
           readOnly
+          labelShown
           label={text({ id: "settings-invite-link-made" })}
           value={address}
         />

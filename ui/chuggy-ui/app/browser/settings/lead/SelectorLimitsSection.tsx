@@ -9,7 +9,6 @@
  */
 
 import type { ReactNode } from "react";
-import { useId } from "react";
 
 import {
   selectorSettingsLimitEdited,
@@ -91,22 +90,17 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
   const placeholder = selectorSettingsLimitOverridden(row.draft, row.name)
     ? undefined
     : String(row.installationEffective);
-  const faultId = useId();
   return (
     <div className="selector-limit" data-edited={edited ? "" : undefined}>
-      <span className="selector-limit-key">
-        {edited ? <i className="selector-mark" aria-hidden="true" /> : null}
-        {label}
-      </span>
       {row.editing ? (
         <Input
           numeric
+          labelShown
           label={label}
           unit={text(selectorSettingsLimitUnitWord(row.name))}
           value={row.draft.limits[row.name]}
           {...(placeholder === undefined ? {} : { placeholder })}
-          invalid={row.fault !== undefined}
-          {...(row.fault === undefined ? {} : { describedBy: faultId })}
+          {...(row.fault === undefined ? {} : { error: text(row.fault) })}
           onChange={(digits) => {
             row.onChange(
               selectorSettingsLimitTyped(row.draft, row.name, digits),
@@ -114,14 +108,17 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
           }}
         />
       ) : (
-        <Figure figure={selectorSettingsLimitFigure(row.name, row.effective)} />
+        <>
+          <span className="selector-limit-key">
+            {edited ? <i className="selector-mark" aria-hidden="true" /> : null}
+            {label}
+          </span>
+          <Figure
+            figure={selectorSettingsLimitFigure(row.name, row.effective)}
+          />
+        </>
       )}
       <SelectorLimitStanding row={row} />
-      {row.fault === undefined ? null : (
-        <span id={faultId} className="selector-fault">
-          {text(row.fault)}
-        </span>
-      )}
     </div>
   );
 }

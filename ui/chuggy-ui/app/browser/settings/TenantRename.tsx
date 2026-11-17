@@ -3,10 +3,14 @@
  * it. The box starts on the name the reader's own list answers, and the name
  * saved is read again from that list and the site's, so every place that
  * names the workspace names it anew. Its address is not changed.
+ *
+ * It is saved as a settings section is, its one field always open: Save is
+ * offered once the name moved, a landing is the write's toast, and a refusal
+ * is drawn under the field and takes focus.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { AccessTenantAbilities } from "../../../../../src/contract/accessPlane.ts";
@@ -15,6 +19,7 @@ import { apiRenameTenant } from "../../core/accessRoutes.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { failureWords } from "../../core/failureWords.ts";
+import { projectDisplayNameFault } from "../../core/projectCreation.ts";
 import {
   callerTenantsQuery,
   siteWorkspacesQuery,
@@ -23,11 +28,11 @@ import {
   tenantRenameOffered,
   tenantRenameSent,
 } from "../../core/tenantRename.ts";
-import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
-import type { ConsoleWriting } from "../consoleWrite.tsx";
+import { useConsoleWrite } from "../consoleWrite.tsx";
+import { settingsSectionRefusalOf } from "../settingsSectionRefusal.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Input } from "../ui/Input.tsx";
-import { Notice } from "../ui/Notice.tsx";
+import { useSettingsSectionRefusalFocus } from "../ui/SettingsSection.tsx";
 import { useWorkspaceNames } from "../workspaceNames.ts";
 import { SettingsListingSection } from "./SettingsListing.tsx";
 
@@ -49,36 +54,8 @@ function tenantRenameWrite(tenant: string): ConsoleWrite<string, undefined> {
     write: (ports, displayName) => apiRenameTenant(ports, tenant, displayName),
     refusal: (failure) => failureWords(failure).word,
     landed: (client) => tenantRenameLanded(client, tenant),
+    landedUnseen: () => ({ id: "settings-rename-workspace-saved" }),
   };
-}
-
-/** The write's line: under way, landed, or refused in the write's own words. */
-function TenantRenameNotice(props: {
-  readonly renaming: ConsoleWriting<string, undefined>;
-}): ReactNode {
-  const text = useCopyText();
-  const { renaming } = props;
-  if (renaming.isPending)
-    return (
-      <Notice
-        tone="info"
-        inline
-        detail={text({ id: "settings-rename-workspace-writing" })}
-      />
-    );
-  if (renaming.error !== null)
-    return (
-      <Notice tone="danger" inline>
-        <ConsoleWriteRefusedWords refused={renaming.error} />
-      </Notice>
-    );
-  return renaming.isSuccess ? (
-    <Notice
-      tone="live"
-      inline
-      detail={text({ id: "settings-rename-workspace-written" })}
-    />
-  ) : null;
 }
 
 export function TenantRename(props: {
@@ -90,10 +67,14 @@ export function TenantRename(props: {
   const current = useWorkspaceNames()(tenant);
   const [typed, setTyped] = useState<string | undefined>(undefined);
   const renaming = useConsoleWrite(tenantRenameWrite(tenant), { drawn: true });
+  const refusal = settingsSectionRefusalOf(renaming.error);
+  const form = useRef<HTMLFormElement>(null);
+  const line = useRef<HTMLDivElement>(null);
+  useSettingsSectionRefusalFocus(refusal, true, form, line);
   if (!tenantRenameOffered(props.abilities)) return null;
   const shown = typed ?? current;
   const sent = tenantRenameSent(shown, current);
-  const label = text({ id: "settings-rename-workspace-label" });
+  const fault = projectDisplayNameFault(shown);
   return (
     <SettingsListingSection
       heading={text({ id: "settings-rename-workspace-title" })}
@@ -103,7 +84,8 @@ export function TenantRename(props: {
       })}
     >
       <form
-        className="flex min-w-0 flex-wrap items-center gap-2"
+        ref={form}
+        className="flex min-w-0 flex-wrap items-end gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           if (sent === undefined) return;
@@ -115,9 +97,11 @@ export function TenantRename(props: {
         }}
       >
         <Input
-          label={label}
+          labelShown
+          label={text({ id: "settings-rename-workspace-label" })}
           value={shown}
           invalid={shown !== current && sent === undefined}
+          {...(fault === undefined ? {} : { error: text(fault) })}
           disabled={renaming.isPending}
           onChange={(value) => {
             renaming.reset();
@@ -125,14 +109,20 @@ export function TenantRename(props: {
           }}
         />
         <Button
+          variant="primary"
           size="sm"
           type="submit"
+          busy={renaming.isPending}
           disabled={sent === undefined || renaming.isPending}
         >
-          {text({ id: "settings-rename-workspace" })}
+          {text({ id: renaming.isPending ? "ui-saving" : "ui-save" })}
         </Button>
       </form>
-      <TenantRenameNotice renaming={renaming} />
+      {refusal?.at === "Section" ? (
+        <div ref={line} tabIndex={-1}>
+          {refusal.line}
+        </div>
+      ) : null}
     </SettingsListingSection>
   );
 }

@@ -17,6 +17,7 @@ import {
   type AccessTenantAbilities,
   type AccessTenantPeople,
 } from "../../../../src/contract/accessPlane.ts";
+import { ConsoleWriteToasts } from "../../app/browser/consoleWrite.tsx";
 import { TenantPeoplePage } from "../../app/browser/settings/TenantPeoplePage.tsx";
 import {
   answer,
@@ -195,6 +196,8 @@ export interface PeopleDrawing {
   readonly inventory?: () => Response;
   /** What a grant, a removal, an invitation, a link made or one revoked is answered with. */
   readonly changed?: (request: SentRequest) => Response | Promise<Response>;
+  /** Whether the shell's toasts are drawn beside the page. */
+  readonly toasts?: boolean;
 }
 
 export function drawPeople(drawing: PeopleDrawing = {}): Promise<DrawnStrict> {
@@ -217,7 +220,16 @@ export function drawPeople(drawing: PeopleDrawing = {}): Promise<DrawnStrict> {
         ],
         truncated: false,
       }));
-  return drawnStrict(<TenantPeoplePage />, (request: SentRequest) => {
+  const page =
+    drawing.toasts === true ? (
+      <>
+        <TenantPeoplePage />
+        <ConsoleWriteToasts />
+      </>
+    ) : (
+      <TenantPeoplePage />
+    );
+  return drawnStrict(page, (request: SentRequest) => {
     if (request.url === peoplePath && request.method === "GET")
       return listing();
     if (request.url === abilitiesPath && request.method === "GET")
