@@ -24,6 +24,7 @@ import { Disclosure } from "./ui/Disclosure.tsx";
 import { Lightbox } from "./ui/Lightbox.tsx";
 import { MarkdownReport } from "./ui/MarkdownReport.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
+import "./ExecutionArtifacts.css";
 
 type ResultArtifact = NonNullable<
   ExecutionResponse["result"]
