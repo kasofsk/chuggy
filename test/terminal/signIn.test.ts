@@ -257,10 +257,14 @@ test("a declined sign-in stands: the bare command says it again and opens nothin
       ...declined,
     ]);
     assert.match(stood.lines[3] ?? "", /^rule: Run the command on the next: /u);
-    assert.match(stood.lines[4] ?? "", /^rule: Never read or print /u);
-    assert.match(stood.lines[5] ?? "", signOutRule);
-    assert.match(stood.lines[6] ?? "", declinedRule);
-    assert.deepEqual(stood.lines.slice(7), ["next: stop"]);
+    assert.match(
+      stood.lines[4] ?? "",
+      /^rule: Before anything else, start a subagent that explores /u,
+    );
+    assert.match(stood.lines[5] ?? "", /^rule: Never read or print /u);
+    assert.match(stood.lines[6] ?? "", signOutRule);
+    assert.match(stood.lines[7] ?? "", declinedRule);
+    assert.deepEqual(stood.lines.slice(8), ["next: stop"]);
   }
   assert.equal(pages(installation), 1);
   assert.equal(existsSync(join(machine.beside, "opened")), false);

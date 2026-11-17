@@ -21,6 +21,7 @@ import { setupMergePollMs } from "./setupMerge.ts";
 import { setupRemoteWaitMs } from "./setupRemote.ts";
 import { setupLivePollMs } from "./setupRunner.ts";
 import { setupSignInPollMs } from "./setupSignIn.ts";
+import { setupWatchPollMs } from "./setupTicket.ts";
 
 export interface SetupPacing {
   /** How often a sign-in looks for the note its page leaves. */
@@ -33,6 +34,8 @@ export interface SetupPacing {
   readonly bindPollMs: number;
   /** How often `merge` reads the checklist again while it waits on the import. */
   readonly mergePollMs: number;
+  /** How often `watch` reads the checklist again while the first ticket is on its way. */
+  readonly watchPollMs: number;
 }
 
 export const setupPacing: SetupPacing = {
@@ -41,6 +44,7 @@ export const setupPacing: SetupPacing = {
   remoteWaitMs: setupRemoteWaitMs,
   bindPollMs: setupBindPollMs,
   mergePollMs: setupMergePollMs,
+  watchPollMs: setupWatchPollMs,
 };
 
 function setupPacingField(msMax: number) {
@@ -53,6 +57,7 @@ const setupPacingSchema = z.strictObject({
   remoteWaitMs: setupPacingField(setupPacing.remoteWaitMs),
   bindPollMs: setupPacingField(setupPacing.bindPollMs),
   mergePollMs: setupPacingField(setupPacing.mergePollMs),
+  watchPollMs: setupPacingField(setupPacing.watchPollMs),
 });
 
 /** The pacing `text` names, each field it leaves out the program's own. */
@@ -72,5 +77,6 @@ export function setupPacingRead(text: string | undefined): SetupPacing {
     remoteWaitMs: named.data.remoteWaitMs ?? setupPacing.remoteWaitMs,
     bindPollMs: named.data.bindPollMs ?? setupPacing.bindPollMs,
     mergePollMs: named.data.mergePollMs ?? setupPacing.mergePollMs,
+    watchPollMs: named.data.watchPollMs ?? setupPacing.watchPollMs,
   };
 }

@@ -49,6 +49,7 @@ import {
   setupRunnerDue,
   setupServeDue,
   setupTicketDue,
+  setupWatchAwaited,
 } from "./setupNext.ts";
 import type { SetupMergeSeen } from "./setupNext.ts";
 import type { SetupPacing } from "./setupPacing.ts";
@@ -728,6 +729,34 @@ async function setupTicket(
 }
 
 /**
+ * `watch` works under the remembered sign-in as the bare command does, and
+ * reads the checklist again at `pacing.watchPollMs`, entered again at each
+ * look, while its next thing is the first ticket on its way to its landing and
+ * the run's wait has not ended, then says the checklist. It writes nothing.
+ */
+async function setupWatch(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Watch" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const endsAtMs = ports.nowMs() + asked.waitSecs * 1_000;
+  for (;;) {
+    const held = await setupEntered(ports, asked.site, "Watch");
+    if (held === undefined) return setupBusy(ports, "Watch", asked.site);
+    if (held.signed === "Out") return held.report;
+    const standing = await setupStandingRead(
+      ports,
+      held,
+      asked.answers,
+      pacing,
+    );
+    if (!setupWatchAwaited(standing) || ports.nowMs() >= endsAtMs)
+      return setupChecklist(ports, held, asked.answers, pacing);
+    await ports.sleepMs(pacing.watchPollMs);
+  }
+}
+
+/**
  * `north-star` works under the remembered sign-in as `ticket` does. Where the
  * checklist's next thing is the project's North Star, it writes the text it
  * was given as that, through ports that let out only the settings' write, and
@@ -975,6 +1004,8 @@ export async function setupRun(
         return await setupServe(ports, asked, pacing);
       case "Ticket":
         return await setupTicket(ports, asked, pacing);
+      case "Watch":
+        return await setupWatch(ports, asked, pacing);
       case "NorthStar":
         return await setupNorthStar(ports, asked, pacing);
       case "Listen":

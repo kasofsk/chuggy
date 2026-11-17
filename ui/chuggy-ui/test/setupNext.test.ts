@@ -96,7 +96,12 @@ function lacking(
   const steps: readonly SetupStep[] = [
     { step: "workspace", state: "done", detail: "acme", lacks: undefined },
     { step: "runner", state: "waiting", detail: "why", lacks: lack },
-    { step: "ticket", state: "todo", detail: "", lacks: { lacks: "Ticket" } },
+    {
+      step: "ticket",
+      state: "todo",
+      detail: "",
+      lacks: { lacks: "Ticket", pullRequest: true },
+    },
   ];
   return {
     site: stoodSite,
@@ -162,6 +167,7 @@ const mends: {
       | "Grant"
       | "Serving"
       | "NorthStar"
+      | "Landing"
     >
   ]: readonly [Extract<SetupLack, { readonly lacks: Kind }>, SaidThing];
 } = {
@@ -201,7 +207,7 @@ const mends: {
     ),
   ],
   Ticket: [
-    { lacks: "Ticket" },
+    { lacks: "Ticket", pullRequest: true },
     hand(
       `${create}. Tell me once it is created.`,
       "once the person says the ticket is created",
@@ -221,20 +227,6 @@ const mends: {
       "once the person says ticket 4 has started",
     ),
   ],
-  Landing: [
-    {
-      lacks: "Landing",
-      ticket: 4,
-      phase: "Evaluation",
-      pullRequest: false,
-      bootstrapped: false,
-      wait: undefined,
-    },
-    hand(
-      `Ticket 4 is in Evaluation. Setup is done when it finishes. ${pages}/tickets/4 shows where it is. Tell me when you want me to look again.`,
-      "if the person asks to look again",
-    ),
-  ],
   Decision: [
     { lacks: "Decision", ticket: 4 },
     hand(
@@ -243,6 +235,32 @@ const mends: {
     ),
   ],
 };
+
+/** `watch` run at once for the project, beside where its first ticket is. */
+const watchRun = (tell: string): SaidThing => ({
+  thing: "Run",
+  command: "Watch",
+  tell,
+  workspace: "acme",
+  project: "widgets",
+});
+
+test("a first ticket on its way to its landing is watched: watch is run at once beside where it is, and the person is not asked to say when to look again", () => {
+  expect(
+    thing({
+      lacks: "Landing",
+      ticket: 4,
+      phase: "Evaluation",
+      pullRequest: false,
+      bootstrapped: false,
+      wait: undefined,
+    }),
+  ).toEqual(
+    watchRun(
+      `Ticket 4 is in Evaluation. Setup is done when it finishes. ${pages}/tickets/4 shows where it is. I'll keep watching it and tell you what changes.`,
+    ),
+  );
+});
 
 /** `bind` run at once for the project, beside what `tell` has the person do on GitHub. */
 const bindRun = (tell: string | undefined): SaidThing => ({
@@ -444,7 +462,9 @@ test("the MCP step is the one next only while it is the first step not done, whi
     tenant: "acme",
     project: "widgets",
   });
-  expect(setupMcpDue(lacking_({ lacks: "Ticket" }))).toBeUndefined();
+  expect(
+    setupMcpDue(lacking_({ lacks: "Ticket", pullRequest: true })),
+  ).toBeUndefined();
   expect(setupRunnerDue(lacking_({ lacks: "Mcp" }))).toBeUndefined();
 });
 
@@ -511,7 +531,9 @@ test("the import is due only while the configuration is the first step not done,
     partition: { tenant: "acme", project: "widgets" },
     repository: "Acme-Org/Widgets",
   });
-  expect(setupConfigurationDue(lacking_({ lacks: "Ticket" }))).toBeUndefined();
+  expect(
+    setupConfigurationDue(lacking_({ lacks: "Ticket", pullRequest: true })),
+  ).toBeUndefined();
   expect(setupRunnerDue(lacking_(unconfigured()))).toBeUndefined();
 });
 
@@ -759,9 +781,8 @@ function workingWith(
 
 /** The tell of ticket 7 in its work, with what it waits on of the person's runners said after its phase. */
 const working = (waits: string): SaidThing =>
-  hand(
-    `Ticket 7 is in Work.${waits} Setup is done when it finishes. ${pages}/tickets/7 shows where it is. Tell me when you want me to look again.`,
-    "if the person asks to look again",
+  watchRun(
+    `Ticket 7 is in Work.${waits} Setup is done when it finishes. ${pages}/tickets/7 shows where it is. I'll keep watching it and tell you what changes.`,
   );
 
 const room = { freeMib: 1434, neededMib: 4096 };
@@ -1270,6 +1291,7 @@ const deciding: Readonly<
     | keyof typeof trips
     | "Project"
     | "Configuration"
+    | "Landing"
     | "Done"
   >
 > = {
@@ -1310,6 +1332,11 @@ test("at each stage of a site the first step that is not done decides what is ne
         thing: "Run",
         command: "Bind",
       });
+    else if (kind === "Landing")
+      expect(next.thing, stage).toMatchObject({
+        thing: "Run",
+        command: "Watch",
+      });
     else {
       const { when } = mends[kind][1] as { readonly when: string };
       expect(next.thing, stage).toMatchObject({ thing: "Hand", when });
@@ -1334,7 +1361,7 @@ const open = (
   whole = true,
 ): SetupStanding =>
   lacking(
-    { lacks: "Ticket" },
+    { lacks: "Ticket", pullRequest: true },
     {
       steps: [],
       choice: {
@@ -1549,7 +1576,7 @@ test("bind waits while the next thing is a trip to GitHub, and on nothing else",
   for (const lack of [
     { lacks: "Binding", reach: undefined },
     unconfigured(),
-    { lacks: "Ticket" },
+    { lacks: "Ticket", pullRequest: true },
     { lacks: "Runner", chat: false },
   ] as const satisfies readonly SetupLack[])
     expect(setupBindAwaited(lacking(lack)), lack.lacks).toBe(false);

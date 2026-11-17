@@ -326,16 +326,32 @@ still take the work while her runner is off. Those are its only writes; it says
 what each came to, and reads the checklist again. Where she does not
 administer the project, the `tell:` names its Placement page for an admin.
 
-Where the project has no ticket yet, the ticket step asks what she wants done
-first, and the configurations a ticket may use are read as the console's New
-ticket page reads them. The `rule:` names `ticket` with `--title` and
+The first run's `rule:` lines have the agent start a subagent that explores
+the repository for the toolchains its work needs while she goes through the
+steps that do not depend on it.
+
+Where the project has no ticket yet, the configurations a ticket may use are
+read as the console's New ticket page reads them. Where the one offered is the
+bootstrap, a `rule:` has the agent recommend a worker image for those
+toolchains, and the `tell:` announces a first ticket that checks everything
+works end to end and says what it writes; the `rule:` names `ticket` with
+`--image` and `--toolchains` to run unless she objects, adding `--title` and
+`--intent` where she asks for something else first. Elsewhere the step asks
+what she wants done, and the `rule:` names `ticket` with `--title` and
 `--intent`, and with `--configuration` where she has to choose among several.
 `ticket` files the ticket through the core the console's Create ticket calls:
-the form that page starts on, filled with her words and the branch it proposes,
-then created, released and dispatched. Its writes are the draft and the two
-submissions. It says what the site answered and reads the checklist again.
-Where the configurations were not read, the `tell:` names the New ticket page
-instead.
+the form that page starts on, filled with her words or the end-to-end check and
+the branch it proposes, then created, released and dispatched. Under the
+bootstrap, what it asks for also names the image and toolchains and asks for a
+`AGENTS.md` in the repository's `.chug` folder saying what that folder is, and it is not filed without the
+image. Its writes are the draft and the two submissions. It says what the site
+answered and reads the checklist again. Where the configurations were not read,
+the `tell:` names the New ticket page instead.
+
+While the first ticket is on its way, `next:` names `watch`, which the `rule:`
+has run at once. `watch` reads the checklist again every few seconds, for as
+long as `--wait-secs` gives it, until the ticket needs her or is done, and
+names itself again where the wait ends first. It writes nothing.
 
 Where the checklist is otherwise done and the first ticket's pull request
 stands unmerged on a repository holding only the bootstrap, the `tell:` asks

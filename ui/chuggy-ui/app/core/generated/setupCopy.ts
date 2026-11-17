@@ -39,6 +39,7 @@ export interface SetupCopy {
   readonly "setup-rule-drive": {
     readonly stop: unknown;
   };
+  readonly "setup-rule-explore": Record<never, never>;
   readonly "setup-rule-directory": {
     readonly directory: unknown;
   };
@@ -76,6 +77,7 @@ export interface SetupCopy {
     readonly merged: unknown;
     readonly served: unknown;
     readonly filed: unknown;
+    readonly watched: unknown;
     readonly plugged: unknown;
     readonly starred: unknown;
   };
@@ -98,6 +100,8 @@ export interface SetupCopy {
     readonly configuration: unknown;
     readonly title: unknown;
     readonly intent: unknown;
+    readonly image: unknown;
+    readonly toolchains: unknown;
     readonly chosen: unknown;
     readonly filed: unknown;
     readonly text: unknown;
@@ -133,8 +137,14 @@ export interface SetupCopy {
   };
   readonly "setup-asked-brief": {
     readonly filed: unknown;
+    readonly image: unknown;
+    readonly toolchains: unknown;
     readonly title: unknown;
     readonly intent: unknown;
+  };
+  readonly "setup-asked-image": {
+    readonly image: unknown;
+    readonly toolchains: unknown;
   };
   readonly "setup-asked-test": {
     readonly flag: unknown;
@@ -564,6 +574,7 @@ export interface SetupCopy {
   };
   readonly "setup-rule-bind": Record<never, never>;
   readonly "setup-rule-bind-again": Record<never, never>;
+  readonly "setup-rule-watch": Record<never, never>;
   readonly "setup-rule-merge-again": Record<never, never>;
   readonly "setup-mend-binding-yours": Record<never, never>;
   readonly "setup-mend-binding-mine": {
@@ -935,6 +946,31 @@ export interface SetupCopy {
     readonly names: unknown;
     readonly create: unknown;
   };
+  readonly "setup-rule-image": {
+    readonly project: unknown;
+  };
+  readonly "setup-tell-first-ticket": {
+    readonly agents: unknown;
+    readonly ends: unknown;
+  };
+  readonly "setup-rule-ticket-first": {
+    readonly command: unknown;
+    readonly image: unknown;
+    readonly toolchains: unknown;
+    readonly title: unknown;
+    readonly intent: unknown;
+  };
+  readonly "setup-ticket-check-title": Record<never, never>;
+  readonly "setup-ticket-check-intent": Record<never, never>;
+  readonly "setup-ticket-agents": {
+    readonly agents: unknown;
+    readonly docs: unknown;
+  };
+  readonly "setup-ticket-image": {
+    readonly image: unknown;
+    readonly toolchains: unknown;
+  };
+  readonly "setup-ticket-imageless": Record<never, never>;
   readonly "setup-ticket-none": Record<never, never>;
   readonly "setup-ticket-did": {
     readonly ticket: unknown;

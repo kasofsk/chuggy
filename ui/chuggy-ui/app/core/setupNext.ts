@@ -91,6 +91,7 @@ import type {
   SetupRunnerHeld,
   SetupRunnerHere,
 } from "./setupRunnerMachine.ts";
+import { setupTicketAgentsPath } from "./setupTicket.ts";
 import type { SetupTicketOffers } from "./setupTicket.ts";
 import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
 import {
@@ -922,12 +923,27 @@ function setupRunnerBarredMend(
   );
 }
 
-/** What the person wants done first, asked with the configurations they choose among where there is a choice, and the console's page named for writing it themselves. */
+/** What the person wants done first, asked with the configurations they choose among where there is a choice, and the console's page named for writing it themselves; or, under a bootstrap with nothing to choose, the worker image and the end-to-end check announced, to be filed unless the person objects. */
 function setupBriefAsked(
   at: SetupAt,
   offers: SetupTicketOffers,
   create: Copy,
+  pullRequest: boolean,
 ): SetupThing {
+  if (offers.bootstrap)
+    return {
+      thing: "First",
+      named: setupNamed(at),
+      tell: {
+        id: "setup-tell-first-ticket",
+        args: {
+          agents: setupTicketAgentsPath,
+          ends: pullRequest ? "pull" : "merged",
+        },
+      },
+      workspace: at.workspace,
+      project: at.project,
+    };
   return {
     thing: "Brief",
     ask: {
@@ -993,7 +1009,7 @@ function setupTicketMend(
   };
   const created: Copy = { id: "setup-mend-ticket-when" };
   if (lack.lacks === "Ticket" && offers !== undefined)
-    return setupBriefAsked(at, offers, create);
+    return setupBriefAsked(at, offers, create, lack.pullRequest);
   if (lack.lacks === "Ticket")
     return setupHand(
       { id: "setup-mend-ticket-tell", args: { create } },
@@ -1016,8 +1032,10 @@ function setupTicketMend(
         { id: "setup-mend-dispatch-when", args: { ticket } },
       );
     case "Landing":
-      return setupHand(
-        {
+      return {
+        thing: "Run",
+        command: "Watch",
+        tell: {
           id: "setup-mend-finalization-tell",
           args: {
             ticket,
@@ -1028,8 +1046,9 @@ function setupTicketMend(
             ...setupWaitSaid(lack.wait),
           },
         },
-        setupLookAgain,
-      );
+        workspace: at.workspace,
+        project: at.project,
+      };
     case "Decision":
       return setupHand(
         { id: "setup-mend-decision-tell", args: { ticket, page } },
@@ -1419,6 +1438,11 @@ export function setupTicketDue(
   standing: SetupStanding,
 ): PartitionIdentity | undefined {
   return setupDue(standing, ["Ticket"]);
+}
+
+/** Whether the checklist's next thing is the first ticket on its way to its landing, which is what `watch` waits on. */
+export function setupWatchAwaited(standing: SetupStanding): boolean {
+  return setupDue(standing, ["Landing"]) !== undefined;
 }
 
 /** The project whose North Star step is the one next, which is when the folder's checkout is looked at and `north-star` writes one. */

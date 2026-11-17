@@ -156,7 +156,7 @@ test("a first ticket that opened a pull request is said to have done that, in th
   const failed = await printed(await machineSignedIn(world));
   expect(failed.lines.slice(-4, -2)).toEqual([
     "step: ticket      waiting  ticket 1 is in Finalization",
-    `tell: Ticket 1 is in Finalization. Setup is done when it finishes. ${pages}/tickets/1 shows where it is. Tell me when you want me to look again.`,
+    `tell: Ticket 1 is in Finalization. Setup is done when it finishes. ${pages}/tickets/1 shows where it is. I'll keep watching it and tell you what changes.`,
   ]);
 });
 
