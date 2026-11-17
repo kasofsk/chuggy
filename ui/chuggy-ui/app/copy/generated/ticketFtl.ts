@@ -108,8 +108,8 @@ ticket-actions-request-failed = the request failed
 # spells -attempt: one try at an action, not at a run
 ticket-actions-attempt-cancelled = this attempt was cancelled
 
-## What a resume, a dispatch or any other action does, as the line a reader
-## hovers the button for: \`app/core/ticketActions.ts\`.
+## What a resume, a dispatch or any other action does:
+## \`app/core/ticketActions.ts\`.
 
 ticket-actions-sentence-dispatch = { -dispatch } this { -ticket } from the version the console observed
 ticket-actions-sentence-resume-default = continue this { -ticket } from where it was { -escalation }

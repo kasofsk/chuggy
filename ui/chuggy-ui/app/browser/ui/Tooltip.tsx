@@ -53,7 +53,8 @@ function tooltipAbbreviationPressed(
   event: MouseEvent<HTMLElement>,
   onOpen: () => void,
 ): void {
-  if (event.currentTarget.closest("a[href], button, summary, label") !== null) return;
+  if (event.currentTarget.closest("a[href], button, summary, label") !== null)
+    return;
   event.preventDefault();
   onOpen();
 }
