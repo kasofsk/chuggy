@@ -1,16 +1,13 @@
 /**
- * The pieces every screen of tickets draws the same way, and the table cells
- * the inbox wraps them in.
+ * The pieces every screen of tickets draws the same way.
  *
  * The title and the number are a link pair defined once — `TicketTitleWords`
  * and `TicketTitleNumber` — both linking to that ticket's page wherever they
  * are drawn, so a screen that built its own `Link` would be a second place the
- * path has to change. `TicketTitleCell` is the `th` the inbox's table needs
- * around them; a screen that is not a table takes the pieces directly. The
- * execution column and the activity piece are the same arrangement: whether a
- * row's execution draws as a chip, and how long ago a ticket last moved, are
- * read in one place rather than drawn on two screens as two answers that
- * happen to agree today.
+ * path has to change. The execution chip and the activity piece are the same
+ * arrangement: whether a row's execution draws as a chip, and how long ago a
+ * ticket last moved, are read in one place rather than drawn on two screens as
+ * two answers that happen to agree today.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -22,7 +19,6 @@ import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import { verdictTone } from "../core/tones.ts";
 import { Figure } from "./ui/Figure.tsx";
 import { Pill } from "./ui/Pill.tsx";
-import { Tooltip } from "./ui/Tooltip.tsx";
 
 export const cellAbsent = "—";
 
@@ -61,32 +57,9 @@ export function TicketTitleNumber(props: {
   );
 }
 
-/** The inbox's own title column: the words clipped at `max-w-aside` with the
- * whole title on hover, the number beside them. */
-export function TicketTitleCell(props: {
-  readonly partition: PartitionIdentity;
-  readonly ticket: number;
-  readonly title: string | undefined;
-}): ReactNode {
-  return (
-    <th scope="row">
-      {props.title === undefined ? (
-        <TicketTitleWords {...props} />
-      ) : (
-        <Tooltip trigger="abbreviation" text={props.title}>
-          <span className="max-w-aside inline-block truncate align-bottom">
-            <TicketTitleWords {...props} />
-          </span>
-        </Tooltip>
-      )}
-      <TicketTitleNumber partition={props.partition} ticket={props.ticket} />
-    </th>
-  );
-}
-
-/** An execution column drawn as its own chip where the row carries an
- * execution, in the word and hue the ticket's ledger draws it in, and as the
- * dim dash where it carries none. */
+/** A row's execution drawn as its own chip where the row carries one, in the
+ * word and hue the ticket's ledger draws it in, and as the dim dash where it
+ * carries none. */
 export function TicketRowExecutionCell(props: {
   readonly row: ProjectTableRow;
 }): ReactNode {
@@ -108,17 +81,5 @@ export function TicketActivity(props: {
     cellAbsent
   ) : (
     <Figure figure={agoFigure(props.activityAt, props.nowMs)} />
-  );
-}
-
-/** The inbox's own activity column, dim around the piece above. */
-export function TicketActivityCell(props: {
-  readonly activityAt: string | undefined;
-  readonly nowMs: number;
-}): ReactNode {
-  return (
-    <td className="text-ink-3">
-      <TicketActivity {...props} />
-    </td>
   );
 }
