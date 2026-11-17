@@ -23,6 +23,7 @@ import {
   runnerAskRead,
   runnerCapabilitiesTyped,
   runnerCapabilityLabel,
+  runnerInstalledVersion,
   runnerOutdated,
   runnerPackages,
   runnerRegisterCommand,
@@ -377,4 +378,12 @@ test("a runner is outdated only below a pinned plain release, part by part", () 
   expect(runnerOutdated("0.14.0-rc.1", "0.14.1")).toBe(false);
   expect(runnerOutdated("0.13.0", "0.14.1+build")).toBe(false);
   expect(runnerOutdated("0.13", "0.14.1")).toBe(false);
+});
+
+test("the release each platform's install command installs is the one its archive and its tag name", () => {
+  for (const offered of Object.values(runnerPackages)) {
+    const tagged = /\/download\/v([^/]+)\//u.exec(offered.installCommand)?.[1];
+    expect(tagged).toMatch(/^[0-9]+\.[0-9]+\.[0-9]+$/u);
+    expect(runnerInstalledVersion(offered)).toBe(tagged);
+  }
 });
