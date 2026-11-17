@@ -1,6 +1,5 @@
 /**
- * 207 closes every open lead and inquiry through the session's own close,
- * drops the lead's, the inquiries' and the subsidy's objects, and leaves a
+ * 207 drops the lead's, the inquiries' and the subsidy's objects, and leaves a
  * project's placement and settings holding their thread columns.
  */
 
@@ -131,57 +130,6 @@ async function leadRetiredObjectsGone(subject: pg.Pool): Promise<void> {
       `${table}.${column}`,
     );
 }
-
-test("207 closes every open lead and inquiry, abandons their turns and appends the change of each", async () => {
-  await migrationDatabase("lead_retired_sessions", async (subject) => {
-    await migratedBefore(subject, migration207.version);
-    await subject.query(leadKept);
-    const appendedBefore = (
-      await subject.query<{ sequence: string }>(
-        "SELECT coalesce(max(sequence),0)::text AS sequence FROM project_change",
-      )
-    ).rows[0]?.sequence;
-
-    assert.ok((await postgresMigrate(subject)).includes(migration207.version));
-
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT session,state,closed_at IS NOT NULL AS closed
-             FROM agent_session ORDER BY session`,
-        )
-      ).rows,
-      [
-        { session: "inquiry-207", state: "Closed", closed: true },
-        { session: "lead-207", state: "Closed", closed: true },
-      ],
-    );
-    assert.deepEqual(
-      (await subject.query("SELECT turn,state,failure FROM session_turn")).rows,
-      [{ turn: "turn-207", state: "Abandoned", failure: "SessionClosed" }],
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT resource::jsonb AS resource FROM project_change
-            WHERE kind='Session' AND sequence>$1 AND resource::jsonb ? 'state'
-            ORDER BY resource::jsonb->>'session'`,
-          [appendedBefore],
-        )
-      ).rows,
-      [
-        {
-          resource: {
-            session: "inquiry-207",
-            kind: "Inquiry",
-            state: "Closed",
-          },
-        },
-        { resource: { session: "lead-207", kind: "Lead", state: "Closed" } },
-      ],
-    );
-  });
-});
 
 test("207 drops the lead's, the inquiries' and the subsidy's objects, keeps the thread settings, and the placement door still takes a lead and writes the thread alone", async () => {
   await migrationDatabase("lead_retired_objects", async (subject) => {

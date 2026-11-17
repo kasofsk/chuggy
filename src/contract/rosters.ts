@@ -815,9 +815,9 @@ export const sessionCapabilities = [
 export type SessionCapability = (typeof sessionCapabilities)[number];
 
 /**
- * Capabilities no session holds any more that a stored roster or a chat host's
- * poll may still name. A reader accepts each and drops it, so a host whose
- * operator configured one is served the rest rather than refused.
+ * Capabilities no session holds any more that a chat host's poll may still
+ * name. A reader accepts each and drops it, so a host whose operator
+ * configured one is served the rest rather than refused.
  */
 export const sessionCapabilitiesRetired = ["LeadDecision"] as const;
 export type SessionCapabilityRetired =
