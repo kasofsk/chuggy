@@ -119,11 +119,12 @@
   }
 
   .ticket-list-standing:focus-visible {
-    box-shadow: none;
+    outline: none;
   }
 
   .ticket-list-standing:focus-visible > :is(.ticket-state, .status-badge) {
-    box-shadow: var(--ring-focus);
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: var(--focus-offset);
   }
 
   button.ticket-list-standing:disabled {

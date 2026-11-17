@@ -32,6 +32,12 @@
     font-weight: var(--weight-strong);
   }
 
+  @media (forced-colors: active) {
+    .btn[aria-pressed="true"] {
+      border-color: var(--forced-current);
+    }
+  }
+
   .btn[aria-checked="true"] {
     background: var(--surface-inverse);
     color: var(--ink-inverse);

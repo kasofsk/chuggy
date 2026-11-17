@@ -52,11 +52,12 @@
   }
 
   .chip-remove:focus-visible {
-    box-shadow: none;
+    outline: none;
   }
 
   .chip:has(.chip-remove:focus-visible) {
-    box-shadow: var(--ring-focus);
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: var(--focus-offset);
   }
 
   .chip-remove:disabled {
