@@ -117,19 +117,18 @@
 -- `src/roots/provisionProjectAccess.ts` states in its own header why it checks
 -- a privilege instead.
 --
--- chuggy_selector_control IS CREATED WITH NO LOGIN ROLE, DELIBERATELY. The
--- migration grants it the selector administration surface and no command under
--- `src/roots/` connects as it, so there is no process for a credential to
--- belong to; issuing one would put a live password behind a door nothing opens.
--- It is created here for the reason every group role is — so a membership grant
--- has a group, and so re-running this file is authoritative over its
--- attributes.
+-- THE SELECTOR'S GROUP ROLES OUTLIVE ITS PROCESS. The migration that retired
+-- the selector left its roles holding nothing, but the migrations before it
+-- still grant to them, and a fresh database replays the whole chain. So they
+-- are created here, and chuggy_owner is a member of them, for the reasons it
+-- is of every group. No login role is issued for any of them, and the one an
+-- earlier run issued, chuggy_selector_service_login, is dropped where it
+-- stands, so a deployed rig converges by running this file again.
 --
 -- Usage:
 --   CHUG_PG_OWNER_PASSWORD=... \
 --   CHUG_PG_TICKET_SERVICE_PASSWORD=... \
 --   CHUG_PG_API_PASSWORD=... \
---   CHUG_PG_SELECTOR_SERVICE_PASSWORD=... \
 --   CHUG_PG_SCHEDULER_PASSWORD=... \
 --   CHUG_PG_FINALIZER_PASSWORD=... \
 --   CHUG_PG_WORKER_PLANE_PASSWORD=... \
@@ -143,7 +142,6 @@
 \getenv owner_password CHUG_PG_OWNER_PASSWORD
 \getenv ticket_service_password CHUG_PG_TICKET_SERVICE_PASSWORD
 \getenv api_password CHUG_PG_API_PASSWORD
-\getenv selector_service_password CHUG_PG_SELECTOR_SERVICE_PASSWORD
 \getenv scheduler_password CHUG_PG_SCHEDULER_PASSWORD
 \getenv finalizer_password CHUG_PG_FINALIZER_PASSWORD
 \getenv worker_plane_password CHUG_PG_WORKER_PLANE_PASSWORD
@@ -152,6 +150,13 @@
 \getenv access_plane_password CHUG_PG_ACCESS_PLANE_PASSWORD
 \getenv metrics_plane_password CHUG_PG_METRICS_PLANE_PASSWORD
 BEGIN;
+
+-- A login whose process is retired. DROP OWNED takes back the CONNECT an
+-- earlier run gave it, which DROP ROLE would otherwise refuse over.
+SELECT format('DROP OWNED BY %1$I; DROP ROLE %1$I', role_name)
+  FROM unnest(ARRAY['chuggy_selector_service_login']) AS role_name
+ WHERE EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
+\gexec
 
 -- The group roles the migration would otherwise be first to create. A DO block
 -- would be the shorter conditional and psql does not interpolate a variable
@@ -169,9 +174,9 @@ SELECT format('CREATE ROLE %I NOLOGIN', role_name)
 -- The identities that log in: one per service, plus the one that migrates.
 SELECT format('CREATE ROLE %I LOGIN', role_name)
   FROM unnest(ARRAY['chuggy_owner', 'chuggy_ticket_service_login', 'chuggy_api_login',
-                    'chuggy_selector_service_login', 'chuggy_scheduler_login',
-                    'chuggy_finalizer_login', 'chuggy_worker_plane_login',
-                    'chuggy_pool_plane_login', 'chuggy_access_plane_login',
+                    'chuggy_scheduler_login', 'chuggy_finalizer_login',
+                    'chuggy_worker_plane_login', 'chuggy_pool_plane_login',
+                    'chuggy_access_plane_login',
                     'chuggy_configuration_importer_login',
                     'chuggy_metrics_plane_login']) AS role_name
  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
@@ -211,8 +216,6 @@ ALTER ROLE chuggy_ticket_service_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 ALTER ROLE chuggy_api_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
-ALTER ROLE chuggy_selector_service_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
-  CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 ALTER ROLE chuggy_scheduler_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 ALTER ROLE chuggy_finalizer_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
@@ -231,7 +234,6 @@ ALTER ROLE chuggy_metrics_plane_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB 
 ALTER ROLE chuggy_owner PASSWORD :'owner_password';
 ALTER ROLE chuggy_ticket_service_login PASSWORD :'ticket_service_password';
 ALTER ROLE chuggy_api_login PASSWORD :'api_password';
-ALTER ROLE chuggy_selector_service_login PASSWORD :'selector_service_password';
 ALTER ROLE chuggy_scheduler_login PASSWORD :'scheduler_password';
 ALTER ROLE chuggy_finalizer_login PASSWORD :'finalizer_password';
 ALTER ROLE chuggy_worker_plane_login PASSWORD :'worker_plane_password';
@@ -244,7 +246,6 @@ ALTER ROLE chuggy_metrics_plane_login PASSWORD :'metrics_plane_password';
 -- widening one is an edit to the migration's grants and to nothing here.
 GRANT chuggy_ticket_service TO chuggy_ticket_service_login;
 GRANT chuggy_api TO chuggy_api_login;
-GRANT chuggy_selector_service TO chuggy_selector_service_login;
 GRANT chuggy_scheduler TO chuggy_scheduler_login;
 GRANT chuggy_finalizer TO chuggy_finalizer_login;
 GRANT chuggy_worker_plane TO chuggy_worker_plane_login;
@@ -272,9 +273,9 @@ SELECT format('REVOKE CONNECT ON DATABASE %I FROM PUBLIC', current_database())
 -- then have to agree with.
 SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), role_name)
   FROM unnest(ARRAY['chuggy_owner', 'chuggy_ticket_service_login', 'chuggy_api_login',
-                    'chuggy_selector_service_login', 'chuggy_scheduler_login',
-                    'chuggy_finalizer_login', 'chuggy_worker_plane_login',
-                    'chuggy_pool_plane_login', 'chuggy_access_plane_login',
+                    'chuggy_scheduler_login', 'chuggy_finalizer_login',
+                    'chuggy_worker_plane_login', 'chuggy_pool_plane_login',
+                    'chuggy_access_plane_login',
                     'chuggy_configuration_importer_login',
                     'chuggy_metrics_plane_login']) AS role_name
 \gexec

@@ -1,36 +1,9 @@
 /**
- * The two narrow things the ticket service is allowed to learn from the
- * execution scheduler: bounded project-safe active-work and advisory capacity
- * context, and the authoritative hard execution-backlog guard over dispatch.
- *
- * THE CONTEXT HAS NO READER HERE. The functions that answer it are granted to
- * the API and ticket-service roles alone, `NativeWeb` publishes no method
- * returning one, and nothing composes the read. What a dispatcher does learn
- * is the guard's verdict, as the answer to its dispatch.
- *
- * THE CONTEXT IS ADVISORY AND THE GUARD IS AUTHORITATIVE, and they are
- * separate ports for that reason. issue #180 forbids capacity and active-work
- * observations to reserve capacity, alter ticket eligibility or become a
- * hidden ticket service dispatch policy, and it excludes them from the strict
- * dispatch-view digest. The guard is the opposite: it is retryable
- * infrastructure backpressure applied at ingress, before an operation becomes
- * durable, and it is neither `TicketGraph` state, ticket eligibility nor a
- * commercial entitlement.
- *
- * NOTHING CROSSES THE PROJECT BOUNDARY EXCEPT A SAFE AGGREGATE. The active-work
- * numbers are the named project's own; the capacity numbers are the cluster
- * total and the project's own account, which 006 permits as safe aggregate
- * advisory context. No other project's identity, tickets, tasks or counts are
- * representable in these types, so an adapter cannot leak one by accident.
- *
- * A PROJECT IS THE WHOLE COMPOSITE KEY HERE, WHICH IS WHY THE FOLD READS A TYPE
- * THE ARITHMETIC DOES NOT. `model/capacity.qnt` gives a registration one atomic
- * project identity and this tree's is `(tenant, project)`, so a fold that
- * compared the project half alone would answer one tenant with another tenant's
- * work whenever both named a project the same thing. The arithmetic below still
- * takes the model's own record, and the project-scoped fold takes a
- * `PartitionedExecution` — the tenant half is in the type it reads, so a caller
- * that has not got one cannot ask.
+ * What the ticket service is allowed to learn from the execution scheduler:
+ * the authoritative hard execution-backlog guard over dispatch. It is
+ * retryable infrastructure backpressure applied at ingress, before an
+ * operation becomes durable, and it is neither `TicketGraph` state, ticket
+ * eligibility nor a commercial entitlement.
  *
  * THE GUARD PRESERVES HEADROOM BY BEING NARROW RATHER THAN BY RESERVING IT.
  * `dispatchNeedsExecutionHeadroom` returns true for the two dispatch commands
@@ -52,121 +25,13 @@
  */
 
 import {
-  executionAccountActiveCount,
-  executionActiveCount,
-  executionEntitlementOf,
-  executionReservationDeficit,
   recordScheduler,
   type BacklogScope,
-  type CapacityExecution,
-  type Entitlement,
-  type ExecutionStatus,
   type SchedulerTelemetry,
 } from "./executionScheduler.ts";
 export { allBacklogScopes, type BacklogScope } from "./executionScheduler.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ProjectCommand } from "./projectCommand.ts";
-
-/** The named project's own unfinished logical work, by the status that owns a slot or waits for one. */
-export interface ProjectActiveWork {
-  readonly partition: Partition;
-  readonly queued: number;
-  readonly admitted: number;
-  readonly launching: number;
-  readonly running: number;
-}
-
-/** The safe aggregate capacity facts, and no cross-project detail. */
-export interface AdvisoryCapacity {
-  readonly clusterSlotsMax: number;
-  readonly clusterActive: number;
-  readonly accountMaximum: number;
-  readonly accountActive: number;
-  readonly accountReservationDeficit: number;
-}
-
-/** One observation of a project's active work and capacity. */
-export interface SelectorExecutionContext {
-  readonly activeWork: ProjectActiveWork;
-  readonly capacity: AdvisoryCapacity;
-}
-
-export interface SelectorRuntimeExecutionContext extends SelectorExecutionContext {
-  readonly account: string;
-  readonly backlog: {
-    readonly project: number;
-    readonly installation: number;
-  };
-}
-
-/**
- * The advisory read through the authenticated ticket service. It answers for
- * one project and reads no other.
- */
-export interface ExecutionContextRead {
-  context(partition: Partition): Promise<SelectorRuntimeExecutionContext>;
-}
-
-/** One registration with the tenant half of its key, which the arithmetic never reads. */
-export interface PartitionedExecution extends CapacityExecution {
-  readonly tenant: string;
-}
-
-/** How many of these registrations sit in one logical status. */
-function statusCount(
-  executions: readonly CapacityExecution[],
-  status: ExecutionStatus,
-): number {
-  return executions.filter((each) => each.status === status).length;
-}
-
-/** Whether this registration is the named partition's own, on both halves of the key. */
-function partitionOwns(
-  partition: Partition,
-  execution: PartitionedExecution,
-): boolean {
-  return (
-    execution.tenant === partition.tenant &&
-    execution.project === partition.project
-  );
-}
-
-/**
- * The advisory context one cluster ledger already determines, folded with the
- * same mirrored arithmetic admission uses so an adapter answering the read has
- * something to be compared against rather than a second opinion to form. Every
- * count it returns is either the named partition's own or a cluster-wide total,
- * which is where the project boundary is actually kept.
- */
-export function selectorExecutionContext(
-  clusterSlotsMax: number,
-  entitlements: ReadonlyMap<string, Entitlement>,
-  executions: readonly PartitionedExecution[],
-  partition: Partition,
-  account: string,
-): SelectorExecutionContext {
-  const own = executions.filter((each) => partitionOwns(partition, each));
-  return {
-    activeWork: {
-      partition,
-      queued: statusCount(own, "Queued"),
-      admitted: statusCount(own, "Admitted"),
-      launching: statusCount(own, "Launching"),
-      running: statusCount(own, "Running"),
-    },
-    capacity: {
-      clusterSlotsMax,
-      clusterActive: executionActiveCount(executions),
-      accountMaximum: executionEntitlementOf(entitlements, account).maximum,
-      accountActive: executionAccountActiveCount(executions, account),
-      accountReservationDeficit: executionReservationDeficit(
-        entitlements,
-        executions,
-        account,
-      ),
-    },
-  };
-}
 
 /**
  * What the backlog guard found. `Backlogged` carries a retry hint and no
