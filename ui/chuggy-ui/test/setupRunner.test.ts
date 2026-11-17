@@ -97,7 +97,7 @@ import type { SetupSite } from "./setupSite.ts";
 
 /** `runner` as the rule of an offer that asks of no chat host names it. */
 const runnerAlone = ["runner", "--workspace", "acme", "--project", "widgets"];
-/** `runner` as a person who said yes to their chat host too runs it. */
+/** `runner` as an offer that makes this machine the person's chat host too names it. */
 const runner = [...runnerAlone, "--chat-host", "yes"];
 const mcp = ["mcp", "--workspace", "acme", "--project", "widgets"];
 /** The first line of a run of `mcp`, which names the site and needs no sign-in. */
@@ -2487,7 +2487,7 @@ test("a declined sign-in that still stands where a run enters its sign-in again 
 });
 
 const pages = `${machineSite}/acme/widgets`;
-const offer = `rule: Run node ${machineScript} runner ${flags} only once the person has been told what it does here, and has not asked for it on another machine instead.`;
+const offer = `rule: Run node ${machineScript} runner ${flags} only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.`;
 const runnerService =
   "The runner package, chuggy-linux, runs it as a background service of yours that starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan, 4 GiB a run.";
 const runnerIs =
@@ -2502,7 +2502,7 @@ function otherMachine(chat: boolean): string {
   return `rule: Where the person wants them on another machine instead, run nothing here, and give them this line to paste into Claude Code on that machine: Make this machine my chuggy ${things}: run "curl -fsS ${machineSite}/chuggy-setup.mjs -o ~/.chuggy-setup.mjs && node ~/.chuggy-setup.mjs runner --site ${machineSite} ${flags}${host}" and do what its output says.`;
 }
 
-test("the bare command, where a runner is next and this machine could take one, says once what runner would put here and names it only under the person's yes, having looked at the machine and changed nothing", async () => {
+test("the bare command, where a runner is next and this machine could take one, says once what runner would put here and names it to run unless the person objects, having looked at the machine and changed nothing", async () => {
   const machine = await fresh();
   const before = new Map(machine.box.paths);
   const done = await ran(machine, []);
@@ -2564,7 +2564,7 @@ test("from the offer to live: the command the rule names sets the runner up, and
 function chatOffer(program: string, held: string): readonly string[] {
   return [
     `tell: chuggy needs two things running on a machine of yours. A **runner** does the work of tickets. A **chat host** runs your chats with chuggy. I'll install both on this machine, as yours alone. They can live on another machine instead; say so if you want that. ${runnerService.replace("chuggy-linux", program)} Your chat host is a second background service, which holds ${held} at once. ${takesWork}`,
-    `rule: Run node ${machineScript} runner ${flags} --chat-host yes only once the person has been told what it does here, and has not asked for it on another machine instead.`,
+    `rule: Run node ${machineScript} runner ${flags} --chat-host yes only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.`,
     "rule: Run it with --chat-host no in place of --chat-host yes only where the person says they want no chat host. Before running it with --chat-host yes, tell the person: Downloading the chat image. This takes a few minutes the first time.",
     otherMachine(true),
     stop,
@@ -2611,7 +2611,7 @@ const boxBesideContainers: BoxContainer[] = [
   },
 ];
 
-test("the bare command sizes the chat host to the room what the engine already runs leaves: 11.7 GiB with 2 GiB in use is recommended two chats in 4 GiB and a yes writes two, and a run's own container that leaves no room is recommended none, saying what is in use", async () => {
+test("the bare command sizes the chat host to the room what the engine already runs leaves: 11.7 GiB with 2 GiB in use is offered two chats in 4 GiB and the run writes two, and a run's own container that leaves no room is offered none, saying what is in use", async () => {
   const used = await both();
   used.box.containers.push(...boxBesideContainers);
   expect((await ran(used, [])).lines.slice(-5)).toEqual(
@@ -2656,7 +2656,7 @@ test("on a Mac the bare command asks of the chat host as Linux does, with the Ma
   );
 });
 
-test("on a Mac whose Colima runs no VM, stopped or not made yet, the bare command counts nothing in use against the memory a yes gives it, offering three chats in 6 GiB, and the yes writes the same three", async () => {
+test("on a Mac whose Colima runs no VM, stopped or not made yet, the bare command counts nothing in use against the memory the run gives it, offering three chats in 6 GiB, and the run writes the same three", async () => {
   for (const vm of ["Stopped", "None"] as const) {
     const machine = await mac();
     for (const project of machine.world.projects) project.threads = "Pool";
@@ -2690,7 +2690,7 @@ test("on a Mac whose Colima runs no VM, stopped or not made yet, the bare comman
   }
 });
 
-test("on a Mac whose running Colima VM a yes restarts, the yes counts what ran before the restart, so a postgres the restart stops leaves the offer's two chats in 4 GiB, not three", async () => {
+test("on a Mac whose running Colima VM the run restarts, the run counts what ran before the restart, so a postgres the restart stops leaves the offer's two chats in 4 GiB, not three", async () => {
   const machine = await mac();
   for (const project of machine.world.projects) project.threads = "Pool";
   boxMacMade(machine.box, {
@@ -2977,7 +2977,7 @@ function reaching(): { readonly api: ApiPorts; readonly reached: string[] } {
   };
 }
 
-test("the ports the writes go out through pass the mint for the person's runner, the project given to it and the fallback that lets it take their work, the mint for their chat host where they said yes to one, and any read, and refuse every other write having reached nothing", async () => {
+test("the ports the writes go out through pass the mint for the person's runner, the project given to it and the fallback that lets it take their work, the mint for their chat host where the run is named with one, and any read, and refuse every other write having reached nothing", async () => {
   const { api, reached } = reaching();
   const partition = { tenant: "two words", project: "a/b" };
   const ports = setupWritePorts(

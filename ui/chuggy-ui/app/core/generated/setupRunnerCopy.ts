@@ -24,7 +24,6 @@ export interface SetupRunnerCopy {
     readonly line: unknown;
   };
   readonly "setup-runner-rule-chat-host": {
-    readonly given: unknown;
     readonly flag: unknown;
     readonly no: unknown;
     readonly yes: unknown;

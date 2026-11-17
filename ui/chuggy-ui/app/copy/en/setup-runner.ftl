@@ -21,10 +21,7 @@ setup-runner-rule = Run { $command } only { $when }.
 setup-runner-rule-elsewhere = Where the person wants them on another machine instead, run nothing here, and give them this line to paste into { -claude-code } on that machine: { $line }
 # spells -run: to run is a verb here
 # spells -thread: the chat image is the image the chat host runs
-setup-runner-rule-chat-host = { $given ->
-    [yes] Run it with { $flag } { $no } in place of { $flag } { $yes } only where the person says they want no { -chat-host }. Before running it with { $flag } { $yes }, tell the person: Downloading the chat image. This takes a few minutes the first time.
-   *[no] Run it with { $flag } { $yes } in place of { $flag } { $no } only where the person asks for the { -chat-host } all the same.
-}
+setup-runner-rule-chat-host = Run it with { $flag } { $no } in place of { $flag } { $yes } only where the person says they want no { -chat-host }. Before running it with { $flag } { $yes }, tell the person: Downloading the chat image. This takes a few minutes the first time.
 
 ## Each kind of Claude credential: what it is called, and what makes one.
 

@@ -1493,11 +1493,11 @@ function ended(thing: SetupThing, held = setupAnswersNone): readonly string[] {
   ).slice(1 + steps.length);
 }
 
-test("something runner would do is told once, and runner is named for that project only once the person says yes, whatever names the run was given", () => {
+test("something runner would do is told once, and runner is named for that project to run unless the person objects, whatever names the run was given", () => {
   const [offer, hostile] = things.Offer;
   expect(ended(offer as SetupThing)).toEqual([
     "tell: A runner is registered and is not running. Start it on its machine and tell me once it is running.",
-    `rule: Run node ${machineScript} runner ${flags} only once the person has been told what it does here, and has not asked for it on another machine instead.`,
+    `rule: Run node ${machineScript} runner ${flags} only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.`,
     stop,
   ]);
   expect(
@@ -1505,7 +1505,7 @@ test("something runner would do is told once, and runner is named for that proje
       -2,
     ),
   ).toBe(
-    `rule: Run node ${machineScript} runner --workspace 'two words' --project 'it'\\''s --site' only once the person has been told what it does here, and has not asked for it on another machine instead.`,
+    `rule: Run node ${machineScript} runner --workspace 'two words' --project 'it'\\''s --site' only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.`,
   );
 });
 
@@ -1516,7 +1516,7 @@ test("an offer naming a line for another machine gives it as a rule of its own, 
     ended({ ...(offer as SetupThing), elsewhere: line } as SetupThing),
   ).toEqual([
     "tell: A runner is registered and is not running. Start it on its machine and tell me once it is running.",
-    `rule: Run node ${machineScript} runner ${flags} only once the person has been told what it does here, and has not asked for it on another machine instead.`,
+    `rule: Run node ${machineScript} runner ${flags} only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.`,
     `rule: Where the person wants them on another machine instead, run nothing here, and give them this line to paste into Claude Code on that machine: ${line}`,
     stop,
   ]);

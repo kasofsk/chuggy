@@ -464,7 +464,7 @@ function setupOffer(tell: Copy, at: SetupAt, chat: boolean): SetupThing {
     when: { id: "setup-offer-when" },
     workspace,
     project,
-    ...(chat ? { chatHost: "yes" as const } : {}),
+    chatHost: chat,
     elsewhere: claudeCodeRunnerLine(at.site, workspace, project, chat),
   };
 }

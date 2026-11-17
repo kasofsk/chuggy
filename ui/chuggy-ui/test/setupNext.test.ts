@@ -905,10 +905,10 @@ const offered = (tell: string, chat = false): SaidThing => ({
   thing: "Offer",
   command: "Runner",
   tell,
-  when: "once the person has been told what it does here, and has not asked for it on another machine instead",
+  when: "once the person has been told what it does here, has not objected, and has not asked for it on another machine instead",
   workspace: "acme",
   project: "widgets",
-  ...(chat ? { chatHost: "yes" } : {}),
+  chatHost: chat,
   elsewhere: otherMachine(chat),
 });
 

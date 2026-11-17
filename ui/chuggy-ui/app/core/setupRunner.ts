@@ -3,7 +3,8 @@
  * machine the program is run on, given one project, with the project letting
  * their own runners take its work, and said to be done only once the site sees
  * it live and given the project; then, where the person's chats in the project run on runners
- * and they said yes to it, the same machine made their chat host, which takes
+ * and the run is named with the chat host flag's yes, which is what setup
+ * names unless the person objects, the same machine made their chat host, which takes
  * their chats in every project of the workspace, and said to be done only
  * once the site sees this machine live as that host too. One package, one
  * settings file and one Claude credential serve both. The chat host is sized
@@ -261,7 +262,7 @@ interface Run {
   session: SetupRunnerSession;
 }
 
-/** A run of `runner`, for one project, which makes this machine the person's own runner and gives it the project; `chatHost` where the person said yes to this machine as their chat host too. */
+/** A run of `runner`, for one project, which makes this machine the person's own runner and gives it the project; `chatHost` where it is named with the chat host flag's yes, to make this machine the person's chat host too. */
 interface ProjectRun extends Run {
   readonly partition: PartitionIdentity;
   readonly chatHost: boolean;
@@ -386,7 +387,7 @@ function setupUnread(
 
 const setupWhole = (): boolean => true;
 
-/** Where the person's chats in the project run, read before anything is touched: whether they run on a chat host, which is the person's, and the person said yes to this machine as it. */
+/** Where the person's chats in the project run, read before anything is touched: whether they run on a chat host, which is the person's, and the run is named with the chat host flag's yes. */
 async function setupChatsAsked(
   run: ProjectRun,
 ): Promise<{ readonly chats: boolean } | Halt> {

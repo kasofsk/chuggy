@@ -79,7 +79,6 @@ import {
 import type {
   SetupAnswers,
   SetupAskFault,
-  SetupChatHostAnswer,
   SetupCommand,
 } from "./setupArguments.ts";
 import type {
@@ -203,8 +202,8 @@ export type SetupThing =
       readonly when: Copy;
       readonly workspace: string;
       readonly project: string | undefined;
-      /** The answer `runner` is named with for the person's chat host, where the offer makes this machine it. */
-      readonly chatHost?: SetupChatHostAnswer;
+      /** Whether the offer makes this machine the person's chat host too, which `runner` is then named with the chat host flag for. */
+      readonly chatHost?: boolean;
       /** The line that has `runner` run on another machine of the person's instead, where the offer is of one. */
       readonly elsewhere?: string;
     }
@@ -1344,14 +1343,14 @@ function setupSkipping(saying: SetupSaying): SetupSaying {
   };
 }
 
-/** The rule that names the chat host's other answer, and when the agent gives it in place of the one named. */
-function setupChatHostRule(given: SetupChatHostAnswer): SetupLine {
+/** The rule that names the chat host flag's no, for a person who wants no chat host, and what is said before the flag's yes is run. */
+function setupChatHostRule(): SetupLine {
   const [yes, no] = setupChatHostAnswers;
   return [
     "rule",
     {
       id: "setup-runner-rule-chat-host",
-      args: { flag: setupChatHostFlag, given, yes, no },
+      args: { flag: setupChatHostFlag, yes, no },
     },
   ];
 }
@@ -1362,11 +1361,12 @@ function setupOfferLines(
   saying: SetupSaying,
 ): readonly SetupLine[] {
   if (thing.command !== "Plugin") {
-    const chatHost = thing.chatHost;
+    const chatHost = thing.chatHost === true;
+    const [yes] = setupChatHostAnswers;
     const command = setupCommandOf(
       setupSayingOf(saying, thing),
       thing.command,
-      chatHost === undefined ? [] : [setupChatHostFlag, chatHost],
+      chatHost ? [setupChatHostFlag, yes] : [],
     );
     return [
       ["tell", thing.tell],
@@ -1374,7 +1374,7 @@ function setupOfferLines(
         "rule",
         { id: "setup-runner-rule", args: { command, when: thing.when } },
       ],
-      ...(chatHost === undefined ? [] : [setupChatHostRule(chatHost)]),
+      ...(chatHost ? [setupChatHostRule()] : []),
       ...(thing.elsewhere === undefined
         ? []
         : [

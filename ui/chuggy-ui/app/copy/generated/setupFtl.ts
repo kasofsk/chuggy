@@ -477,7 +477,7 @@ setup-project-refused-tell = The { -project } was not made: { $refusal }. Tell m
 ## The runner's step, which the runner command does on this machine once it
 ## is announced, unless the person objects or asks for another machine.
 
-setup-offer-when = once the person has been told what it does here, and has not asked for it on another machine instead
+setup-offer-when = once the person has been told what it does here, has not objected, and has not asked for it on another machine instead
 setup-claude-on-subscription = your { -claude } plan
 setup-claude-on-api-key = your Anthropic API key
 setup-claude-on-bedrock = your Amazon Bedrock account
