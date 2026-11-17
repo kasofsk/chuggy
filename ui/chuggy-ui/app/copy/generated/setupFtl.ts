@@ -51,6 +51,9 @@ setup-rule-ask-name = Run { $command } with the person's answer after it, quoted
 setup-rule-ticket = Run { $command } with { $title } and a short title for what the person wants done, then { $intent } and what they want done in their own words{ $choose ->
     [choose] , then { $configuration } and the { -configuration } they chose
    *[given] { "" }
+}{ $worker ->
+    [worker] , then { $image } and the image recommended, or the one the person wants instead, then { $toolchains } and the toolchains it needs
+   *[none] { "" }
 }, each quoted as one word, only once the person has said what they want done.
 
 ## The arguments, asked wrongly. Each flag and command word is the program's own.

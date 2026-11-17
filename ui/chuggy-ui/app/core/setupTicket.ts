@@ -6,9 +6,9 @@
  * Under a bootstrap, what the ticket asks for also carries the worker image
  * setup recommended and the toolchains it was recommended for, which the
  * bootstrap's brief lets the repository's configuration name, and asks for
- * the `AGENTS.md` of `setupTicketAgentsPath` saying only what that folder is. A bootstrap ticket is not
- * filed without the image, since its worker could not run the checks it
- * commands on an image nobody chose.
+ * the `AGENTS.md` of `setupTicketAgentsPath` saying only what that folder
+ * is. A bootstrap ticket is not filed without the image, since its worker
+ * could not run the checks it commands on an image nobody chose.
  *
  * What it may be drawn under is read as the creation screen reads it, the form
  * is the one that screen starts on, with the title and what is wanted done
@@ -76,6 +76,8 @@ export interface SetupTicketOffers {
   readonly choose: boolean;
   /** Whether the one offer the ticket is drawn under, with nothing to choose, is a bootstrap, so the ticket also writes the repository's own configuration. */
   readonly bootstrap: boolean;
+  /** Whether some offer is a bootstrap, so the ticket, drawn under that one, is not filed without the worker image chosen. */
+  readonly bootstrapOffered: boolean;
 }
 
 /** The offers of a context read, as the ticket step's question puts them. */
@@ -93,6 +95,9 @@ export function setupTicketOffersOf(
     choose: start === undefined,
     bootstrap:
       start !== undefined && creationBootstrapLine(start) !== undefined,
+    bootstrapOffered: context.offers.some(
+      (offer) => creationBootstrapLine(offer) !== undefined,
+    ),
   };
 }
 

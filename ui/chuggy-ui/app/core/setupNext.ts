@@ -923,7 +923,7 @@ function setupRunnerBarredMend(
   );
 }
 
-/** What the person wants done first, asked with the configurations they choose among where there is a choice, and the console's page named for writing it themselves; or, under a bootstrap with nothing to choose, the worker image and the end-to-end check announced, to be filed unless the person objects. */
+/** What the person wants done first, asked with the configurations they choose among where there is a choice, whether some of them is a bootstrap, and the console's page named for writing it themselves; or, under a bootstrap with nothing to choose, the worker image and the end-to-end check announced, to be filed unless the person objects. */
 function setupBriefAsked(
   at: SetupAt,
   offers: SetupTicketOffers,
@@ -955,9 +955,11 @@ function setupBriefAsked(
         create,
       },
     },
+    named: setupNamed(at),
     workspace: at.workspace,
     project: at.project,
     choose: offers.choose,
+    bootstrapOffered: offers.bootstrapOffered,
   };
 }
 

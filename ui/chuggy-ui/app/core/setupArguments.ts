@@ -40,13 +40,14 @@
  * offers more than one, where that is the checklist's next thing, and reads
  * the checklist again. None of them is ever printed back. `watch` waits, as
  * `bind` does, while the checklist's next thing is that ticket on its way to
- * its landing, and reads the checklist again. `plugin` installs chuggy's Claude Code plugin, or updates or
- * enables it. `--plugin skip` is the way past the plugin step without it, and
- * every command the program prints carries it as it carries the workspace and
- * project. `north-star` writes the project's North Star, which `--text` says
- * and which is never printed back, where that is the checklist's next thing,
- * and reads the checklist again; `--north-star skip` is the way past that
- * step without one, carried as `--plugin skip` is.
+ * its landing, and reads the checklist again. `plugin` installs chuggy's
+ * Claude Code plugin, or updates or enables it. `--plugin skip` is the way
+ * past the plugin step without it, and every command the program prints
+ * carries it as it carries the workspace and project. `north-star` writes
+ * the project's North Star, which `--text` says and which is never printed
+ * back, where that is the checklist's next thing, and reads the checklist
+ * again; `--north-star skip` is the way past that step without one, carried
+ * as `--plugin skip` is.
  */
 
 import { selectorSettingsTextCharsMax } from "../../../../src/contract/http.ts";

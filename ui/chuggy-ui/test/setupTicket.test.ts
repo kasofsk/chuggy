@@ -19,8 +19,11 @@ import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import {
   setupTicketAgentsPath,
   setupTicketFiledUnder,
+  setupTicketOffersOf,
+  setupTicketWritten,
 } from "../app/core/setupTicket.ts";
 import { creationConfigurationsOffered } from "../app/core/ticketCreation.ts";
+import type { CreationOffer } from "../app/core/ticketCreation.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
 import {
   machineProject,
@@ -244,6 +247,60 @@ test("where what a ticket may use could not be read, the console's New ticket pa
   expect(lines(await machine.command(flags)).at(-3)).toBe(
     `tell: Open ${page}, say what you want done and press Create ticket. Tell me once it is created.`,
   );
+});
+
+test("where the project offers several configurations and some is a bootstrap, the worker image is recommended and the rule asks for it beside the configuration chosen", async () => {
+  const site = setupSiteAt("Live");
+  site.projects[0]?.repositories.push({
+    repository: "https://github.com/acme-org/gadgets",
+    configured: true,
+  });
+  const machine = await machineSignedIn(setupSiteBootstrap(site));
+  expect(lines(await machine.command(flags)).slice(-4)).toEqual([
+    recommend,
+    `ask: ${asked} The project offers bootstrap · acme-org/gadgets or bootstrap · acme-org/widgets: which configuration should it use? ${yourself}`,
+    `${rule}, then --configuration and the configuration they chose, then --image and the image recommended, or the one the person wants instead, then --toolchains and the toolchains it needs${once}`,
+    "next: stop",
+  ]);
+});
+
+test("a bootstrap offered where the person must still choose, as in a listing that may have missed some, is said to be offered, so the filing its rule asks for carries the image", () => {
+  const bootstrap: CreationOffer = {
+    ...creationOffer(
+      creationSummary(
+        setupSiteBootstrapRevision(setupSiteRepositoryAddress),
+        "Ready",
+      ),
+    ),
+    name: "bootstrap",
+    listed: undefined,
+  };
+  const offers = setupTicketOffersOf({
+    context: "Ready",
+    offers: [bootstrap],
+    partial: true,
+    repositories: [],
+  });
+  expect(offers).toEqual({
+    names: ["bootstrap"],
+    choose: true,
+    bootstrap: false,
+    bootstrapOffered: true,
+  });
+  expect(
+    setupTicketWritten(
+      { said: { title, intent }, worker: { image, toolchains } },
+      true,
+      copyTextEn,
+    ),
+  ).toEqual({ title, intent: `${intent}${carried}` });
+});
+
+test("where the project offers several configurations and none is a bootstrap, the ask names no worker image", async () => {
+  const machine = await machineSignedIn(live(["development", "review"]));
+  const bare = lines(await machine.command(flags));
+  expect(bare).not.toContain(recommend);
+  expect(bare.join("\n")).not.toContain("--image");
 });
 
 test("ticket takes a title and what is wanted done together, a worker image and its toolchains together, or both, and nothing else", () => {

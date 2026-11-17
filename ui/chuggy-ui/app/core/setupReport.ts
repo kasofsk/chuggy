@@ -191,7 +191,8 @@ export interface SetupStepSaid {
  * flag her answer is passed in; what to call the project `project` makes in
  * the workspace, at the address named where one is; what she wants done
  * first, which `ticket` files for the project named, with the configuration
- * she chooses where `choose` says she must; under the bootstrap, the worker
+ * she chooses where `choose` says she must, and the worker image to
+ * recommend where one of them is a bootstrap; under the bootstrap, the worker
  * image to recommend and the first ticket announced, which `ticket` files
  * unless she objects; the project's North Star, which
  * `north-star` writes in the words the agent drafts as `draft` says and she
@@ -249,9 +250,13 @@ export type SetupThing =
   | {
       readonly thing: "Brief";
       readonly ask: Copy;
+      /** The project as the worker image's sentence names it. */
+      readonly named: CopyArgument;
       readonly workspace: string;
       readonly project: string;
       readonly choose: boolean;
+      /** Whether some configuration offered is a bootstrap, whose ticket is filed only with the worker image chosen. */
+      readonly bootstrapOffered: boolean;
     }
   | {
       readonly thing: "First";
@@ -1556,12 +1561,16 @@ function setupThingLines(
   }
 }
 
-/** What the person wants done first, asked, and the rule `ticket` is named under: with the configuration they choose where they must choose one. */
+/** What the person wants done first, asked, and the rule `ticket` is named under: with the configuration they choose where they must choose one, and, where some offer is a bootstrap, the worker image to recommend and the one chosen. */
 function setupBriefLines(
   thing: Extract<SetupThing, { readonly thing: "Brief" }>,
   saying: SetupSaying,
 ): readonly SetupLine[] {
+  const image: readonly SetupLine[] = thing.bootstrapOffered
+    ? [["rule", { id: "setup-rule-image", args: { project: thing.named } }]]
+    : [];
   return [
+    ...image,
     ["ask", thing.ask],
     [
       "rule",
@@ -1573,6 +1582,9 @@ function setupBriefLines(
           intent: setupIntentFlag,
           choose: thing.choose ? "choose" : "given",
           configuration: setupConfigurationFlag,
+          worker: thing.bootstrapOffered ? "worker" : "none",
+          image: setupImageFlag,
+          toolchains: setupToolchainsFlag,
         },
       },
     ],

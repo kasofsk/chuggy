@@ -399,16 +399,29 @@ const things: {
     {
       thing: "Brief",
       ask: briefAsk("given"),
+      named: "acme/widgets",
       workspace: "acme",
       project: "widgets",
       choose: false,
+      bootstrapOffered: false,
     },
     {
       thing: "Brief",
       ask: briefAsk("choose"),
+      named: "acme/widgets",
       workspace: "acme",
       project: "widgets",
       choose: true,
+      bootstrapOffered: false,
+    },
+    {
+      thing: "Brief",
+      ask: briefAsk("choose"),
+      named: "acme/widgets",
+      workspace: "acme",
+      project: "widgets",
+      choose: true,
+      bootstrapOffered: true,
     },
   ],
   First: (["pull", "merged"] as const).map((ends) => ({
@@ -1496,17 +1509,20 @@ test("no checklist but bind's, merge's and watch's ends on a command: whatever e
       setupSteps.length,
     );
     const rules = lines.filter((text) => text.startsWith("rule: "));
+    const imageRecommended =
+      thing.thing === "First" ||
+      (thing.thing === "Brief" && thing.bootstrapOffered);
     expect(rules, said).toHaveLength(
       thing.thing === "Done"
         ? 0
         : (thing.thing === "Offer" && thing.command === "Plugin") ||
             thing.thing === "NorthStar" ||
-            thing.thing === "First"
+            imageRecommended
           ? 2
           : 1,
     );
     expect(commands(lines), said).toHaveLength(
-      thing.thing === "First" ? 1 : rules.length,
+      imageRecommended ? 1 : rules.length,
     );
     if (rules.length > 0) expect(lines.at(-2), said).toBe(rules.at(-1));
   }

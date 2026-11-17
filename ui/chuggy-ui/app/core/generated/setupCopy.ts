@@ -62,6 +62,9 @@ export interface SetupCopy {
     readonly intent: unknown;
     readonly choose: unknown;
     readonly configuration: unknown;
+    readonly worker: unknown;
+    readonly image: unknown;
+    readonly toolchains: unknown;
   };
   readonly "setup-asked-command": {
     readonly signIn: unknown;
