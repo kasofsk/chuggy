@@ -110,8 +110,7 @@
   }
 
   /* An open row is its field, over the key's column and the value's, beside
-     the alias menu where it has one; its edit mark is drawn before the
-     field's label. */
+     the alias menu where it has one. */
   .selector-limit > .form-field,
   .selector-limit > .selector-pinned {
     grid-column: 1 / span 2;
@@ -119,27 +118,6 @@
 
   .selector-limit[data-aliased] > .form-field {
     grid-column: auto;
-  }
-
-  .selector-limit[data-edited] .form-field-label::before {
-    content: "";
-    align-self: center;
-  }
-
-  .selector-mark,
-  .selector-limit[data-edited] .form-field-label::before {
-    display: inline-block;
-    width: 0.4em;
-    height: 0.4em;
-    border-radius: var(--radius-circle);
-    background: var(--tone-live);
-    flex: none;
-  }
-
-  @media (forced-colors: active) {
-    .selector-mark {
-      background: var(--forced-ink);
-    }
   }
 
   .selector-pinned {

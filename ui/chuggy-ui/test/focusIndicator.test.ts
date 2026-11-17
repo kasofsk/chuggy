@@ -673,13 +673,6 @@ const focusIndicatorForcedMarks = [
     "forced-ink",
   ],
   [
-    "browser/settings/lead/selector.css",
-    '<i class="selector-mark" data-under-test></i>',
-    "",
-    "background",
-    "forced-ink",
-  ],
-  [
     "browser/epic/epicGraph.css",
     '<div class="epic-card"><i class="epic-card-port" data-met data-under-test></i></div>',
     "",

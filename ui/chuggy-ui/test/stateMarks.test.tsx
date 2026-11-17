@@ -11,6 +11,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { phaseRoster } from "../../../src/contract/rosters.ts";
 import { EpicGraphSideMark } from "../app/browser/epic/EpicGraphSide.tsx";
 import { EpicStatusChip } from "../app/browser/epic/EpicProgress.tsx";
+import { SelectorEditedMark } from "../app/browser/settings/lead/SelectorRowsSection.tsx";
 import { TicketDependencyChip } from "../app/browser/ticket/TicketStateChip.tsx";
 import { TicketStateLabel } from "../app/browser/ticket/TicketStateLabel.tsx";
 import { TabNav, TabNavLink } from "../app/browser/ui/TabNav.tsx";
@@ -64,6 +65,14 @@ test("a ticket's state drawn as its mark alone still says its word, hidden from 
     ).toBe(copyTextEn(label.word));
     cleanup();
   }
+});
+
+test("a selector row's edited mark is a compact badge that says its word to assistive technology", () => {
+  renderCopied(<SelectorEditedMark />);
+  expect(stateMarksBadge()).toStrictEqual({ tone: "live", word: "Edited" });
+  const badge = document.querySelector<HTMLElement>(".status-badge");
+  expect(badge?.hasAttribute("data-compact")).toBe(true);
+  expect(badge?.querySelector(".visually-hidden")?.textContent).toBe("Edited");
 });
 
 test("a ticket's label and a dependency's badge are drawn in the same tone for every standing, a phase's the tone every phase is drawn in", () => {

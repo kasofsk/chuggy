@@ -42,7 +42,10 @@ import { FormField } from "../../ui/FormField.tsx";
 import { Input } from "../../ui/Input.tsx";
 import { Picker } from "../../ui/Picker.tsx";
 import { StatusBadge } from "../../ui/StatusBadge.tsx";
-import { SelectorRowsSection } from "./SelectorRowsSection.tsx";
+import {
+  SelectorEditedMark,
+  SelectorRowsSection,
+} from "./SelectorRowsSection.tsx";
 import type { SelectorRowsChrome } from "./SelectorRowsSection.tsx";
 
 import "./selector.css";
@@ -205,7 +208,7 @@ function SelectorModel(props: { readonly row: SelectorModelRow }): ReactNode {
       ) : (
         <>
           <span className="selector-limit-key">
-            {edited ? <i className="selector-mark" aria-hidden="true" /> : null}
+            {edited ? <SelectorEditedMark /> : null}
             {label}
           </span>
           <span>
@@ -217,6 +220,7 @@ function SelectorModel(props: { readonly row: SelectorModelRow }): ReactNode {
         </>
       )}
       <span className="selector-was">
+        {row.editing && edited ? <SelectorEditedMark /> : null}
         <SelectorModelBadge row={row} />
       </span>
     </div>

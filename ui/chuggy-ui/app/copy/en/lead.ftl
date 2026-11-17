@@ -114,6 +114,7 @@ lead-settings-title = { -lead(case: "upper") }
 lead-settings-revision = { -revision(case: "upper") } { $revision }
 lead-settings-default = Default
 lead-settings-default-lower = default
+lead-settings-edited = Edited
 lead-settings-effective-none = None
 
 lead-mode-name = { -lead(case: "upper") }
