@@ -285,32 +285,56 @@ function ticketsBannerBoxes(page: Page): Promise<readonly string[]> {
   );
 }
 
-/** The boxes while the image's read is held across a reload, and once it has
- * landed. */
-async function ticketsBannerBoxesAcrossImage(page: Page): Promise<{
-  readonly held: readonly string[];
-  readonly landed: readonly string[];
-}> {
+/** A route on `path` answered only once the returned release is called. */
+async function ticketsBannerHeld(
+  page: Page,
+  path: string,
+): Promise<() => void> {
   let release: () => void = () => undefined;
   const released = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await page.route(`**${ticketsBannerPath}`, async (route) => {
+  await page.route(`**${path}`, async (route) => {
     await released;
     await route.continue();
   });
-  const asked = page.waitForRequest(`**${ticketsBannerPath}`);
+  return release;
+}
+
+/** Across a reload, with the images read and then the image's read held:
+ * whether any row was drawn once the rows had answered and the images read
+ * had not, and the boxes once the images read answers and once the image
+ * lands. */
+async function ticketsBannerBoxesAcrossImage(page: Page): Promise<{
+  readonly rowsBeforeImages: number;
+  readonly held: readonly string[];
+  readonly landed: readonly string[];
+}> {
+  const imagesPath = `${ticketsProjectPath}/appearance/images`;
+  const imagesRelease = await ticketsBannerHeld(page, imagesPath);
+  const imageRelease = await ticketsBannerHeld(page, ticketsBannerPath);
+  const rowsAnswered = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === ticketsProjectPath,
+  );
+  const imagesAsked = page.waitForRequest(`**${imagesPath}`);
   await page.reload();
-  await asked;
+  await Promise.all([rowsAnswered, imagesAsked]);
+  await expect(page.locator(".ticket-list-page")).toBeVisible();
+  const rowsBeforeImages = await page
+    .locator(".ticket-list-page [aria-label='Tickets'] > li")
+    .count();
+  const imageAsked = page.waitForRequest(`**${ticketsBannerPath}`);
+  imagesRelease();
+  await imageAsked;
   await expect(
     page.getByRole("heading", { level: 3, name: "Ticket 40" }),
   ).toBeVisible();
   await expect(page.locator(".project-banner")).toBeVisible();
   await expect(page.locator(".project-banner img")).toHaveCount(0);
   const held = await ticketsBannerBoxes(page);
-  release();
+  imageRelease();
   await expect(page.locator(".project-banner img")).toBeVisible();
-  return { held, landed: await ticketsBannerBoxes(page) };
+  return { rowsBeforeImages, held, landed: await ticketsBannerBoxes(page) };
 }
 
 /** Scrolls what the band scrolls in to `pixels` from its top, and returns once
@@ -336,7 +360,8 @@ function ticketsBannerScrolled(page: Page, pixels: number): Promise<void> {
 /**
  * A project's banner over its tickets list under the served policy: the image
  * decodes and the band says nothing of it; the first rows are still on the
- * first screen whole; nothing under the band moves as the image lands; and
+ * first screen whole; no row is drawn before it is known whether there is a
+ * band, and nothing under the band moves as the image lands; and
  * once the page scrolls the band is gone, not back a pixel short of the top,
  * and back at the top.
  */
@@ -390,6 +415,7 @@ for (const viewport of ticketsViewports)
         ).toBeLessThanOrEqual(screenHeight);
       }
       const boxes = await ticketsBannerBoxesAcrossImage(page);
+      expect(boxes.rowsBeforeImages).toBe(0);
       expect(boxes.landed).toStrictEqual(boxes.held);
       const band = page.locator(".project-banner");
       await ticketsBannerScrolled(page, screenHeight);

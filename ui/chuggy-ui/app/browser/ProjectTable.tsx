@@ -103,7 +103,7 @@ import type { ListFilterMark } from "./ui/ListFilter.tsx";
 import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { persistentStore } from "./ports.ts";
-import { ProjectBanner } from "./ProjectBanner.tsx";
+import { ProjectBanner, useProjectBannerHeld } from "./ProjectBanner.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { useProjectPeople } from "./settings/projectPermissionsResource.ts";
 import { ScreenTitle } from "./shell/slots.tsx";
@@ -863,13 +863,16 @@ function ProjectTableTitle(): ReactNode {
 
 /** The page's section, holding the project's banner over the list or the
  * line that stands for it, drawn knowing whether the section is wide, which
- * is the width the bar is laid out against. */
+ * is the width the bar is laid out against. Nothing under the banner is drawn
+ * until it is known whether there is one, so the band never lands above rows
+ * already drawn. */
 function ProjectTableSection(props: {
   readonly partition: PartitionIdentity;
   readonly children: (wide: boolean) => ReactNode;
 }): ReactNode {
   const text = useCopyText();
   const [held, wide] = useElementAtLeastEm(viewportNarrowEm);
+  const banner = useProjectBannerHeld(props.partition);
   return (
     <section
       ref={held}
@@ -878,9 +881,13 @@ function ProjectTableSection(props: {
       data-fills-width
     >
       <ProjectTableTitle />
-      <ProjectBanner partition={props.partition} />
+      <ProjectBanner partition={props.partition} held={banner} />
       <RepositoryImportRefusedNotice partition={props.partition} />
-      {props.children(wide === true)}
+      {banner.settled ? (
+        props.children(wide === true)
+      ) : (
+        <PanelUnready state={{ state: "Pending" }} />
+      )}
     </section>
   );
 }

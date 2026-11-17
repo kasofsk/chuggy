@@ -4,7 +4,8 @@
  * written over it and nothing said of it. The band holds its height while
  * the image is read, so the list under it does not move as it lands, and is
  * gone where the project names no banner, a read fails, the image cannot be
- * drawn, or the reader hides banners. It goes once the page scrolls past it
+ * drawn, or the reader hides banners. Whether there is one is known before
+ * the list under it is drawn, through `useProjectBannerHeld`. It goes once the page scrolls past it
  * and is back only at the page's top.
  */
 
@@ -46,26 +47,40 @@ function ProjectBannerBand(props: {
   );
 }
 
-function ProjectBannerNamed(props: {
-  readonly partition: PartitionIdentity;
-}): ReactNode {
-  const images = usePanelState(projectImagesQuery(props.partition));
-  if (images.state !== "Ready" || images.value.banner === undefined)
-    return null;
-  return (
-    <ProjectBannerBand
-      key={images.value.banner}
-      partition={props.partition}
-      banner={images.value.banner}
-    />
-  );
+/** Whether the reader is to be drawn the project's banner, and which: not
+ * `settled` until the images read has answered, and settled with none where
+ * the reader hides banners, the project names none, or the read failed. What
+ * is drawn under the band waits on this, so a band that arrives late does not
+ * push down what was drawn before it. */
+export type ProjectBannerHeld =
+  | { readonly settled: false }
+  | { readonly settled: true; readonly banner: string | undefined };
+
+export function useProjectBannerHeld(
+  partition: PartitionIdentity,
+): ProjectBannerHeld {
+  const [choice] = useState(() => projectBannersRead(persistentStore));
+  const images = usePanelState({
+    ...projectImagesQuery(partition),
+    enabled: choice === "Shown",
+  });
+  if (choice === "Hidden") return { settled: true, banner: undefined };
+  if (images.state === "Pending") return { settled: false };
+  return {
+    settled: true,
+    banner: images.state === "Ready" ? images.value.banner : undefined,
+  };
 }
 
 export function ProjectBanner(props: {
   readonly partition: PartitionIdentity;
+  readonly held: ProjectBannerHeld;
 }): ReactNode {
-  const [choice] = useState(() => projectBannersRead(persistentStore));
-  return choice === "Hidden" ? null : (
-    <ProjectBannerNamed partition={props.partition} />
+  return !props.held.settled || props.held.banner === undefined ? null : (
+    <ProjectBannerBand
+      key={props.held.banner}
+      partition={props.partition}
+      banner={props.held.banner}
+    />
   );
 }
