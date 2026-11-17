@@ -77,6 +77,8 @@ test("a person is a row: an account by its email and login, the reader marked, a
   expect(within(ada).getByText("ada-l")).toBeTruthy();
   expect(within(ada).getByText("You")).toBeTruthy();
   expect(heldIn(ada)).toStrictEqual(["Admin", "Hosted runs"]);
+  expect(ada.querySelectorAll("li > .chip")).toHaveLength(2);
+  expect(ada.querySelector(".status-badge")).toBeNull();
   expect(within(ada).getByText("All projects")).toBeTruthy();
   expect(projectsIn(ada)).toStrictEqual(["atlas-web: Admin, Developer"]);
   const bob = personRow("s-bob");

@@ -4,8 +4,9 @@
  * an active link.
  *
  * A tab may carry a count beside its label, as a `CountBadge` its name reads
- * after the label, marked as a least where what was read was cut. A row wider than its container scrolls inside itself and fades the
- * side the more is on, rather than widening the page.
+ * after the label, marked as at least where what was read was cut. A row
+ * wider than its container scrolls inside itself and fades the side the more
+ * is on, rather than widening the page.
  */
 
 import { createLink } from "@tanstack/react-router";

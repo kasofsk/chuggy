@@ -1,8 +1,8 @@
 /**
  * A ticket's place in its landing queue, as `position/total` on the status
- * badge of its tone, with the place in words on hover and as its name. A ticket in no queue draws
- * nothing, and so does every ticket while the read is out or has failed, since
- * the read is then nothing.
+ * badge of its tone, with the place in words on hover and as its name. A
+ * ticket in no queue draws nothing, and so does every ticket while the read is
+ * out or has failed, since the read is then nothing.
  */
 
 import type { ReactNode } from "react";

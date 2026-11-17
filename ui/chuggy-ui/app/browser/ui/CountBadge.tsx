@@ -1,6 +1,6 @@
 /**
  * A number in a small rounded mark: how many of something a tab, a link or a
- * heading stands for, marked as a least where the read it came from was cut.
+ * heading stands for, marked as at least where the read it came from was cut.
  *
  * The figure alone says nothing about what it counts, so the caller names it
  * whole, the figure and what it counts together, and that name is what
