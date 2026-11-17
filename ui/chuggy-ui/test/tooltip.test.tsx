@@ -1,8 +1,9 @@
 /**
  * The tooltip: no tab stop of its own around a control, a focusable trigger
  * only where the caller says the child abbreviates the text, the text bound as
- * the trigger's description, an abbreviation's text opened by a press, a
- * disabled control's text still reachable from the keyboard, Escape closing it where focus is, and no runtime
+ * the trigger's description, an abbreviation's text opened by a press that
+ * is not a surrounding control's, a disabled control's text still reachable
+ * from the keyboard, Escape closing it where focus is, and no runtime
  * `<style>` element while it is open — the served policy refuses one.
  */
 
@@ -124,6 +125,22 @@ test("a press on an abbreviation inside a link is the link's, and opens no text"
     </a>,
   );
   fireEvent.click(screen.getByText("the name"));
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+test("a press on an abbreviation inside a summary is the summary's: it toggles its details, and opens no text", () => {
+  const { container } = render(
+    <details>
+      <summary>
+        <Tooltip trigger="abbreviation" text="no reading">
+          <span>—</span>
+        </Tooltip>
+      </summary>
+    </details>,
+  );
+  const details = container.querySelector("details");
+  fireEvent.click(screen.getByText("—"));
+  expect(details?.open).toBe(true);
   expect(screen.queryByRole("tooltip")).toBeNull();
 });
 

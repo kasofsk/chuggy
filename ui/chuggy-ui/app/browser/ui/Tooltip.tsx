@@ -13,7 +13,7 @@
  * - `abbreviation`: the child shortens what the text spells out. It becomes
  *   focusable, the text is its description, and pressing it opens the text,
  *   which is how a touch screen, where nothing hovers, reaches it. Inside a
- *   link or button a press is theirs, and opens nothing.
+ *   link, button, summary or label a press is theirs, and opens nothing.
  * - `decoration`: nothing becomes focusable; the text is also drawn visually
  *   hidden beside the child, for assistive technology.
  */
@@ -47,12 +47,13 @@ function TooltipText(props: { readonly text: CopyOrData }): ReactNode {
 }
 
 /** A press on an abbreviation opens its text, unless the press belongs to a
- * link or button around it; the press is kept from Radix, which closes on it. */
+ * link, button, summary or label around it; the press is kept from Radix,
+ * which closes on it. */
 function tooltipAbbreviationPressed(
   event: MouseEvent<HTMLElement>,
   onOpen: () => void,
 ): void {
-  if (event.currentTarget.closest("a[href], button") !== null) return;
+  if (event.currentTarget.closest("a[href], button, summary, label") !== null) return;
   event.preventDefault();
   onOpen();
 }
