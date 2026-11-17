@@ -281,13 +281,18 @@ function memberRows(): readonly HTMLElement[] {
   return [
     ...screen
       .getByRole("region", { name: "Tickets" })
-      .querySelectorAll<HTMLElement>("li[data-ticket]"),
+      .querySelectorAll<HTMLElement>("li.record-list-item"),
   ];
 }
 
+/** The row whose title links to the ticket. */
 function memberRow(ticket: number): HTMLElement {
   const row = memberRows().find(
-    (drawn) => drawn.dataset["ticket"] === String(ticket),
+    (drawn) =>
+      drawn
+        .querySelector(".record-row-title a")
+        ?.getAttribute("href")
+        ?.endsWith(`/tickets/${String(ticket)}`) === true,
   );
   if (row === undefined) throw new Error(`#${String(ticket)} has a row`);
   return row;
