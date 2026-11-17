@@ -11,8 +11,8 @@
  * the server's, is the field's error.
  *
  * Each image is previewed as it is drawn, in the project's default theme
- * where it keeps one: the icon at each of its sizes on a light surface and a
- * dark one, named by the project's name; the banner as the band above the
+ * where it keeps one: the icon as the project's mark at each size a mark is
+ * drawn at, on a light surface and a dark one, named by the project's name; the banner as the band above the
  * tickets at a phone's width and a desk's, drawn as decoration.
  */
 
@@ -41,6 +41,7 @@ import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import type { Copy, CopyText } from "../../core/copy.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
+import { projectMarkSizes } from "../../core/projectMark.ts";
 import {
   projectImageHint,
   projectImageLanded,
@@ -72,6 +73,7 @@ import { useConsoleWrite } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
 import { ProjectImage, useProjectImageHeld } from "../ProjectImage.tsx";
+import { ProjectMark } from "../ProjectMark.tsx";
 import { useProjectNamed } from "../projectNamed.ts";
 import { Button } from "../ui/Button.tsx";
 import { FormField } from "../ui/FormField.tsx";
@@ -366,8 +368,6 @@ const appearanceSchemes = [
   { scheme: "dark", word: "settings-appearance-preview-dark" },
 ] as const;
 
-const appearanceIconSizes = ["small", "large"] as const;
-
 const appearanceBandWidths = [
   { width: "phone", word: "settings-appearance-preview-phone" },
   { width: "desk", word: "settings-appearance-preview-desk" },
@@ -400,13 +400,14 @@ function AppearancePreview(props: {
             <span className="appearance-preview-word">
               {text({ id: word })}
             </span>
-            {appearanceIconSizes.map((size) => (
-              <ProjectImage
+            {projectMarkSizes.map((size) => (
+              <ProjectMark
                 key={size}
                 partition={props.partition}
-                artifact={props.artifact}
-                alt={named}
-                className={`appearance-icon appearance-icon-${size}`}
+                name={named}
+                icon={props.artifact}
+                size={size}
+                alone
               />
             ))}
           </AppearanceSurface>

@@ -88,7 +88,9 @@ for (const viewport of ["phone", "desk"] as const)
       const images = page.locator(".appearance img");
       await expect(images).toHaveCount(6);
       await expect(
-        page.getByRole("img", { name: stubApiProject, exact: true }),
+        page
+          .getByRole("group", { name: "The icon as it is drawn" })
+          .getByRole("img", { name: stubApiProject, exact: true }),
       ).toHaveCount(4);
       for (const image of await images.all())
         await expect

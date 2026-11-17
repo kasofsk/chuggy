@@ -1,8 +1,8 @@
 /* A project's appearance: its three fields in one column, each a card; an
-   image's preview above its actions; the icon at its sizes on a surface of
-   each scheme; and the banner as its band, cropped to fill it, at a phone's
-   width and at the column's. In a narrow column every action is given a
-   finger's height. */
+   image's preview above its actions; the icon as the project's mark at its
+   sizes on a surface of each scheme; and the banner as its band, cropped to
+   fill it, at a phone's width and at the column's. In a narrow column every
+   action is given a finger's height. */
 
 @layer page {
   .appearance {
@@ -45,9 +45,8 @@
   }
 
   .appearance-placeholder-icon {
-    width: var(--size-project-icon-large);
-    height: var(--size-project-icon-large);
-    text-align: center;
+    justify-self: start;
+    padding: var(--space-2) var(--space-3);
   }
 
   .appearance-placeholder-banner {
@@ -85,22 +84,6 @@
 
   .appearance-icons .appearance-preview-word {
     flex: 1 1 auto;
-  }
-
-  .appearance-icon {
-    display: block;
-    object-fit: cover;
-    border-radius: var(--radius-2);
-  }
-
-  .appearance-icon-small {
-    width: var(--size-project-icon);
-    height: var(--size-project-icon);
-  }
-
-  .appearance-icon-large {
-    width: var(--size-project-icon-large);
-    height: var(--size-project-icon-large);
   }
 
   .appearance-band-at-phone,
