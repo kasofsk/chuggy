@@ -278,6 +278,7 @@
     --size-epic-graph-step: 1.25rem; /* epic: a card's step on the longest chain */
     --width-epic-graph-line: 1.5px; /* epic: a strong line under the cards */
     --width-epic-overview-aside: 16rem; /* epic: what is running and next, beside the description */
+    --width-epic-chip-title: 24ch; /* epic: a chip's title, before it is cut */
   }
 
   :root[data-theme="light"] {
