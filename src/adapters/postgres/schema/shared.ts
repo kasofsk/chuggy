@@ -132,7 +132,7 @@ export const personalExecutionReleaseFunction =
 export const workerPoolInventoryFunction = "worker_pool_inventory_matches";
 /** Whether a runner takes an attempt's agent now, by what it advertises. */
 export const workerPoolAgentFunction = "worker_pool_agent_offered";
-/** Whether an attempt's ticket is started: an execution of it registered before the attempt's own, or an earlier attempt of that execution claimed. */
+/** Whether an execution's ticket is started: an execution of it registered before this one, or an attempt of this one other than the attempt named claimed, any where none is named. */
 export const executionAttemptStartedFunction = "execution_attempt_started";
 /** When a ticket's first execution was registered, which is its age to a claim. */
 export const executionTicketRegisteredFunction = "execution_ticket_registered";
