@@ -49,7 +49,7 @@
   }
 
   .shell-main:focus-visible {
-    box-shadow: none;
+    outline: none;
   }
 
   /* A chat's own page: its head inset as any page's column is, over the
@@ -188,7 +188,6 @@
 
   .chat-separator:focus-visible {
     border-radius: 0;
-    box-shadow: var(--ring-focus);
   }
 
   /* Beside the pages, a panel under the pane's least width is one a held drag
@@ -214,6 +213,11 @@
     outline-offset: calc(-1 * var(--hairline));
     animation: chat-history-held calc(2 * var(--duration-pulse)) ease-in-out
       infinite;
+  }
+
+  .chat-history-row:focus-visible {
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: var(--focus-inset);
   }
 
   @keyframes chat-history-held {
@@ -329,6 +333,15 @@
     color: var(--ink-1);
   }
 
+  /* An edge rather than an underline: the link holds an icon, no text. Off
+   * while focused, so the focus outline is the one drawn. */
+  @media (forced-colors: active) {
+    .topbar-inbox[aria-current="page"]:not(:focus-visible) {
+      outline: var(--hairline) solid var(--forced-current);
+      outline-offset: calc(-1 * var(--hairline));
+    }
+  }
+
   .topbar-inbox-badge {
     position: absolute;
     top: 0;
@@ -384,6 +397,12 @@
     height: calc(2 * var(--hairline));
     border-radius: var(--radius-1);
     background: var(--ink-1);
+  }
+
+  @media (forced-colors: active) {
+    .topbar-entry[aria-current="page"]::after {
+      background: var(--forced-current);
+    }
   }
 
   .topbar-entry-label {
@@ -465,6 +484,12 @@
     height: calc(2 * var(--hairline));
     border-radius: var(--radius-1);
     background: var(--ink-1);
+  }
+
+  @media (forced-colors: active) {
+    .topbar-phone-item:is([aria-current="page"], [data-current])::before {
+      background: var(--forced-current);
+    }
   }
 
   .topbar-phone-glyph {

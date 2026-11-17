@@ -65,8 +65,9 @@
 
   /* The ring is the field's, not the textarea's: a box drawn around a box is
    * two rings, and the outer one is the control the reader sees. */
-  .conversation-field:focus-within {
-    box-shadow: var(--ring-focus);
+  .conversation-field:has(:focus-visible) {
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: var(--focus-offset);
   }
 
   .conversation-input {
@@ -79,7 +80,7 @@
   }
 
   .conversation-input:focus-visible {
-    box-shadow: none;
+    outline: none;
   }
 
   /* The controls are a row under the box, each as tall as the least a finger
@@ -187,6 +188,13 @@
     background: var(--surface-2);
   }
 
+  @media (forced-colors: active) {
+    .conversation-trigger-item[data-highlighted] {
+      text-decoration: underline;
+      text-decoration-color: var(--forced-current);
+    }
+  }
+
   .conversation-chevron {
     transition: rotate var(--duration-1) var(--ease-out);
   }
@@ -210,6 +218,13 @@
     box-shadow: inset 0 0 0 1px var(--edge-strong);
     border-radius: var(--radius-2);
     padding: var(--space-1);
+  }
+
+  @media (forced-colors: active) {
+    .conversation-call[aria-current="location"] {
+      outline: var(--hairline) solid var(--forced-current);
+      outline-offset: calc(-1 * var(--hairline));
+    }
   }
 
   /* Under a finger a row that opens and the copy control answer a press
@@ -347,6 +362,12 @@
     border-radius: 50%;
     background: var(--ink-3);
     animation: conversation-pulse var(--duration-pulse) var(--ease-out) infinite;
+  }
+
+  @media (forced-colors: active) {
+    .conversation-writing .run-report-mark::after {
+      background: var(--forced-ink);
+    }
   }
 
   /* Where nothing written can carry it the report does, and it stands alone

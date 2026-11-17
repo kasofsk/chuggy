@@ -8,7 +8,8 @@
  * not, where a project is the table's card: its name over a row of its boxes,
  * each under its role's word, and a cell with no box keeping its place so a
  * role stands at the same place down the grid. The box is named without the
- * role's word, which the card draws for the eye alone.
+ * role's word, which the card draws for the eye alone. A project's name is
+ * drawn after its mark.
  */
 
 import type { ReactNode } from "react";
@@ -18,7 +19,8 @@ import type { AccessProjectRole } from "../../../../../src/contract/accessPlane.
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { CopyText } from "../../core/copy.ts";
 import { projectRoleLabel } from "../../core/tenantPeople.ts";
-import { useProjectNamed } from "../projectNamed.ts";
+import { ProjectMark } from "../ProjectMark.tsx";
+import { useProjectIcon, useProjectNamed } from "../projectNamed.ts";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Table } from "../ui/Table.tsx";
 import type { TableRow } from "../ui/Table.tsx";
@@ -38,7 +40,9 @@ type TenantProjectsColumn = "project" | AccessProjectRole;
 function tenantProjectsRow(
   project: string,
   drawn: {
+    readonly tenant: string;
     readonly name: string;
+    readonly icon: string | undefined;
     readonly box: (role: AccessProjectRole) => TenantProjectsBox | undefined;
     readonly onToggle: (role: AccessProjectRole) => void;
     readonly text: CopyText;
@@ -68,7 +72,17 @@ function tenantProjectsRow(
   return {
     key: project,
     cells: {
-      project: drawn.name,
+      project: (
+        <span className="people-grid-named">
+          <ProjectMark
+            partition={{ tenant: drawn.tenant, project }}
+            name={drawn.name}
+            icon={drawn.icon}
+            size="sm"
+          />
+          {drawn.name}
+        </span>
+      ),
       ...(Object.fromEntries(boxes) as Record<AccessProjectRole, ReactNode>),
     },
     empty: boxes.filter(([, box]) => box === null).map(([role]) => role),
@@ -86,6 +100,7 @@ export function TenantProjectsGrid(props: {
 }): ReactNode {
   const text = useCopyText();
   const named = useProjectNamed();
+  const icon = useProjectIcon();
   if (props.projects.length === 0) return null;
   const projects = text({ id: "settings-people-projects" });
   return (
@@ -108,7 +123,9 @@ export function TenantProjectsGrid(props: {
           ],
           rows: props.projects.map((project) =>
             tenantProjectsRow(project, {
+              tenant: props.tenant,
               name: named({ tenant: props.tenant, project }),
+              icon: icon({ tenant: props.tenant, project }),
               box: (role) => props.box(project, role),
               onToggle: (role) => {
                 props.onToggle(project, role);

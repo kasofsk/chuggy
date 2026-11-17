@@ -34,10 +34,6 @@
       var(--font-prose);
   }
 
-  .list-filter-panel:focus-visible {
-    outline: none;
-  }
-
   .list-filter-title {
     margin: 0;
     font-size: var(--text-md);

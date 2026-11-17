@@ -27,6 +27,7 @@ import {
   turned,
 } from "../screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
+import { textSaid } from "../textSaid.ts";
 
 export const peopleTenant = "acme-co";
 
@@ -354,9 +355,7 @@ export function boxesIn(editor: HTMLElement, group: string): readonly string[] {
 export function projectsOffered(dialog: HTMLElement): readonly string[] {
   const grid = within(dialog).queryByRole("table", { name: "Projects" });
   if (grid === null) return [];
-  return within(grid)
-    .getAllByRole("rowheader")
-    .map((header) => header.textContent);
+  return within(grid).getAllByRole("rowheader").map(textSaid);
 }
 
 /** One box of a dialog pressed, and what the press set off flushed. */

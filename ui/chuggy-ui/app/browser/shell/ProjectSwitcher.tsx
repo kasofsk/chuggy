@@ -15,6 +15,11 @@
  *
  * NO PROJECT IS A CHOICE IN THE WORKSPACE SHOWN, where it lets the reader chat
  * outside a project, and picking it opens their own chat there.
+ *
+ * Each project is drawn with its mark, from the icon the inventory lists for
+ * it, so the list asks nothing more of the API than its marks' own images. The
+ * shown project's mark is the trigger's glyph, and on a phone, where the
+ * trigger draws no text, it is what names the project.
  */
 
 import { useNavigate } from "@tanstack/react-router";
@@ -22,21 +27,27 @@ import type { UseNavigateResult } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import type { NamedProject } from "../../../../../src/contract/responses.ts";
+import type {
+  InventoryProject,
+  NamedProject,
+} from "../../../../../src/contract/responses.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { CopyText } from "../../core/copy.ts";
 import { projectsInventoryQuery } from "../../core/tenantQueries.ts";
 import { lastProjectWrite } from "../../core/lastProject.ts";
 import { memberChatOpens, memberChatRoutes } from "../../core/memberChat.ts";
 import { projectCreationRoutePath } from "../../core/projectCreation.ts";
-import { projectNamed } from "../../core/projectNaming.ts";
+import { projectIcon, projectNamed } from "../../core/projectNaming.ts";
 import { usePanelState } from "../api.ts";
+import { ProjectMark } from "../ProjectMark.tsx";
 import { persistentStore } from "../ports.ts";
 import { useChatAbilities } from "../thread/threadRead.ts";
 import type { WorkspaceNamed } from "../../core/workspaceNames.ts";
 import { useWorkspaceNames } from "../workspaceNames.ts";
 import { Notice } from "../ui/Notice.tsx";
 import { Picker } from "../ui/Picker.tsx";
+import type { PickerOption } from "../ui/Picker.tsx";
+import { useViewportAtMostEm, viewportNarrowEm } from "./viewport.ts";
 
 /** A folder, which is what a project is on a bar too narrow for its name. */
 const projectGlyph = (
@@ -53,6 +64,40 @@ const projectGlyph = (
     <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.8l1.4 1.5h4.8A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" />
   </svg>
 );
+
+/** The trigger's glyph: the shown project's mark, and the folder outside
+ * every project. */
+function ProjectSwitcherGlyph(props: {
+  readonly partition: PartitionIdentity | undefined;
+  readonly inventory: readonly InventoryProject[];
+}): ReactNode {
+  return props.partition === undefined ? (
+    projectGlyph
+  ) : (
+    <ProjectSwitcherMark
+      partition={props.partition}
+      inventory={props.inventory}
+    />
+  );
+}
+
+/** The shown project's mark, standing for its name on a phone. */
+function ProjectSwitcherMark(props: {
+  readonly partition: PartitionIdentity;
+  readonly inventory: readonly InventoryProject[];
+}): ReactNode {
+  const phone = useViewportAtMostEm(viewportNarrowEm);
+  const { partition } = props;
+  return (
+    <ProjectMark
+      partition={partition}
+      name={projectNamed(props.inventory, partition)}
+      icon={projectIcon(props.inventory, partition)}
+      size={phone ? "md" : "sm"}
+      alone={phone}
+    />
+  );
+}
 
 /** The value the picker names a workspace's own chat by, which no project's
  * value is, since a project's name is never empty. */
@@ -99,6 +144,26 @@ function projectSwitcherHint(
   return partition === undefined
     ? undefined
     : `${named(partition.tenant)} / ${projectNamed(inventory, partition)}`;
+}
+
+/** Each project the reader may read, as the picker offers it: by its
+ * workspace and its name, after its mark. */
+function projectSwitcherProjects(
+  inventory: readonly InventoryProject[],
+  named: WorkspaceNamed,
+): readonly PickerOption[] {
+  return inventory.map((candidate) => ({
+    value: `${candidate.tenant}/${candidate.project}`,
+    text: `${named(candidate.tenant)} / ${candidate.name}`,
+    glyph: (
+      <ProjectMark
+        partition={{ tenant: candidate.tenant, project: candidate.project }}
+        name={candidate.name}
+        icon={candidate.icon}
+        size="sm"
+      />
+    ),
+  }));
 }
 
 /** The workspace's own chat, as the picker offers it where it may be had. */
@@ -168,7 +233,12 @@ function ProjectSwitcherPicker(props: {
   return (
     <Picker
       label={text({ id: "shell-project" })}
-      glyph={projectGlyph}
+      glyph={
+        <ProjectSwitcherGlyph
+          partition={props.partition}
+          inventory={state.value}
+        />
+      }
       hint={projectSwitcherHint(props.partition, state.value, named)}
       value={
         props.partition !== undefined
@@ -178,13 +248,7 @@ function ProjectSwitcherPicker(props: {
             : ""
       }
       placeholder={text({ id: "shell-project" })}
-      options={[
-        ...none,
-        ...state.value.map((candidate) => ({
-          value: `${candidate.tenant}/${candidate.project}`,
-          text: `${named(candidate.tenant)} / ${candidate.name}`,
-        })),
-      ]}
+      options={[...none, ...projectSwitcherProjects(state.value, named)]}
       onChoose={(picked) => {
         if (tenant !== undefined && picked === projectSwitcherNone(tenant)) {
           void navigate({ to: memberChatRoutes.chat, params: { tenant } });

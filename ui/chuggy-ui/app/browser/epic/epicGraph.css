@@ -288,11 +288,6 @@
     border-color: var(--edge-control);
   }
 
-  .epic-card-button:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
-  }
-
   .epic-card[data-standing="Done"] .epic-card-button {
     border-color: color-mix(in srgb, var(--tone-pass) 35%, var(--edge));
     background: var(--wash-pass);
@@ -346,6 +341,12 @@
     box-shadow: 0 0 0 var(--hairline) var(--ink-1);
   }
 
+  @media (forced-colors: active) {
+    .epic-card .epic-card-button[aria-pressed="true"] {
+      border-color: var(--forced-current);
+    }
+  }
+
   /* Out of the chain of the ticket in focus. */
   .epic-card[data-dim] .epic-card-button {
     border-color: var(--edge);
@@ -388,6 +389,12 @@
   .epic-card-port[data-met] {
     border-color: var(--tone-pass);
     background: var(--tone-pass);
+  }
+
+  @media (forced-colors: active) {
+    .epic-card-port[data-met] {
+      background: var(--forced-ink);
+    }
   }
 
   /* A port a strong line lands on. */
@@ -558,11 +565,6 @@
     background: var(--surface-0);
   }
 
-  .epic-graph-side-ticket:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
-  }
-
   .epic-graph-side-actions {
     display: flex;
     flex-wrap: wrap;
@@ -665,11 +667,6 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     cursor: pointer;
-  }
-
-  .epic-graph-sheet-pill:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
   }
 
   .epic-graph-sheet-pill .epic-graph-mark {

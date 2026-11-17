@@ -123,6 +123,7 @@ import { DraftSaveHeld } from "./editor/draftSaveBeforeSend.tsx";
 import { ChatPane } from "./shell/ChatPane.tsx";
 import { useChatPane } from "./shell/chatPaneHeld.ts";
 import { DetailsPane, detailsPaneMainId } from "./shell/DetailsPane.tsx";
+import { ProjectFavicon } from "./shell/ProjectFavicon.tsx";
 import { TicketReferenceWiring } from "./ticket/TicketReferenceWiring.tsx";
 import { ShellSlots } from "./shell/slots.tsx";
 import { TopBar, TopBarPhone, TopBarRows } from "./shell/TopBar.tsx";
@@ -621,6 +622,7 @@ function ShellDrawn(props: {
     <ShellFrame>
       <ShellSkip />
       <ShellPageFollowed pathname={pathname} title={title} />
+      <ProjectFavicon partition={props.partition} />
       <ShellHeader partition={props.partition} />
       <div
         data-chat-slide={slide?.toLowerCase()}
