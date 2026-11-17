@@ -82,14 +82,12 @@ export interface SetupCopy {
     readonly filed: unknown;
     readonly watched: unknown;
     readonly plugged: unknown;
-    readonly starred: unknown;
   };
   readonly "setup-asked-flag": {
     readonly site: unknown;
     readonly workspace: unknown;
     readonly project: unknown;
     readonly plugin: unknown;
-    readonly northStar: unknown;
     readonly wait: unknown;
     readonly name: unknown;
     readonly made: unknown;
@@ -107,8 +105,6 @@ export interface SetupCopy {
     readonly toolchains: unknown;
     readonly chosen: unknown;
     readonly filed: unknown;
-    readonly text: unknown;
-    readonly starred: unknown;
   };
   readonly "setup-asked-site": {
     readonly flag: unknown;
@@ -164,15 +160,6 @@ export interface SetupCopy {
   readonly "setup-asked-plugin": {
     readonly flag: unknown;
     readonly skip: unknown;
-  };
-  readonly "setup-asked-north-star": {
-    readonly flag: unknown;
-    readonly skip: unknown;
-  };
-  readonly "setup-asked-north-star-text": {
-    readonly starred: unknown;
-    readonly text: unknown;
-    readonly chars: unknown;
   };
   readonly "setup-asked-opened": {
     readonly flag: unknown;
@@ -423,9 +410,6 @@ export interface SetupCopy {
   readonly "setup-step-plugin-off": Record<never, never>;
   readonly "setup-step-plugin-none": Record<never, never>;
   readonly "setup-step-plugin-skipped": Record<never, never>;
-  readonly "setup-step-north-star-set": Record<never, never>;
-  readonly "setup-step-north-star-none": Record<never, never>;
-  readonly "setup-step-north-star-skipped": Record<never, never>;
   readonly "setup-step-runner-offline": Record<never, never>;
   readonly "setup-step-runner-live": Record<never, never>;
   readonly "setup-step-runner-hosted": Record<never, never>;
@@ -730,28 +714,6 @@ export interface SetupCopy {
   readonly "setup-mend-plugin-does": Record<never, never>;
   readonly "setup-mend-plugin-offer": Record<never, never>;
   readonly "setup-mend-plugin-offer-off": Record<never, never>;
-  readonly "setup-mend-north-star-tell": {
-    readonly drawn: unknown;
-  };
-  readonly "setup-north-star-ask": Record<never, never>;
-  readonly "setup-north-star-draft-folder": Record<never, never>;
-  readonly "setup-north-star-draft-ask": Record<never, never>;
-  readonly "setup-rule-north-star": {
-    readonly command: unknown;
-    readonly text: unknown;
-    readonly draft: unknown;
-  };
-  readonly "setup-rule-north-star-skip": {
-    readonly command: unknown;
-  };
-  readonly "setup-north-star-none": Record<never, never>;
-  readonly "setup-north-star-did": {
-    readonly project: unknown;
-  };
-  readonly "setup-north-star-failed": {
-    readonly project: unknown;
-    readonly failure: unknown;
-  };
   readonly "setup-plugin-did": {
     readonly did: unknown;
     readonly uninstall: unknown;

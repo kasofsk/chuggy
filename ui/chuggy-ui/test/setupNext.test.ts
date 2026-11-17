@@ -166,7 +166,6 @@ const mends: {
       | "App"
       | "Grant"
       | "Serving"
-      | "NorthStar"
       | "Landing"
     >
   ]: readonly [Extract<SetupLack, { readonly lacks: Kind }>, SaidThing];

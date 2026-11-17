@@ -33,9 +33,7 @@
  * plugin, and is named only under a rule that waits on her yes, beside one
  * that names the way past it on her no; once it has left the plugin on, the
  * checklist is named under a rule that waits on her reloading the plugins or
- * saying she would rather not. `north-star` writes the project's North Star,
- * and is named only under a rule that waits on her yes to the words the
- * agent drafted with her, beside one that names the way past it on her no.
+ * saying she would rather not.
  *
  * A report of a sign-in holds a site's origin, a directory, a path of the
  * program's own, numbers and members of closed sets. A checklist holds
@@ -61,7 +59,7 @@ import type { Copy, CopyArgument, CopyOrData, CopyText } from "./copy.ts";
 import {
   setupAnswerArguments,
   setupAnswersNone,
-  setupAnswersSkipped,
+  setupAnswersPlugin,
   setupChatHostAnswers,
   setupChatHostFlag,
   setupCommandArguments,
@@ -69,14 +67,11 @@ import {
   setupImageFlag,
   setupIntentFlag,
   setupNameFlag,
-  setupNorthStarFlag,
-  setupNorthStarSkip,
   setupOpenedFlag,
   setupOpenedGithub,
   setupPluginFlag,
   setupPluginSkip,
   setupTestFlag,
-  setupTextFlag,
   setupTitleFlag,
   setupToolchainsFlag,
   setupWaitSecsMax,
@@ -94,7 +89,6 @@ import type {
   SetupImportAnswered,
 } from "./setupConfigurationEnded.ts";
 import { ownerFallbackLabel } from "./myRunner.ts";
-import { selectorSettingsTextCharsMax } from "../../../../src/contract/http.ts";
 import { setupPlatforms } from "./setupPorts.ts";
 import type { SetupMachineFault, SetupPlatform } from "./setupPorts.ts";
 import {
@@ -155,7 +149,6 @@ export const setupSteps = [
   "plugin",
   "workspace",
   "project",
-  "north-star",
   "mcp",
   "github",
   "repository",
@@ -194,9 +187,7 @@ export interface SetupStepSaid {
  * she chooses where `choose` says she must, and the worker image to
  * recommend where one of them is a bootstrap; under the bootstrap, the worker
  * image to recommend and the first ticket announced, which `ticket` files
- * unless she objects; the project's North Star, which
- * `north-star` writes in the words the agent drafts as `draft` says and she
- * says yes to, with the way past it; the repository's own
+ * unless she objects; the repository's own
  * configuration, which `configuration` starts and `import` has imported; or a
  * read that failed, `stale` where this copy of the program could not read what
  * the site sent.
@@ -267,13 +258,6 @@ export type SetupThing =
       readonly project: string;
     }
   | {
-      readonly thing: "NorthStar";
-      readonly tell: Copy;
-      readonly draft: Copy;
-      readonly workspace: string;
-      readonly project: string;
-    }
-  | {
       readonly thing: "Configure";
       readonly tell: Copy;
       readonly workspace: string;
@@ -323,11 +307,6 @@ export type SetupTicketAnswered =
       readonly bootstrap: boolean;
     }
   | { readonly answered: "Refused"; readonly refusal: Copy };
-
-/** What the site answered the North Star's write: written, or not, in the word a failed request is drawn as. */
-export type SetupNorthStarAnswered =
-  | { readonly answered: "Written" }
-  | { readonly answered: "Failed"; readonly failure: Copy };
 
 /**
  * How a run of `project` ended: the project the site answered as made, which
@@ -552,16 +531,6 @@ export type SetupReport =
       >;
     }
   | {
-      /** A run of `north-star`: the project it wrote the North Star of and what the site answered, where the checklist's next thing was that, and the checklist read after. */
-      readonly report: "NorthStar";
-      readonly project: string | undefined;
-      readonly answered: SetupNorthStarAnswered | undefined;
-      readonly checklist: Extract<
-        SetupReport,
-        { readonly report: "Checklist" }
-      >;
-    }
-  | {
       /** A run of `runner` or `chat-host` whose sign-in the site stopped taking part-way: what it had found and done by then, and the report that ends it. */
       readonly report: "RunnerOut";
       readonly workspace: string;
@@ -676,7 +645,6 @@ function setupCommandWords() {
     filed = "",
     watched = "",
     plugged = "",
-    starred = "",
   ] = [
     ...setupCommandArguments("SignIn"),
     ...setupCommandArguments("SignOut"),
@@ -693,7 +661,6 @@ function setupCommandWords() {
     ...setupCommandArguments("Ticket"),
     ...setupCommandArguments("Watch"),
     ...setupCommandArguments("Plugin"),
-    ...setupCommandArguments("NorthStar"),
   ];
   return {
     signIn,
@@ -711,14 +678,12 @@ function setupCommandWords() {
     filed,
     watched,
     plugged,
-    starred,
   };
 }
 
 /** Every flag the program takes, each with the command it alone is read by. */
 function setupAskFlagSaid(words: ReturnType<typeof setupCommandWords>): Copy {
-  const { made, runner, chatHost, configuration, filed, bound, starred } =
-    words;
+  const { made, runner, chatHost, configuration, filed, bound } = words;
   return {
     id: "setup-asked-flag",
     args: {
@@ -741,33 +706,10 @@ function setupAskFlagSaid(words: ReturnType<typeof setupCommandWords>): Copy {
       chosen: setupConfigurationFlag,
       filed,
       plugin: setupPluginFlag,
-      northStar: setupNorthStarFlag,
-      text: setupTextFlag,
-      starred,
       opened: setupOpenedFlag,
       bound,
     },
   };
-}
-
-/** A `--north-star` that is not skip, or a North Star `north-star` could not take. */
-function setupAskFaultSaidNorthStar(
-  fault: "NorthStar" | "NorthStarText",
-  starred: string,
-): Copy {
-  return fault === "NorthStar"
-    ? {
-        id: "setup-asked-north-star",
-        args: { flag: setupNorthStarFlag, skip: setupNorthStarSkip },
-      }
-    : {
-        id: "setup-asked-north-star-text",
-        args: {
-          starred,
-          text: setupTextFlag,
-          chars: String(selectorSettingsTextCharsMax),
-        },
-      };
 }
 
 /** A `ticket` given only one of a pair of flags, or neither pair. */
@@ -793,7 +735,7 @@ function setupAskFaultSaidTicket(
 
 function setupAskFaultSaid(fault: SetupAskFault): Copy {
   const words = setupCommandWords();
-  const { made, chatHost, configuration, filed, bound, starred } = words;
+  const { made, chatHost, configuration, filed, bound } = words;
   const names = { workspace: setupFlagWorkspace, project: setupFlagProject };
   switch (fault) {
     case "Command":
@@ -846,9 +788,6 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
         id: "setup-asked-plugin",
         args: { flag: setupPluginFlag, skip: setupPluginSkip },
       };
-    case "NorthStar":
-    case "NorthStarText":
-      return setupAskFaultSaidNorthStar(fault, starred);
     case "Opened":
       return {
         id: "setup-asked-opened",
@@ -1373,7 +1312,7 @@ function setupSayingOf(saying: SetupSaying, named: SetupRunnerAt): SetupSaying {
     answers: {
       workspace,
       project,
-      ...setupAnswersSkipped(saying.answers),
+      ...setupAnswersPlugin(saying.answers),
       ...(saying.answers.chatHost === undefined
         ? {}
         : { chatHost: saying.answers.chatHost }),
@@ -1527,7 +1466,7 @@ function setupThingLines(
       const answers = {
         workspace,
         project,
-        ...setupAnswersSkipped(saying.answers),
+        ...setupAnswersPlugin(saying.answers),
       };
       return [
         ["ask", thing.ask],
@@ -1549,8 +1488,6 @@ function setupThingLines(
       return setupBriefLines(thing, saying);
     case "First":
       return setupFirstLines(thing, saying);
-    case "NorthStar":
-      return setupNorthStarLines(thing, saying);
     case "Configure":
       return [
         ["tell", thing.tell],
@@ -1611,40 +1548,6 @@ function setupFirstLines(
           title: setupTitleFlag,
           intent: setupIntentFlag,
         },
-      },
-    ],
-    ["next", setupNextStop],
-  ];
-}
-
-/** The North Star offered, the rule `north-star` is named under once the agent has drafted it as `draft` says and the person says yes, and the rule that names the checklist past it on their no. */
-function setupNorthStarLines(
-  thing: Extract<SetupThing, { readonly thing: "NorthStar" }>,
-  saying: SetupSaying,
-): readonly SetupLine[] {
-  const named = setupSayingOf(saying, thing);
-  const passed: SetupSaying = {
-    ...named,
-    answers: { ...named.answers, northStar: setupNorthStarSkip },
-  };
-  return [
-    ["tell", thing.tell],
-    [
-      "rule",
-      {
-        id: "setup-rule-north-star",
-        args: {
-          draft: thing.draft,
-          command: setupCommandOf(named, "NorthStar"),
-          text: setupTextFlag,
-        },
-      },
-    ],
-    [
-      "rule",
-      {
-        id: "setup-rule-north-star-skip",
-        args: { command: setupCommandOf(passed, "Status") },
       },
     ],
     ["next", setupNextStop],
@@ -2061,37 +1964,6 @@ function setupTicketLines(
   ];
 }
 
-/** What `north-star` asked of the site and what it answered, said where the checklist read after it says the site. */
-function setupNorthStarSaid(
-  report: Extract<SetupReport, { readonly report: "NorthStar" }>,
-): SetupLine {
-  const answered = report.answered;
-  const project = report.project ?? "";
-  if (answered === undefined) return ["found", { id: "setup-north-star-none" }];
-  return answered.answered === "Written"
-    ? ["did", { id: "setup-north-star-did", args: { project } }]
-    : [
-        "found",
-        {
-          id: "setup-north-star-failed",
-          args: { project, failure: answered.failure },
-        },
-      ];
-}
-
-/** A run of `north-star`: the checklist read after it, with what it asked and what the site answered after the site's own line. */
-function setupNorthStarRunLines(
-  report: Extract<SetupReport, { readonly report: "NorthStar" }>,
-  saying: SetupSaying,
-): readonly SetupLine[] {
-  const [site, ...rest] = setupLines(report.checklist, saying);
-  return [
-    ...(site === undefined ? [] : [site]),
-    setupNorthStarSaid(report),
-    ...rest,
-  ];
-}
-
 /** A run of `import`: the checklist read after it, with what it asked and what the site answered after the site's own line. */
 function setupImportLines(
   report: Extract<SetupReport, { readonly report: "Import" }>,
@@ -2217,7 +2089,7 @@ function setupProjectLines(
   saying: SetupSaying,
 ): readonly SetupLine[] {
   const { workspace, ended } = report;
-  const skipped = setupAnswersSkipped(saying.answers);
+  const plugin = setupAnswersPlugin(saying.answers);
   const head = setupSignedInSaid(report.site, report.login);
   if (ended.ended === "Made")
     return [
@@ -2235,7 +2107,7 @@ function setupProjectLines(
       setupNextLine(
         {
           ...saying,
-          answers: { workspace, project: ended.project, ...skipped },
+          answers: { workspace, project: ended.project, ...plugin },
         },
         "Status",
       ),
@@ -2249,13 +2121,13 @@ function setupProjectLines(
             workspace,
             project: report.project,
             name: report.name,
-            ...skipped,
+            ...plugin,
           },
         },
         "Project",
       )
     : setupCommandOf(
-        { ...saying, answers: { workspace, project: undefined, ...skipped } },
+        { ...saying, answers: { workspace, project: undefined, ...plugin } },
         "Status",
       );
   return [
@@ -2445,8 +2317,6 @@ function setupLines(
       return setupServeLines(report, saying);
     case "Ticket":
       return setupTicketLines(report, saying);
-    case "NorthStar":
-      return setupNorthStarRunLines(report, saying);
     case "Mcp":
       return setupServerLines(report, saying);
     case "Plugin":
@@ -2546,7 +2416,6 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
     case "Merge":
     case "Serve":
     case "Ticket":
-    case "NorthStar":
       return setupReportExit(report.checklist);
     case "Plugin":
       return 0;

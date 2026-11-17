@@ -241,7 +241,7 @@ test("across every way a sign-in ends, nothing the issuer handed out and nothing
     sessionEndings(installation.site),
   );
   assert.equal(
-    runs.at(-2)?.lines.find((text) => text.startsWith("step: repository ")),
+    runs.at(-2)?.lines[6],
     "step: repository  todo     github.com/acme-org/widgets (this folder's remote)",
   );
   assert.deepEqual(
