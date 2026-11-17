@@ -71,6 +71,7 @@ import { ToggleGroup } from "../ui/ToggleGroup.tsx";
 import {
   ThemeEditorColours,
   ThemeEditorFaults,
+  ThemeEditorUnreadFields,
   themeEditorSchemeWords,
 } from "./ThemeEditorFields.tsx";
 import { ThemeEditorPreview } from "./ThemeEditorPreview.tsx";
@@ -234,7 +235,8 @@ function ThemeEditorScheme(props: {
   );
 }
 
-/** The fields, the preview and the faults, over the editing the dialog holds. */
+/** The fields, the preview, the faults and the unread fields, over the
+ * editing the dialog holds. */
 function ThemeEditorBody(props: {
   readonly editing: ThemeEditing;
   readonly onEditing: (editing: ThemeEditing) => void;
@@ -284,6 +286,7 @@ function ThemeEditorBody(props: {
           onEditing(themeEditingColourTyped(editing, atScheme, role, value));
         }}
       />
+      <ThemeEditorUnreadFields unread={editing.unread} />
     </>
   );
 }

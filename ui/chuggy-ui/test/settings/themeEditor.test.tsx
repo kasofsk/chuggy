@@ -2,7 +2,8 @@
  * The theme editor opened from Appearance: a new theme starts as a copy of
  * the theme in use and is saved as one of the reader's own without being
  * worn; a pairing that fails keeps Save from being pressed, says which
- * pairing it is, and offers the value that mends it; the preview draws the
+ * pairing it is, and offers the value that mends it; a colour field that
+ * reads as no colour is named wherever it is; the preview draws the
  * draft and nothing else changes; Edit is offered only on a theme of the
  * reader's own and writes it whole; and deleting one asks first and leaves
  * the reader on what applies once it is gone.
@@ -227,6 +228,31 @@ test("a colour that does not read as one is said under its field and keeps Save 
   expect(field("Page").getAttribute("aria-invalid")).toBe("true");
   expect(within(editor()).getByText("Six hex digits after a #")).toBeDefined();
   expect(saveButton().disabled).toBe(true);
+});
+
+test("a colour that does not read as one is named beside Save while its scheme is not the one shown, and the word goes once it reads", async () => {
+  await editorDrawn({ global: undefined, themes: [] });
+  await press("New theme");
+  const kept = field("Page").value;
+  await typed("Page", "url(x)");
+  await turned(() => {
+    fireEvent.click(within(editor()).getByRole("radio", { name: "Dark" }));
+  });
+  expect(field("Page").getAttribute("aria-invalid")).not.toBe("true");
+  const unread = within(editor()).getByText(
+    "Not saved until every colour reads as one:",
+  ).parentElement;
+  expect(unread).not.toBeNull();
+  expect(within(unread ?? editor()).getByText("Page, Light")).toBeDefined();
+  expect(saveButton().disabled).toBe(true);
+  await turned(() => {
+    fireEvent.click(within(editor()).getByRole("radio", { name: "Light" }));
+  });
+  await typed("Page", kept);
+  expect(
+    within(editor()).queryByText("Not saved until every colour reads as one:"),
+  ).toBeNull();
+  expect(saveButton().disabled).toBe(false);
 });
 
 test("the preview is drawn in the draft and nothing outside it changes until a theme is saved and chosen", async () => {

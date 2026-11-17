@@ -3,7 +3,8 @@
  * light or dark value in the browser's own colour input beside a text field,
  * the pairings that role changes with each one's ratio and verdict under it,
  * and, while any pairing fails, which ones do and the nearest value that
- * passes for each role at fault.
+ * passes for each role at fault; and, while any field reads as no colour,
+ * which ones, since one may be in the scheme not shown or a closed group.
  */
 
 import { useMemo } from "react";
@@ -29,6 +30,7 @@ import type {
   ThemeEditing,
   ThemeEditorContrast,
   ThemeEditorRoleGroup,
+  ThemeEditorUnread,
 } from "../../core/themeEditor.ts";
 import { Button } from "../ui/Button.tsx";
 import { FormField } from "../ui/FormField.tsx";
@@ -246,6 +248,32 @@ export function ThemeEditorFaults(props: {
               </Button>
             )}
           </div>
+        ))}
+      </div>
+    </Notice>
+  );
+}
+
+/** Which colour fields read as no colour, each by its role and scheme. */
+export function ThemeEditorUnreadFields(props: {
+  readonly unread: readonly ThemeEditorUnread[];
+}): ReactNode {
+  const text = useCopyText();
+  if (props.unread.length === 0) return null;
+  return (
+    <Notice tone="danger" inline>
+      <div className="theme-editor-faults">
+        <p>{text({ id: "settings-theme-editor-unread" })}</p>
+        {props.unread.map(({ scheme, role }) => (
+          <p key={`${scheme} ${role}`} className="font-strong">
+            {text({
+              id: "settings-theme-editor-failing-role",
+              args: {
+                name: themeEditorColourName(text, role),
+                scheme: text({ id: themeEditorSchemeWords[scheme] }),
+              },
+            })}
+          </p>
         ))}
       </div>
     </Notice>
