@@ -2896,13 +2896,22 @@ test("the bare command says why this machine cannot take a runner where it canno
   ]);
 });
 
-test("a runner registered and not running is offered to be started here only where this machine holds a registration for the project, and the offer says the machine is registered again where the site no longer knows that one", async () => {
+test("a runner registered and not running on another machine does not hold the step: a machine holding no registration is offered the person's own runner as where there is none, and the run ends with it live and given the project", async () => {
   const elsewhere = await machineSignedIn(projectOnly(setupSiteAt("Offline")));
-  expect((await ran(elsewhere, [])).lines.slice(-3)).toEqual([
-    "tell: A runner is registered and is not running. Start it on its machine and tell me once it is running.",
-    `rule: Run node ${machineScript} only once the person says the runner is running.`,
+  expect((await ran(elsewhere, [])).lines.slice(-4)).toEqual([
+    `tell: chuggy needs a **runner** running on a machine of yours, which does the work of tickets. I'll install it on this machine, as yours alone. It can live on another machine instead; say so if you want that. ${runnerService} ${takesWork}`,
+    offer,
+    otherMachine(false),
     stop,
   ]);
+  const done = await ran(elsewhere);
+  expect(done.lines).toContain(did.personal);
+  expect(done.lines.slice(-2)).toEqual([live, next]);
+  expect(elsewhere.box.paths.has(personal)).toBe(true);
+  expect(writes(elsewhere)).toEqual([mint, ...serve]);
+});
+
+test("a runner registered and not running is offered to be started here only where this machine holds a registration for the project, and the offer says the machine is registered again where the site no longer knows that one", async () => {
   const here = await fresh();
   await ran(here);
   for (const unit of here.box.units.values()) unit.active = false;

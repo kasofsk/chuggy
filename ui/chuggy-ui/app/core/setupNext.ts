@@ -86,7 +86,11 @@ import type { SetupNext, SetupThing } from "./setupReport.ts";
 import { setupEngineSpareMib, setupJobMemoryMib } from "./setupFit.ts";
 import type { SetupFit } from "./setupFit.ts";
 import { setupChatSized } from "./setupRunnerMachine.ts";
-import type { SetupChatSize, SetupRunnerHere } from "./setupRunnerMachine.ts";
+import type {
+  SetupChatSize,
+  SetupRunnerHeld,
+  SetupRunnerHere,
+} from "./setupRunnerMachine.ts";
 import type { SetupTicketOffers } from "./setupTicket.ts";
 import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
 import {
@@ -589,7 +593,7 @@ function setupRunnerThings(chat: boolean): Copy {
   return { id: "setup-mend-runner-things", args: { chat: setupWith(chat) } };
 }
 
-/** What an offer of `runner` says the person's chat host here holds, and that its first check downloads the chat image; nothing where it is not made here. */
+/** What an offer of `runner` says the person's chat host here holds; nothing where it is not made here. */
 function setupChatHostSaid(chat: boolean, here: SetupRunnerHere): CopyArgument {
   if (!chat) return "";
   const size = setupChatSizeHere(here);
@@ -720,22 +724,21 @@ function setupFitToldMend(
   );
 }
 
-/** A runner registered and not running: started here unless the person objects where this machine holds the person's runner's registration, and otherwise theirs to start where it is. */
+/** A runner registered and not running where this machine holds a registration: started here unless the person objects where it is the person's runner's, and registered again as theirs where it is only the project's pool's. */
 function setupRunnerLiveMend(
   at: SetupAt,
-  here: SetupRunnerHere | undefined,
+  here: SetupRunnerHere,
+  held: SetupRunnerHeld,
   chat: boolean,
   instead: Copy,
 ): SetupThing {
-  if (here?.held === undefined)
-    return setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning);
   return (
     setupRunnerLoginMend(here, chat) ??
     setupFitToldMend(here.fit, instead) ??
     setupOffer(
       {
         id:
-          here.held === "Personal"
+          held === "Personal"
             ? "setup-mend-runner-live-offer"
             : "setup-mend-runner-pool-offer",
         args: {
@@ -798,10 +801,12 @@ function setupServingMend(
 }
 
 /**
- * No runner yet. Where this machine could take one the person is told what
+ * No runner yet, or one registered and not running elsewhere, which does not
+ * hold the step: where this machine could take one the person is told what
  * `runner` would put here, with the package of the platform the program runs
  * on, before it may be run; where it could not, why not; and where the
- * machine was not looked at, the console's own page.
+ * machine was not looked at, the console's own page, or for a runner not
+ * running, to start it where it is.
  */
 function setupRunnerMend(
   lack: Extract<SetupLack, { readonly lacks: "Runner" | "RunnerLive" }>,
@@ -819,9 +824,13 @@ function setupRunnerMend(
     id: "setup-mend-runner-instead",
     args: { page, add },
   };
-  if (lack.lacks === "RunnerLive")
-    return setupRunnerLiveMend(at, here, lack.chat, instead);
-  if (here === undefined) return setupHand(elsewhere, setupRunnerRunning);
+  const live = lack.lacks === "RunnerLive";
+  if (live && here?.held !== undefined)
+    return setupRunnerLiveMend(at, here, here.held, lack.chat, instead);
+  if (here === undefined)
+    return live
+      ? setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning)
+      : setupHand(elsewhere, setupRunnerRunning);
   const { room } = here;
   switch (room.room) {
     case "Open":

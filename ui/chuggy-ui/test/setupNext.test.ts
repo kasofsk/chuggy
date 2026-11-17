@@ -1135,7 +1135,7 @@ test("a user the runner package bars from docker is told the package's reason an
   );
 });
 
-test("a runner registered and not running is offered to be started here only where this machine holds the person's runner's registration, said as held and as registered again where the site no longer knows it, offered to be registered again beside a pool's registration, and is otherwise the person's to start where it is", () => {
+test("a runner registered and not running is offered to be started here only where this machine holds the person's runner's registration, said as held and as registered again where the site no longer knows it, offered to be registered again beside a pool's registration, and where this machine holds none is offered as where there is no runner", () => {
   const holds =
     "A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner. I'll check it and start it here as a background service of yours that starts when you log in, registering this machine again as yours alone first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan, 4 GiB a run.";
   const instead =
@@ -1145,7 +1145,7 @@ test("a runner registered and not running is offered to be started here only whe
   );
   for (const room of [roomy, { room: "Serviceless" }] as const)
     expect(here({ lacks: "RunnerLive", chat: false }, room), room.room).toEqual(
-      mends.RunnerLive[1],
+      here({ lacks: "Runner", chat: false }, room),
     );
   expect(here({ lacks: "RunnerLive", chat: true }, roomy, "Personal")).toEqual(
     offered(
