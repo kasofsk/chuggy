@@ -8,7 +8,8 @@
 /** How many tints `tokens.css` names, `--mark-tint-1` and up. */
 export const projectMarkTints = 6;
 
-/** The sizes a mark is drawn at, each a `--mark-*` length in `tokens.css`. */
+/** The sizes a mark is drawn at, each a `--size-mark-*` length in
+ * `tokens.css`. */
 export const projectMarkSizes = ["sm", "md"] as const;
 export type ProjectMarkSize = (typeof projectMarkSizes)[number];
 
