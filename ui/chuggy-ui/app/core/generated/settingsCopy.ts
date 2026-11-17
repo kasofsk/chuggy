@@ -12,6 +12,7 @@ export interface SettingsCopy {
   readonly "settings-nav-permissions": Record<never, never>;
   readonly "settings-nav-repositories": Record<never, never>;
   readonly "settings-nav-catalog": Record<never, never>;
+  readonly "settings-nav-appearance": Record<never, never>;
   readonly "settings-nav-workspace": Record<never, never>;
   readonly "settings-nav-people": Record<never, never>;
   readonly "settings-nav-accounts": Record<never, never>;
@@ -29,6 +30,7 @@ export interface SettingsCopy {
   readonly "settings-nav-permissions-summary": Record<never, never>;
   readonly "settings-nav-repositories-summary": Record<never, never>;
   readonly "settings-nav-catalog-summary": Record<never, never>;
+  readonly "settings-nav-appearance-summary": Record<never, never>;
   readonly "settings-nav-people-summary": Record<never, never>;
   readonly "settings-nav-accounts-summary": Record<never, never>;
   readonly "settings-nav-workspace-permissions-summary": Record<never, never>;
@@ -363,4 +365,58 @@ export interface SettingsCopy {
     readonly lead: unknown;
     readonly rest: unknown;
   };
+  readonly "settings-appearance-theme": Record<never, never>;
+  readonly "settings-appearance-theme-none": Record<never, never>;
+  readonly "settings-appearance-theme-kept": {
+    readonly name: unknown;
+  };
+  readonly "settings-appearance-theme-copied": Record<never, never>;
+  readonly "settings-appearance-theme-own": Record<never, never>;
+  readonly "settings-appearance-theme-drifted": {
+    readonly name: unknown;
+  };
+  readonly "settings-appearance-theme-update": Record<never, never>;
+  readonly "settings-appearance-theme-saved": Record<never, never>;
+  readonly "settings-appearance-theme-cleared": Record<never, never>;
+  readonly "settings-appearance-theme-unsaved": Record<never, never>;
+  readonly "settings-appearance-icon": Record<never, never>;
+  readonly "settings-appearance-banner": Record<never, never>;
+  readonly "settings-appearance-icon-hint": {
+    readonly types: unknown;
+    readonly size: unknown;
+  };
+  readonly "settings-appearance-banner-hint": {
+    readonly types: unknown;
+    readonly size: unknown;
+  };
+  readonly "settings-appearance-image-size": {
+    readonly count: unknown;
+    readonly unit: unknown;
+  };
+  readonly "settings-appearance-image-type": {
+    readonly types: unknown;
+  };
+  readonly "settings-appearance-image-large": {
+    readonly size: unknown;
+  };
+  readonly "settings-appearance-image-unsaved": Record<never, never>;
+  readonly "settings-appearance-image-uploading": Record<never, never>;
+  readonly "settings-appearance-icon-none": Record<never, never>;
+  readonly "settings-appearance-banner-none": Record<never, never>;
+  readonly "settings-appearance-image-choose": Record<never, never>;
+  readonly "settings-appearance-icon-choose": Record<never, never>;
+  readonly "settings-appearance-banner-choose": Record<never, never>;
+  readonly "settings-appearance-image-clear": Record<never, never>;
+  readonly "settings-appearance-icon-clear": Record<never, never>;
+  readonly "settings-appearance-banner-clear": Record<never, never>;
+  readonly "settings-appearance-icon-saved": Record<never, never>;
+  readonly "settings-appearance-icon-cleared": Record<never, never>;
+  readonly "settings-appearance-banner-saved": Record<never, never>;
+  readonly "settings-appearance-banner-cleared": Record<never, never>;
+  readonly "settings-appearance-icon-preview": Record<never, never>;
+  readonly "settings-appearance-banner-preview": Record<never, never>;
+  readonly "settings-appearance-preview-light": Record<never, never>;
+  readonly "settings-appearance-preview-dark": Record<never, never>;
+  readonly "settings-appearance-preview-phone": Record<never, never>;
+  readonly "settings-appearance-preview-desk": Record<never, never>;
 }

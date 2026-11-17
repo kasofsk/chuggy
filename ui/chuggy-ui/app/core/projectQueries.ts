@@ -144,10 +144,13 @@ export function projectPeopleQuery(partition: PartitionIdentity) {
   );
 }
 
-/** The artifacts the project names its icon and its banner. */
+/** The artifacts the project names its icon and its banner, and whether the
+ * reader may change them. */
 export function projectImagesQuery(partition: PartitionIdentity) {
-  return consolePartitionQuery(partition, "images", (ports) =>
-    apiProjectImages(ports, partition),
+  return consolePartitionQuery(
+    partition,
+    "appearance-images",
+    (ports, signal) => apiProjectImages(ports, partition, signal),
   );
 }
 

@@ -38,6 +38,7 @@ export const settingsRoutes = {
     permissions: "/$tenant/$project/settings/permissions",
     repositories: "/$tenant/$project/settings/repositories",
     catalog: "/$tenant/$project/settings/catalog",
+    appearance: "/$tenant/$project/settings/appearance",
     people: "/$tenant/$project/settings/workspace/people",
     accounts: "/$tenant/$project/settings/workspace/accounts",
     workspacePermissions: "/$tenant/$project/settings/workspace/permissions",
@@ -68,10 +69,10 @@ export type SettingsRoute =
 
 export type SettingsGroupId = "project" | "workspace" | "site" | "person";
 
-/** What shows a section: being a member of where it is drawn, or one of the
- * site's abilities. */
+/** What shows a section: being a member of where it is drawn, administering
+ * the project it is drawn in, or one of the site's abilities. */
 export type SettingsSectionShownBy =
-  "Member" | "SiteWorkspaces" | "SitePermissions";
+  "Member" | "ProjectAdminister" | "SiteWorkspaces" | "SitePermissions";
 
 export type SettingsSectionId =
   | "lead"
@@ -81,6 +82,7 @@ export type SettingsSectionId =
   | "permissions"
   | "repositories"
   | "catalog"
+  | "appearance"
   | "people"
   | "accounts"
   | "workspace-permissions"
@@ -112,6 +114,7 @@ const settingsSectionLabels = {
   permissions: { id: "settings-nav-permissions" },
   repositories: { id: "settings-nav-repositories" },
   catalog: { id: "settings-nav-catalog" },
+  appearance: { id: "settings-nav-appearance" },
   people: { id: "settings-nav-people" },
   accounts: { id: "settings-nav-accounts" },
   "workspace-permissions": { id: "settings-nav-permissions" },
@@ -131,6 +134,7 @@ const settingsSectionSummaries = {
   permissions: { id: "settings-nav-permissions-summary" },
   repositories: { id: "settings-nav-repositories-summary" },
   catalog: { id: "settings-nav-catalog-summary" },
+  appearance: { id: "settings-nav-appearance-summary" },
   people: { id: "settings-nav-people-summary" },
   accounts: { id: "settings-nav-accounts-summary" },
   "workspace-permissions": {
@@ -175,6 +179,7 @@ export const settingsSections: readonly SettingsSection[] = [
   settingsSectionOf("permissions", "project", "permissions"),
   settingsSectionOf("repositories", "project", "repositories"),
   settingsSectionOf("catalog", "project", "catalog"),
+  settingsSectionOf("appearance", "project", "appearance", "ProjectAdminister"),
   settingsSectionOf("people", "workspace", "people"),
   settingsSectionOf("accounts", "workspace", "accounts"),
   settingsSectionOf(
@@ -234,10 +239,12 @@ export interface SettingsNavSite {
   readonly permissions: boolean;
 }
 
-/** The open project: its address, which every entry's link carries, and the name its group is headed by. */
+/** The open project: its address, which every entry's link carries, the name
+ * its group is headed by, and whether the reader administers it. */
 export interface SettingsNavProject {
   readonly address: string;
   readonly name: string;
+  readonly administers: boolean;
 }
 
 export interface SettingsNavInput {
@@ -260,14 +267,18 @@ export function settingsNavSiteDrawn(
   };
 }
 
-/** Whether the reader's abilities show a section. */
+/** Whether the reader's abilities show a section: the site's, and whether
+ * they administer the project the navigation is drawn in. */
 export function settingsSectionShown(
   shownBy: SettingsSectionShownBy,
   site: SettingsNavSite,
+  administers: boolean,
 ): boolean {
   switch (shownBy) {
     case "Member":
       return true;
+    case "ProjectAdminister":
+      return administers;
     case "SiteWorkspaces":
       return site.workspaces;
     case "SitePermissions":
@@ -312,7 +323,14 @@ export function settingsNav(
       entries: settingsSections.flatMap((section) => {
         const to = project === undefined ? section.workspace : section.project;
         if (section.group !== group || to === undefined) return [];
-        if (!settingsSectionShown(section.shownBy, input.site)) return [];
+        if (
+          !settingsSectionShown(
+            section.shownBy,
+            input.site,
+            project?.administers === true,
+          )
+        )
+          return [];
         return [
           {
             id: section.id,

@@ -54,6 +54,8 @@ import {
 import {
   agentAccountsResponseSchema,
   projectAppearanceResponseSchema,
+  projectImagesResponseSchema,
+  projectThemeResponseSchema,
   ownedThemesResponseSchema,
   themeChoiceResponseSchema,
   agenticRefusalsResponseSchema,
@@ -84,7 +86,6 @@ import {
   personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
   projectAbilitiesResponseSchema,
-  projectImagesResponseSchema,
   projectInventoryResponseSchema,
   projectOwnerFallbackResponseSchema,
   projectRepositoriesResponseSchema,
@@ -626,9 +627,14 @@ const consoleReads: readonly ConsoleRead[] = [
     }),
   },
   {
+    path: consoleReadAt(`${projectPath}/appearance/theme`),
+    schema: projectThemeResponseSchema,
+    body: () => ({ administers: true }),
+  },
+  {
     path: consoleReadAt(`${projectPath}/appearance/images`),
     schema: projectImagesResponseSchema,
-    body: () => ({ administers: false }),
+    body: () => ({ administers: true }),
   },
   {
     path: consoleReadAt("/api/v1/appearance/choice"),
