@@ -12,5 +12,27 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-1);
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* A chip: the title cut short, then the number, which never is. */
+  .epic-chip {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .epic-chip-title {
+    min-width: 0;
+    max-width: var(--width-epic-chip-title);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .epic-chip-number,
+  .epic-chip-archived {
+    flex: none;
+    font-weight: var(--weight-regular);
+    color: var(--ink-3);
   }
 }
