@@ -115,7 +115,9 @@ export function TenantRename(props: {
           busy={renaming.isPending}
           disabled={sent === undefined || renaming.isPending}
         >
-          {text({ id: renaming.isPending ? "ui-saving" : "ui-save" })}
+          {renaming.isPending
+            ? text({ id: "ui-saving" })
+            : text({ id: "ui-save" })}
         </Button>
       </form>
       {refusal?.at === "Section" ? (

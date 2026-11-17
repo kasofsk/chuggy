@@ -111,7 +111,7 @@ function SettingsSectionFoot(props: {
         disabled={!props.savable || props.saving}
         onClick={props.onSave}
       >
-        {text({ id: props.saving ? "ui-saving" : "ui-save" })}
+        {props.saving ? text({ id: "ui-saving" }) : text({ id: "ui-save" })}
       </Button>
     </>
   );
