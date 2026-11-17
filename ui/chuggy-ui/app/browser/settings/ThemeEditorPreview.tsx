@@ -6,8 +6,9 @@
  * The theme is set on the sample alone, through the object model as the
  * picker's swatches are, so nothing outside it changes. The washes and fills
  * the sheet mixes from the page's own surfaces are set beside the roles, from
- * the contract's own mixes, since a mix the root resolved would follow the
- * root's theme; the text size, which the root sets, is the sample's zoom. The
+ * the contract's own mixes, and so is the retired tone the sheet takes from
+ * the quiet text, since a token the root resolved would follow the root's
+ * theme; the text size, which the root sets, is the sample's zoom. The
  * sample takes no press and no focus.
  */
 
@@ -56,6 +57,7 @@ export function themeEditorPreviewAssignments(
       property: `--${wash}`,
       value: themeWashColour(scheme, colours, wash),
     })),
+    { property: "--tone-retired", value: colours["ink-3"] },
     ...themeFills.map((fill) => ({
       property: `--${fill}`,
       value: themeFillColour(scheme, colours, fill),

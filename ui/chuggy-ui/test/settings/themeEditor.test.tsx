@@ -256,6 +256,23 @@ test("the preview is drawn in the draft and nothing outside it changes until a t
   expect(document.documentElement.getAttribute("style")).toBe(root);
 });
 
+test("every token the sample draws is the draft's, the retired tone the sheet takes from the quiet text among them", async () => {
+  await editorDrawn({ global: undefined, themes: [] });
+  await press("New theme");
+  await turned(() => {
+    fireEvent.click(
+      within(editor()).getByRole("button", { name: "More colours" }),
+    );
+  });
+  await typed("Quiet text", "#445566");
+  const sample = within(editor())
+    .getByRole("region", { name: "Preview" })
+    .querySelector(".theme-preview");
+  if (!(sample instanceof HTMLElement)) throw new Error("no sample drawn");
+  expect(sample.style.getPropertyValue("--ink-3")).toBe("#445566");
+  expect(sample.style.getPropertyValue("--tone-retired")).toBe("#445566");
+});
+
 test("every role is a field, the lead ones shown and the rest under one disclosure", async () => {
   await editorDrawn({ global: undefined, themes: [] });
   await press("New theme");
