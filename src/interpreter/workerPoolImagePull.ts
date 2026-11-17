@@ -107,6 +107,30 @@ export function workerPoolImageHosted(
   return textCodePointsCount(hosted) > workerImageCharsMax ? image : hosted;
 }
 
+/** What reading the chat-image setting came to. */
+export type WorkerPoolChatImageRead =
+  | { readonly read: "Image"; readonly image: string | undefined }
+  | { readonly read: "Refused"; readonly why: string };
+
+/** The chat-image setting, a reference pinned by digest that an answer may carry; absent or empty, the plane names no chat image of its own. */
+export function workerPoolChatImageRead(
+  text: string | undefined,
+): WorkerPoolChatImageRead {
+  if (text === undefined || text.length === 0)
+    return { read: "Image", image: undefined };
+  if (textCodePointsCount(text) > workerImageCharsMax)
+    return {
+      read: "Refused",
+      why: `is longer than ${String(workerImageCharsMax)} characters`,
+    };
+  if (!workerPoolImagePinned(text))
+    return {
+      read: "Refused",
+      why: "is not an image reference pinned by digest",
+    };
+  return { read: "Image", image: text };
+}
+
 /** What reading the image-host setting came to. */
 export type WorkerPoolImageHostsRead =
   | { readonly read: "Hosts"; readonly hosts: WorkerPoolImageHosts }

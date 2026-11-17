@@ -518,6 +518,8 @@ export interface WorkerPoolPollSettings {
   readonly pollsMax: number;
   /** The public host each internal registry host is published as, which an assignment names its image by. */
   readonly imageHosts: WorkerPoolImageHosts;
+  /** The image a chat host starts its sessions' container from, where the site names one apart from its session image. */
+  readonly chatImage?: string;
 }
 
 /**
@@ -1291,11 +1293,10 @@ export async function workerPoolSettled(
 }
 
 /**
- * The image a chat host starts its sessions' container from, by the host the
- * cluster names it with: the session image the scheduler publishes, where the
- * plane serves sessions and one is published, and none for any other caller.
- * Every session runs that one image, whatever its kind or route, so there is
- * no other to choose.
+ * The image a chat host starts its sessions' container from, as the cluster
+ * names it: the plane's own chat image where its settings name one, and
+ * otherwise the session image the scheduler publishes. It is named where the
+ * plane serves sessions and a launch is published, and to no other caller.
  */
 async function workerPoolChatImage(
   ports: WorkerPoolPorts,
@@ -1304,7 +1305,10 @@ async function workerPoolChatImage(
 ): Promise<string | undefined> {
   if (identity.kind !== "ChatHost" || settings.sessionApiUrl === undefined)
     return undefined;
-  return (await ports.sessions.store.launch())?.image;
+  const launch = await ports.sessions.store.launch();
+  return launch === undefined
+    ? undefined
+    : (settings.chatImage ?? launch.image);
 }
 
 /** The images pinned by what this registration may still renew of either kind and the runtimes its jobs were opened under, each kind to its own bound, and the image a chat host is named, which it pulls before it holds anything. */
@@ -1327,7 +1331,7 @@ export async function workerPoolHeldImages(
   ];
 }
 
-/** `answer` naming a chat host's image by the host it pulls it from, where it is named one; it is read as the answer is made, so a newer publish reaches the next answer. */
+/** `answer` naming a chat host's image by the host it pulls it from, where it is named one; the launch is read as the answer is made, so a newer publish reaches the next answer. */
 async function workerPoolChatImageNamed(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
