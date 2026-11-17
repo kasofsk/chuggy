@@ -41,7 +41,7 @@ codes-git-workflows-refused = Workflows refused
 
 ## Which hold a finalization is stuck on.
 
-codes-hold-repository-unbound = { -repository(case: "upper") } unbound
+codes-hold-repository-unbound = { -repository(case: "upper") } disconnected
 codes-hold-target-unreadable = Target unreadable
 codes-hold-base-unreadable = { -pull-request(case: "upper") } base unreadable
 codes-hold-base-is-head = { -pull-request(case: "upper") } base at head

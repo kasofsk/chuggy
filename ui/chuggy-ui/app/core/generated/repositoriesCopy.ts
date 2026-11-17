@@ -39,6 +39,7 @@ export interface RepositoriesCopy {
   readonly "repositories-about": Record<never, never>;
   readonly "repositories-none": Record<never, never>;
   readonly "repositories-add": Record<never, never>;
+  readonly "repositories-add-apps": Record<never, never>;
   readonly "repositories-add-how": Record<never, never>;
   readonly "repositories-bound-caption": Record<never, never>;
   readonly "repositories-col-repository": Record<never, never>;
@@ -80,21 +81,15 @@ export interface RepositoriesCopy {
   readonly "repositories-configurations-imported": Record<never, never>;
   readonly "repositories-configuration-added": Record<never, never>;
   readonly "repositories-ignored": {
-    readonly detail: unknown;
-  };
-  readonly "repositories-ignored-entries": {
+    readonly count: unknown;
     readonly directory: unknown;
   };
-  readonly "repositories-ignored-one": {
-    readonly first: unknown;
-  };
   readonly "repositories-ignored-more": {
-    readonly first: unknown;
     readonly count: unknown;
+    readonly directory: unknown;
   };
-  readonly "repositories-ignored-more-truncated": {
-    readonly first: unknown;
-    readonly count: unknown;
+  readonly "repositories-ignored-some": {
+    readonly directory: unknown;
   };
   readonly "repositories-new-ticket": Record<never, never>;
   readonly "repositories-deferred": Record<never, never>;

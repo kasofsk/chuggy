@@ -340,7 +340,7 @@ test("an original on a retired binding opens with no repository, and says so", a
   });
   expect(
     screen.getByText(
-      "Not carried · repository kasofsk/chuggy, no longer bound",
+      "Not carried · repository kasofsk/chuggy, no longer connected",
     ),
   ).toBeTruthy();
   expect(

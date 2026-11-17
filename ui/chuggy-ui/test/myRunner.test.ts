@@ -17,6 +17,7 @@ import {
   memberRunnerRemoved,
   myRunnerAddable,
   myRunnerHeldLabel,
+  myRunnerLineProjects,
   myRunnerRemovalLine,
   myRunnerRoom,
   myRunnersCountLine,
@@ -90,6 +91,22 @@ test("each fallback is chosen by its own value, none included, and said in its o
       ownerFallbackChoices.map((each) => copyTextEn(ownerFallbackAbout(each))),
     ).size,
   ).toBe(ownerFallbackChoices.length);
+});
+
+test("the register line is made for the project the page is framed in, or else for any of the workspace's projects the reader reads, in name order", () => {
+  const readable = [
+    { tenant: "acme", project: "zephyr" },
+    { tenant: "other", project: "borealis" },
+    { tenant: "acme", project: "atlas" },
+  ];
+  expect(myRunnerLineProjects(readable, "acme", "zephyr")).toStrictEqual([
+    "zephyr",
+  ]);
+  expect(myRunnerLineProjects(readable, "acme", undefined)).toStrictEqual([
+    "atlas",
+    "zephyr",
+  ]);
+  expect(myRunnerLineProjects(readable, "none", undefined)).toStrictEqual([]);
 });
 
 test("a runner is offered the workspace's projects the reader reads and it does not yet serve, in name order", () => {

@@ -39,7 +39,7 @@ import {
   repositoriesDrawn,
   repositoryDeferrals,
   repositoryGrantLines,
-  repositoryIgnoredDetail,
+  repositoryIgnoredLine,
   repositoryLabel,
   repositoryNextStep,
   repositoryOffersLine,
@@ -339,9 +339,12 @@ test("each app has one short line under the roster and a link of its own", () =>
     [...forgeApps].toSorted(),
   );
   expect(copiedWords(repositoryGrantLines)).toStrictEqual({
-    portal: { status: "Not listed · grant it on GitHub", label: "Portal app" },
+    portal: {
+      status: "Repository not listed · add it to the portal app on GitHub",
+      label: "Portal app",
+    },
     worker: {
-      status: "Worker app missing · grant it on GitHub",
+      status: "A row marked missing · add it to the worker app on GitHub",
       label: "Worker app",
     },
   });
@@ -455,11 +458,11 @@ test("a bind of a repository already bound says so, and offers nothing further",
   expect(
     copiedWords(repositoryBindNote(repositoryBindOutcome(alreadyBound))),
   ).toStrictEqual({
-    status: "kasofsk/chuggy · Already bound",
+    status: "kasofsk/chuggy · Already connected",
     ticketOffered: false,
   });
   expect(status(answered({ result: "Imported", count: 2 }))).not.toContain(
-    "Already bound",
+    "Already connected",
   );
 });
 
@@ -491,9 +494,9 @@ test("a new binding names the repository and what its configurations came to, an
     });
 });
 
-/** The entries a step read none of are a line of their own, naming the first
- * and counting the rest, and a count past what the answer names is a floor. */
-test("a new binding that bootstrapped names what its `.chug/` holds instead on a line of its own", () => {
+/** The entries a step read none of are a line of their own, counting them,
+ * and a count past what the answer names is a floor. */
+test("a new connection that bootstrapped counts what else its `.chug/` holds on a line of its own", () => {
   const chug = ".chug/";
   expect(
     boundNote({
@@ -504,7 +507,7 @@ test("a new binding that bootstrapped names what its `.chug/` holds instead on a
   ).toStrictEqual({
     status: "kasofsk/chuggy · Default configuration added",
     ticketOffered: true,
-    ignored: `Not configurations · ${chug}project.yaml`,
+    ignored: `1 other item in ${chug} is not a chuggy configuration and is ignored.`,
   });
   expect(
     boundNote({
@@ -515,24 +518,30 @@ test("a new binding that bootstrapped names what its `.chug/` holds instead on a
         truncated: false,
       },
     }).ignored,
-  ).toBe(`Not configurations · ${chug}evaluators/ and 2 more`);
+  ).toBe(
+    `3 other items in ${chug} are not chuggy configurations and are ignored.`,
+  );
   expect(
     copyTextEn(
-      repositoryIgnoredDetail({
+      repositoryIgnoredLine({
         paths: [`${chug}evaluators/`, `${chug}project.yaml`],
         truncated: true,
       }),
     ),
-  ).toBe(`${chug}evaluators/ and 2+ more`);
+  ).toBe(
+    `2+ other items in ${chug} are not chuggy configurations and are ignored.`,
+  );
   expect(
-    copyTextEn(repositoryIgnoredDetail({ paths: [], truncated: true })),
-  ).toBe(`entries in ${chug}`);
+    copyTextEn(repositoryIgnoredLine({ paths: [], truncated: true })),
+  ).toBe(
+    `Other items in ${chug} are not chuggy configurations and are ignored.`,
+  );
 });
 
 test("a step that names no entry names `.chug/` as data, which a wording leaves as it is", () => {
   const pseudo = copyTextOf(copyPseudoBundleOf(copyCatalogEn));
   expect(
-    pseudo(repositoryIgnoredDetail({ paths: [], truncated: true })),
+    pseudo(repositoryIgnoredLine({ paths: [], truncated: true })),
   ).toContain(" .chug/");
 });
 
@@ -547,7 +556,7 @@ test("each refusal is the one line the picker draws under itself", () => {
   ).toBe("Not installed");
   expect(
     status({ outcome: "Conflict", code: "RepositoryBound", body: undefined }),
-  ).toBe("Bound elsewhere");
+  ).toBe("Connected elsewhere");
   expect(
     status({ outcome: "Conflict", code: "OperationConflict", body: undefined }),
   ).toBe("Conflict");
@@ -625,7 +634,7 @@ test("a configuration step asked for again and refused draws the refusal it met"
         body: undefined,
       }),
     ),
-  ).toStrictEqual({ status: "Unbound", retry: false });
+  ).toStrictEqual({ status: "Disconnected", retry: false });
   expect(
     copiedWords(
       repositoryConfigureStatus({
@@ -661,7 +670,7 @@ test("Unbind asks by the repository's name, and says what it ends and what it le
       repositoryUnbindQuestion("https://forge.test/kasofsk/chuggy.git"),
     ),
   ).toStrictEqual({
-    question: "Unbind kasofsk/chuggy?",
+    question: "Disconnect kasofsk/chuggy?",
     line: "New tickets can't name kasofsk/chuggy. Existing tickets and their history stay. It can be added again, here or to another project.",
   });
 });

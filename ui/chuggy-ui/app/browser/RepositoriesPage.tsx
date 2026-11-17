@@ -12,7 +12,7 @@
  * The rows are drawn from the read that does not ask the forge, and the reach
  * marks are laid on them when the read that asks it answers; one that has not
  * answered, or failed, leaves the rows drawn and unmarked.
- * Each binding offers Unbind unless the abilities read refuses this reader
+ * Each binding offers Disconnect unless the abilities read refuses this reader
  * `administer`, which is the permit the retirement route asks.
  * The line under Add says why it is withheld, or that a connected account
  * lacks the worker app. The accounts are the tenant's, and

@@ -176,6 +176,19 @@ export function myRunnerAddable(
     .sort();
 }
 
+/** The projects the register panel's line may be made for: the one the page is framed in where it is, or else the tenant's the reader reads, in name order. */
+export function myRunnerLineProjects(
+  readable: readonly PartitionIdentity[],
+  tenant: string,
+  framed: string | undefined,
+): readonly string[] {
+  if (framed !== undefined) return [framed];
+  return readable
+    .filter((each) => each.tenant === tenant)
+    .map((each) => each.project)
+    .sort();
+}
+
 /** What a run of the reader's waits on of their runners, as the server answers it. */
 export type RunnerWait = PersonalRunnerWait;
 
