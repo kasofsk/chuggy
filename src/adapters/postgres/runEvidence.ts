@@ -134,6 +134,7 @@ function runTotals(
   labels: {
     readonly resultSubtype?: string;
     readonly stopReason?: string;
+    readonly credential?: string;
   } = {},
 ): RunTotals {
   return {
@@ -280,15 +281,17 @@ interface RunAttemptRow extends RunTotalRow {
   readonly readings_recorded: string;
   readonly result_subtype: string | null;
   readonly stop_reason: string | null;
+  readonly credential: string | null;
 }
 
-/** The optional label pair a single run's totals carry and a rollup does not. */
+/** The optional labels and credential a single run's totals carry and a rollup, over runs that may have used different credentials, does not. */
 function runLabels(row: RunAttemptRow) {
   return {
     ...(row.result_subtype === null
       ? {}
       : { resultSubtype: row.result_subtype }),
     ...(row.stop_reason === null ? {} : { stopReason: row.stop_reason }),
+    ...(row.credential === null ? {} : { credential: row.credential }),
   };
 }
 
@@ -383,7 +386,7 @@ export async function postgresAttemptRuns(
                t.tokens_cache_read::text AS tokens_cache_read,
                t.cost_usd_micros::text AS cost_usd_micros,
                t.cost_basis,t.permission_denials::text AS permission_denials,
-               t.result_subtype,t.stop_reason
+               t.result_subtype,t.stop_reason,t.credential
           FROM execution_run r
           CROSS JOIN LATERAL (
             SELECT count(*) AS batches,coalesce(sum(x.bytes),0) AS bytes,

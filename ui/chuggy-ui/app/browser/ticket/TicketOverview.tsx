@@ -42,6 +42,7 @@ import {
 } from "../../core/ticketOverview.ts";
 import type { TicketOverviewBranch } from "../../core/ticketOverview.ts";
 import { ticketLedger } from "../../core/ticketLedger.ts";
+import { ticketTaker } from "../../core/ticketOffers.ts";
 import { phaseIsRunning } from "../../core/ticketPageFacts.ts";
 import { ticketStepsOf } from "../../core/ticketSteps.ts";
 import { useCreatorEmails } from "../creatorEmails.ts";
@@ -62,7 +63,7 @@ import "./ticket.css";
 
 type TicketOverviewParams = PartitionIdentity & { readonly ticket: string };
 
-/** The member who filed the ticket, drawn only where the wire names one. */
+/** A member who filed or owns the ticket, drawn only where the wire names one. */
 function TicketFiledBy(props: {
   readonly partition: PartitionIdentity;
   readonly creator: string;
@@ -177,6 +178,8 @@ interface TicketSidebarFacts {
   readonly repository: string | undefined;
   readonly branch: TicketOverviewBranch | undefined;
   readonly creator: string | undefined;
+  /** The owner where it is not the creator. */
+  readonly owner: string | undefined;
   readonly dependencies: readonly {
     readonly ticket: number;
     readonly phase?: TicketPhase;
@@ -216,7 +219,7 @@ function TicketSidebarDrawn(props: {
   readonly children?: ReactNode;
 }): ReactNode {
   const { held, facts } = props;
-  const { repository, branch, creator, revision } = facts;
+  const { repository, branch, creator, owner, revision } = facts;
   const params = { ...held.partition, ticket: String(held.ticket) };
   const text = useCopyText();
   const configuration =
@@ -243,6 +246,11 @@ function TicketSidebarDrawn(props: {
         {creator === undefined ? null : (
           <Field name={text({ id: "ticket-overview-filed-by" })}>
             <TicketFiledBy partition={held.partition} creator={creator} />
+          </Field>
+        )}
+        {owner === undefined ? null : (
+          <Field name={text({ id: "ticket-overview-owner" })}>
+            <TicketFiledBy partition={held.partition} creator={owner} />
           </Field>
         )}
         <Field name={text({ id: "ticket-overview-depends-on" })}>
@@ -284,6 +292,7 @@ function TicketSidebar(props: {
           ticketLandingsHeld(held.reads.landingsState),
         ),
         creator: ticket.creator,
+        owner: ticketTaker(ticket),
         dependencies: ticketOverviewDependenciesOf(ticket),
         revision: ticket.configurationRevision,
         version: ticket.configurationVersion,
@@ -420,6 +429,7 @@ function TicketDraftOverview(props: {
           repository: draft.brief?.repository,
           branch: ticketOverviewBranchOf(draft, []),
           creator: undefined,
+          owner: undefined,
           dependencies: draft.authoring.dependencies.map((ticket) => ({
             ticket,
           })),
@@ -431,7 +441,7 @@ function TicketDraftOverview(props: {
   );
 }
 
-export function TicketOverviewTab(): ReactNode {
+export function TicketOverview(): ReactNode {
   const held = useTicketPageHeld();
   if (held.draft !== undefined)
     return <TicketDraftOverview held={held} draft={held.draft} />;

@@ -4,7 +4,7 @@
 standing-pending = Pending
 standing-work = Working
 standing-evaluation = Evaluating
-standing-finalization = { -landing(case: "upper") }
+standing-finalization = { -finalization(case: "upper", form: "ing") }
 standing-done = Done
 standing-escalated = { -escalation(case: "upper") }
 standing-revoked = { -revoke(case: "upper", form: "ed") }

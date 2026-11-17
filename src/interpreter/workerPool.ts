@@ -42,24 +42,38 @@
  * projects it allowlists that allow one, and holds no session: the authority
  * is asked whether its owner may still read each project before anything is
  * claimed, so an outage fails the poll with nothing claimed. Each
- * execution it is assigned names its project, to a poll whose release reads
- * one, since an earlier runner refuses the whole answer over it.
+ * execution it is assigned names its project, to a poll whose peer implements
+ * `RunnerProjects`, since any other runner refuses the whole answer over it.
  *
- * A PERSONAL RUNNER WHOSE RELEASE READS A CREDENTIAL'S OUTCOME BENCHES THE
+ * A PERSONAL RUNNER IMPLEMENTING `CredentialOutcome` BENCHES THE
  * CREDENTIAL, NOT ITS OWNER'S ACCOUNT. The plane holds no agent credential for
  * a member's runner, so every job it runs is on one its owner keeps there. A
  * job such a poll claims is recorded so on its attempt, its usage limit pauses
  * no account, and each answer that stops it names how its run ended, where
- * that was a usage limit or credits run out. A job claimed by an earlier
- * release, a pool's, and the cluster's pause the account as they always did.
+ * that was a usage limit or credits run out. A job claimed by any other
+ * runner, a pool's, and the cluster's pause the account as they always did.
+ *
+ * A POOL'S, A PERSONAL RUNNER'S OR A CHAT HOST'S POLL MAY NAME THE
+ * CREDENTIALS IT WOULD RUN EACH AGENT'S WORK ON, which are kept for its
+ * claims, a poll naming none clearing them, so that its claim of a job of an
+ * agent it named, or of a session where it named Claude's, waits only while
+ * every one of them is paused for the account its work spends: a runner's or
+ * a chat host's owner, or the member who registered a pool, where one did.
+ * Its answer names each of them that is paused and when that ends, to a poll
+ * whose peer implements `CredentialPauses`, read as the answer is made and
+ * kept nowhere. Neither moves what it advertises, nor a pool's deferring to a runner.
  *
  * A MEMBER'S CHAT HOST POLLS IT TOO, admitted as a personal runner is, by its
  * row and its owner's permit. It claims sessions and never an execution, and
- * may name how long a session it claims may sit idle, which the plane caps at
- * the scheduler's own bound; no other caller's poll is read for one. Its
+ * may name how long a session it claims may sit idle, which is without limit
+ * where it names none; no other caller's poll is read for one. Its
  * sessions run in one container it starts before it holds any, so each answer
  * to it names the session image the scheduler publishes, and it may pull that
- * image while it holds nothing.
+ * image while it holds nothing. Each answer to one implementing
+ * `ChatThreadsClosed` also names the threads it last ran that have since
+ * closed, so it may remove what it keeps for them, and each session it hands
+ * one implementing `ChatSessionThreads` names the thread that session is an
+ * attempt of, so it may keep that across attempts.
  *
  * A POLL MAY NAME WHAT ITS CALLER CAN RUN: the set it names, and the most
  * memory it takes one job of, each replace the one recorded before anything
@@ -70,11 +84,11 @@
  *
  * A POLL MAY NAME ITS ROOM, the memory it can give jobs now, and each job it
  * claims fits what the claims before it left of that room; a poll naming none
- * is claimed by count alone. A poll naming its room whose release reads it is
- * also told whether a job it would be given is still waiting, which ends at
- * once such a poll that wants no job, so a runner holding back learns there is
- * work it fits. A poll naming no room is never told, so a pool that wants no
- * job because it is full waits out its whole poll. A poll may name how long it
+ * is claimed by count alone. A poll naming its room whose peer implements
+ * `MemoryRoom` is also told whether a job it would be given is still waiting,
+ * which ends at once such a poll that wants no job, so a runner holding back
+ * learns there is work it fits. A poll naming no room is never told, so a
+ * pool that wants no job because it is full waits out its whole poll. A poll may name how long it
  * waits for an answer with nothing in it, up to the plane's own longest wait.
  *
  * A POOL'S CLAIM DEFERS TO AN OWNER'S PERSONAL RUNNERS as the owner's fallback
@@ -86,17 +100,21 @@
  */
 import { setTimeout as delay } from "node:timers/promises";
 
-import type {
-  AssignmentOutcome,
-  WorkerPoolAssignment,
-  WorkerPoolCredentialOutcome,
-  WorkerPoolReconciliation,
-  WorkerPoolSessionAssignment,
-  WorkerRunner,
+import {
+  workerPoolThreadsClosedMax,
+  type AssignmentOutcome,
+  type WorkerPoolAssignment,
+  type WorkerPoolCredentialOutcome,
+  type WorkerPoolCredentialPause,
+  type WorkerPoolReconciliation,
+  type WorkerPoolSessionAssignment,
+  type WorkerRunner,
+  type WorkerRunnerCredentials,
 } from "../contract/workerPool.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 export { workerPoolsAnsweredMax } from "../contract/http.ts";
-import type { ExecutionRequirement } from "./executionRequirement.ts";
+import type { SessionCapability } from "./agentSession.ts";
+import type { ExecutionRequirement } from "../contract/executionRequirement.ts";
 import type { TaskResources } from "./taskResources.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
@@ -109,13 +127,9 @@ import {
   workerPoolPlatformToken,
   type WorkerPoolClass,
 } from "./workerPoolAssignment.ts";
+import type { WorkerContractPeer } from "../contract/workerContract.ts";
 import {
-  contractVersionAccepted,
   workerContractAccepted,
-  workerContractRunnerAgents,
-  workerContractRunnerCredentialOutcomes,
-  workerContractRunnerJobsWaiting,
-  workerContractRunnerProjects,
   type WorkerContractRange,
 } from "./workerPlane.ts";
 import type {
@@ -136,6 +150,7 @@ export type {
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
 import {
+  workerPoolPeerImplements,
   workerPoolSessionClaimant,
   workerPoolSessionClaims,
   type WorkerPoolSessionClaimant,
@@ -154,19 +169,27 @@ export const workerPoolContractAccepted: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has, the most memory, in MiB, it takes one job of, the memory it has room for now, the longest it waits for an empty answer, how long a session it claims may sit idle and the contract release it offered, where it named each. */
+/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has, the credentials it would run each agent's job on, the most memory, in MiB, it takes one job of, the memory it has room for now, the longest it waits for an empty answer, how long a session it claims may sit idle, the capabilities a chat host's threads may hold and the release and features its request offered, where it named each. */
 export interface WorkerPoolAsked {
   readonly held: readonly string[];
   readonly wanted: number;
   readonly wantedSessions: number;
   readonly runner?: WorkerRunner;
   readonly capabilities?: readonly string[];
+  readonly credentials?: WorkerRunnerCredentials;
   readonly memoryCeilingMib?: number;
   readonly memoryRoomMib?: number;
   readonly pollWaitSecs?: number;
   readonly idleSecs?: number;
-  readonly contract?: string;
+  readonly sessionCapabilities?: readonly SessionCapability[];
+  readonly contract?: WorkerContractPeer;
 }
+
+/** What of a poll its query names, the rest being its headers. */
+export type WorkerPoolAskedQuery = Pick<
+  WorkerPoolAsked,
+  "held" | "wanted" | "wantedSessions" | "idleSecs" | "sessionCapabilities"
+>;
 
 /** The memory, in MiB, an execution naming none runs with on a pool, where the plane names no size of its own. */
 export const workerPoolMemoryMibDefault = 4_096;
@@ -436,6 +459,11 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
     bearer: string,
     projects: readonly ProjectId[],
   ): Promise<WorkerPoolPersonalClaimed | undefined>;
+  /** Each of `credentials` that is paused now for the account a pool's, a runner's or a chat host's work spends, and when that pause ends, at most once each. */
+  credentialPauses(
+    identity: PoolPlaneIdentity,
+    credentials: WorkerRunnerCredentials,
+  ): Promise<readonly WorkerPoolCredentialPause[]>;
   /** How the run of each of `assignments` this registration claimed benching its credential ended, where it ended under an outcome, one for each such assignment. */
   credentialOutcomes(
     identity: PersonalRunnerIdentity,
@@ -487,10 +515,12 @@ export interface WorkerPoolPollSettings {
  * registration alone: the runner, which a poll naming none keeps none of, so a
  * machine moved back to a runner too old to name itself is not shown as the
  * version it left; the capabilities and the memory ceiling, which a poll
- * naming none leaves as they were recorded; and, for a personal runner,
- * whether those capabilities name exactly the agents it takes, which every
- * poll writes afresh from its release, so a runner moved back to an earlier
- * one is read as that one.
+ * naming none leaves as they were recorded; for a personal runner, whether
+ * those capabilities name exactly the agents it takes, which every poll writes
+ * afresh from its peer, so a runner moved back to an earlier one is read as
+ * that one; the credentials it named, which a poll naming none clears; and
+ * for a chat host, the capabilities it named for its threads, which a poll
+ * naming none clears too.
  */
 export interface WorkerPoolRunners {
   named(
@@ -499,6 +529,8 @@ export interface WorkerPoolRunners {
     capabilities: readonly string[] | undefined,
     memoryCeilingMib?: number,
     agentsAdvertised?: boolean,
+    credentials?: WorkerRunnerCredentials,
+    sessionCapabilities?: readonly SessionCapability[],
   ): Promise<void>;
 }
 
@@ -632,7 +664,7 @@ async function workerPoolClaimMade(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
-  contract: string | undefined,
+  contract: WorkerContractPeer | undefined,
 ): Promise<WorkerPoolClaimer> {
   const { access, assignments } = ports;
   const held = (memoryRoomMib: number | undefined): WorkerPoolClaimTerms => ({
@@ -674,8 +706,8 @@ async function workerPoolClaimMade(
           claim: () => Promise.resolve(undefined),
           waiting: () => Promise.resolve(false),
         };
-      const runnerBenchesCredential = contractVersionAccepted(
-        workerContractRunnerCredentialOutcomes,
+      const runnerBenchesCredential = workerPoolPeerImplements(
+        "CredentialOutcome",
         contract,
       );
       return {
@@ -701,14 +733,15 @@ async function workerPoolClaimMade(
 
 /**
  * The project an assignment names: a personal runner's claimed attempt's own,
- * where the release its poll offered reads one, and none for a pool's claim.
+ * where its poll's peer implements `RunnerProjects`, and none for a pool's
+ * claim.
  */
 function workerPoolClaimedProject(
   row: WorkerPoolClaimed | WorkerPoolPersonalClaimed,
-  contract: string | undefined,
+  contract: WorkerContractPeer | undefined,
 ): Pick<WorkerPoolAssignment, "project"> {
   return "project" in row &&
-    contractVersionAccepted(workerContractRunnerProjects, contract)
+    workerPoolPeerImplements("RunnerProjects", contract)
     ? { project: row.project }
     : {};
 }
@@ -737,9 +770,9 @@ function workerPoolRoomLeft(
 /**
  * The claims one poll makes, each one a row taken and bound to a fresh bearer
  * in the same statement and each fitting the room the claims before it left,
- * and, for a poll naming its room whose release reads it, whether one more is
- * waiting, which a claim that took nothing answers without asking, as does a
- * room of nothing that wants none, since no job fits it. Any other caller that
+ * and, for a poll naming its room whose peer implements `MemoryRoom`, whether
+ * one more is waiting, which a claim that took nothing answers without
+ * asking, as does a room of nothing that wants none, since no job fits it. Any other caller that
  * wants no job asks for none and none is claimed, so a full pool's or runner's
  * poll costs no row a pool with room could take and no question of the
  * authority.
@@ -751,13 +784,13 @@ async function workerPoolClaims(
   asked: {
     readonly wanted: number;
     readonly memoryRoomMib?: number;
-    readonly contract?: string;
+    readonly contract?: WorkerContractPeer;
   },
 ): Promise<Pick<WorkerPoolReconciliation, "assignments" | "jobsWaiting">> {
   const { wanted } = asked;
   const answersWaiting =
     asked.memoryRoomMib !== undefined &&
-    contractVersionAccepted(workerContractRunnerJobsWaiting, asked.contract);
+    workerPoolPeerImplements("MemoryRoom", asked.contract);
   const assignments: WorkerPoolAssignment[] = [];
   if (wanted <= 0 && !answersWaiting) return { assignments };
   if (wanted <= 0 && asked.memoryRoomMib === 0)
@@ -807,7 +840,8 @@ function workerPoolSessionsClaimed(
   asked: {
     readonly wanted: number;
     readonly idleSecs?: number;
-    readonly contract?: string;
+    readonly sessionCapabilities?: readonly SessionCapability[];
+    readonly contract?: WorkerContractPeer;
   },
 ): Promise<WorkerPoolSessionAssignment[]> {
   const apiUrl = settings.sessionApiUrl;
@@ -833,18 +867,19 @@ function workerPoolSessionsClaimed(
 
 /**
  * How the credential stopped each job of `stopped`, named only to a personal
- * runner whose poll's release reads it, and absent where it names none.
+ * runner whose poll's peer implements `CredentialOutcome`, and absent where it
+ * names none.
  */
 async function workerPoolCredentialOutcomesNamed(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   stopped: readonly string[],
-  contract: string | undefined,
+  contract: WorkerContractPeer | undefined,
 ): Promise<Pick<WorkerPoolReconciliation, "credentialOutcomes">> {
   if (
     identity.kind !== "Personal" ||
     stopped.length === 0 ||
-    !contractVersionAccepted(workerContractRunnerCredentialOutcomes, contract)
+    !workerPoolPeerImplements("CredentialOutcome", contract)
   )
     return {};
   const outcomes = await ports.assignments.credentialOutcomes(
@@ -860,6 +895,65 @@ async function workerPoolCredentialOutcomesNamed(
 }
 
 /**
+ * Each credential a caller's poll named that is paused for the account its
+ * work spends, named only to a poll whose peer implements `CredentialPauses`,
+ * read as the answer is made and kept nowhere, and absent where none is.
+ */
+async function workerPoolCredentialPausesNamed(
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
+  asked: Pick<WorkerPoolAsked, "credentials" | "contract">,
+): Promise<Pick<WorkerPoolReconciliation, "credentialPauses">> {
+  const credentials = asked.credentials ?? {};
+  if (
+    Object.keys(credentials).length === 0 ||
+    !workerPoolPeerImplements("CredentialPauses", asked.contract)
+  )
+    return {};
+  const pauses = await ports.assignments.credentialPauses(
+    identity,
+    credentials,
+  );
+  const seen = new Set<string>();
+  for (const pause of pauses) {
+    const key = `${pause.agent}:${pause.credential}`;
+    if (
+      seen.has(key) ||
+      !(credentials[pause.agent] ?? []).includes(pause.credential)
+    )
+      throw new Error(
+        "a credential pause named a credential its poll did not, or one twice",
+      );
+    seen.add(key);
+  }
+  return pauses.length === 0 ? {} : { credentialPauses: [...pauses] };
+}
+
+/**
+ * The threads a chat host last ran that have since closed, named only to a
+ * chat host whose poll's peer implements `ChatThreadsClosed`, and absent where
+ * none has.
+ */
+async function workerPoolThreadsClosedNamed(
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
+  contract: WorkerContractPeer | undefined,
+): Promise<Pick<WorkerPoolReconciliation, "threadsClosed">> {
+  if (
+    identity.kind !== "ChatHost" ||
+    !workerPoolPeerImplements("ChatThreadsClosed", contract)
+  )
+    return {};
+  const closed = await ports.sessions.store.threadsClosed(
+    identity,
+    workerPoolThreadsClosedMax,
+  );
+  if (closed.length > workerPoolThreadsClosedMax)
+    throw new Error("a chat host was read more closed threads than it asked");
+  return closed.length === 0 ? {} : { threadsClosed: [...closed] };
+}
+
+/**
  * One reconciliation pass, which is a renewal of what is held and a claim of
  * what is not, each kind through its own rows. Each kind's room is the least
  * of what the pool asked, the plane's per-poll bound and what its held bound
@@ -871,7 +965,12 @@ export async function workerPoolReconcile(
   holding: WorkerPoolHolding,
   asked: Pick<
     WorkerPoolAsked,
-    "wanted" | "wantedSessions" | "memoryRoomMib" | "idleSecs" | "contract"
+    | "wanted"
+    | "wantedSessions"
+    | "memoryRoomMib"
+    | "idleSecs"
+    | "sessionCapabilities"
+    | "contract"
   >,
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolReconciliation> {
@@ -916,6 +1015,9 @@ export async function workerPoolReconcile(
         settings.sessionsHeldMax - holding.sessions.length,
       ),
       ...(asked.idleSecs === undefined ? {} : { idleSecs: asked.idleSecs }),
+      ...(asked.sessionCapabilities === undefined
+        ? {}
+        : { sessionCapabilities: asked.sessionCapabilities }),
       ...(asked.contract === undefined ? {} : { contract: asked.contract }),
     }),
     stop,
@@ -954,7 +1056,9 @@ async function workerPoolHoldingRead(
 /**
  * Records the runner this poll named, and the capabilities it has and the
  * memory ceiling it takes jobs under where it named them, whether a personal
- * runner's release advertises its agents among them, and the poll as the
+ * runner's peer implements `RunnerAgentsAdvertised`, the credentials it
+ * named, which its claims read, the capabilities a chat host named for its
+ * threads, which its owner reads, and the poll as the
  * caller's last of each kind of work it could take: for a pool or a chat host,
  * a session, with room for one or holding one from a plane that names the API
  * a session reaches, and, for a pool or a personal runner, an execution, with
@@ -978,7 +1082,9 @@ async function workerPoolPollRecorded(
     asked.capabilities,
     asked.memoryCeilingMib,
     identity.kind === "Personal" &&
-      contractVersionAccepted(workerContractRunnerAgents, asked.contract),
+      workerPoolPeerImplements("RunnerAgentsAdvertised", asked.contract),
+    asked.credentials ?? {},
+    identity.kind === "ChatHost" ? asked.sessionCapabilities : undefined,
   );
   const claimant = workerPoolSessionClaimant(identity);
   if (
@@ -1076,7 +1182,11 @@ export async function workerPoolPoll(
   }
   return {
     polled: "Answered",
-    answer: await workerPoolChatImageNamed(ports, identity, settings, answer),
+    answer: {
+      ...(await workerPoolChatImageNamed(ports, identity, settings, answer)),
+      ...(await workerPoolCredentialPausesNamed(ports, identity, asked)),
+      ...(await workerPoolThreadsClosedNamed(ports, identity, asked.contract)),
+    },
   };
 }
 

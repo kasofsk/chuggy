@@ -41,6 +41,7 @@ import {
   ticketRefusedFirst,
   ticketReleasing,
 } from "./ticketReleasing.tsx";
+import { disclosed, disclosedFound } from "./creationMore.ts";
 
 vi.mock(
   "../app/browser/editor/TicketEditor.tsx",
@@ -107,9 +108,12 @@ function shot(bytes: readonly number[], type = "image/png"): File {
 }
 
 function picked(...files: readonly File[]): void {
-  fireEvent.change(screen.getByLabelText("Attach images"), {
-    target: { files },
-  });
+  fireEvent.change(
+    disclosed(() => screen.getByLabelText("Attach images")),
+    {
+      target: { files },
+    },
+  );
 }
 
 function uploads(sent: readonly Sent[]): readonly Sent[] {
@@ -119,7 +123,9 @@ function uploads(sent: readonly Sent[]): readonly Sent[] {
 }
 
 async function thumbnails(count: number): Promise<readonly HTMLElement[]> {
-  const list = await screen.findByRole("list", { name: "Images" });
+  const list = await disclosedFound(() =>
+    screen.findByRole("list", { name: "Images" }),
+  );
   await waitFor(() => {
     expect(within(list).getAllByRole("img")).toHaveLength(count);
   });
@@ -138,7 +144,9 @@ test("a picked image is uploaded as its bytes and drawn from a data URI", async 
 
 test("a pasted image and a dropped one are each attached", async () => {
   draw(api().ports);
-  const zone = screen.getByRole("group", { name: "Paste or drop images here" });
+  const zone = disclosed(() =>
+    screen.getByRole("group", { name: "Paste or drop images here" }),
+  );
   fireEvent.paste(zone, {
     clipboardData: { files: [shot([1])], types: ["Files"] },
   });
@@ -195,9 +203,11 @@ test("an attaching past the bound takes what fits and names the bound", async ()
   expect(screen.getAllByText(bound, { exact: false }).length).toBeGreaterThan(
     0,
   );
-  expect(screen.getByLabelText("Attach images").hasAttribute("disabled")).toBe(
-    true,
-  );
+  expect(
+    disclosed(() => screen.getByLabelText("Attach images")).hasAttribute(
+      "disabled",
+    ),
+  ).toBe(true);
 });
 
 test("a file that is not an image the upload takes is not uploaded", async () => {
@@ -238,7 +248,7 @@ test("deleting the key in the YAML removes the attachments", async () => {
     },
   });
   fireEvent.click(screen.getByRole("radio", { name: "Form" }));
-  await screen.findByLabelText("Attach images");
+  await disclosedFound(() => screen.findByLabelText("Attach images"));
   expect(screen.queryByRole("list", { name: "Images" })).toBeNull();
 });
 
@@ -305,7 +315,11 @@ test("an image removed after a refused release is revised out of the held draft"
   await thumbnails(1);
   submit();
   await screen.findByText(heldNote);
-  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+  fireEvent.click(
+    within(screen.getByRole("list", { name: "Images" })).getByRole("button", {
+      name: "Remove",
+    }),
+  );
   submit();
   await waitFor(() => {
     expect(created).toStrictEqual([creationDraft.ticket]);

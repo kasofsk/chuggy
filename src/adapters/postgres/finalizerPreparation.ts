@@ -1,7 +1,6 @@
 /**
- * The three durable moves preparation owns: gathering what the ticket's passed
- * work declared, writing the immutable attempt and the bundle it pinned, and
- * asking a person to approve one prepared candidate.
+ * The two durable moves preparation owns: gathering what the ticket's passed
+ * work declared, and writing the immutable attempt and the bundle it pinned.
  *
  * THE PASSED SET IS SPELLED IN EACH STATEMENT THAT DRAWS ON IT. A tagged
  * query's interpolations are values, so a fragment shared between the two
@@ -11,9 +10,9 @@
  *
  * THE GATHER READS ROWS AND DECIDES NOTHING. Whether the artifacts it found are
  * a candidate's worth is `../../interpreter/finalizerPreparation.ts`'s to say,
- * so this file has no notion of a refusal and no notion of an approval policy —
- * it hands back the passed work, its artifacts in path order, and the canonical
- * configuration those executions ran under. Every draw stops one row past the
+ * so this file has no notion of a refusal — it hands back the passed work, its
+ * artifacts in path order, and the configuration revision those executions ran
+ * under. Every draw stops one row past the
  * ceiling the decision is made against, which is what keeps the refusal for
  * exceeding it reachable while bounding what a decision is ever handed.
  *
@@ -48,27 +47,15 @@
  * and a re-run of a preparation that already committed is refused by the
  * primary key rather than by a read.
  *
- * THE APPROVAL GOES THROUGH A DOOR AND NOT A TABLE. The action is the ticket
- * service's row and this role holds `SELECT` on it and no more, so the ask is
- * `request_finalization_approval`, which builds the row from durable rows and
- * refuses a binding they disagree with.
- *
  * THE GLOBAL LOCK ORDER IS REQUEST, THEN REPOSITORY, THEN PROJECT, THEN PERMIT,
  * THEN ATTEMPT. The record takes the request row and then writes the bundle and
- * the attempt; the gather takes nothing; the door takes the request and then the
- * ticket service's own rows inside it.
+ * the attempt; the gather takes nothing.
  */
 
-import type { ConfigurationSelection } from "../../contract/configurationSelection.ts";
-import { storedSelectionOf } from "./ticketBrief.ts";
-import { randomUUID } from "node:crypto";
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import { asCanonicalConfiguration } from "../../interpreter/authoring.ts";
 import type {
-  ApprovalAsk,
-  ApprovalAsked,
   AttemptRecord,
   AttemptRecorded,
   HandoffArtifact,
@@ -76,7 +63,6 @@ import type {
   HandoffSource,
   HandoffWork,
 } from "../../interpreter/finalizerPreparation.ts";
-import { allApprovalRefusals } from "../../interpreter/finalizerPreparation.ts";
 import type { FinalizationClaim } from "../../interpreter/finalizer.ts";
 import {
   asGitObjectId,
@@ -98,7 +84,6 @@ import {
 import { postgresInputBundleWrite } from "./inputBundle.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { projectRowCounter } from "./rows.ts";
-import { finalizerRowPresent, finalizerRowValue } from "./finalizerRows.ts";
 
 /** One passed work execution of the ticket, with the revision it ran under. */
 interface WorkRow {
@@ -109,7 +94,6 @@ interface WorkRow {
   readonly manifest: string;
   readonly configuration_revision: string;
   readonly configuration_digest: string;
-  readonly canonical: string;
 }
 
 /** One handoff artifact one of those executions declared. */
@@ -132,12 +116,6 @@ interface SourceRow {
   readonly expected_base: string;
 }
 
-/** What the approval door answered about one prepared attempt. */
-interface ApprovalRow {
-  readonly result: string | null;
-  readonly action: string | null;
-}
-
 /**
  * The executions whose passed work one finalization promotes. Only a `Work`
  * task's result is authoritative passed-task output, so an evaluation's
@@ -152,7 +130,7 @@ async function preparationPassedWork(
     sql`WITH passed AS (
     SELECT e.tenant, e.project, e.execution, r.attempt, r.manifest,
            e.source_request, e.task,
-           e.configuration_revision, e.configuration_digest, c.canonical
+           e.configuration_revision, e.configuration_digest
       FROM execution e
       JOIN execution_request_task t
         ON t.tenant = e.tenant AND t.project = e.project
@@ -168,7 +146,7 @@ async function preparationPassedWork(
        AND t.kind = 'Work' AND e.status = 'Terminal' AND e.outcome = 'Passed'
        AND r.verdict = 'Pass')
      SELECT execution, attempt, source_request AS spawn, task::text AS task,
-            manifest, configuration_revision, configuration_digest, canonical
+            manifest, configuration_revision, configuration_digest
        FROM passed ORDER BY passed.task DESC LIMIT ${candidateExecutionsMax + 1}`,
   );
   return found.rows;
@@ -235,20 +213,6 @@ async function preparationPassedSources(
   return found.rows;
 }
 
-/** The catalog entries the ticket was released selecting, none where it selected none. */
-async function preparationSelection(
-  client: pg.PoolClient,
-  claim: FinalizationClaim,
-): Promise<{ readonly selection?: ConfigurationSelection }> {
-  const { tenant, project } = claim.partition;
-  const found = await client.query<{ selection: string | null }>(
-    sql`SELECT selection::text AS selection FROM ticket_definition
-     WHERE tenant = ${tenant} AND project = ${project} AND ticket = ${claim.ticket}`,
-  );
-  const selection = storedSelectionOf(found.rows[0]?.selection ?? null);
-  return selection === undefined ? {} : { selection };
-}
-
 /**
  * The attempt whose worker reported a passed work result. Only an answer to an
  * evaluation approval writes a result naming none, and that is never work.
@@ -268,7 +232,6 @@ export async function finalizerPreparationGathering(
   const artifacts = await preparationPassedArtifacts(client, claim);
   const sources = await preparationPassedSources(client, claim);
   return {
-    ...(await preparationSelection(client, claim)),
     work: work.map((row): HandoffWork => ({
       execution: asExecutionId(row.execution),
       attempt: preparationWorkAttempt(row.attempt),
@@ -279,7 +242,6 @@ export async function finalizerPreparationGathering(
         revision: row.configuration_revision,
         digest: row.configuration_digest,
       },
-      canonical: asCanonicalConfiguration(row.canonical),
     })),
     artifacts: artifacts.map((row): HandoffArtifact => ({
       execution: asExecutionId(row.execution),
@@ -331,16 +293,17 @@ export async function finalizerPreparationRecord(
        (tenant, project, attempt, request, ticket, repository, input_bundle,
         input_bundle_digest, target_ref,
         target_commit, target_base_ref, strategy, configuration_revision,
-        configuration_digest, approval_required, outcome, candidate_commit,
+        configuration_digest, outcome, candidate_commit,
         failure_kind, conflict_manifest, conflict_manifest_digest,
         proposal_base_ref, proposal_base_commit, queue_group_commit,
-        recheck_commit, recheck_reason, recheck_base_ref, attempt_digest)
+        recheck_commit, recheck_reason, recheck_base_ref, restack_tickets,
+        restack_commits, attempt_digest)
      VALUES (${claim.partition.tenant},${claim.partition.project},${record.attempt},
              ${claim.request},${claim.ticket},${record.repository},
              ${record.bundle.bundle},${record.bundle.digest},${record.target.ref},
              ${record.target.commit},${record.target.baseRef ?? null},${record.strategy},
              ${record.configuration.revision},${record.configuration.digest},
-             ${record.approvalRequired},${record.outcome},
+             ${record.outcome},
              ${record.candidate ?? null},${record.failureKind ?? null},
              ${record.conflictManifest ?? null},${record.conflictDigest ?? null},
              ${record.proposalBase?.ref ?? null},
@@ -349,42 +312,9 @@ export async function finalizerPreparationRecord(
              ${record.recheckCommit ?? null},
              ${record.recheckReason ?? null},
              ${record.recheckBaseRef ?? null},
+             ${record.restackBeneath?.map((member) => member.ticket) ?? null}::bigint[],
+             ${record.restackBeneath?.map((member) => member.commit) ?? null}::text[],
              ${record.attemptDigest})`,
   );
   return { recorded: "Attempt" };
-}
-
-/** Narrows the door's verdict to the closed set the port declares. */
-function finalizerPreparationAsked(row: ApprovalRow): ApprovalAsked {
-  if (row.result === "Requested") return { asked: "Requested" };
-  if (row.result === "AlreadyRequested") return { asked: "AlreadyRequested" };
-  return {
-    asked: "Refused",
-    refusal: finalizerRowValue(
-      allApprovalRefusals,
-      finalizerRowPresent(row.result, "approval verdict"),
-      "approval refusal",
-    ),
-  };
-}
-
-/** Asks a person to approve one prepared candidate, through the one door that may open it. */
-export async function finalizerPreparationApproval(
-  client: pg.PoolClient,
-  ask: ApprovalAsk,
-): Promise<ApprovalAsked> {
-  const { claim } = ask;
-  const action = `approval-${randomUUID()}`;
-  const asked = await client.query<ApprovalRow>(
-    sql`SELECT result, action FROM request_finalization_approval(
-      ${claim.partition.tenant},${claim.partition.project},${ask.attempt},
-      ${action},${claim.recoveryEpoch})`,
-  );
-  const row = asked.rows[0];
-  if (row === undefined) {
-    throw new Error(
-      "postgres finalizer: the approval door returned no verdict at all",
-    );
-  }
-  return finalizerPreparationAsked(row);
 }

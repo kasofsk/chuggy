@@ -26,7 +26,7 @@ import {
 } from "../core/configurationSteps.ts";
 import { configurationLabel, digestShortened } from "../core/labels.ts";
 import type { Label } from "../core/labels.ts";
-import { navRoutes } from "../core/shellNav.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 import { usePanelState } from "./api.ts";
 import { ConfigurationStepsTable } from "./ConfigurationSteps.tsx";
 import { PanelUnready } from "./DataPanel.tsx";
@@ -180,7 +180,7 @@ function ConfigurationFoot(props: {
   return (
     <p className="config-foot">
       <span>{text({ id: "ticket-provenance-digest" })}</span>{" "}
-      <Tooltip text={props.digest}>
+      <Tooltip trigger="abbreviation" text={props.digest}>
         <code>{digestShortened(props.digest)}</code>
       </Tooltip>
       <span> · </span>
@@ -268,7 +268,7 @@ function ConfigurationCatalogLink(props: {
   const text = useCopyText();
   return (
     <Link
-      to={navRoutes.catalog}
+      to={settingsRoutes.project.catalog}
       params={props.partition}
       search={{ configuration: props.revision }}
       className="config-heading-link"

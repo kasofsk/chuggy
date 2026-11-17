@@ -18,16 +18,11 @@
 
 import { vi } from "vitest";
 
-const viewportAsked = /min-width:\s*([0-9.]+)em/u;
+import { viewportEmPixels, viewportHeightEmDefault } from "./viewportSizes.ts";
 
-/** A desk's viewport, wider than any of the console's breakpoints. */
-export const viewportDeskEm = 80;
+export { viewportDeskEm } from "./viewportSizes.ts";
 
-/** The root's `em` in pixels, which the stated frame is measured in. */
-const viewportEmPixels = 16;
-
-/** The frame's height where a case does not state one. */
-const viewportHeightEmDefault = 50;
+const viewportAsked = /(min|max)-width:\s*([0-9.]+)em/u;
 
 export interface ViewportFrame {
   readonly columnEm?: number;
@@ -48,7 +43,9 @@ function viewportMatches(
   if (query.includes("prefers-reduced-motion: reduce"))
     return frame?.motion === false;
   const asked = viewportAsked.exec(query);
-  return asked !== null && em >= Number(asked[1]);
+  if (asked === null) return false;
+  const width = Number(asked[2]);
+  return asked[1] === "min" ? em >= width : em <= width;
 }
 
 export function viewportAtEm(em: number, frame?: ViewportFrame): void {

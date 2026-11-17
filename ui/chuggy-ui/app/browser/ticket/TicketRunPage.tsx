@@ -56,6 +56,7 @@ import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { TabNav, TabNavLink } from "../ui/TabNav.tsx";
 import {
   readValue,
   useTicketPageHeld,
@@ -68,6 +69,7 @@ import {
   TicketRunApprovalTime,
 } from "./TicketRunApproval.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
+import { TicketTabHeading } from "./TicketPageTabs.tsx";
 import { TicketRunsRail, useTicketRuns } from "./TicketRuns.tsx";
 import type { TicketRunsRailCurrent } from "./TicketRuns.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
@@ -92,7 +94,8 @@ export function TicketRunsBack(props: {
   );
 }
 
-/** The rail beside a page of the Runs tab, and the page itself. */
+/** A page of the Runs tab under the tab's heading: the rail, and beside it
+ * the page itself. */
 export function TicketRunsFrame(props: {
   readonly held: TicketPageHeld;
   readonly current: TicketRunsRailCurrent;
@@ -100,16 +103,25 @@ export function TicketRunsFrame(props: {
 }): ReactNode {
   useTicketRunsWithin();
   const runs = useTicketRuns(props.held);
-  if (runs === undefined)
-    return <PanelUnready state={props.held.reads.pageState} />;
   return (
-    <div className="ticket-run-frame">
-      <TicketRunsRail held={props.held} runs={runs} current={props.current} />
-      <div className="ticket-run-main">
-        <TicketRunsBack held={props.held} />
-        {props.children}
-      </div>
-    </div>
+    <>
+      <TicketTabHeading tab="ticket-tab-runs" />
+      {runs === undefined ? (
+        <PanelUnready state={props.held.reads.pageState} />
+      ) : (
+        <div className="ticket-run-frame">
+          <TicketRunsRail
+            held={props.held}
+            runs={runs}
+            current={props.current}
+          />
+          <div className="ticket-run-main">
+            <TicketRunsBack held={props.held} />
+            {props.children}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -269,28 +281,21 @@ function TicketRunViewTabs(props: {
   };
   const text = useCopyText();
   return (
-    <nav
-      aria-label={text({ id: "ticket-run-nav-label" })}
-      className="ticket-tabs ticket-run-views"
-    >
-      <ul>
-        {props.offered.map((view) => (
-          <li key={view}>
-            <Link
-              to="/$tenant/$project/tickets/$ticket/runs/$task"
-              params={params}
-              search={{ view }}
-              activeOptions={{ exact: true, includeSearch: true }}
-              aria-current={view === props.shown ? "page" : undefined}
-              className="ticket-tab"
-              replace
-            >
-              {text(ticketRunViewLabel(view))}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    <TabNav label={text({ id: "ticket-run-nav-label" })}>
+      {props.offered.map((view) => (
+        <TabNavLink
+          key={view}
+          to="/$tenant/$project/tickets/$ticket/runs/$task"
+          params={params}
+          search={{ view }}
+          activeOptions={{ exact: true, includeSearch: true }}
+          aria-current={view === props.shown ? "page" : undefined}
+          replace
+        >
+          {text(ticketRunViewLabel(view))}
+        </TabNavLink>
+      ))}
+    </TabNav>
   );
 }
 
@@ -356,12 +361,57 @@ function TicketRunTranscript(props: {
   );
 }
 
-function TicketRunDetailsFields(props: {
+/** What the run spent, from its model to its tokens. */
+function TicketRunDetailsSpent(props: {
   readonly details: TicketRunDetailsFacts;
 }): ReactNode {
   const { details } = props;
   const text = useCopyText();
   const none = text({ id: "ticket-value-none" });
+  return (
+    <>
+      <Field
+        name={text({ id: "ticket-field-model" })}
+        absent={details.model === undefined}
+      >
+        {details.model ?? none}
+      </Field>
+      {details.credential === undefined ? null : (
+        <Field name={text({ id: "ticket-run-credential" })}>
+          {details.credential}
+        </Field>
+      )}
+      <Field
+        name={text({ id: "ticket-field-turns" })}
+        absent={details.turns === undefined}
+      >
+        {details.turns ?? none}
+      </Field>
+      <Field
+        name={text({ id: "ticket-field-api-time" })}
+        absent={details.apiTime === undefined}
+      >
+        {details.apiTime === undefined ? (
+          none
+        ) : (
+          <Figure figure={details.apiTime} />
+        )}
+      </Field>
+      <Field
+        name={text({ id: "ticket-field-tokens" })}
+        absent={details.tokens === undefined}
+      >
+        {details.tokens ?? none}
+      </Field>
+    </>
+  );
+}
+
+function TicketRunDetailsFields(props: {
+  readonly details: TicketRunDetailsFacts;
+}): ReactNode {
+  const { details } = props;
+  const text = useCopyText();
   return (
     <Fields>
       {details.runner === undefined ? null : (
@@ -392,34 +442,7 @@ function TicketRunDetailsFields(props: {
       <Field name={text({ id: "ticket-field-attempts" })}>
         {details.attempts}
       </Field>
-      <Field
-        name={text({ id: "ticket-field-model" })}
-        absent={details.model === undefined}
-      >
-        {details.model ?? none}
-      </Field>
-      <Field
-        name={text({ id: "ticket-field-turns" })}
-        absent={details.turns === undefined}
-      >
-        {details.turns ?? none}
-      </Field>
-      <Field
-        name={text({ id: "ticket-field-api-time" })}
-        absent={details.apiTime === undefined}
-      >
-        {details.apiTime === undefined ? (
-          none
-        ) : (
-          <Figure figure={details.apiTime} />
-        )}
-      </Field>
-      <Field
-        name={text({ id: "ticket-field-tokens" })}
-        absent={details.tokens === undefined}
-      >
-        {details.tokens ?? none}
-      </Field>
+      <TicketRunDetailsSpent details={details} />
       <Field name={text({ id: "ticket-run-id-field" })}>
         <Identity label={details.execution} />
       </Field>

@@ -48,7 +48,7 @@ import { workerPoolCapabilitySchema } from "../../src/contract/workerPool.ts";
 import {
   allArchitectures,
   allOperatingSystems,
-} from "../../src/interpreter/executionRequirement.ts";
+} from "../../src/contract/executionRequirement.ts";
 import {
   allExecutionOutcomes,
   allExecutionRoutes,

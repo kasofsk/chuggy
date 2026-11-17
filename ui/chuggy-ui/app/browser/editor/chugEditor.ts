@@ -361,7 +361,7 @@ function chugEditorHints(vocabulary: () => readonly TicketYamlKey[]) {
  * not reported back as typing. */
 const chugEditorGiven = Annotation.define<true>();
 
-const ticketHighlighting = HighlightStyle.define([
+export const ticketHighlighting = HighlightStyle.define([
   { tag: [tags.propertyName, tags.keyword], color: "var(--syntax-key)" },
   { tag: tags.string, color: "var(--syntax-string)" },
   { tag: [tags.number, tags.bool, tags.null], color: "var(--syntax-value)" },
@@ -373,7 +373,7 @@ const ticketHighlighting = HighlightStyle.define([
  * reach. A narrow screen gets a type size a phone will not zoom into and
  * gutters a finger can hit.
  */
-const editorTheme = EditorView.theme({
+export const chugEditorStyles = {
   "&": {
     color: "var(--ink-1)",
     backgroundColor: "var(--surface-2)",
@@ -480,7 +480,9 @@ const editorTheme = EditorView.theme({
     color: "inherit",
     fontWeight: "var(--weight-strong)",
   },
-});
+} as const;
+
+const editorTheme = EditorView.theme(chugEditorStyles);
 
 /**
  * The words the editor's own panels and gutters say, under the phrases it

@@ -1,7 +1,9 @@
 /**
  * Inviting one person to a workspace, in a dialog: their email, their GitHub
  * username, a workspace role, and roles on the workspace's projects, each
- * offered only where the reader may grant it. A reader who may not make an
+ * offered only where the reader may grant it. Over the person's fields it says
+ * that this joins them to the workspace, and that a workspace of their own
+ * comes from a signup link. A reader who may not make an
  * account is told so under the GitHub field before anything is sent. Each
  * field's fault stands under it before anything is sent, a refusal is one line
  * under the form with everything typed still there, and an invitation that
@@ -213,6 +215,7 @@ function useTenantInvite(
 }
 
 function TenantInviteProjects(props: {
+  readonly tenant: string;
   readonly abilities: AccessTenantAbilities;
   readonly offered: ReturnType<typeof tenantInvitationProjects>;
   readonly inviting: TenantInviting;
@@ -224,6 +227,7 @@ function TenantInviteProjects(props: {
   return (
     <div className="grid gap-1">
       <TenantProjectsGrid
+        tenant={props.tenant}
         projects={props.offered.map((offered) => offered.project)}
         box={(project, role) =>
           projectRoleOffered(props.abilities, project, role)
@@ -244,12 +248,20 @@ function TenantInviteProjects(props: {
 
 /** Who a person's invitation names, which a link's form does not hold. */
 function TenantInvitePerson(props: {
+  readonly tenant: string;
   readonly abilities: AccessTenantAbilities;
   readonly inviting: TenantInviting;
 }): ReactNode {
+  const text = useCopyText();
   const { form, change } = props.inviting;
   return (
     <>
+      <p className="text-sm text-ink-2">
+        {text({
+          id: "settings-invitation-joins",
+          args: { tenant: props.tenant },
+        })}
+      </p>
       <InvitationEmail
         value={form.email}
         onChange={(email) => {
@@ -268,6 +280,7 @@ function TenantInvitePerson(props: {
 }
 
 function TenantInviteFields(props: {
+  readonly tenant: string;
   readonly abilities: AccessTenantAbilities;
   readonly offered: ReturnType<typeof tenantInvitationProjects>;
   readonly inviting: TenantInviting;
@@ -285,6 +298,7 @@ function TenantInviteFields(props: {
       ) : null}
       {mode === "Person" ? (
         <TenantInvitePerson
+          tenant={props.tenant}
           abilities={props.abilities}
           inviting={props.inviting}
         />
@@ -297,6 +311,7 @@ function TenantInviteFields(props: {
         }}
       />
       <TenantInviteProjects
+        tenant={props.tenant}
         abilities={props.abilities}
         offered={props.offered}
         inviting={props.inviting}
@@ -378,6 +393,7 @@ function TenantInviteDialog(props: {
     >
       {inviting.made === undefined ? (
         <TenantInviteFields
+          tenant={props.tenant}
           abilities={props.abilities}
           offered={offered}
           inviting={inviting}

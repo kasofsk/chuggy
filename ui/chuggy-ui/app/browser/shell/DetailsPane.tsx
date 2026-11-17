@@ -8,9 +8,14 @@
  * so a page the chat pane narrows lays itself out as narrow. A page that takes
  * the page width marks itself `data-fills-width`: centred at its content's
  * width, a page whose content is the page width could never be narrower.
+ *
+ * The middle is the document's `main`, focusable by script alone so the shell
+ * can move a reader to it, and named by `label` where it is given: an address
+ * spelled as the trail spells it, so marked as no words to translate.
  */
 
 import { Separator } from "radix-ui";
+import { useId } from "react";
 import type { ReactNode } from "react";
 
 import { useCopyText } from "../../copy/CopyProvider.tsx";
@@ -40,7 +45,11 @@ export function DetailsToggle(): ReactNode {
   );
 }
 
+/** The `id` of the middle, which the shell's skip link points at. */
+export const detailsPaneMainId = "shell-main";
+
 export function DetailsPane(props: {
+  readonly label?: string;
   readonly children: ReactNode;
 }): ReactNode {
   const filled = useShellSlotsFilled();
@@ -53,8 +62,19 @@ export function DetailsPane(props: {
       ? "grid-cols-[minmax(0,1fr)_auto_var(--width-aside)]"
       : "grid-cols-1";
   const scrollerHidden = open && !beside;
+  const labelId = useId();
   return (
-    <div className={`grid min-h-0 ${columns}`}>
+    <main
+      id={detailsPaneMainId}
+      tabIndex={-1}
+      aria-labelledby={props.label === undefined ? undefined : labelId}
+      className={`shell-main grid min-h-0 ${columns}`}
+    >
+      {props.label === undefined ? null : (
+        <span id={labelId} hidden translate="no">
+          {props.label}
+        </span>
+      )}
       <div
         hidden={scrollerHidden}
         className={
@@ -83,6 +103,6 @@ export function DetailsPane(props: {
           />
         </>
       ) : null}
-    </div>
+    </main>
   );
 }

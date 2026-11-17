@@ -43,6 +43,7 @@ import {
   ticketOffers,
   ticketOffersAllowed,
   ticketOffersStartable,
+  ticketTakeOffer,
 } from "../core/ticketOffers.ts";
 import type { TicketOffers } from "../core/ticketOffers.ts";
 import { ticketPageDrawn, ticketPageFacts } from "../core/ticketPageFacts.ts";
@@ -79,7 +80,8 @@ import {
   useTicketDraftDeletion,
 } from "./ticket/TicketDraft.tsx";
 import type { TicketDraftDeletion } from "./ticket/TicketDraft.tsx";
-import { TicketHeader, TicketTabs } from "./ticket/TicketHeader.tsx";
+import { TicketHeader } from "./ticket/TicketHeader.tsx";
+import { TicketTabs } from "./ticket/TicketPageTabs.tsx";
 import { useLandingQueues } from "./ticket/LandingQueueChip.tsx";
 import { useTicketLandings } from "./ticket/TicketLandings.tsx";
 import { useTicketExecutions } from "./ticket/TicketRuns.tsx";
@@ -242,10 +244,11 @@ function useTicketStanding(
     runner,
   );
   const parked = useParkedStanding(props, fence);
+  const ticket = readValue(props.reads.ticketState);
   const actions: TicketHeaderActionsProps = {
     partition: props.partition,
     ticket: props.ticket,
-    phase: readValue(props.reads.ticketState)?.phase,
+    phase: ticket?.phase,
     acting: props.acting,
     offers,
     openState: props.reads.openState,
@@ -258,6 +261,7 @@ function useTicketStanding(
       projectLeadDispatches(props.reads.leadState),
     ),
     noRunner,
+    take: ticket === undefined ? "None" : ticketTakeOffer(ticket, abilities),
   };
   const held: TicketPageHeld = {
     ...props,
@@ -432,7 +436,11 @@ export function TicketPage(props: { readonly children: ReactNode }): ReactNode {
 function TicketPageNotFound(): ReactNode {
   const text = useCopyText();
   return (
-    <EmptyState label={text({ id: "ticket-page-not-found" })} variant="page" />
+    <EmptyState
+      label={text({ id: "ticket-page-not-found" })}
+      variant="page"
+      level={1}
+    />
   );
 }
 

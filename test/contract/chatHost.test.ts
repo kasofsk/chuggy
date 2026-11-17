@@ -6,6 +6,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { z } from "zod";
+
 import {
   chatProtocolFrameBytesMax,
   chatProtocolLine,
@@ -21,7 +23,21 @@ import {
 import { textUtf8Bytes } from "../../src/contract/http.ts";
 import { sessionEndedSchema } from "../../src/contract/sessionPlane.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
-import { workerPoolIdentityCharsMax } from "../../src/contract/workerPool.ts";
+import {
+  workerPoolIdentityCharsMax,
+  type WorkerPoolThreadClosed,
+} from "../../src/contract/workerPool.ts";
+import { poolEnvelopeSchema } from "../../src/contract/workerTask.ts";
+import {
+  contractVersionAccepted,
+  workerContractChatHost,
+} from "../../src/interpreter/workerPlane.ts";
+import {
+  workerContractReleaseExport,
+  workerContractReleaseSchema,
+  workerContractReplayed,
+  workerContractWireOf,
+} from "./workerContractReleases.ts";
 
 const bearer = "session-bearer-secret";
 
@@ -37,13 +53,27 @@ const start = {
   },
 } as const satisfies ChatHostFrame;
 
+/** The envelope of a session that runs under no deadline. */
+const unboundedEnvelope = {
+  callbackUrl: start.envelope.callbackUrl,
+  bearer,
+  outputBytesMax: start.envelope.outputBytesMax,
+  providerCredentialFile: start.envelope.providerCredentialFile,
+} as const;
+
 const credential = {
   agent: "Claude",
   type: "OAuth",
   name: "team-max_2",
 } as const satisfies ChatHostCredential;
 
-const hostFrames: readonly ChatHostFrame[] = [
+const thread = {
+  project: "project-one",
+  session: "thread-one",
+} as const satisfies WorkerPoolThreadClosed;
+
+/** Every frame version 2 wrote, each of which version 3 reads unchanged. */
+const versionTwoHostFrames: readonly ChatHostFrame[] = [
   start,
   { ...start, credential },
   { frame: "Start", assignment: "01HZ", envelope: { ...start.envelope } },
@@ -51,7 +81,30 @@ const hostFrames: readonly ChatHostFrame[] = [
   { frame: "Drain" },
 ];
 
-const supervisorFrames: readonly ChatSupervisorFrame[] = [
+/** The frames version 3 added to the host's. */
+const versionThreeHostFrames: readonly ChatHostFrame[] = [
+  { ...start, thread },
+  { ...start, credential, thread },
+  { frame: "Forget", thread },
+];
+
+/** The frames version 4 added to the host's. */
+const versionFourHostFrames: readonly ChatHostFrame[] = [
+  {
+    frame: "Start",
+    assignment: "01HZ",
+    envelope: unboundedEnvelope,
+    thread,
+  },
+];
+
+const hostFrames: readonly ChatHostFrame[] = [
+  ...versionTwoHostFrames,
+  ...versionThreeHostFrames,
+  ...versionFourHostFrames,
+];
+
+const versionTwoSupervisorFrames: readonly ChatSupervisorFrame[] = [
   {
     frame: "Ready",
     protocols: [chatProtocolVersion],
@@ -66,6 +119,11 @@ const supervisorFrames: readonly ChatSupervisorFrame[] = [
   })),
   { frame: "Ended", assignment: "01HZ", phase: "Succeeded" },
   { frame: "Drained" },
+];
+
+const supervisorFrames: readonly ChatSupervisorFrame[] = [
+  ...versionTwoSupervisorFrames,
+  { frame: "Forgotten", thread },
 ];
 
 /** A line its writer wrote, as its reader takes it off the stream. */
@@ -309,14 +367,176 @@ test("a `Start` names its credential by agent, type and name, and nothing else",
     );
 });
 
-test("a host of version 2 speaks to a supervisor of its window, and not to one of version 1 alone", () => {
+test("a host of version 4 speaks to a supervisor of its window, and not to one of version 3 alone", () => {
   const ready = (protocols: number[]) => ({
     frame: "Ready" as const,
     protocols,
     sessionsMax: 1,
     contractRelease: workerContractRelease,
   });
-  assert.equal(chatProtocolVersion, 2);
-  assert.equal(chatProtocolSpoken(ready([1, 2])), true);
-  assert.equal(chatProtocolSpoken(ready([1])), false);
+  assert.equal(chatProtocolVersion, 4);
+  assert.equal(chatProtocolSpoken(ready([3, 4])), true);
+  assert.equal(chatProtocolSpoken(ready([3])), false);
+});
+
+/** The host's and the supervisor's frame schemas of each release a chat host still polls in that speaks `spoken`. */
+async function chatHostVersionReleases(spoken: number): Promise<
+  readonly {
+    readonly release: string;
+    readonly host: ReturnType<typeof workerContractReleaseSchema.parse>;
+    readonly supervisor: ReturnType<typeof workerContractReleaseSchema.parse>;
+  }[]
+> {
+  const releases = [];
+  for (const release of workerContractReplayed("pool").filter((replayed) =>
+    contractVersionAccepted(
+      workerContractChatHost,
+      workerContractWireOf(replayed),
+    ),
+  )) {
+    const exported = (name: string) =>
+      workerContractReleaseExport(
+        release,
+        "chatHost",
+        name,
+        workerContractReleaseSchema,
+      );
+    const version = await workerContractReleaseExport(
+      release,
+      "chatHost",
+      "chatProtocolVersion",
+      z.number().optional(),
+    );
+    if (version === spoken)
+      releases.push({
+        release,
+        host: await exported("chatHostFrameSchema"),
+        supervisor: await exported("chatSupervisorFrameSchema"),
+      });
+  }
+  return releases;
+}
+
+test("every frame a release of version 2 writes reads unchanged in version 3, and none version 3 added reads in version 2", async () => {
+  const releases = await chatHostVersionReleases(2);
+  assert.ok(releases.length > 0);
+  for (const { release, host, supervisor } of releases) {
+    for (const frame of versionTwoHostFrames) {
+      const line = read(chatProtocolLine(frame));
+      assert.deepEqual(host.parse(JSON.parse(line)), frame, release);
+      assert.deepEqual(parseChatHostFrame(line), frame, release);
+    }
+    for (const frame of versionTwoSupervisorFrames) {
+      const line = read(chatProtocolLine(frame));
+      assert.deepEqual(supervisor.parse(JSON.parse(line)), frame, release);
+      assert.deepEqual(parseChatSupervisorFrame(line), frame, release);
+    }
+    for (const frame of versionThreeHostFrames)
+      assert.equal(host.safeParse(frame).success, false, release);
+    assert.equal(
+      supervisor.safeParse({ frame: "Forgotten", thread }).success,
+      false,
+      release,
+    );
+  }
+});
+
+test("every frame a release of version 3 writes reads unchanged in version 4, and none version 4 added reads in version 3", async () => {
+  const releases = await chatHostVersionReleases(3);
+  assert.ok(releases.length > 0);
+  for (const { release, host, supervisor } of releases) {
+    for (const frame of [...versionTwoHostFrames, ...versionThreeHostFrames]) {
+      const line = read(chatProtocolLine(frame));
+      assert.deepEqual(host.parse(JSON.parse(line)), frame, release);
+      assert.deepEqual(parseChatHostFrame(line), frame, release);
+    }
+    for (const frame of supervisorFrames) {
+      const line = read(chatProtocolLine(frame));
+      assert.deepEqual(supervisor.parse(JSON.parse(line)), frame, release);
+      assert.deepEqual(parseChatSupervisorFrame(line), frame, release);
+    }
+    for (const frame of versionFourHostFrames)
+      assert.equal(host.safeParse(frame).success, false, release);
+  }
+});
+
+test("a `Start` naming no thread is read without one, and one naming a thread names its project and its session and nothing else", () => {
+  assert.equal("thread" in parseChatHostFrame(JSON.stringify(start)), false);
+  assert.deepEqual(parseChatHostFrame(JSON.stringify({ ...start, thread })), {
+    ...start,
+    thread,
+  });
+  const long = "t".repeat(workerPoolIdentityCharsMax);
+  assert.deepEqual(
+    parseChatHostFrame(
+      JSON.stringify({ ...start, thread: { project: long, session: long } }),
+    ),
+    { ...start, thread: { project: long, session: long } },
+  );
+  for (const wrong of [
+    { project: "project-one" },
+    { session: "thread-one" },
+    { ...thread, project: "" },
+    { ...thread, session: "" },
+    { ...thread, session: "t".repeat(workerPoolIdentityCharsMax + 1) },
+    { ...thread, directory: "/sessions/thread-one" },
+    "thread-one",
+    null,
+  ])
+    assert.throws(() =>
+      parseChatHostFrame(JSON.stringify({ ...start, thread: wrong })),
+    );
+});
+
+test("`Forget` and `Forgotten` each name one thread, and nothing else", () => {
+  for (const [frame, parse] of [
+    ["Forget", parseChatHostFrame],
+    ["Forgotten", parseChatSupervisorFrame],
+  ] as const) {
+    assert.deepEqual(parse(JSON.stringify({ frame, thread })), {
+      frame,
+      thread,
+    });
+    for (const wrong of [
+      { frame },
+      { frame, thread: [thread] },
+      { frame, thread: { project: "project-one" } },
+      { frame, thread, assignment: "01HZ" },
+    ])
+      assert.throws(() => parse(JSON.stringify(wrong)));
+  }
+});
+
+test("a `Forget` naming the longest thread fits in a frame", () => {
+  const long = "\u{10FFFF}".repeat(workerPoolIdentityCharsMax / 2);
+  const line = chatProtocolLine({
+    frame: "Forget",
+    thread: { project: long, session: long },
+  });
+  assert.ok(textUtf8Bytes(line) <= chatProtocolFrameBytesMax + 1);
+});
+
+test("a `Start` whose envelope names no deadline is read without one, and one naming a deadline is read as before", () => {
+  const unbounded = { ...start, envelope: unboundedEnvelope } as const;
+  assert.deepEqual(parseChatHostFrame(JSON.stringify(unbounded)), unbounded);
+  assert.deepEqual(parseChatHostFrame(JSON.stringify(start)), start);
+  for (const wrong of [null, "3600"])
+    assert.throws(() =>
+      parseChatHostFrame(
+        JSON.stringify({
+          ...start,
+          envelope: { ...unboundedEnvelope, timeoutSecsMax: wrong },
+        }),
+      ),
+    );
+});
+
+test("a pod's envelope still names its deadline", () => {
+  const envelope = { ...unboundedEnvelope, workspace: "/workspace" };
+  assert.equal(
+    poolEnvelopeSchema.safeParse({ ...envelope, timeoutSecsMax: 3_600 })
+      .success,
+    true,
+  );
+  assert.equal(poolEnvelopeSchema.safeParse(envelope).success, false);
 });

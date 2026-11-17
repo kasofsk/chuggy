@@ -7,7 +7,6 @@ import {
   type WorkerContractPublishPorts,
 } from "./publish-worker-contract.ts";
 
-const wire = "a".repeat(64);
 const name = "@chuggy/worker-contract";
 const release = "1.2.0";
 const files = "e".repeat(64);
@@ -25,13 +24,8 @@ function faked(over: Partial<WorkerContractPublishPorts> = {}): {
       commit: () => "packed-commit",
       tagged: () => false,
       released: () => false,
-      history: () => [
-        { release: "1.0.0", wire: "b".repeat(64), files: "f".repeat(64) },
-        { release, wire, files },
-      ],
-      wire: () => Promise.resolve(wire),
-      pack: (outDirectory) => {
-        made.push(`pack ${outDirectory}`);
+      pack: (outDirectory, label) => {
+        made.push(`pack ${outDirectory} as ${label}`);
         return { tarball: `${outDirectory}/contract.tgz`, sha256: "c", files };
       },
       release: (tag, commit, tarball, title, notes) => {
@@ -45,47 +39,35 @@ function faked(over: Partial<WorkerContractPublishPorts> = {}): {
   };
 }
 
-test("a release the history names is packed, released at its commit, and tagged", async () => {
+test("a label is packed under, released at its commit, and tagged", () => {
   const { made, ports } = faked();
-  const published = await publishWorkerContract(
-    ports,
-    name,
-    release,
-    "/out",
-    false,
-  );
+  const published = publishWorkerContract(ports, name, release, "/out", false);
   assert.equal(published.published, "Released");
   assert.deepEqual(made, [
-    "pack /out",
+    "pack /out as 1.2.0",
     "release worker-contract-v1.2.0 packed-commit /out/contract.tgz @chuggy/worker-contract 1.2.0 Packed at packed-commit (sha256 c).",
     "tag worker-contract-v1.2.0 packed-commit",
   ]);
 });
 
-test("a dry run packs and neither releases nor tags", async () => {
+test("a dry run packs and neither releases nor tags", () => {
   const { made, ports } = faked();
-  const published = await publishWorkerContract(
-    ports,
-    name,
-    release,
-    "/out",
-    true,
-  );
+  const published = publishWorkerContract(ports, name, release, "/out", true);
   assert.equal(published.published, "Packed");
-  assert.deepEqual(made, ["pack /out"]);
+  assert.deepEqual(made, ["pack /out as 1.2.0"]);
 });
 
-test("a release GitHub refuses tags nothing", async () => {
+test("a release GitHub refuses tags nothing", () => {
   const { made, ports } = faked({
     release: () => {
       throw new Error("gh release create exited 1");
     },
   });
-  await assert.rejects(
-    publishWorkerContract(ports, name, release, "/out", false),
+  assert.throws(
+    () => publishWorkerContract(ports, name, release, "/out", false),
     /gh release create/u,
   );
-  assert.deepEqual(made, ["pack /out"]);
+  assert.deepEqual(made, ["pack /out as 1.2.0"]);
 });
 
 for (const [why, over, refusal] of [
@@ -93,16 +75,6 @@ for (const [why, over, refusal] of [
     "a working tree with changes",
     { clean: () => false },
     /working tree has changes/u,
-  ],
-  [
-    "a release the history has no entry for",
-    { history: () => [{ release: "1.1.0", wire, files }] },
-    /add its entry/u,
-  ],
-  [
-    "a wire the history's last entry does not name",
-    { wire: () => Promise.resolve("d".repeat(64)) },
-    /move the release/u,
   ],
   [
     "a release already tagged",
@@ -116,9 +88,9 @@ for (const [why, over, refusal] of [
   ],
 ] as const)
   for (const dryRun of [false, true])
-    test(`${why} is refused before anything is packed${dryRun ? ", in a dry run too" : ""}`, async () => {
+    test(`${why} is refused before anything is packed${dryRun ? ", in a dry run too" : ""}`, () => {
       const { made, ports } = faked(over);
-      const published = await publishWorkerContract(
+      const published = publishWorkerContract(
         ports,
         name,
         release,
@@ -133,34 +105,23 @@ for (const [why, over, refusal] of [
       assert.deepEqual(made, []);
     });
 
-for (const dryRun of [false, true])
-  test(`a pack whose files the history does not record is refused before it is released${dryRun ? ", in a dry run too" : ""}`, async () => {
-    const { made, ports } = faked({
-      history: () => [{ release, wire, files: "f".repeat(64) }],
-    });
-    const published = await publishWorkerContract(
-      ports,
-      name,
-      release,
-      "/out",
-      dryRun,
-    );
-    assert.equal(published.published, "Refused");
-    assert.match(
-      published.published === "Refused" ? published.why : "",
-      new RegExp(`the pack's are ${files}: record the pack's`, "u"),
-    );
-    assert.deepEqual(made, ["pack /out"]);
-  });
+test("a label that is not a major, a minor and a patch is refused before anything is packed", () => {
+  for (const label of ["1.2", "v1.2.0", "1.2.0-rc.1", "latest", ""]) {
+    const { made, ports } = faked();
+    const published = publishWorkerContract(ports, name, label, "/out", false);
+    assert.equal(published.published, "Refused", label);
+    assert.deepEqual(made, []);
+  }
+});
 
-test("a GitHub that cannot say whether the release exists stops the release", async () => {
+test("a GitHub that cannot say whether the release exists stops the release", () => {
   const { made, ports } = faked({
     released: () => {
       throw new Error("gh could not say");
     },
   });
-  await assert.rejects(
-    publishWorkerContract(ports, name, release, "/out", false),
+  assert.throws(
+    () => publishWorkerContract(ports, name, release, "/out", false),
     /could not say/u,
   );
   assert.deepEqual(made, []);

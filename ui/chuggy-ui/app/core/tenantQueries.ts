@@ -8,6 +8,7 @@
 import type { QueryClient } from "@tanstack/query-core";
 
 import {
+  apiCallerAccount,
   apiCallerTenants,
   apiSiteAbilities,
   apiSiteAuthorities,
@@ -30,6 +31,7 @@ import {
   apiPersonalRunner,
   apiPersonalRunnerPermit,
   apiProjectInventoryAll,
+  apiTenantDeletion,
 } from "./apiRoutes.ts";
 import {
   consoleCallerQuery,
@@ -52,6 +54,13 @@ export function callerTenantsQuery() {
   );
 }
 
+/** Who the reader is signed in as, by the directory's account of them. */
+export function callerAccountQuery() {
+  return consoleCallerQuery("access-account", (ports) =>
+    apiCallerAccount(ports),
+  );
+}
+
 /** What the reader may do on the site, before they are in any workspace. */
 export function callerSiteAbilitiesQuery() {
   return consoleCallerQuery("access-site-abilities", (ports) =>
@@ -66,6 +75,13 @@ export function agentAccountsQuery() {
     "agent-accounts",
     (ports) => apiAgentAccounts(ports),
     sessionPlacementPolledMs,
+  );
+}
+
+/** What holds the workspace from deletion, absent to a reader who may not delete it. */
+export function tenantDeletionQuery(tenant: string) {
+  return consoleTenantQuery(tenant, "deletion", (ports) =>
+    apiTenantDeletion(ports, tenant),
   );
 }
 

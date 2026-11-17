@@ -44,6 +44,7 @@ import {
   ticketRefusedFirst,
   ticketReleasing,
 } from "./ticketReleasing.tsx";
+import { disclosed } from "./creationMore.ts";
 
 vi.mock(
   "../app/browser/editor/TicketEditor.tsx",
@@ -95,23 +96,32 @@ function type(editor: HTMLTextAreaElement, text: string): void {
 
 test("the YAML starts as the form reads, and reads back into it", async () => {
   draw(api().ports);
-  fireEvent.change(screen.getByPlaceholderText("what this ticket is called"), {
-    target: { value: "Ship it" },
-  });
+  fireEvent.change(
+    disclosed(() => screen.getByPlaceholderText("what this ticket is called")),
+    {
+      target: { value: "Ship it" },
+    },
+  );
   const editor = await toYaml();
   expect(editor.value).toContain("title: Ship it\n");
   type(editor, editor.value.replace("Ship it", "Shipped"));
   fireEvent.click(screen.getByRole("radio", { name: "Form" }));
   expect(
-    screen.getByPlaceholderText<HTMLInputElement>("what this ticket is called")
-      .value,
+    disclosed(() =>
+      screen.getByPlaceholderText<HTMLInputElement>(
+        "what this ticket is called",
+      ),
+    ).value,
   ).toBe("Shipped");
 });
 
 function typeTitle(text: string): void {
-  fireEvent.change(screen.getByPlaceholderText("what this ticket is called"), {
-    target: { value: text },
-  });
+  fireEvent.change(
+    disclosed(() => screen.getByPlaceholderText("what this ticket is called")),
+    {
+      target: { value: text },
+    },
+  );
 }
 
 function problems(): string | null {
@@ -123,7 +133,9 @@ function toForm(): void {
 }
 
 function branchBox(): HTMLInputElement {
-  return screen.getByRole<HTMLInputElement>("textbox", { name: "Branch" });
+  return disclosed(() =>
+    screen.getByRole<HTMLInputElement>("textbox", { name: "Branch" }),
+  );
 }
 
 function intentBox(): HTMLTextAreaElement {
@@ -137,7 +149,9 @@ function intentBox(): HTMLTextAreaElement {
 function drawProposing(title: string): { readonly sent: readonly Sent[] } {
   const held = api();
   draw(held.ports);
-  fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
+  fireEvent.click(
+    disclosed(() => screen.getByRole("radio", { name: "Pull request" })),
+  );
   fireEvent.change(intentBox(), { target: { value: "ship it" } });
   typeTitle(title);
   return held;
@@ -183,7 +197,9 @@ test("a look at the YAML leaves the branch box empty, the proposal following the
   typeTitle("Fix the login page");
   expect(branchBox().value).toBe("");
   expect(branchBox().placeholder).toBe("fix-the-login-page");
-  fireEvent.click(screen.getByRole("radio", { name: "Git merge" }));
+  fireEvent.click(
+    disclosed(() => screen.getByRole("radio", { name: "Git merge" })),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
   expect(await briefSent(held)).not.toHaveProperty("branch");
 });
@@ -253,7 +269,9 @@ test("the YAML of a push writes the empty branch its box holds as nothing", asyn
  * emptied under a pull request is refused at its key as it was. */
 test("a YAML whose reader empties the branch of a pull request is refused at the key", async () => {
   draw(api().ports);
-  fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
+  fireEvent.click(
+    disclosed(() => screen.getByRole("radio", { name: "Pull request" })),
+  );
   typeTitle("Fix the login page");
   const editor = await toYaml();
   type(

@@ -1,16 +1,13 @@
 /**
- * The head of every tab of the ticket page: the title with its number, the
- * epics it belongs to, the state label and the one fragment beside it, its
- * place in a landing queue where it holds one, the actions, and the tabs. Once
- * the header has scrolled out of view, a thin bar holding the small label and
- * the title sticks to the top of the page in its place.
+ * The head of every tab of the ticket page, drawn through `PageHeader`: the
+ * title with its number, the state label with the one fragment beside it and
+ * its place in a landing queue where it holds one, the actions, and the epics
+ * it belongs to. Once the header has scrolled out of view, the primitive's bar
+ * holds the small label and the title in its place.
  */
 
-import { Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
+import type { ReactNode } from "react";
 
-import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { LandingQueuePlace } from "../../core/landingQueues.ts";
 import type {
   TicketHeaderFragment,
@@ -20,29 +17,9 @@ import { LandingQueueChip } from "./LandingQueueChip.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
 import { TicketStateLabel } from "./TicketStateLabel.tsx";
-import { useCopyText } from "../../copy/CopyProvider.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
 
 import "./ticket.css";
-
-/** Whether the element is out of view, which nothing says until it has been
- * observed and a browser without the observer never says. */
-function useScrolledAway(ref: RefObject<HTMLElement | null>): boolean {
-  const [away, setAway] = useState(false);
-  useEffect(() => {
-    const element = ref.current;
-    if (element === null || typeof IntersectionObserver === "undefined")
-      return undefined;
-    const observer = new IntersectionObserver((entries) => {
-      const entry = entries.at(-1);
-      if (entry !== undefined) setAway(!entry.isIntersecting);
-    });
-    observer.observe(element);
-    return () => {
-      observer.disconnect();
-    };
-  }, [ref]);
-  return away;
-}
 
 function TicketHeaderFragmentDrawn(props: {
   readonly fragment: TicketHeaderFragment;
@@ -83,46 +60,6 @@ function TicketHeaderFragmentDrawn(props: {
   }
 }
 
-/** The title with the number after it, as every page's header opens. */
-export function TicketHeaderTitle(props: {
-  readonly title: string;
-  readonly ticket: number;
-}): ReactNode {
-  return (
-    <h1 className="ticket-header-title">
-      {props.title}{" "}
-      <span className="ticket-header-number">{`#${String(props.ticket)}`}</span>
-    </h1>
-  );
-}
-
-/**
- * A page's header and the thin bar that stands in for it once it has scrolled
- * away, holding the small label and the title: the ticket's, and every page
- * laid out as the ticket's is.
- */
-export function TicketHeaderFrame(props: {
-  readonly label: ReactNode;
-  readonly title: string;
-  readonly children: ReactNode;
-}): ReactNode {
-  const header = useRef<HTMLElement>(null);
-  const away = useScrolledAway(header);
-  return (
-    <>
-      <div className="ticket-sticky">
-        <div className="ticket-sticky-bar" hidden={!away}>
-          {props.label}
-          <span className="ticket-sticky-title">{props.title}</span>
-        </div>
-      </div>
-      <header ref={header} className="ticket-header">
-        {props.children}
-      </header>
-    </>
-  );
-}
-
 export function TicketHeader(props: {
   readonly ticket: number;
   readonly title: string;
@@ -135,99 +72,26 @@ export function TicketHeader(props: {
   readonly notes: ReactNode;
 }): ReactNode {
   return (
-    <TicketHeaderFrame
-      label={<TicketStateLabel standing={props.standing} size="small" />}
+    <PageHeader
       title={props.title}
-    >
-      <TicketHeaderTitle title={props.title} ticket={props.ticket} />
-      {props.epics}
-      <div className="ticket-header-standing">
-        <div className="ticket-header-state">
+      number={props.ticket}
+      status={
+        <>
           <TicketStateLabel standing={props.standing} size="page" />
           <TicketHeaderFragmentDrawn
             fragment={props.fragment}
             nowMs={props.nowMs}
           />
           <LandingQueueChip place={props.queued} />
-        </div>
-        {props.actions}
-      </div>
-      {props.notes}
-    </TicketHeaderFrame>
-  );
-}
-
-/** One tab: a link to its own address, which the router marks current, and
- * which `within` marks current under it as well. */
-function TicketTab(props: {
-  readonly to:
-    | "/$tenant/$project/tickets/$ticket"
-    | "/$tenant/$project/tickets/$ticket/runs"
-    | "/$tenant/$project/tickets/$ticket/configuration"
-    | "/$tenant/$project/tickets/$ticket/usage";
-  readonly params: PartitionIdentity & { readonly ticket: string };
-  readonly within?: boolean;
-  readonly children: ReactNode;
-}): ReactNode {
-  return (
-    <li>
-      <Link
-        to={props.to}
-        params={props.params}
-        activeOptions={{ exact: props.within !== true, includeSearch: false }}
-        aria-current={props.within === true ? "page" : undefined}
-        className="ticket-tab"
-      >
-        {props.children}
-      </Link>
-    </li>
-  );
-}
-
-/** The tabs, the same whatever the ticket's state; Runs carries how many runs
- * the page holds once it holds any, with a + where the page is cut off. */
-export function TicketTabs(props: {
-  readonly partition: PartitionIdentity;
-  readonly ticket: number;
-  readonly runCount: number | undefined;
-  readonly runCountCut: boolean;
-  /** Whether a page under the Runs tab is drawn, at an address of its own. */
-  readonly runsWithin: boolean;
-}): ReactNode {
-  const params = { ...props.partition, ticket: String(props.ticket) };
-  const runCount = props.runCount ?? 0;
-  const text = useCopyText();
-  return (
-    <nav
-      aria-label={text({ id: "ticket-tabs-nav-label" })}
-      className="ticket-tabs"
+        </>
+      }
+      statusCondensed={
+        <TicketStateLabel standing={props.standing} size="small" />
+      }
+      overflow={props.actions}
     >
-      <ul>
-        <TicketTab to="/$tenant/$project/tickets/$ticket" params={params}>
-          {text({ id: "ticket-tab-overview" })}
-        </TicketTab>
-        <TicketTab
-          to="/$tenant/$project/tickets/$ticket/runs"
-          params={params}
-          within={props.runsWithin}
-        >
-          {text({ id: "ticket-tab-runs" })}
-          {runCount === 0 ? null : (
-            <span className="ticket-tab-count">
-              {props.runCountCut ? `${String(runCount)}+` : runCount}
-            </span>
-          )}
-        </TicketTab>
-        <TicketTab
-          to="/$tenant/$project/tickets/$ticket/configuration"
-          params={params}
-        >
-          {text({ id: "ticket-tab-configuration" })}
-        </TicketTab>
-        <TicketTab to="/$tenant/$project/tickets/$ticket/usage" params={params}>
-          {text({ id: "ticket-tab-usage" })}
-        </TicketTab>
-      </ul>
-    </nav>
+      {props.epics}
+      {props.notes}
+    </PageHeader>
   );
 }

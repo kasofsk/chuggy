@@ -21,7 +21,6 @@ inbox-action-dispatch = { -dispatch }
 inbox-action-resume = resume
 inbox-action-revoke = { -revoke }
 inbox-action-approve = approve
-inbox-action-decline = decline
 inbox-action-reject = reject
 inbox-action-release = { -release }
 

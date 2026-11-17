@@ -3,7 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import {
@@ -34,7 +34,11 @@ import type { TicketProgram } from "../app/core/ticketLedger.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
-import { TicketPageEveryTab, ticketHeader } from "./ticketPageEveryTab.tsx";
+import {
+  TicketPageEveryTab,
+  ticketHeader,
+  ticketHeaderMenuEntries,
+} from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "vteng", project: "chuggy" };
 
@@ -46,10 +50,15 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   nowMs: () => pageClock.atMs ?? Date.now(),
 }));
 
-vi.mock("@tanstack/react-router", () => ({
-  createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+vi.mock("@tanstack/react-router", async () => ({
+  ...(await import("./routerLinkStubbed.tsx")),
+  Link: (props: {
+    readonly ref?: Ref<HTMLAnchorElement>;
+    readonly children?: ReactNode;
+  }) => (
+    <a href="/" ref={props.ref}>
+      {props.children}
+    </a>
   ),
   useParams: () => ({ ...atlas, ticket: "21" }),
 }));
@@ -364,7 +373,7 @@ test("the current cycle draws its work, its stages, where it stopped and its rol
   expect(rows[1]).toContain("$0.35");
   expect(rows[2]).toContain("Stage 2");
   expect(rows[2]).toContain("Not reached");
-  expect(rows[3]).toContain("Landing");
+  expect(rows[3]).toContain("Finalization");
   expect(rows[3]).toContain("Not reached");
   expect(outcomeOf(current)).toBe("Failed at Stage 1");
   expect(current.querySelector(".ticket-runs-rollup")?.textContent).toContain(
@@ -491,7 +500,10 @@ test("the page fills no second header row in the shell's top bar: its tabs are i
     { shell: true },
   );
   expect(
-    screen.getByText("Overview").closest("nav")?.getAttribute("aria-label"),
+    screen
+      .getByRole("link", { name: "Overview" })
+      .closest("nav")
+      ?.getAttribute("aria-label"),
   ).toBe("Ticket");
   expect(screen.getByRole("heading", { level: 1 }).closest("header")).not.toBe(
     null,
@@ -505,9 +517,7 @@ test("the title is the page's one h1, and it holds the title and the number afte
   });
   const heading = screen.getByRole("heading", { level: 1 });
   expect(heading.textContent).toBe("Serve the reason #21");
-  expect(heading.querySelector(".ticket-header-number")?.textContent).toBe(
-    "#21",
-  );
+  expect(heading.querySelector(".page-header-number")?.textContent).toBe("#21");
 });
 
 test("the brief's intent is drawn once, as markdown, under Instructions", async () => {
@@ -657,7 +667,7 @@ test("a short page says so", async () => {
       "link",
       { name: /^Runs/u },
     ).textContent,
-  ).toBe("Runs4+");
+  ).toBe("Runs 4+");
 });
 
 test("without the draft the rows still group by the program the ticket was released with", async () => {
@@ -684,7 +694,7 @@ test("a ticket read carrying no program still groups its runs by cycle, and numb
   ).toEqual([
     "Work",
     "Stage 1",
-    "Landing",
+    "Finalization",
     "Work",
     "Stage 1",
     "Stage 2",
@@ -754,9 +764,13 @@ test("no string the page composes but the brief runs past the copy budget", asyn
  * The rework wall's resume buys a fresh cycle, so the page must not still
  * offer it as a re-run of the evaluation.
  */
-test("a rework-wall resume says it reworks rather than re-evaluates", async () => {
+test("a rework-wall resume says it reworks rather than re-evaluates, and is the header's one primary action", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
-  expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
+  expect(
+    [...ticketHeader().querySelectorAll(".btn-primary")].map(
+      (primary) => primary.textContent,
+    ),
+  ).toStrictEqual(["Resume"]);
   expect(screen.getByText(/Reworks · new artifact/u)).toBeDefined();
   expect(screen.queryByText(/Re-runs evaluation from stage 1/u)).toBeNull();
 });
@@ -1102,10 +1116,10 @@ const pendingTicket = {
  * link is found as the anchor it draws rather than by a role its href gives. */
 test("a Pending ticket offers the edit screen, and a parked one does not", async () => {
   await drawTicket({ shapes: [], ticket: pendingTicket });
-  expect(screen.getByText("Edit", { selector: "a" })).toBeDefined();
+  expect(await ticketHeaderMenuEntries()).toContain("Edit");
   cleanup();
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
-  expect(screen.queryByText("Edit", { selector: "a" })).toBeNull();
+  expect(await ticketHeaderMenuEntries()).not.toContain("Edit");
 });
 
 /** The banner over the steps, which is drawn only for a draft holding edits

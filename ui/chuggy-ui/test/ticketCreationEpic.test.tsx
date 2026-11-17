@@ -18,6 +18,7 @@ import { creationFormDrawn } from "./creationFormDrawn.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { answer, turned } from "./screenHarness.tsx";
 import { creationOffers } from "./ticketCreationFixture.ts";
+import { disclosed } from "./creationMore.ts";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -83,7 +84,9 @@ function drawnOver(
 test("the creation form offers the project's Active epics, by title", async () => {
   const asked = drawnOver([billing]);
   await waitFor(() => {
-    expect(screen.getAllByText("Epic").length).toBeGreaterThan(0);
+    expect(disclosed(() => screen.getAllByText("Epic")).length).toBeGreaterThan(
+      0,
+    );
   });
   expect(
     asked.some(
@@ -97,19 +100,25 @@ test("a form opened from an epic starts its picker on that epic", async () => {
   drawnOver([billing, shipping], undefined, 9);
   await waitFor(() => {
     expect(
-      screen.getByRole("button", { name: /^Epic/u }).textContent,
+      disclosed(() => screen.getByRole("button", { name: /^Epic/u }))
+        .textContent,
     ).toContain("Shipping");
   });
 });
 
 async function epicMenuOpened(): Promise<HTMLElement> {
   await waitFor(() => {
-    expect(screen.getByRole("button", { name: /^Epic/u })).toBeTruthy();
+    expect(
+      disclosed(() => screen.getByRole("button", { name: /^Epic/u })),
+    ).toBeTruthy();
   });
   await turned(() => {
-    fireEvent.keyDown(screen.getByRole("button", { name: /^Epic/u }), {
-      key: "ArrowDown",
-    });
+    fireEvent.keyDown(
+      disclosed(() => screen.getByRole("button", { name: /^Epic/u })),
+      {
+        key: "ArrowDown",
+      },
+    );
   });
   return screen.getByRole("menu");
 }
@@ -150,7 +159,8 @@ test("an epic past the picker's first page is reached by asking for more, and th
   });
   await waitFor(() => {
     expect(
-      screen.getByRole("button", { name: /^Epic/u }).textContent,
+      disclosed(() => screen.getByRole("button", { name: /^Epic/u }))
+        .textContent,
     ).toContain("Shipping");
   });
 });
