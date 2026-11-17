@@ -69,7 +69,7 @@ import { test } from "node:test";
 
 import * as schema from "../../src/adapters/postgres/schema.ts";
 
-const { migrations, selectorServiceRole, workerPlaneRole } = schema;
+const { migrations, workerPlaneRole } = schema;
 const rolesFilePath = "deploy/rig/postgres/postgres-roles.sql";
 const rolesFile = readFileSync(rolesFilePath, "utf8")
   .replaceAll(/--.*$/gmu, " ")
@@ -135,18 +135,6 @@ function rootAssertedRoles(): ReadonlySet<string> {
     }
   }
   return found;
-}
-
-/**
- * The group roles a login is granted though no command under `src/roots/`
- * serves as them: the selector's process is gone, and its login is kept
- * holding nothing.
- */
-const unservedLoginRoles: ReadonlySet<string> = new Set([selectorServiceRole]);
-
-/** Every group role a login is granted: the ones a serving command asserts, and the unserved ones kept beside them. */
-function loginGroupRoles(): ReadonlySet<string> {
-  return new Set([...rootAssertedRoles(), ...unservedLoginRoles]);
 }
 
 /** Every role name one repeated statement of the file names, and the shape it names them in. */
@@ -243,7 +231,7 @@ test("a role a migration makes an owner may create in the schema it owns in", ()
 test("every group role a serving command asserts is granted to a login role", () => {
   assert.deepEqual(
     rolesFileRepeated(/GRANT (chuggy_\w+) TO chuggy_\w+_login;/gu),
-    loginGroupRoles(),
+    rootAssertedRoles(),
   );
 });
 
@@ -355,4 +343,18 @@ test("every login role's password is the distinct variable its own name names", 
       `${rolesFilePath} fills ${variable} from an environment name that is not ${role}'s`,
     );
   }
+});
+
+test("every environment name the file reads sets a login role's password", () => {
+  const used = new Set(
+    Array.from(
+      rolesFile.matchAll(/ALTER ROLE chuggy_\w+ PASSWORD :'(\w+)';/gu),
+      ([, variable]) => String(variable),
+    ),
+  );
+  for (const [, variable, name] of rolesFile.matchAll(/\\getenv (\w+) (\w+)/gu))
+    assert.ok(
+      used.has(String(variable)),
+      `${rolesFilePath} reads ${name} and sets no password from it, so a deployment must issue a credential nothing uses`,
+    );
 });
