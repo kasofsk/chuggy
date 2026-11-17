@@ -19,6 +19,7 @@ import {
   schedulerExecutions,
   schedulerFurtherTicket,
   schedulerInCluster,
+  schedulerOpenedAttempt,
   schedulerOwner,
   schedulerProject,
   schedulerRigOpen,
@@ -240,5 +241,71 @@ test("launch offers an admitted started ticket's evaluation before older admitte
       .filter((row) => row.partition.project === project.partition.project)
       .map((row) => row.execution),
     [started, unstarted],
+  );
+});
+
+/**
+ * Records that a runner claimed an attempt that has since ended, as a pool's
+ * claim would have; an ended attempt is otherwise written once.
+ */
+async function startedFirstClaimed(
+  project: SchedulerProject,
+  execution: string,
+): Promise<void> {
+  const rewriting = await rig.harness.begin();
+  try {
+    await rewriting.query("SET LOCAL session_replication_role=replica");
+    await rewriting.query(
+      `UPDATE execution_attempt SET claimed_at=now()
+        WHERE tenant=$1 AND project=$2 AND execution=$3 AND ended_at IS NOT NULL`,
+      [project.partition.tenant, project.partition.project, execution],
+    );
+  } catch (error) {
+    await rewriting.rollback();
+    throw error;
+  }
+  await rewriting.commit();
+}
+
+test("launch offers an execution whose ended attempt was claimed before an older admitted execution never claimed", async () => {
+  const project = await schedulerProject(rig, "started-retry", {
+    slotsMax: 8,
+    maximum: 8,
+    tasks: 1,
+  });
+  await startedFirstRegister(project, project.request, "started-retry");
+  const unstarted = await startedFirstExecution(project, project.request);
+  assert.deepEqual(await rig.store.admit(project.cluster), {
+    admitted: "Admitted",
+    execution: unstarted,
+  });
+  const further = await schedulerFurtherTicket(
+    rig,
+    project,
+    project.memory,
+    "started-retry-claimed",
+    1,
+  );
+  await startedFirstRegister(project, further.request, "started-retry-claimed");
+  const retried = await schedulerOpenedAttempt(
+    rig,
+    project,
+    "started-retry-claimed",
+  );
+  assert.equal(
+    retried.execution,
+    await startedFirstExecution(project, further.request),
+  );
+  assert.equal(
+    await rig.store.attemptEnded(retried.attempt, "Lost", "Vanished"),
+    true,
+  );
+  await startedFirstClaimed(project, retried.execution);
+  const waiting = await rig.store.unlaunched(project.epoch, 256);
+  assert.deepEqual(
+    waiting
+      .filter((row) => row.partition.project === project.partition.project)
+      .map((row) => row.execution),
+    [retried.execution, unstarted],
   );
 });
