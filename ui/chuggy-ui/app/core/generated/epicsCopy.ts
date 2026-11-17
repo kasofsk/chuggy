@@ -98,6 +98,9 @@ export interface EpicsCopy {
     readonly word: unknown;
     readonly count: unknown;
   };
+  readonly "epics-tickets-group-count": {
+    readonly count: unknown;
+  };
   readonly "epics-tickets-after": Record<never, never>;
   readonly "epics-tickets-blocks": {
     readonly count: unknown;

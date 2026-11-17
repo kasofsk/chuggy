@@ -95,6 +95,10 @@ epics-tickets-filter = Filter { -ticket(form: "plural") }
 epics-tickets-no-match = No { -ticket(form: "plural") } match
 epics-tickets-running = Running
 epics-tickets-group = { $word }, { $count }
+epics-tickets-group-count = { $count ->
+    [one] { $count } { -ticket }
+   *[other] { $count } { -ticket(form: "plural") }
+}
 epics-tickets-after = after
 epics-tickets-blocks = blocks { $count }
 epics-tickets-menu = More actions for #{ $ticket }

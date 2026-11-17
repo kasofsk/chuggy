@@ -1,7 +1,8 @@
 /**
  * The router as an epic's page meets it: the epic its address names, which a
  * case may move, each link an anchor at the address it would go to, its search
- * included, carrying what it is labelled and titled by, and each navigation
+ * included, carrying what it is labelled and titled by, a link `createLink`
+ * makes being the component it wraps at that address, and each navigation
  * recorded where it was asked to go unless a blocker the page holds refused
  * it.
  */
@@ -58,8 +59,28 @@ function EpicLink(
   );
 }
 
+/** A link made by `createLink`: the component it wraps, given the address the
+ * link would go to and none of the router's own props. */
+function epicCreateLink(
+  component: (props: Readonly<Record<string, unknown>>) => ReactNode,
+) {
+  return function EpicCreatedLink(
+    props: Readonly<Record<string, unknown>> & {
+      readonly to?: string;
+      readonly params?: Readonly<Record<string, string>>;
+      readonly search?: Readonly<Record<string, unknown>>;
+    },
+  ): ReactNode {
+    const { to, params, search, ...rest } = props;
+    const anchor = Object.fromEntries(
+      Object.entries(rest).filter(([key]) => key !== "activeOptions"),
+    );
+    return component({ ...anchor, href: epicAddress(to, params, search) });
+  };
+}
+
 export const epicRouterDouble = {
-  createLink: () => EpicLink,
+  createLink: epicCreateLink,
   Link: EpicLink,
   useParams: () => ({ ...leadPartition, epic: epicRouted.epic }),
   useBlocker: (options: { readonly shouldBlockFn: () => boolean }) => {

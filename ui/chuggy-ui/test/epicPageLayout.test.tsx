@@ -59,14 +59,14 @@ test("the tabs are links to the epic's four addresses, Tickets counting its memb
       .getAllByRole("link")
       .map((link) => [
         link.textContent,
-        link.querySelector(".epic-tab-count")?.textContent,
+        link.querySelector(".tab-nav-count")?.textContent,
         link.getAttribute("href"),
       ]),
   ).toStrictEqual([
     ["Overview", undefined, epicPath],
-    ["Tickets2", "2", `${epicPath}/tickets`],
+    ["Tickets 2", "2", `${epicPath}/tickets`],
     ["Graph", undefined, `${epicPath}/graph`],
-    ["History3", "3", `${epicPath}/history`],
+    ["History 3", "3", `${epicPath}/history`],
   ]);
 });
 
@@ -119,6 +119,23 @@ test("the header draws the title, the status, the summary under them and the bar
     within(header()).getByRole("progressbar", { name: "1 of 2 done" }),
   ).toBeTruthy();
   expect(within(header()).queryByText("Archived")).toBeNull();
+});
+
+test("the page holds one top heading: the epic's title once it is read, and the page's name while it is not", async () => {
+  await epicPageDrawn(abilitiesNone);
+  expect(
+    screen
+      .getAllByRole("heading", { level: 1 })
+      .map((heading) => heading.textContent),
+  ).toStrictEqual(["Billing #7"]);
+  cleanup();
+  epicServing.view = { refused: true };
+  await epicPageDrawn(abilitiesNone);
+  expect(
+    screen
+      .getAllByRole("heading", { level: 1 })
+      .map((heading) => heading.textContent),
+  ).toStrictEqual(["Epic"]);
 });
 
 test("the header draws neither the tickets outside the epic it waits on nor its revision, which the Overview draws", async () => {
@@ -318,6 +335,21 @@ test("a draft member, which has no row, is drawn by its title and the graph's wo
   const draft = memberRow(6);
   expect(draft.textContent).toContain("Ledger");
   expect(draft.textContent).toContain("Draft");
+});
+
+test("each group of the Tickets tab is headed by its word and a count naming what it counts", async () => {
+  epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
+  await epicPageDrawn(abilitiesNone, { tab: <EpicTicketsTab /> });
+  const groups = screen
+    .getAllByRole("heading", { level: 3 })
+    .map((heading) => [
+      heading.querySelector(".count-badge [aria-hidden]")?.textContent,
+      heading.querySelector(".count-badge .visually-hidden")?.textContent,
+    ]);
+  expect(groups).toStrictEqual([
+    ["1", "1 ticket"],
+    ["1", "1 ticket"],
+  ]);
 });
 
 test("the Tickets tab of an epic holding none says so", async () => {

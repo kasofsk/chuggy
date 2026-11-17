@@ -90,10 +90,10 @@ import {
   useParkedOverridesSave,
 } from "./ticket/ParkedOverrides.tsx";
 import {
-  readValue,
   TicketPageHeldProvider,
   TicketRunsWithinProvider,
 } from "./ticket/TicketPageHeld.tsx";
+import { readValue } from "../core/freshness.ts";
 import type { TicketPageHeld, TicketReads } from "./ticket/TicketPageHeld.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { useWorkRunner } from "./workRunner.tsx";

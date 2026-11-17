@@ -17,7 +17,8 @@ import { EmptyState } from "../ui/EmptyState.tsx";
 import { TabNav, TabNavLink } from "../ui/TabNav.tsx";
 import { TicketOverview } from "./TicketOverview.tsx";
 import { TicketRunsList } from "./TicketRuns.tsx";
-import { readValue, useTicketPageHeld } from "./TicketPageHeld.tsx";
+import { useTicketPageHeld } from "./TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import { TicketUsage } from "./TicketUsage.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 

@@ -33,7 +33,7 @@ import { Notice } from "../ui/Notice.tsx";
 import { Table } from "../ui/Table.tsx";
 import type { TableRow } from "../ui/Table.tsx";
 import { TicketDelivery } from "./TicketDelivery.tsx";
-import { readValue } from "./TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { CopyText } from "../../core/copy.ts";

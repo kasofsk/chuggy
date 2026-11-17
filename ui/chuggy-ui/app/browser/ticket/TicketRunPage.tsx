@@ -57,11 +57,8 @@ import { Identity } from "../ui/Identity.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { TabNav, TabNavLink } from "../ui/TabNav.tsx";
-import {
-  readValue,
-  useTicketPageHeld,
-  useTicketRunsWithin,
-} from "./TicketPageHeld.tsx";
+import { useTicketPageHeld, useTicketRunsWithin } from "./TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 import { RunResultOpenedBody, useRunResultOpened } from "./TicketResult.tsx";
 import {
