@@ -1,6 +1,6 @@
 /**
  * The head of a page: a back link, the title with its number, the description
- * under it, the status mark on a row with the actions, and whatever else the
+ * under it and the line naming what the page belongs to, the status mark on a row with the actions, and whatever else the
  * page draws under them.
  * Once the header has scrolled out of view, a thin bar holding the status, the
  * title and the primary action sticks to the top of the page in its place.
@@ -194,6 +194,9 @@ export function PageHeader(
     /** The status as the condensed bar draws it, where it is drawn smaller. */
     readonly statusCondensed?: ReactNode;
     readonly description?: string;
+    /** What the page belongs to, as a line under the title that may link
+     * there. */
+    readonly meta?: ReactNode;
     /** The list's `ListControls`, drawn after the header. */
     readonly controls?: ReactNode;
     readonly children?: ReactNode;
@@ -222,6 +225,9 @@ export function PageHeader(
         <PageHeaderTitle title={props.title} number={props.number} />
         {props.description === undefined ? null : (
           <p className="page-header-description">{props.description}</p>
+        )}
+        {props.meta === undefined ? null : (
+          <p className="page-header-meta">{props.meta}</p>
         )}
         <PageHeaderStanding
           status={props.status}

@@ -55,7 +55,6 @@ chat-history-row = { $title }, { $standing }, { $ago }
 chat-history-row-undated = { $title }, { $standing }
 chat-history-elsewhere = { $project } · { $title }
 chat-history-elsewhere-row = { $project } · { $title }, { $standing }
-chat-actions = { -thread(case: "upper") } actions
 chat-open = Open
 chat-copy-link = Copy link
 chat-copied = Copied
@@ -66,6 +65,14 @@ chat-close-confirm = Close { -thread }
 chat-close-not-mine = Not your { -thread } · Ends it for its owner too
 chat-close-kept = Stays in { chat-history } · Takes no more messages
 chat-close-final = Drops any reply in progress · Cannot be undone
+
+## What a chat's own page says over and under its conversation.
+
+chat-page-project = In { $project }
+chat-page-host = Your { -chat-host }
+chat-page-standing = { $standing } · Takes no more messages
+chat-page-not-mine = Not your { -thread } · { shell-view-only }
+chat-page-back = Back to { $project }
 
 ## What a member's own chat outside a project says.
 

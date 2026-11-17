@@ -185,8 +185,9 @@ function useChatPaneMenuItems(onHistory: () => void): {
   };
 }
 
-/** The menu, named again as a tooltip on focus, as every glyph of the row is. */
-function ChatPaneMenu(props: {
+/** The menu, named again as a tooltip on focus, as every glyph of the row is,
+ * and as a chat's own page draws it too. */
+export function ChatPaneMenu(props: {
   readonly items: readonly MoreMenuItem[];
 }): ReactNode {
   const text = useCopyText();
@@ -259,7 +260,7 @@ function useChatPaneCopyItem(
 
 /** What closing asks and what a change was refused, under the row. */
 function ChatPaneThreadSaid(props: {
-  readonly thread: ThreadEntryResponse;
+  readonly thread: ChatThreadMenuNamed;
   readonly actions: ThreadEntryActions;
   readonly confirming: boolean;
   readonly onConfirming: (confirming: boolean) => void;
@@ -293,6 +294,76 @@ function ChatPaneThreadSaid(props: {
   );
 }
 
+/** What of a thread its menu reads, which a listing's entry and the thread's
+ * own read both carry. */
+export type ChatThreadMenuNamed = Pick<
+  ThreadEntryResponse,
+  "session" | "title" | "mine" | "state"
+>;
+
+/** What a header's menu offers on the thread it holds, in its order: Copy
+ * link where the browser can copy, then Rename, then Close, each only to a
+ * reader who may change it; and what closing asks, a change was refused and
+ * Copy link said, for under the header's row. */
+export interface ChatThreadMenu {
+  readonly actions: ThreadEntryActions;
+  readonly copy: readonly MoreMenuItem[];
+  readonly rename: readonly MoreMenuItem[];
+  readonly close: readonly MoreMenuItem[];
+  readonly said: ReactNode;
+}
+
+/** The menu over a thread, which the pane's header and a chat's own page
+ * both offer, so each is offered by the same word in both. */
+export function useChatThreadMenu(
+  home: ThreadHome,
+  thread: ChatThreadMenuNamed,
+  viewOnly: boolean,
+): ChatThreadMenu {
+  const text = useCopyText();
+  const actions = useThreadEntryActions(home, thread);
+  const [confirming, setConfirming] = useState(false);
+  const copy = useChatPaneCopyItem(home, thread.session);
+  const changes = !viewOnly;
+  return {
+    actions,
+    copy: copy.items,
+    rename:
+      actions.renameable && changes
+        ? [
+            {
+              kind: "action",
+              label: text({ id: "chat-rename" }),
+              onSelect: actions.startRename,
+            },
+          ]
+        : [],
+    close:
+      actions.closable && changes
+        ? [
+            {
+              kind: "destructive",
+              label: text({ id: "chat-close" }),
+              onSelect: () => {
+                setConfirming(true);
+              },
+            },
+          ]
+        : [],
+    said: (
+      <>
+        <ChatPaneThreadSaid
+          thread={thread}
+          actions={actions}
+          confirming={confirming}
+          onConfirming={setConfirming}
+        />
+        {copy.said}
+      </>
+    ),
+  };
+}
+
 /** The header over a thread: the menu offers what is done to it too, Rename
  * and Close only to a reader who may change it. */
 function ChatPaneHeaderThread(
@@ -304,58 +375,34 @@ function ChatPaneHeaderThread(
   const text = useCopyText();
   const home = threadHomeOf(props.partition);
   const { thread } = props;
-  const actions = useThreadEntryActions(home, thread);
-  const [confirming, setConfirming] = useState(false);
-  const copy = useChatPaneCopyItem(home, thread.session);
+  const menu = useChatThreadMenu(home, thread, props.viewOnly);
   const pane = useChatPaneMenuItems(props.onHistory);
-  const changes = !props.viewOnly;
   const items: readonly MoreMenuItem[] = [
     pane.history,
     chatPaneOpenItem(text({ id: "chat-open" }), home, thread.session),
-    ...copy.items,
-    ...(actions.renameable && changes
-      ? [
-          {
-            kind: "action",
-            label: text({ id: "chat-rename" }),
-            onSelect: actions.startRename,
-          } as const,
-        ]
-      : []),
+    ...menu.copy,
+    ...menu.rename,
     ...pane.frame,
-    ...(actions.closable && changes
-      ? [
-          {
-            kind: "destructive",
-            label: text({ id: "chat-close" }),
-            onSelect: () => {
-              setConfirming(true);
-            },
-          } as const,
-        ]
-      : []),
+    ...menu.close,
   ];
   return (
     <ChatPaneHeaderDrawn
       title={
-        actions.renaming ? (
-          <ThreadEntryRename initial={thread.title ?? ""} actions={actions} />
+        menu.actions.renaming ? (
+          <ThreadEntryRename
+            initial={thread.title ?? ""}
+            actions={menu.actions}
+          />
         ) : (
           <ChatPaneHeaderTitle thread={thread} />
         )
       }
       start={props.start}
       placement={props.placement}
-      items={actions.renaming ? undefined : items}
+      items={menu.actions.renaming ? undefined : items}
     >
       {props.said}
-      <ChatPaneThreadSaid
-        thread={thread}
-        actions={actions}
-        confirming={confirming}
-        onConfirming={setConfirming}
-      />
-      {copy.said}
+      {menu.said}
     </ChatPaneHeaderDrawn>
   );
 }
