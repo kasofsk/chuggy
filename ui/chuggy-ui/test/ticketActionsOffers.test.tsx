@@ -235,6 +235,15 @@ test("Revoke is marked destructive in the menu and asks before it submits", asyn
   expect(api.submissions()).toBe(0);
 });
 
+/** What every status in the header says, less those that say nothing. */
+function headerSaid(): readonly string[] {
+  return within(ticketHeader())
+    .getAllByRole("status")
+    .flatMap((status) =>
+      status.textContent === "" ? [] : [status.textContent],
+    );
+}
+
 test("Copy link writes the ticket page's whole address, and says it did", async () => {
   const write = vi.fn<CopyWrite>(() => Promise.resolve(true));
   await bar("Escalated", true, undefined, write);
@@ -248,7 +257,7 @@ test("Copy link writes the ticket page's whole address, and says it did", async 
   );
   expect(screen.getByRole("menu")).toBe(menu);
   expect(within(menu).getByRole("menuitem", { name: "Copied" })).toBeDefined();
-  expect(within(ticketHeader()).getByRole("status").textContent).toBe("Copied");
+  expect(headerSaid()).toStrictEqual(["Copied"]);
 });
 
 test("a write the browser refused claims nothing", async () => {
@@ -261,7 +270,7 @@ test("a write the browser refused claims nothing", async () => {
   });
   expect(write).toHaveBeenCalledTimes(1);
   expect(within(menu).queryByRole("menuitem", { name: "Copied" })).toBeNull();
-  expect(within(ticketHeader()).getByRole("status").textContent).toBe("");
+  expect(headerSaid()).toStrictEqual([]);
 });
 
 /** What the header draws to press outside its menu. */

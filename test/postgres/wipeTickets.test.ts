@@ -51,6 +51,7 @@ const wipeKept = [
   "project_creation_grant",
   "project_creation_operation",
   "project_execution_placement",
+  "project_image",
   "project_owner_fallback",
   "project_repository",
   "project_repository_bind_operation",

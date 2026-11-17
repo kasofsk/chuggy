@@ -14,6 +14,10 @@
  * frames the sprite and `--ink-3` for what recedes into it — because a token
  * ramp flips wholesale and an absolute highlight would not flip with it.
  *
+ * IT IS SAID ONCE. The line is a status whose one thing is the engine and its
+ * name, and nothing in it changes while it runs, so a screen reader hears it
+ * as it appears and not again.
+ *
  * Nothing here measures anything or holds a frame in state. The crossing, the
  * bounce, the wheels and the steam are each a keyframe, and a wheel turns about
  * its own axle through `transform-box: fill-box`: the served policy refuses a
@@ -144,7 +148,7 @@ function ConversationWaitingTrain(): ReactNode {
 export function ConversationWaiting(): ReactNode {
   const text = useCopyText();
   return (
-    <div className="conversation-waiting">
+    <div className="conversation-waiting" role="status">
       <div className="conversation-waiting-track" aria-hidden="true" />
       <div
         className="conversation-waiting-engine"

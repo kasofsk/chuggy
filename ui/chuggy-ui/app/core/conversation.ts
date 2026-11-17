@@ -577,6 +577,22 @@ export function conversationWorkSummary(
   };
 }
 
+/** What the line says once the work is over, which is the shape of the work
+ * rather than a count of everything in it. */
+export function conversationWorkLabel(
+  steps: readonly ConversationWorkStep[],
+): Copy {
+  const summary = conversationWorkSummary(steps);
+  const count = summary.toolCalls;
+  if (count === 0)
+    return summary.thought
+      ? { id: "conversation-work-thought" }
+      : { id: "conversation-work-done" };
+  return summary.thought
+    ? { id: "conversation-work-thought-tools", args: { count } }
+    : { id: "conversation-work-tools", args: { count } };
+}
+
 /** The most characters a tool call's one-line argument summary carries. The
  * whole of the arguments is one disclosure away, so this clips a summary rather
  * than truncating the record. */

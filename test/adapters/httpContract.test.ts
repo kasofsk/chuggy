@@ -104,6 +104,8 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/appearance/theme",
   "/api/v1/tenants/:tenant/projects/:project/appearance/override",
   "/api/v1/tenants/:tenant/projects/:project/appearance",
+  "/api/v1/tenants/:tenant/projects/:project/appearance/images",
+  "/api/v1/tenants/:tenant/projects/:project/appearance/images/:role",
   "/api/v1/tenants/:tenant/projects/:project/hosted-runs",
   "/api/v1/tenants/:tenant/projects/:project/abilities",
   "/api/v1/tenants/:tenant/projects/:project/worker-pools",

@@ -15,6 +15,9 @@ import {
   nativeHttpRoutes,
   nativeHttpVersion,
   personalRunnersMax,
+  projectBannerBytesMax,
+  projectIconBytesMax,
+  projectImageMediaTypes,
   threadsOpenDefault,
   ticketActiveFinishedHours,
   ticketSearchCharsMax,
@@ -43,6 +46,7 @@ import {
   personalRunnerRedemptionSchema,
   projectOwnerFallbackSchema,
   projectThemeSchema,
+  projectImageSchema,
   registrationTokenRequestSchema,
 } from "./requests.ts";
 import { epicWriteRequestSchema } from "./epics.ts";
@@ -70,6 +74,7 @@ function nativeHttpContractDocumentSchemas(): unknown {
     sessionPlacement: nativeHttpContractDocumentInput(sessionPlacementSchema),
     ownerFallback: nativeHttpContractDocumentInput(projectOwnerFallbackSchema),
     projectTheme: nativeHttpContractDocumentInput(projectThemeSchema),
+    projectImage: nativeHttpContractDocumentInput(projectImageSchema),
     personalRunnerProject: nativeHttpContractDocumentInput(
       personalRunnerProjectSchema,
     ),
@@ -167,14 +172,15 @@ const ticketSubReadNotes = {
     "each finalization a ticket has had, oldest first and the newest of them where it has had more than one read answers, as what is recorded of it: Running, Held at the last hold recorded, Failed where it sent the ticket back to work, Unavailable where it escalated, Landed with the commit it landed at, Proposed where it concluded at an open pull request, or Invalidated; with its newest attempt, the paths a conflict its manifest records named, and its pull request; one that landed nothing and tried nothing is left out; it is read as the ticket is, written with no event, and polled",
 };
 
-/** Where a project's work and sessions run, and the runners that take it. */
 /** What the document says of how a console looks: a person's own themes and a project's. */
 const appearanceNotes = {
   appearance: `a caller reads and writes their own themes and their own global choice alone, keyed by their principal and no workspace, and no route names another principal: a theme is a document, created under a number never given to another theme and answered with it, read, written whole, which is also how it is renamed, and deleted; a caller holds at most ${String(themesOwnedMax)}, and a creation past that is refused ThemeLimitReached; a document is refused InvalidRequest where it fails its schema and ThemeContrastInsufficient where it draws a pair below the contrast the pair needs; the choice is a built-in by its id or a theme of the caller's by its number, written whole, refused ThemeNotFound where it names none of theirs, and cleared; deleting the theme it names clears it, and a caller holding none reads no choice`,
   projectAppearance:
     "a project wears for each reader the first theme of four layers that names one: their own for the project, the project's default, their global choice, and the built-in default; the project's default is a document the project keeps, not a reference, read by anyone who may read the project, written whole and cleared by an administrator, and refused as a theme of a person's own is; a reader's own for the project is a built-in by its id or a theme of theirs by its number, written whole, refused ThemeNotFound where it names none of theirs, cleared, and read and written by that reader alone; deleting the theme it names clears it; the resolved read answers the document that applies, the layer it came from and each layer's own value, a layer naming a theme that no longer exists answered as unset",
+  projectImages: `a project names an image artifact of its own its icon and another its banner, each read by anyone who may read the project and named or cleared by an administrator; naming one is refused ImageNotFound where the project holds no such artifact, ImageTypeNotAdmitted where it is not one of ${projectImageMediaTypes.join(", ")}, and ImageTooLarge past ${String(projectIconBytesMax)} bytes for an icon or ${String(projectBannerBytesMax)} for a banner; the inventory lists each project with the icon it names, and the bytes are read through the artifact route`,
 };
 
+/** Where a project's work and sessions run, and the runners that take it. */
 const runnerNotes = {
   executionPlacement:
     "where a project's work and evaluations run is decided per kind by the deployment's override for the project, else the project's own placement, else the deployment's default; an administrator writes both routes whole, and choosing InCluster needs the tenant's hosted grant, as a session on that route does",

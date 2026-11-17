@@ -90,6 +90,24 @@ test("the client authenticates and decodes inventory through its V1 codec", asyn
   assert.equal(request?.url, "https://ticket.example/api/v1/projects?limit=10");
 });
 
+test("the client decodes a project's icon in the inventory, and only where one is named", async () => {
+  const listed = [
+    { ...partition, name: "Atlas", icon: "image/png:mark" },
+    { ...partition, project: "plain", name: "Plain" },
+  ];
+  const client = nativeHttpClient({
+    baseUrl: "https://ticket.example/",
+    accessToken: constantAccessToken("token"),
+    requestTimeoutMs: 1_000,
+    responseBytesMax: 1_000,
+    fetch: () => Promise.resolve(jsonResponse({ projects: listed })),
+  });
+  assert.deepEqual(
+    (await client.projectInventory(principal, undefined, 10)).projects,
+    listed,
+  );
+});
+
 test("proposal acceptance remains narrower than private operation standing", async () => {
   let request: Request | undefined;
   const client = nativeHttpClient({

@@ -3,6 +3,7 @@
  * that names one caller.
  */
 
+import { nativeHttpMediaType } from "../../src/contract/http.ts";
 import {
   createNativeHttpApp,
   type UnrunDeletions,
@@ -12,6 +13,7 @@ import type { AgentAccountService } from "../../src/interpreter/agentAccount.ts"
 import type { AppearanceService } from "../../src/interpreter/appearance.ts";
 import type { MemberChat } from "../../src/interpreter/memberChat.ts";
 import type { ProjectAppearanceService } from "../../src/interpreter/projectAppearance.ts";
+import type { ProjectImageService } from "../../src/interpreter/projectImages.ts";
 import type { PersonalRunnerService } from "../../src/interpreter/personalRunnerRegistration.ts";
 import type { Principal } from "../../src/interpreter/principal.ts";
 import type { ProjectOwnerFallbackAdministration } from "../../src/interpreter/projectOwnerFallback.ts";
@@ -34,6 +36,7 @@ export interface CallerAppServices {
   readonly takes?: TicketTakes;
   readonly appearance?: AppearanceService;
   readonly projectAppearance?: ProjectAppearanceService;
+  readonly projectImages?: ProjectImageService;
 }
 
 /** The app serving `services`, where `Bearer valid` authenticates `caller` and any other bearer nobody. */
@@ -83,6 +86,33 @@ export function callerApp(caller: Principal, services: CallerAppServices) {
     services.deletions,
     services.takes,
     services.appearance,
-    services.projectAppearance,
+    {
+      themes: services.projectAppearance,
+      images: services.projectImages,
+    },
   );
+}
+
+/** The code of the error an answer carries. */
+export function callerAppCodeOf(answer: { json<T>(): T }): string {
+  return answer.json<{ error: { code: string } }>().error.code;
+}
+
+/** A write to `url` as the app's caller, carrying `body` as the versioned media type where there is one. */
+export function callerAppSent(
+  app: ReturnType<typeof callerApp>,
+  method: "PUT" | "DELETE",
+  url: string,
+  body?: unknown,
+) {
+  const bearer = { authorization: "Bearer valid" };
+  return app.inject({
+    method,
+    url,
+    headers:
+      body === undefined
+        ? bearer
+        : { ...bearer, "content-type": nativeHttpMediaType },
+    ...(body === undefined ? {} : { payload: JSON.stringify(body) }),
+  });
 }

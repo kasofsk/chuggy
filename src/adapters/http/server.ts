@@ -97,6 +97,7 @@ import {
   nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
+  projectImageRoles,
   selectorHistoryLimitMax,
   selectorProposalDispatchesAnsweredMax,
   ticketSearchCharsMax,
@@ -107,7 +108,10 @@ import {
   type WorkerRunnerReleasesPinned,
 } from "../../contract/workerPool.ts";
 import type { WorkerRunnerReleases } from "../../interpreter/workerRunnerRelease.ts";
-import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
+import {
+  asProjectArtifactId,
+  type ProjectArtifactId,
+} from "../../interpreter/finalizerPreparation.ts";
 import {
   parseConfigurationCursor,
   parseDraftCursor,
@@ -262,6 +266,8 @@ import {
   projectThemeOverrideBody,
   projectThemeOverrideChosenResponse,
   projectThemeWrittenResponse,
+  projectImageNamedResponse,
+  projectImagesBody,
   personalRunnerDeregisteredResponse,
   unrunDeletedResponse,
   unrunDeletionStandingResponse,
@@ -296,6 +302,10 @@ import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegi
 import type { AgentAccountService } from "../../interpreter/agentAccount.ts";
 import type { AppearanceService } from "../../interpreter/appearance.ts";
 import type { ProjectAppearanceService } from "../../interpreter/projectAppearance.ts";
+import type {
+  ProjectAppearanceServices,
+  ProjectImageService,
+} from "../../interpreter/projectImages.ts";
 import {
   themeNumberSchema,
   type ThemeDocument,
@@ -2033,17 +2043,73 @@ function registerProjectThemeOverride(
   });
 }
 
+/**
+ * A project's icon and banner: both read under `Read`, and each named by an
+ * artifact of the project's own, or cleared, under `Administer`. A role the
+ * route does not know is a path that is not there.
+ */
+function registerProjectImages(
+  app: FastifyInstance,
+  images: ProjectImageService,
+): void {
+  app.get(nativeHttpRoutes.projectImages, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      placementReadResponse(
+        await images.images(principalOf(request), partitionOf(request)),
+        projectImagesBody,
+      ),
+    );
+  });
+  const named = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    artifact: ProjectArtifactId | undefined,
+  ) => {
+    const role = projectImageRoles.find(
+      (known) => known === textField(record(request.params), "role"),
+    );
+    nativeHttpSend(
+      reply,
+      role === undefined
+        ? notFound()
+        : projectImageNamedResponse(
+            await images.name(
+              principalOf(request),
+              partitionOf(request),
+              role,
+              artifact,
+            ),
+          ),
+    );
+  };
+  app.put(
+    nativeHttpRoutes.projectImage,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const { artifact } = nativeHttpEndpoints.nameProjectImage.body.parse(
+        request.body,
+      );
+      await named(request, reply, asProjectArtifactId(artifact));
+    },
+  );
+  app.delete(nativeHttpRoutes.projectImage, async (request, reply) => {
+    await named(request, reply, undefined);
+  });
+}
+
 /** What a person keeps of their own in no workspace, their agent accounts and their appearance, and how each project appears to them. */
 function registerOwnSettings(
   app: FastifyInstance,
   agentAccounts: AgentAccountService | undefined,
   appearance: AppearanceService | undefined,
-  projectAppearance: ProjectAppearanceService | undefined,
+  projectAppearance: ProjectAppearanceServices | undefined,
 ): void {
   if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
   if (appearance !== undefined) registerAppearance(app, appearance);
-  if (projectAppearance !== undefined)
-    registerProjectAppearance(app, projectAppearance);
+  const { themes, images } = projectAppearance ?? {};
+  if (themes !== undefined) registerProjectAppearance(app, themes);
+  if (images !== undefined) registerProjectImages(app, images);
 }
 
 /**
@@ -3776,7 +3842,7 @@ export function createNativeHttpApp(
   deletions?: UnrunDeletions,
   takes?: TicketTakes,
   appearance?: AppearanceService,
-  projectAppearance?: ProjectAppearanceService,
+  projectAppearance?: ProjectAppearanceServices,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   registerCapacity(app, limits.concurrentRequestsMax);

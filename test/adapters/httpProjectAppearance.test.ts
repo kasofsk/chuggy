@@ -9,10 +9,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { builtInThemes } from "../../src/contract/appearance.ts";
-import {
-  nativeHttpMediaType,
-  nativeHttpRoutes,
-} from "../../src/contract/http.ts";
+import { nativeHttpRoutes } from "../../src/contract/http.ts";
 import {
   projectAppearanceResponseSchema,
   projectThemeResponseSchema,
@@ -25,9 +22,12 @@ import {
   reader,
   stranger,
 } from "../interpreter/projectAppearanceFixture.ts";
-import { callerApp } from "./callerAppFixture.ts";
+import {
+  callerApp,
+  callerAppCodeOf,
+  callerAppSent,
+} from "./callerAppFixture.ts";
 
-const json = { "content-type": nativeHttpMediaType };
 const bearer = { authorization: "Bearer valid" };
 
 const atlasPath = (route: string) =>
@@ -36,28 +36,12 @@ const themePath = atlasPath(nativeHttpRoutes.projectTheme);
 const overridePath = atlasPath(nativeHttpRoutes.projectThemeOverride);
 const appearancePath = atlasPath(nativeHttpRoutes.projectAppearance);
 
-function codeOf(answer: { json<T>(): T }): string {
-  return answer.json<{ error: { code: string } }>().error.code;
-}
-
-function sent(
-  app: ReturnType<typeof callerApp>,
-  method: "PUT" | "DELETE",
-  url: string,
-  body?: unknown,
-) {
-  return app.inject({
-    method,
-    url,
-    headers: body === undefined ? bearer : { ...bearer, ...json },
-    ...(body === undefined ? {} : { payload: JSON.stringify(body) }),
-  });
-}
-
 test("an administrator sets the project's default document and clears it, each answer the default as it now stands", async () => {
   const { held, service } = projectAppearanceFixture();
   await using app = callerApp(administrator, { projectAppearance: service });
-  const set = await sent(app, "PUT", themePath, { document: projectDocument });
+  const set = await callerAppSent(app, "PUT", themePath, {
+    document: projectDocument,
+  });
   assert.equal(set.statusCode, 200);
   assert.deepEqual(projectThemeResponseSchema.parse(set.json()), {
     document: projectDocument,
@@ -68,7 +52,7 @@ test("an administrator sets the project's default document and clears it, each a
     document: projectDocument,
     administers: true,
   });
-  const cleared = await sent(app, "PUT", themePath, {});
+  const cleared = await callerAppSent(app, "PUT", themePath, {});
   assert.equal(cleared.statusCode, 200);
   assert.deepEqual(cleared.json(), { administers: true });
   assert.equal(held.projectDefault, undefined);
@@ -85,7 +69,7 @@ test("a member without administer reads the project's default and is refused wri
     administers: false,
   });
   for (const body of [{ document: builtInThemes.harbour }, {}]) {
-    const written = await sent(app, "PUT", themePath, body);
+    const written = await callerAppSent(app, "PUT", themePath, body);
     assert.equal(written.statusCode, 404);
   }
   assert.deepEqual(held.writes, []);
@@ -102,11 +86,18 @@ test("a caller who may not read the project is told none of its routes is there"
       url,
     );
   assert.equal(
-    (await sent(app, "PUT", overridePath, { kind: "BuiltIn", theme: "ember" }))
-      .statusCode,
+    (
+      await callerAppSent(app, "PUT", overridePath, {
+        kind: "BuiltIn",
+        theme: "ember",
+      })
+    ).statusCode,
     404,
   );
-  assert.equal((await sent(app, "DELETE", overridePath)).statusCode, 404);
+  assert.equal(
+    (await callerAppSent(app, "DELETE", overridePath)).statusCode,
+    404,
+  );
   assert.deepEqual(held.writes, []);
 });
 
@@ -121,7 +112,7 @@ test("a reader sets, reads and clears their own override, and the resolved read 
     layer: "ProjectDefault",
     layers: { projectDefault: projectDocument },
   });
-  const chosen = await sent(app, "PUT", overridePath, {
+  const chosen = await callerAppSent(app, "PUT", overridePath, {
     kind: "BuiltIn",
     theme: "high-contrast",
   });
@@ -139,7 +130,10 @@ test("a reader sets, reads and clears their own override, and the resolved read 
       projectDefault: projectDocument,
     },
   });
-  assert.equal((await sent(app, "DELETE", overridePath)).statusCode, 204);
+  assert.equal(
+    (await callerAppSent(app, "DELETE", overridePath)).statusCode,
+    204,
+  );
   assert.deepEqual(
     (await app.inject({ url: overridePath, headers: bearer })).json(),
     {},
@@ -154,12 +148,12 @@ test("an override naming a theme that is not the caller's is refused ThemeNotFou
   const { held, service } = projectAppearanceFixture();
   await using app = callerApp(reader, { projectAppearance: service });
   held.owned.set(administrator, new Map([[9, projectDocument]]));
-  const refused = await sent(app, "PUT", overridePath, {
+  const refused = await callerAppSent(app, "PUT", overridePath, {
     kind: "Owned",
     theme: 9,
   });
   assert.equal(refused.statusCode, 422);
-  assert.equal(codeOf(refused), "ThemeNotFound");
+  assert.equal(callerAppCodeOf(refused), "ThemeNotFound");
   assert.equal(held.overrides.has(reader), false);
 });
 
@@ -172,9 +166,9 @@ test("every body carrying a field its schema does not name is refused and writes
     [overridePath, { kind: "BuiltIn", theme: "ember", extra: true }],
     [overridePath, { kind: "BuiltIn", theme: "neon" }],
   ] as const) {
-    const answer = await sent(app, "PUT", url, body);
+    const answer = await callerAppSent(app, "PUT", url, body);
     assert.equal(answer.statusCode, 400, JSON.stringify(body));
-    assert.equal(codeOf(answer), "InvalidRequest");
+    assert.equal(callerAppCodeOf(answer), "InvalidRequest");
   }
   assert.deepEqual(held.writes, []);
 });
