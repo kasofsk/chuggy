@@ -10,10 +10,22 @@
  * route with `renderedOpen`, which records every content-security-policy
  * violation the document reports from its first byte, and ends with
  * `renderedNoViolations`, which fails on any.
+ *
+ * Before a route is opened for its case, `renderedOpen` opens it again at the
+ * phone and the desk, each in a context of its own, and in each the light
+ * scheme and then the dark, and fails the case on any finding `audited.ts`
+ * returns there. So a route a case opens is held to axe with nothing more
+ * written for it. A route a worker has once passed is not audited again on
+ * that worker.
  */
 
 import { test as base, expect } from "@playwright/test";
-import type { Browser, Locator, Page } from "@playwright/test";
+import type {
+  Browser,
+  BrowserContextOptions,
+  Locator,
+  Page,
+} from "@playwright/test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,6 +35,7 @@ import {
   viewportEmPixels,
   viewportHeightEmDefault,
 } from "../../test/viewportSizes.ts";
+import { auditedFindings, auditedSettled } from "./audited.ts";
 import { servedOpen } from "./served.ts";
 import type { Served } from "./served.ts";
 import type { StubApiRead } from "./stubApi.ts";
@@ -67,6 +80,9 @@ export interface RenderedOpening {
   readonly touch?: boolean;
   /** What is on the screen once it has drawn, waited for before returning. */
   readonly ready: (page: Page) => Locator;
+  /** Whether the route is audited before it opens; only a page written to
+   * carry a defect another helper names is not. */
+  readonly audited?: boolean;
 }
 
 export const test = base.extend<
@@ -127,11 +143,12 @@ async function renderedViolationsHeard(
   });
 }
 
-export async function renderedOpen(
+async function renderedContextOpened(
   browser: Browser,
   origin: string,
   opening: RenderedOpening,
-): Promise<Rendered> {
+  options: BrowserContextOptions = {},
+): Promise<Page> {
   const context = await browser.newContext({
     viewport: renderedViewports[opening.viewport],
     ...(opening.touch === true ? { hasTouch: true, isMobile: true } : {}),
@@ -148,8 +165,68 @@ export async function renderedOpen(
           ]
         : [],
     },
+    ...options,
   });
-  const page = await context.newPage();
+  return context.newPage();
+}
+
+const renderedAuditedViewports: readonly RenderedViewport[] = ["phone", "desk"];
+
+const renderedAuditedSchemes = ["light", "dark"] as const;
+
+/** The routes this worker has audited clean, by origin, route and session. */
+const renderedAuditedClean = new Set<string>();
+
+/** `opening`'s route at the phone and the desk, light and then dark, with
+ * motion reduced, which takes every duration to zero, so what axe measures is
+ * each colour as it stands. What a case waits for can be its own width's, so
+ * at the other width the page is waited for by its `main`. In each scheme
+ * the page is waited for to fall still before axe reads it, since a screen
+ * may answer the scheme in script as well as in its sheets. */
+async function renderedAudited(
+  browser: Browser,
+  origin: string,
+  opening: RenderedOpening,
+): Promise<void> {
+  const key = JSON.stringify([origin, opening.route, opening.signedIn]);
+  if (renderedAuditedClean.has(key)) return;
+  for (const viewport of renderedAuditedViewports) {
+    const page = await renderedContextOpened(
+      browser,
+      origin,
+      { ...opening, viewport, touch: viewport === "phone" },
+      { colorScheme: "light", reducedMotion: "reduce" },
+    );
+    try {
+      await page.goto(`${origin}${opening.route}`);
+      await expect(
+        viewport === opening.viewport
+          ? opening.ready(page)
+          : page.getByRole("main"),
+      ).toBeVisible();
+      for (const colorScheme of renderedAuditedSchemes) {
+        await page.emulateMedia({ colorScheme });
+        await auditedSettled(page);
+        expect(
+          await auditedFindings(page),
+          `axe on ${opening.route} at the ${viewport} in ${colorScheme}`,
+        ).toEqual([]);
+      }
+    } finally {
+      await page.context().close();
+    }
+  }
+  renderedAuditedClean.add(key);
+}
+
+export async function renderedOpen(
+  browser: Browser,
+  origin: string,
+  opening: RenderedOpening,
+): Promise<Rendered> {
+  if (opening.audited !== false)
+    await renderedAudited(browser, origin, opening);
+  const page = await renderedContextOpened(browser, origin, opening);
   const violations: RenderedViolation[] = [];
   await renderedViolationsHeard(page, violations);
   await page.goto(`${origin}${opening.route}`);

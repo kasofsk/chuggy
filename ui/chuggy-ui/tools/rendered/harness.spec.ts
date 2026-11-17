@@ -21,6 +21,7 @@ import {
   test,
 } from "./driver.ts";
 import type { Rendered } from "./driver.ts";
+import { auditedFindings } from "./audited.ts";
 import configuration from "./playwright.config.ts";
 import { servedOpen } from "./served.ts";
 import type { Served } from "./served.ts";
@@ -32,10 +33,19 @@ body { margin: 0; color: var(--ink); }
 button { width: 48px; height: 48px; }
 .wide { width: 600px; }
 .small { width: 20px; height: 20px; }
+.faint { color: rgb(0, 0, 0); background: rgb(255, 255, 255); }
+@media (prefers-color-scheme: dark) and (max-width: 500px) {
+  .faint { color: rgb(40, 40, 40); background: rgb(0, 0, 0); }
+}
 `;
 
 function page(body: string): string {
   return `<!doctype html><html><head><link rel="stylesheet" href="/page.css"></head><body>${body}</body></html>`;
+}
+
+/** A page axe finds nothing on but what its body carries. */
+function auditedPage(body: string): string {
+  return `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width"><title>Audited</title><link rel="stylesheet" href="/page.css"></head><body><main><h1>Audited</h1>${body}</main></body></html>`;
 }
 
 const pages: Readonly<Record<string, string>> = {
@@ -46,6 +56,9 @@ const pages: Readonly<Record<string, string>> = {
   "scoped.html": page(
     '<section><button class="small">s</button></section><aside><button>ok</button></aside>',
   ),
+  "audited.html": auditedPage("<p>Plain</p><button>ok</button>"),
+  "unnamed.html": auditedPage("<button>ok</button><button></button>"),
+  "faint.html": auditedPage('<p class="faint">Faint</p><button>ok</button>'),
 };
 
 let root = "";
@@ -73,6 +86,7 @@ async function harnessOpen(
     route,
     viewport: "phone",
     signedIn: false,
+    audited: false,
     ready: (opened) => opened.getByRole("button", { name: "ok" }),
   });
 }
@@ -175,6 +189,66 @@ test("a custom property set on the root re-themes what the sweep reads", async (
     "rgb(4, 5, 6)",
   );
   renderedNoViolations(rendered);
+});
+
+/** `route` opened at the desk and audited as every console route is. */
+async function harnessAudited(
+  browser: Parameters<typeof renderedOpen>[0],
+  route: string,
+): Promise<Rendered> {
+  if (served === undefined) throw new Error("the fixture site is not open");
+  return renderedOpen(browser, served.origin, {
+    route,
+    viewport: "desk",
+    signedIn: false,
+    ready: (opened) => opened.getByRole("button", { name: "ok" }),
+  });
+}
+
+test("a route axe finds nothing on opens audited", async ({ browser }) => {
+  const rendered = await harnessAudited(browser, "/audited.html");
+  renderedNoViolations(rendered);
+});
+
+test("a control with no name is a finding the audit fails on", async ({
+  browser,
+}) => {
+  await expect(harnessAudited(browser, "/unnamed.html")).rejects.toThrow(
+    /button-name/u,
+  );
+});
+
+test("text that fails contrast only on a phone in the dark fails a route opened at the desk", async ({
+  browser,
+}) => {
+  await expect(harnessAudited(browser, "/faint.html")).rejects.toThrow(
+    /at the phone in dark[\s\S]*color-contrast/u,
+  );
+});
+
+test("an exception lets pass its own rule on its own selector and nothing else", async ({
+  browser,
+}) => {
+  const rendered = await harnessOpen(browser, "/faint.html");
+  const page = rendered.page;
+  await page.emulateMedia({ colorScheme: "dark" });
+  const reason = "the fixture carries it";
+  expect((await auditedFindings(page, [])).map((found) => found.rule)).toEqual([
+    "color-contrast",
+  ]);
+  expect(
+    await auditedFindings(page, [
+      { rule: "color-contrast", selector: ".faint", reason },
+    ]),
+  ).toEqual([]);
+  expect(
+    (
+      await auditedFindings(page, [
+        { rule: "color-contrast", selector: "button", reason },
+        { rule: "button-name", selector: ".faint", reason },
+      ])
+    ).map((found) => found.target),
+  ).toEqual(["p"]);
 });
 
 test("a case that fails with a context open is marked as failing", async ({
