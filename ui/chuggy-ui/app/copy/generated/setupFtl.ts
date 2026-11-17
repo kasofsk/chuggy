@@ -36,6 +36,8 @@ setup-site-issuer = { $site }, its sign-in server is not answering
 # The words before each colon are the lines' own, which the agent reads.
 # spells -run: to run is a verb here
 setup-rule-drive = Run the command on the next: line exactly as written, and stop where it says { $stop }. Say each tell: line to the person as it is written. Put each ask: line to the person, and pass their answer in the flag it names.
+# spells -work-stage: the work in general
+setup-rule-explore = Before anything else, start { -subagent(form: "a") } that explores this folder's { -repository } and reports which toolchains work on it needs, and which images the { -repository } already defines for its CI or development. Go on with the person through the steps that do not depend on the { -repository } while it works, and use its report where the worker image is chosen.
 setup-rule-directory = Never read or print anything under { $directory }: it holds the sign-in.
 # spells -run: to run is a verb here
 setup-rule-sign-out = To change which { -github } account { setup-program } is signed in as, run { $command } and then sign in again.
@@ -49,20 +51,24 @@ setup-rule-ask-name = Run { $command } with the person's answer after it, quoted
 setup-rule-ticket = Run { $command } with { $title } and a short title for what the person wants done, then { $intent } and what they want done in their own words{ $choose ->
     [choose] , then { $configuration } and the { -configuration } they chose
    *[given] { "" }
+}{ $worker ->
+    [worker] , then { $image } and the image recommended, or the one the person wants instead, then { $toolchains } and the toolchains it needs
+   *[none] { "" }
 }, each quoted as one word, only once the person has said what they want done.
 
 ## The arguments, asked wrongly. Each flag and command word is the program's own.
 
 # spells -run: to run is a verb here
-setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $signOut }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $merged }, as { $served }, as { $filed }, as { $plugged } or as { $starred }
-setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin }, { $northStar } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag } with { $runner }, { $test } with { $configuration }, { $title }, { $intent } and { $chosen } with { $filed }, and { $text } with { $starred }, each once with a value, and no other flag
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $signOut }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $merged }, as { $served }, as { $filed }, as { $watched }, as { $plugged } or as { $starred }
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin }, { $northStar } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag } with { $runner }, { $test } with { $configuration }, { $title }, { $intent }, { $image }, { $toolchains } and { $chosen } with { $filed }, and { $text } with { $starred }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
 setup-asked-project = { $mcp }, { $runner } and { $served } each take { $workspace } and { $project }, both: the { -project } each is for
 setup-asked-workspace = { $chatHost } takes { $workspace }: the { -workspace } the { -chat-host } is for
 setup-asked-project-name = { $made } takes { $workspace } and { $name }, both: the { -workspace } the { -project } is made in, and what it is called, on one line
-setup-asked-brief = { $filed } takes { $title } and { $intent }, both: what the { -ticket } is called, and what the person wants done
+setup-asked-brief = { $filed } takes { $image } and { $toolchains }, { $title } and { $intent }, or all four: the worker image chosen and the toolchains it was chosen for, then what the { -ticket } is called and what the person wants done, each pair together
+setup-asked-image = { $image } and { $toolchains } are given together: the worker image chosen, and the toolchains it was chosen for
 setup-asked-test = { $flag } takes the command that tests this { -repository }, on one line, as { $configuration } writes it
 setup-asked-replace = { $flag } takes the short id of your { -chat-host }, as your { -personal-runner(case: "upper", form: "plural") } page shows it
 setup-asked-chat-host = { $flag } takes only { $yes } or { $no }: whether this machine is made your { -chat-host } too
@@ -315,6 +321,8 @@ setup-mend-reach-tell = { $installed }Which { -repository } is this { -project }
 setup-rule-bind = Run the command on the next: line now, without asking the person, and tell them what the tell: line says. It waits until { -github } lets both apps into this folder's { -repository }, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.
 # spells -run: to run is a verb here
 setup-rule-bind-again = Run the command on the next: line again, and go on running it while { -github } still lacks what the tell: line says. Nothing has failed, so do not tell the person that it did or give them a deadline.
+# spells -run: to run is a verb here
+setup-rule-watch = Run the command on the next: line now, without asking the person, and tell them what the tell: line says when it differs from what you last told them. It waits while the { -ticket } works, and ends once it needs the person or is done; go on running it while the next: line names it again. Nothing has failed, so do not tell the person that it did or give them a deadline.
 # spells -run: to run is a verb here
 setup-rule-merge-again = Run the command on the next: line again, and go on running it while { -brand-name } imports the { -repository }'s own { -configuration }: the { -pull-request } is merged already, so it merges nothing again and waits on the same import. Nothing has failed, so do not tell the person that it did or give them a deadline.
 setup-mend-binding-yours = your { -repository }
@@ -598,6 +606,31 @@ setup-ask-ticket = What would you like done first in { $project }? Say it in a s
     [choose] { " " }The { -project } offers { $names }: which { -configuration } should it use?
    *[given] { "" }
 } If you would rather write it yourself: { $create }.
+# spells -work-stage: the work in general
+setup-rule-image = Once the { -subagent } has reported, tell the person, filled from its report: "{ $project } needs TOOLCHAINS. I recommend IMAGE for its work, because REASON. Say if you want a different one." Recommend, in this order: a stock public image that has those toolchains; else a local build of an image the { -repository } already defines for its CI or development; else a new worker Dockerfile, written in the first { -ticket }. Go on unless the person objects.
+# spells -brief-check: to check is a verb here
+setup-tell-first-ticket = I'll file a first { -ticket } to check everything works end to end. It adds a tiny { $agents } and this { -repository }'s { -brand-name } { -configuration }, and ends in { $ends ->
+    [pull] { -pull-request(form: "a") } for you to merge
+   *[merged] { -brand-name } merging its change itself
+}.
+# spells -run: to run is a verb here
+setup-rule-ticket-first = Run { $command } with { $image } and the image recommended, or the one the person wants instead, then { $toolchains } and the toolchains it needs, and where they ask for something else to be done first, { $title } and a short title for it, then { $intent } and what they want done in their own words, each quoted as one word, once you have said both lines and without waiting for a yes.
+# spells -brief-check: to check is a verb here
+setup-ticket-check-title = Check that { -brand-name } works end to end
+# spells -brief-check: to check is a verb here
+setup-ticket-check-intent = Check that { -brand-name } works on this { -repository } end to end. Change none of the { -repository }'s own code.
+# spells -run: to run is a verb here
+# spells -work-stage: the work in general
+# spells -brief-check: the checks a configuration declares
+# spells -configuration: the folder's name
+setup-ticket-agents = Add { $agents } saying only what that folder is, in these lines and nothing about the code, its layout or how to build it: "This folder holds files for { -brand-name }, the system that runs { -ticket(form: "plural") } against this { -repository }. \`configurations/\` declares what a { -ticket } runs: the work, the checks and the review. Docs: { $docs }."
+# spells -run: to run is a verb here
+# spells -work-stage: the work in general
+# spells -brief-check: to check is a verb here
+setup-ticket-image = Name this as the image I of the { -configuration } you write, and command checks that run in it: { $image }. This { -repository }'s work needs { $toolchains }.
+# spells -run: to run is a verb here
+# spells -brief-check: to check is a verb here
+setup-ticket-imageless = no worker image was chosen, and a { -ticket } under the bootstrap needs one to write checks it can run
 setup-ticket-none = nothing to file: the next thing is not the { -project }'s first { -ticket }
 setup-ticket-did = asked { -brand-name } to file { -ticket } { $ticket }, { -release(form: "ed") } and sent to start, under { $configuration }{ $bootstrap ->
     [bootstrap] , so the { -ticket } also writes this { -repository }'s own { -configuration }
@@ -627,7 +660,7 @@ setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $p
        *[own] { " " }for you to merge on { -github }
     }. Setup is done once that { -pull-request } is open.
    *[finish] Setup is done when it finishes.
-} { $page } shows where it is. Tell me when you want me to look again.
+} { $page } shows where it is. I'll keep watching it and tell you what changes.
 setup-mend-wait-room = It is waiting on your { -personal-runner }, which has { $free } free; this { -run } needs { $needed }.
 setup-mend-wait-pool-room = It is waiting on this { -project }'s { -runner(form: "plural") }, which have { $free } free; this { -run } needs { $needed }.
 setup-mend-wait-offline = It is waiting on your { -personal-runner }, which is offline.

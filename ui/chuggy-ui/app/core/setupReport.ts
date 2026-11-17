@@ -25,8 +25,11 @@
  * her first ticket at the site, and is named only under a rule that waits on
  * her yes; once it has merged, it waits on the import and not on her, and is
  * named again to run at once where that wait ran out first. `ticket`
- * files a ticket at the site, and is named only under a rule that waits on
- * her saying what she wants done. `plugin` installs chuggy's Claude Code
+ * files a ticket at the site, and is named under a rule that waits on her
+ * saying what she wants done, or, under the bootstrap, on the agent having
+ * said the worker image and the ticket and on no objection from her. `watch`
+ * only reads, so it is named to run at once while her first ticket is on its
+ * way, and again where its wait ran out first. `plugin` installs chuggy's Claude Code
  * plugin, and is named only under a rule that waits on her yes, beside one
  * that names the way past it on her no; once it has left the plugin on, the
  * checklist is named under a rule that waits on her reloading the plugins or
@@ -63,6 +66,7 @@ import {
   setupChatHostFlag,
   setupCommandArguments,
   setupConfigurationFlag,
+  setupImageFlag,
   setupIntentFlag,
   setupNameFlag,
   setupNorthStarFlag,
@@ -74,6 +78,7 @@ import {
   setupTestFlag,
   setupTextFlag,
   setupTitleFlag,
+  setupToolchainsFlag,
   setupWaitSecsMax,
 } from "./setupArguments.ts";
 import type {
@@ -181,11 +186,15 @@ export interface SetupStepSaid {
  * `serve` or `merge` at the site for the project named, and the yes it waits
  * on; `bind` run at once for the project named, beside what it tells of
  * GitHub, or `merge` run again, beside setup said to
- * be done, where the import it waits on is still under way; a question only she answers, and the
+ * be done, where the import it waits on is still under way, or `watch` run
+ * at once, beside where her first ticket is; a question only she answers, and the
  * flag her answer is passed in; what to call the project `project` makes in
  * the workspace, at the address named where one is; what she wants done
  * first, which `ticket` files for the project named, with the configuration
- * she chooses where `choose` says she must; the project's North Star, which
+ * she chooses where `choose` says she must, and the worker image to
+ * recommend where one of them is a bootstrap; under the bootstrap, the worker
+ * image to recommend and the first ticket announced, which `ticket` files
+ * unless she objects; the project's North Star, which
  * `north-star` writes in the words the agent drafts as `draft` says and she
  * says yes to, with the way past it; the repository's own
  * configuration, which `configuration` starts and `import` has imported; or a
@@ -222,7 +231,7 @@ export type SetupThing =
     }
   | {
       readonly thing: "Run";
-      readonly command: "Merge";
+      readonly command: "Merge" | "Watch";
       readonly tell: Copy;
       readonly workspace: string;
       readonly project: string;
@@ -241,9 +250,21 @@ export type SetupThing =
   | {
       readonly thing: "Brief";
       readonly ask: Copy;
+      /** The project as the worker image's sentence names it. */
+      readonly named: CopyArgument;
       readonly workspace: string;
       readonly project: string;
       readonly choose: boolean;
+      /** Whether some configuration offered is a bootstrap, whose ticket is filed only with the worker image chosen. */
+      readonly bootstrapOffered: boolean;
+    }
+  | {
+      readonly thing: "First";
+      /** The project as the worker image's sentence names it. */
+      readonly named: CopyArgument;
+      readonly tell: Copy;
+      readonly workspace: string;
+      readonly project: string;
     }
   | {
       readonly thing: "NorthStar";
@@ -653,6 +674,7 @@ function setupCommandWords() {
     merged = "",
     served = "",
     filed = "",
+    watched = "",
     plugged = "",
     starred = "",
   ] = [
@@ -669,6 +691,7 @@ function setupCommandWords() {
     ...setupCommandArguments("Merge"),
     ...setupCommandArguments("Serve"),
     ...setupCommandArguments("Ticket"),
+    ...setupCommandArguments("Watch"),
     ...setupCommandArguments("Plugin"),
     ...setupCommandArguments("NorthStar"),
   ];
@@ -686,6 +709,7 @@ function setupCommandWords() {
     merged,
     served,
     filed,
+    watched,
     plugged,
     starred,
   };
@@ -712,6 +736,8 @@ function setupAskFlagSaid(words: ReturnType<typeof setupCommandWords>): Copy {
       configuration,
       title: setupTitleFlag,
       intent: setupIntentFlag,
+      image: setupImageFlag,
+      toolchains: setupToolchainsFlag,
       chosen: setupConfigurationFlag,
       filed,
       plugin: setupPluginFlag,
@@ -742,6 +768,27 @@ function setupAskFaultSaidNorthStar(
           chars: String(selectorSettingsTextCharsMax),
         },
       };
+}
+
+/** A `ticket` given only one of a pair of flags, or neither pair. */
+function setupAskFaultSaidTicket(
+  fault: "Brief" | "Image",
+  filed: string,
+): Copy {
+  const image = setupImageFlag;
+  const toolchains = setupToolchainsFlag;
+  return fault === "Brief"
+    ? {
+        id: "setup-asked-brief",
+        args: {
+          filed,
+          title: setupTitleFlag,
+          intent: setupIntentFlag,
+          image,
+          toolchains,
+        },
+      }
+    : { id: "setup-asked-image", args: { image, toolchains } };
 }
 
 function setupAskFaultSaid(fault: SetupAskFault): Copy {
@@ -792,10 +839,8 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
         args: { flag: setupTestFlag, configuration },
       };
     case "Brief":
-      return {
-        id: "setup-asked-brief",
-        args: { filed, title: setupTitleFlag, intent: setupIntentFlag },
-      };
+    case "Image":
+      return setupAskFaultSaidTicket(fault, filed);
     case "Plugin":
       return {
         id: "setup-asked-plugin",
@@ -860,6 +905,7 @@ function setupRuleLines(
 ): readonly SetupLine[] {
   return [
     ["rule", { id: "setup-rule-drive", args: { stop: setupNextStop } }],
+    ["rule", { id: "setup-rule-explore" }],
     ["rule", { id: "setup-rule-directory", args: { directory } }],
     setupSignOutRule(saying),
   ];
@@ -1404,15 +1450,20 @@ function setupOfferLines(
   ];
 }
 
-/** `bind` to run at once, beside what the tell says of GitHub, and again where a wait of its own ran out first; or `merge` run again, beside setup said to be done. */
+/** `bind` to run at once, beside what the tell says of GitHub, and again where a wait of its own ran out first; `merge` run again, beside setup said to be done; or `watch` run at once and again, beside where the first ticket is. */
 function setupRunLines(
   thing: Extract<SetupThing, { readonly thing: "Run" }>,
   saying: SetupSaying,
 ): readonly SetupLine[] {
-  if (thing.command === "Merge")
+  if (thing.command === "Merge" || thing.command === "Watch")
     return [
       ["tell", thing.tell],
-      ["rule", { id: "setup-rule-merge-again" }],
+      [
+        "rule",
+        thing.command === "Merge"
+          ? { id: "setup-rule-merge-again" }
+          : { id: "setup-rule-watch" },
+      ],
       setupNextLine(setupSayingOf(saying, thing), thing.command),
     ];
   const rule: Copy = saying.again
@@ -1496,6 +1547,8 @@ function setupThingLines(
     }
     case "Brief":
       return setupBriefLines(thing, saying);
+    case "First":
+      return setupFirstLines(thing, saying);
     case "NorthStar":
       return setupNorthStarLines(thing, saying);
     case "Configure":
@@ -1508,12 +1561,16 @@ function setupThingLines(
   }
 }
 
-/** What the person wants done first, asked, and the rule `ticket` is named under: with the configuration they choose where they must choose one. */
+/** What the person wants done first, asked, and the rule `ticket` is named under: with the configuration they choose where they must choose one, and, where some offer is a bootstrap, the worker image to recommend and the one chosen. */
 function setupBriefLines(
   thing: Extract<SetupThing, { readonly thing: "Brief" }>,
   saying: SetupSaying,
 ): readonly SetupLine[] {
+  const image: readonly SetupLine[] = thing.bootstrapOffered
+    ? [["rule", { id: "setup-rule-image", args: { project: thing.named } }]]
+    : [];
   return [
+    ...image,
     ["ask", thing.ask],
     [
       "rule",
@@ -1525,6 +1582,34 @@ function setupBriefLines(
           intent: setupIntentFlag,
           choose: thing.choose ? "choose" : "given",
           configuration: setupConfigurationFlag,
+          worker: thing.bootstrapOffered ? "worker" : "none",
+          image: setupImageFlag,
+          toolchains: setupToolchainsFlag,
+        },
+      },
+    ],
+    ["next", setupNextStop],
+  ];
+}
+
+/** The worker image to recommend, as the early exploration found it, and the end-to-end check announced, with the rule `ticket` is named under at once unless the person objects. */
+function setupFirstLines(
+  thing: Extract<SetupThing, { readonly thing: "First" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  return [
+    ["rule", { id: "setup-rule-image", args: { project: thing.named } }],
+    ["tell", thing.tell],
+    [
+      "rule",
+      {
+        id: "setup-rule-ticket-first",
+        args: {
+          command: setupCommandOf(setupSayingOf(saying, thing), "Ticket"),
+          image: setupImageFlag,
+          toolchains: setupToolchainsFlag,
+          title: setupTitleFlag,
+          intent: setupIntentFlag,
         },
       },
     ],

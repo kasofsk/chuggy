@@ -10,7 +10,7 @@
 
 import { copyTextEn } from "../app/copy/catalog.ts";
 import { copyOrDataText } from "../app/core/copy.ts";
-import type { CopyOrData } from "../app/core/copy.ts";
+import type { CopyArgument, CopyOrData } from "../app/core/copy.ts";
 import type {
   SetupOfferCommand,
   SetupNext,
@@ -63,7 +63,7 @@ export type SaidThing =
     }
   | {
       readonly thing: "Run";
-      readonly command: "Bind" | "Merge";
+      readonly command: "Bind" | "Merge" | "Watch";
       readonly tell: string | undefined;
       readonly workspace: string;
       readonly project: string;
@@ -85,6 +85,13 @@ export type SaidThing =
       readonly workspace: string;
       readonly project: string;
       readonly choose: boolean;
+    }
+  | {
+      readonly thing: "First";
+      readonly named: CopyArgument;
+      readonly tell: string;
+      readonly workspace: string;
+      readonly project: string;
     }
   | {
       readonly thing: "NorthStar";
@@ -109,6 +116,7 @@ export function saidThing(thing: SetupThing): SaidThing {
   switch (thing.thing) {
     case "Done":
     case "Configure":
+    case "First":
       return { ...thing, tell: copyTextEn(thing.tell) };
     case "Hand":
     case "Offer":

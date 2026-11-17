@@ -156,7 +156,8 @@ export type SetupLack =
       readonly administers: boolean;
     }
   | { readonly lacks: "RunnerLive"; readonly chat: boolean }
-  | { readonly lacks: "Ticket" }
+  /** `pullRequest` where the repository meant lands a ticket in a pull request the person merges. */
+  | { readonly lacks: "Ticket"; readonly pullRequest: boolean }
   | { readonly lacks: "Release"; readonly ticket: number }
   | { readonly lacks: "Dispatch"; readonly ticket: number }
   /** `pullRequest` where the repository meant lands a ticket in a pull request the person merges, `bootstrapped` where it holds only the bootstrap, and `wait` what its starting execution waits on of the person's runners, where it is read whole and says so. */
@@ -1160,14 +1161,19 @@ function setupTicketMoving(
       lacks: "Landing",
       ticket,
       phase,
-      pullRequest:
-        setupBindingMeant(reads.repositories)?.finalization.kind ===
-        "PullRequest",
+      pullRequest: setupLandsInPullRequest(reads),
       bootstrapped: setupBootstrapped(reads.repositories),
       wait: setupRunnerWaitOf(
         reads.executions.find((held) => held.ticket === ticket),
       ),
     },
+  );
+}
+
+/** Whether the repository meant lands a ticket in a pull request the person merges. */
+function setupLandsInPullRequest(reads: SetupReads): boolean {
+  return (
+    setupBindingMeant(reads.repositories)?.finalization.kind === "PullRequest"
   );
 }
 
@@ -1179,7 +1185,10 @@ function setupTicketStep(
 ): SetupStep {
   if (done !== undefined) return setupDone("ticket", done.detail);
   if (none)
-    return setupUndone("ticket", "todo", undefined, { lacks: "Ticket" });
+    return setupUndone("ticket", "todo", undefined, {
+      lacks: "Ticket",
+      pullRequest: setupLandsInPullRequest(reads),
+    });
   const unread = setupTicketUnread(reads);
   if (unread !== undefined) return unread;
   const [moving] = reads.moving.read === "Got" ? reads.moving.value : [];
@@ -1196,7 +1205,10 @@ function setupTicketStep(
       },
       { lacks: "Release", ticket: draft.ticket },
     );
-  return setupUndone("ticket", "todo", undefined, { lacks: "Ticket" });
+  return setupUndone("ticket", "todo", undefined, {
+    lacks: "Ticket",
+    pullRequest: setupLandsInPullRequest(reads),
+  });
 }
 
 /** A project as a line names it: by its workspace's display name, and its own address. */

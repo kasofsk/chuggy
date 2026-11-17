@@ -34,16 +34,20 @@
  * work, where that is the checklist's next thing, and reads the checklist
  * again.
  * `ticket` files the project's first ticket, titled what `--title` says and
- * asking what `--intent` says, under the configuration `--configuration`
- * names where the project offers more than one, where that is the
- * checklist's next thing, and reads the checklist again. Neither is ever
- * printed back. `plugin` installs chuggy's Claude Code plugin, or updates or
- * enables it. `--plugin skip` is the way past the plugin step without it, and
- * every command the program prints carries it as it carries the workspace and
- * project. `north-star` writes the project's North Star, which `--text` says
- * and which is never printed back, where that is the checklist's next thing,
- * and reads the checklist again; `--north-star skip` is the way past that
- * step without one, carried as `--plugin skip` is.
+ * asking what `--intent` says, or else the end-to-end check setup announces,
+ * naming the worker image `--image` says for the toolchains `--toolchains`
+ * says, under the configuration `--configuration` names where the project
+ * offers more than one, where that is the checklist's next thing, and reads
+ * the checklist again. None of them is ever printed back. `watch` waits, as
+ * `bind` does, while the checklist's next thing is that ticket on its way to
+ * its landing, and reads the checklist again. `plugin` installs chuggy's
+ * Claude Code plugin, or updates or enables it. `--plugin skip` is the way
+ * past the plugin step without it, and every command the program prints
+ * carries it as it carries the workspace and project. `north-star` writes
+ * the project's North Star, which `--text` says and which is never printed
+ * back, where that is the checklist's next thing, and reads the checklist
+ * again; `--north-star skip` is the way past that step without one, carried
+ * as `--plugin skip` is.
  */
 
 import { selectorSettingsTextCharsMax } from "../../../../src/contract/http.ts";
@@ -64,6 +68,10 @@ export const setupTestFlag = "--test";
 export const setupTitleFlag = "--title";
 export const setupIntentFlag = "--intent";
 export const setupConfigurationFlag = "--configuration";
+
+/** The flags `ticket` is told the worker image recommended and the toolchains the repository's work needs in. */
+export const setupImageFlag = "--image";
+export const setupToolchainsFlag = "--toolchains";
 
 /** The flag `north-star` is told the project's North Star in. */
 export const setupTextFlag = "--text";
@@ -89,6 +97,7 @@ export type SetupAskFault =
   | "ProjectName"
   | "Test"
   | "Brief"
+  | "Image"
   | "Plugin"
   | "Opened"
   | "NorthStar"
@@ -110,6 +119,7 @@ export type SetupCommand =
   | "Merge"
   | "Serve"
   | "Ticket"
+  | "Watch"
   | "Plugin"
   | "NorthStar";
 
@@ -261,11 +271,18 @@ export type SetupAsked =
       readonly asked: "Ticket";
       readonly site: string | undefined;
       readonly answers: SetupAnswers;
-      /** What the ticket is called and what the person wants done, which the command is not run without. */
-      readonly title: string;
-      readonly intent: string;
+      /** What the ticket is called and what the person wants done, where they asked for something of their own. */
+      readonly said: SetupTicketSaid | undefined;
+      /** The worker image recommended and the toolchains it was recommended for, where they were given. */
+      readonly worker: SetupTicketWorker | undefined;
       /** The configuration the person chose, where they named one. */
       readonly configuration: string | undefined;
+    }
+  | {
+      readonly asked: "Watch";
+      readonly site: string | undefined;
+      readonly waitSecs: number;
+      readonly answers: SetupAnswers;
     }
   | {
       readonly asked: "Plugin";
@@ -286,6 +303,18 @@ export type SetupAsked =
     }
   | { readonly asked: "Wrongly"; readonly fault: SetupAskFault };
 
+/** What a person asked a ticket to do in place of the end-to-end check: what it is called and what they want done. */
+export interface SetupTicketSaid {
+  readonly title: string;
+  readonly intent: string;
+}
+
+/** The worker image the first ticket's configuration is to name, and the toolchains the repository's work needs of it. */
+export interface SetupTicketWorker {
+  readonly image: string;
+  readonly toolchains: string;
+}
+
 type SetupRun = Exclude<SetupAsked["asked"], "Wrongly">;
 
 const setupCommandWords = {
@@ -302,6 +331,7 @@ const setupCommandWords = {
   merge: "Merge",
   serve: "Serve",
   ticket: "Ticket",
+  watch: "Watch",
   plugin: "Plugin",
   "north-star": "NorthStar",
   listen: "Listen",
@@ -322,6 +352,8 @@ const setupFlags = [
   "title",
   "intent",
   "configuration",
+  "image",
+  "toolchains",
   "plugin",
   "opened",
   "north-star",
@@ -374,10 +406,13 @@ const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
     "project",
     "title",
     "intent",
+    "image",
+    "toolchains",
     "configuration",
     "plugin",
     "north-star",
   ],
+  Watch: ["site", "wait-secs", "workspace", "project", "plugin", "north-star"],
   Plugin: ["site", "workspace", "project", "plugin", "north-star"],
   NorthStar: ["site", "workspace", "project", "text", "plugin", "north-star"],
   Listen: ["site", "life-secs"],
@@ -516,18 +551,41 @@ function setupConfigurationAsked(
   return { asked: "Configuration", site: undefined, answers, test };
 }
 
-/** A ticket is not filed without both a title and what is wanted done; neither is printed back, so neither is held to a line. */
+/** Two flags given together or not at all: their values, nothing, or that only one was given. */
+function setupTicketPair(
+  flags: ReadonlyMap<SetupFlag, string>,
+  first: SetupFlag,
+  second: SetupFlag,
+): readonly [string, string] | "Wrongly" | undefined {
+  const one = flags.get(first);
+  const other = flags.get(second);
+  if (one === undefined && other === undefined) return undefined;
+  return one === undefined || other === undefined ? "Wrongly" : [one, other];
+}
+
+/** A ticket is filed with a title and what is wanted done together, a worker image and its toolchains together, or both; none is printed back, so none is held to a line. */
 function setupTicketAsked(
   site: string | undefined,
   answers: SetupAnswers,
   flags: ReadonlyMap<SetupFlag, string>,
 ): SetupAsked {
-  const title = flags.get("title");
-  const intent = flags.get("intent");
-  if (title === undefined || intent === undefined)
+  const said = setupTicketPair(flags, "title", "intent");
+  const worker = setupTicketPair(flags, "image", "toolchains");
+  if (said === "Wrongly") return { asked: "Wrongly", fault: "Brief" };
+  if (worker === "Wrongly") return { asked: "Wrongly", fault: "Image" };
+  if (said === undefined && worker === undefined)
     return { asked: "Wrongly", fault: "Brief" };
-  const configuration = flags.get("configuration");
-  return { asked: "Ticket", site, answers, title, intent, configuration };
+  return {
+    asked: "Ticket",
+    site,
+    answers,
+    said: said === undefined ? undefined : { title: said[0], intent: said[1] },
+    worker:
+      worker === undefined
+        ? undefined
+        : { image: worker[0], toolchains: worker[1] },
+    configuration: flags.get("configuration"),
+  };
 }
 
 /** A North Star is sent whole and never printed back, so it is held only to what the site takes: some text, and no more than its bound. */
@@ -619,6 +677,7 @@ function setupAskedOf(
       return { asked, site, answers };
     case "SignIn":
     case "Merge":
+    case "Watch":
       return { asked, site, waitSecs: wait, answers };
     case "Project":
       return setupProjectAsked(site, answers);
@@ -692,6 +751,8 @@ export function setupCommandArguments(
       return ["serve"];
     case "Ticket":
       return ["ticket"];
+    case "Watch":
+      return ["watch"];
     case "Plugin":
       return ["plugin"];
     case "NorthStar":

@@ -19,6 +19,7 @@ import { expect, test } from "vitest";
 import { repositoryConfigurationRoot as root } from "../../../src/contract/configurationDocument.ts";
 import { proposalMergeRefusals } from "../../../src/contract/rosters.ts";
 import { setupConfigurationPath } from "../app/core/setupConfiguration.ts";
+import { setupTicketAgentsPath } from "../app/core/setupTicket.ts";
 import {
   setupAnswersNone,
   setupAsked,
@@ -237,23 +238,6 @@ const things: {
       },
       when: { id: "setup-mend-admin-when", args: { workspace: "acme" } },
     },
-    {
-      thing: "Hand",
-      tell: {
-        id: "setup-mend-finalization-tell",
-        args: {
-          ticket: "7",
-          phase: { id: "ticket-steps-phase-work" },
-          page: "the page",
-          ends: "finish",
-          bootstrap: "own",
-          wait: "room",
-          free: quantityFigureCopy(memoryMibFigure(1434)),
-          needed: quantityFigureCopy(memoryMibFigure(4096)),
-        },
-      },
-      when: { id: "setup-runner-when-look-again" },
-    },
   ],
   Offer: [
     {
@@ -379,6 +363,25 @@ const things: {
       workspace: "acme",
       project: "widgets",
     },
+    {
+      thing: "Run",
+      command: "Watch",
+      tell: {
+        id: "setup-mend-finalization-tell",
+        args: {
+          ticket: "7",
+          phase: { id: "ticket-steps-phase-work" },
+          page: "the page",
+          ends: "finish",
+          bootstrap: "own",
+          wait: "room",
+          free: quantityFigureCopy(memoryMibFigure(1434)),
+          needed: quantityFigureCopy(memoryMibFigure(4096)),
+        },
+      },
+      workspace: "acme",
+      project: "widgets",
+    },
   ],
   Ask: [
     {
@@ -396,18 +399,41 @@ const things: {
     {
       thing: "Brief",
       ask: briefAsk("given"),
+      named: "acme/widgets",
       workspace: "acme",
       project: "widgets",
       choose: false,
+      bootstrapOffered: false,
     },
     {
       thing: "Brief",
       ask: briefAsk("choose"),
+      named: "acme/widgets",
       workspace: "acme",
       project: "widgets",
       choose: true,
+      bootstrapOffered: false,
+    },
+    {
+      thing: "Brief",
+      ask: briefAsk("choose"),
+      named: "acme/widgets",
+      workspace: "acme",
+      project: "widgets",
+      choose: true,
+      bootstrapOffered: true,
     },
   ],
+  First: (["pull", "merged"] as const).map((ends) => ({
+    thing: "First",
+    named: "acme/widgets",
+    tell: {
+      id: "setup-tell-first-ticket",
+      args: { agents: setupTicketAgentsPath, ends },
+    },
+    workspace: "acme",
+    project: "widgets",
+  })),
   NorthStar: (["folder", "question"] as const).map((drawn) => ({
     thing: "NorthStar",
     tell: { id: "setup-mend-north-star-tell", args: { drawn } },
@@ -1137,6 +1163,7 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
       thing.thing === "Run" ||
       thing.thing === "Name" ||
       thing.thing === "Brief" ||
+      thing.thing === "First" ||
       thing.thing === "NorthStar" ||
       thing.thing === "Configure"
       ? project(thing)
@@ -1347,6 +1374,7 @@ test("a sign-in that ended on the person's side exits zero, and one the installa
 
 const driven = [
   `rule: Run the command on the next: line exactly as written, and stop where it says ${setupNextStop}. Say each tell: line to the person as it is written. Put each ask: line to the person, and pass their answer in the flag it names.`,
+  "rule: Before anything else, start a subagent that explores this folder's repository and reports which toolchains work on it needs, and which images the repository already defines for its CI or development. Go on with the person through the steps that do not depend on the repository while it works, and use its report where the worker image is chosen.",
   "rule: Never read or print anything under ~/.chuggy-setup: it holds the sign-in.",
   `rule: To change which GitHub account chuggy setup is signed in as, run node ${machineScript} sign-out and then sign in again.`,
 ];
@@ -1443,7 +1471,7 @@ test("every step in every state is laid out in the same columns, and a step with
   expect(Math.max(...setupStepStates.map((state) => state.length))).toBe(7);
 });
 
-test("no checklist but bind's and merge's ends on a command: whatever else comes next waits on the person, and is named under a rule or not at all", () => {
+test("no checklist but bind's, merge's and watch's ends on a command: whatever else comes next waits on the person, and is named under a rule or not at all", () => {
   for (const report of roster.Checklist) {
     const lines = setupReportLines(report, machineScript, copyTextEn);
     const said = JSON.stringify(report.next);
@@ -1454,6 +1482,15 @@ test("no checklist but bind's and merge's ends on a command: whatever else comes
       );
       expect(lines.at(-2), said).toMatch(
         /^rule: Run the command on the next: line again, and go on running it while chuggy imports/u,
+      );
+      continue;
+    }
+    if (thing.thing === "Run" && thing.command === "Watch") {
+      expect(lines.at(-1), said).toBe(
+        `next: node ${machineScript} watch ${flags}`,
+      );
+      expect(lines.at(-2), said).toMatch(
+        /^rule: Run the command on the next: line now, without asking the person, .* It waits while the ticket works/u,
       );
       continue;
     }
@@ -1472,15 +1509,21 @@ test("no checklist but bind's and merge's ends on a command: whatever else comes
       setupSteps.length,
     );
     const rules = lines.filter((text) => text.startsWith("rule: "));
+    const imageRecommended =
+      thing.thing === "First" ||
+      (thing.thing === "Brief" && thing.bootstrapOffered);
     expect(rules, said).toHaveLength(
       thing.thing === "Done"
         ? 0
         : (thing.thing === "Offer" && thing.command === "Plugin") ||
-            thing.thing === "NorthStar"
+            thing.thing === "NorthStar" ||
+            imageRecommended
           ? 2
           : 1,
     );
-    expect(commands(lines), said).toHaveLength(rules.length);
+    expect(commands(lines), said).toHaveLength(
+      imageRecommended ? 1 : rules.length,
+    );
     if (rules.length > 0) expect(lines.at(-2), said).toBe(rules.at(-1));
   }
 });
@@ -1537,12 +1580,13 @@ test("a step done by hand is told, and the checklist is named to be read again o
   ]);
 });
 
-test("a ticket waiting on the person's runners short of memory is told how much they have free and the run needs, each as the ticket page sizes it", () => {
-  expect(ended(things.Hand[1] as SetupThing)).toEqual([
-    "tell: Ticket 7 is in Work. It is waiting on your personal runner, which has 1.4 GiB free; this run needs 4 GiB. Setup is done when it finishes. the page shows where it is. Tell me when you want me to look again.",
-    `rule: Run node ${machineScript} only if the person asks to look again.`,
-    stop,
+test("a ticket waiting on the person's runners short of memory is told how much they have free and the run needs, each as the ticket page sizes it, and is watched", () => {
+  expect(ended(things.Run[3] as SetupThing).slice(0, 1)).toEqual([
+    "tell: Ticket 7 is in Work. It is waiting on your personal runner, which has 1.4 GiB free; this run needs 4 GiB. Setup is done when it finishes. the page shows where it is. I'll keep watching it and tell you what changes.",
   ]);
+  expect(ended(things.Run[3] as SetupThing).at(-1)).toBe(
+    `next: node ${machineScript} watch ${flags}`,
+  );
 });
 
 test("a question is put as ask:, and the rule names the flag the answer is passed in, last, after whatever is already chosen", () => {
@@ -1705,11 +1749,12 @@ test("a checklist exits zero whatever is next, and one where a read failed", () 
   const exits = (kind: SetupThing["thing"]) =>
     things[kind].map((thing) => setupReportExit(checklist(thing)));
   expect(exits("Done")).toEqual([0, 0]);
-  expect(exits("Hand")).toEqual([0, 0]);
+  expect(exits("Hand")).toEqual([0]);
   expect(exits("Ask")).toEqual([0, 0]);
   expect(exits("Name")).toEqual([0, 0]);
   expect(exits("Offer")).toEqual([0, 0, 0, 0, 0, 0, 0]);
-  expect(exits("Run")).toEqual([0, 0, 0]);
+  expect(exits("Run")).toEqual([0, 0, 0, 0]);
+  expect(exits("First")).toEqual([0, 0]);
   expect(exits("Failed")).toEqual([1, 1]);
 });
 

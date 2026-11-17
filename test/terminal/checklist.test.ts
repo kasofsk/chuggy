@@ -77,7 +77,25 @@ function steps(done: Ran): readonly (readonly [string, string])[] {
   return past;
 }
 
-test("a site set up one thing further at a time, from nothing to a landed first ticket, is printed as it stands at each, with an address of the site's to go to wherever a page is what mends it, and no command but this one again or, where the project is lacking, project with its name, or where the repository holds no configuration, configuration for the project, or where the project has no ticket yet, ticket for the project, or where the person goes to GitHub, bind for the project to run at once", async () => {
+/** The command a run's `next:` names, split by a shell. */
+function nextRun(done: Ran): Promise<readonly string[]> {
+  return shellWords((done.lines.at(-1) ?? "").slice("next: ".length));
+}
+
+/** A command the checklist names to run at once for the project. */
+function runAtOnce(command: string): readonly string[] {
+  return [
+    "node",
+    program,
+    command,
+    "--workspace",
+    "acme",
+    "--project",
+    "widgets",
+  ];
+}
+
+test("a site set up one thing further at a time, from nothing to a landed first ticket, is printed as it stands at each, with an address of the site's to go to wherever a page is what mends it, and no command but this one again or, where the project is lacking, project with its name, or where the repository holds no configuration, configuration for the project, or where the project has no ticket yet, ticket for the project, or where the person goes to GitHub, bind for the project to run at once, or where the first ticket is on its way, watch for the project to run at once", async () => {
   const session = await signed();
   for (const stage of setupSiteStages) {
     const done = await read(session, setupSiteAt(stage));
@@ -86,19 +104,11 @@ test("a site set up one thing further at a time, from nothing to a landed first 
     if (stage === "Project" || stage === "Portal") {
       const [tell = ""] = said(done, "tell");
       assert.equal(tell.includes(`${session.installation.site}/`), true, tell);
-      assert.deepEqual(
-        await shellWords((done.lines.at(-1) ?? "").slice("next: ".length)),
-        [
-          "node",
-          program,
-          "bind",
-          "--workspace",
-          "acme",
-          "--project",
-          "widgets",
-        ],
-        stage,
-      );
+      assert.deepEqual(await nextRun(done), runAtOnce("bind"), stage);
+      continue;
+    }
+    if (stage === "Moving") {
+      assert.deepEqual(await nextRun(done), runAtOnce("watch"), stage);
       continue;
     }
     assert.equal(done.lines.at(-1), "next: stop", stage);
@@ -531,7 +541,7 @@ test("a ticket in its work waiting on the person's runners short of memory is to
     return site;
   };
   const tell = (waits: string): string =>
-    `Ticket 7 is in Work.${waits} Setup is done when it finishes. ${session.installation.site}/acme/widgets/tickets/7 shows where it is. Tell me when you want me to look again.`;
+    `Ticket 7 is in Work.${waits} Setup is done when it finishes. ${session.installation.site}/acme/widgets/tickets/7 shows where it is. I'll keep watching it and tell you what changes.`;
   const short = await read(session, working());
   assert.equal(short.code, 0, short.stdout);
   assert.deepEqual(steps(short).at(-1), ["waiting", "ticket 7 is in Work"]);
