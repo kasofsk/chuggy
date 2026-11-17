@@ -132,9 +132,7 @@ function editor(): HTMLElement {
 }
 
 function field(name: string): HTMLInputElement {
-  return within(editor()).getByRole("textbox", {
-    name,
-  }) as HTMLInputElement;
+  return within(editor()).getByRole<HTMLInputElement>("textbox", { name });
 }
 
 async function typed(name: string, value: string): Promise<void> {
@@ -144,9 +142,9 @@ async function typed(name: string, value: string): Promise<void> {
 }
 
 function saveButton(): HTMLButtonElement {
-  return within(editor()).getByRole("button", {
+  return within(editor()).getByRole<HTMLButtonElement>("button", {
     name: "Save",
-  }) as HTMLButtonElement;
+  });
 }
 
 function checkedTheme(): string | undefined {
