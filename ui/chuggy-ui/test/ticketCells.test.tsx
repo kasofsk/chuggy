@@ -22,6 +22,7 @@ function row(
     title: undefined,
     repository: undefined,
     creator: undefined,
+    owner: undefined,
     phase: "Escalated",
     sequence: 1,
     badge: { id: "codes-escalation-work-failure" },

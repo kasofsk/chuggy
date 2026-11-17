@@ -30,7 +30,7 @@ import { z } from "zod";
 import { textCodePointsCount } from "../contract/http.ts";
 import { claudeCredentialMountKinds } from "../contract/rosters.ts";
 import { workerPoolCapabilitiesSchema } from "../contract/workerPool.ts";
-import type { SessionBounds } from "../contract/workerTask.ts";
+import type { SessionSiteBounds } from "../interpreter/workerTask.ts";
 import {
   postgresLimitsDefault,
   type PostgresLimits,
@@ -390,7 +390,7 @@ const schedulerWorkerSidecarsSchema = z.array(
  * admit one set of values rather than agreeing by coincidence.
  */
 const schedulerSessionBoundKinds: {
-  readonly [Bound in keyof SessionBounds]: z.ZodType<number>;
+  readonly [Bound in keyof SessionSiteBounds]: z.ZodType<number>;
 } = {
   mailboxPollMs: schedulerBoundSchema,
   idleMs: schedulerBoundSchema,
@@ -786,7 +786,7 @@ function schedulerSessions(
       "SESSION_DEADLINE_SECS",
       schedulerCommandDefaults.sessionDeadlineSecs,
     ),
-    bounds: schedulerBounds<SessionBounds>(
+    bounds: schedulerBounds<SessionSiteBounds>(
       environment,
       "SESSION_BOUNDS",
       kubernetesSessionBoundsDefaults,

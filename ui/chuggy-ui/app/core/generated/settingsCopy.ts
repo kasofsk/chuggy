@@ -6,8 +6,12 @@ export interface SettingsCopy {
   readonly "settings-nav": Record<never, never>;
   readonly "settings-nav-project": Record<never, never>;
   readonly "settings-nav-lead": Record<never, never>;
+  readonly "settings-nav-lead-session": Record<never, never>;
   readonly "settings-nav-placement": Record<never, never>;
+  readonly "settings-nav-pools": Record<never, never>;
   readonly "settings-nav-permissions": Record<never, never>;
+  readonly "settings-nav-repositories": Record<never, never>;
+  readonly "settings-nav-catalog": Record<never, never>;
   readonly "settings-nav-workspace": Record<never, never>;
   readonly "settings-nav-people": Record<never, never>;
   readonly "settings-nav-accounts": Record<never, never>;
@@ -15,6 +19,52 @@ export interface SettingsCopy {
   readonly "settings-nav-usage": Record<never, never>;
   readonly "settings-nav-site": Record<never, never>;
   readonly "settings-nav-workspaces": Record<never, never>;
+  readonly "settings-nav-person": Record<never, never>;
+  readonly "settings-nav-preferences": Record<never, never>;
+  readonly "settings-nav-index": Record<never, never>;
+  readonly "settings-nav-lead-summary": Record<never, never>;
+  readonly "settings-nav-lead-session-summary": Record<never, never>;
+  readonly "settings-nav-placement-summary": Record<never, never>;
+  readonly "settings-nav-pools-summary": Record<never, never>;
+  readonly "settings-nav-permissions-summary": Record<never, never>;
+  readonly "settings-nav-repositories-summary": Record<never, never>;
+  readonly "settings-nav-catalog-summary": Record<never, never>;
+  readonly "settings-nav-people-summary": Record<never, never>;
+  readonly "settings-nav-accounts-summary": Record<never, never>;
+  readonly "settings-nav-workspace-permissions-summary": Record<never, never>;
+  readonly "settings-nav-usage-summary": Record<never, never>;
+  readonly "settings-nav-site-workspaces-summary": Record<never, never>;
+  readonly "settings-nav-site-permissions-summary": Record<never, never>;
+  readonly "settings-nav-personal-runners-summary": Record<never, never>;
+  readonly "settings-nav-preferences-summary": Record<never, never>;
+  readonly "settings-preferences-appearance": Record<never, never>;
+  readonly "settings-preferences-scheme": Record<never, never>;
+  readonly "settings-preferences-scheme-system": Record<never, never>;
+  readonly "settings-preferences-scheme-light": Record<never, never>;
+  readonly "settings-preferences-scheme-dark": Record<never, never>;
+  readonly "settings-preferences-theme": Record<never, never>;
+  readonly "settings-preferences-theme-covered": Record<never, never>;
+  readonly "settings-preferences-theme-here": Record<never, never>;
+  readonly "settings-preferences-theme-here-override": Record<never, never>;
+  readonly "settings-preferences-theme-here-default": Record<never, never>;
+  readonly "settings-preferences-theme-here-global": Record<never, never>;
+  readonly "settings-preferences-theme-here-built-in": Record<never, never>;
+  readonly "settings-preferences-theme-here-project-default": Record<
+    never,
+    never
+  >;
+  readonly "settings-preferences-theme-unsaved": Record<never, never>;
+  readonly "settings-preferences-theme-not-found": Record<never, never>;
+  readonly "settings-preferences-wording": Record<never, never>;
+  readonly "settings-preferences-wording-standard": Record<never, never>;
+  readonly "settings-preferences-wording-pseudo": Record<never, never>;
+  readonly "settings-preferences-wording-vernacular": {
+    readonly name: unknown;
+  };
+  readonly "settings-preferences-chat": Record<never, never>;
+  readonly "settings-preferences-chat-right": Record<never, never>;
+  readonly "settings-preferences-chat-left": Record<never, never>;
+  readonly "settings-preferences-chat-bottom": Record<never, never>;
   readonly "settings-cancel": Record<never, never>;
   readonly "settings-done": Record<never, never>;
   readonly "settings-edit": Record<never, never>;
@@ -95,6 +145,9 @@ export interface SettingsCopy {
   readonly "settings-invitation-title": {
     readonly tenant: unknown;
   };
+  readonly "settings-invitation-joins": {
+    readonly tenant: unknown;
+  };
   readonly "settings-invite-link-create": Record<never, never>;
   readonly "settings-invite-link-made": Record<never, never>;
   readonly "settings-invite-link-copy": Record<never, never>;
@@ -113,18 +166,20 @@ export interface SettingsCopy {
   readonly "settings-invite-link-revoked": Record<never, never>;
   readonly "settings-invite-link-expired": Record<never, never>;
   readonly "settings-invite-brand": Record<never, never>;
+  readonly "settings-invite-needed-title": Record<never, never>;
   readonly "settings-invite-needed": Record<never, never>;
+  readonly "settings-invite-invited-title": Record<never, never>;
   readonly "settings-invite-invited": Record<never, never>;
+  readonly "settings-invite-joining-title": Record<never, never>;
   readonly "settings-invite-joining": Record<never, never>;
+  readonly "settings-invite-not-valid-title": Record<never, never>;
   readonly "settings-invite-not-valid": Record<never, never>;
+  readonly "settings-invite-failed-title": Record<never, never>;
+  readonly "settings-invite-failed-next": Record<never, never>;
+  readonly "settings-invite-naming-title": Record<never, never>;
   readonly "settings-invite-sign-in": Record<never, never>;
   readonly "settings-invite-open": Record<never, never>;
   readonly "settings-invite-retry": Record<never, never>;
-  readonly "settings-invite-naming": Record<never, never>;
-  readonly "settings-invite-workspace-name": Record<never, never>;
-  readonly "settings-invite-workspace-about": Record<never, never>;
-  readonly "settings-invite-create": Record<never, never>;
-  readonly "settings-invite-name-not-valid": Record<never, never>;
   readonly "settings-permissions-title": Record<never, never>;
   readonly "settings-permissions-project": Record<never, never>;
   readonly "settings-permissions-workspace": Record<never, never>;
@@ -173,6 +228,9 @@ export interface SettingsCopy {
   readonly "settings-workspaces-create": Record<never, never>;
   readonly "settings-workspaces-note": Record<never, never>;
   readonly "settings-workspaces-note-lines": Record<never, never>;
+  readonly "settings-workspaces-link-mode": Record<never, never>;
+  readonly "settings-workspaces-link-about": Record<never, never>;
+  readonly "settings-workspaces-links": Record<never, never>;
   readonly "settings-accounts-title": Record<never, never>;
   readonly "settings-accounts-about": Record<never, never>;
   readonly "settings-accounts-table": Record<never, never>;
@@ -188,4 +246,52 @@ export interface SettingsCopy {
   readonly "settings-accounts-missing": Record<never, never>;
   readonly "settings-accounts-update-pending": Record<never, never>;
   readonly "settings-accounts-review": Record<never, never>;
+  readonly "settings-delete-project-title": Record<never, never>;
+  readonly "settings-delete-project-about": Record<never, never>;
+  readonly "settings-delete-project": Record<never, never>;
+  readonly "settings-delete-project-question": {
+    readonly project: unknown;
+  };
+  readonly "settings-delete-project-line": {
+    readonly project: unknown;
+  };
+  readonly "settings-delete-project-done": {
+    readonly project: unknown;
+  };
+  readonly "settings-rename-workspace-title": Record<never, never>;
+  readonly "settings-rename-workspace-about": {
+    readonly workspace: unknown;
+  };
+  readonly "settings-rename-workspace-label": Record<never, never>;
+  readonly "settings-rename-workspace": Record<never, never>;
+  readonly "settings-rename-workspace-writing": Record<never, never>;
+  readonly "settings-rename-workspace-written": Record<never, never>;
+  readonly "settings-delete-workspace-title": Record<never, never>;
+  readonly "settings-delete-workspace-about": Record<never, never>;
+  readonly "settings-delete-workspace": Record<never, never>;
+  readonly "settings-delete-workspace-question": {
+    readonly workspace: unknown;
+  };
+  readonly "settings-delete-workspace-line": {
+    readonly workspace: unknown;
+  };
+  readonly "settings-delete-workspace-done": {
+    readonly workspace: unknown;
+  };
+  readonly "settings-delete-back": Record<never, never>;
+  readonly "settings-delete-held": {
+    readonly held: unknown;
+  };
+  readonly "settings-delete-held-released-ticket": Record<never, never>;
+  readonly "settings-delete-held-execution": Record<never, never>;
+  readonly "settings-delete-held-session": Record<never, never>;
+  readonly "settings-delete-held-worker-pool": Record<never, never>;
+  readonly "settings-delete-held-action-observation": Record<never, never>;
+  readonly "settings-delete-held-project": Record<never, never>;
+  readonly "settings-delete-held-personal-runner": Record<never, never>;
+  readonly "settings-delete-held-chat-host": Record<never, never>;
+  readonly "settings-delete-held-joined": {
+    readonly lead: unknown;
+    readonly rest: unknown;
+  };
 }

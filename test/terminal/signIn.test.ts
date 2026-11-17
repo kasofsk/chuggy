@@ -10,7 +10,13 @@
  */
 
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { connect } from "node:net";
 import { networkInterfaces } from "node:os";
 import { dirname, join } from "node:path";
@@ -38,11 +44,23 @@ async function installed(): Promise<{
   return { installation: await made.installation(), machine: made.machine() };
 }
 
-function remembered(machine: Home): { site?: string; refreshToken?: string } {
-  return JSON.parse(machine.file("session.json") ?? "{}") as {
+/** The site the program's own file remembers, and the sign-in the shared store holds for it. */
+function remembered(machine: Home): {
+  site: string | undefined;
+  refreshToken: string | undefined;
+} {
+  const { site } = JSON.parse(machine.file("session.json") ?? "{}") as {
     site?: string;
-    refreshToken?: string;
   };
+  return {
+    site,
+    refreshToken: site === undefined ? undefined : machine.held(site),
+  };
+}
+
+/** The file the shared store keeps a site's sign-in in. */
+function storeFile(machine: Home, site: string): string {
+  return join(machine.store, encodeURIComponent(site));
 }
 
 test("a sign-in the person finishes is exchanged, remembered and said, on this machine's own address", async () => {
@@ -107,19 +125,40 @@ test("a renewal the issuer refuses is not signed in and not a failure, and sign-
   await signedIn(installation, machine);
   const spent = remembered(machine).refreshToken ?? "";
   await machine.run([]);
-  const fresh = machine.file("session.json") ?? "";
-  writeFileSync(
-    join(machine.directory, "session.json"),
-    JSON.stringify({ site: installation.site, refreshToken: spent }),
-  );
+  const kept = storeFile(machine, installation.site);
+  const fresh = readFileSync(kept, "utf8");
+  writeFileSync(kept, `${spent}\n`);
   const replayed = await machine.run([]);
   assert.equal(replayed.code, 0);
   assert.equal(replayed.lines[0], `site: ${installation.site}, not signed in`);
   assert.match(replayed.lines.at(-1) ?? "", /^next: node \S+ sign-in$/u);
   assert.equal(installation.grants.at(-1), "refresh_token refused");
-  writeFileSync(join(machine.directory, "session.json"), fresh);
+  writeFileSync(kept, fresh);
   const ended = await machine.run([]);
   assert.equal(ended.lines[0], `site: ${installation.site}, not signed in`);
+});
+
+test("a sign-in kept by a setup program from before the shared store is moved into it once, and the program's own file then remembers the site alone", async () => {
+  const { installation, machine } = await installed();
+  await signedIn(installation, machine);
+  const before = machine.held(installation.site) ?? "";
+  rmSync(storeFile(machine, installation.site));
+  const old = JSON.stringify({ site: installation.site, refreshToken: before });
+  writeFileSync(join(machine.directory, "session.json"), old);
+  const done = await machine.run([]);
+  assert.equal(done.code, 0, done.stdout);
+  assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
+  assert.deepEqual(installation.grants, [
+    "authorization_code granted",
+    "refresh_token granted",
+  ]);
+  assert.ok(machine.held(installation.site) === installation.renewal());
+  assert.equal(
+    machine.file("session.json"),
+    JSON.stringify({ site: installation.site }),
+  );
+  const again = await machine.run([]);
+  assert.equal(again.lines[0], `site: ${installation.site}, signed in`);
 });
 
 test("a sign-in the site does not confirm is a failure that is kept, and the next command confirms it once the site answers", async () => {

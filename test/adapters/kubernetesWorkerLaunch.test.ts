@@ -71,10 +71,7 @@ import {
   type AttemptPlacement,
 } from "../../src/interpreter/executionScheduler.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
-import {
-  asGitRefName,
-  asRepositoryId,
-} from "../../src/interpreter/finalizer.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { PolicyAuthorityGrant } from "../../src/interpreter/taskAuthority.ts";
 import {
@@ -96,6 +93,9 @@ import {
   workerErrorPath,
 } from "../../src/contract/http.ts";
 import {
+  workerContractFeatures,
+  workerContractFeaturesHeader,
+  workerContractFeaturesOf,
   workerContractHeader,
   workerContractRelease,
 } from "../../src/contract/workerContract.ts";
@@ -208,13 +208,18 @@ const configuration: PinnedTaskConfiguration = {
   review: { instructions: ["Walk the call paths the change reaches."] },
 };
 
+/** The invocation a configuration listing every credential of this grant composes to. */
 function taskInvocation(
   authorityGrant: PolicyAuthorityGrant = grant,
 ): AttemptPlacement["invocation"] {
+  const listing: PinnedTaskConfiguration = {
+    ...configuration,
+    authority: { credentials: authorityGrant.credentials },
+  };
   const composed = composeTaskInvocation(blessedPracticeCatalog, {
     purpose: "Work",
-    pin: configuration,
-    configuration,
+    pin: listing,
+    configuration: listing,
     runtime: { changedFiles: [], handoff: [] },
     readOnlyRepositories: [],
     dependencyDeliveries: [],
@@ -339,6 +344,7 @@ function expectedTask(): string {
       text: placement.invocation.briefing.text,
     },
     authority: { ...grant, mayCompleteTask: false },
+    credentialsListed: grant.credentials,
     workerPlane: {
       url: config.workerPlaneUrl,
       capabilityFile: config.capabilityFile,
@@ -846,16 +852,21 @@ test("every worker configuration reaches a document the contract names in full",
     { mode: { type: "Commands", commands: ["just check"] }, ...preparation },
   ];
   for (const worker of workers)
-    for (const [stage, targetRef] of [
-      [undefined, undefined],
-      [1, asGitRefName("refs/heads/main")],
+    for (const [stage, targetMerge, pushPathsRefused] of [
+      [undefined, undefined, undefined],
+      [
+        1,
+        { ref: "refs/heads/main", pipelinesWritable: false },
+        [".forgejo/workflows/"],
+      ],
     ] as const) {
       const document = JSON.parse(
         JSON.stringify(
           kubernetesWorkerTask(config, {
             ...placement,
             ...(stage === undefined ? {} : { stage }),
-            ...(targetRef === undefined ? {} : { targetRef }),
+            ...(targetMerge === undefined ? {} : { targetMerge }),
+            ...(pushPathsRefused === undefined ? {} : { pushPathsRefused }),
             invocation: {
               ...placement.invocation,
               ...(worker === undefined ? {} : { worker }),
@@ -869,9 +880,15 @@ test("every worker configuration reaches a document the contract names in full",
       );
       assert.equal(Object.hasOwn(document, "worker"), worker !== undefined);
       assert.equal(Object.hasOwn(document, "stage"), stage !== undefined);
-      assert.equal(
-        (document as { readonly targetRef?: string }).targetRef,
-        targetRef,
+      assert.equal(Object.hasOwn(document, "targetRef"), false);
+      assert.deepEqual(
+        (document as { readonly targetMerge?: object }).targetMerge,
+        targetMerge,
+      );
+      assert.deepEqual(
+        (document as { readonly pushPathsRefused?: readonly string[] })
+          .pushPathsRefused,
+        pushPathsRefused,
       );
     }
 });
@@ -1338,6 +1355,7 @@ function maximalConfiguration(): PinnedTaskConfiguration {
     practices: [...allPracticeIds],
     work: { instructions: list },
     review: { instructions: list },
+    authority: { credentials: grant.credentials },
   };
 }
 
@@ -1591,6 +1609,12 @@ test("an error text is uploaded where its worker would have, under the bearer it
   assert.equal(upload.authorization, "Bearer secret-one");
   assert.equal(upload.headers.get("content-type"), workerPlaneBytesMediaType);
   assert.equal(upload.headers.get(workerContractHeader), workerContractRelease);
+  assert.deepEqual(
+    workerContractFeaturesOf(
+      upload.headers.get(workerContractFeaturesHeader) ?? undefined,
+    ),
+    Object.keys(workerContractFeatures),
+  );
   assert.equal(upload.body, text);
   assert.equal(reached.length, 2);
 });

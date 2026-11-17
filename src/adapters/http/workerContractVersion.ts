@@ -10,8 +10,14 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
   contractVersionRefusalStatus,
+  workerContractFeatures,
+  workerContractFeaturesHeader,
+  workerContractFeaturesOf,
+  workerContractFeaturesText,
   workerContractHeader,
   workerContractRelease,
+  type WorkerContractFeature,
+  type WorkerContractPeer,
 } from "../../contract/workerContract.ts";
 import {
   contractVersionAccepted,
@@ -19,19 +25,45 @@ import {
   type WorkerContractRange,
 } from "../../interpreter/workerPlane.ts";
 
-/** Names this plane's release on every answer `app` gives, the framework's own refusals and failures included. */
+/** Every feature in the roster, each of which this plane implements. */
+const workerContractNamedFeatures = workerContractFeaturesText(
+  Object.keys(workerContractFeatures) as WorkerContractFeature[],
+);
+
+/** Names this plane's release and its features on every answer `app` gives, the framework's own refusals and failures included. */
 export function workerContractNamed(app: FastifyInstance): void {
   app.addHook("onRequest", async (_request, reply) => {
     reply.header(workerContractHeader, workerContractRelease);
+    reply.header(workerContractFeaturesHeader, workerContractNamedFeatures);
   });
+}
+
+/** The text of a header a request sends, a header sent more than once joined by `, `. */
+function workerContractOfferedText(
+  request: FastifyRequest,
+  header: string,
+): string | undefined {
+  const offered = request.headers[header];
+  return Array.isArray(offered) ? offered.join(", ") : offered;
 }
 
 /** The release a request names, a header sent more than once joined into text no release matches. */
 export function workerContractOffered(
   request: FastifyRequest,
 ): string | undefined {
-  const offered = request.headers[workerContractHeader];
-  return Array.isArray(offered) ? offered.join(", ") : offered;
+  return workerContractOfferedText(request, workerContractHeader);
+}
+
+/** What a request offered: the release it names and the features it lists. */
+export function workerContractPeer(
+  request: FastifyRequest,
+): WorkerContractPeer {
+  return {
+    release: workerContractOffered(request),
+    features: workerContractFeaturesOf(
+      workerContractOfferedText(request, workerContractFeaturesHeader),
+    ),
+  };
 }
 
 /** A contract route's first hook on a plane serving `range`, answering the refusal where the request's release is outside it. */

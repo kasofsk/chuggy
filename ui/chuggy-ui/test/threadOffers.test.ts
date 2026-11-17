@@ -42,13 +42,34 @@ import {
 } from "../app/core/threadOffers.ts";
 import type { ThreadOfferStanding } from "../app/core/threadOffers.ts";
 import type { KeyValuePort } from "../app/core/sessionHolder.ts";
+import type { PanelState } from "../app/core/freshness.ts";
 import { creationDraft } from "./ticketCreationFixture.ts";
 
 /** Where a card stands, with why it is closed as the base language says it. */
-function stoodSaid(standing: ThreadOfferStanding): Record<string, string> {
-  return standing.standing === "Closed"
-    ? { standing: standing.standing, why: copyTextEn(standing.why) }
-    : { standing: standing.standing };
+function stoodSaid(standing: ThreadOfferStanding): Record<string, unknown> {
+  switch (standing.standing) {
+    case "Closed":
+      return { standing: standing.standing, why: copyTextEn(standing.why) };
+    case "Waiting":
+      return { standing: standing.standing, tickets: standing.tickets };
+    case "Unread":
+      return { standing: standing.standing, read: standing.read.state };
+    case "Superseded":
+    case "Open":
+      return { standing: standing.standing };
+  }
+}
+
+/** A dependency's draft as the cache holds it once read. */
+function dependencyRead(
+  ticket: number,
+  state: DraftResponse["state"],
+): PanelState<DraftResponse> {
+  return {
+    state: "Ready",
+    value: { ...creationDraft, ticket, state },
+    observedAtMs: 0,
+  };
 }
 
 function call(
@@ -177,24 +198,81 @@ describe("whether a page answers an offer", () => {
   });
 });
 
+describe("where a release card stands against its dependencies", () => {
+  test("a release offer waits on exactly the dependencies still drafts, and is open once none is", () => {
+    const depending = (dependencies: readonly number[]): DraftResponse => ({
+      ...creationDraft,
+      authoringVersion: 3,
+      authoring: {
+        ...creationDraft.authoring,
+        dependencies: [...dependencies],
+      },
+    });
+    expect(
+      stoodSaid(threadOfferReleaseStanding(release, depending([]), [])),
+    ).toStrictEqual({ standing: "Open" });
+    expect(
+      stoodSaid(
+        threadOfferReleaseStanding(release, depending([5, 6, 7]), [
+          dependencyRead(5, "Draft"),
+          dependencyRead(6, "Released"),
+          dependencyRead(7, "Draft"),
+        ]),
+      ),
+    ).toStrictEqual({ standing: "Waiting", tickets: [5, 7] });
+    expect(
+      stoodSaid(
+        threadOfferReleaseStanding(release, depending([5, 6, 7]), [
+          dependencyRead(5, "Released"),
+          { state: "Absent" },
+          dependencyRead(7, "Deleted"),
+        ]),
+      ),
+    ).toStrictEqual({ standing: "Open" });
+  });
+
+  test("a release offer with a dependency not read yet is unread, not waiting", () => {
+    const draft: DraftResponse = {
+      ...creationDraft,
+      authoringVersion: 3,
+      authoring: { ...creationDraft.authoring, dependencies: [5, 6] },
+    };
+    expect(
+      stoodSaid(
+        threadOfferReleaseStanding(release, draft, [
+          dependencyRead(5, "Draft"),
+          { state: "Pending" },
+        ]),
+      ),
+    ).toStrictEqual({ standing: "Unread", read: "Pending" });
+    expect(() =>
+      threadOfferReleaseStanding(release, draft, [dependencyRead(5, "Draft")]),
+    ).toThrow(RangeError);
+  });
+});
+
 describe("where a card stands", () => {
   test("a release offer is open only at the draft's own authoring version, and superseded past it", () => {
     expect(
-      stoodSaid(threadOfferReleaseStanding(release, creationDraft)),
+      stoodSaid(threadOfferReleaseStanding(release, creationDraft, [])),
     ).toStrictEqual({
       standing: "Open",
     });
     expect(
       stoodSaid(
-        threadOfferReleaseStanding(release, {
-          ...creationDraft,
-          authoringVersion: 4,
-        }),
+        threadOfferReleaseStanding(
+          release,
+          {
+            ...creationDraft,
+            authoringVersion: 4,
+          },
+          [],
+        ),
       ),
     ).toStrictEqual({ standing: "Superseded" });
     const released: DraftResponse = { ...creationDraft, state: "Released" };
     expect(
-      stoodSaid(threadOfferReleaseStanding(release, released)),
+      stoodSaid(threadOfferReleaseStanding(release, released, [])),
     ).toStrictEqual({
       standing: "Closed",
       why: "Draft 12 is released",
