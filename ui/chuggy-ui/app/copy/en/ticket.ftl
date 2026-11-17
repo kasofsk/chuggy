@@ -88,7 +88,7 @@ ticket-page-not-found = No such { -ticket }
 ticket-page-no-configuration = No { -configuration }
 
 ## The header's actions and menu: `app/browser/TicketActions.tsx`,
-## `TicketHeaderMenu.tsx`, `TicketRevoke.tsx`.
+## `TicketHeaderMenu.tsx`; the revoke strings also in `Inbox.tsx`.
 
 ticket-dispatch-confirm-title = { -dispatch(case: "upper") } { -ticket } #{ $number }?
 ticket-cancel-refused = Cancel refused · { $reason }
