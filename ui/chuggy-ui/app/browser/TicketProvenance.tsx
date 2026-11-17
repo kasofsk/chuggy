@@ -240,8 +240,10 @@ export function ConfigurationBody(props: {
         <span className="config-heading-title">
           {named === undefined ? null : (
             <>
-              <h2 className="config-heading-name" title={named.name.title}>
-                {named.name.text}
+              <h2 className="config-heading-name">
+                <Tooltip trigger="abbreviation" text={named.name.title}>
+                  <span>{named.name.text}</span>
+                </Tooltip>
               </h2>
               <Chip>{text(configurationFollowingWord(steps.following))}</Chip>
             </>

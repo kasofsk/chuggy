@@ -49,6 +49,7 @@ import {
 } from "./SettingsListing.tsx";
 
 import "./tenantPeople.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 /** What a link holds whichever list it is in. */
 export type InviteLinkListed = Pick<
@@ -155,13 +156,15 @@ export function InviteLinkWho(props: {
   const named = tenantPersonName(props.person);
   return (
     <div className="grid min-w-0">
-      <span className="tabular-cut" title={named.name}>
-        {named.subject ? (
+      {named.subject ? (
+        <span className="tabular-cut">
           <Identity label={{ text: named.name, title: named.name }} />
-        ) : (
-          named.name
-        )}
-      </span>
+        </span>
+      ) : (
+        <Tooltip trigger="abbreviation" text={named.name}>
+          <span className="tabular-cut">{named.name}</span>
+        </Tooltip>
+      )}
       {named.githubLogin === undefined ? null : (
         <span className="truncate text-sm text-ink-3">{named.githubLogin}</span>
       )}

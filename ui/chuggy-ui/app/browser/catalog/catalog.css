@@ -234,4 +234,14 @@
       overflow: auto;
     }
   }
+
+  /* On a phone what spells out its whole value on a press is a finger's
+     height, its text keeping its line, centred in that height. */
+  @container (max-width: 40em) {
+    .catalog-row-repository,
+    .catalog-repository-name > span,
+    .catalog-provenance > code {
+      line-height: var(--height-touch);
+    }
+  }
 }

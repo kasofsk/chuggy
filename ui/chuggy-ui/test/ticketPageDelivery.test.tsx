@@ -298,10 +298,14 @@ test("a read that fails is drawn as a failed read in this row, and the page arou
   );
   expect(rowsDrawn(container)).toEqual(["delivery"]);
   const row = await deliveryOpened(container);
-  expect(readFailedLines(row)).toStrictEqual(["Not read · Server error"]);
+  expect(readFailedLines(row)).toStrictEqual([
+    "Not read · Server error · InternalError",
+  ]);
   expect(linesDrawn(row)).toEqual([]);
   expect(
-    readFailedLines().filter((line) => line === "Not read · Server error"),
+    readFailedLines().filter(
+      (line) => line === "Not read · Server error · InternalError",
+    ),
   ).toHaveLength(1);
   expect(ticketHeader().textContent).toContain("Done");
 });
@@ -314,7 +318,9 @@ test("an answer that is not the read's is a failed read too, and draws no line o
     }),
   );
   const row = await deliveryOpened(container);
-  expect(readFailedLines(row)).toStrictEqual(["Not read · Unreadable"]);
+  expect(readFailedLines(row).map((line) => line.split("[")[0])).toStrictEqual([
+    "Not read · Unreadable Details",
+  ]);
   expect(linesDrawn(row)).toEqual([]);
 });
 

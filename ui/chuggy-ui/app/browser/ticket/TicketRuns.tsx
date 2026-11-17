@@ -73,6 +73,7 @@ import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 /**
  * The page of executions this ticket's route answers with, read once by the
@@ -332,7 +333,9 @@ function TicketRunsStackDrawn(props: {
         </ol>
       </Field>
       <Field name={text({ id: "ticket-runs-stack-built-on" })}>
-        <code title={stack.reference}>{branchName(stack.reference)}</code>{" "}
+        <Tooltip trigger="abbreviation" text={stack.reference}>
+          <code>{branchName(stack.reference)}</code>
+        </Tooltip>{" "}
         <Identity label={stack.tip} />
       </Field>
     </Fields>

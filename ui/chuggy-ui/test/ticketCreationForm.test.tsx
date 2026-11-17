@@ -726,11 +726,9 @@ test("a held draft that cannot be read is said, written nothing, and read again 
   typeIntent("ship that");
   await submitted();
   expect(note()).toBe(`Draft not written · ${draftUnreleased}`);
-  expect(readFailedLines()).toStrictEqual(["Draft · Not read · Server error"]);
-  fireEvent.focus(screen.getByText("Server error"));
-  expect((await screen.findByRole("tooltip")).textContent).toBe(
-    "InternalError",
-  );
+  expect(readFailedLines()).toStrictEqual([
+    "Draft · Not read · Server error · InternalError",
+  ]);
   expect(held.since()).toStrictEqual([draftRead]);
   reads.failing = false;
   submit();

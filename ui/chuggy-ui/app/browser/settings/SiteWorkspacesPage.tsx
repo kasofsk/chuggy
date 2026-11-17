@@ -55,6 +55,7 @@ import { TenantPersonWho } from "./TenantPersonRow.tsx";
 import { useSiteAbilities } from "./tenantPermissionsResource.ts";
 
 import "./tenantPeople.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 /** Who administers one workspace, a line a person, then the count of those
  * the answer does not name. */
@@ -89,13 +90,14 @@ function siteWorkspaceRow(
     key: listed.tenant,
     cells: {
       workspace: (
-        <span
-          className="tabular-cut block font-strong text-ink-1"
-          title={listed.tenant}
-          translate="no"
-        >
-          {listed.displayName}
-        </span>
+        <Tooltip trigger="abbreviation" text={listed.tenant}>
+          <span
+            className="tabular-cut block font-strong text-ink-1"
+            translate="no"
+          >
+            {listed.displayName}
+          </span>
+        </Tooltip>
       ),
       admins: none ? (
         <SettingsListingNone />

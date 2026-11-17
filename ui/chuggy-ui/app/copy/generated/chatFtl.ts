@@ -26,7 +26,6 @@ chat-standing-orphaned = Orphaned
 chat-kept-running = Kept running
 chat-kept-running-detail = This { -thread } holds processes your { -chat-host } restarts each time it starts again, so it is kept up. Close it, or ask it to stop them, to end that.
 chat-host-capabilities = On your { -chat-host }
-chat-host-capabilities-detail = On your { -chat-host }, this { -thread } may: { $capabilities }
 
 ## What a chat may do, as its roster and its chat host's setting name it.
 

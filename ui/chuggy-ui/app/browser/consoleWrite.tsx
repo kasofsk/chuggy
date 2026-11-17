@@ -48,7 +48,7 @@ import {
 import { useConsoleDispatch, useConsoleSelector } from "./store.ts";
 import { Toasts } from "./ui/Toast.tsx";
 import type { ToastLine } from "./ui/Toast.tsx";
-import { Tooltip } from "./ui/Tooltip.tsx";
+import { WordDetail } from "./ui/WordDetail.tsx";
 
 /** What a screen draws of its write, and the press that makes one. What a
  * press asks to be told is told only while the screen that pressed is mounted. */
@@ -249,18 +249,18 @@ export function ConsoleWriteToasts(): ReactNode {
   );
 }
 
-/** A refused write's sentence, with what its failure carries beyond it on
- * hover of the sentence and never in it. */
+/** A refused write's sentence, with what its failure carries beyond it after
+ * the sentence. */
 export function ConsoleWriteRefusedWords(props: {
   readonly refused: ConsoleWriteRefused;
   readonly className?: string;
 }): ReactNode {
   return (
-    <Tooltip
-      trigger="abbreviation"
-      text={consoleWriteRefusedDetail(props.refused)}
-    >
-      <span className={props.className}>{props.refused.message}</span>
-    </Tooltip>
+    <span className={props.className}>
+      <WordDetail
+        word={props.refused.message}
+        detail={consoleWriteRefusedDetail(props.refused)}
+      />
+    </span>
   );
 }

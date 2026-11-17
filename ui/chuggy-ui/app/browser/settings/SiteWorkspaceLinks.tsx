@@ -28,6 +28,7 @@ import {
 } from "./InviteLinksListing.tsx";
 import { SettingsListingNone } from "./SettingsListing.tsx";
 import { siteWorkspaceLinksReread } from "./siteWorkspacesResource.ts";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 function SiteWorkspaceLinkNote(props: {
   readonly link: AccessWorkspaceLink;
@@ -58,12 +59,11 @@ function SiteWorkspaceLinkMade(props: {
   const link = props.link;
   return (
     <div className="grid min-w-0">
-      <span
-        className="tabular-cut font-strong text-ink-1"
-        title={link.workspace}
-      >
-        {link.workspace}
-      </span>
+      <Tooltip trigger="abbreviation" text={link.workspace}>
+        <span className="tabular-cut font-strong text-ink-1">
+          {link.workspace}
+        </span>
+      </Tooltip>
       <div className="text-sm text-ink-3">
         <InviteLinkWho
           person={link.usedBy}

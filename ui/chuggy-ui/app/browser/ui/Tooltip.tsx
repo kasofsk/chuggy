@@ -11,12 +11,15 @@
  *   describes the child, so it describes the control only where the child is
  *   the control.
  * - `abbreviation`: the child shortens what the text spells out. It becomes
- *   focusable, and the text is its description.
+ *   focusable, the text is its description, and pressing it opens the text,
+ *   which is how a touch screen, where nothing hovers, reaches it. Inside a
+ *   link or button a press is theirs, and opens nothing.
  * - `decoration`: nothing becomes focusable; the text is also drawn visually
  *   hidden beside the child, for assistive technology.
  */
 
-import type { ReactElement, ReactNode } from "react";
+import { useState } from "react";
+import type { MouseEvent, ReactElement, ReactNode } from "react";
 import { Tooltip as TooltipPrimitive } from "radix-ui";
 
 import { useCopyText } from "../../copy/CopyProvider.tsx";
@@ -43,19 +46,43 @@ function TooltipText(props: { readonly text: CopyOrData }): ReactNode {
   );
 }
 
-export function Tooltip(props: {
-  readonly text: CopyOrData | undefined;
+/** A press on an abbreviation opens its text, unless the press belongs to a
+ * link or button around it; the press is kept from Radix, which closes on it. */
+function tooltipAbbreviationPressed(
+  event: MouseEvent<HTMLElement>,
+  onOpen: () => void,
+): void {
+  if (event.currentTarget.closest("a[href], button") !== null) return;
+  event.preventDefault();
+  onOpen();
+}
+
+function TooltipShown(props: {
+  readonly text: CopyOrData;
   readonly trigger: TooltipTrigger;
   readonly children: ReactElement;
-  readonly sideOffset?: number;
+  readonly sideOffset: number | undefined;
 }): ReactElement {
-  if (props.text === undefined) return props.children;
+  const [open, setOpen] = useState(false);
   return (
     <TooltipPrimitive.Provider>
-      <TooltipPrimitive.Root disableHoverableContent={false}>
+      <TooltipPrimitive.Root
+        disableHoverableContent={false}
+        open={open}
+        onOpenChange={setOpen}
+      >
         <TooltipPrimitive.Trigger
           asChild
-          {...(props.trigger === "abbreviation" ? { tabIndex: 0 } : {})}
+          {...(props.trigger === "abbreviation"
+            ? {
+                tabIndex: 0,
+                onClick: (event: MouseEvent<HTMLElement>) => {
+                  tooltipAbbreviationPressed(event, () => {
+                    setOpen(true);
+                  });
+                },
+              }
+            : {})}
         >
           {props.children}
         </TooltipPrimitive.Trigger>
@@ -74,5 +101,23 @@ export function Tooltip(props: {
         </TooltipPrimitive.Portal>
       </TooltipPrimitive.Root>
     </TooltipPrimitive.Provider>
+  );
+}
+
+export function Tooltip(props: {
+  readonly text: CopyOrData | undefined;
+  readonly trigger: TooltipTrigger;
+  readonly children: ReactElement;
+  readonly sideOffset?: number;
+}): ReactElement {
+  if (props.text === undefined) return props.children;
+  return (
+    <TooltipShown
+      text={props.text}
+      trigger={props.trigger}
+      sideOffset={props.sideOffset}
+    >
+      {props.children}
+    </TooltipShown>
   );
 }

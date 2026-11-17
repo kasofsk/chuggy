@@ -83,7 +83,7 @@ test("a place from a cut read draws its total as a least, and names it so", () =
   expect(chip.textContent).toBe("3/3+");
 });
 
-test("inside a link the chip says its words as a title and takes no focus of its own", () => {
+test("inside a link the chip says its words as its name alone, with no title, and takes no focus of its own", () => {
   renderCopied(
     <a href="/">
       <LandingQueueChip
@@ -100,7 +100,7 @@ test("inside a link the chip says its words as a title and takes no focus of its
     </a>,
   );
   const chip = screen.getByRole("img", { name: waiterWords });
-  expect(chip.getAttribute("title")).toBe(waiterWords);
+  expect(chip.hasAttribute("title")).toBe(false);
   expect(chip.hasAttribute("tabindex")).toBe(false);
 });
 

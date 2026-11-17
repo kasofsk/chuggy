@@ -33,6 +33,7 @@ import {
 } from "./EpicGraphSide.tsx";
 
 import "./epicGraph.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 /** One row of pills under its heading, or the word for none. */
 function EpicGraphSheetRow(props: {
@@ -57,32 +58,33 @@ function EpicGraphSheetRow(props: {
               other?.node.title ?? text({ id: "epics-card-untitled" });
             return (
               <li key={ticket}>
-                <button
-                  type="button"
-                  className="epic-graph-sheet-pill"
-                  aria-label={text({
-                    id: "epics-sheet-ticket",
-                    args: {
-                      ticket: String(ticket),
-                      title,
-                      state:
-                        other === undefined
-                          ? ""
-                          : text(ticketStateLabelOf(other.standing).word),
-                    },
-                  })}
-                  title={title}
-                  onClick={() => {
-                    props.onTicket(ticket);
-                  }}
-                >
-                  {other === undefined ? null : (
-                    <EpicGraphSideMark standing={other.standing} />
-                  )}
-                  <span className="epic-graph-sheet-number">
-                    {String(ticket)}
-                  </span>
-                </button>
+                <Tooltip trigger="control" text={title}>
+                  <button
+                    type="button"
+                    className="epic-graph-sheet-pill"
+                    aria-label={text({
+                      id: "epics-sheet-ticket",
+                      args: {
+                        ticket: String(ticket),
+                        title,
+                        state:
+                          other === undefined
+                            ? ""
+                            : text(ticketStateLabelOf(other.standing).word),
+                      },
+                    })}
+                    onClick={() => {
+                      props.onTicket(ticket);
+                    }}
+                  >
+                    {other === undefined ? null : (
+                      <EpicGraphSideMark standing={other.standing} />
+                    )}
+                    <span className="epic-graph-sheet-number">
+                      {String(ticket)}
+                    </span>
+                  </button>
+                </Tooltip>
               </li>
             );
           })}

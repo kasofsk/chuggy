@@ -62,7 +62,7 @@ import { drawBytes } from "../ports.ts";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
+import { WordDetail } from "../ui/WordDetail.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { configurationCatalogOf } from "../../core/configurationCatalog.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
@@ -114,16 +114,14 @@ function ParkedOverridesNote(props: {
         ? {}
         : { more: text(operationRefusalSentence(refusal)) })}
     >
-      <Tooltip
-        trigger="abbreviation"
-        text={
+      <WordDetail
+        word={refused}
+        detail={
           step.step === "Abandoned"
             ? operationAbandonWords(step.cause).detail
             : undefined
         }
-      >
-        <span>{refused}</span>
-      </Tooltip>
+      />
     </Notice>
   );
 }

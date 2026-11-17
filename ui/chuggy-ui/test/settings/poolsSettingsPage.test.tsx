@@ -110,7 +110,7 @@ test("a pool's version is drawn, Outdated where chuggy pins a later one, and a d
       { ...pool, pool: "unnamed" },
     ],
   });
-  expect(rowText(rows()[1])).toMatch(/0\.9\.0Outdated/u);
+  expect(rowText(rows()[1])).toMatch(/0\.9\.0Outdated · 0\.10\.0 available/u);
   expect(rowText(rows()[2])).toMatch(/0\.10\.0/u);
   expect(rowText(rows()[2])).not.toMatch(/Outdated/u);
   expect(rowText(rows()[3])).toMatch(/Linux Amd64—/u);

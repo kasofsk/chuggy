@@ -106,7 +106,7 @@ import type { MoreMenuItem } from "./ui/MoreMenu.tsx";
 import { OfferedAction } from "./ui/OfferedAction.tsx";
 import { Button, ButtonLink } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
-import { Tooltip } from "./ui/Tooltip.tsx";
+import { WordDetail } from "./ui/WordDetail.tsx";
 import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { copyOrDataText } from "../core/copy.ts";
@@ -126,9 +126,7 @@ function StepNote(props: {
   const tone = drawn.wrong ? "danger" : drawn.settled ? "info" : "live";
   return (
     <Notice tone={tone} inline role="status">
-      <Tooltip trigger="abbreviation" text={drawn.detail}>
-        <span>{text(drawn.text)}</span>
-      </Tooltip>
+      <WordDetail word={text(drawn.text)} detail={drawn.detail} />
     </Notice>
   );
 }
@@ -911,14 +909,13 @@ export interface TicketRowDispatch {
   readonly busy: boolean;
   /** This tab does not reach the network, so a press would not be sent. */
   readonly offline: boolean;
-  readonly effect: string;
   readonly press: () => void;
 }
 
 /**
  * The Dispatch a ready row of the ticket list offers, expecting the version the
- * row was drawn at, as the press its state chip answers and the notes its
- * follow draws beside it. The reader's abilities and the project's runner take
+ * row was drawn at, as the press its state chip answers and the notes beside
+ * it: that it waits while this tab is offline, and what its follow draws. The reader's abilities and the project's runner take
  * it away as they take it on the ticket page, and a press is followed by the
  * same submission the ticket page would follow.
  */
@@ -951,9 +948,6 @@ export function TicketRowDispatchScope(props: {
       ? offers.actions.find((action) => action.action === "Dispatch")
       : undefined;
   if (offered === undefined) return props.children(undefined, null);
-  const effect = text(
-    ticketActionEffect("Dispatch", { kind: "NoPoint" }).effect,
-  );
   return (
     <TicketActingScope partition={props.partition} ticket={props.ticket} drawn>
       {(acting) =>
@@ -961,12 +955,21 @@ export function TicketRowDispatchScope(props: {
           {
             busy: acting.busy,
             offline: !online,
-            effect,
             press: () => {
               acting.submitting.submit(offered);
             },
           },
-          <FollowNotes submitting={acting.submitting} />,
+          <>
+            {online ? null : (
+              <Notice
+                tone="parked"
+                inline
+                role="status"
+                detail={text({ id: "ticket-dispatch-offline" })}
+              />
+            )}
+            <FollowNotes submitting={acting.submitting} />
+          </>,
         )
       }
     </TicketActingScope>

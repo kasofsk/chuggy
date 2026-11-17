@@ -77,6 +77,7 @@ import {
 } from "./CatalogShown.tsx";
 
 import "./catalog.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 function catalogVersionText(summary: ConfigurationSummary): string {
   const commit = configurationCommitShort(summary.provenance);
@@ -102,9 +103,9 @@ function CatalogProvenance(props: {
       {provenance.source === "Repository" ? (
         <>
           <span>{repositoryLabel(provenance.repository)}</span>
-          <code title={provenance.commit}>
-            {configurationCommitShort(provenance)}
-          </code>
+          <Tooltip trigger="abbreviation" text={provenance.commit}>
+            <code>{configurationCommitShort(provenance)}</code>
+          </Tooltip>
           <code>{provenance.path}</code>
         </>
       ) : (

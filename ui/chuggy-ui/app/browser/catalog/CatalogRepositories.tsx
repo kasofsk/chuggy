@@ -59,6 +59,7 @@ import {
   useCatalogRowLink,
   useCatalogSearch,
 } from "./CatalogShown.tsx";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 function catalogSummaryName(summary: ConfigurationSummary): string {
   const { provenance } = summary;
@@ -224,11 +225,15 @@ function CatalogRepositoryHead(props: {
   const commit = commitLabel(repository.commit);
   return (
     <header className="catalog-repository-head">
-      <h2 className="catalog-repository-name" title={repository.repository}>
-        {repositoryLabel(repository.repository)}
+      <h2 className="catalog-repository-name">
+        <Tooltip trigger="abbreviation" text={repository.repository}>
+          <span>{repositoryLabel(repository.repository)}</span>
+        </Tooltip>
       </h2>
       <p className="catalog-provenance">
-        <code title={commit.title}>{commit.text}</code>
+        <Tooltip trigger="abbreviation" text={commit.title}>
+          <code>{commit.text}</code>
+        </Tooltip>
         <span>
           {text({ id: "configuration-catalog-imported" })}{" "}
           <Figure figure={instantFigure(repository.importedAt, nowMs)} />

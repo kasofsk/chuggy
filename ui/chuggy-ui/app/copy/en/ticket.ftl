@@ -214,6 +214,7 @@ ticket-approval-work-artifacts = Its { -artifact(form: "plural") }
 ticket-approval-work-runs = { -cycle(case: "upper") } { $cycle } in its { -run(form: "plural") }
 ticket-approval-note-label = Note
 ticket-approval-note-placeholder = Optional with an approve
+ticket-approval-note-unsendable = A note with a control character cannot be sent
 ticket-approval-reject-question = Send this { -work-stage } back?
 ticket-approval-feedback-label = Feedback
 ticket-approval-feedback-placeholder = What has to change
@@ -225,6 +226,7 @@ ticket-approval-withdrawn = Withdrawn without an answer
 ## `TicketStateChip.tsx`: a dependency chip and the dispatch button it sits in.
 
 ticket-dispatch-aria-label = { -dispatch(case: "upper") } { -ticket } #{ $number }
+ticket-dispatch-offline = Offline: { -dispatch } waits until this tab reconnects
 
 ## A ticket's place in its finalization queue: `LandingQueueChip.tsx`,
 ## `app/core/landingQueues.ts`.

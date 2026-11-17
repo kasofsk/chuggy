@@ -22,7 +22,7 @@ import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Panel } from "./ui/Panel.tsx";
 import { Skeleton, type SkeletonShape } from "./ui/Skeleton.tsx";
-import { Tooltip } from "./ui/Tooltip.tsx";
+import { WordDetail } from "./ui/WordDetail.tsx";
 
 /** Retry for a failed read, or nothing when the read carries no retry. */
 function PanelRetry(props: {
@@ -39,8 +39,7 @@ function PanelRetry(props: {
 
 /**
  * A read that did not answer, as one line: what was not read, where the place
- * names it, and the failure's word, whose detail is on hover of the word and
- * never in the line. An absence is the parked tone, since it is an answer.
+ * names it, and the failure's word, its detail after it. An absence is the parked tone, since it is an answer.
  */
 export function ReadFailed(props: {
   readonly subject?: string | undefined;
@@ -57,9 +56,7 @@ export function ReadFailed(props: {
         inline
       >
         {lead.map((part) => `${copyOrDataText(text, part)} · `).join("")}
-        <Tooltip trigger="abbreviation" text={words.detail}>
-          <span>{text(words.word)}</span>
-        </Tooltip>
+        <WordDetail word={text(words.word)} detail={words.detail} />
       </Notice>
       <PanelRetry retry={props.retry} />
     </div>

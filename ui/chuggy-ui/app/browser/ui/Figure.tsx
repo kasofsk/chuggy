@@ -4,8 +4,8 @@
  *
  * Total over `figureKinds`, and over a span that is open or closed. It formats
  * nothing — `core/figures.ts` did that — so the same quantity cannot be rounded
- * two ways on one page, and an absence is drawn as an absence with its reason
- * in a tooltip rather than as a zero.
+ * two ways on one page, and an absence is drawn as an absence, a dash whose
+ * tooltip spells out its reason, rather than as a zero.
  */
 
 import { Fragment } from "react";
@@ -19,7 +19,8 @@ import type { Copy } from "../../core/copy.ts";
 
 import "./Figure.css";
 
-/** What a list price is not, said where a reader hovers the tag that says it. */
+/** What a list price is not, said where a reader hovers or presses the tag
+ * that says it. */
 export const figureBasisTitle: Copy = { id: "figures-basis-title" };
 
 function FigureSpan(props: {

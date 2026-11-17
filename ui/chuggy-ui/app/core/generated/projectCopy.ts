@@ -56,9 +56,6 @@ export interface ProjectCopy {
   readonly "project-table-show-more": Record<never, never>;
   readonly "project-table-clear-filters": Record<never, never>;
   readonly "project-table-more-failed": Record<never, never>;
-  readonly "project-table-blocked-hint": {
-    readonly count: unknown;
-  };
   readonly "project-table-status-matched": {
     readonly matched: unknown;
   };

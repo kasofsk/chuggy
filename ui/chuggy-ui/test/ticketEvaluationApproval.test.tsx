@@ -250,6 +250,39 @@ test("the card asks the step under evaluation, shows its instructions and who an
   });
 });
 
+test("each answer says what it does under the answers, as its button's description, with no hover", async () => {
+  mounted();
+  await settled();
+  const asked = question();
+  const said = (name: string): HTMLElement | null =>
+    document.getElementById(
+      within(asked)
+        .getByRole("button", { name })
+        .getAttribute("aria-describedby") ?? "",
+    );
+  expect(said("Approve")?.textContent).toMatch(/^pass this evaluator/u);
+  expect(said("Reject")?.textContent).toMatch(/^send this ticket's work back/u);
+  expect(asked.contains(said("Approve"))).toBe(true);
+  expect(asked.contains(said("Reject"))).toBe(true);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+test("an approve the note cannot be sent with says why beside it", async () => {
+  mounted();
+  await settled();
+  const asked = question();
+  expect(asked.textContent).not.toContain("control character");
+  typed(within(asked).getByRole("textbox", { name: "Note" }), "a\u0007b");
+  expect(
+    within(asked)
+      .getByRole("button", { name: "Approve" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  expect(asked.textContent).toContain(
+    "A note with a control character cannot be sent",
+  );
+});
+
 test("the card's rejection asks for feedback, and cannot be sent blank", async () => {
   const held = mounted();
   await settled();

@@ -324,7 +324,7 @@ test("a creation refused after its form was drawn again empty is a toast and no 
     [...document.querySelectorAll(".toast-line")].map(
       (line) => line.textContent,
     ),
-  ).toStrictEqual(["Taken"]);
+  ).toStrictEqual(["Taken · TenantTaken"]);
 });
 
 test("a refusal is one short line under the name it is about, and the form stays where it was", async () => {

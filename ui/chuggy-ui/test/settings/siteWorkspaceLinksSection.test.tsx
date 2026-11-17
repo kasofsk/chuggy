@@ -7,7 +7,7 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -127,9 +127,12 @@ test("a used link names the workspace it made, then who used it and when, a subj
   expect(made?.textContent).toBe(
     `Workspacenorthwind-cos-grace${linkWhen(used.usedAtMs)}`,
   );
-  const name = made?.querySelector(".tabular-cut");
-  expect(name?.textContent).toBe("northwind-co");
-  expect(name?.getAttribute("title")).toBe("northwind-co");
+  const name = made?.querySelector<HTMLElement>(".tabular-cut");
+  if (name === null || name === undefined) throw new Error("no name drawn");
+  expect(name.textContent).toBe("northwind-co");
+  expect(name.hasAttribute("title")).toBe(false);
+  fireEvent.focus(name);
+  expect((await screen.findByRole("tooltip")).textContent).toBe("northwind-co");
   expect(made?.querySelector(".identity")?.textContent).toBe("s-grace");
   expect(made?.hasAttribute("data-empty")).toBe(false);
 });

@@ -432,14 +432,18 @@ test("a ready row's badge is in the tone of a done row's and a blocked row's in 
     blocked?.querySelector("svg")?.innerHTML,
   );
 });
-test("an escalated row answers its kind on the phase chip's hover", async () => {
+test("an escalated row says its kind in its meta line, in the document without a hover", async () => {
   await drawTableWith([escalated], []);
-  const trigger = within(rowsDrawn())
-    .getByText("Escalated")
-    .closest('[tabindex="0"]');
-  if (trigger === null) throw new Error("no tooltip trigger around Escalated");
-  fireEvent.focus(trigger);
-  expect((await screen.findByRole("tooltip")).textContent).toBe("Work failed");
+  const kind = within(rowsDrawn()).getByText("Work failed");
+  expect(kind.className).toBe("ticket-list-escalation");
+  expect(kind.closest(".record-row-meta")).not.toBeNull();
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+test("a row escalated with no read of its escalation says its phase once, in its chip", async () => {
+  await drawTableWith([{ ...escalated, escalation: undefined }], []);
+  expect(within(rowsDrawn()).getAllByText("Escalated")).toHaveLength(1);
+  expect(document.querySelector(".ticket-list-escalation")).toBeNull();
 });
 
 test("opening the list issues no executions read, and no sentence names a page budget", async () => {

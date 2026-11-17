@@ -60,10 +60,6 @@ project-table-search-placeholder = Search titles or #number…
 project-table-show-more = Show more
 project-table-clear-filters = Clear filters
 project-table-more-failed = More
-project-table-blocked-hint = Blocked · { $count ->
-    [one] { $count } unfinished { -dependency }
-   *[other] { $count } unfinished { -dependency(form: "plural") }
-}
 project-table-status-matched = { $matched ->
     [one] { $matched } matching { -ticket }
    *[other] { $matched } matching { -ticket(form: "plural") }

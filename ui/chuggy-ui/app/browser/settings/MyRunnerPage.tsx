@@ -108,6 +108,7 @@ import {
 
 import "./MyRunnerPage.css";
 import "./tenantPeople.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 type PersonalRunnerListed = PersonalRunnerResponse["runners"][number];
 
@@ -346,9 +347,9 @@ function myRunnerCells(
   return {
     runner: (
       <>
-        <span className="block font-medium text-ink-1" title={runner.id}>
-          {short}
-        </span>
+        <Tooltip trigger="abbreviation" text={runner.id}>
+          <span className="block font-medium text-ink-1">{short}</span>
+        </Tooltip>
         <span className="block text-sm font-regular text-ink-3">
           {runner.capabilities.map(runnerCapabilityLabel).join(", ")}
         </span>

@@ -229,6 +229,22 @@
       height: var(--height-touch);
     }
 
+    /* A dependency keeps its drawn size and is pressed through a box a
+       finger's height, centred on it, as a checkbox is. */
+    .ticket-dependency {
+      position: relative;
+    }
+
+    .ticket-dependency::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, var(--height-touch));
+      height: var(--height-touch);
+      translate: -50% -50%;
+    }
+
     /* On a phone what a row waits on wraps within the end of its line rather
        than running past the screen's edge. */
     .ticket-list-trail,

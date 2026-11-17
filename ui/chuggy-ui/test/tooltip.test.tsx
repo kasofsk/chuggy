@@ -1,8 +1,8 @@
 /**
  * The tooltip: no tab stop of its own around a control, a focusable trigger
  * only where the caller says the child abbreviates the text, the text bound as
- * the trigger's description, a disabled control's text still reachable from
- * the keyboard, Escape closing it where focus is, and no runtime
+ * the trigger's description, an abbreviation's text opened by a press, a
+ * disabled control's text still reachable from the keyboard, Escape closing it where focus is, and no runtime
  * `<style>` element while it is open — the served policy refuses one.
  */
 
@@ -99,6 +99,32 @@ test("an abbreviation is focusable, and the text appears on focus as its descrip
   expect(trigger.getAttribute("aria-describedby")).toBe(content.id);
   styleless();
   expect(container.querySelector("[style]")).toBeNull();
+});
+
+test("a press on an abbreviation opens its text, as a touch screen with nothing to hover presses it", async () => {
+  render(
+    <Tooltip trigger="abbreviation" text="2026-11-17 09:30">
+      <span>3 minutes ago</span>
+    </Tooltip>,
+  );
+  const trigger = screen.getByText("3 minutes ago");
+  fireEvent.pointerDown(trigger, { pointerType: "touch" });
+  fireEvent.click(trigger);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "2026-11-17 09:30",
+  );
+});
+
+test("a press on an abbreviation inside a link is the link's, and opens no text", () => {
+  render(
+    <a href="#elsewhere">
+      <Tooltip trigger="abbreviation" text="the whole name">
+        <span>the name</span>
+      </Tooltip>
+    </a>,
+  );
+  fireEvent.click(screen.getByText("the name"));
+  expect(screen.queryByRole("tooltip")).toBeNull();
 });
 
 test("a decoration makes nothing focusable, and gives its text to assistive technology beside the child", () => {

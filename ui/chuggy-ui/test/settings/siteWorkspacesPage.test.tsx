@@ -6,7 +6,7 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -68,11 +68,22 @@ test("a workspace is a row, in the order answered: its display name, its admins 
     ["Umbrella", "3 unnamed", "New people"],
     ["Initech", "Existing accounts"],
   ]);
-  expect(
-    screen
-      .getAllByRole("rowheader")
-      .map((header) => header.querySelector("[title]")?.getAttribute("title")),
-  ).toStrictEqual(["globex-co", "acme-co", "umbrella-co", "initech-co"]);
+  expect(document.querySelector("[title]")).toBeNull();
+  const addresses: string[] = [];
+  for (const header of screen.getAllByRole("rowheader")) {
+    const name = header.querySelector<HTMLElement>('[tabindex="0"]');
+    if (name === null) throw new Error("no name drawn");
+    fireEvent.focus(name);
+    addresses.push((await screen.findByRole("tooltip")).textContent);
+    fireEvent.keyDown(name, { key: "Escape" });
+    fireEvent.blur(name);
+  }
+  expect(addresses).toStrictEqual([
+    "globex-co",
+    "acme-co",
+    "umbrella-co",
+    "initech-co",
+  ]);
   styleless();
 });
 
@@ -164,7 +175,9 @@ test("a list loading or failed is the read's own line, with no table and no acti
   expect(screen.queryAllByRole("button")).toStrictEqual([]);
   cleanup();
   await drawWorkspaces({ listing: () => answer({}, 500) });
-  expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
+  expect(readFailedLines()).toStrictEqual([
+    "Not read · Server error · InternalError",
+  ]);
   expect(screen.queryByRole("table")).toBeNull();
   expect(
     screen.queryAllByRole("button").map((button) => button.textContent),
@@ -210,7 +223,9 @@ test("the abilities loading or failed is the page's unready line, with no list r
   expect(screen.queryByText(workspacesWithheld)).toBeNull();
   cleanup();
   const failed = await drawWorkspaces({ abilities: () => answer({}, 500) });
-  expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
+  expect(readFailedLines()).toStrictEqual([
+    "Not read · Server error · InternalError",
+  ]);
   expect(workspaceListReads(failed)).toBe(0);
   expect(
     screen.queryAllByRole("button").map((button) => button.textContent),

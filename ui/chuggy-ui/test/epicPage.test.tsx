@@ -140,7 +140,7 @@ test("a revision made over another's is refused as stale, stays on the page and 
   );
   await saved("Payments");
   expect(screen.getByRole("alert").textContent).toBe(
-    "The epic was changed since you opened it. Reload it and make the change again.",
+    "The epic was changed since you opened it. Reload it and make the change again. · StaleRevision",
   );
   expect(screen.getByRole("button", { name: "Reload the epic" })).toBeTruthy();
   expect(epicNavigated).toStrictEqual([]);

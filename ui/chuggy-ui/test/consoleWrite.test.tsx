@@ -200,7 +200,7 @@ test("a write the server faulted on is sent once", async () => {
   expect(writesSent(page.sent)).toBe(1);
 });
 
-test("a refusal's code is not in its line, and is on hover of it", async () => {
+test("a refusal's code follows its sentence in its line, in the document without a hover", async () => {
   await drawn(consoleQueryClient(), () =>
     answer({ error: { code: "Fault" } }, 500),
   );
@@ -208,12 +208,13 @@ test("a refusal's code is not in its line, and is on hover of it", async () => {
   await settled();
 
   const line = within(sectionOf(sectionTitle)).getByText(refusedSentence);
-  expect(line.closest(".notice")?.textContent).toBe(refusedSentence);
-  fireEvent.focus(line);
-  expect((await screen.findByRole("tooltip")).textContent).toBe("Fault");
+  expect(line.closest(".notice")?.textContent).toBe(
+    `${refusedSentence} · Fault`,
+  );
+  expect(screen.queryByRole("tooltip")).toBeNull();
 });
 
-test("a refusal's code is not in its toast, and is on hover of it", async () => {
+test("a refusal's code follows its sentence in its toast", async () => {
   const held = heldAnswer();
   const page = await drawn(consoleQueryClient(), () => held.answered);
   await saved();
@@ -223,14 +224,10 @@ test("a refusal's code is not in its toast, and is on hover of it", async () => 
   });
   await settled();
 
-  expect(toastLines()).toStrictEqual([refusedSentence]);
-  const toast = document.querySelector(".toast-line span");
-  if (toast === null) throw new Error("the refusal drew no toast");
-  fireEvent.focus(toast);
-  expect((await screen.findByRole("tooltip")).textContent).toBe("Fault");
+  expect(toastLines()).toStrictEqual([`${refusedSentence} · Fault`]);
 });
 
-test("a creation refused for its held draft's failed read keeps that read's code on hover of its toast", async () => {
+test("a creation refused for its held draft's failed read says that read's code in its toast", async () => {
   const client = consoleQueryClient();
   renderCopied(
     <ScreenHarness
@@ -255,13 +252,7 @@ test("a creation refused for its held draft's failed read keeps that read's code
     );
   });
 
-  expect(toastLines()).toStrictEqual([sentence]);
-  const toast = document.querySelector(".toast-line span");
-  if (toast === null) throw new Error("the refusal drew no toast");
-  fireEvent.focus(toast);
-  expect((await screen.findByRole("tooltip")).textContent).toBe(
-    "InternalError",
-  );
+  expect(toastLines()).toStrictEqual([`${sentence} · InternalError`]);
 });
 
 /** A write answering `7` once released, saying `ticket-authoring-edit-saved`

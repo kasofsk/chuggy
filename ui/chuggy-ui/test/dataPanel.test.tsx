@@ -88,7 +88,7 @@ test("an absent read and a failed read say which they are, each in its word unde
   const lines = view.container.querySelectorAll(".read-failed .notice");
   expect([...lines].map((line) => line.textContent)).toStrictEqual([
     "Not found",
-    "Not read · No connection",
+    "Not read · No connection · fetch failed",
   ]);
   expect(lines[0]?.classList.contains("notice-parked")).toBe(true);
   expect(lines[1]?.classList.contains("notice-danger")).toBe(true);
@@ -110,10 +110,10 @@ test("a panel's failed read does not repeat its title", () => {
   expect(screen.getAllByText(/Tickets/u)).toHaveLength(1);
   expect(
     view.container.querySelector(".read-failed .notice")?.textContent,
-  ).toBe("Not read · No connection");
+  ).toBe("Not read · No connection · fetch failed");
 });
 
-test("a failed read's detail is on hover of its word and in no line", async () => {
+test("a failed read's detail follows its word in its line, in the document without a hover", () => {
   renderCopied(
     <DataPanel
       title="Cycles"
@@ -130,12 +130,14 @@ test("a failed read's detail is on hover of its word and in no line", async () =
       {(value: string) => <p>{value}</p>}
     </DataPanel>,
   );
-  expect(document.body.textContent).not.toContain("Throttled");
-  fireEvent.focus(screen.getByText("Refused"));
-  expect((await screen.findByRole("tooltip")).textContent).toBe("Throttled");
+  expect(document.querySelector(".read-failed .notice")?.textContent).toBe(
+    "Not read · Refused · Throttled",
+  );
+  expect(screen.getByText(/Throttled/u).className).toBe("word-detail");
+  expect(screen.queryByRole("tooltip")).toBeNull();
 });
 
-test("no failed read's drawn line carries a code, a reason or the API", () => {
+test("no failed read's drawn line names the API, and a code or reason it carries is in it", () => {
   const failures: readonly ApiFailure[] = [
     { outcome: "Unauthenticated" },
     { outcome: "Absent" },
@@ -152,12 +154,15 @@ test("no failed read's drawn line carries a code, a reason or the API", () => {
     );
     const drawn = view.container.textContent;
     expect(drawn, failure.outcome).toMatch(/^Tickets · /u);
-    for (const internal of [
-      "API",
-      "code" in failure ? failure.code : "API",
-      "reason" in failure ? failure.reason : "API",
-    ])
-      expect(drawn, failure.outcome).not.toContain(internal);
+    expect(drawn, failure.outcome).not.toContain("API");
+    const detail =
+      "code" in failure
+        ? failure.code
+        : "reason" in failure
+          ? failure.reason
+          : undefined;
+    if (typeof detail === "string")
+      expect(drawn.endsWith(` · ${detail}`), failure.outcome).toBe(true);
     cleanup();
   }
 });
@@ -174,7 +179,7 @@ test("a read with no noun of its own says only that it was not read, and why", (
     </DataSection>,
   );
   expect(document.querySelector(".read-failed .notice")?.textContent).toBe(
-    "Not read · Server error",
+    "Not read · Server error · InternalError",
   );
 });
 

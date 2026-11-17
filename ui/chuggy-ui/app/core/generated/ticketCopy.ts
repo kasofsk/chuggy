@@ -197,6 +197,7 @@ export interface TicketCopy {
   };
   readonly "ticket-approval-note-label": Record<never, never>;
   readonly "ticket-approval-note-placeholder": Record<never, never>;
+  readonly "ticket-approval-note-unsendable": Record<never, never>;
   readonly "ticket-approval-reject-question": Record<never, never>;
   readonly "ticket-approval-feedback-label": Record<never, never>;
   readonly "ticket-approval-feedback-placeholder": Record<never, never>;
@@ -207,6 +208,7 @@ export interface TicketCopy {
   readonly "ticket-dispatch-aria-label": {
     readonly number: unknown;
   };
+  readonly "ticket-dispatch-offline": Record<never, never>;
   readonly "ticket-queue-place": {
     readonly position: unknown;
     readonly total: unknown;

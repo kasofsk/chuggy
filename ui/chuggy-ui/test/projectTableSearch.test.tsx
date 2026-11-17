@@ -369,8 +369,9 @@ test("a further page that could not be read says so in one line, keeping its row
   await press("Show more");
   await press("Show more");
   expect(titlesDrawn()).toStrictEqual(["Ticket 150", "Ticket 120"]);
-  expect(readFailedLines()).toStrictEqual(["More · Not read · Server error"]);
-  expect(document.body.textContent).not.toContain("InternalError");
+  expect(readFailedLines()).toStrictEqual([
+    "More · Not read · Server error · InternalError",
+  ]);
   expect(showMores()).toBe(1);
 });
 

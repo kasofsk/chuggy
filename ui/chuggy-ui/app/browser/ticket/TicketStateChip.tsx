@@ -37,7 +37,6 @@ function standingWord(standing: TicketListStanding, text: CopyText): string {
 export interface TicketStateDispatch {
   readonly busy: boolean;
   readonly offline: boolean;
-  readonly effect: string;
   readonly press: () => void;
 }
 
@@ -63,8 +62,6 @@ function TicketStateChipDrawn(props: {
 export function TicketStateChip(props: {
   readonly ticket: number;
   readonly standing: TicketListStanding;
-  /** What holds the ticket in this state, on hover. */
-  readonly hint: string | undefined;
   readonly dispatch?: TicketStateDispatch | undefined;
   readonly look?: TicketStateChipLook | undefined;
 }): ReactNode {
@@ -75,29 +72,25 @@ export function TicketStateChip(props: {
   );
   if (dispatch !== undefined)
     return (
-      <Tooltip trigger="control" text={dispatch.effect}>
-        <button
-          type="button"
-          className="ticket-list-standing"
-          data-standing={standing}
-          aria-label={text({
-            id: "ticket-dispatch-aria-label",
-            args: { number: String(props.ticket) },
-          })}
-          aria-busy={dispatch.busy || undefined}
-          disabled={dispatch.busy || dispatch.offline}
-          onClick={dispatch.press}
-        >
-          {label}
-        </button>
-      </Tooltip>
+      <button
+        type="button"
+        className="ticket-list-standing"
+        data-standing={standing}
+        aria-label={text({
+          id: "ticket-dispatch-aria-label",
+          args: { number: String(props.ticket) },
+        })}
+        aria-busy={dispatch.busy || undefined}
+        disabled={dispatch.busy || dispatch.offline}
+        onClick={dispatch.press}
+      >
+        {label}
+      </button>
     );
   return (
-    <Tooltip trigger="abbreviation" text={props.hint}>
-      <span className="ticket-list-standing" data-standing={standing}>
-        {label}
-      </span>
-    </Tooltip>
+    <span className="ticket-list-standing" data-standing={standing}>
+      {label}
+    </span>
   );
 }
 
@@ -111,20 +104,22 @@ export function dependencyStandingOf(
   return phase === "Pending" ? (pending ?? "Blocked") : phase;
 }
 
-/** A dependency as its number in the colours of the state it stands in. */
+/** A dependency as its number in the colours of the state it stands in, the
+ * state's word on hover or press. */
 export function TicketDependencyChip(props: {
   readonly ticket: number;
   readonly standing: TicketListStanding;
 }): ReactNode {
   const text = useCopyText();
   return (
-    <span
-      className="ticket-list-state ticket-dependency"
-      data-tone={standingTone(props.standing)}
-      data-standing={props.standing}
-      title={standingWord(props.standing, text)}
-    >
-      {`#${String(props.ticket)}`}
-    </span>
+    <Tooltip trigger="abbreviation" text={standingWord(props.standing, text)}>
+      <span
+        className="ticket-list-state ticket-dependency"
+        data-tone={standingTone(props.standing)}
+        data-standing={props.standing}
+      >
+        {`#${String(props.ticket)}`}
+      </span>
+    </Tooltip>
   );
 }

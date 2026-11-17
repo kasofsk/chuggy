@@ -145,7 +145,7 @@ test("a refusal about no one field is drawn above the actions, and marks no fiel
   );
   await savePressed();
   const alert = screen.getByRole("alert");
-  expect(alert.textContent).toBe("The epic is too large.");
+  expect(alert.textContent).toBe("The epic is too large. · LargeContent");
   const save = screen.getByRole("button", { name: "Save" });
   expect(
     alert.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING,

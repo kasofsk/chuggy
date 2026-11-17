@@ -97,9 +97,7 @@ function stateLabelDrawn(word: string): HTMLElement {
 
 test("every state's row chip is the small label with a mark, and only a moving state's mark spins", () => {
   for (const standing of standings) {
-    renderCopied(
-      <TicketStateChip ticket={7} standing={standing} hint={undefined} />,
-    );
+    renderCopied(<TicketStateChip ticket={7} standing={standing} />);
     const labels = document.querySelectorAll<HTMLElement>(".ticket-state");
     expect(labels, standing).toHaveLength(1);
     for (const label of labels) {
@@ -121,8 +119,8 @@ test("every state's row chip is the small label with a mark, and only a moving s
 test("Ready and Done differ: Ready tinted with its own mark, Done filled with a check", () => {
   renderCopied(
     <>
-      <TicketStateChip ticket={7} standing="Ready" hint={undefined} />
-      <TicketStateChip ticket={8} standing="Done" hint={undefined} />
+      <TicketStateChip ticket={7} standing="Ready" />
+      <TicketStateChip ticket={8} standing="Done" />
     </>,
   );
   const ready = stateLabelDrawn("Ready");
@@ -140,8 +138,8 @@ test("a ready chip that dispatches is the button around the label, which presses
     <TicketStateChip
       ticket={7}
       standing="Ready"
-      hint={undefined}
-      dispatch={{ busy: false, offline: false, effect: "Starts work", press }}
+
+      dispatch={{ busy: false, offline: false, press }}
     />,
   );
   const button = screen.getByRole("button", { name: "Dispatch ticket #7" });
@@ -156,8 +154,8 @@ test("a ready chip cannot be pressed while its dispatch is going, which it says,
     <TicketStateChip
       ticket={7}
       standing="Ready"
-      hint={undefined}
-      dispatch={{ busy: true, offline: false, effect: "Starts work", press }}
+
+      dispatch={{ busy: true, offline: false, press }}
     />,
   );
   const button = screen.getByRole<HTMLButtonElement>("button", {
@@ -169,8 +167,8 @@ test("a ready chip cannot be pressed while its dispatch is going, which it says,
     <TicketStateChip
       ticket={7}
       standing="Ready"
-      hint={undefined}
-      dispatch={{ busy: false, offline: true, effect: "Starts work", press }}
+
+      dispatch={{ busy: false, offline: true, press }}
     />,
   );
   expect(button.disabled).toBe(true);
@@ -184,11 +182,10 @@ test("a ticket's number is named as it is written, never grouped as a count is",
     <TicketStateChip
       ticket={1345}
       standing="Ready"
-      hint={undefined}
+
       dispatch={{
         busy: false,
         offline: false,
-        effect: "Starts work",
         press: vi.fn(),
       }}
     />,
@@ -201,9 +198,9 @@ test("a ticket's number is named as it is written, never grouped as a count is",
 test("every small state label's word is sized by every state's word, whatever its own, and the page's by its own", () => {
   renderCopied(
     <>
-      <TicketStateChip ticket={7} standing="Done" hint={undefined} />
-      <TicketStateChip ticket={8} standing="Finalization" hint={undefined} />
-      <TicketStateChip ticket={9} standing="Ready" hint={undefined} />
+      <TicketStateChip ticket={7} standing="Done" />
+      <TicketStateChip ticket={8} standing="Finalization" />
+      <TicketStateChip ticket={9} standing="Ready" />
       <TicketStateLabel standing="Done" size="page" />
     </>,
   );
