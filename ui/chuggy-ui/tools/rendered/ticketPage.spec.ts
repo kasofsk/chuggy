@@ -13,9 +13,10 @@
  * whose branch, model and conflicting path are each longer than a phone is
  * wide: at the desk with the chat pane open, at the desk with the pane widened
  * until the page is narrower than the two-column breakpoint, and on a phone.
- * None scrolls the page or its column sideways and none cuts content off, and
+ * None scrolls the page or its column sideways and none cuts content off,
  * where the pane leaves the page narrow the overview lays one column while
- * the screen is still a desk's, which is the page asking its own width.
+ * the screen is still a desk's, which is the page asking its own width, and a
+ * step's evaluator list sits below its box rather than over it.
  */
 
 import { ticketActionReachResponseSchema } from "../../../../src/contract/actionReach.ts";
@@ -242,6 +243,13 @@ test("a ticket whose Runs tab carries its count has more tabs than a phone holds
   }
 });
 
+/** Ticket 21's program with its second stage two evaluators wide, so its
+ * step lists them under its box. */
+const ticketPageRanProgram = [
+  ticket21Program[0],
+  { key: 2, evaluators: [{ key: 1 }, { key: 2 }] },
+];
+
 /** Ticket 21 of the ledger fixture, parked after three cycles, its branch,
  * its model and the path its landing conflicted on each one unbroken string
  * longer than a phone is wide. */
@@ -264,7 +272,7 @@ const ticketPageRan = {
     finalization: { kind: "PullRequest", target: "refs/heads/main" },
   },
   configurationRevision: "r1",
-  program: ticket21Program,
+  program: ticketPageRanProgram,
   escalation: { kind: "EvaluationFailureEscalated", resumeAt: "ResumeRework" },
   runTotals: {
     turns: 212,
@@ -409,6 +417,23 @@ async function ticketPageRanFits(page: Page): Promise<void> {
   });
 }
 
+/** A step's evaluator list is drawn, and below its step's box rather than
+ * over it. */
+async function ticketPageRanStepsApart(page: Page): Promise<void> {
+  const list = page.locator(".ticket-steps-evaluators");
+  await expect(list).toHaveCount(1);
+  const box = list.locator("xpath=preceding-sibling::*[1]");
+  await expect(box).toHaveClass(/ticket-steps-box/u);
+  const [listTop, boxBottom] = await Promise.all([
+    list.evaluate((drawn) => drawn.getBoundingClientRect().top),
+    box.evaluate((drawn) => drawn.getBoundingClientRect().bottom),
+  ]);
+  expect(
+    listTop,
+    "the evaluator list starts below its box",
+  ).toBeGreaterThanOrEqual(boxBottom);
+}
+
 /** The chat pane widened by dragging its edge, again where a drag lands
  * before the panels have laid out, until the page's column is
  * narrower than the two-column breakpoint, 60em in tokens.css, which a
@@ -488,6 +513,7 @@ for (const screen of ticketPageRanScreens)
               { message: "the overview's columns" },
             )
             .toBe(screen.viewport === "desk" && !screen.narrowed ? 2 : 1);
+          await ticketPageRanStepsApart(page);
         }
         await ticketPageRanFits(page);
         renderedNoViolations(rendered, [zodProbeViolation]);

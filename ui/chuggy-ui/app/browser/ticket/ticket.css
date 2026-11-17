@@ -1283,8 +1283,8 @@
     text-decoration: none;
   }
 
-  /* A cell's two rows are the grid's, so a phase's heading that wraps lowers
-     every box in the row with it. */
+  /* A cell's two rows, its phase's heading and its body, are the grid's, so
+     a heading that wraps lowers every box in the row with it. */
   .ticket-steps-grid {
     display: grid;
     grid-auto-flow: column;
@@ -1335,6 +1335,13 @@
 
   .ticket-steps-column + .ticket-steps-column .ticket-steps-cell[data-first] {
     border-left: var(--hairline) solid var(--edge-strong);
+  }
+
+  .ticket-steps-body {
+    display: grid;
+    align-content: start;
+    gap: var(--space-2);
+    min-width: 0;
   }
 
   .ticket-steps-phase {
