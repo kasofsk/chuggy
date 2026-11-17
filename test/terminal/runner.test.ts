@@ -51,12 +51,13 @@ import {
   mcp,
   mint,
   next,
-  poolFile,
+  personalFile,
   ran,
   redemption,
   rerun,
   runner,
   runnerAlone,
+  serve,
   stood,
   stoodSearched,
   unasked,
@@ -155,43 +156,54 @@ test("on a fresh machine signed in, the bare command offers chuggy's MCP server 
   assert.ok(on.home.held(on.installation.site) === on.installation.renewal());
 });
 
-test("on a machine `mcp` has put the runner package on, the bare command offers a runner having changed nothing, and the command its rule names registers, checks and starts one, with the token one word of one command, and ends on a checklist that says the runner live", async () => {
-  const on = await stood();
+/** What a run that makes a fresh machine the person's runner says, up to the site seeing it live. */
+function madeRunner(on: Stood): readonly string[] {
   const { found, did } = lines(on);
-  const offered = await ran(on, []);
-  assert.equal(offered.code, 0, offered.stdout);
-  assert.equal(offered.lines.at(-1), "next: stop");
-  const rule = offered.lines.at(-2) ?? "";
-  const yes = " only once the person says yes to a runner on this machine.";
-  assert.ok(rule.startsWith("rule: Run ") && rule.endsWith(yes), rule);
-  assert.deepEqual(acts(on), ["services", "docker"]);
-  assert.deepEqual(on.installation.writes, []);
-  assert.ok(!existsSync(on.machine.settings));
-
-  cleared(on);
-  const argv = await commanded(rule.slice("rule: Run ".length, -yes.length));
-  assert.deepEqual(argv, runnerAlone);
-  const done = await ran(on, argv);
-  assert.equal(done.code, 0, done.stdout);
-  assert.deepEqual(done.lines, [
+  return [
     `site: ${on.installation.site}, signed in`,
     found.engine,
     found.login,
     found.package,
     did.settings,
-    did.pool,
+    did.personal,
     found.check,
     did.unit,
     did.linger,
     did.started,
+    did.given,
+    did.allowed,
     found.live,
-    next,
-  ]);
+  ];
+}
+
+test("on a machine `mcp` has put the runner package on, the bare command offers a runner having changed nothing, and the command its rule names registers, checks and starts one, with the token one word of one command, and ends on a checklist that says the runner live", async () => {
+  const on = await stood();
+  const offered = await ran(on, []);
+  assert.equal(offered.code, 0, offered.stdout);
+  assert.equal(offered.lines.at(-1), "next: stop");
+  const rule = offered.lines.at(-3) ?? "";
+  assert.ok(
+    rule.startsWith("rule: Run ") && rule.endsWith(unlessObjected),
+    rule,
+  );
+  assert.deepEqual(acts(on), ["services", "docker"]);
+  assert.deepEqual(on.installation.writes, []);
+  assert.ok(!existsSync(on.machine.settings));
+
+  cleared(on);
+  const argv = await commanded(
+    rule.slice("rule: Run ".length, -unlessObjected.length),
+  );
+  assert.deepEqual(argv, runnerAlone);
+  const done = await ran(on, argv);
+  assert.equal(done.code, 0, done.stdout);
+  assert.deepEqual(done.lines, [...madeRunner(on), next]);
   assert.deepEqual(acts(on), first);
-  assert.deepEqual(on.installation.writes, [mint, redemption]);
+  assert.deepEqual(on.installation.writes, [mint, redemption, ...serve]);
   const [token = ""] = on.installation.world.secrets;
   assert.deepEqual(words(on, "chuggy-linux")[0], [
     "register",
+    "--personal",
     "--api",
     on.installation.site,
     `--token=${token}`,
@@ -212,7 +224,7 @@ test("on a machine `mcp` has put the runner package on, the bare command offers 
 
   const after = await ran(on, await commanded(next.slice("next: ".length)));
   assert.ok(after.lines.includes("step: runner      done     live"));
-  assert.deepEqual(on.installation.writes, [mint, redemption]);
+  assert.deepEqual(on.installation.writes, [mint, redemption, ...serve]);
 });
 
 test("a second run on a machine that has everything finds each thing as it is, runs nothing but its probes and an install-service that writes its unit as it was, and sends the site no write", async () => {
@@ -227,11 +239,13 @@ test("a second run on a machine that has everything finds each thing as it is, r
     found.settings,
     found.login,
     found.package,
-    found.pool,
+    found.personal,
     found.check,
     found.unit,
     found.linger,
     found.running,
+    found.given,
+    found.allowed,
     found.live,
     next,
   ]);
@@ -241,11 +255,17 @@ test("a second run on a machine that has everything finds each thing as it is, r
   unasked(on);
 });
 
-/** How the bare command asks of the chat host on an engine with room for three chats beside a run, and the rule that names the answer it does not recommend. */
+/** How the bare command says the chat host it puts here beside the runner on an engine with room for three chats beside a run, and the rule that names the answer it does not take by default. */
 const chatAsked =
-  / 4 GiB a run\. I can also make this machine your chat host, a second background service, which holds 6 GiB whenever it runs: 2 GiB a chat, for up to 3 at once\. .* so I recommend it\. /u;
+  /^tell: chuggy needs two things running on a machine of yours\. .* 4 GiB a run\. Your chat host is a second background service, which holds 6 GiB whenever it runs: 2 GiB a chat, for up to 3 at once\. /u;
 const chatRuleNo =
-  "rule: Run it with --chat-host no in place of --chat-host yes where the person wants no chat host, or only uses chuggy through their agent.";
+  "rule: Run it with --chat-host no in place of --chat-host yes only where the person says they want no chat host. Before running it with --chat-host yes, tell the person: Downloading the chat image. This takes a few minutes the first time.";
+/** The end of the rule an offer of a runner names its command under. */
+const unlessObjected =
+  " only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.";
+
+/** Every write a run that makes this machine the person's runner and their chat host sends. */
+const madeBoth = [mint, redemption, ...serve, chatMint, chatRedemption];
 
 /** The chat host's size the runner's settings on the machine name. */
 function settingsChat(on: Stood): unknown {
@@ -260,36 +280,28 @@ function registrations(on: Stood): readonly (readonly string[])[] {
   return words(on, "chuggy-linux").filter((argv) => argv[0] === "register");
 }
 
-test("where the person's chats run on a chat host and they have none, the bare command asks of it beside the runner, recommending three chats in 6 GiB on an engine with 11.7 GiB, and the command its rule names makes this machine the project's runner and then their chat host, sized in the one settings file, on one package and one Claude login, and ends on a checklist that says the runner's step done", async () => {
+test("where the person's chats run on a chat host and they have none, the bare command offers it beside the runner by default, three chats in 6 GiB on an engine with 11.7 GiB, and the command its rule names makes this machine the project's runner and then their chat host, sized in the one settings file, on one package and one Claude login, and ends on a checklist that says the runner's step done", async () => {
   const on = await stood("Pool");
   const { found, did } = lines(on);
   const offered = await ran(on, []);
   assert.equal(offered.code, 0, offered.stdout);
-  assert.match(offered.lines.at(-4) ?? "", chatAsked);
-  assert.equal(offered.lines.at(-2), chatRuleNo);
-  const rule = offered.lines.at(-3) ?? "";
-  const yes = " only once the person says yes to a runner on this machine.";
-  assert.ok(rule.startsWith("rule: Run ") && rule.endsWith(yes), rule);
+  assert.match(offered.lines.at(-5) ?? "", chatAsked);
+  assert.equal(offered.lines.at(-3), chatRuleNo);
+  const rule = offered.lines.at(-4) ?? "";
+  assert.ok(
+    rule.startsWith("rule: Run ") && rule.endsWith(unlessObjected),
+    rule,
+  );
   assert.deepEqual(on.installation.writes, []);
 
   cleared(on);
   const done = await ran(
     on,
-    await commanded(rule.slice("rule: Run ".length, -yes.length)),
+    await commanded(rule.slice("rule: Run ".length, -unlessObjected.length)),
   );
   assert.equal(done.code, 0, done.stdout);
   assert.deepEqual(done.lines, [
-    `site: ${on.installation.site}, signed in`,
-    found.engine,
-    found.login,
-    found.package,
-    did.settings,
-    did.pool,
-    found.check,
-    did.unit,
-    did.linger,
-    did.started,
-    found.live,
+    ...madeRunner(on),
     did.chatSized,
     did.chat,
     found.chatCheck,
@@ -302,12 +314,7 @@ test("where the person's chats run on a chat host and they have none, the bare c
     sessionsMax: 3,
     sessionMemoryMib: 2048,
   });
-  assert.deepEqual(on.installation.writes, [
-    mint,
-    redemption,
-    chatMint,
-    chatRedemption,
-  ]);
+  assert.deepEqual(on.installation.writes, madeBoth);
   const [, token = ""] = on.installation.world.secrets.filter((secret) =>
     secret.includes("registration"),
   );
@@ -367,28 +374,26 @@ test("a second run where the project's runner and the person's chat host are bot
   assert.deepEqual(on.installation.writes, []);
 });
 
-test("a workspace that does not let the person register a chat host stops the run once the project's runner is live, says an admin, who may be the person, turns on Personal runners for them with Edit on their row of the People page, and the run its rule names finishes the job", async () => {
+test("a workspace that does not let the person register a runner of their own stops the run before anything is minted, says an admin, who may be the person, turns on Personal runners for them with Edit on their row of the People page, and the run its rule names finishes the job", async () => {
   const on = await stood("Pool");
   on.installation.world.withheld.add("acme");
   const withheld = await ran(on);
   assert.equal(withheld.code, 0, withheld.stdout);
-  assert.deepEqual(withheld.lines.slice(-6), [
-    lines(on).found.live,
-    lines(on).did.chatSized,
-    "found: the workspace does not let you register a chat host",
-    `tell: The runner for the work on acme/widgets is set up and live. Your chats there run only on your chat host, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${on.installation.site}/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.`,
+  assert.deepEqual(withheld.lines.slice(-4), [
+    "found: the workspace does not let you register a runner of your own",
+    `tell: Your work in acme/widgets runs on a runner of your own, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${on.installation.site}/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.`,
     `${again}once the person says Personal runners is on for them in the workspace.`,
     "next: stop",
   ]);
-  assert.deepEqual(on.installation.writes, [mint, redemption]);
-  assert.equal(registrations(on).length, 1);
+  assert.deepEqual(on.installation.writes, []);
+  assert.equal(registrations(on).length, 0);
 
   on.installation.world.withheld.delete("acme");
   cleared(on);
   const done = await ran(on);
   assert.equal(done.code, 0, done.stdout);
   assert.deepEqual(done.lines.slice(-2), [lines(on).found.chatLive, next]);
-  assert.deepEqual(on.installation.writes, [chatMint, chatRedemption]);
+  assert.deepEqual(on.installation.writes, madeBoth);
 });
 
 test("a chat host of the person's live on another machine is left serving their chats, and this machine is registered as nothing but the project's runner", async () => {
@@ -402,7 +407,7 @@ test("a chat host of the person's live on another machine is left serving their 
     found.chatElsewhere,
     next,
   ]);
-  assert.deepEqual(on.installation.writes, [mint, redemption]);
+  assert.deepEqual(on.installation.writes, [mint, redemption, ...serve]);
   assert.equal(registrations(on).length, 1);
   assert.ok(!existsSync(join(on.machine.pools, chatFile)));
   assert.deepEqual(on.installation.world.chat.get("acme"), {
@@ -500,11 +505,13 @@ test("a machine that was set up and has since come to have no runner package run
         found.settings,
         found.login,
         found.package,
-        found.pool,
+        found.personal,
         found.check,
         found.unit,
         found.linger,
         found.running,
+        found.given,
+        found.allowed,
         found.live,
         did.chatSized,
         did.chat,
@@ -599,9 +606,9 @@ const losses: readonly Loss[] = [
   {
     lost: "its registration",
     lose: (on) => {
-      rmSync(join(on.machine.pools, poolFile));
+      rmSync(join(on.machine.pools, personalFile));
     },
-    did: (did) => [did.pool, did.restarted],
+    did: (did) => [did.personal, did.restarted],
     acts: [...rerun.slice(0, 2), "register", ...rerun.slice(2), ...restarted],
     sent: [mint, redemption],
   },
@@ -686,7 +693,7 @@ test("where the person keeps their configuration in a directory of their own cho
   assert.equal(done.lines.at(-1), next);
   for (const made of [
     join("chuggy-linux", "runner.json"),
-    join("chuggy", "pools", poolFile),
+    join("chuggy", "pools", personalFile),
     join("systemd", "user", unit),
   ])
     assert.ok(existsSync(join(config, made)), made);

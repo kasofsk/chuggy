@@ -20,8 +20,10 @@ export interface SetupRunnerCopy {
     readonly command: unknown;
     readonly when: unknown;
   };
+  readonly "setup-runner-rule-elsewhere": {
+    readonly line: unknown;
+  };
   readonly "setup-runner-rule-chat-host": {
-    readonly given: unknown;
     readonly flag: unknown;
     readonly no: unknown;
     readonly yes: unknown;
@@ -89,18 +91,26 @@ export interface SetupRunnerCopy {
     readonly credential: unknown;
     readonly path: unknown;
   };
-  readonly "setup-runner-note-pool": {
-    readonly project: unknown;
+  readonly "setup-runner-note-personal": {
     readonly path: unknown;
   };
-  readonly "setup-runner-note-pool-gone": {
+  readonly "setup-runner-note-personal-gone": {
     readonly path: unknown;
-    readonly pool: unknown;
+  };
+  readonly "setup-runner-note-personal-registered": {
+    readonly path: unknown;
+  };
+  readonly "setup-runner-note-given": {
     readonly project: unknown;
   };
-  readonly "setup-runner-note-registered": {
+  readonly "setup-runner-note-given-now": {
     readonly project: unknown;
-    readonly path: unknown;
+  };
+  readonly "setup-runner-note-allowed": {
+    readonly project: unknown;
+  };
+  readonly "setup-runner-note-allowed-now": {
+    readonly project: unknown;
   };
   readonly "setup-runner-note-checked": Record<never, never>;
   readonly "setup-runner-note-checked-warned": {
@@ -245,8 +255,8 @@ export interface SetupRunnerCopy {
   };
   readonly "setup-runner-read-work": Record<never, never>;
   readonly "setup-runner-read-threads": Record<never, never>;
-  readonly "setup-runner-read-placement": Record<never, never>;
-  readonly "setup-runner-read-pools": Record<never, never>;
+  readonly "setup-runner-read-fallback": Record<never, never>;
+  readonly "setup-runner-read-personal": Record<never, never>;
   readonly "setup-runner-read-permit": Record<never, never>;
   readonly "setup-runner-read-chat": Record<never, never>;
   readonly "setup-runner-unread-refused-found": {
@@ -455,17 +465,21 @@ export interface SetupRunnerCopy {
   readonly "setup-runner-lasting-hostname-tell": Record<never, never>;
   readonly "setup-runner-lasting-hostname-when": Record<never, never>;
   readonly "setup-runner-mint-found": {
+    readonly outcome: unknown;
+  };
+  readonly "setup-runner-mint-absent-tell": Record<never, never>;
+  readonly "setup-runner-mint-absent-when": Record<never, never>;
+  readonly "setup-runner-mint-conflict-tell": {
+    readonly mins: unknown;
+  };
+  readonly "setup-runner-mint-tell": Record<never, never>;
+  readonly "setup-runner-serve-refused-found": {
+    readonly write: unknown;
     readonly project: unknown;
     readonly outcome: unknown;
   };
-  readonly "setup-runner-mint-absent-tell": {
-    readonly project: unknown;
-  };
-  readonly "setup-runner-mint-conflict-tell": {
-    readonly project: unknown;
-    readonly mins: unknown;
-  };
-  readonly "setup-runner-mint-tell": {
+  readonly "setup-runner-serve-refused-tell": {
+    readonly write: unknown;
     readonly project: unknown;
   };
   readonly "setup-runner-chat-mint-found": {
@@ -559,7 +573,6 @@ export interface SetupRunnerCopy {
   readonly "setup-runner-not-live-unregistered-found": {
     readonly running: unknown;
     readonly secs: unknown;
-    readonly project: unknown;
   };
   readonly "setup-runner-not-live-tell": Record<never, never>;
   readonly "setup-runner-permit-found": Record<never, never>;
@@ -574,6 +587,11 @@ export interface SetupRunnerCopy {
     readonly people: unknown;
   };
   readonly "setup-runner-permit-workspace-tell": {
+    readonly people: unknown;
+  };
+  readonly "setup-runner-withheld-found": Record<never, never>;
+  readonly "setup-runner-withheld-tell": {
+    readonly project: unknown;
     readonly people: unknown;
   };
   readonly "setup-runner-permit-when": Record<never, never>;

@@ -589,7 +589,7 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
         machine.ranWaitMs.push(waitMs);
         return Promise.resolve(machineRead(machine, command));
       },
-      run: (command) =>
+      run: (command, waitMs) =>
         Promise.resolve(
           boxRan(
             machine.box,
@@ -599,6 +599,7 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
               platform: machine.platform,
             },
             command,
+            waitMs,
           ),
         ),
     },

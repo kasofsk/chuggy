@@ -189,7 +189,7 @@ test("a write the site refuses is said as refused, and the step stays to do", as
   expect(runnerStep(said)).toBe("step: runner      todo");
 });
 
-test("a person with no personal runner is told to register one, and serve is not offered", async () => {
+test("a person with no personal runner is offered one on this machine, and serve is not offered", async () => {
   const { site } = held({
     given: false,
     fallback: undefined,
@@ -198,6 +198,6 @@ test("a person with no personal runner is told to register one, and serve is not
   site.personal.clear();
   const machine = await machineSignedIn(site);
   const said = lines(await machine.command(flags)).join("\n");
-  expect(said).toContain("Register runner");
+  expect(said).toContain("I'll install it on this machine, as yours alone.");
   expect(said).not.toContain(" serve ");
 });

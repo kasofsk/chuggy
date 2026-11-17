@@ -43,6 +43,7 @@ import {
   redemption,
   rerun,
   runner,
+  serve,
   stood,
   stoodAll,
   stoodSearched,
@@ -278,9 +279,9 @@ test("a registration that fails saying its own arguments back, whole and in halv
   cleared(on);
   const done = await ran(on);
   assert.equal(done.code, 0, done.stdout);
-  assert.deepEqual(on.installation.writes, [mint, redemption]);
+  assert.deepEqual(on.installation.writes, [mint, redemption, ...serve]);
   assert.equal(on.installation.world.mints.length, 2);
-  assert.deepEqual(on.installation.world.projects[0]?.tokens, [lost]);
+  assert.deepEqual([...on.installation.world.personalTokens.keys()], [lost]);
   assert.equal(done.lines.at(-1), next);
 });
 
@@ -327,7 +328,7 @@ test("where keeping services running after a logout wants a password, none is ta
   assert.equal(done.code, 0, done.stdout);
   assert.ok(done.lines.includes(lines(on).found.linger), done.stdout);
   assert.deepEqual(done.lines.slice(-2), [lines(on).found.live, next]);
-  assert.deepEqual(on.installation.writes, []);
+  assert.deepEqual(on.installation.writes, serve);
 });
 
 test("a runner that is started and that the site does not see live within the wait is a failure that says how long was waited, having asked the service manager once more whether it still runs, and the run after it is seen ends on the checklist", async () => {
@@ -337,7 +338,7 @@ test("a runner that is started and that the site does not see live within the wa
   assert.equal(waited.code, 1, waited.stdout);
   assert.ok(
     waited.lines.includes(
-      "found: the runner's service is running as process 4242, and after 1 s the site still sees no runner of acme/widgets live",
+      "found: the runner's service is running as process 4242, and after 1 s the site still does not see your runner live, taking your work in acme/widgets",
     ),
     waited.stdout,
   );
@@ -348,8 +349,10 @@ test("a runner that is started and that the site does not see live within the wa
   on.machine.tell({ polls: true });
   cleared(on);
   const done = await ran(on);
-  assert.deepEqual(done.lines.slice(-3), [
+  assert.deepEqual(done.lines.slice(-5), [
     lines(on).found.running,
+    lines(on).found.given,
+    lines(on).found.allowed,
     lines(on).found.live,
     next,
   ]);
@@ -388,8 +391,8 @@ test("on a Mac runner takes the Mac's package: with only Linux's installed it st
   const bare = await ran(on, [], mac);
   assert.equal(bare.code, 0, bare.stdout);
   assert.match(
-    bare.lines.at(-3) ?? "",
-    /^tell: .* The runner package, chuggy-darwin, runs it, /u,
+    bare.lines.at(-4) ?? "",
+    /^tell: .* The runner package, chuggy-darwin, runs it /u,
   );
   assert.deepEqual(on.installation.writes, []);
 });

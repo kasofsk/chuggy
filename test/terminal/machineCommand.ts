@@ -188,16 +188,20 @@ function unitOf(file: string): string {
 const units = join(config, "systemd", "user");
 const requestMsMax = 10_000;
 
-/** The file the package keeps a registration's credentials in: a pool's named for its project and pool, the person's chat host's for the workspace and the member. */
+/** The file the package keeps a registration's credentials in: a pool's named for its project and pool, the person's own runner's for the workspace and the member, and their chat host's likewise with `.chat.host`. */
 function fileOf(held: {
+  readonly kind?: string;
   readonly tenant: string;
   readonly project?: string;
   readonly owner?: string;
 }): string {
+  const owned = `${machineNamePart(held.tenant)}.${machineNamePart(held.owner ?? "")}`;
   const name =
     held.owner === undefined
       ? `${machineNamePart(held.tenant)}.${machineNamePart(held.project ?? "")}.${knobs.pool}.json`
-      : `${machineNamePart(held.tenant)}.${machineNamePart(held.owner)}.chat.host.json`;
+      : held.kind === "Personal"
+        ? `${owned}.json`
+        : `${owned}.chat.host.json`;
   return join(config, "chuggy", "pools", name);
 }
 
@@ -216,17 +220,23 @@ function takesChat(): boolean {
   return Number(version?.[1] ?? 0) > 0 || Number(version?.[2] ?? 0) >= 35;
 }
 
-/** A registration, a pool's or with `--chat` the person's chat host's: the token redeemed at the site it names, where a chat host's is redeemed where a member's runner's is, and the credentials kept in the file the package names for them. */
+/** A registration, a pool's, with `--personal` the person's own runner's or with `--chat` their chat host's: the token redeemed at the site it names, where the person's are redeemed where a member's runner's is, and the credentials kept in the file the package names for them. */
 async function register(): Promise<number> {
+  const personal = argv[1] === "--personal";
   const chat = argv.at(-1) === "--chat";
   if (chat && !takesChat())
     return said(1, "", "error: unknown option '--chat'\n");
-  const [flag, api = "", word = ""] = argv.slice(1, chat ? -1 : undefined);
+  if (personal && !takesChat())
+    return said(1, "", "error: unknown option '--personal'\n");
+  const [flag, api = "", word = ""] = argv.slice(
+    personal ? 2 : 1,
+    chat ? -1 : undefined,
+  );
   const token = word.startsWith("--token=") ? word.slice(8) : "";
   if (flag !== "--api" || !/^[A-Za-z0-9_-]{43}$/u.test(token))
     return said(2, "", "--token is not a registration token\n");
   const answer = await fetch(
-    `${api}/api/v1/${chat ? "personal-runner" : "worker-pool"}-registrations`,
+    `${api}/api/v1/${chat || personal ? "personal-runner" : "worker-pool"}-registrations`,
     {
       method: "POST",
       headers: {
@@ -234,7 +244,9 @@ async function register(): Promise<number> {
         [machineSender]: "runner",
       },
       body: JSON.stringify(
-        chat ? { token } : { token, pool: knobs.pool, capabilities: [] },
+        chat || personal
+          ? { token }
+          : { token, pool: knobs.pool, capabilities: [] },
       ),
       signal: AbortSignal.timeout(requestMsMax),
     },
@@ -246,6 +258,7 @@ async function register(): Promise<number> {
       "the registration token is unknown, spent or expired; mint another in chuggy's console\n",
     );
   const pool = (await answer.json()) as {
+    kind?: string;
     tenant: string;
     project?: string;
     owner?: string;

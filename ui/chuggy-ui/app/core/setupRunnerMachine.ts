@@ -264,7 +264,7 @@ const setupServicesProbe = [
   "Version",
 ];
 
-/** What starts Colima, the VM docker runs in on a Mac, as it is: the person's to run where a yes to `runner` would change nothing of it. */
+/** What starts Colima, the VM docker runs in on a Mac, as it is: the person's to run where `runner` would change nothing of it. */
 export const setupColimaStart = ["colima", "start"] as const;
 
 /** What starts Colima whenever the person logs in, as chuggy-darwin's `install-agent` says it. */
@@ -470,13 +470,13 @@ export const setupChatSessionMemoryMib = 2_048;
 /** The most sessions at once setup sizes a chat host to. */
 export const setupChatSessionsMax = 4;
 
-/** What a chat host here would hold, as a yes to it leaves the settings naming. */
+/** What a chat host here would hold, as `runner` leaves the settings naming. */
 export interface SetupChatSize {
   /** The engine's memory as it reports it, in MiB, or nothing where it did not say. */
   readonly engineMib: number | undefined;
   /** What the engine's running containers take of it, in MiB, or nothing where that could not be counted. */
   readonly inUseMib: number | undefined;
-  /** The sessions at once the engine's memory has room for beside what it runs and a job, none where it has room for none or either was not read; the chat host is recommended only where this is one or more. */
+  /** The sessions at once the engine's memory has room for beside what it runs and a job, none where it has room for none or either was not read. */
   readonly room: number;
   /** The sessions at once the settings name: those already named, and otherwise the room, but never none, since the package takes none fewer than one. */
   readonly sessionsMax: number;
@@ -786,16 +786,16 @@ export const setupPackageLeast = "0.14.0";
 export const setupChatPackageLeast = "0.35.0";
 
 /**
- * The oldest of each platform's runner package a run can use: `pool` for the
- * project's runner alone, `chat` where the person's chat host is set up too.
+ * The oldest of each platform's runner package a run can use: `runner` for
+ * the person's runner alone, `chat` where their chat host is set up too.
  * Linux's are the two above; chuggy-darwin's are its first release with every
  * command a run uses.
  */
 export const setupPackageLeasts: Readonly<
-  Record<SetupPlatform, { readonly pool: string; readonly chat: string }>
+  Record<SetupPlatform, { readonly runner: string; readonly chat: string }>
 > = {
-  linux: { pool: setupPackageLeast, chat: setupChatPackageLeast },
-  darwin: { pool: "0.23.0", chat: "0.23.0" },
+  linux: { runner: setupPackageLeast, chat: setupChatPackageLeast },
+  darwin: { runner: "0.23.0", chat: "0.23.0" },
 };
 
 function setupVersionParts(version: string): readonly number[] {
@@ -919,13 +919,13 @@ export function setupInstallCommand(
     : [...words.slice(0, -1), "--prefix", places.own, ...words.slice(-1)];
 }
 
-/** The console's own register command for `offered`, word for word, as a pool's or as the person's chat host, run as the installed command by its whole path. */
+/** The console's own register command for `offered`, word for word, as `kind` says, run as the installed command by its whole path. */
 export function setupRegisterCommand(
   offered: RunnerPackage,
   command: string,
   site: string,
   token: string,
-  kind: Exclude<RunnerKind, "Personal">,
+  kind: RunnerKind,
 ): readonly string[] {
   const [, ...rest] = runnerRegisterCommand(offered, site, token, kind).split(
     " ",
@@ -933,14 +933,20 @@ export function setupRegisterCommand(
   return [command, ...rest];
 }
 
-/** What the bare command reads of this machine where the runner's step is the one next: whether a runner could be put here, and whether it holds a registration for the project and one as the person's chat host in its workspace, each a file's name and not yet whether the site knows it. */
+/** What the bare command reads of this machine where the runner's step is the one next: whether a runner could be put here, and whether it holds a registration as the person's runner or the project's and one as the person's chat host in its workspace, each a file's name and not yet whether the site knows it. */
 export interface SetupRunnerHere {
   readonly room: SetupRunnerRoom;
-  readonly held: boolean;
+  readonly held: SetupRunnerHeld | undefined;
   readonly chat: boolean;
   /** The kind of Claude credential work here would run on: the one the settings name, a subscription's where there are none, and nothing where they were not read. */
   readonly claude: SetupClaudeKind | undefined;
-  /** What a chat host here would hold, where a runner could be put here or will be once a yes changes Colima. */
+  /** The runner's settings where this machine already has them, and the Claude credential they name, which is whose login its work would run on. */
+  readonly settings:
+    | { readonly path: string; readonly credential: SetupClaudeCredential }
+    | undefined;
+  /** The Claude credential work here would run on, where its file is not there yet: the one the settings name, or a subscription's where there are none. */
+  readonly loginMissing: SetupClaudeCredential | undefined;
+  /** What a chat host here would hold, where a runner could be put here or will be once `runner` changes Colima. */
   readonly chatSize: SetupChatSize | undefined;
   /** What this machine is short of for a job naming no memory or platform. */
   readonly fit: SetupFit;
@@ -1033,11 +1039,37 @@ export function setupChatFiles(
     });
 }
 
-/** What of the chat host's file is read: the id the site holds that host by, which is not its secret. */
+/**
+ * The files this machine has of the person's own runner in a workspace, found
+ * by their names, in the order of those names: the package names one for the
+ * workspace and the member, two whole parts, which no pool's file or chat
+ * host's is.
+ */
+export function setupPersonalFiles(
+  ports: SetupPorts,
+  places: SetupRunnerPlaces,
+  tenant: string,
+): readonly SetupFile[] {
+  const prefix = `${setupPoolNamePart(tenant)}.`;
+  return ports.disk
+    .names(places.pools)
+    .toSorted()
+    .flatMap((name) => {
+      if (!name.startsWith(prefix) || !name.endsWith(setupPoolFileSuffix))
+        return [];
+      const member = name.slice(prefix.length, -setupPoolFileSuffix.length);
+      const path = setupPath(places.pools, name);
+      return setupNamePart.test(member) && ports.disk.kind(path) === "File"
+        ? [{ path }]
+        : [];
+    });
+}
+
+/** What of a member's runner's file or chat host's is read: the id the site holds it by, which is not its secret. */
 const setupChatFileSchema = z.object({ clientId: identitySchema });
 
-/** The id the site holds the chat host of `file` by, or nothing where the file says none this program reads. */
-export function setupChatClient(
+/** The id the site holds the member's runner or chat host of `file` by, or nothing where the file says none this program reads. */
+export function setupFileClient(
   ports: SetupPorts,
   file: SetupFile,
 ): string | undefined {
@@ -1061,6 +1093,21 @@ function setupClaudeHere(
   }
 }
 
+/** The registration of a runner this machine holds: the person's own, which `runner` checks and starts, or only the project's pool, which it leaves as it is and registers this machine beside as the person's own. */
+export type SetupRunnerHeld = "Personal" | "Pool";
+
+function setupRunnerHeld(
+  ports: SetupPorts,
+  places: SetupRunnerPlaces,
+  partition: PartitionIdentity,
+): SetupRunnerHeld | undefined {
+  if (setupPersonalFiles(ports, places, partition.tenant).length > 0)
+    return "Personal";
+  return setupPoolFiles(ports, places, partition).length > 0
+    ? "Pool"
+    : undefined;
+}
+
 /** Looks at the machine as `runner` would before it did anything, and changes nothing. */
 export async function setupRunnerHere(
   ports: SetupPorts,
@@ -1078,11 +1125,25 @@ export async function setupRunnerHere(
   const { fit, engineMib } = await setupFitRead(ports, engine);
   const sized = open || fit.fit === "Colima";
   const inUseMib = sized ? await setupInUseHere(ports, engine, fit) : undefined;
+  const credential: SetupClaudeCredential | undefined =
+    settings.settings === "Read"
+      ? settings.credential
+      : settings.settings === "Absent"
+        ? { kind: "Subscription", path: places.login }
+        : undefined;
   return {
     room,
-    held: open && setupPoolFiles(ports, places, partition).length > 0,
+    held: open ? setupRunnerHeld(ports, places, partition) : undefined,
     chat: open && setupChatFiles(ports, places, partition.tenant).length > 0,
     claude: setupClaudeHere(settings),
+    settings:
+      settings.settings === "Read"
+        ? { path: places.settings, credential: settings.credential }
+        : undefined,
+    loginMissing:
+      credential !== undefined && ports.disk.kind(credential.path) !== "File"
+        ? credential
+        : undefined,
     chatSize: sized
       ? setupChatSized(setupFitEngineMib(fit, engineMib), inUseMib, chat)
       : undefined,

@@ -18,7 +18,12 @@ import { setupPluginId } from "../app/core/setupProgram.ts";
 import { SetupMachineError } from "../app/core/setupPorts.ts";
 import type { SetupChildEnded, SetupDiskPort } from "../app/core/setupPorts.ts";
 import type { SetupEngine } from "../app/core/setupRunnerSaid.ts";
-import { setupSiteChatRedeemed, setupSiteRedeemed } from "./setupSite.ts";
+import {
+  setupSiteChatRedeemed,
+  setupSitePersonalId,
+  setupSitePersonalRedeemed,
+  setupSiteRedeemed,
+} from "./setupSite.ts";
 import type { SetupSite } from "./setupSite.ts";
 
 export const boxHome = "/home/person";
@@ -132,6 +137,8 @@ export interface RunnerBox {
   readonly acts: BoxAct[];
   /** What an act answers where a case says other than what the machine does, from the command where the case wants it; the machine then does nothing for it. */
   readonly answers: Map<BoxAct, BoxAnswer>;
+  /** How long an act takes where a case has it take time; one waited on for less never ends. */
+  readonly lasts: Map<BoxAct, number>;
   /** What happens once an act is done, where a case ends the run there. */
   after: (act: BoxAct) => void;
   /** What `npm prefix -g` prints, or nothing where npm does not answer. */
@@ -196,6 +203,7 @@ export function runnerBox(): RunnerBox {
     ran: [],
     acts: [],
     answers: new Map(),
+    lasts: new Map(),
     after: () => undefined,
     prefix: boxPrefix,
     plugins: JSON.stringify([
@@ -284,6 +292,15 @@ export function boxPoolFile(tenant: string, project: string): string {
 
 export function boxUnitName(tenant: string, project: string): string {
   return `chuggy-linux-${boxNamePart(tenant)}.${boxNamePart(project)}.${boxPoolName}.service`;
+}
+
+/** The file the package writes for the person's own runner in a workspace, named for it and the member, and the unit it writes for that file. */
+export function boxPersonalFile(tenant: string, member: string): string {
+  return `${boxPools}/${boxNamePart(tenant)}.${boxNamePart(member)}.json`;
+}
+
+export function boxPersonalUnitName(tenant: string, member: string): string {
+  return `chuggy-linux-${boxNamePart(tenant)}.${boxNamePart(member)}.service`;
 }
 
 /** The file the package writes for the person's chat host in a workspace, named for it and the member, and the unit it writes for that file. */
@@ -649,15 +666,15 @@ export function boxServing(
   );
 }
 
-/** Whether the package a command is run from is new enough to know `--chat`, as its manifest says. */
-function boxTakesChat(box: RunnerBox, program: string): boolean {
+/** Whether the package a command is run from is new enough to know `--personal`, or `--chat` where `chat`, as its manifest says. */
+function boxTakes(box: RunnerBox, program: string, chat: boolean): boolean {
   const name = program.slice(program.lastIndexOf("/") + 1);
   const prefix = program.slice(0, -`/bin/${name}`.length);
   const manifest = box.paths.get(
     `${prefix}/lib/node_modules/${name}/package.json`,
   );
   const version = /"version":"(\d+)\.(\d+)\./u.exec(manifest ?? "");
-  const least = name === "chuggy-darwin" ? 23 : 35;
+  const least = name === "chuggy-darwin" ? 23 : chat ? 35 : 4;
   return Number(version?.[1] ?? 0) > 0 || Number(version?.[2] ?? 0) >= least;
 }
 
@@ -668,23 +685,28 @@ interface BoxWorld {
   readonly platform: string;
 }
 
-/** A registration, as a pool's or with `--chat` as the person's chat host: the token redeemed at the site, and the file the package names for what it answered. */
+/** A registration, as a pool's, with `--personal` as the person's own runner, or with `--chat` as their chat host: the token redeemed at the site, and the file the package names for what it answered. */
 function registered(
   box: RunnerBox,
   world: BoxWorld,
   command: readonly string[],
 ): SetupChildEnded {
-  const [program = "", , ...words] = command;
+  const [program = "", , ...said] = command;
+  const personal = said[0] === "--personal";
+  const words = personal ? said.slice(1) : said;
   const chat = words.at(-1) === "--chat";
-  if (chat && !boxTakesChat(box, program))
-    return exited(1, "", "error: unknown option '--chat'\n");
+  const option = personal ? "--personal" : "--chat";
+  if ((chat || personal) && !boxTakes(box, program, chat))
+    return exited(1, "", `error: unknown option '${option}'\n`);
   const [flag, api, token = ""] = chat ? words.slice(0, -1) : words;
   if (flag !== "--api" || api !== world.origin || !token.startsWith("--token="))
     return exited(2, "", "register needs --api and --token\n");
   const redeemed = token.slice("--token=".length);
   const answer = chat
     ? setupSiteChatRedeemed(world.site(), redeemed)
-    : setupSiteRedeemed(world.site(), redeemed, boxPoolName);
+    : personal
+      ? setupSitePersonalRedeemed(world.site(), redeemed)
+      : setupSiteRedeemed(world.site(), redeemed, boxPoolName);
   if (answer.status !== 201)
     return exited(
       1,
@@ -698,7 +720,9 @@ function registered(
   };
   const file = chat
     ? boxChatFile(held.tenant, held.owner ?? "")
-    : boxPoolFile(held.tenant, held.project ?? "");
+    : personal
+      ? boxPersonalFile(held.tenant, held.owner ?? "")
+      : boxPoolFile(held.tenant, held.project ?? "");
   const at = boxPackageOf(world.platform);
   const unit = at.unitOf(file);
   const serves = box.paths.has(at.unitPath(file));
@@ -827,7 +851,7 @@ function agentServed(
   );
 }
 
-/** What the site sees once the unit `name` is up and polls: a runner of every project this machine is registered for as live, or, for the unit of the person's chat host, that host where its file names it. */
+/** What the site sees once the unit `name` is up and polls: a runner of every project this machine is registered for as live, or, for the unit of the person's own runner or chat host, that runner or host where its file names it. */
 function polled(box: RunnerBox, world: BoxWorld, name: string): void {
   const site = world.site();
   for (const [tenant, host] of site.chat) {
@@ -840,6 +864,21 @@ function polled(box: RunnerBox, world: BoxWorld, name: string): void {
     const held = box.paths.get(file) ?? "{}";
     const { clientId } = JSON.parse(held) as { readonly clientId?: string };
     if (host.id === clientId) host.live = true;
+  }
+  for (const [tenant, held] of site.personal) {
+    const file = boxPersonalFile(tenant, site.member);
+    if (
+      name !== boxPersonalUnitName(tenant, site.member) &&
+      name !== boxAgentLabel(file)
+    )
+      continue;
+    const { clientId } = JSON.parse(box.paths.get(file) ?? "{}") as {
+      readonly clientId?: string;
+    };
+    const at = held.live.findIndex(
+      (_, index) => setupSitePersonalId(index) === clientId,
+    );
+    if (at >= 0) held.live[at] = true;
   }
   if (
     !name.endsWith(`.${boxPoolName}.service`) &&
@@ -1086,6 +1125,7 @@ export function boxRan(
   box: RunnerBox,
   world: BoxWorld,
   command: readonly string[],
+  waitMs: number,
 ): SetupChildEnded {
   box.ran.push(command);
   const act = boxActOf(command);
@@ -1093,6 +1133,7 @@ export function boxRan(
   if (act === undefined || (program.includes("/") && !box.paths.has(program)))
     return { ended: "Unstarted" };
   box.acts.push(act);
+  if ((box.lasts.get(act) ?? 0) > waitMs) return { ended: "Unended" };
   const told = box.answers.get(act);
   if (told !== undefined)
     return typeof told === "function" ? told(command) : told;

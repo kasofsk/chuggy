@@ -73,7 +73,7 @@ export type SetupClaudeCredential =
     };
 
 /** Each kind as the person is told it: the credential, and what makes one where its file holds it alone. */
-const setupClaudeWords: Record<
+export const setupClaudeWords: Record<
   SetupClaudeKind,
   { readonly credential: Copy; readonly made: Copy }
 > = {
@@ -100,7 +100,7 @@ const setupClaudeWords: Record<
 };
 
 /** What the credential is and where it is kept, as the person is told it: its secret alone in its file, or an AWS credentials file whose profile holds an access key. */
-function setupClaudeSaved(credential: SetupClaudeCredential): Copy {
+export function setupClaudeSaved(credential: SetupClaudeCredential): Copy {
   const { path } = credential;
   return credential.kind === "Bedrock" && credential.profile !== undefined
     ? {
@@ -232,9 +232,13 @@ export type SetupRunnerNote =
       readonly note: "Login";
       readonly credential: SetupClaudeCredential;
     }
-  | { readonly note: "Pool"; readonly path: string }
-  | { readonly note: "PoolGone"; readonly path: string; readonly pool: string }
-  | { readonly note: "Registered"; readonly path: string }
+  /** `PersonalGone` is a registration this machine holds as the person's runner that the site no longer lists. */
+  | {
+      readonly note: "Personal" | "PersonalGone" | "PersonalRegistered";
+      readonly path: string;
+    }
+  /** The project given to the person's runners, and their own runners let take its work: each found so, or `now` where this run wrote it. */
+  | { readonly note: "Given" | "Allowed"; readonly now: boolean }
   /** `warned` is the first line of the check that passed with a warning, where one did. */
   | { readonly note: "Checked"; readonly warned: string | undefined }
   | { readonly note: "ChatChecked"; readonly warned: string | undefined }
@@ -323,7 +327,7 @@ export function setupCheckFirst(
 
 /** A read of the site `runner` makes, by what it is of. */
 export type SetupRunnerRead =
-  "work" | "threads" | "placement" | "pools" | "permit" | "chat";
+  "work" | "threads" | "fallback" | "personal" | "permit" | "chat";
 
 /** Why a run stopped short of a runner the site sees live. */
 export type SetupRunnerStop =
@@ -439,6 +443,14 @@ export type SetupRunnerStop =
       readonly stop: "ChatMintRefused";
       readonly outcome: ApiFailure["outcome"];
       readonly lapseMins: number;
+    }
+  /** The workspace does not let the person register a runner of their own; `people` is its People page. */
+  | { readonly stop: "RunnerWithheld"; readonly people: string }
+  /** The site did not make one of the writes that let the person's runner take the project's work. */
+  | {
+      readonly stop: "ServeRefused";
+      readonly write: "Give" | "Allow";
+      readonly outcome: ApiFailure["outcome"];
     }
   /** The person's chat host is another machine, registered and not running, which registering this one would replace; `runners` is the page it is removed on. */
   | { readonly stop: "ChatHostOffline"; readonly runners: string }
@@ -725,37 +737,50 @@ function setupChatNoteSaid(
   }
 }
 
-type SetupPoolNote = Extract<
+type SetupPersonalNote = Extract<
   SetupRunnerNote,
-  { readonly note: "Pool" | "PoolGone" | "Registered" | "Checked" }
+  {
+    readonly note:
+      | "Personal"
+      | "PersonalGone"
+      | "PersonalRegistered"
+      | "Given"
+      | "Allowed"
+      | "Checked";
+  }
 >;
 
-function setupPoolNoteSaid(
-  note: SetupPoolNote,
+function setupPersonalNoteSaid(
+  note: SetupPersonalNote,
   project: string,
 ): SetupRunnerNoteSaid {
   switch (note.note) {
-    case "Pool":
+    case "Personal":
       return [
         "found",
-        { id: "setup-runner-note-pool", args: { project, path: note.path } },
+        { id: "setup-runner-note-personal", args: { path: note.path } },
       ];
-    case "PoolGone":
+    case "PersonalGone":
       return [
         "found",
-        {
-          id: "setup-runner-note-pool-gone",
-          args: { path: note.path, pool: note.pool, project },
-        },
+        { id: "setup-runner-note-personal-gone", args: { path: note.path } },
       ];
-    case "Registered":
+    case "PersonalRegistered":
       return [
         "did",
         {
-          id: "setup-runner-note-registered",
-          args: { project, path: note.path },
+          id: "setup-runner-note-personal-registered",
+          args: { path: note.path },
         },
       ];
+    case "Given":
+      return note.now
+        ? ["did", { id: "setup-runner-note-given-now", args: { project } }]
+        : ["found", { id: "setup-runner-note-given", args: { project } }];
+    case "Allowed":
+      return note.now
+        ? ["did", { id: "setup-runner-note-allowed-now", args: { project } }]
+        : ["found", { id: "setup-runner-note-allowed", args: { project } }];
     case "Checked":
       return [
         "found",
@@ -841,11 +866,13 @@ export function setupRunnerNoteSaid(
           },
         },
       ];
-    case "Pool":
-    case "PoolGone":
-    case "Registered":
+    case "Personal":
+    case "PersonalGone":
+    case "PersonalRegistered":
+    case "Given":
+    case "Allowed":
     case "Checked":
-      return setupPoolNoteSaid(note, setupRunnerNamed(at));
+      return setupPersonalNoteSaid(note, setupRunnerNamed(at));
     case "Unit":
     case "UnitWritten":
     case "Linger":
@@ -1178,14 +1205,18 @@ function setupDockerBarredSaid(
 const setupReadsSaid: Readonly<Record<SetupRunnerRead, Copy>> = {
   work: { id: "setup-runner-read-work" },
   threads: { id: "setup-runner-read-threads" },
-  placement: { id: "setup-runner-read-placement" },
-  pools: { id: "setup-runner-read-pools" },
+  fallback: { id: "setup-runner-read-fallback" },
+  personal: { id: "setup-runner-read-personal" },
   permit: { id: "setup-runner-read-permit" },
   chat: { id: "setup-runner-read-chat" },
 };
 
 /** The reads a run makes before it looks at the machine, which makes them the ones a stop at can say nothing was changed. */
-const setupReadsFirst: readonly SetupRunnerRead[] = ["work", "threads"];
+const setupReadsFirst: readonly SetupRunnerRead[] = [
+  "work",
+  "fallback",
+  "threads",
+];
 
 /** What a read the site did not give leaves of a run: a runner not known to be set up, which is not one known not to be. */
 const setupUnknown: Copy = { id: "setup-runner-unknown" };
@@ -1436,19 +1467,38 @@ function setupServiceRefusedSaid(
   };
 }
 
+/** A write that lets the person's runner take the project's work, which the site did not make. */
+function setupServeRefusedSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "ServeRefused" }>,
+  project: string,
+): SetupRunnerStopSaid {
+  const write = stop.write === "Give" ? "give" : "allow";
+  return {
+    found: {
+      id: "setup-runner-serve-refused-found",
+      args: { write, project, outcome: stop.outcome },
+    },
+    tell: {
+      id: "setup-runner-serve-refused-tell",
+      args: { write, project },
+    },
+    when: setupTryAgain,
+    again: "Again",
+  };
+}
+
 function setupMintSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "MintRefused" }>,
-  project: string,
 ): SetupRunnerStopSaid {
   const found: Copy = {
     id: "setup-runner-mint-found",
-    args: { project, outcome: stop.outcome },
+    args: { outcome: stop.outcome },
   };
   if (stop.outcome === "Absent")
     return {
       found,
-      tell: { id: "setup-runner-mint-absent-tell", args: { project } },
-      when: { id: "setup-runner-when-admin", args: { project } },
+      tell: { id: "setup-runner-mint-absent-tell" },
+      when: { id: "setup-runner-mint-absent-when" },
       again: "Again",
     };
   if (stop.outcome === "Conflict")
@@ -1456,14 +1506,14 @@ function setupMintSaid(
       found,
       tell: {
         id: "setup-runner-mint-conflict-tell",
-        args: { project, mins: String(stop.lapseMins) },
+        args: { mins: String(stop.lapseMins) },
       },
       when: setupTryAgain,
       again: "Again",
     };
   return {
     found,
-    tell: { id: "setup-runner-mint-tell", args: { project } },
+    tell: { id: "setup-runner-mint-tell" },
     when: setupTryAgain,
     again: "Again",
   };
@@ -1681,28 +1731,30 @@ function setupServiceSaid(
       };
     case "Inactive":
       return setupInactiveSaid(stop);
-    case "NotLive":
+    case "NotLive": {
+      const secs = String(stop.waitedSecs);
+      const running: Copy =
+        stop.pid === undefined
+          ? { id: "setup-runner-not-live-running" }
+          : {
+              id: "setup-runner-not-live-running-pid",
+              args: { pid: String(stop.pid) },
+            };
       return {
-        found: {
-          id: stop.registered
-            ? "setup-runner-not-live-found"
-            : "setup-runner-not-live-unregistered-found",
-          args: {
-            secs: String(stop.waitedSecs),
-            project,
-            running:
-              stop.pid === undefined
-                ? { id: "setup-runner-not-live-running" }
-                : {
-                    id: "setup-runner-not-live-running-pid",
-                    args: { pid: String(stop.pid) },
-                  },
-          },
-        },
+        found: stop.registered
+          ? {
+              id: "setup-runner-not-live-found",
+              args: { secs, project, running },
+            }
+          : {
+              id: "setup-runner-not-live-unregistered-found",
+              args: { secs, running },
+            },
         tell: { id: "setup-runner-not-live-tell" },
         when: setupLookAgain,
         again: "Again",
       };
+    }
   }
 }
 
@@ -1901,6 +1953,22 @@ function setupHeldSaid(
   };
 }
 
+/** A workspace that does not let the person register a runner of their own, said with where an admin turns it on. */
+function setupWithheldSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "RunnerWithheld" }>,
+  project: string,
+): SetupRunnerStopSaid {
+  return {
+    found: { id: "setup-runner-withheld-found" },
+    tell: {
+      id: "setup-runner-withheld-tell",
+      args: { project, people: stop.people },
+    },
+    when: { id: "setup-runner-permit-when" },
+    again: "Again",
+  };
+}
+
 /** A stop as it is said of the project or the workspace the run was for. */
 export function setupRunnerStopSaid(
   stop: SetupRunnerStop,
@@ -1941,7 +2009,11 @@ export function setupRunnerStopSaid(
     case "ServiceRefused":
       return setupServiceRefusedSaid(stop);
     case "MintRefused":
-      return setupMintSaid(stop, project);
+      return setupMintSaid(stop);
+    case "RunnerWithheld":
+      return setupWithheldSaid(stop, project);
+    case "ServeRefused":
+      return setupServeRefusedSaid(stop, project);
     case "CheckFailed":
     case "LingerAsks":
     case "Inactive":
@@ -1974,6 +2046,7 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 {
     case "Npmless":
     case "LingerAsks":
     case "PermitWithheld":
+    case "RunnerWithheld":
     case "ChatHostOffline":
     case "ChatLogin":
     case "ChatHostHeld":
@@ -1991,6 +2064,7 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 {
     case "Behind":
     case "ServiceRefused":
     case "MintRefused":
+    case "ServeRefused":
     case "CheckFailed":
     case "Inactive":
     case "NotLive":

@@ -20,19 +20,18 @@
  * no ticket yet and what a ticket may be drawn under was read, the person is
  * asked what they want done first, and `ticket` files it, with the
  * configuration they choose where there is a choice; where that read came to
- * nothing, the console's New ticket page is the way. The MCP step and the
- * runner's change the machine, so each is offered and never run unasked: the
- * person is told what `mcp` would do, the runner package installed where it
- * is not here and its server named in their agent, and for the runner's step
- * they are told what `runner` would put here, a service for the project's
- * work and what a job of it takes, and where their chats run on their chat
- * host and they have none, what one here would hold, recommended only where
- * the engine's memory has room for it beside a job: the command is named
- * under a rule that waits on their yes, with the answer recommended, and a
- * rule for the other; where the machine could not take a runner, they are
- * told that instead. A chat host lacking is never the next thing.
+ * nothing, the console's New ticket page is the way. The MCP step changes the
+ * machine, so it is offered and never run unasked: the person is told what
+ * `mcp` would do, the runner package installed where it is not here and its
+ * server named in their agent. The runner's step has one sensible answer, so
+ * it is announced and then run unless the person objects: they are told what
+ * `runner` puts here, a personal runner taking the project's work and what a
+ * job of it takes, and where their chats run on their chat host and they have
+ * none, a chat host beside it and what it holds, with the line that runs it
+ * on another machine instead; where the machine could not take a runner, they
+ * are told that instead. A chat host lacking is never the next thing.
  * Where a personal runner of theirs is registered and does not take the
- * project's work, `serve` is offered on the same yes.
+ * project's work, `serve` is offered on the person's yes.
  * `setupMend` is where each thing a step can lack is turned into its next
  * thing; the slice that gives a step its command changes that step's line
  * there and nowhere else. A tell says of a page only what is pressed there:
@@ -58,6 +57,7 @@ import type { RepositoryConfigurationImportAttemptResponse } from "../../../../s
 import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type { Copy, CopyArgument } from "./copy.ts";
 import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
+import { claudeCodeRunnerLine } from "./claudeCodeLine.ts";
 import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
 import {
@@ -76,7 +76,7 @@ import { setupServerPackages } from "./setupAgent.ts";
 import type { SetupMcpPackaged } from "./setupAgent.ts";
 import { setupAnswersSkipped, setupNameFlag } from "./setupArguments.ts";
 import { setupConfigurationPath } from "./setupConfiguration.ts";
-import type { SetupAnswers, SetupChatHostAnswer } from "./setupArguments.ts";
+import type { SetupAnswers } from "./setupArguments.ts";
 import { setupMergeImportFailed } from "./setupMerge.ts";
 import type { SetupHistory, SetupMergeSince } from "./setupMerge.ts";
 import type { SetupTracked } from "./setupNorthStar.ts";
@@ -86,11 +86,17 @@ import type { SetupNext, SetupThing } from "./setupReport.ts";
 import { setupEngineSpareMib, setupJobMemoryMib } from "./setupFit.ts";
 import type { SetupFit } from "./setupFit.ts";
 import { setupChatSized } from "./setupRunnerMachine.ts";
-import type { SetupChatSize, SetupRunnerHere } from "./setupRunnerMachine.ts";
+import type {
+  SetupChatSize,
+  SetupRunnerHeld,
+  SetupRunnerHere,
+} from "./setupRunnerMachine.ts";
 import type { SetupTicketOffers } from "./setupTicket.ts";
 import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
 import {
   setupChatCost,
+  setupClaudeSaved,
+  setupClaudeWords,
   setupDockerBarredTold,
   setupEnginesNone,
   setupFitStopOf,
@@ -452,12 +458,8 @@ function setupConfigurationMend(
   };
 }
 
-/** Something `runner` would do on this machine for the checklist's project, which waits on the person's yes. */
-function setupOffer(
-  tell: Copy,
-  at: SetupAt,
-  chatHost: SetupChatHostAnswer | undefined,
-): SetupThing {
+/** What `runner` does on this machine for the checklist's project, said before it is run, with the line that has it run on another machine instead; `chat` where it makes this machine the person's chat host too. */
+function setupOffer(tell: Copy, at: SetupAt, chat: boolean): SetupThing {
   const { workspace, project } = at;
   return {
     thing: "Offer",
@@ -466,7 +468,8 @@ function setupOffer(
     when: { id: "setup-offer-when" },
     workspace,
     project,
-    ...(chatHost === undefined ? {} : { chatHost }),
+    chatHost: chat,
+    elsewhere: claudeCodeRunnerLine(at.site, workspace, project, chat),
   };
 }
 
@@ -474,7 +477,7 @@ const setupMcpOffers = {
   Current: "setup-mend-mcp-offer",
   Behind: "setup-mend-mcp-offer-behind",
   Absent: "setup-mend-mcp-offer-absent",
-} as const satisfies Record<SetupMcpPackaged, string>;
+} as const satisfies Record<SetupMcpPackaged["packaged"], string>;
 
 /**
  * The agent's MCP server for the checklist's project, which `mcp` names in
@@ -488,13 +491,30 @@ function setupMcpMend(
 ): SetupThing {
   const { site, workspace, project } = at;
   const program = setupServerPackages[platform].offered.program;
+  const named = setupNamed(at);
+  const versioned = (version: string | undefined): Copy | string =>
+    version === undefined
+      ? program
+      : { id: "setup-runner-versioned", args: { program, version } };
   return {
     thing: "Offer",
     command: "Mcp",
-    tell: {
-      id: setupMcpOffers[packaged],
-      args: { project: setupNamed(at), site, program },
-    },
+    tell:
+      packaged.packaged === "Behind"
+        ? {
+            id: setupMcpOffers.Behind,
+            args: {
+              project: named,
+              site,
+              program,
+              found: versioned(packaged.version),
+              installs: versioned(packaged.installs),
+            },
+          }
+        : {
+            id: setupMcpOffers[packaged.packaged],
+            args: { project: named, site, program },
+          },
     when: { id: "setup-offer-mcp-when" },
     workspace,
     project,
@@ -563,46 +583,59 @@ const setupJobSaid: Copy = quantityFigureCopy(
   memoryMibFigure(setupJobMemoryMib),
 );
 
-/** The answer `runner` is told for the person's chat host where a chat host here is asked about, which is the one recommended: yes only where the engine's memory has room for one beside a job. */
-function setupChatHostRecommended(size: SetupChatSize): SetupChatHostAnswer {
-  return size.room > 0 ? "yes" : "no";
-}
-
 /** What a chat host here would be, where the machine was looked at and its engine named; sized as having no room where the engine was not read. */
 function setupChatSizeHere(here: SetupRunnerHere): SetupChatSize {
   return here.chatSize ?? setupChatSized(undefined, undefined, {});
 }
 
-/** Where memory is short for a chat host of `size` beside a run, as the engine `engine` said it or did not. */
-function setupChatHostShort(size: SetupChatSize, engine: string): Copy {
-  const id = "setup-mend-chat-host-short";
-  const { engineMib, inUseMib } = size;
-  if (engineMib === undefined)
-    return { id, args: { said: "unsaid", engine, memory: "", used: "" } };
-  if (inUseMib === undefined)
-    return { id, args: { said: "uncounted", engine, memory: "", used: "" } };
-  const memory = setupMemorySaid(engineMib);
-  return inUseMib === 0
-    ? { id, args: { said: "said", engine, memory, used: "" } }
-    : {
-        id,
-        args: { said: "used", engine, memory, used: setupMemorySaid(inUseMib) },
-      };
+/** What an offer of `runner` says of the two things it puts here, or of the runner alone where `chat` says the person's chat host is not made here. */
+function setupRunnerThings(chat: boolean): Copy {
+  return { id: "setup-mend-runner-things", args: { chat: setupWith(chat) } };
 }
 
-/** The question an offer of `runner` asks of the person's chat host: what it would hold, what it is for, and whether it is recommended, with where memory is short where it is not; an engine not yet answering is a Mac's docker, which Colima runs. */
-function setupChatHostAsk(here: SetupRunnerHere): Copy {
+/** What an offer of `runner` says the person's chat host here holds; nothing where it is not made here. */
+function setupChatHostSaid(chat: boolean, here: SetupRunnerHere): CopyArgument {
+  if (!chat) return "";
   const size = setupChatSizeHere(here);
-  const engine = here.room.room === "Open" ? here.room.engine : "docker";
-  const short = setupChatHostShort(size, engine);
   return {
-    id: "setup-mend-chat-host-ask",
+    id: "setup-mend-chat-host-holds",
+    args: setupChatCost(size.sessionsMax, size.sessionMemoryMib),
+  };
+}
+
+/** What an offer of `runner` says it finds here and keeps: the runner's settings, and whose Claude login they run work on. */
+function setupRunnerFoundSaid(here: SetupRunnerHere): CopyArgument {
+  const { settings } = here;
+  if (settings === undefined) return "";
+  return {
+    id: "setup-mend-runner-found-settings",
     args: {
-      ...setupChatCost(size.sessionsMax, size.sessionMemoryMib),
-      recommend: setupChatHostRecommended(size),
-      short,
+      path: settings.path,
+      credential: setupClaudeWords[settings.credential.kind].credential,
+      login: settings.credential.path,
     },
   };
+}
+
+/** Where the Claude credential work here would run on is not on this machine yet, what the person is told to do first, before anything is put here. */
+function setupRunnerLoginMend(
+  here: SetupRunnerHere,
+  chat: boolean,
+): SetupThing | undefined {
+  const credential = here.loginMissing;
+  if (credential === undefined) return undefined;
+  const things = setupRunnerThings(chat);
+  const saved = setupClaudeSaved(credential);
+  const words = setupClaudeWords[credential.kind].credential;
+  return setupHand(
+    credential.kind === "Subscription"
+      ? { id: "setup-mend-runner-login", args: { things, saved } }
+      : {
+          id: "setup-mend-runner-login-named",
+          args: { things, credential: words, path: credential.path, saved },
+        },
+    { id: "setup-runner-login-missing-when", args: { credential: words } },
+  );
 }
 
 /** Memory as an offer says it. */
@@ -619,7 +652,7 @@ function setupColimaShort(
   return fit.amd64 ? "amd64" : "none";
 }
 
-/** What a yes to `runner` gives Colima's VM, as the word an offer's sentence picks its clause by. */
+/** What `runner` gives Colima's VM, as the word an offer's sentence picks its clause by. */
 function setupColimaGives(
   fit: Extract<SetupFit, { readonly fit: "Colima" }>,
 ): string {
@@ -630,7 +663,7 @@ function setupColimaGives(
   return fit.rosetta ? "rosetta" : "none";
 }
 
-/** What an offer of `runner` says this machine is short of for a job naming no memory or platform, and what a yes does for it, or nothing where it is short of nothing. */
+/** What an offer of `runner` says this machine is short of for a job naming no memory or platform, and what `runner` does for it, or nothing where it is short of nothing. */
 function setupFitSaid(here: SetupRunnerHere): CopyArgument {
   const { fit } = here;
   const engine = here.room.room === "Open" ? here.room.engine : "docker";
@@ -691,39 +724,34 @@ function setupFitToldMend(
   );
 }
 
-/** The answer an offer of `runner` carries for the chat host, where it asks of one: where the person's chats run on a chat host they lack. */
-function setupChatHostOffered(
-  chat: boolean,
-  here: SetupRunnerHere,
-): SetupChatHostAnswer | undefined {
-  return chat ? setupChatHostRecommended(setupChatSizeHere(here)) : undefined;
-}
-
-/** A runner registered and not running: started here on the person's yes where this machine holds a registration for the project, and otherwise theirs to start where it is. */
+/** A runner registered and not running where this machine holds a registration: started here unless the person objects where it is the person's runner's, and registered again as theirs where it is only the project's pool's. */
 function setupRunnerLiveMend(
   at: SetupAt,
-  here: SetupRunnerHere | undefined,
+  here: SetupRunnerHere,
+  held: SetupRunnerHeld,
   chat: boolean,
   instead: Copy,
 ): SetupThing {
-  if (here?.held !== true)
-    return setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning);
   return (
+    setupRunnerLoginMend(here, chat) ??
     setupFitToldMend(here.fit, instead) ??
     setupOffer(
       {
-        id: "setup-mend-runner-live-offer",
+        id:
+          held === "Personal"
+            ? "setup-mend-runner-live-offer"
+            : "setup-mend-runner-pool-offer",
         args: {
           project: setupNamed(at),
           runs: setupRunsOn(here.claude),
           job: setupJobSaid,
           fit: setupFitSaid(here),
-          chat: setupWith(chat),
-          ask: chat ? setupChatHostAsk(here) : "",
+          found: setupRunnerFoundSaid(here),
+          chat: setupChatHostSaid(chat, here),
         },
       },
       at,
-      setupChatHostOffered(chat, here),
+      chat,
     )
   );
 }
@@ -773,10 +801,12 @@ function setupServingMend(
 }
 
 /**
- * No runner yet. Where this machine could take one the person is told what
+ * No runner yet, or one registered and not running elsewhere, which does not
+ * hold the step: where this machine could take one the person is told what
  * `runner` would put here, with the package of the platform the program runs
  * on, before it may be run; where it could not, why not; and where the
- * machine was not looked at, the console's own page.
+ * machine was not looked at, the console's own page, or for a runner not
+ * running, to start it where it is.
  */
 function setupRunnerMend(
   lack: Extract<SetupLack, { readonly lacks: "Runner" | "RunnerLive" }>,
@@ -794,9 +824,13 @@ function setupRunnerMend(
     id: "setup-mend-runner-instead",
     args: { page, add },
   };
-  if (lack.lacks === "RunnerLive")
-    return setupRunnerLiveMend(at, here, lack.chat, instead);
-  if (here === undefined) return setupHand(elsewhere, setupRunnerRunning);
+  const live = lack.lacks === "RunnerLive";
+  if (live && here?.held !== undefined)
+    return setupRunnerLiveMend(at, here, here.held, lack.chat, instead);
+  if (here === undefined)
+    return live
+      ? setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning)
+      : setupHand(elsewhere, setupRunnerRunning);
   const { room } = here;
   switch (room.room) {
     case "Open":
@@ -815,14 +849,14 @@ function setupRunnerMend(
   }
 }
 
-/** Whether a fit is one where Colima's VM is what a yes or the person mends, which is so also where docker does not answer yet. */
+/** Whether a fit is one where Colima's VM is what `runner` or the person mends, which is so also where docker does not answer yet. */
 function setupColimaMends(fit: SetupFit): boolean {
   return (
     fit.fit === "Colima" || fit.fit === "Rosettaless" || fit.fit === "Rebuild"
   );
 }
 
-/** What `runner` would put on this machine, offered on the person's yes with what a yes changes of Colima first, or what they are to mend first where only they can. */
+/** What `runner` puts on this machine, announced with what it changes of Colima and run unless the person objects, or what they are to mend first where only they can. */
 function setupRunnerPutMend(
   chat: boolean,
   at: SetupAt,
@@ -830,13 +864,16 @@ function setupRunnerPutMend(
   platform: SetupPlatform,
   instead: Copy,
 ): SetupThing {
-  const told = setupFitToldMend(here.fit, instead);
+  const told =
+    setupRunnerLoginMend(here, chat) ?? setupFitToldMend(here.fit, instead);
   if (told !== undefined) return told;
-  const page = setupPage(at, settingsRoutes.project.myRunner);
   return setupOffer(
     {
       id: "setup-mend-runner-offer",
       args: {
+        things: setupRunnerThings(chat),
+        chat: setupWith(chat),
+        found: setupRunnerFoundSaid(here),
         put: {
           id: "setup-mend-runner-put",
           args: {
@@ -846,14 +883,12 @@ function setupRunnerPutMend(
           },
         },
         fit: setupFitSaid(here),
-        chat: setupWith(chat),
-        ask: chat ? setupChatHostAsk(here) : "",
-        page,
-        add: setupPressed.runner,
+        holds: setupChatHostSaid(chat, here),
+        project: setupNamed(at),
       },
     },
     at,
-    setupChatHostOffered(chat, here),
+    chat,
   );
 }
 
@@ -1449,7 +1484,7 @@ export function setupNext(
   answers: SetupAnswers,
   platform: SetupPlatform,
   here?: SetupRunnerHere,
-  packaged: SetupMcpPackaged = "Absent",
+  packaged: SetupMcpPackaged = { packaged: "Absent" },
   offers?: SetupTicketOffers,
   merge: SetupMergeSeen = setupMergeUnseen,
   tracked?: SetupTracked,

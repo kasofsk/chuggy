@@ -161,6 +161,10 @@ function darwinHeld(machine: SetupMachine, version: string): void {
 
 const darwinCommand = `${boxPrefix}/bin/chuggy-darwin`;
 const darwinInstall = runnerPackages.darwin.installCommand.split(" ");
+/** The release the Mac package's install command downloads, as its tag names it. */
+const darwinTagged = /\/download\/v([0-9]+\.[0-9]+\.[0-9]+)\//u.exec(
+  runnerPackages.darwin.installCommand,
+)?.[1];
 
 test("on a Mac with no runner package, mcp offers and installs the Mac's own package and names its server, run by chuggy-darwin", async () => {
   const machine = await unserved();
@@ -217,10 +221,24 @@ test("on a Mac, mcp leaves a chuggy-darwin whose mcp keeps the shared store as i
   const old = await unserved();
   old.platform = "darwin";
   darwinHeld(old, "0.22.0");
+  expect(darwinTagged).toBeDefined();
   expect(await mcpNext(old)).toMatchObject({
     tell: {
       id: "setup-mend-mcp-offer-behind",
-      args: { program: "chuggy-darwin" },
+      args: {
+        program: "chuggy-darwin",
+        found: {
+          id: "setup-runner-versioned",
+          args: { program: "chuggy-darwin", version: "0.22.0" },
+        },
+        installs: {
+          id: "setup-runner-versioned",
+          args: {
+            program: "chuggy-darwin",
+            version: darwinTagged,
+          },
+        },
+      },
     },
   });
   old.box.ran.length = 0;
@@ -249,7 +267,7 @@ test("the package mcp leaves on each platform is one runner and chat-host can us
   for (const platform of ["linux", "darwin"] as const) {
     const left = { command: "", version: setupServerPackages[platform].least };
     const leasts = setupPackageLeasts[platform];
-    expect(setupPackageCurrent(left, leasts.pool)).toBe(true);
+    expect(setupPackageCurrent(left, leasts.runner)).toBe(true);
     expect(setupPackageCurrent(left, leasts.chat)).toBe(true);
   }
 });

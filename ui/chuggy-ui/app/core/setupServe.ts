@@ -11,27 +11,11 @@
  * Whether the step is done is the checklist's to say, read after.
  */
 
-import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
-
 import type { ApiPorts, ApiResult } from "./apiRequest.ts";
 import { apiPersonalRunnerServes, apiWriteOwnerFallback } from "./apiRoutes.ts";
 import { failureWords } from "./failureWords.ts";
 import type { SetupServeDue } from "./setupNext.ts";
 import type { SetupServeAnswered, SetupServeWritten } from "./setupReport.ts";
-
-/** Each write `serve` makes for what is due, by its method and its address. */
-export function setupServeWrites(due: SetupServeDue): readonly string[] {
-  const filled = (route: string): string =>
-    route
-      .replace(":tenant", encodeURIComponent(due.partition.tenant))
-      .replace(":project", encodeURIComponent(due.partition.project));
-  return [
-    ...(due.give
-      ? [`PUT ${filled(nativeHttpRoutes.personalRunnerProject)}`]
-      : []),
-    ...(due.allow ? [`PUT ${filled(nativeHttpRoutes.ownerFallback)}`] : []),
-  ];
-}
 
 function setupServeWrittenOf(result: ApiResult<unknown>): SetupServeWritten {
   return result.outcome === "Ok"

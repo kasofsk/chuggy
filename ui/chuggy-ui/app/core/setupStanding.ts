@@ -900,16 +900,16 @@ export function setupHosted(route: PlacementRoute): boolean {
  * decider; or the step unread, where a read it turns on was not got; or the
  * step to do where the project has no pool and the person holds a personal
  * runner that does not take its work, because the project is not given it or
- * names no fallback.
- * The fallback and the person's personal runners are read only where the
- * project has no pool to say it has a runner.
+ * names no fallback; a live one that takes the work stands for the project
+ * beside a pool that is not, and both are read only where no pool is live.
  */
 function setupWorkStanding(
   reads: SetupReads,
   route: PlacementRoute,
   project: SessionRunnerStanding,
 ): SetupStep | SessionRunnerStanding {
-  if (sessionRunnerShort(route, project) !== "NoRunner") return project;
+  const short = sessionRunnerShort(route, project);
+  if (short === undefined) return project;
   const fallback = reads.fallback;
   if (fallback.read !== "Got")
     return setupUnread("runner", "fallback", setupFateOf(fallback));
@@ -919,8 +919,11 @@ function setupWorkStanding(
     return setupUnread("runner", "personal", setupFateOf(personal));
   if (!personal.value.registered) return project;
   const given = personal.value.standing !== "Unregistered";
+  if (given && named && short === "RunnerOffline")
+    return personal.value.standing === "Live" ? "Live" : project;
   if (given && named)
     return workRunnerStanding(project, named, personal.value.standing);
+  if (short === "RunnerOffline") return project;
   return setupUndone("runner", "todo", undefined, {
     lacks: "Serving",
     given,

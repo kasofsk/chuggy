@@ -21,11 +21,10 @@ setup-runner-versioned = { $program } { $version }
 # spells -run: to run is a verb here
 setup-runner-rule = Run { $command } only { $when }.
 # spells -run: to run is a verb here
-# spells -agent: the person's own coding agent, not one of chuggy's
-setup-runner-rule-chat-host = { $given ->
-    [yes] Run it with { $flag } { $no } in place of { $flag } { $yes } where the person wants no { -chat-host }, or only uses { -brand-name } through their agent.
-   *[no] Run it with { $flag } { $yes } in place of { $flag } { $no } only where the person asks for the { -chat-host } all the same.
-}
+setup-runner-rule-elsewhere = Where the person wants them on another machine instead, run nothing here, and give them this line to paste into { -claude-code } on that machine: { $line }
+# spells -run: to run is a verb here
+# spells -thread: the chat image is the image the chat host runs
+setup-runner-rule-chat-host = Run it with { $flag } { $no } in place of { $flag } { $yes } only where the person says they want no { -chat-host }. Before running it with { $flag } { $yes }, tell the person: Downloading the chat image. This takes a few minutes the first time.
 
 ## Each kind of Claude credential: what it is called, and what makes one.
 
@@ -59,9 +58,15 @@ setup-runner-note-settings-written = wrote the { -runner }'s settings to { $path
 # spells -run: to run is a verb here
 setup-runner-note-chat-settings-written = wrote the size of your { -chat-host } into { $path }, every other setting kept as it was: the most { -thread(form: "plural") } it runs at once is { $sessions }, at { $each } each, { $total } in all
 setup-runner-note-login = the { -runner }'s { $credential } is in { $path }
-setup-runner-note-pool = this machine is registered as { -runner(form: "a") } of { $project }, in { $path }
-setup-runner-note-pool-gone = { $path } registered this machine as { $pool }, and the { -site } lists no { -runner } of { $project } by that name
-setup-runner-note-registered = registered this machine as { -runner(form: "a") } of { $project }, in { $path }
+setup-runner-note-personal = this machine is registered as your { -runner }, in { $path }
+setup-runner-note-personal-gone = { $path } registered this machine as your { -runner }, and the { -site } no longer knows that registration
+setup-runner-note-personal-registered = registered this machine as your { -runner }, in { $path }
+setup-runner-note-given = your { -runner(form: "plural") } are given { $project }
+setup-runner-note-given-now = gave your { -runner(form: "plural") } { $project }
+# spells -work-stage: the work in general
+setup-runner-note-allowed = { $project } lets your own { -runner(form: "plural") } take your work in it
+# spells -work-stage: the work in general
+setup-runner-note-allowed-now = set { $project } to let your own { -runner(form: "plural") } take your work in it while one is online, and a shared { -runner } while none is
 # spells -brief-check: the runner package's own check is no brief's
 setup-runner-note-checked = the { -runner }'s own check passed
 # spells -brief-check: the runner package's own check is no brief's
@@ -83,7 +88,8 @@ setup-runner-note-enabled = set { $unit }, which was running, to start when you 
 setup-runner-note-started = started { $unit }, which also starts when you log in
 # spells -run: to run is a verb here
 setup-runner-note-restarted = restarted { $unit }, so it runs as it is now registered and installed
-setup-runner-note-project-live = the { -site } sees { -runner(form: "a") } of { $project } live
+# spells -work-stage: the work in general
+setup-runner-note-project-live = the { -site } sees your { -runner } live, taking your work in { $project }
 # spells -work-stage: the work in general
 setup-runner-note-hosted = { -hosted-runs } take the work of { $project }, so that work needs no { -runner }
 setup-runner-note-chat-host = this machine is registered as your { -chat-host }, in { $path }
@@ -149,8 +155,9 @@ setup-runner-docker-tell = { $why } { $state }, { setup-runner-unchanged }. { $m
 setup-runner-read-work = where its work runs
 # spells -run: to run is a verb here
 setup-runner-read-threads = where your { -thread(form: "plural") } in it run
-setup-runner-read-placement = how its { -runner(form: "plural") } stand
-setup-runner-read-pools = which { -runner(form: "plural") } it has
+# spells -work-stage: the work in general
+setup-runner-read-fallback = whether it lets your own { -runner(form: "plural") } take its work
+setup-runner-read-personal = which { -runner(form: "plural") } of yours it knows
 setup-runner-read-permit = whether you may register { -chat-host(form: "a") }
 setup-runner-read-chat = whether you have { -chat-host(form: "a") }
 setup-runner-unread-refused-found = the { -site } does not show you { $project } or { $what }
@@ -161,7 +168,8 @@ setup-runner-unread-refused-when = if the person says their access has changed
 setup-runner-unread-found = the { -site } did not say of { $project } { $what } ({ $outcome })
 setup-runner-unread-tell = The { -brand-name } { -site } did not answer everything I asked it, { setup-runner-unknown }. Tell me if you want me to try again.
 setup-runner-not-admin-found = the { -site } says you are not { -role-admin(form: "a") } of { $project }
-setup-runner-not-admin-tell = Putting { -runner(form: "a") } on { -project(form: "a") } takes { -role-admin(form: "a") } of it, and the { -brand-name } { -site } says you are not one of { $project }, { setup-runner-unchanged }. Ask { -role-admin(form: "a") } to make you one. Tell me once you are.
+# spells -work-stage: the work in general
+setup-runner-not-admin-tell = Your { -runner } takes your work in { $project } only once the { -project } lets its { -role-member(form: "plural") }' own { -runner(form: "plural") } take it, which takes { -role-admin(form: "a") } of it to set, and the { -brand-name } { -site } says you are not one, { setup-runner-unchanged }. Ask { -role-admin(form: "a") } of { $project } to set it, or to make you one. Tell me once they have.
 
 ## What this machine lacks.
 
@@ -310,10 +318,21 @@ setup-runner-lasting-hostname-when = once the person says this machine's name st
 ## The site's registration token, not made.
 
 # The outcome is the request's own name for how it failed, which is code.
-setup-runner-mint-found = the { -site } made no registration token for { $project } ({ $outcome })
-setup-runner-mint-absent-tell = The { -brand-name } { -site } would not make a registration for { $project }: that takes { -role-admin(form: "a") } of it. The { -runner } package is on this machine and nothing is registered. Tell me once you are { -role-admin(form: "a") } of { $project }.
-setup-runner-mint-conflict-tell = { -brand-name } already holds as many unused registrations for { $project } as it keeps at once, so it made no more. Each lapses by itself within { $mins } minutes of being made. Tell me when you want me to try again.
-setup-runner-mint-tell = The { -brand-name } { -site } did not make a registration for { $project }, so this machine is not registered yet. { setup-runner-picked-up }
+setup-runner-mint-found = the { -site } made no registration token for your { -runner } ({ $outcome })
+setup-runner-mint-absent-tell = The { -brand-name } { -site } would not make a registration for { -runner(form: "a") } of yours: the { -workspace } lets only { -role-member(form: "plural") } it chooses register one. The { -runner } package is on this machine and nothing is registered. Tell me once { -workspace(form: "a") } { -role-admin } has let you.
+setup-runner-mint-absent-when = once the person says { -workspace(form: "a") } { -role-admin } has let them register { -runner(form: "a") }
+setup-runner-mint-conflict-tell = { -brand-name } already holds as many unused registrations of yours as it keeps at once, so it made no more. Each lapses by itself within { $mins } minutes of being made. Tell me when you want me to try again.
+setup-runner-mint-tell = The { -brand-name } { -site } did not make a registration for your { -runner }, so this machine is not registered yet. { setup-runner-picked-up }
+# spells -work-stage: the work in general
+setup-runner-serve-refused-found = the { -site } did not { $write ->
+    [give] give your { -runner(form: "plural") } { $project }
+   *[allow] let your own { -runner(form: "plural") } take your work in { $project }
+} ({ $outcome })
+# spells -work-stage: the work in general
+setup-runner-serve-refused-tell = Your { -runner } is registered and running on this machine, and the { -brand-name } { -site } did not { $write ->
+    [give] give it { $project }
+   *[allow] let your own { -runner(form: "plural") } take your work in { $project }
+}, so it does not take that work yet. { setup-runner-picked-up }
 setup-runner-chat-mint-found = the { -site } made no registration token for your { -chat-host } ({ $outcome })
 setup-runner-chat-mint-absent-tell = The { -brand-name } { -site } would not make a registration for { -chat-host(form: "a") } of yours: the { -workspace } lets only { -role-member(form: "plural") } it chooses register one. Tell me once { -workspace(form: "a") } { -role-admin } has let you.
 setup-runner-chat-mint-absent-when = once the person says { -workspace(form: "a") } { -role-admin } has let them register { -chat-host(form: "a") }
@@ -372,8 +391,9 @@ setup-runner-inactive-exit-updated = It last exited with status { $status }, whi
 setup-runner-inactive-exit-other = It last exited with status { $status }, and it is started again { $secs } s after each such exit.
 setup-runner-not-live-running = is running
 setup-runner-not-live-running-pid = is running as process { $pid }
-setup-runner-not-live-found = the { -runner }'s service { $running }, and after { $secs } s the { -site } still sees no { -runner } of { $project } live
-setup-runner-not-live-unregistered-found = the { -runner }'s service { $running }, and after { $secs } s the { -site } lists no { -runner } of { $project }
+# spells -work-stage: the work in general
+setup-runner-not-live-found = the { -runner }'s service { $running }, and after { $secs } s the { -site } still does not see your { -runner } live, taking your work in { $project }
+setup-runner-not-live-unregistered-found = the { -runner }'s service { $running }, and after { $secs } s the { -site } lists no { -runner } of yours by its registration
 setup-runner-not-live-tell = The { -runner } is installed, registered and started on this machine, and the { -brand-name } { -site } does not see it live yet. It can take a little longer. Tell me when you want me to look again.
 
 ## The person's chat host.
@@ -390,6 +410,12 @@ setup-runner-permit-tell = { $work } Your { -thread(form: "plural") } there run 
 # A page and a button are named as the console draws them.
 # spells -turn: to turn on is a verb here
 setup-runner-permit-workspace-tell = The { -workspace } does not let you register { -chat-host(form: "a") } yet. { -role-admin(case: "upper", form: "a") } of the { -workspace }, you if you are one, turns on { -personal-runner(case: "upper", form: "plural") } for you on its People page, { $people }, with Edit on your row. Tell me once it is on.
+setup-runner-withheld-found = the { -workspace } does not let you register { -runner(form: "a") } of your own
+# A page and a button are named as the console draws them.
+# spells -work-stage: the work in general
+# spells -turn: to turn on is a verb here
+# spells -run: to run is a verb here
+setup-runner-withheld-tell = Your work in { $project } runs on { -runner(form: "a") } of your own, and the { -workspace } does not let you register one yet. { -role-admin(case: "upper", form: "a") } of the { -workspace }, you if you are one, turns on { -personal-runner(case: "upper", form: "plural") } for you on its People page, { $people }, with Edit on your row. Tell me once it is on.
 setup-runner-permit-when = once the person says { -personal-runner(case: "upper", form: "plural") } is on for them in the { -workspace }
 setup-runner-offline-found = your { -chat-host } is another machine, registered and not running
 # spells -run: to run is a verb here

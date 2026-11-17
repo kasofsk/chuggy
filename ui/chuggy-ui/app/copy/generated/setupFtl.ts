@@ -404,7 +404,7 @@ setup-mend-mcp-offer = The next step is { -brand-name }'s tools in your agent, f
 setup-mend-mcp-offer-absent = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and it is not installed here. With your yes I will install it with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
 # spells -agent: the person's own coding agent, not one of chuggy's
 # spells -configuration: Claude Code's own settings, not a chuggy configuration
-setup-mend-mcp-offer-behind = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and the one installed here is not at a version { setup-program } uses. With your yes I will install the one it uses with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
+setup-mend-mcp-offer-behind = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and the one installed here, { $found }, is older than { setup-program } uses. With your yes I will install { $installs } in its place with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
 
 ## The plugin step, which the plugin command does in Claude Code with the
 ## person's yes, and passes over on their no.
@@ -474,10 +474,10 @@ setup-project-made = made { $project }, called { $name }
 setup-project-refused-found = the { -project } was not made: { $refusal }
 setup-project-refused-tell = The { -project } was not made: { $refusal }. Tell me what to do instead.
 
-## The runner's step, which the runner command does on this machine with the
-## person's yes.
+## The runner's step, which the runner command does on this machine once it
+## is announced, unless the person objects or asks for another machine.
 
-setup-offer-when = once the person says yes to { -runner(form: "a") } on this machine
+setup-offer-when = once the person has been told what it does here, has not objected, and has not asked for it on another machine instead
 setup-claude-on-subscription = your { -claude } plan
 setup-claude-on-api-key = your Anthropic API key
 setup-claude-on-bedrock = your Amazon Bedrock account
@@ -494,34 +494,39 @@ setup-mend-package-newer = If the { -runner } package here, { $program }, is old
 # spells -brief-check: to check is a verb here
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-live-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds a registration for that { -project }. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the { -site } no longer knows that registration, so work on your { -ticket(form: "plural") } runs on this machine { $runs }, { $job } a { -run }.{ $fit }{ $chat ->
-    [with] { " " }{ $ask } Tell me yes to go ahead, and whether you want the { -chat-host } too.
-   *[without] { " " }Tell me yes to go ahead.
-}
+setup-mend-runner-live-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds the registration of { -runner(form: "a") }. I'll check it and start it here as a background service of yours that starts when you log in, registering this machine again as yours alone first if the { -site } no longer knows that registration, so work on your { -ticket(form: "plural") } runs on this machine { $runs }, { $job } a { -run }.{ $found }{ $fit }{ $chat } Your { -runner } will take work for { $project }. Say if you'd rather it didn't. It can live on another machine instead; say so if you want that.
+# spells -brief-check: to check is a verb here
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+setup-mend-runner-pool-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds the registration of { -runner(form: "a") } of the { -project }'s rather than yours. I'll leave that registration as it is and register this machine again as yours alone, then check your { -runner } and start it here as a background service of yours that starts when you log in, so work on your { -ticket(form: "plural") } runs on this machine { $runs }, { $job } a { -run }.{ $found }{ $fit }{ $chat } Your { -runner } will take work for { $project }. Say if you'd rather it didn't. It can live on another machine instead; say so if you want that.
 setup-mend-runner-live-tell = { -runner(case: "upper", form: "a") } is registered and is not running. Start it on its machine and tell me once it is running.
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-put = That puts a background service of yours here. The { -runner } package, { $program }, runs it, and it starts when you log in. Work on your { -ticket(form: "plural") } then runs on this machine { $runs }, { $job } a { -run }.
+setup-mend-runner-put = The { -runner } package, { $program }, runs it as a background service of yours that starts when you log in. Work on your { -ticket(form: "plural") } then runs on this machine { $runs }, { $job } a { -run }.
 # spells -run: to run is a verb here
-# spells -agent: the person's own coding agent, not one of chuggy's
-setup-mend-chat-host-ask = I can also make this machine your { -chat-host }, a second background service, which holds { $total } whenever it runs: { $each } a { -thread }, for up to { $sessions } at once. It is only for chatting with { -brand-name } in the browser, so tools in your own agent need none. { $recommend ->
-    [yes] There is room for it here beside a { -run }, so I recommend it.
-   *[no] I recommend against it here: { $short }.
+setup-mend-chat-host-holds = { " " }Your { -chat-host } is a second background service, which holds { $total } whenever it runs: { $each } a { -thread }, for up to { $sessions } at once.
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+setup-mend-runner-things = { $chat ->
+    [with] { -brand-name } needs two things running on a machine of yours. A **{ -runner }** does the work of { -ticket(form: "plural") }. A **{ -chat-host }** runs your { -thread(form: "plural") } with { -brand-name }.
+   *[without] { -brand-name } needs a **{ -runner }** running on a machine of yours, which does the work of { -ticket(form: "plural") }.
 }
-setup-mend-chat-host-short = { $said ->
-    [said] { $engine } here has only { $memory }, too little for a { -run } and a { -chat-host } at once
-    [used] { $engine } here has { $memory }, { $used } of it in use, too little for a { -run } and a { -chat-host } at once
-    [uncounted] { $engine } here did not say what its containers use
-   *[unsaid] { $engine } here did not say how much memory it has
-}
+# spells -run: to run is a verb here
+# spells -work-stage: the work in general
+setup-mend-runner-found-settings = { " " }This machine already has { -runner } settings, in { $path }, which run its work on the { $credential } at { $login }. I keep them as they are.
+# spells -claude: claude setup-token is the command
+# spells -run: to run is a verb here
+setup-mend-runner-login = { $things } First, { -claude } needs to be logged in for them: run \`claude setup-token\` and tell me when it's done. { $saved }
+setup-mend-runner-login-named = { $things } First, { -claude } needs to be logged in for them: the { -runner }'s settings name its { $credential } as { $path }, and nothing is there. { $saved } Tell me once it is there.
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
 setup-mend-runner-elsewhere = Open { $page }, press { $add } and do what it shows on the machine that will run the work. Tell me once the { -runner } is running.
 setup-mend-runner-instead = For { -runner(form: "a") } on another machine instead, open { $page } there, press { $add } and do what it shows, and tell me once it is running.
-setup-mend-runner-offer = { setup-next-runner }. I can make this machine one. { $put }{ $fit }{ $chat ->
-    [with] { " " }{ $ask } Tell me yes to go ahead, and whether you want the { -chat-host } too.
-   *[without] { " " }Tell me yes to go ahead.
-} For { -runner(form: "a") } on another machine instead, that machine's own browser opens { $page }, where you press { $add } and do what it shows.
+# spells -work-stage: the work in general
+setup-mend-runner-offer = { $things } { $chat ->
+    [with] I'll install both on this machine, as yours alone. They can live on another machine instead; say so if you want that.
+   *[without] I'll install it on this machine, as yours alone. It can live on another machine instead; say so if you want that.
+}{ $found } { $put }{ $fit }{ $holds } Your { -runner } will take work for { $project }. Say if you'd rather it didn't.
 # spells -work-stage: the work in general
 setup-mend-serving-offer = Your { -runner } is registered and does not take { $project }'s work yet. With your yes I will { $does ->
     [both] give it { $project } and let your own { -runner(form: "plural") } take its work
@@ -562,7 +567,7 @@ setup-mend-fit-small = { " " }{ $machine ->
 }
 # spells -run: to run is a verb here
 setup-mend-fit-colima = { " " }{ $vm ->
-    [none] Docker runs in Colima on a Mac, and Colima has no VM here yet. With your yes I first make one with { $gives ->
+    [none] Docker runs in Colima on a Mac, and Colima has no VM here yet. I first make one with { $gives ->
         [both] { $target } and Rosetta for the amd64 images { -run(form: "a") } naming no platform needs
        *[memory] { $target }
     }, room for { setup-mend-fit-job }: { $commands }.
@@ -571,7 +576,7 @@ setup-mend-fit-colima = { " " }{ $vm ->
         [memory] Colima's VM here has { $has }, short of { setup-mend-fit-job }.
         [amd64] Colima's VM here runs no amd64 images, which { -run(form: "a") } naming no platform needs.
        *[none] Colima's VM here is stopped.
-    } With your yes I first { $vm ->
+    } I first { $vm ->
         [running] stop it, which stops its containers, and start it again
        *[stopped] start it
     }{ $gives ->

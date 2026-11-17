@@ -188,11 +188,11 @@ test("a project whose work the cluster runs, with a ticket landed and no runner,
   expect(done.lines.join("\n")).not.toContain("/settings/workspace/runner");
 });
 
-test("a project with no runner names Personal runners for one on another machine, and nothing that once added a pool", async () => {
+test("a project with no runner gives a line that sets one up on another machine, and names nothing that once added a pool", async () => {
   const done = await printed(await machineSignedIn(setupSiteAt("Configured")));
   const said = done.lines.join("\n");
   expect(said).toContain(
-    `opens ${pages}/settings/workspace/runner, where you press Register runner`,
+    `give them this line to paste into Claude Code on that machine: Make this machine my chuggy runner and chat host: run "curl -fsS ${machineSite}/chuggy-setup.mjs`,
   );
   expect(said).not.toMatch(/\/runners\b|Add runner/u);
 });

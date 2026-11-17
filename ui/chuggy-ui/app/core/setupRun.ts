@@ -69,9 +69,14 @@ import type { SetupReads } from "./setupReads.ts";
 import { setupProject } from "./setupProject.ts";
 import type { SetupProjectAsked } from "./setupProject.ts";
 import { setupRemoteRead } from "./setupRemote.ts";
-import { setupServeAsked, setupServeWrites } from "./setupServe.ts";
+import { setupServeAsked } from "./setupServe.ts";
 import type { SetupFault, SetupReport } from "./setupReport.ts";
-import { setupChatHost, setupRunner, setupWritePorts } from "./setupRunner.ts";
+import {
+  setupChatHost,
+  setupRunner,
+  setupServeWrites,
+  setupWritePorts,
+} from "./setupRunner.ts";
 import type {
   SetupChatHostAsked,
   SetupRunnerAsked,

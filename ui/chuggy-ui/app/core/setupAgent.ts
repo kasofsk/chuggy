@@ -27,7 +27,7 @@
 
 import { z } from "zod";
 
-import { runnerPackages } from "./runners.ts";
+import { runnerInstalledVersion, runnerPackages } from "./runners.ts";
 import type { RunnerPackage } from "./runners.ts";
 import type { SetupAsked } from "./setupArguments.ts";
 import { setupPlatformOf } from "./setupPorts.ts";
@@ -278,14 +278,20 @@ async function setupServerHad(
   return { ended: "Served" };
 }
 
-/** What `mcp` finds of the platform's runner package here: one it leaves as it is, one it replaces, or none. */
-export type SetupMcpPackaged = "Current" | "Behind" | "Absent";
+/** What `mcp` finds of the platform's runner package here: one it leaves as it is, none, or one it replaces, with the version found where it said one and the one its install command installs. */
+export type SetupMcpPackaged =
+  | { readonly packaged: "Current" | "Absent" }
+  | {
+      readonly packaged: "Behind";
+      readonly version: string | undefined;
+      readonly installs: string | undefined;
+    };
 
 /** The platform's runner package here as `mcp` would find it, looked for and not touched. */
 export async function setupMcpPackaged(
   ports: SetupPorts,
 ): Promise<SetupMcpPackaged> {
-  if (ports.surroundings.home === undefined) return "Absent";
+  if (ports.surroundings.home === undefined) return { packaged: "Absent" };
   const { offered, least } = setupServerPackage(ports);
   const found = (
     await setupPackageProbed(
@@ -295,8 +301,14 @@ export async function setupMcpPackaged(
       offered,
     )
   ).found;
-  if (found === undefined) return "Absent";
-  return setupPackageCurrent(found, least) ? "Current" : "Behind";
+  if (found === undefined) return { packaged: "Absent" };
+  return setupPackageCurrent(found, least)
+    ? { packaged: "Current" }
+    : {
+        packaged: "Behind",
+        version: found.version,
+        installs: runnerInstalledVersion(offered),
+      };
 }
 
 /** One run of `mcp`, to its report, at the site it was given or the one remembered. */

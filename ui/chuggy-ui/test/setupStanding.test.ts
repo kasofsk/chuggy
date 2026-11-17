@@ -18,7 +18,10 @@ import {
   sessionRunnerStandings,
   ticketLandingStates,
 } from "../../../src/contract/rosters.ts";
-import type { SessionRunnerStanding } from "../../../src/contract/rosters.ts";
+import type {
+  OwnerFallback,
+  SessionRunnerStanding,
+} from "../../../src/contract/rosters.ts";
 import { projectInventoryPagesMax } from "../app/core/apiRoutes.ts";
 import { repositoriesWorkerless } from "../app/core/projectRepositories.ts";
 import { setupNorthStarSkip } from "../app/core/setupArguments.ts";
@@ -977,6 +980,27 @@ test("a project with no pool that names an owner fallback takes the person's own
     "Preferred Offline": offline,
     "Preferred Live": saidLive,
   });
+});
+
+test("a pool registered and not running beside the person's own runner live, given the project and named its fallback, reads the runner step done, and the same pool beside one not given it, unnamed or offline still waits on the pool", async () => {
+  const step = async (
+    fallback: OwnerFallback | undefined,
+    live: boolean,
+    projects: string[],
+  ) => {
+    const { site, project } = saidRunnable();
+    project.runner = "Offline";
+    project.fallback = fallback;
+    site.personal.set("acme", { live: [live], projects });
+    return (await column(site))[6];
+  };
+  const widgets = saidRunnable().project.project;
+  const offline: Said = ["waiting", "registered, not running"];
+  expect(await step("Preferred", true, [widgets])).toEqual(saidLive);
+  expect(await step("Strict", true, [widgets])).toEqual(saidLive);
+  expect(await step(undefined, true, [widgets])).toEqual(offline);
+  expect(await step("Preferred", true, ["gadgets"])).toEqual(offline);
+  expect(await step("Preferred", false, [widgets])).toEqual(offline);
 });
 
 /** A chat host runs the person's threads and takes no work, and a personal

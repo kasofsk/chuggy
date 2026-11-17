@@ -101,7 +101,7 @@ test("a run of runner says the project by its workspace's display name, and the 
     "widgets",
   ]);
   expect(lines).toContain(
-    `found: the site sees a runner of ${named}/widgets live`,
+    `found: the site sees your runner live, taking your work in ${named}/widgets`,
   );
   expect(lines.at(-1)).toBe(
     `next: node ${machineScript} --workspace acme --project widgets`,
