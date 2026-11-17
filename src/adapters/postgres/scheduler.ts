@@ -35,6 +35,12 @@
  * the cluster. It guards an arithmetic rather than an authority; the authority
  * stays the durable allocations, which is why no count is cached anywhere.
  *
+ * ADMISSION AND LAUNCH TAKE A STARTED TICKET FIRST, AS THE CLAIMS DO. Past the
+ * reservation deficit `preferredOver` leads with, which only admission ranks
+ * by, both take `execution_attempt_started`, then the oldest ticket by
+ * `execution_ticket_registered`, then registration, so a freed slot goes to a
+ * ticket's next stage before another ticket's work.
+ *
  * AN APPROVAL IS REGISTERED AND NEVER ADMITTED. Its execution is queued as any
  * is, which holds no slot, but names no requirement because a person answers
  * it, and admission passes over every row that names none. `mayAdmit` only
@@ -829,6 +835,8 @@ async function schedulerAdmit(
       WHERE e.cluster = ${cluster} AND e.status = 'Queued'
         AND e.requirement_value IS NOT NULL AND h.held < a.maximum
       ORDER BY (greatest(a.reserved - h.held, 0) > 0) DESC,
+               execution_attempt_started(e.tenant, e.project, e.execution, NULL::text) DESC,
+               execution_ticket_registered(e.tenant, e.project, e.ticket),
                e.registered_at, e.execution LIMIT 1
       FOR UPDATE OF e`,
   );
@@ -1422,7 +1430,9 @@ async function schedulerUnlaunched(
                          WHERE a.tenant = e.tenant AND a.project = e.project
                            AND a.execution = e.execution
                            AND a.state IN ('Placing', 'Running'))
-      ORDER BY e.registered_at, e.execution LIMIT ${executionsMax}`,
+      ORDER BY execution_attempt_started(e.tenant, e.project, e.execution, NULL::text) DESC,
+               execution_ticket_registered(e.tenant, e.project, e.ticket),
+               e.registered_at, e.execution LIMIT ${executionsMax}`,
   );
   return waiting.rows.map(executionRowLogical);
 }
