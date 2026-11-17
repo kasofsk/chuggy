@@ -1,8 +1,8 @@
 /**
  * The console's focus indicator and what forced colours keep, as its sheets
  * state them: an outline drawn from the focus tokens, an outline taken away
- * only in a sheet that draws one back on a keyboard's focus, and the rules
- * that hold under `forced-colors: active`. Whether a browser in forced colours
+ * only where a rule of its sheet draws one on that element's keyboard focus,
+ * and the rules that hold under `forced-colors: active`. Whether a browser in forced colours
  * draws what these rules say is for a rendered harness; this reads the rules.
  */
 
@@ -110,20 +110,140 @@ function focusIndicatorRemoves(rule: CSSStyleRule): boolean {
   );
 }
 
-/** The selectors of a sheet that take an outline away while no rule of the
- * same sheet draws one on a keyboard's focus. */
-function focusIndicatorUnreplaced(text: string): readonly string[] {
-  const rules = focusIndicatorRules(text);
-  const replaced = rules.some(
-    (rule) =>
-      rule.selectorText.includes(":focus-visible") &&
-      rule.style.getPropertyValue("outline") !== "" &&
-      !focusIndicatorRemoves(rule),
-  );
-  return replaced
-    ? []
-    : rules.filter(focusIndicatorRemoves).map((rule) => rule.selectorText);
+/** How an outline taken away is answered: markup in which the element its
+ * rule names holds a keyboard's focus, marked `data-under-test`, or the reason
+ * that element is a region rather than a control and wears no ring. */
+type FocusIndicatorTaken =
+  { readonly markup: string } | { readonly region: string };
+
+/** A selector as `Element.matches` can test it: a keyboard's focus as an
+ * attribute, and a trailing pseudo-element read as the element drawing it. */
+function focusIndicatorMatchable(selector: string): string {
+  return selector
+    .replace(/::[\w-]+$/u, "")
+    .replaceAll(":focus-visible", "[data-focus-visible]");
 }
+
+/** Whether a rule draws an outline on a keyboard's focus. */
+function focusIndicatorDraws(rule: CSSStyleRule): boolean {
+  return (
+    rule.selectorText
+      .replace(/:not\(:focus[\w-]*\)/gu, "")
+      .includes(":focus-visible") &&
+    rule.style.getPropertyValue("outline") !== "" &&
+    !focusIndicatorRemoves(rule)
+  );
+}
+
+/** Whether a rule of the sheet draws an outline on the focused element of the
+ * markup, on an element holding it, or on one it holds. */
+function focusIndicatorAnswered(
+  rules: readonly CSSStyleRule[],
+  removed: string,
+  markup: string,
+): boolean {
+  const host = document.createElement("div");
+  host.innerHTML = markup;
+  const focused = host.querySelector("[data-under-test]");
+  if (focused === null) throw new Error(`nothing under test in ${markup}`);
+  focused.setAttribute("data-focus-visible", "");
+  if (!focused.matches(focusIndicatorMatchable(removed)))
+    throw new Error(`${removed} does not name the focus in ${markup}`);
+  const related = [...host.querySelectorAll("*")].filter(
+    (element) => element.contains(focused) || focused.contains(element),
+  );
+  return rules
+    .filter(focusIndicatorDraws)
+    .flatMap(focusIndicatorSelectors)
+    .some((selector) =>
+      related.some((element) =>
+        element.matches(focusIndicatorMatchable(selector)),
+      ),
+    );
+}
+
+/** The selectors of a sheet that take an outline away and are not answered as
+ * `taken` says: unnamed there, or with no rule of the same sheet drawing one on
+ * the focused element, an element holding it, or one it holds. */
+function focusIndicatorUnreplaced(
+  text: string,
+  taken: Readonly<Record<string, FocusIndicatorTaken>>,
+): readonly string[] {
+  const rules = focusIndicatorRules(text);
+  return rules
+    .filter(focusIndicatorRemoves)
+    .flatMap(focusIndicatorSelectors)
+    .filter((selector) => {
+      const answer = taken[selector];
+      if (answer === undefined) return true;
+      return "markup" in answer
+        ? !focusIndicatorAnswered(rules, selector, answer.markup)
+        : false;
+    });
+}
+
+/** Each outline the console's sheets take away, by sheet and selector. */
+const focusIndicatorTakenAway: Readonly<
+  Record<string, Readonly<Record<string, FocusIndicatorTaken>>>
+> = {
+  "browser/ProjectTable.css": {
+    ".ticket-list-standing:focus-visible": {
+      markup:
+        '<a class="ticket-list-standing" data-under-test><span class="ticket-state"></span></a>',
+    },
+  },
+  "browser/RunnerMint.css": {
+    ".runner-mint .checkbox:focus-visible": {
+      markup:
+        '<div class="runner-mint"><button class="checkbox" data-under-test></button></div>',
+    },
+  },
+  "browser/conversation/conversation.css": {
+    ".conversation-input:focus-visible": {
+      markup:
+        '<div class="conversation-field"><textarea class="conversation-input" data-under-test></textarea></div>',
+    },
+  },
+  "browser/repositories/Repositories.css": {
+    ".repositories-page .radio-item:focus-visible": {
+      markup:
+        '<div class="repositories-page"><button class="radio-item" data-under-test></button></div>',
+    },
+  },
+  "browser/settings/PreferencesPage.css": {
+    ".preferences-section .radio-item:focus-visible": {
+      markup:
+        '<section class="preferences-section"><button class="radio-item" data-under-test></button></section>',
+    },
+  },
+  "browser/shell/shell.css": {
+    ".shell-main:focus-visible": {
+      region: "the page a skip link moves the reader to",
+    },
+  },
+  "browser/ui/Chip.css": {
+    ".chip-remove:focus-visible": {
+      markup:
+        '<span class="chip"><button class="chip-remove" data-under-test></button></span>',
+    },
+  },
+  "browser/ui/ListControls.css": {
+    ".list-search > .list-search-toggle:focus-visible": {
+      markup:
+        '<div class="list-search"><button class="list-search-toggle" data-under-test></button></div>',
+    },
+    ".list-search-field .input-box:focus-visible": {
+      markup:
+        '<div class="list-search"><div class="list-search-field"><input class="input-box" data-under-test></div></div>',
+    },
+  },
+  "browser/ui/Menu.css": {
+    ".menu:focus-visible": {
+      region:
+        "the panel focus rests in between items, each item outlined when the keys reach it",
+    },
+  },
+};
 
 /** What one forced-colours rule of a sheet declares for one property. */
 function focusIndicatorForcedValue(
@@ -180,38 +300,85 @@ test("no sheet draws focus as a shadow, and every focus outline takes the focus 
   expect(found).toEqual([]);
 });
 
-test("no sheet takes an outline away without drawing one on a keyboard's focus", () => {
+test("no sheet takes an outline away without drawing one on the same element's keyboard focus", () => {
   const found = Object.entries(focusIndicatorSheets).flatMap(([path, text]) =>
-    focusIndicatorUnreplaced(text).map((selector) => `${path}: ${selector}`),
+    focusIndicatorUnreplaced(
+      text,
+      focusIndicatorTakenAway[path.replace("../app/", "")] ?? {},
+    ).map((selector) => `${path}: ${selector}`),
   );
   expect(found).toEqual([]);
 });
 
-test("an outline taken away, as none or as zero, is named until the sheet draws one back", () => {
+test("an outline taken away, as none or as zero, is named until a rule draws one on the element it was taken from", () => {
   const taken = `@layer ui {
     .a:focus-visible { outline: none; }
     .b { outline: 0; }
     .c { outline-style: none; }
   }`;
-  expect(focusIndicatorUnreplaced(taken)).toEqual([
+  const answers = {
+    ".a:focus-visible": {
+      markup: '<div class="a" data-under-test></div>',
+    },
+    ".b": { markup: '<div class="b" data-under-test></div>' },
+    ".c": { markup: '<div class="c" data-under-test></div>' },
+  };
+  expect(focusIndicatorUnreplaced(taken, answers)).toEqual([
     ".a:focus-visible",
     ".b",
     ".c",
   ]);
   expect(
-    focusIndicatorUnreplaced(`${taken} .d:focus-visible { outline: none; }`),
-  ).toHaveLength(4);
+    focusIndicatorUnreplaced(
+      `${taken} .a:focus-visible { outline: var(--focus-width) solid var(--focus); }`,
+      answers,
+    ),
+  ).toEqual([".b", ".c"]);
+  expect(
+    focusIndicatorUnreplaced(
+      `${taken} .d:focus-visible { outline: var(--focus-width) solid var(--focus); }`,
+      answers,
+    ),
+  ).toEqual([".a:focus-visible", ".b", ".c"]);
+  expect(
+    focusIndicatorUnreplaced(
+      `${taken} .a:focus-visible::before, .b:focus-visible > i, .x:has(.c:focus-visible) { outline: var(--focus-width) solid var(--focus); }`,
+      {
+        ...answers,
+        ".b": { markup: '<div class="b" data-under-test><i></i></div>' },
+        ".c": {
+          markup: '<div class="x"><div class="c" data-under-test></div></div>',
+        },
+      },
+    ),
+  ).toEqual([]);
   expect(
     focusIndicatorUnreplaced(
       `${taken} .a:has(:focus-visible) { outline: var(--focus-width) solid var(--focus); }`,
+      {},
     ),
-  ).toEqual([]);
+  ).toEqual([".a:focus-visible", ".b", ".c"]);
+});
+
+test("a second outline taken away in a sheet that answers one is named", () => {
+  const shell = focusIndicatorSheet("browser/shell/shell.css");
+  const taken = focusIndicatorTakenAway["browser/shell/shell.css"] ?? {};
+  expect(
+    focusIndicatorUnreplaced(
+      `${shell} @layer page { .chat-separator:focus-visible { outline: none; } }`,
+      {
+        ...taken,
+        ".chat-separator:focus-visible": {
+          markup: '<div class="chat-separator" data-under-test></div>',
+        },
+      },
+    ),
+  ).toEqual([".chat-separator:focus-visible"]);
 });
 
 test("where a scroller clips past its row, the focus outline is drawn inside", () => {
   for (const [path, selector] of [
     ["browser/ui/TabNav.css", ".tab-nav-tab:focus-visible"],
-    ["browser/ticket/ticket.css", ".ticket-tab:focus-visible"],
     ["browser/ui/Menu.css", ".menu-item:focus-visible"],
     ["browser/shell/shell.css", ".chat-history-row:focus-visible"],
   ] as const) {
@@ -463,13 +630,6 @@ const focusIndicatorForcedMarks = [
   [
     "browser/ui/TabNav.css",
     '<nav class="tab-nav"><a class="tab-nav-tab" aria-current="page" data-under-test></a></nav>',
-    "::after",
-    "background",
-    "forced-current",
-  ],
-  [
-    "browser/ticket/ticket.css",
-    '<a class="ticket-tab" aria-current="page" data-under-test></a>',
     "::after",
     "background",
     "forced-current",
