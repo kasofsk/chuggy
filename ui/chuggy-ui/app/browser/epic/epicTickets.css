@@ -43,10 +43,6 @@
     font-weight: var(--weight-medium);
   }
 
-  .epic-tickets-group-mark {
-    display: flex;
-  }
-
   .epic-tickets-after a {
     color: var(--ink-2);
     font-family: var(--font-mono);

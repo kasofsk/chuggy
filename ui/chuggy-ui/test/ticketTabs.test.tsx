@@ -47,7 +47,7 @@ function ticketTabsRead(
     .getAllByRole("link")
     .map((link) => [
       link.firstChild?.textContent ?? "",
-      link.querySelector(".tab-nav-count")?.textContent,
+      link.querySelector('.count-badge [aria-hidden="true"]')?.textContent,
     ]);
 }
 

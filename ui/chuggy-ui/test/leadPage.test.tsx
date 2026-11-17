@@ -290,7 +290,7 @@ test.each([
     const chips = screen.getByRole("heading", {
       name: "Lead",
     }).nextElementSibling;
-    const words = [...(chips?.querySelectorAll(".pill") ?? [])].map(
+    const words = [...(chips?.querySelectorAll(".status-badge") ?? [])].map(
       (pill) => pill.textContent,
     );
     expect(words).toStrictEqual(

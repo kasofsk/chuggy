@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 
 import { TicketHeader } from "../app/browser/ticket/TicketHeader.tsx";
 import { TicketStateLabel } from "../app/browser/ticket/TicketStateLabel.tsx";
+import { ticketStateLabelOf } from "../app/core/ticketHeader.ts";
 import type { TicketListStanding } from "../app/core/ticketListView.ts";
 import { intersectionObserverStubbed } from "./intersectionObserver.ts";
 
@@ -39,28 +40,25 @@ const standings: readonly TicketListStanding[] = [
   "Revoked",
 ];
 
-test("every state's label is its word after a mark, and only a moving state's mark spins", () => {
+test("every state's label is its status badge, the page's regular and the bar's small, in its label's tone", () => {
   for (const standing of standings) {
     const { container } = renderCopied(
-      <TicketStateLabel standing={standing} size="page" />,
+      <TicketStateLabel standing={standing} size="regular" />,
     );
-    const label = container.querySelector<HTMLElement>(".ticket-state");
+    const label = container.querySelector<HTMLElement>(".status-badge");
     const mark = label?.querySelector("svg");
     expect(label?.tagName, standing).toBe("SPAN");
-    expect(mark?.getAttribute("aria-hidden"), standing).toBe("true");
-    expect(mark?.hasAttribute("data-spins"), standing).toBe(
-      standing === "Work" ||
-        standing === "Evaluation" ||
-        standing === "Finalization",
+    expect(label?.dataset["tone"], standing).toBe(
+      ticketStateLabelOf(standing).tone,
     );
+    expect(mark?.getAttribute("aria-hidden"), standing).toBe("true");
     cleanup();
   }
   renderCopied(<TicketStateLabel standing="Evaluation" size="small" />);
   const small = screen
     .getByText("Evaluating")
-    .closest<HTMLElement>(".ticket-state");
+    .closest<HTMLElement>(".status-badge");
   expect(small?.dataset["size"]).toBe("small");
-  expect(small?.dataset["form"]).toBe("filled");
   expect(small?.dataset["tone"]).toBe("evaluation");
 });
 
@@ -91,7 +89,7 @@ test("the bar holding the small label and the title shows once the header has sc
   expect(
     within(bar as HTMLElement)
       .getByText("Escalated")
-      .closest<HTMLElement>(".ticket-state")?.dataset["size"],
+      .closest<HTMLElement>(".status-badge")?.dataset["size"],
   ).toBe("small");
   expect(
     within(bar as HTMLElement).getByText("Lock the contract"),

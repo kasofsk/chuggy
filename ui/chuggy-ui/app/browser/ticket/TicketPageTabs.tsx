@@ -51,13 +51,8 @@ export function TicketTabs(props: {
         params={params}
         activeOptions={{ exact: !props.runsWithin, includeSearch: false }}
         aria-current={props.runsWithin ? "page" : undefined}
-        count={
-          runCount === 0
-            ? undefined
-            : props.runCountCut
-              ? `${String(runCount)}+`
-              : runCount
-        }
+        count={runCount === 0 ? undefined : runCount}
+        countCut={props.runCountCut}
       >
         {text({ id: "ticket-tab-runs" })}
       </TabNavLink>

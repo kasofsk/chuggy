@@ -51,7 +51,8 @@ export function linkColumn(heading: string): readonly (string | undefined)[] {
 
 export function linkStatuses(): readonly (string | undefined)[] {
   return linkRows().map(
-    (row) => linkCells(row)["Status"]?.querySelector(".pill")?.textContent,
+    (row) =>
+      linkCells(row)["Status"]?.querySelector(".status-badge")?.textContent,
   );
 }
 

@@ -108,6 +108,7 @@ export interface LeadCopy {
   };
   readonly "lead-settings-default": Record<never, never>;
   readonly "lead-settings-default-lower": Record<never, never>;
+  readonly "lead-settings-edited": Record<never, never>;
   readonly "lead-settings-effective-none": Record<never, never>;
   readonly "lead-mode-name": Record<never, never>;
   readonly "lead-mode-running": Record<never, never>;

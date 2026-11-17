@@ -245,7 +245,7 @@
     --text-root: 100%;
     --mono-optical: 0.93em; /* mono set inside prose, matched by x-height */
     --text-xs: 0.6875rem; /* meta, eyebrows, freshness */
-    --text-sm: 0.75rem; /* pills, table heads, notes */
+    --text-sm: 0.75rem; /* badges, table heads, notes */
     --text-md: 0.875rem; /* body, rows, keys */
     --text-lg: 1rem; /* a panel title that leads a region */
     --text-xl: 1.25rem; /* the page title */
@@ -255,7 +255,7 @@
     --weight-medium: 500;
     --weight-strong: 600;
     --leading-tight: 1.25;
-    --leading-dense: 1.4; /* rows, pills, tables */
+    --leading-dense: 1.4; /* rows, badges, tables */
     --leading-prose: 1.55;
     --leading-reading: 1.7; /* a conversation given the whole frame */
     --tracking-label: 0.06em;
@@ -285,8 +285,6 @@
     --height-control: var(--height-icon);
     --height-icon: 2rem; /* a control that is only its glyph */
     --height-chat-strip: 2.5rem; /* the chat pane collapsed to its strip */
-    --height-state: 1.875rem; /* a ticket's state label on its page */
-    --height-state-small: 1.5rem; /* that label where a row or a bar holds it */
 
     /* stacking — the band a Radix portal draws in, above every page layer's
        own z-index: a menu, a picker or a tooltip takes this value directly,

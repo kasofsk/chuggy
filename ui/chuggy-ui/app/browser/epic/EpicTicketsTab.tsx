@@ -35,7 +35,6 @@ import { PanelUnready } from "../DataPanel.tsx";
 import { TicketListEscalation, TicketListState } from "../ProjectTable.tsx";
 import { TicketRowDispatchScope } from "../TicketActions.tsx";
 import { TicketTitleNumber, cellAbsent } from "../TicketCells.tsx";
-import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
 import { readValue } from "../../core/freshness.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { CountBadge } from "../ui/CountBadge.tsx";
@@ -133,7 +132,7 @@ function EpicTicketsState(props: {
   if (member.standing !== "Ready")
     return (
       <span className="ticket-list-foot-standing">
-        <TicketListState row={row} look="Badge" />
+        <TicketListState row={row} />
       </span>
     );
   return (
@@ -146,7 +145,7 @@ function EpicTicketsState(props: {
         <>
           <div className="ticket-list-notes">{notes}</div>
           <span className="ticket-list-foot-standing">
-            <TicketListState row={row} dispatch={dispatch} look="Badge" />
+            <TicketListState row={row} dispatch={dispatch} />
           </span>
         </>
       )}
@@ -255,13 +254,9 @@ function EpicTicketsGroupList(props: {
   return (
     <section className="epic-tickets-group" data-group={props.group}>
       <h3 className="epic-tickets-group-head">
-        <span
-          className="epic-tickets-group-mark ticket-state-ink"
-          data-tone={ticketStateLabelOf(standing).tone}
-        >
-          <TicketStateMark standing={standing} />
-        </span>
-        <span>{word}</span>
+        <StatusBadge tone={ticketStateLabelOf(standing).tone} size="regular">
+          {word}
+        </StatusBadge>
         <CountBadge
           count={count}
           name={text({ id: "epics-tickets-group-count", args: { count } })}

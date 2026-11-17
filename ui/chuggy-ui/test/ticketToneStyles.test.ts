@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import listSheet from "../app/browser/ProjectTable.css?raw";
+import badgeSheet from "../app/browser/ui/StatusBadge.css?raw";
 import ticketSheet from "../app/browser/ticket/ticket.css?raw";
 import { phaseTone } from "../app/core/tones.ts";
 import tokenSheet from "../app/styles/tokens.css?raw";
@@ -20,14 +20,15 @@ test.each([
   ["Finalization", "finalization"],
   ["Escalated", "parked"],
   ["Done", "pass"],
-] as const)("%s has its own tint in the list", (phase, tone) => {
+] as const)("%s has its own tint on its status badge", (phase, tone) => {
   const badge = document.createElement("span");
-  badge.className = "ticket-list-state";
+  badge.className = "status-badge";
   badge.dataset["tone"] = phaseTone(phase);
-  badge.dataset["standing"] = phase;
-  const listRules = sheetRules(listSheet, []);
-  expect(sheetDeclared(listRules, badge, "color")).toBe(`var(--tone-${tone})`);
-  expect(sheetDeclared(listRules, badge, "background")).toBe(
+  const badgeRules = sheetRules(badgeSheet, []);
+  expect(sheetDeclared(badgeRules, badge, "--status-badge-ink")).toBe(
+    `var(--tone-${tone})`,
+  );
+  expect(sheetDeclared(badgeRules, badge, "--status-badge-ground")).toBe(
     `var(--wash-${tone})`,
   );
   expect(toneWashed(tone)).toContain(`var(--tone-${tone})`);

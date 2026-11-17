@@ -64,7 +64,7 @@ import { CopyBox } from "../ui/CopyBox.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import {
   SettingsListingSection,
   SettingsListingStacked,
@@ -175,9 +175,9 @@ function chatHostCells(
         <Figure figure={instantFigure(host.polledAt, nowMs)} />
       ),
     status: (
-      <Pill tone={runnerStandingTone(standing)}>
+      <StatusBadge tone={runnerStandingTone(standing)} size="small">
         {text(runnerStandingLabel(standing))}
-      </Pill>
+      </StatusBadge>
     ),
     remove: (
       <Button

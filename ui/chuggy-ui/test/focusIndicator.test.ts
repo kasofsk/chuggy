@@ -189,7 +189,7 @@ const focusIndicatorTakenAway: Readonly<
   "browser/ProjectTable.css": {
     ".ticket-list-standing:focus-visible": {
       markup:
-        '<a class="ticket-list-standing" data-under-test><span class="ticket-state"></span></a>',
+        '<a class="ticket-list-standing" data-under-test><span class="status-badge"></span></a>',
     },
   },
   "browser/RunnerMint.css": {
@@ -619,10 +619,6 @@ test("a forced rule outweighed by a rule outside forced colours is not what the 
   ).toBe("var(--forced-ink)");
 });
 
-function focusIndicatorPill(tone: string): string {
-  return `<span class="pill pill-${tone}"><i class="pill-mark" data-under-test></i></span>`;
-}
-
 /** Each mark drawn as a ground, in each state it is drawn in: its sheet, the
  * markup with the element under test, the pseudo-element, the property, and
  * the forced token that has to win. */
@@ -655,23 +651,6 @@ const focusIndicatorForcedMarks = [
     "background",
     "forced-current",
   ],
-  ...["pass", "fail", "live", "evaluation", "finalization", "parked"].map(
-    (tone) =>
-      [
-        "browser/ui/Pill.css",
-        focusIndicatorPill(tone),
-        "",
-        "background",
-        "forced-ink",
-      ] as const,
-  ),
-  [
-    "browser/ui/Pill.css",
-    focusIndicatorPill("queued"),
-    "",
-    "border",
-    "forced-ink",
-  ],
   [
     "browser/ui/RadioGroup.css",
     '<button class="radio-item"><span class="radio-mark" data-under-test></span></button>',
@@ -689,23 +668,6 @@ const focusIndicatorForcedMarks = [
   [
     "browser/ui/Picker.css",
     '<span class="picker-mark" data-under-test></span>',
-    "",
-    "background",
-    "forced-ink",
-  ],
-  ...["live", "parked"].map(
-    (tone) =>
-      [
-        "browser/settings/lead/selector.css",
-        `<i class="selector-dot" data-tone="${tone}" data-under-test></i>`,
-        "",
-        "background",
-        "forced-ink",
-      ] as const,
-  ),
-  [
-    "browser/settings/lead/selector.css",
-    '<i class="selector-mark" data-under-test></i>',
     "",
     "background",
     "forced-ink",

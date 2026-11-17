@@ -1,9 +1,9 @@
 /**
- * A ticket named inside prose, drawn as the chip the rest of the console draws
- * a ticket as, and followed to the ticket's own screen.
+ * A ticket named inside prose, drawn as the badge the rest of the console draws
+ * a ticket's state as, and followed to the ticket's own screen.
  *
- * IT IS A `Pill` WEARING A LINK. A reference says the same three things a phase
- * chip says — a mark, a tone and a word — so it takes the same classes rather
+ * IT IS A `StatusBadge` WEARING A LINK. A reference says the same three things
+ * a phase badge says — a mark, a tone and a word — so it is that badge rather
  * than a second tone mapping of its own, and a roster the wire grows reaches it
  * through `phaseTone` like everything else.
  *
@@ -24,6 +24,7 @@ import type { MouseEvent, ReactNode } from "react";
 import { phaseLabel } from "../../core/codeLabels.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { phaseTone } from "../../core/tones.ts";
+import { StatusBadge } from "./StatusBadge.tsx";
 import { useTicketReferenceHeld } from "./ticketReferenceHeld.tsx";
 import type { TicketReferenceHeld } from "./ticketReferenceHeld.tsx";
 
@@ -60,21 +61,27 @@ function TicketReferenceChip(props: {
   return (
     <a
       href={props.held.hrefOf(ticket)}
-      className={`pill pill-${tone} ticket-reference`}
+      className="ticket-reference"
       onClick={(event) => {
         if (!ticketReferenceTaken(event)) return;
         event.preventDefault();
         props.held.open(ticket);
       }}
     >
-      <i className="pill-mark" aria-hidden="true" />
-      <span className="num">{ticketReferenceWord(ticket)}</span>
-      {title === undefined ? null : (
-        <span className="ticket-reference-title">{title}</span>
-      )}
-      {facts === undefined ? null : (
-        <span className="visually-hidden">{text(phaseLabel(facts.phase))}</span>
-      )}
+      <StatusBadge tone={tone} size="small">
+        <span className="num">{ticketReferenceWord(ticket)}</span>
+        {title === undefined ? null : (
+          <>
+            {" "}
+            <span className="ticket-reference-title">{title}</span>
+          </>
+        )}
+        {facts === undefined ? null : (
+          <span className="visually-hidden">
+            {text(phaseLabel(facts.phase))}
+          </span>
+        )}
+      </StatusBadge>
     </a>
   );
 }

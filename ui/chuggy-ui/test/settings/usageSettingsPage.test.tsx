@@ -566,7 +566,9 @@ test("an agent holding one credential, turned off and never read, draws it marke
   await drawUsage();
   const claude = within(sectionOf("Claude"));
   expect(windowLines("Five-hour window").join("")).toContain("workNo reading");
-  expect(claude.getByText("Off", { selector: ".pill" })).toBeTruthy();
+  expect(
+    claude.getByText("Off", { selector: ".status-badge-word" }),
+  ).toBeTruthy();
   expect(
     claude.getByRole("button", { name: "Turn on credential work" }),
   ).toBeTruthy();
@@ -578,7 +580,9 @@ test("a credential turned off beside one that is on is marked Off while the agen
   const claude = sectionOf("Claude").textContent ?? "";
   expect(claude).not.toContain("Paused");
   expect(
-    within(sectionOf("Claude")).getAllByText("Off", { selector: ".pill" }),
+    within(sectionOf("Claude")).getAllByText("Off", {
+      selector: ".status-badge-word",
+    }),
   ).toHaveLength(2);
   expect(
     within(sectionOf("Claude")).getByRole("button", {

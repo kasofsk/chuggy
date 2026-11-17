@@ -125,7 +125,9 @@ function serving(inbox: () => readonly InboxEntryResponse[] | undefined) {
  * clear. */
 function badge(): string | undefined {
   const entry = screen.queryByRole("link", { name: /^Inbox/u });
-  const count = entry?.textContent ?? "";
+  const count =
+    entry?.querySelector('.count-badge [aria-hidden="true"]')?.textContent ??
+    "";
   if (count === "") return undefined;
   expect(entry?.getAttribute("aria-label")).toBe(`Inbox, ${count} unread`);
   return count;

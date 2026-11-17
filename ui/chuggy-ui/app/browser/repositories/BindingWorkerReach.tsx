@@ -11,7 +11,7 @@ import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { repositoryWorkerReachLine } from "../../core/projectRepositories.ts";
 import { repositoryWorkerReachTone } from "../../core/tones.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { WordDetail } from "../ui/WordDetail.tsx";
 
 export function BindingWorkerReach(props: {
@@ -24,9 +24,12 @@ export function BindingWorkerReach(props: {
       <span>
         <WordDetail
           word={
-            <Pill tone={repositoryWorkerReachTone(props.reach.reach)}>
+            <StatusBadge
+              tone={repositoryWorkerReachTone(props.reach.reach)}
+              size="small"
+            >
               {text(line.status)}
-            </Pill>
+            </StatusBadge>
           }
           detail={line.detail}
         />

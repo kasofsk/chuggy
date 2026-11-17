@@ -73,11 +73,13 @@ test("Running lists the members at work, each a link, and Next the Ready ones", 
     [[4, 6]],
   );
   await epicPageDrawn(abilitiesNone);
-  expect(listed("running")).toStrictEqual([["#4 T4", `${tickets}/4`, ""]]);
+  expect(listed("running")).toStrictEqual([
+    ["Working #4 T4", `${tickets}/4`, ""],
+  ]);
   expect(
     part("running").querySelector(".epic-overview-ticket-mark svg"),
   ).not.toBeNull();
-  expect(listed("next")).toStrictEqual([["#5 T5", `${tickets}/5`, ""]]);
+  expect(listed("next")).toStrictEqual([["Ready #5 T5", `${tickets}/5`, ""]]);
 });
 
 test("with no Ready member, Next is the Blocked members waiting only on running tickets, in the Tickets tab's order, each with what it comes after", async () => {
@@ -100,8 +102,8 @@ test("with no Ready member, Next is the Blocked members waiting only on running 
   );
   await epicPageDrawn(abilitiesNone);
   expect(listed("next")).toStrictEqual([
-    ["#5 T5", `${tickets}/5`, "after #4"],
-    ["#6 T6", `${tickets}/6`, "after #2, #4"],
+    ["Blocked #5 T5", `${tickets}/5`, "after #4"],
+    ["Blocked #6 T6", `${tickets}/6`, "after #2, #4"],
   ]);
 });
 

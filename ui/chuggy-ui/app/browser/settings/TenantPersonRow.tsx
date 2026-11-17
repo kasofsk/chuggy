@@ -28,7 +28,7 @@ import {
 import type { TenantHeldProjectLine } from "../../core/tenantPeople.ts";
 import { useProjectNamed } from "../projectNamed.ts";
 import { Identity } from "../ui/Identity.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { Chip } from "../ui/Chip.tsx";
 import type { TableRow } from "../ui/Table.tsx";
 import { SettingsListingNone } from "./SettingsListing.tsx";
 import { TenantPersonEditor } from "./TenantPersonEditor.tsx";
@@ -113,7 +113,7 @@ export function TenantHeldWords(props: {
     <ul className="flex flex-wrap gap-1">
       {props.held.map((word) => (
         <li key={word.id} className="flex">
-          <Pill tone="neutral">{text(word)}</Pill>
+          <Chip>{text(word)}</Chip>
         </li>
       ))}
     </ul>

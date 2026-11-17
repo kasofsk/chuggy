@@ -51,15 +51,6 @@
     }
   }
 
-  .tab-nav-count {
-    padding: 0 var(--space-2);
-    border-radius: var(--radius-3);
-    background: var(--surface-2);
-    color: var(--ink-2);
-    font-size: var(--text-xs);
-    line-height: var(--leading-dense);
-  }
-
   .tab-nav-tab:focus-visible {
     outline-offset: var(--focus-inset);
   }

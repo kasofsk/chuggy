@@ -20,20 +20,19 @@ import type { ProjectTableRow } from "../../core/projectTableRows.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketStateStanding } from "../../core/ticketHeader.ts";
 import { TicketRowDispatchScope } from "../TicketActions.tsx";
-import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
+import { TicketStateLabel } from "../ticket/TicketStateLabel.tsx";
 import { Button, buttonLookClassName } from "../ui/Button.tsx";
 
 import "./epicGraph.css";
 
+/** A ticket's state as its badge's mark alone, its word for assistive
+ * technology. */
 export function EpicGraphSideMark(props: {
   readonly standing: TicketStateStanding;
 }): ReactNode {
   return (
-    <span
-      className="epic-graph-mark"
-      data-tone={ticketStateLabelOf(props.standing).tone}
-    >
-      <TicketStateMark standing={props.standing} />
+    <span className="epic-graph-mark">
+      <TicketStateLabel standing={props.standing} size="small" compact />
     </span>
   );
 }
@@ -74,7 +73,9 @@ function EpicGraphSideList(props: {
                   }}
                 >
                   {other === undefined ? null : (
-                    <EpicGraphSideMark standing={other.standing} />
+                    <>
+                      <EpicGraphSideMark standing={other.standing} />{" "}
+                    </>
                   )}
                   <span>
                     <span className="epic-graph-side-number">{`#${String(ticket)}`}</span>{" "}
@@ -198,9 +199,8 @@ export function EpicGraphSide(props: {
       data-ticket={node.ticket}
     >
       <p className="epic-graph-side-head" data-tone={label.tone}>
-        <EpicGraphSideMark standing={standing} />
         <span className="epic-graph-side-number">{`#${String(node.ticket)}`}</span>
-        <span className="epic-graph-side-word">{text(label.word)}</span>
+        <TicketStateLabel standing={standing} size="small" />
       </p>
       <h3 className="epic-graph-side-title">
         {node.title ?? text({ id: "epics-card-untitled" })}

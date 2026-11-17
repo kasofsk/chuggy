@@ -48,7 +48,7 @@ import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketStateStanding } from "../../core/ticketHeader.ts";
 import { useViewportAtMostEm, viewportNarrowEm } from "../shell/viewport.ts";
 import { readValue } from "../../core/freshness.ts";
-import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { EpicGraphCard } from "./EpicGraphCard.tsx";
@@ -165,13 +165,12 @@ function EpicGraphBar(props: {
             className="epic-graph-key-item"
             data-standing={key.standing}
           >
-            <span
-              className="epic-graph-mark"
-              data-tone={ticketStateLabelOf(key.standing).tone}
+            <StatusBadge
+              tone={ticketStateLabelOf(key.standing).tone}
+              size="small"
             >
-              <TicketStateMark standing={key.standing} />
-            </span>
-            {text(key.word)}{" "}
+              {text(key.word)}
+            </StatusBadge>{" "}
             <span className="epic-graph-key-count">{key.count}</span>
           </li>
         ))}

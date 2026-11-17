@@ -16,7 +16,7 @@ import type { CopyText } from "../../core/copy.ts";
 import { configurationsPartialLabel } from "../../core/repositoryConfigurations.ts";
 import type { RepositoryConfigurationRow } from "../../core/repositoryConfigurations.ts";
 import { EmptyState } from "../ui/EmptyState.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { Table } from "../ui/Table.tsx";
 import type { TableRow } from "../ui/Table.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
@@ -40,7 +40,9 @@ function repositoryConfigurationCells(
     return {
       configuration: name,
       worker: (
-        <Pill tone="neutral">{text({ id: "repositories-incomplete" })}</Pill>
+        <StatusBadge tone="neutral" size="small">
+          {text({ id: "repositories-incomplete" })}
+        </StatusBadge>
       ),
       stages: null,
     };

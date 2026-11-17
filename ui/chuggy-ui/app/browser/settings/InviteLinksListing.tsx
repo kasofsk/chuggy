@@ -40,7 +40,7 @@ import { Confirm } from "../ui/Confirm.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import type { TableColumn, TableRow } from "../ui/Table.tsx";
 import {
   SettingsListingNone,
@@ -188,9 +188,9 @@ function InviteLinkStatus(props: {
   const link = props.link;
   return (
     <div className="grid justify-items-start gap-1">
-      <Pill tone={inviteLinkStateTone(link.state)}>
+      <StatusBadge tone={inviteLinkStateTone(link.state)} size="small">
         {text(inviteLinkStateLabel(link.state))}
-      </Pill>
+      </StatusBadge>
       {link.state === "Open" ? (
         <span className="text-sm text-ink-3">
           {text(inviteLinksWords.expires)}{" "}

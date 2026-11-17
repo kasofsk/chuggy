@@ -39,9 +39,9 @@ test("a holder's chip draws the merge mark and 1/total, and is named as landing 
   const chip = screen.getByRole("img", { name: holderWords });
   expect(chip.textContent).toBe("1/3");
   expect(chip.dataset["holding"]).toBe("true");
-  expect(
-    chip.querySelector(".ticket-run-mark")?.getAttribute("data-mark"),
-  ).toBe("Merge");
+  expect(chip.querySelector(".status-badge")?.getAttribute("data-tone")).toBe(
+    "finalization",
+  );
   expect(chip.getAttribute("tabindex")).toBe("0");
 });
 
@@ -61,7 +61,9 @@ test("a waiter's chip draws its position of the total, and is named as waiting b
   const chip = screen.getByRole("img", { name: waiterWords });
   expect(chip.textContent).toBe("3/3");
   expect(chip.dataset["holding"]).toBeUndefined();
-  expect(chip.className).toContain("pill-queued");
+  expect(chip.querySelector(".status-badge")?.getAttribute("data-tone")).toBe(
+    "queued",
+  );
 });
 
 test("a place from a cut read draws its total as a least, and names it so", () => {

@@ -108,13 +108,12 @@
     cursor: pointer;
   }
 
-  button.ticket-list-standing > :is(.ticket-state, .status-badge) {
+  button.ticket-list-standing > .status-badge {
     box-shadow: 0 var(--hairline) var(--space-1) var(--wash-pass);
     transition: box-shadow var(--duration-1) var(--ease-out);
   }
 
-  button.ticket-list-standing:hover:not(:disabled)
-    > :is(.ticket-state, .status-badge) {
+  button.ticket-list-standing:hover:not(:disabled) > .status-badge {
     box-shadow: 0 var(--space-1) var(--space-3) var(--wash-pass);
   }
 
@@ -122,7 +121,7 @@
     outline: none;
   }
 
-  .ticket-list-standing:focus-visible > :is(.ticket-state, .status-badge) {
+  .ticket-list-standing:focus-visible > .status-badge {
     outline: var(--focus-width) solid var(--focus);
     outline-offset: var(--focus-offset);
   }
@@ -132,61 +131,9 @@
     opacity: 0.6;
   }
 
-  /* A dependency is its number in the colours of the state it stands in: an
-     outline for what can start, a wash for what is moving, parked or
-     finished, and the inset for what waits or was stopped. */
-  .ticket-list-state {
+  .ticket-dependency {
     display: inline-flex;
     flex: none;
-    align-items: center;
-    padding: var(--space-1) var(--space-3);
-    border: var(--hairline) solid transparent;
-    border-radius: var(--radius-3);
-    background: var(--surface-2);
-    color: var(--ink-2);
-    font-size: var(--text-sm);
-    font-weight: var(--weight-strong);
-    white-space: nowrap;
-  }
-
-  .ticket-list-state[data-tone="pass"] {
-    border-color: var(--tone-pass);
-    background: var(--surface-1);
-    color: var(--tone-pass);
-  }
-
-  .ticket-list-state[data-standing="Done"] {
-    border-color: transparent;
-    background: var(--wash-pass);
-    font-weight: var(--weight-medium);
-  }
-
-  .ticket-list-state[data-tone="live"] {
-    background: var(--wash-live);
-    color: var(--tone-live);
-  }
-
-  .ticket-list-state[data-tone="evaluation"] {
-    background: var(--wash-evaluation);
-    color: var(--tone-evaluation);
-  }
-
-  .ticket-list-state[data-tone="finalization"] {
-    background: var(--wash-finalization);
-    color: var(--tone-finalization);
-  }
-
-  .ticket-list-state[data-tone="parked"] {
-    background: var(--wash-parked);
-    color: var(--tone-parked);
-  }
-
-  .ticket-list-state[data-tone="queued"] {
-    color: var(--tone-parked);
-  }
-
-  .ticket-list-state[data-tone="retired"] {
-    color: var(--ink-3);
   }
 
   @container (max-width: 53em) {

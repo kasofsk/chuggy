@@ -23,7 +23,7 @@ import { EmptyState } from "../ui/EmptyState.tsx";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { useTicketPageHeld } from "./TicketPageHeld.tsx";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
@@ -51,7 +51,9 @@ function TicketLandingHead(props: {
         <span className="ticket-run-cycle">
           {text(cycleLabel(landing.cycle))}
         </span>
-        <Pill tone={landing.tone}>{landing.word}</Pill>
+        <StatusBadge tone={landing.tone} size="small">
+          {landing.word}
+        </StatusBadge>
       </div>
       {prepared === undefined ? null : (
         <p className="ticket-run-meta">

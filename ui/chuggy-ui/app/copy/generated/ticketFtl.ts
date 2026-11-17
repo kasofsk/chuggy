@@ -16,7 +16,6 @@ ticket-verdict-approved = Approved
 ticket-verdict-rejected = Rejected
 ticket-verdict-killed = Killed
 ticket-cycle-current = Current
-ticket-standing-ready = Ready
 ticket-value-none = None
 ticket-value-unknown = Unknown
 ticket-value-default = Default

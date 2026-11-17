@@ -24,7 +24,7 @@ const zodProbeViolation = { directive: "script-src", blocked: "eval" };
 
 const settingsRoot = `/${stubApiTenant}/${stubApiProject}/settings`;
 
-/** The section whose title starts `title`, before any pill beside it, its
+/** The section whose title starts `title`, before any badge beside it, its
  * Edit pressed and its form drawn. */
 async function settingsFormOpened(page: Page, title: string): Promise<void> {
   const section = page.getByRole("region", {

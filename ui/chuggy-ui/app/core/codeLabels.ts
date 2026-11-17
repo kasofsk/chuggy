@@ -225,7 +225,7 @@ export function leadAbsenceLabel(reason: LeadAbsenceResponse["reason"]): Copy {
   }
 }
 
-/** Where one landing stands, as the one word its pill says. */
+/** Where one landing stands, as the one word its badge says. */
 export function ticketLandingStateLabel(state: TicketLandingState): Copy {
   switch (state) {
     case "Running":

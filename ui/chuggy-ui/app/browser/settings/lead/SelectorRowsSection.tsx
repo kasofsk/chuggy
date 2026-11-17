@@ -16,6 +16,7 @@ import type { SelectorSettingsDraft } from "../../../core/selectorSettingsForm.t
 import { useCopyText } from "../../../copy/CopyProvider.tsx";
 import type { SelectorSettingsShown } from "../../selectorSettingsWriting.ts";
 import { Figure } from "../../ui/Figure.tsx";
+import { StatusBadge } from "../../ui/StatusBadge.tsx";
 import { SelectorSection } from "./SelectorSection.tsx";
 
 /** What the page hands a section of rows: the draft, what its write would refuse, and the card's controls. */
@@ -32,6 +33,18 @@ export interface SelectorRowsChrome {
   readonly onCancel: () => void;
   readonly onSave: () => void;
   readonly onReload: () => void;
+}
+
+/** A row the open draft moved, as its mark with the word for assistive
+ * technology: before the key of a closed row, and leading the standing of an
+ * open one, whose key is its field's label. */
+export function SelectorEditedMark(): ReactNode {
+  const text = useCopyText();
+  return (
+    <StatusBadge tone="live" size="small" compact>
+      {text({ id: "lead-settings-edited" })}
+    </StatusBadge>
+  );
 }
 
 export function SelectorRowsSection(

@@ -20,7 +20,7 @@ import { epicGraphTitledOf } from "../../core/epicGraphLayers.ts";
 import type { LandingQueuePlace } from "../../core/landingQueues.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import { LandingQueueChip } from "../ticket/LandingQueueChip.tsx";
-import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
+import { TicketStateLabel } from "../ticket/TicketStateLabel.tsx";
 
 import "./epicGraph.css";
 import { Tooltip } from "../ui/Tooltip.tsx";
@@ -87,7 +87,7 @@ function EpicGraphCardHead(props: {
   return (
     <span className="epic-card-head">
       <span className="epic-card-mark">
-        <TicketStateMark standing={standing} />
+        <TicketStateLabel standing={standing} size="small" compact />
       </span>
       <span className="epic-card-number">{String(node.ticket)}</span>
       {props.kicker === undefined ? null : (

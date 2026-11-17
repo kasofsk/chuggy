@@ -520,6 +520,13 @@ test("a row this draft moved is marked and an untouched one is not", async () =>
   });
   expect(rowOf("Dispatches")?.hasAttribute("data-edited")).toBe(true);
   expect(rowOf("Tokens")?.hasAttribute("data-edited")).toBe(false);
+  expect(
+    rowOf("Dispatches")?.querySelector('.status-badge[data-tone="live"]')
+      ?.textContent,
+  ).toBe("Edited");
+  expect(
+    rowOf("Tokens")?.querySelector('.status-badge[data-tone="live"]'),
+  ).toBeNull();
 });
 
 /** A row's own Reset gives that ceiling back to the installation without

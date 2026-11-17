@@ -41,8 +41,11 @@ import { useCopyText } from "../../../copy/CopyProvider.tsx";
 import { FormField } from "../../ui/FormField.tsx";
 import { Input } from "../../ui/Input.tsx";
 import { Picker } from "../../ui/Picker.tsx";
-import { Pill } from "../../ui/Pill.tsx";
-import { SelectorRowsSection } from "./SelectorRowsSection.tsx";
+import { StatusBadge } from "../../ui/StatusBadge.tsx";
+import {
+  SelectorEditedMark,
+  SelectorRowsSection,
+} from "./SelectorRowsSection.tsx";
 import type { SelectorRowsChrome } from "./SelectorRowsSection.tsx";
 
 import "./selector.css";
@@ -149,19 +152,23 @@ function SelectorModelPinned(props: {
   );
 }
 
-/** The pill a row carries: Pinned where a subsidized lead holds it, and
+/** The badge a row carries: Pinned where a subsidized lead holds it, and
  * Default where the project never set it. */
-function SelectorModelPill(props: {
+function SelectorModelBadge(props: {
   readonly row: SelectorModelRow;
 }): ReactNode {
   const text = useCopyText();
   const row = props.row;
   if (row.pinned !== undefined)
     return (
-      <Pill tone="neutral">{text({ id: "lead-settings-model-pinned" })}</Pill>
+      <StatusBadge tone="neutral" size="small">
+        {text({ id: "lead-settings-model-pinned" })}
+      </StatusBadge>
     );
   return row.draft.models[row.name] === "" ? (
-    <Pill tone="neutral">{text({ id: "lead-settings-default" })}</Pill>
+    <StatusBadge tone="neutral" size="small">
+      {text({ id: "lead-settings-default" })}
+    </StatusBadge>
   ) : null;
 }
 
@@ -201,7 +208,7 @@ function SelectorModel(props: { readonly row: SelectorModelRow }): ReactNode {
       ) : (
         <>
           <span className="selector-limit-key">
-            {edited ? <i className="selector-mark" aria-hidden="true" /> : null}
+            {edited ? <SelectorEditedMark /> : null}
             {label}
           </span>
           <span>
@@ -213,7 +220,8 @@ function SelectorModel(props: { readonly row: SelectorModelRow }): ReactNode {
         </>
       )}
       <span className="selector-was">
-        <SelectorModelPill row={row} />
+        {row.editing && edited ? <SelectorEditedMark /> : null}
+        <SelectorModelBadge row={row} />
       </span>
     </div>
   );
