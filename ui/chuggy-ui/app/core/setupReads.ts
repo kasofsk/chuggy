@@ -29,6 +29,7 @@ import type {
   ExecutionPlacementResponse,
   ForgeInstallationResponse,
   ForgeRepositoryResponse,
+  ProjectOwnerFallbackResponse,
   ProjectRepositoryListedResponse,
   SelectorProjectSettingsResponse,
   SessionPlacementResponse,
@@ -36,7 +37,10 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import { forgeApps } from "../../../../src/contract/rosters.ts";
-import type { ForgeAppName } from "../../../../src/contract/rosters.ts";
+import type {
+  ForgeAppName,
+  SessionRunnerStanding,
+} from "../../../../src/contract/rosters.ts";
 
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import {
@@ -44,6 +48,8 @@ import {
   apiExecutionPlacement,
   apiForgeInstallationRepositories,
   apiForgeInstallations,
+  apiOwnerFallback,
+  apiPersonalRunner,
   apiProject,
   apiProjectInventory,
   apiProjectRepositories,
@@ -56,6 +62,7 @@ import type { SetupAnswers } from "./setupArguments.ts";
 import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
 import type { SetupRemote } from "./setupRemote.ts";
 import type { SetupWorkspacesAnswered } from "./setupSession.ts";
+import { workRunnerPersonal } from "./workRunner.ts";
 
 export type SetupRead<T> =
   | { readonly read: "Got"; readonly value: T; readonly whole: boolean }
@@ -201,6 +208,10 @@ export interface SetupReads {
   /** Where the project's work runs, which is what says whether it waits on a runner at all. */
   readonly work: SetupRead<ExecutionPlacementResponse>;
   readonly placement: SetupRead<SessionPlacementResponse>;
+  /** Whether the project lets a member's own runners take their work, which says whether the person's own can be its runner. */
+  readonly fallback: SetupRead<ProjectOwnerFallbackResponse>;
+  /** How the person's own personal runners stand for the project, unregistered where they hold none or none serves it; they take the person's work where the fallback lets them. */
+  readonly personal: SetupRead<SessionRunnerStanding>;
   /** A ticket that is done, where the project has one: one is all that is asked for. */
   readonly landed: SetupRead<readonly TicketResponse[]>;
   /** The tickets on their way, most lately moved first. */
@@ -499,6 +510,8 @@ type SetupProjectReads = Pick<
   | "repositories"
   | "work"
   | "placement"
+  | "fallback"
+  | "personal"
   | "landed"
   | "moving"
   | "drafts"
@@ -509,6 +522,8 @@ const setupProjectUnasked: SetupProjectReads = {
   repositories: setupUnasked,
   work: setupUnasked,
   placement: setupUnasked,
+  fallback: setupUnasked,
+  personal: setupUnasked,
   landed: setupUnasked,
   moving: setupUnasked,
   drafts: setupUnasked,
@@ -519,25 +534,45 @@ async function setupProjectRead(
   partition: PartitionIdentity,
   held: SetupRepositories | undefined,
 ): Promise<SetupProjectReads> {
-  const [settings, repositories, work, placement, landed, moving, drafts] =
-    await Promise.all([
-      apiSelectorSettings(ports, partition),
-      held ?? setupRepositoriesRead(ports, partition),
-      apiExecutionPlacement(ports, partition),
-      apiSessionPlacement(ports, partition),
-      apiProject(ports, partition, { phase: ["Done"], limit: 1 }),
-      apiProject(ports, partition, {
-        phase: setupMovingPhases,
-        order: "RecentActivity",
-      }),
-      apiDrafts(ports, partition, { limit: 1 }),
-    ]);
+  const [
+    settings,
+    repositories,
+    work,
+    placement,
+    fallback,
+    personal,
+    landed,
+    moving,
+    drafts,
+  ] = await Promise.all([
+    apiSelectorSettings(ports, partition),
+    held ?? setupRepositoriesRead(ports, partition),
+    apiExecutionPlacement(ports, partition),
+    apiSessionPlacement(ports, partition),
+    apiOwnerFallback(ports, partition),
+    apiPersonalRunner(ports, partition.tenant),
+    apiProject(ports, partition, { phase: ["Done"], limit: 1 }),
+    apiProject(ports, partition, {
+      phase: setupMovingPhases,
+      order: "RecentActivity",
+    }),
+    apiDrafts(ports, partition, { limit: 1 }),
+  ]);
   const all = (): boolean => true;
   return {
     settings: setupGot(settings, (answered) => answered, all),
     repositories,
     work: setupGot(work, (answered) => answered, all),
     placement: setupGot(placement, (answered) => answered, all),
+    fallback: setupGot(fallback, (answered) => answered, all),
+    personal:
+      personal.outcome === "Absent"
+        ? { read: "Got", value: "Unregistered", whole: true }
+        : setupGot(
+            personal,
+            (answered) => workRunnerPersonal(answered, partition.project),
+            all,
+          ),
     landed: setupGot(landed, (answered) => answered.tickets, all),
     moving: setupGot(
       moving,

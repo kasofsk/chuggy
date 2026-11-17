@@ -3,9 +3,10 @@
  * hold and is sent as, the words its list has of its own, and which links the
  * reader may revoke.
  *
- * A workspace link names nobody and no workspace, so all its form holds is
- * the box that hands account creation on, held as the workspace's own form
- * holds it, and a note only the site's list shows.
+ * A workspace link is what a reader is told is a signup link: whoever opens
+ * it gets a workspace of their own. It names nobody and no workspace, so all
+ * its form holds is the box that hands account creation on, held as the
+ * workspace's own form holds it, and a note only the site's list shows.
  */
 
 import {
@@ -25,6 +26,9 @@ import { projectNameLengthFault } from "./projectCreation.ts";
 export const siteWorkspaceLinkWords = {
   note: { id: "settings-workspaces-note" },
   workspace: { id: "settings-workspaces-workspace" },
+  mode: { id: "settings-workspaces-link-mode" },
+  about: { id: "settings-workspaces-link-about" },
+  heading: { id: "settings-workspaces-links" },
 } as const satisfies Readonly<Record<string, Copy>>;
 
 /** What a note that runs past one line is refused as. */

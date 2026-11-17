@@ -44,6 +44,7 @@ import {
   turned,
 } from "../screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
+import { tableText } from "../tableText.ts";
 
 /** What a drawn page sent, every level's drawing carrying it. */
 interface PermissionsSent {
@@ -380,7 +381,8 @@ export function permissionCell(title: string, name: string): string {
     .getByRole("rowheader", { name })
     .closest("tr");
   if (row === null) throw new Error(`no row draws ${name}`);
-  return within(row).getAllByRole("cell")[0]?.textContent ?? "";
+  const cell = within(row).getAllByRole("cell")[0];
+  return cell === undefined ? "" : tableText(cell);
 }
 
 export function sectionDrawn(title: string): boolean {

@@ -73,7 +73,7 @@ test("a name the newest commit no longer declares is not a row", () => {
   ).toStrictEqual(["r9", "r8"]);
 });
 
-test("a ready row states three facts, and an incomplete one states none", () => {
+test("a ready row states two facts, and an incomplete one states none", () => {
   const ready = declared("r6", chuggy, "chuggy");
   expect(repositoryConfigurationRow(ready)).toStrictEqual({
     revision: "r6",
@@ -81,7 +81,6 @@ test("a ready row states three facts, and an incomplete one states none", () => 
     facts: {
       worker: { text: "an-image", title: "an-image" },
       stages: "1",
-      approval: { id: "codes-approval-not-required" },
     },
   });
   expect(

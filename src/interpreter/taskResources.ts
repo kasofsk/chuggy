@@ -14,7 +14,7 @@ import { configurationResourcesSchema } from "../contract/configurationDocument.
 import {
   executionTaskKindKey,
   type ExecutionTaskKind,
-} from "./executionRequirement.ts";
+} from "../contract/executionRequirement.ts";
 
 /** The size one task asks for, in the units a placement asks in. */
 export interface TaskResources {

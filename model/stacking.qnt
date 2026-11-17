@@ -32,13 +32,19 @@
 /// is written when its evaluation starts and never changes; a ticket whose
 /// stack stops standing goes back to be evaluated again, which is no rework and keeps its rank.
 ///
+/// RE-STACK. A Stacked ticket pending unstacked, not the holder, that could now
+/// stack goes back to Work at its rank, as a re-check does, and its next
+/// evaluation chooses its stack again. It is not sent back again over the line
+/// it was last sent back over, so each re-stack is paid for by a change to the
+/// line ahead of it.
+///
 /// DIRECT. A Direct landing moves the tip, so every stack built on the old one
 /// stops standing.
 ///
 /// CARRIED VERDICT. A ticket carries the passing verdict of the evaluators that
 /// rerun only on a change, with the stacking it was earned under and the patch
-/// it was earned on. A work report after a re-check may keep the patch, and any
-/// other changes it. An evaluation keeps the verdict while the patch is the same
+/// it was earned on. A work report after a re-check or a re-stack may keep the
+/// patch, and any other changes it. An evaluation keeps the verdict while the patch is the same
 /// and it was earned unstacked or over a stack whose beneath all landed at the
 /// commits it names; otherwise it earns a fresh one. A failed evaluation, a
 /// rework or an ejection clears it. The expected tree is what the evaluators
@@ -66,10 +72,12 @@ module stacking {
     stacking: Stacking, expected: Tree, stackFailures: int, reworks: int,
     invalidations: int, landedEntry: int, patch: int, verdict: Verdict
   }
-  /// `landedStep` is how many tickets the latest step landed.
+  /// `landedStep` is how many tickets the latest step landed, and `restacked`
+  /// logs each re-stack with the line ahead it was sent back over.
   type State = {
     tickets: int -> Ticket, history: Tree, nextEntry: int,
-    landedStep: int, rankKept: bool, invalidated: List[{ ticket: int, kind: Invalidation }]
+    landedStep: int, rankKept: bool, invalidated: List[{ ticket: int, kind: Invalidation }],
+    restacked: List[{ ticket: int, over: List[Pair] }]
   }
 
   /// Configuration: the most tickets beneath a stacked one, and the number of
@@ -82,7 +90,8 @@ module stacking {
       policy: policies.get(i), phase: Work, entry: 0, rechecks: 0,
       commit: 0, stacking: Unstacked, expected: List(), stackFailures: 0,
       reworks: 0, invalidations: 0, landedEntry: 0, patch: 0, verdict: NoVerdict }),
-    history: List(), nextEntry: 1, landedStep: 0, rankKept: true, invalidated: List()
+    history: List(), nextEntry: 1, landedStep: 0, rankKept: true, invalidated: List(),
+    restacked: List()
   }
 
   pure def pairOf(s: State, i: int): Pair = { ticket: i, commit: s.tickets.get(i).commit }
@@ -189,7 +198,7 @@ module stacking {
   pure def phaseIs(s: State, i: int, p: Phase): bool = s.tickets.get(i).phase == p
 
   /// A report either keeps the ticket's own diff, a clean merge, or changes it;
-  /// only the report of a re-check, a ranked ticket in Work, may keep it.
+  /// only the report of a re-check or a re-stack, a ranked ticket in Work, may keep it.
   pure def canReport(s: State, i: int, keptDiff: bool): bool =
     and { phaseIs(s, i, Work), or { not(keptDiff), s.tickets.get(i).entry > 0 } }
   pure def report(s: State, i: int, keptDiff: bool): State =
@@ -259,6 +268,29 @@ module stacking {
                             reworks: t.reworks + 1 }))
     else
       settle(s, withTicket({ ...s, history: mergeTree(s, i) }, i, { ...t, phase: Landed, landedEntry: t.entry }))
+
+  /// The line ahead of `i` it would stack over now, empty where it would not stack.
+  pure def restackLine(s: State, i: int): List[Pair] =
+    match stackFor(s, i) { | StackedOn(r) => r.beneath | Unstacked => List() }
+  /// The line ahead of `i` its latest re-stack was sent back over, empty where it has none.
+  pure def restackedOver(s: State, i: int): List[Pair] =
+    s.restacked.foldl(List(), (acc, e) => if (e.ticket == i) e.over else acc)
+  /// Whether `i`, pending unstacked behind the holder, could now stack over a
+  /// line it was not last sent back over.
+  pure def canRestack(s: State, i: int): bool =
+    val t = s.tickets.get(i)
+    and {
+      t.phase == Pending, ranked(t), t.policy == Stacked, holder(s) != i,
+      t.stacking == Unstacked, restackLine(s, i) != List(),
+      restackLine(s, i) != restackedOver(s, i)
+    }
+  /// Sends `i` back to Work at its rank to be evaluated over the stack it could
+  /// now choose. It is a return to Work but no rework: it keeps its verdict, and
+  /// counts no re-check and no stacked failure.
+  pure def restack(s: State, i: int): State =
+    val t = s.tickets.get(i)
+    settle(s, withTicket({ ...s, restacked: s.restacked.append({ ticket: i, over: restackLine(s, i) }) }, i,
+      { ...t, phase: Work, reworks: t.reworks + 1 }))
 
   // ---- invariants
 
@@ -330,11 +362,22 @@ module stacking {
     landedTickets(s).forall(i => or { not(queued(s.tickets.get(i))),
       match s.tickets.get(i).verdict { | Carried(v) => verdictHolds(s, i, v) | NoVerdict => false } })
 
-  /// No stacked evaluation carries a verdict earned unstacked.
-  pure def stackedCarriesNoUnstackedVerdict(s: State): bool =
-    s.tickets.keys().forall(i => val t = s.tickets.get(i)
-      or { t.phase != Evaluation, t.stacking == Unstacked,
-           match t.verdict { | Carried(v) => v.over != Unstacked | NoVerdict => true } })
+  /// An evaluation carries only a verdict that holds: on its own patch, and
+  /// earned unstacked or over a stack whose beneath all landed. A verdict earned
+  /// unstacked may carry into a stacked one.
+  pure def evaluationCarriesAHoldingVerdict(s: State): bool =
+    s.tickets.keys().forall(i => or { not(phaseIs(s, i, Evaluation)),
+      match s.tickets.get(i).verdict { | Carried(v) => verdictHolds(s, i, v) | NoVerdict => true } })
+
+  /// A ticket is re-stacked only over a line it could stack on, and never twice
+  /// in a row over the same line.
+  pure def restackBounded(s: State): bool =
+    s.restacked.indices().forall(k => and {
+      s.restacked[k].over.length() > 0,
+      s.restacked.indices().forall(m => or {
+        m <= k, s.restacked[m].ticket != s.restacked[k].ticket,
+        s.restacked[m].over != s.restacked[k].over,
+        s.restacked.indices().exists(n => and { n > k, n < m, s.restacked[n].ticket == s.restacked[k].ticket }) }) })
 
   /// No step moved the rank of a ticket that was ranked before it and after it, and
   /// ranks are unique and issued.
@@ -345,7 +388,8 @@ module stacking {
       s.tickets.get(i).entry != s.tickets.get(j).entry })) }
 
   /// A ticket re-checks once for the tickets that ranked ahead of it, and then only
-  /// for a Direct landing: nothing ranked later can land ahead of it.
+  /// for a Direct landing: nothing ranked later can land ahead of it. A re-stack
+  /// is no re-check, and `restackBounded` bounds it.
   pure def recheckBounded(s: State): bool =
     s.tickets.keys().forall(i => s.tickets.get(i).rechecks <= 1 + s.history.indices().filter(k => s.tickets.get(s.history[k].ticket).policy == Direct).size())
 
@@ -353,6 +397,6 @@ module stacking {
     landsOneAtATime(s), landsInQueueOrder(s), historyFollowsEntries(s), landedAsEvaluated(s), landedOnce(s), ranksHold(s), recheckBounded(s),
     liveStacksStand(s), stackBaseIsPrefix(s), serializedOnlyHolderBeneath(s),
     invalidatedOnlyStacked(s), reworksAreReturnsToWork(s), failureCapHolds(s), depthHolds(s),
-    landsOnAHoldingVerdict(s), stackedCarriesNoUnstackedVerdict(s)
+    landsOnAHoldingVerdict(s), evaluationCarriesAHoldingVerdict(s), restackBounded(s)
   }
 }

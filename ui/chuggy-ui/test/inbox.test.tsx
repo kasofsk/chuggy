@@ -262,9 +262,8 @@ test("an answer's button still opens the sentence it sends", async () => {
   drawInbox(served);
   await settled();
   const button = screen.getByRole("button", { name: "resume" });
-  const trigger = button.closest('[tabindex="0"]');
-  if (trigger === null) throw new Error("no tooltip trigger around resume");
-  fireEvent.focus(trigger);
+  expect(button.parentElement?.closest("[tabindex]")).toBeNull();
+  fireEvent.focus(button);
   expect((await screen.findByRole("tooltip")).textContent).toBe(
     "continue this ticket from where it was escalated",
   );

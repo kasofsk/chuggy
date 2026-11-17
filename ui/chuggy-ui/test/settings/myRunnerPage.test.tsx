@@ -3,8 +3,8 @@
  * is told why and offered nothing; one it has is handed the personal command;
  * and a member with runners sees a row for each, registers another while under
  * the bound, gives them projects they read, takes them away, and takes one
- * runner off at a time; and their chat host is drawn, registered with a token
- * and taken off.
+ * runner off at a time; and their chat host is drawn, registered on the
+ * machine they choose by the steps it is handed over in, and taken off.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -24,6 +24,8 @@ import {
 } from "../../../../src/contract/http.ts";
 import { MyRunnerPage } from "../../app/browser/settings/MyRunnerPage.tsx";
 import { copyTextEn } from "../../app/copy/catalog.ts";
+import { runnerPackages } from "../../app/core/runners.ts";
+import type { RunnerPackageName } from "../../app/core/runners.ts";
 import {
   myRunnerRemovalLine,
   myRunnerWithheld,
@@ -39,7 +41,11 @@ import {
 import type { SentRequest } from "../screenHarness.tsx";
 import { leadPartition } from "../leadFixture.ts";
 import { resizeObserverStubbed } from "../resizeObserver.ts";
+import { sheetDeclared, sheetNarrowCondition, sheetRules } from "../sheet.ts";
+import myRunnerSheet from "../../app/browser/settings/MyRunnerPage.css?raw";
+import tableSheet from "../../app/browser/ui/Table.css?raw";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
+import { tableCards } from "../tableText.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -99,9 +105,9 @@ const runnersTwo = {
 /** Projects the reader reads: two in this workspace, one in another. */
 const inventory = {
   projects: [
-    { tenant: "acme", project: "atlas" },
-    { tenant: "acme", project: "borealis" },
-    { tenant: "other", project: "cirrus" },
+    { tenant: "acme", project: "atlas", name: "Atlas Web" },
+    { tenant: "acme", project: "borealis", name: "Borealis" },
+    { tenant: "other", project: "cirrus", name: "cirrus" },
   ],
 };
 
@@ -116,8 +122,8 @@ interface Drawing {
   removal?: number;
   /** The chat host every read answers; absent where the reader has none. */
   host?: unknown;
-  /** The reader's agent accounts; none paused where absent. */
-  accounts?: unknown;
+  /** Where set, the status a runner's token mint is refused with. */
+  mintRefused?: number;
 }
 
 /** A chat host of the reader's whose id ends in `tail`, never polled. */
@@ -126,22 +132,6 @@ function hostListed(tail: string): unknown {
     id: `chuggy-personal-${tail}-0000-4000-8000-000000000000`,
     registeredAt: "2026-10-01T00:00:00Z",
     live: false,
-  };
-}
-
-/** Both agents of the reader's account, Codex held by `pause` where one is given. */
-function agentAccounts(pause: unknown): unknown {
-  return {
-    accounts: ["Claude", "Codex"].map((agent) => ({
-      agent,
-      settings: {
-        fiveHourPercent: 90,
-        sevenDayPercent: 90,
-        pausesThreads: false,
-      },
-      readings: [],
-      ...(agent === "Codex" && pause !== undefined ? { pause } : {}),
-    })),
   };
 }
 
@@ -175,8 +165,6 @@ async function drawMyRunner(): Promise<readonly SentRequest[]> {
         ? answer(undefined, 204)
         : answer({ error: { code: "NotFound" } }, drawing.removal);
     if (path === `${nativeHttpBasePath}/projects`) return answer(inventory);
-    if (path === `${nativeHttpBasePath}/agent-accounts`)
-      return answer(drawing.accounts ?? agentAccounts(undefined));
     if (path === `${tenantPath}/chat-host`) {
       if (request.method !== "GET") return answer(undefined, 204);
       return drawing.host === undefined
@@ -186,7 +174,12 @@ async function drawMyRunner(): Promise<readonly SentRequest[]> {
     if (path === `${tenantPath}/chat-host-registration-tokens`)
       return answer({ token: "tok_host-1", expiresAtMs: 1_800_000_000_000 });
     if (path === `${tenantPath}/personal-runner-registration-tokens`)
-      return answer({ token: "tok_en-1", expiresAtMs: 1_800_000_000_000 });
+      return drawing.mintRefused === undefined
+        ? answer({ token: "tok_en-1", expiresAtMs: 1_800_000_000_000 })
+        : answer(
+            { error: { code: "Forbidden", message: "no" } },
+            drawing.mintRefused,
+          );
     if (path.startsWith(`${tenantPath}/personal-runner/projects/`))
       return answer(undefined, 204);
     return answer({}, 404);
@@ -229,6 +222,132 @@ test("a member the workspace lets register one asks what it is for, and is hande
   ).toContain(
     "chuggy-linux register --personal --api https://chuggy.test --token=tok_en-1",
   );
+});
+
+/** The steps a runner's mint is handed over in, a list by its name. */
+function runnerSteps(): HTMLElement {
+  return screen.getByRole("list", { name: "Register runner" });
+}
+
+/** One of those steps, by the title it opens with. */
+function runnerStep(title: string): HTMLElement {
+  const found = within(runnerSteps())
+    .getAllByRole("listitem")
+    .find((item) => item.textContent.startsWith(title));
+  if (found === undefined) throw new Error(`no step is titled ${title}`);
+  return found;
+}
+
+test("a minted token is handed over in three steps, a list: install, register, and the guide for what is left", async () => {
+  await drawMyRunner();
+  await press("Register runner");
+  await press("Create token");
+  expect(
+    within(runnerSteps())
+      .getAllByRole("listitem")
+      .map((item) => item.firstElementChild?.firstElementChild?.textContent),
+  ).toStrictEqual(["Install", "Register", "Finish"]);
+  expect(runnerStep("Install").textContent).toContain(
+    "Linux · Node 24 · Docker or Podman",
+  );
+  expect(runnerStep("Install").querySelector("code")?.textContent).toBe(
+    runnerPackages.linux.installCommand,
+  );
+  expect(runnerStep("Register").textContent).toContain("Expires");
+  expect(runnerStep("Finish").querySelector("code")).toBeNull();
+  const guide = within(runnerStep("Finish")).getByRole("link", {
+    name: "Setup guide",
+  });
+  expect(guide.getAttribute("href")).toBe(
+    "https://github.com/kasofsk/chuggy-linux#configure",
+  );
+  expect(guide.getAttribute("target")).toBe("_blank");
+  expect(guide.getAttribute("rel")).toBe("noopener noreferrer");
+});
+
+test("the steps leave the focus with whatever holds it as they are drawn", async () => {
+  await drawMyRunner();
+  await press("Register runner");
+  const elsewhere = document.body.appendChild(document.createElement("input"));
+  elsewhere.focus();
+  await press("Create token");
+  expect(runnerSteps()).toBeTruthy();
+  expect(document.activeElement).toBe(elsewhere);
+  elsewhere.remove();
+});
+
+test("a mint the API refuses says so, draws no step and returns to the ask, which Cancel puts away", async () => {
+  drawing = { granted: true, runner: undefined, mintRefused: 403 };
+  await drawMyRunner();
+  await press("Register runner");
+  await press("Create token");
+  expect(screen.getByText("Refused")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("Forbidden");
+  expect(screen.queryByRole("list", { name: "Register runner" })).toBeNull();
+  expect(screen.getByRole("form", { name: "Runner" })).toBeTruthy();
+  await press("Cancel");
+  expect(screen.queryByRole("form", { name: "Runner" })).toBeNull();
+});
+
+test("a Mac asked to run work on itself and to declare capabilities mints a token that names none, and its steps install and register it so", async () => {
+  const sent = await drawMyRunner();
+  await press("Register runner");
+  fireEvent.click(screen.getByRole("radio", { name: "Mac" }));
+  await press("Advanced");
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "Runs without a container" }),
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Capabilities" }), {
+    target: { value: "Agent:Claude Tool:Xcode" },
+  });
+  await press("Create token");
+  expect(sent.find((one) => one.method === "POST")?.body).toStrictEqual({
+    lifetimeSecs: 3600,
+  });
+  expect(runnerStep("Install").textContent).toContain(
+    "macOS · Node 24 · Colima",
+  );
+  expect(runnerStep("Register").querySelector("code")?.textContent).toBe(
+    "chuggy-darwin register --personal --api https://chuggy.test --token=tok_en-1 --host --capability Agent:Claude --capability Tool:Xcode",
+  );
+});
+
+/** A refusal opens the fold it is drawn in, and the reader typing a fix there
+ * is not folded away from it. */
+test("a refusal of what was typed under a folded Advanced opens it, and it stays open while the reader fixes it", async () => {
+  const sent = await drawMyRunner();
+  await press("Register runner");
+  await press("Advanced");
+  const capabilities = (): HTMLElement =>
+    screen.getByRole("textbox", { name: "Capabilities" });
+  fireEvent.change(capabilities(), { target: { value: "_x" } });
+  await press("Advanced");
+  expect(screen.queryByRole("textbox", { name: "Capabilities" })).toBeNull();
+  await press("Create token");
+  expect(screen.getByText("_x · start with a letter or digit")).toBeTruthy();
+  fireEvent.change(capabilities(), { target: { value: "x" } });
+  await settled();
+  expect(capabilities()).toBeTruthy();
+  expect(sent.filter((one) => one.method === "POST")).toHaveLength(0);
+});
+
+test("capabilities typed that are not ones are refused before anything is minted", async () => {
+  const sent = await drawMyRunner();
+  await press("Register runner");
+  await press("Advanced");
+  fireEvent.change(screen.getByRole("textbox", { name: "Capabilities" }), {
+    target: { value: "Platform:Linux:Amd64" },
+  });
+  await press("Create token");
+  expect(sent.filter((one) => one.method === "POST")).toHaveLength(0);
+  expect(
+    screen.getByText("Platform:Linux:Amd64 is detected, not typed"),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByRole("textbox", { name: "Capabilities" })
+      .getAttribute("aria-invalid"),
+  ).toBe("true");
 });
 
 /** The runner read again on its clock, as a page left open is, and drawn
@@ -361,7 +480,7 @@ test("each runner says what it is running, each ticket linked with what it runs,
     within(busy ?? document.body)
       .getAllByRole("link")
       .map((link) => link.textContent),
-  ).toStrictEqual(["atlas #12", "borealis #4"]);
+  ).toStrictEqual(["Atlas Web #12", "Borealis #4"]);
   expect(busy?.textContent).toContain("Work · cycle 1");
   expect(busy?.textContent).toContain("Stage 1 · cycle 2");
   expect(busy?.textContent).toContain("More not shown");
@@ -393,7 +512,7 @@ test("a member holding a runner may register another, and one holding as many as
   expect(screen.getByText("Limit reached")).toBeTruthy();
 });
 
-test("a runner is given only a project of this workspace the reader reads, and takes one away", async () => {
+test("a runner is given only a project of this workspace the reader reads, each named by its name and written by its address, and takes one away", async () => {
   drawing = { granted: true, runner: runnerHeld };
   const sent = await drawMyRunner();
   fireEvent.keyDown(screen.getByRole("button", { name: /^Add a project/u }), {
@@ -404,12 +523,13 @@ test("a runner is given only a project of this workspace the reader reads, and t
     within(menu)
       .getAllByRole("menuitemradio")
       .map((item) => item.textContent),
-  ).toStrictEqual(["borealis"]);
+  ).toStrictEqual(["Borealis"]);
   fireEvent.click(
-    within(menu).getByRole("menuitemradio", { name: "borealis" }),
+    within(menu).getByRole("menuitemradio", { name: "Borealis" }),
   );
   await settled();
-  await press("Remove atlas");
+  expect(screen.getByRole("rowheader", { name: "Atlas Web" })).toBeTruthy();
+  await press("Remove Atlas Web");
   expect(written(sent)).toStrictEqual([
     "PUT /personal-runner/projects/borealis",
     "DELETE /personal-runner/projects/atlas",
@@ -420,12 +540,12 @@ test("a project's priority is drawn and chosen from High, Normal and Low, and on
   drawing = { granted: true, runner: runnerHeld };
   const sent = await drawMyRunner();
   const priority = screen.getByRole("button", {
-    name: /^Priority of atlas/u,
+    name: /^Priority of Atlas Web/u,
   });
   expect(priority.textContent).toContain("Normal");
   const choose = async (name: string) => {
     fireEvent.keyDown(
-      screen.getByRole("button", { name: /^Priority of atlas/u }),
+      screen.getByRole("button", { name: /^Priority of Atlas Web/u }),
       { key: "ArrowDown" },
     );
     const menu = await screen.findByRole("menu");
@@ -503,13 +623,92 @@ test("taking the last runner off says the projects go with it, and leaves none l
   expect(screen.getByRole("button", { name: "Register runner" })).toBeTruthy();
 });
 
-test("a member with no chat host is handed a token that replaces nothing", async () => {
+/** Register chat host pressed, `machine` chosen and its token minted. */
+async function chatHostRegistered(machine: string): Promise<void> {
+  await press("Register chat host");
+  await turnedMachine(machine);
+  await press("Create token");
+}
+
+async function turnedMachine(machine: string): Promise<void> {
+  fireEvent.click(
+    within(screen.getByRole("radiogroup", { name: "Machine" })).getByRole(
+      "radio",
+      {
+        name: machine,
+      },
+    ),
+  );
+  await settled();
+}
+
+/** The commands the chat host's steps hand over, each in its own box. */
+function chatHostStepsCommands(): readonly (string | null)[] {
+  const steps = screen.getByRole("list", { name: "Register chat host" });
+  return [...steps.querySelectorAll("code")].map((code) => code.textContent);
+}
+
+test("a member with no chat host chooses the machine before a token is minted, and is handed one that replaces nothing", async () => {
   const sent = await drawMyRunner();
   expect(screen.getByText("No chat host yet")).toBeTruthy();
   await press("Register chat host");
+  expect(written(sent)).toStrictEqual([]);
+  expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
+  await press("Create token");
   expect(written(sent)).toStrictEqual(["POST /chat-host-registration-tokens"]);
-  expect(screen.getByText("tok_host-1")).toBeTruthy();
+  expect(chatHostStepsCommands()).toContain(
+    "chuggy-linux register --api https://chuggy.test --token=tok_host-1 --chat",
+  );
   expect(screen.queryByText(/replaces chat host/u)).toBeNull();
+});
+
+test("a chat host is handed over on each machine as its package's install, a register command carrying --chat and the minted token, and its package's chat host guide", async () => {
+  for (const [machine, name, guide] of [
+    ["Linux", "linux", "https://github.com/kasofsk/chuggy-linux#a-chat-host"],
+    ["Mac", "darwin", "https://github.com/kasofsk/chuggy-darwin#chat-host"],
+  ] as const satisfies readonly (readonly [
+    string,
+    RunnerPackageName,
+    string,
+  ])[]) {
+    await drawMyRunner();
+    await chatHostRegistered(machine);
+    const offered = runnerPackages[name];
+    expect(chatHostStepsCommands()).toStrictEqual([
+      offered.installCommand,
+      `${offered.program} register --api https://chuggy.test --token=tok_host-1 --chat`,
+    ]);
+    expect(
+      within(screen.getByRole("list", { name: "Register chat host" }))
+        .getByRole("link", { name: "Setup guide" })
+        .getAttribute("href"),
+    ).toBe(guide);
+    cleanup();
+  }
+});
+
+test("on Linux the line to paste into Claude Code, naming chat-host and the workspace and no token, comes before the steps, and on a Mac only the steps are handed over", async () => {
+  await drawMyRunner();
+  await chatHostRegistered("Linux");
+  const line = screen.getByText(/chat-host --site/u);
+  expect(line.textContent).toBe(
+    `Make this machine my chuggy chat host: run "curl -fsS https://chuggy.test/chuggy-setup.mjs -o ~/.chuggy-setup.mjs && node ~/.chuggy-setup.mjs chat-host --site https://chuggy.test --workspace ${leadPartition.tenant}" and do what its output says.`,
+  );
+  expect(
+    screen.getByText(
+      "Paste into Claude Code on the machine that will be your chat host",
+    ),
+  ).toBeTruthy();
+  expect(
+    line.compareDocumentPosition(
+      screen.getByRole("list", { name: "Register chat host" }),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  cleanup();
+  await drawMyRunner();
+  await chatHostRegistered("Mac");
+  expect(screen.getByRole("list", { name: "Register chat host" })).toBeTruthy();
+  expect(screen.queryByText(/chat-host --site/u)).toBeNull();
 });
 
 test("a member's chat host is drawn with whether it has polled, and registering another hands over a token said to replace it and end its sessions", async () => {
@@ -522,18 +721,44 @@ test("a member's chat host is drawn with whether it has polled, and registering 
   expect(row[0]?.textContent).toContain("5be0d7aa");
   expect(row[0]?.textContent).toContain("Never");
   expect(row[0]?.textContent).toContain("Offline");
-  await press("Register chat host");
+  await chatHostRegistered("Linux");
   expect(
     sent
       .filter((one) => one.method === "POST")
       .map((one) => [one.url.slice(tenantPath.length), one.body]),
   ).toStrictEqual([["/chat-host-registration-tokens", { lifetimeSecs: 3600 }]]);
-  expect(screen.getByText("tok_host-1")).toBeTruthy();
+  expect(chatHostStepsCommands().join(" ")).toContain("--token=tok_host-1");
   expect(
     screen.getByText("Replaces chat host 5be0d7aa · Ends its sessions"),
   ).toBeTruthy();
   await press("Done");
-  expect(screen.queryByText("tok_host-1")).toBeNull();
+  expect(screen.queryByRole("list", { name: "Register chat host" })).toBeNull();
+});
+
+test("a member's chat host says what the chats it hosts may do where it named that, and that each may do everything its own roster allows where it named nothing", async () => {
+  for (const [named, said] of [
+    [
+      ["ProjectRead", "ThreadOffer"],
+      "Chats here may: Read the project, Offer you a page or an action",
+    ],
+    [[], "Chats here may: nothing"],
+    [undefined, "Chats here may do everything their own roster allows"],
+  ] as const) {
+    drawing = {
+      granted: true,
+      runner: undefined,
+      host: {
+        ...(hostListed("5be0d7aa") as object),
+        ...(named === undefined ? {} : { sessionCapabilities: [...named] }),
+      },
+    };
+    await drawMyRunner();
+    const [row] = within(screen.getByRole("table", { name: "Chat host" }))
+      .getAllByRole("row")
+      .slice(1);
+    expect(row?.textContent).toContain(said);
+    cleanup();
+  }
 });
 
 test("a chat host is drawn though its owner may no longer register one, and taking it off is asked first, then sent, and leaves none", async () => {
@@ -557,25 +782,168 @@ test("a chat host is drawn though its owner may no longer register one, and taki
   expect(screen.getByText("No chat host yet")).toBeTruthy();
 });
 
-test("each agent of the reader's account a pause holds is said above their runners, with where it is set, and none is said where none is paused", async () => {
-  drawing = { granted: true, runner: runnerHeld };
-  await drawMyRunner();
-  expect(screen.queryByRole("group", { name: "Paused agents" })).toBeNull();
-  cleanup();
+test("no agent is said paused above a member's runners where their read answers none paused, or answers no pauses at all", async () => {
+  for (const runner of [runnerHeld, { ...runnerHeld, pauses: [] }]) {
+    drawing = { granted: true, runner };
+    await drawMyRunner();
+    expect(screen.queryByRole("group", { name: "Paused agents" })).toBeNull();
+    cleanup();
+  }
+});
+
+test("an agent the read of a member's runners answers held only by credentials turned off is said so, with neither until when nor a press", async () => {
   drawing = {
     granted: true,
-    runner: runnerHeld,
-    accounts: agentAccounts({
-      until: "2026-10-01T05:00:00Z",
-      reasons: ["seven_day", "limit"],
-      pressed: false,
-    }),
+    runner: {
+      ...runnerHeld,
+      pauses: [
+        {
+          agent: "Claude",
+          pause: { off: true, reasons: ["off"], pressed: false },
+        },
+      ],
+    },
+  };
+  await drawMyRunner();
+  const paused = screen.getByRole("group", { name: "Paused agents" });
+  expect(paused.textContent).toContain("Claude · Paused · Off");
+  expect(paused.textContent).not.toContain("until");
+  expect(
+    within(paused).queryByRole("button", { name: /again now/u }),
+  ).toBeNull();
+});
+
+test("each agent the read of a member's runners answers paused is said above them, by its agent, with where it is set", async () => {
+  drawing = {
+    granted: true,
+    runner: {
+      ...runnerHeld,
+      pauses: [
+        {
+          agent: "Claude",
+          pause: {
+            until: "2026-10-01T03:00:00Z",
+            reasons: ["five_hour"],
+            pressed: false,
+          },
+        },
+        {
+          agent: "Codex",
+          pause: {
+            until: "2026-10-01T05:00:00Z",
+            reasons: ["seven_day", "limit"],
+            pressed: false,
+          },
+        },
+      ],
+    },
   };
   await drawMyRunner();
   const paused = screen.getByRole("group", { name: "Paused agents" });
   expect(paused.textContent).toContain(
+    "Claude · Paused · Five-hour window · until ",
+  );
+  expect(paused.textContent).toContain(
     "Codex · Paused · Weekly window · Provider limit · until ",
   );
-  expect(paused.textContent).not.toContain("Claude");
-  expect(within(paused).getByRole("link", { name: "Usage" })).toBeTruthy();
+  expect(within(paused).getAllByRole("link", { name: "Usage" })).toHaveLength(
+    2,
+  );
+});
+
+test("the page is headed by its one h1, drawn by the page head", async () => {
+  drawing = { granted: true, runner: runnerHeld };
+  await drawMyRunner();
+  const titles = screen.getAllByRole("heading", { level: 1 });
+  expect(titles).toHaveLength(1);
+  expect(titles[0]?.textContent).toBe(
+    copyTextEn({ id: "runners-personal-title" }),
+  );
+  expect(titles[0]?.closest("header.page-header")).not.toBeNull();
+});
+
+test("each runner is a card titled by its name, then its status, version and last poll, each labelled, and its removal last and unlabelled", async () => {
+  drawing = { granted: true, runner: runnersTwo };
+  await drawMyRunner();
+  const table = screen.getByRole("table", { name: "Runners" });
+  expect(table.classList.contains("tabular-stacked")).toBe(true);
+  const row = within(table).getAllByRole("row")[1];
+  const cells = Array.from(row?.children ?? []);
+  expect(
+    cells.map((cell) => cell.querySelector(".tabular-label")?.textContent),
+  ).toStrictEqual([
+    undefined,
+    "Status",
+    "Version",
+    "Last polled",
+    "Running",
+    "Registered",
+    undefined,
+  ]);
+  expect(cells[0]?.getAttribute("role")).toBe("rowheader");
+  expect(cells[0]?.textContent).toContain("3f2a9c1e");
+  expect(cells[1]?.textContent).toContain("Live");
+  expect(
+    within(table).getByRole("columnheader", { name: "Remove" }),
+  ).toBeTruthy();
+});
+
+test("each project and the chat host is a card titled by its name, its values labelled, and its Remove last", async () => {
+  drawing = { granted: true, runner: runnerHeld, host: hostListed("5be0d7aa") };
+  await drawMyRunner();
+  expect(
+    tableCards(screen.getByRole("table", { name: "Projects" }))[0],
+  ).toStrictEqual({
+    title: "Atlas Web",
+    labels: ["Priority", "Waiting", undefined],
+    actionsLast: true,
+  });
+  expect(
+    tableCards(screen.getByRole("table", { name: "Chat host" })),
+  ).toStrictEqual([
+    {
+      title: "5be0d7aaChats here may do everything their own roster allows",
+      labels: ["Version", "Registered", "Last polled", "Status", undefined],
+      actionsLast: true,
+    },
+  ]);
+});
+
+test("the projects and the chat host are drawn in the people listings' frame", async () => {
+  drawing = { granted: true, runner: runnerHeld, host: hostListed("5be0d7aa") };
+  await drawMyRunner();
+  for (const name of ["Projects", "Chat host"])
+    expect(
+      screen.getByRole("table", { name }).closest(".people-table"),
+    ).not.toBeNull();
+});
+
+test("the question a runner's removal waits on stands under the roster, outside the table", async () => {
+  drawing = { granted: true, runner: runnersTwo };
+  await drawMyRunner();
+  await press("Remove runner a81c04d2");
+  const asked = screen.getByRole("group", { name: "Remove runner a81c04d2?" });
+  expect(asked.closest("table")).toBeNull();
+  expect(screen.getByRole("table", { name: "Runners" })).toBeTruthy();
+});
+
+test("narrow, a listing table's hidden head stacks its cells, and every press, menu and link on the page is a finger's height", async () => {
+  drawing = { granted: true, runner: runnerHeld };
+  await drawMyRunner();
+  const narrow = sheetRules(tableSheet, [sheetNarrowCondition]);
+  const projects = screen.getByRole("table", { name: "Projects" });
+  for (const head of within(projects).getAllByRole("columnheader"))
+    expect(sheetDeclared(narrow, head, "display")).toBe("block");
+  const touch = sheetRules(myRunnerSheet, [sheetNarrowCondition]);
+  const wide = sheetRules(myRunnerSheet, []);
+  for (const control of [
+    screen.getByRole("button", { name: "Remove runner 3f2a9c1e" }),
+    screen.getByRole("button", { name: "Register runner" }),
+    screen.getByRole("button", { name: /^Priority of Atlas Web/u }),
+  ]) {
+    expect(sheetDeclared(touch, control, "min-height")).toBe(
+      "var(--height-touch)",
+    );
+    expect(sheetDeclared(wide, control, "min-height")).toBe("");
+  }
 });

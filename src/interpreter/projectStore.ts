@@ -117,6 +117,11 @@ export interface Partition {
   readonly project: ProjectId;
 }
 
+/** A project and what it is called, which its creation named and nothing changes. */
+export interface NamedPartition extends Partition {
+  readonly name: string;
+}
+
 /** Every lifecycle, and the declaration `Lifecycle` derives from, so narrowing a stored column has one list to check. */
 export const allLifecycles = [
   "Active",

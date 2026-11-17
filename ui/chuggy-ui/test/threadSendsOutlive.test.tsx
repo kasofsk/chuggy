@@ -51,6 +51,7 @@ import {
 } from "./threadStopStage.tsx";
 import type { StageDoors } from "./threadStopStage.tsx";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { chatPaneHistoryChosen } from "./chatPaneMenu.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -367,17 +368,7 @@ test("a first press whose open's answer was lost while its box was drawn, presse
 
 /** The thread `session` chosen out of the pane's history. */
 async function picked(session: string): Promise<void> {
-  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
-    key: "ArrowDown",
-  });
-  const row = await screen.findByRole("menuitemradio", {
-    name: new RegExp(`^${session}`, "u"),
-  });
-  await act(async () => {
-    fireEvent.click(row);
-    await Promise.resolve();
-  });
-  await settled();
+  await chatPaneHistoryChosen(new RegExp(`^${session}`, "u"));
 }
 
 test.each([
@@ -442,7 +433,7 @@ test("a first message answered while the pane is collapsed under StrictMode is d
   expect(site.opens).toHaveLength(1);
 });
 
-test("a send out when the pane collapsed is Stop once expanded, and its stop reaches that thread once the send has answered", async () => {
+test("a send out when the pane collapsed offers Stop once expanded, and its stop reaches that thread once the send has answered", async () => {
   const site = siteStubbed([held]);
   await drawn("Pane");
   await stageSent(words);
@@ -451,7 +442,7 @@ test("a send out when the pane collapsed is Stop once expanded, and its stop rea
   await collapsed();
   await expanded();
   expect(stageColumn(document.body)).toContain(`> ${words}`);
-  expect(stageButton()).toBe("Stop");
+  expect(stageButton()).toBe("Stop+Send");
   await pressed("Stop");
   expect(site.stops, "the door knows no such turn yet").toStrictEqual([]);
 
@@ -470,7 +461,7 @@ test("a press in the pane is drawn on the same thread's own page, with its Stop"
 
   await tab.to("Page");
   expect(stageColumn(document.body)).toContain(`> ${words}`);
-  expect(stageButton()).toBe("Stop");
+  expect(stageButton()).toBe("Stop+Send");
 });
 
 test("a first message the hosted grant refused while the pane was collapsed is back in its box, read-only, on expanding with the grant still refused", async () => {

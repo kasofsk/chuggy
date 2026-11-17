@@ -130,6 +130,15 @@ a preset reads exactly like a rule that is working.
     message — and an outer loop decides across tickets what becomes practice
     (kasofsk/chuggy#58). The reviewer checks a change's additions against its
     stated scope.
+17. **A variable a root comes to require is named for the deployment.** A root
+    under `src/roots/` is composed from its environment's variables and
+    refuses the start without a required one. The gates here supply it; the
+    deployment's manifests are in another repository and do not until told.
+    So a change that makes a root require a variable it did not, or changes
+    what an existing one must hold, says in its commit message what the
+    deployment must supply and whether the service starts without it, and one
+    that does either and says nothing of it is a finding. A variable that is
+    optional, or whose fallback is today's behaviour, needs only to be so.
 
 ## The standing rules — the model's
 

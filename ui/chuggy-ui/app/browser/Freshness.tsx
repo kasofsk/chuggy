@@ -58,7 +58,10 @@ export function Freshness(props: {
   );
   if (!hovered || props.observedAtMs === undefined) return label;
   return (
-    <Tooltip text={instantExactText(new Date(props.observedAtMs))}>
+    <Tooltip
+      trigger="abbreviation"
+      text={instantExactText(new Date(props.observedAtMs))}
+    >
       {label}
     </Tooltip>
   );

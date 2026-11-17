@@ -124,7 +124,7 @@ async function linking(drawing: WorkspacesDrawing = {}): Promise<DrawnStrict> {
     ...drawing,
   });
   await press(opener);
-  await inviteModeChosen(dialog(), "Link");
+  await inviteModeChosen(dialog(), "Signup link");
   return drawn;
 }
 
@@ -137,15 +137,20 @@ async function made(drawing: WorkspacesDrawing = {}): Promise<DrawnStrict> {
 test("where the site keeps links the dialog opens on Person, its form as it was, with Link beside it", async () => {
   await drawWorkspaces(kept);
   await press(opener);
-  expect(inviteModesDrawn(dialog())).toStrictEqual(["Person+", "Link"]);
+  expect(inviteModesDrawn(dialog())).toStrictEqual(["Person+", "Signup link"]);
   expect(dialogFields(dialog())).toStrictEqual(person);
   expect(dialogActions(dialog())).toStrictEqual(["Cancel", "Create"]);
   styleless();
 });
 
-test("a link's form names no workspace and no person: the box, a note that may be left empty, and Cancel then Create link", async () => {
+test("a link's form is a signup link's, says it makes its opener a workspace of their own, and names no workspace and no person: the box, a note that may be left empty, and Cancel then Create link", async () => {
   await linking();
-  expect(inviteModesDrawn(dialog())).toStrictEqual(["Person", "Link+"]);
+  expect(inviteModesDrawn(dialog())).toStrictEqual(["Person", "Signup link+"]);
+  expect(
+    within(dialog()).getByText(
+      "Whoever opens it signs in with GitHub and gets a workspace of their own.",
+    ),
+  ).toBeDefined();
   expect(dialogFields(dialog())).toStrictEqual(["Note"]);
   expect(within(dialog()).queryByRole("group", { name: "Owner" })).toBeNull();
   expect(linkDrawn()).toStrictEqual(["", true]);
@@ -158,7 +163,7 @@ test("the box is a link's as it is a person's: what one form held the other hold
   await drawWorkspaces(kept);
   await press(opener);
   fireEvent.click(box());
-  await inviteModeChosen(dialog(), "Link");
+  await inviteModeChosen(dialog(), "Signup link");
   expect(linkDrawn()).toStrictEqual(["", false]);
   expect(boxStill(box())).toBe(false);
   cleanup();
@@ -187,7 +192,7 @@ test("a note is sent as typed beside the box, and nothing typed for a person wit
   fireEvent.change(within(dialog()).getByRole("textbox", { name: "Name" }), {
     target: { value: "northwind" },
   });
-  await inviteModeChosen(dialog(), "Link");
+  await inviteModeChosen(dialog(), "Signup link");
   fireEvent.click(box());
   await noted("For the Lisbon team");
   await press("Create link");
@@ -226,7 +231,7 @@ test("a site at its limit of open links says so in the dialog's one line, everyt
   expect(within(dialog()).getByRole("status").textContent).toBe(
     "Link limit reached",
   );
-  expect(inviteModesDrawn(dialog())).toStrictEqual(["Person", "Link+"]);
+  expect(inviteModesDrawn(dialog())).toStrictEqual(["Person", "Signup link+"]);
   expect(linkDrawn()).toStrictEqual(["For the Lisbon team", false]);
   expect(dialogActions(dialog())).toStrictEqual(["Cancel", "Create link"]);
   await inviteModeChosen(dialog(), "Person");
@@ -295,7 +300,7 @@ test("a made workspace link is gone once the dialog is closed, and opened again 
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(tokenHeldOutside(minted.token, drawn.sent)).toStrictEqual([]);
   await press(opener);
-  expect(inviteModesDrawn(dialog())).toStrictEqual(["Person+", "Link"]);
+  expect(inviteModesDrawn(dialog())).toStrictEqual(["Person+", "Signup link"]);
   expect(dialogFields(dialog())).toStrictEqual(person);
   expect(dialogActions(dialog())).toStrictEqual(["Cancel", "Create"]);
 });
@@ -305,7 +310,7 @@ test("a note typed is gone when the dialog is opened again", async () => {
   await noted("For the Lisbon team");
   await press("Cancel");
   await press(opener);
-  await inviteModeChosen(dialog(), "Link");
+  await inviteModeChosen(dialog(), "Signup link");
   expect(linkDrawn()).toStrictEqual(["", true]);
 });
 
@@ -330,7 +335,7 @@ test("a workspace link unanswered, nothing closes the dialog, its form takes not
   expect(note().disabled).toBe(true);
   expect(boxStill(box())).toBe(true);
   await inviteModeChosen(dialog(), "Person");
-  expect(inviteModesDrawn(dialog())).toStrictEqual(["Person", "Link+"]);
+  expect(inviteModesDrawn(dialog())).toStrictEqual(["Person", "Signup link+"]);
   await turned(pressedOutside);
   await turned(() => {
     held.release(answer(minted, 201));
@@ -347,7 +352,7 @@ test.each([
   "a site whose links read %s draws the dialog as it was, and no links",
   async (_named, drawing) => {
     await drawWorkspaces(drawing);
-    expect(screen.queryByText("Invite links")).toBeNull();
+    expect(screen.queryByText("Signup links")).toBeNull();
     await press(opener);
     expect(inviteModesDrawn(dialog())).toStrictEqual([]);
     expect(dialogFields(dialog())).toStrictEqual(person);
@@ -357,7 +362,7 @@ test.each([
 
 test("a site with links draws them and the choice", async () => {
   await drawWorkspaces({ links: () => answer(workspaceLinksListed) });
-  expect(screen.getByRole("table", { name: "Invite links" })).toBeTruthy();
+  expect(screen.getByRole("table", { name: "Signup links" })).toBeTruthy();
   await press(opener);
-  expect(inviteModesDrawn(dialog())).toStrictEqual(["Person+", "Link"]);
+  expect(inviteModesDrawn(dialog())).toStrictEqual(["Person+", "Signup link"]);
 });

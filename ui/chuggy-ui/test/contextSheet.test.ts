@@ -9,7 +9,11 @@
 import { afterEach, expect, test } from "vitest";
 
 import contextSheet from "../app/browser/context/context.css?raw";
-import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
+import {
+  sheetDeclared,
+  sheetPageNarrowCondition,
+  sheetRules,
+} from "./sheet.ts";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -28,7 +32,7 @@ function contextSheetPlaced(outer: string, className: string): Element {
 
 test("a run's view draws no frame of its own inside the run's body, at any width", () => {
   const view = contextSheetPlaced("ticket-run-body", "context-view");
-  for (const conditions of [[], [sheetNarrowCondition]]) {
+  for (const conditions of [[], [sheetPageNarrowCondition]]) {
     const rules = sheetRules(contextSheet, conditions);
     for (const property of ["padding", "background", "border", "border-radius"])
       expect(sheetDeclared(rules, view, property), property).toBe("");
@@ -58,7 +62,7 @@ test("at a phone's width a table's outer columns sit flush with the section and 
   const [name, middle, last] = [...view.querySelectorAll("td")];
   if (name === undefined || middle === undefined || last === undefined)
     throw new Error("no row");
-  const rules = sheetRules(contextSheet, [sheetNarrowCondition]);
+  const rules = sheetRules(contextSheet, [sheetPageNarrowCondition]);
   expect(sheetDeclared(rules, name, "padding-inline-start")).toBe("0px");
   expect(sheetDeclared(rules, name, "white-space")).toBe("normal");
   expect(sheetDeclared(rules, middle, "padding-inline")).toBe("var(--space-2)");

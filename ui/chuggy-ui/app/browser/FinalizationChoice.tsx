@@ -61,24 +61,31 @@ function finalizationChoiceMember<Member extends string>(
   return roster.find((member) => member === value);
 }
 
-export function FinalizationChoiceFields(props: {
+interface FinalizationChoiceFieldsProps {
   readonly choice: FinalizationChoice;
   readonly onChoose: (choice: FinalizationChoice) => void;
   readonly disabled?: boolean;
+  /** What describes the kind's group, such as the error a form states of it. */
+  readonly describedBy?: string | undefined;
   /** One control as the screen lays it out, under the label it is named by. */
   readonly row: (label: string, control: ReactNode) => ReactNode;
-}): ReactNode {
+}
+
+export function FinalizationChoiceFields(
+  props: FinalizationChoiceFieldsProps,
+): ReactNode {
   const { choice, onChoose, row } = props;
   const disabled = props.disabled ?? false;
   const text = useCopyText();
   return (
     <>
       {row(
-        text({ id: "ticket-landing-heading" }),
+        text({ id: "ticket-finalization-heading" }),
         <RadioGroup
-          label={text({ id: "ticket-landing-heading" })}
+          label={text({ id: "ticket-finalization-heading" })}
           value={choice.kind}
           disabled={disabled}
+          describedBy={props.describedBy}
           options={finalizationKindOptions(text)}
           onChoose={(value) => {
             const kind = finalizationChoiceMember(
@@ -93,9 +100,9 @@ export function FinalizationChoiceFields(props: {
       {choice.kind !== "GitMerge" ? null : (
         <>
           {row(
-            text({ id: "ticket-landing-merge" }),
+            text({ id: "ticket-finalization-merge" }),
             <RadioGroup
-              label={text({ id: "ticket-landing-merge" })}
+              label={text({ id: "ticket-finalization-merge" })}
               value={choice.mode}
               disabled={disabled}
               options={gitMergeModeOptions(text)}
