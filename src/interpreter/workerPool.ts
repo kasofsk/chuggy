@@ -68,8 +68,9 @@
  * may name how long a session it claims may sit idle, which is without limit
  * where it names none; no other caller's poll is read for one. Its
  * sessions run in one container it starts before it holds any, so each answer
- * to it names the session image the scheduler publishes, and it may pull that
- * image while it holds nothing. Its poll names every session it holds, so an
+ * to it names the image for that container, the plane's chat image or else
+ * the session image the scheduler publishes, and it may pull that image while
+ * it holds nothing. Its poll names every session it holds, so an
  * attempt its registration holds that the poll does not name is ended at
  * once, before anything the poll claims. Each answer to one implementing
  * `ChatThreadsClosed` also names the threads it last ran that have since

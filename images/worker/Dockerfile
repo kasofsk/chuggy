@@ -148,7 +148,8 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
   && chmod 0555 /shipped/git-askpass.sh
 
 # CHUGGY'S RUNTIME: the tree a job's container mounts read-only at `/opt/chuggy`
-# whatever image the job names, and the image every stage below is built on.
+# whatever image the job names, and the image every stage below is built on
+# but `chat`, which copies the tree.
 #
 #   bin/node      the `runtime-node` stage's node, which runs the core
 #   bin/claude    the Claude Code the core and a session's SDK both run

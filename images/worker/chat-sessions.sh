@@ -52,10 +52,11 @@ while read -r uid home; do
 		--home-dir "$home" --shell /bin/bash "chat-$uid" ||
 		refuse "could not make the user chat-$uid"
 done <"$scratch/homes.txt"
-name="$(setpriv --reuid "$last" --regid "$last" --clear-groups id -un)"
+name="$(setpriv --reuid "$last" --regid "$last" --clear-groups id -un)" ||
+	refuse "setpriv could not run as the last session user"
 [ "$name" = "chat-$last" ] ||
 	refuse "the last session user is named $name, not chat-$last"
-prlimit --version
+prlimit --version || refuse "prlimit did not run"
 
 [ "$(command -v chuggy)" = /opt/chuggy/path/chuggy ] ||
 	refuse "chuggy on PATH is $(command -v chuggy || echo nothing)"
