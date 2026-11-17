@@ -414,7 +414,7 @@ test("a running exchange's card says Working, and nothing else does", () => {
   expect(screen.getByText("weighing it")).toBeDefined();
   expect(
     view.container.querySelector(
-      '.conversation-meta p [role="status"]:not(.visually-hidden)',
+      ".conversation-meta p [data-word]:not(.visually-hidden)",
     ),
   ).toBeNull();
   styleless();

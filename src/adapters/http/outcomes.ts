@@ -97,6 +97,7 @@ import {
   type NativeActionAnswerRefusalCode,
   type TicketTakeRefusalCode,
   type ProjectArtifactUploadRefusalCode,
+  type ProjectImageRefusalCode,
   type SelectorReviewOutcome,
   type ThreadMessageRefusalCode,
 } from "../../contract/rosters.ts";
@@ -234,6 +235,10 @@ import type {
   ProjectThemeWritten,
 } from "../../interpreter/projectAppearance.ts";
 import type {
+  ProjectImageNamed,
+  ProjectImagesView,
+} from "../../interpreter/projectImages.ts";
+import type {
   AgentAccountsResponse,
   AgentPause,
   OwnedThemeResponse,
@@ -241,6 +246,7 @@ import type {
   ThemeChoiceResponse,
   ProjectThemeResponse,
   ProjectAppearanceResponse,
+  ProjectImagesResponse,
   ChatHostCredentialsResponse,
   ChatHostResponse,
   ExecutionPlacementResponse,
@@ -928,11 +934,17 @@ export function projectArtifactReadResponse(
 ): NativeHttpResponse {
   switch (result.fetched) {
     case "Content":
-      return response(200, {
-        content: Buffer.from(result.content).toString(projectArtifactEncoding),
-        mediaType: result.mediaType,
-        encoding: projectArtifactEncoding,
-      });
+      return response(
+        200,
+        {
+          content: Buffer.from(result.content).toString(
+            projectArtifactEncoding,
+          ),
+          mediaType: result.mediaType,
+          encoding: projectArtifactEncoding,
+        },
+        { "x-content-type-options": "nosniff" },
+      );
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "Unavailable":
@@ -1874,6 +1886,60 @@ export function projectAppearanceBody(
       ...(global === undefined ? {} : { global: { ...global } }),
     },
   };
+}
+
+/** A project's icon and banner, each absent where it names none, and whether the caller may change them. */
+export function projectImagesBody(
+  view: ProjectImagesView,
+): ProjectImagesResponse {
+  const { icon, banner } = view.images;
+  return {
+    ...(icon === undefined ? {} : { icon }),
+    ...(banner === undefined ? {} : { banner }),
+    administers: view.administers,
+  };
+}
+
+/** What naming an artifact a project's icon or banner refuses a request with. */
+function projectImageRefusal(
+  code: ProjectImageRefusalCode,
+  message: string,
+  extra: Readonly<Record<string, number>> = {},
+): NativeHttpResponse {
+  return response(422, { ...nativeHttpError(code, message), ...extra });
+}
+
+/** An icon or banner named or cleared, answering the images as they now stand, or refused. */
+export function projectImageNamedResponse(
+  result: ProjectImageNamed,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "ImageNotFound":
+      return projectImageRefusal(
+        "ImageNotFound",
+        "The project holds no such artifact.",
+      );
+    case "ImageTypeNotAdmitted":
+      return projectImageRefusal(
+        "ImageTypeNotAdmitted",
+        "The artifact is not an image type a project's icon or banner may be.",
+      );
+    case "ImageTooLarge":
+      return projectImageRefusal(
+        "ImageTooLarge",
+        "The artifact is too large for its role.",
+        { bytesMax: result.bytesMax },
+      );
+    case "Unavailable":
+      return retry(503, result.retryAfterSeconds, artifactUnavailableCode);
+    case "Written":
+    case "Unchanged":
+      return response(200, projectImagesBody(result.view));
+    default:
+      return assertNever(result);
+  }
 }
 
 /** An allowlist addition: made, or a runner or a readable active project that is not there, or the allowlist at its bound. */

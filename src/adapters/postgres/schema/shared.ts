@@ -467,3 +467,5 @@ export const projectThemeSetFunction = "set_project_theme";
 export const projectThemeOverrideReadFunction = "read_project_theme_override";
 /** One person's theme for one project written whole, or cleared. */
 export const projectThemeOverrideWriteFunction = "write_project_theme_override";
+/** One project's icon or banner named, or cleared, and who named it. */
+export const projectImageSetFunction = "set_project_image";
