@@ -936,7 +936,7 @@ export function setupRegisterCommand(
 /** What the bare command reads of this machine where the runner's step is the one next: whether a runner could be put here, and whether it holds a registration as the person's runner or the project's and one as the person's chat host in its workspace, each a file's name and not yet whether the site knows it. */
 export interface SetupRunnerHere {
   readonly room: SetupRunnerRoom;
-  readonly held: boolean;
+  readonly held: SetupRunnerHeld | undefined;
   readonly chat: boolean;
   /** The kind of Claude credential work here would run on: the one the settings name, a subscription's where there are none, and nothing where they were not read. */
   readonly claude: SetupClaudeKind | undefined;
@@ -1093,6 +1093,21 @@ function setupClaudeHere(
   }
 }
 
+/** The registration of a runner this machine holds: the person's own, which `runner` checks and starts, or only the project's pool, which it leaves as it is and registers this machine beside as the person's own. */
+export type SetupRunnerHeld = "Personal" | "Pool";
+
+function setupRunnerHeld(
+  ports: SetupPorts,
+  places: SetupRunnerPlaces,
+  partition: PartitionIdentity,
+): SetupRunnerHeld | undefined {
+  if (setupPersonalFiles(ports, places, partition.tenant).length > 0)
+    return "Personal";
+  return setupPoolFiles(ports, places, partition).length > 0
+    ? "Pool"
+    : undefined;
+}
+
 /** Looks at the machine as `runner` would before it did anything, and changes nothing. */
 export async function setupRunnerHere(
   ports: SetupPorts,
@@ -1118,10 +1133,7 @@ export async function setupRunnerHere(
         : undefined;
   return {
     room,
-    held:
-      open &&
-      (setupPoolFiles(ports, places, partition).length > 0 ||
-        setupPersonalFiles(ports, places, partition.tenant).length > 0),
+    held: open ? setupRunnerHeld(ports, places, partition) : undefined,
     chat: open && setupChatFiles(ports, places, partition.tenant).length > 0,
     claude: setupClaudeHere(settings),
     settings:

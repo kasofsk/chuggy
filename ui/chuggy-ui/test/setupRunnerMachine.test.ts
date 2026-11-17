@@ -720,14 +720,14 @@ test("docker is asked only of the user the package takes it from: any other is a
   ]);
 });
 
-test("what the bare command reads of the machine changes nothing: whether a runner could be put here, whether it holds a registration for the project, and the kind of Claude credential its work would run on", async () => {
+test("what the bare command reads of the machine changes nothing: whether a runner could be put here, whether it holds the person's runner's registration or only the project's pool's, and the kind of Claude credential its work would run on", async () => {
   const here = (machine: SetupMachine) =>
     setupRunnerHere(machine.ports(), acme);
   const bare = setupMachine();
   const before = new Map(bare.box.paths);
   expect(await here(bare)).toEqual({
     room: { room: "Open", engine: "docker" },
-    held: false,
+    held: undefined,
     chat: false,
     chatSize: {
       engineMib: 11_980,
@@ -745,11 +745,19 @@ test("what the bare command reads of the machine changes nothing: whether a runn
   expect(bare.box.acts).toEqual(["services", "docker"]);
 
   const registered = pooled(["acme.widgets.shame.json"]);
-  expect(await here(registered)).toMatchObject({ held: true, chat: false });
+  expect(await here(registered)).toMatchObject({ held: "Pool", chat: false });
   registered.box.paths.set(boxChatFile("acme", setupSiteMember), "{}");
-  expect(await here(registered)).toMatchObject({ held: true, chat: true });
+  expect(await here(registered)).toMatchObject({ held: "Pool", chat: true });
+  registered.box.paths.set(boxPersonalFile("acme", setupSiteMember), "{}");
+  expect(await here(registered)).toMatchObject({
+    held: "Personal",
+    chat: true,
+  });
   registered.box.engines.docker = "No";
-  expect(await here(registered)).toMatchObject({ held: false, chat: false });
+  expect(await here(registered)).toMatchObject({
+    held: undefined,
+    chat: false,
+  });
 
   const named = setupMachine();
   named.box.paths.set(
@@ -792,7 +800,7 @@ test("a user barred from docker is read as that before the engine is asked, with
       user: "1001",
       how: { barred: "Named", settings: boxSettings },
     },
-    held: false,
+    held: undefined,
     chat: false,
     chatSize: undefined,
     claude: "Subscription",
@@ -806,11 +814,11 @@ test("a user barred from docker is read as that before the engine is asked, with
   expect(barred.box.acts).toEqual(["services"]);
 });
 
-test("a personal runner's registration on this machine is held", async () => {
+test("a personal runner's registration on this machine is held as the person's", async () => {
   const personal = setupMachine();
   personal.box.paths.set(boxPersonalFile("acme", setupSiteMember), "{}");
   expect(await setupRunnerHere(personal.ports(), acme)).toMatchObject({
-    held: true,
+    held: "Personal",
     chat: false,
   });
 });
@@ -824,7 +832,7 @@ test("on a Mac the bare command reads the settings at chuggy-darwin's place and 
   darwin.platform = "darwin";
   expect(await setupRunnerHere(darwin.ports(), acme)).toEqual({
     room: { room: "Open", engine: "docker" },
-    held: true,
+    held: "Pool",
     chat: false,
     chatSize: {
       engineMib: 11_980,

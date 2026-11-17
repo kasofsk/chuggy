@@ -795,6 +795,14 @@ export interface SetupCopy {
     readonly fit: unknown;
     readonly chat: unknown;
   };
+  readonly "setup-mend-runner-pool-offer": {
+    readonly project: unknown;
+    readonly runs: unknown;
+    readonly job: unknown;
+    readonly found: unknown;
+    readonly fit: unknown;
+    readonly chat: unknown;
+  };
   readonly "setup-mend-runner-live-tell": Record<never, never>;
   readonly "setup-mend-runner-put": {
     readonly program: unknown;

@@ -70,6 +70,7 @@ import {
   boxMacSettings,
   boxOwn,
   boxPersonalFile,
+  boxPoolFile,
   boxPersonalUnitName,
   boxPrefix,
   boxServing,
@@ -2939,6 +2940,24 @@ test("a runner registered and not running is offered to be started here only whe
   );
   expect(anew.lines).toContain(did.personal);
   expect(writes(stale)).toEqual([mint, ...serve]);
+});
+
+test("a machine that holds only the project's pool's registration, beside a runner registered and not running, is offered to be registered again as the person's own, and the run does that and leaves the pool's file as it was", async () => {
+  const pooled = await machineSignedIn(projectOnly(setupSiteAt("Offline")));
+  const pool = boxPoolFile("acme", "widgets");
+  pooled.box.paths.set(pool, "{}");
+  expect((await ran(pooled, [])).lines.slice(-4)).toEqual([
+    `tell: A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner of the project's rather than yours. I'll leave that registration as it is and register this machine again as yours alone, then check your runner and start it here as a background service of yours that starts when you log in, so work on your tickets runs on this machine in containers, on your Claude plan, 4 GiB a run. ${takesWork} It can live on another machine instead; say so if you want that.`,
+    offer,
+    otherMachine(false),
+    stop,
+  ]);
+  const anew = await ran(pooled);
+  expect(anew.lines).toContain(did.personal);
+  expect(anew.lines.slice(-2)).toEqual([live, next]);
+  expect(pooled.box.paths.get(pool)).toBe("{}");
+  expect(pooled.box.paths.has(personal)).toBe(true);
+  expect(writes(pooled)).toEqual([mint, ...serve]);
 });
 
 test("the machine is looked at only where the runner's step is the one next, and at no stage is anything on it changed or anything but a read sent", async () => {

@@ -720,21 +720,24 @@ function setupFitToldMend(
   );
 }
 
-/** A runner registered and not running: started here unless the person objects where this machine holds a registration for the project, and otherwise theirs to start where it is. */
+/** A runner registered and not running: started here unless the person objects where this machine holds the person's runner's registration, and otherwise theirs to start where it is. */
 function setupRunnerLiveMend(
   at: SetupAt,
   here: SetupRunnerHere | undefined,
   chat: boolean,
   instead: Copy,
 ): SetupThing {
-  if (here?.held !== true)
+  if (here?.held === undefined)
     return setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning);
   return (
     setupRunnerLoginMend(here, chat) ??
     setupFitToldMend(here.fit, instead) ??
     setupOffer(
       {
-        id: "setup-mend-runner-live-offer",
+        id:
+          here.held === "Personal"
+            ? "setup-mend-runner-live-offer"
+            : "setup-mend-runner-pool-offer",
         args: {
           project: setupNamed(at),
           runs: setupRunsOn(here.claude),

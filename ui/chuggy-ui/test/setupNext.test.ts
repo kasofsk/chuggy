@@ -41,6 +41,7 @@ import { setupChatSized } from "../app/core/setupRunnerMachine.ts";
 import { boxEngineBytes } from "./setupRunnerBox.ts";
 import type {
   SetupChatSize,
+  SetupRunnerHeld,
   SetupRunnerHere,
   SetupRunnerRoom,
 } from "../app/core/setupRunnerMachine.ts";
@@ -410,7 +411,7 @@ test("on a Mac the MCP step and the runner, with or without the chat host, offer
   }
   const looked: SetupRunnerHere = {
     room: { room: "Open", engine: "docker" },
-    held: false,
+    held: undefined,
     chat: false,
     chatSize: setupChatSized(engineRoomy, 0, {}),
     claude: "Subscription",
@@ -919,7 +920,7 @@ const engineRoomy = Math.floor(boxEngineBytes / 2 ** 20);
 function here(
   lack: SetupLack,
   room: SetupRunnerRoom,
-  held = false,
+  held: SetupRunnerHeld | undefined = undefined,
   chat = false,
   platform: SetupPlatform = "linux",
   chatSize: SetupChatSize = setupChatSized(engineRoomy, 0, {}),
@@ -959,7 +960,7 @@ test("with no runner yet and a machine that could take one, the person is told w
   expect(here({ lacks: "Runner", chat: false }, roomy)).toEqual(
     offered(`${runnerOnly} ${putHere} ${takesWork}`),
   );
-  expect(here({ lacks: "Runner", chat: false }, roomy, true)).toEqual(
+  expect(here({ lacks: "Runner", chat: false }, roomy, "Personal")).toEqual(
     here({ lacks: "Runner", chat: false }, roomy),
   );
 });
@@ -980,7 +981,7 @@ test("with neither a runner nor the person's chat host, the offer explains both 
     setupChatSized(undefined, 0, {}),
   ])
     expect(
-      here({ lacks: "Runner", chat: true }, roomy, false, false, "linux", size),
+      here({ lacks: "Runner", chat: true }, roomy, undefined, false, "linux", size),
     ).toEqual(
       offered(
         `${runnerAndHost} ${putHere} ${holds("2 GiB whenever it runs: 2 GiB a chat, for up to 1")} ${takesWork}`,
@@ -997,7 +998,7 @@ function hereFound(
   return saidThing(
     setupNext(lacking({ lacks: "Runner", chat }), setupAnswersNone, "linux", {
       room: roomy,
-      held: false,
+      held: undefined,
       chat: false,
       chatSize: setupChatSized(engineRoomy, 0, {}),
       fit: { fit: "Room" },
@@ -1080,7 +1081,7 @@ test("where this machine could not take a runner the person is told why instead,
         asked: [{ engine: "docker", answered: "No" }],
         start: "colima start",
       },
-      false,
+      undefined,
       false,
       "darwin",
     ),
@@ -1127,22 +1128,27 @@ test("a user the runner package bars from docker is told the package's reason an
   );
 });
 
-test("a runner registered and not running is offered to be started here only where this machine holds a registration, said as held and as registered again where the site no longer knows it, and is otherwise the person's to start where it is", () => {
+test("a runner registered and not running is offered to be started here only where this machine holds the person's runner's registration, said as held and as registered again where the site no longer knows it, offered to be registered again beside a pool's registration, and is otherwise the person's to start where it is", () => {
   const holds =
     "A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner. I'll check it and start it here as a background service of yours that starts when you log in, registering this machine again as yours alone first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan, 4 GiB a run.";
   const instead =
     "It can live on another machine instead; say so if you want that.";
-  expect(here({ lacks: "RunnerLive", chat: false }, roomy, true)).toEqual(
+  expect(here({ lacks: "RunnerLive", chat: false }, roomy, "Personal")).toEqual(
     offered(`${holds} ${takesWork} ${instead}`),
   );
   for (const room of [roomy, { room: "Serviceless" }] as const)
     expect(here({ lacks: "RunnerLive", chat: false }, room), room.room).toEqual(
       mends.RunnerLive[1],
     );
-  expect(here({ lacks: "RunnerLive", chat: true }, roomy, true)).toEqual(
+  expect(here({ lacks: "RunnerLive", chat: true }, roomy, "Personal")).toEqual(
     offered(
       `${holds} Your chat host is a second background service, which holds 6 GiB whenever it runs: 2 GiB a chat, for up to 3 at once. ${takesWork} ${instead}`,
       true,
+    ),
+  );
+  expect(here({ lacks: "RunnerLive", chat: false }, roomy, "Pool")).toEqual(
+    offered(
+      `A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner of the project's rather than yours. I'll leave that registration as it is and register this machine again as yours alone, then check your runner and start it here as a background service of yours that starts when you log in, so work on your tickets runs on this machine in containers, on your Claude plan, 4 GiB a run. ${takesWork} ${instead}`,
     ),
   );
 });
@@ -1151,9 +1157,9 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
   const said = (claude: SetupClaudeKind | undefined) =>
     (
       [
-        [{ lacks: "Runner", chat: false }, false],
-        [{ lacks: "Runner", chat: true }, false],
-        [{ lacks: "RunnerLive", chat: false }, true],
+        [{ lacks: "Runner", chat: false }, undefined],
+        [{ lacks: "Runner", chat: true }, undefined],
+        [{ lacks: "RunnerLive", chat: false }, "Personal"],
       ] as const
     ).map(([lack, held]) => {
       const { thing } = saidNext(
@@ -1191,12 +1197,12 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
 test("what the machine showed moves no step but the runner's", () => {
   for (const [kind, [lack, told]] of Object.entries(mends))
     if (!runnerKinds.includes(kind))
-      expect(here(lack, roomy, true), kind).toEqual(told);
+      expect(here(lack, roomy, "Personal"), kind).toEqual(told);
 });
 
 test("a project lacking is asked for the same whatever the machine showed, and has the machine looked at for nothing", () => {
   const lack: SetupLack = { lacks: "Project" };
-  expect(here(lack, roomy, true)).toEqual(thing(lack));
+  expect(here(lack, roomy, "Personal")).toEqual(thing(lack));
   expect(setupRunnerDue(lacking(lack))).toBeUndefined();
   expect(setupMcpDue(lacking(lack))).toBeUndefined();
 });
