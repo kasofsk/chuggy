@@ -20,19 +20,18 @@
  * no ticket yet and what a ticket may be drawn under was read, the person is
  * asked what they want done first, and `ticket` files it, with the
  * configuration they choose where there is a choice; where that read came to
- * nothing, the console's New ticket page is the way. The MCP step and the
- * runner's change the machine, so each is offered and never run unasked: the
- * person is told what `mcp` would do, the runner package installed where it
- * is not here and its server named in their agent, and for the runner's step
- * they are told what `runner` would put here, a service for the project's
- * work and what a job of it takes, and where their chats run on their chat
- * host and they have none, what one here would hold, recommended only where
- * the engine's memory has room for it beside a job: the command is named
- * under a rule that waits on their yes, with the answer recommended, and a
- * rule for the other; where the machine could not take a runner, they are
- * told that instead. A chat host lacking is never the next thing.
+ * nothing, the console's New ticket page is the way. The MCP step changes the
+ * machine, so it is offered and never run unasked: the person is told what
+ * `mcp` would do, the runner package installed where it is not here and its
+ * server named in their agent. The runner's step has one sensible answer, so
+ * it is announced and then run unless the person objects: they are told what
+ * `runner` puts here, a personal runner taking the project's work and what a
+ * job of it takes, and where their chats run on their chat host and they have
+ * none, a chat host beside it and what it holds, with the line that runs it
+ * on another machine instead; where the machine could not take a runner, they
+ * are told that instead. A chat host lacking is never the next thing.
  * Where a personal runner of theirs is registered and does not take the
- * project's work, `serve` is offered on the same yes.
+ * project's work, `serve` is offered on the person's yes.
  * `setupMend` is where each thing a step can lack is turned into its next
  * thing; the slice that gives a step its command changes that step's line
  * there and nowhere else. A tell says of a page only what is pressed there:
@@ -649,7 +648,7 @@ function setupColimaShort(
   return fit.amd64 ? "amd64" : "none";
 }
 
-/** What a yes to `runner` gives Colima's VM, as the word an offer's sentence picks its clause by. */
+/** What `runner` gives Colima's VM, as the word an offer's sentence picks its clause by. */
 function setupColimaGives(
   fit: Extract<SetupFit, { readonly fit: "Colima" }>,
 ): string {
@@ -660,7 +659,7 @@ function setupColimaGives(
   return fit.rosetta ? "rosetta" : "none";
 }
 
-/** What an offer of `runner` says this machine is short of for a job naming no memory or platform, and what a yes does for it, or nothing where it is short of nothing. */
+/** What an offer of `runner` says this machine is short of for a job naming no memory or platform, and what `runner` does for it, or nothing where it is short of nothing. */
 function setupFitSaid(here: SetupRunnerHere): CopyArgument {
   const { fit } = here;
   const engine = here.room.room === "Open" ? here.room.engine : "docker";
@@ -721,7 +720,7 @@ function setupFitToldMend(
   );
 }
 
-/** A runner registered and not running: started here on the person's yes where this machine holds a registration for the project, and otherwise theirs to start where it is. */
+/** A runner registered and not running: started here unless the person objects where this machine holds a registration for the project, and otherwise theirs to start where it is. */
 function setupRunnerLiveMend(
   at: SetupAt,
   here: SetupRunnerHere | undefined,
@@ -838,14 +837,14 @@ function setupRunnerMend(
   }
 }
 
-/** Whether a fit is one where Colima's VM is what a yes or the person mends, which is so also where docker does not answer yet. */
+/** Whether a fit is one where Colima's VM is what `runner` or the person mends, which is so also where docker does not answer yet. */
 function setupColimaMends(fit: SetupFit): boolean {
   return (
     fit.fit === "Colima" || fit.fit === "Rosettaless" || fit.fit === "Rebuild"
   );
 }
 
-/** What `runner` would put on this machine, offered on the person's yes with what a yes changes of Colima first, or what they are to mend first where only they can. */
+/** What `runner` puts on this machine, announced with what it changes of Colima and run unless the person objects, or what they are to mend first where only they can. */
 function setupRunnerPutMend(
   chat: boolean,
   at: SetupAt,

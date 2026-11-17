@@ -590,9 +590,10 @@ test("beside a machine-wide package too old under a prefix not the person's to w
   expect(times(npmless, "mcpAdd")).toBe(0);
 });
 
-test("a workspace that does not let the person register a runner of their own stops the run before anything is minted, says where and with what press an admin, who may be the person, turns it on, and the run named again finishes the job", async () => {
+test("a workspace that does not let the person register a runner of their own stops the run before anything is minted or changed on the machine, says where and with what press an admin, who may be the person, turns it on, and the run named again finishes the job", async () => {
   const machine = await both();
   machine.world.withheld.add("acme");
+  const before = new Map(machine.box.paths);
   const withheld = await ran(machine);
   expect(withheld.exit).toBe(0);
   expect(withheld.lines.slice(-4)).toEqual([
@@ -605,6 +606,7 @@ test("a workspace that does not let the person register a runner of their own st
   ]);
   expect(writes(machine)).toEqual([]);
   expect(times(machine, "register")).toBe(0);
+  expect(machine.box.paths).toEqual(before);
   machine.world.withheld.delete("acme");
   const granted = await ran(machine);
   expect(granted.lines.slice(-8)).toEqual([live, ...chatMade, next]);
@@ -2723,6 +2725,34 @@ test("on a Mac whose running Colima VM a yes restarts, the yes counts what ran b
   expect(JSON.parse(machine.box.paths.get(boxMacSettings) ?? "")).toMatchObject(
     { chat: { sessionsMax: 2, sessionMemoryMib: 2048 } },
   );
+});
+
+test("on a Mac whose running Colima VM a run would restart, a workspace that does not let the person register a runner of their own stops the run with Colima, the package and the settings untouched", async () => {
+  const machine = await mac();
+  machine.world.withheld.add("acme");
+  boxMacMade(machine.box, {
+    silicon: true,
+    rosetta: true,
+    memoryBytes: 24 * 2 ** 30,
+    vm: {
+      running: true,
+      vmType: "vz",
+      vzRosetta: true,
+      memoryBytes: 2 * 2 ** 30,
+      arch: "aarch64",
+      rosettaOn: true,
+    },
+  });
+  const before = new Map(machine.box.paths);
+  const withheld = await ran(machine);
+  expect(withheld.lines).toContain(
+    "found: the workspace does not let you register a runner of your own",
+  );
+  expect(times(machine, "colimaStop")).toBe(0);
+  expect(times(machine, "colimaStart")).toBe(0);
+  expect(times(machine, "install")).toBe(0);
+  expect(writes(machine)).toEqual([]);
+  expect(machine.box.paths).toEqual(before);
 });
 
 test("--chat-host no sets up the project's runner alone, minting and registering no chat host, and the runner's step is done with it live, saying chat-host where the chat host is missing or not running", async () => {

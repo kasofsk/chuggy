@@ -264,7 +264,7 @@ const setupServicesProbe = [
   "Version",
 ];
 
-/** What starts Colima, the VM docker runs in on a Mac, as it is: the person's to run where a yes to `runner` would change nothing of it. */
+/** What starts Colima, the VM docker runs in on a Mac, as it is: the person's to run where `runner` would change nothing of it. */
 export const setupColimaStart = ["colima", "start"] as const;
 
 /** What starts Colima whenever the person logs in, as chuggy-darwin's `install-agent` says it. */
@@ -470,13 +470,13 @@ export const setupChatSessionMemoryMib = 2_048;
 /** The most sessions at once setup sizes a chat host to. */
 export const setupChatSessionsMax = 4;
 
-/** What a chat host here would hold, as a yes to it leaves the settings naming. */
+/** What a chat host here would hold, as `runner` leaves the settings naming. */
 export interface SetupChatSize {
   /** The engine's memory as it reports it, in MiB, or nothing where it did not say. */
   readonly engineMib: number | undefined;
   /** What the engine's running containers take of it, in MiB, or nothing where that could not be counted. */
   readonly inUseMib: number | undefined;
-  /** The sessions at once the engine's memory has room for beside what it runs and a job, none where it has room for none or either was not read; the chat host is recommended only where this is one or more. */
+  /** The sessions at once the engine's memory has room for beside what it runs and a job, none where it has room for none or either was not read. */
   readonly room: number;
   /** The sessions at once the settings name: those already named, and otherwise the room, but never none, since the package takes none fewer than one. */
   readonly sessionsMax: number;
@@ -946,7 +946,7 @@ export interface SetupRunnerHere {
     | undefined;
   /** The Claude credential work here would run on, where its file is not there yet: the one the settings name, or a subscription's where there are none. */
   readonly loginMissing: SetupClaudeCredential | undefined;
-  /** What a chat host here would hold, where a runner could be put here or will be once a yes changes Colima. */
+  /** What a chat host here would hold, where a runner could be put here or will be once `runner` changes Colima. */
   readonly chatSize: SetupChatSize | undefined;
   /** What this machine is short of for a job naming no memory or platform. */
   readonly fit: SetupFit;

@@ -474,8 +474,8 @@ setup-project-made = made { $project }, called { $name }
 setup-project-refused-found = the { -project } was not made: { $refusal }
 setup-project-refused-tell = The { -project } was not made: { $refusal }. Tell me what to do instead.
 
-## The runner's step, which the runner command does on this machine with the
-## person's yes.
+## The runner's step, which the runner command does on this machine once it
+## is announced, unless the person objects or asks for another machine.
 
 setup-offer-when = once the person has been told what it does here, and has not asked for it on another machine instead
 setup-claude-on-subscription = your { -claude } plan

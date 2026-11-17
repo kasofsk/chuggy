@@ -18,8 +18,9 @@
  * nothing; so the command is run again after any failure, at any point, and
  * picks up where things stand. Whatever could stop a run without anything
  * having been changed is looked at before the first act: where the project's
- * work runs and whether it lets this person's runner take it, the machine's user
- * services, a container engine the package takes from this user, the
+ * work runs and whether it lets this person's runner take it, whether the
+ * workspace lets them register one where this machine holds none the site
+ * lists, the machine's user services, a container engine the package takes from this user, the
  * runner's settings and its Claude credential, and whether the package could be
  * installed at all.
  *
@@ -687,7 +688,7 @@ async function setupChatSettingsHad(
   return { written: true };
 }
 
-/** What a yes counts in use: the larger of the counts before and after it restarted Colima's VM, since a container the restart stopped is started again; nothing where either was not read. */
+/** What a run counts in use: the larger of the counts before and after it restarted Colima's VM, since a container the restart stopped is started again; nothing where either was not read. */
 function setupInUseLarger(
   colima: ColimaHad,
   afterMib: number | undefined,
@@ -768,7 +769,7 @@ function setupFileSaid<File extends SetupFile>(
   );
 }
 
-/** This machine registered as the person's own runner, where the workspace lets them; a file of one the site no longer knows is said first. */
+/** This machine registered as the person's own runner, which `setupPersonalAsked` found the workspace lets them; a file of one the site no longer knows is said first. */
 async function setupPersonalRegistered(
   run: ProjectRun,
   command: string,
@@ -776,11 +777,6 @@ async function setupPersonalRegistered(
 ): Promise<Enrolled | Halt> {
   if (held !== undefined)
     run.notes.push({ note: "PersonalGone", path: held.path });
-  const permitted = await setupPermitted(run, (people) => ({
-    stop: "RunnerWithheld",
-    people,
-  }));
-  if (halted(permitted)) return permitted;
   const acted = await setupTokenHanded(
     run,
     command,
@@ -816,26 +812,50 @@ async function setupPersonalRead(
     : setupUnread("personal", read);
 }
 
+/** What this machine holds of the person's own runner: a file of one the site lists as theirs, or what a registration would replace, if anything. */
+type PersonalAsked =
+  | {
+      readonly asked: "Good";
+      readonly file: SetupFile;
+      readonly client: string;
+    }
+  | { readonly asked: "Register"; readonly held: SetupFile | undefined };
+
+/** Which of the person's runners this machine holds, read before anything is touched, and where it holds none the site lists, whether the workspace lets them register one. */
+async function setupPersonalAsked(
+  run: ProjectRun,
+): Promise<PersonalAsked | Halt> {
+  const held = setupPersonalFiles(run.ports, run.places, run.tenant);
+  const [first] = held;
+  if (first !== undefined) {
+    const read = await setupPersonalRead(run);
+    if (halted(read)) return read;
+    const listed = new Set(read.personal?.runners.map((runner) => runner.id));
+    for (const file of held) {
+      const client = setupFileClient(run.ports, file);
+      if (client !== undefined && listed.has(client))
+        return { asked: "Good", file, client };
+    }
+  }
+  const permitted = await setupPermitted(run, (people) => ({
+    stop: "RunnerWithheld",
+    people,
+  }));
+  if (halted(permitted)) return permitted;
+  return { asked: "Register", held: first };
+}
+
 /** This machine as the person's own runner: kept where it holds a file of a runner the site lists as theirs, and registered otherwise. */
 async function setupPersonalHad(
   run: ProjectRun,
   command: string,
+  asked: PersonalAsked,
 ): Promise<Enrolled | Halt> {
-  const held = setupPersonalFiles(run.ports, run.places, run.tenant);
-  const [first] = held;
-  if (first === undefined)
-    return setupPersonalRegistered(run, command, undefined);
-  const read = await setupPersonalRead(run);
-  if (halted(read)) return read;
-  const listed = new Set(read.personal?.runners.map((runner) => runner.id));
-  for (const file of held) {
-    const client = setupFileClient(run.ports, file);
-    if (client !== undefined && listed.has(client)) {
-      run.notes.push({ note: "Personal", path: file.path });
-      return { file, client, fresh: false };
-    }
-  }
-  return setupPersonalRegistered(run, command, first);
+  if (asked.asked === "Register")
+    return setupPersonalRegistered(run, command, asked.held);
+  const { file, client } = asked;
+  run.notes.push({ note: "Personal", path: file.path });
+  return { file, client, fresh: false };
 }
 
 /** The package's own check of the machine for a registration's file, a runner's or the person's chat host's: passed, with its first warning where it gave one, or the first line that failed it, redacted, as the stop. */
@@ -1209,8 +1229,9 @@ async function setupMachineShared(
 async function setupPersonalDone(
   run: ProjectRun,
   packaged: Packaged,
+  asked: PersonalAsked,
 ): Promise<{ readonly unit: SetupUnit; readonly client: string } | Halt> {
-  const enrolled = await setupPersonalHad(run, packaged.command);
+  const enrolled = await setupPersonalHad(run, packaged.command, asked);
   if (halted(enrolled)) return enrolled;
   const checked = await setupChecked(
     run,
@@ -1504,12 +1525,12 @@ async function setupHostedWalked(
   return setupChatAlone(run, { of: "Runner", pooled: false });
 }
 
-/** Whether a yes restarted Colima's running VM, and if so what its running containers took before, which is what the offer counted. */
+/** Whether a run restarted Colima's running VM, and if so what its running containers took before, which is what the offer counted. */
 type ColimaHad =
   | { readonly restarted: false }
   | { readonly restarted: true; readonly inUseMib: number | undefined };
 
-/** On a Mac, Colima's VM given what a job needs where a yes can give it, or the stop of what only the person can mend; then what the VM has. */
+/** On a Mac, Colima's VM given what a job needs where a run can give it, or the stop of what only the person can mend; then what the VM has. */
 async function setupColimaHad(run: Run): Promise<Halt | ColimaHad> {
   const unchanged = { restarted: false } as const;
   if (run.platform !== "darwin") return unchanged;
@@ -1558,6 +1579,8 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   if (setupHosted(project.route)) return setupHostedWalked(run, chats);
   const fallback = await setupFallbackAsked(run);
   if (halted(fallback)) return fallback;
+  const personal = await setupPersonalAsked(run);
+  if (halted(personal)) return personal;
   const colima = await setupColimaHad(run);
   if (halted(colima)) return colima;
   const machine = await setupMachineProbed(
@@ -1567,7 +1590,7 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   if (halted(machine)) return machine;
   const packaged = await setupMachineShared(run, machine);
   if (halted(packaged)) return packaged;
-  const done = await setupPersonalDone(run, packaged);
+  const done = await setupPersonalDone(run, packaged, personal);
   if (halted(done)) return done;
   const served = await setupServed(run, fallback);
   if (halted(served)) return served;
