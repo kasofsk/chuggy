@@ -95,11 +95,12 @@
     }
 
     .repositories-page .radio-item:focus-visible {
-      box-shadow: none;
+      outline: none;
     }
 
     .repositories-page .radio-item:focus-visible::before {
-      box-shadow: var(--ring-focus);
+      outline: var(--focus-width) solid var(--focus);
+      outline-offset: var(--focus-offset);
     }
   }
 }

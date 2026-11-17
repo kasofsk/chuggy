@@ -1,6 +1,7 @@
 /* TabNav: a row of tabs over a hairline, the current one in full ink on a
    rail. A row wider than its container scrolls inside it, which
-   ScrollSides.css cues. */
+   ScrollSides.css cues, and clips anything drawn past a tab, so a tab's focus
+   outline is drawn inside it. */
 
 @layer ui {
   .tab-nav {
@@ -57,6 +58,16 @@
     color: var(--ink-2);
     font-size: var(--text-xs);
     line-height: var(--leading-dense);
+  }
+
+  .tab-nav-tab:focus-visible {
+    outline-offset: var(--focus-inset);
+  }
+
+  @media (forced-colors: active) {
+    .tab-nav-tab[aria-current="page"]::after {
+      background: var(--forced-current);
+    }
   }
 
   /* The list is as wide as its tabs rather than its row, so a tab or count

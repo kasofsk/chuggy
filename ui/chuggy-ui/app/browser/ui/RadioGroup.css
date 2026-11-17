@@ -44,6 +44,16 @@
     background: var(--ink-1);
   }
 
+  @media (forced-colors: active) {
+    .radio-mark {
+      background: var(--forced-ink);
+    }
+
+    .radio-item:disabled .radio-mark {
+      background: var(--forced-quiet);
+    }
+  }
+
   @media (pointer: coarse) {
     .radio-item {
       position: relative;

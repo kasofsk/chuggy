@@ -50,11 +50,12 @@
     }
 
     .runner-mint .checkbox:focus-visible {
-      box-shadow: none;
+      outline: none;
     }
 
     .runner-mint .checkbox:focus-visible::before {
-      box-shadow: var(--ring-focus);
+      outline: var(--focus-width) solid var(--focus);
+      outline-offset: var(--focus-offset);
     }
 
     .runner-mint :is(a[href], [tabindex="0"]) {

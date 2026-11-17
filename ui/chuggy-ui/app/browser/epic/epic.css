@@ -110,6 +110,15 @@
     stroke-width: 1;
   }
 
+  /* A segment is told from its key by its tone alone, so forced colours keep
+     the tones. */
+  @media (forced-colors: active) {
+    .epic-progress-track,
+    .epic-progress-swatch {
+      forced-color-adjust: none;
+    }
+  }
+
   .epic-progress-count {
     color: var(--ink-1);
     font-variant-numeric: tabular-nums;

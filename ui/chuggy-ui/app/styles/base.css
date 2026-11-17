@@ -81,8 +81,8 @@
   }
 
   :focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: var(--focus-offset);
     border-radius: var(--radius-1);
   }
 

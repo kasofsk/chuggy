@@ -394,7 +394,7 @@ test("the edge is drawn over both panels, and a keyboard's focus rings it", asyn
   const ring = rules.find(
     (rule) => rule.selectorText === ".chat-separator:focus-visible",
   );
-  expect(ring?.style.getPropertyValue("box-shadow")).toBe("var(--ring-focus)");
+  expect(ring?.style.getPropertyValue("outline")).toBe("");
   expect(ring?.style.getPropertyValue("border-radius")).toBe("0px");
   styleless();
 });

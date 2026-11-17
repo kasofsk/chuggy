@@ -151,6 +151,13 @@
     flex: none;
   }
 
+  @media (forced-colors: active) {
+    .selector-dot[data-tone],
+    .selector-mark {
+      background: var(--forced-ink);
+    }
+  }
+
   .selector-pinned {
     display: flex;
     min-width: 8em;

@@ -214,7 +214,17 @@
        level: it has to let the level under it through */
     --scrim: color-mix(in srgb, var(--surface-0) 70%, transparent);
 
+    /* focus — an outline, which forced colours keep where they drop a shadow */
     --focus: var(--ink-1);
+    --focus-width: 2px;
+    --focus-offset: 2px; /* the gap between a control and its outline */
+    /* the outline drawn inside a box that would clip it */
+    --focus-inset: calc(-1 * var(--focus-width));
+
+    /* forced colours — the system's own, for what a user's palette must keep */
+    --forced-ink: CanvasText; /* a mark whose presence is what it says */
+    --forced-current: Highlight; /* focus, and what is selected or current */
+    --forced-quiet: GrayText; /* a mark on what cannot be chosen */
 
     /* type — the operator's own faces, because the policy admits no font; a
        theme puts one of the three stacks under prose */
@@ -277,9 +287,6 @@
     --height-chat-strip: 2.5rem; /* the chat pane collapsed to its strip */
     --height-state: 1.875rem; /* a ticket's state label on its page */
     --height-state-small: 1.5rem; /* that label where a row or a bar holds it */
-
-    /* rings */
-    --ring-focus: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--focus);
 
     /* stacking — the band a Radix portal draws in, above every page layer's
        own z-index: a menu, a picker or a tooltip takes this value directly,
@@ -369,6 +376,12 @@
   @media (pointer: coarse) {
     :root {
       --height-control: max(var(--height-touch), var(--height-icon));
+    }
+  }
+
+  @media (forced-colors: active) {
+    :root {
+      --focus: var(--forced-current);
     }
   }
 
