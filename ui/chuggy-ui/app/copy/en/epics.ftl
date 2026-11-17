@@ -12,8 +12,8 @@ epics-show-more = Show more
 epics-reload = Reload the { -epic }
 epics-chip-number = #{ $epic }
 epics-chip-archived = (archived)
-epics-chip-name = { $title } #{ $epic }
-epics-chip-name-archived = { $title } #{ $epic } (archived)
+epics-chip-name = #{ $epic } { $title }
+epics-chip-name-archived = #{ $epic } { $title } (archived)
 
 ## A status, and how far an epic's tickets have come.
 

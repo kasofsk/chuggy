@@ -16,12 +16,12 @@ export interface EpicsCopy {
   };
   readonly "epics-chip-archived": Record<never, never>;
   readonly "epics-chip-name": {
-    readonly title: unknown;
     readonly epic: unknown;
+    readonly title: unknown;
   };
   readonly "epics-chip-name-archived": {
-    readonly title: unknown;
     readonly epic: unknown;
+    readonly title: unknown;
   };
   readonly "epics-status-empty": Record<never, never>;
   readonly "epics-status-not-started": Record<never, never>;

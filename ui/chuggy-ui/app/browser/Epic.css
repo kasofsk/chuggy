@@ -16,7 +16,7 @@
     max-width: 100%;
   }
 
-  /* A chip: the title cut short, then the number, which never is. */
+  /* A chip: the number, which is never cut, then the title cut short. */
   .epic-chip {
     min-width: 0;
     max-width: 100%;
