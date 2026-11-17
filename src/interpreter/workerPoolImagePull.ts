@@ -10,7 +10,8 @@
  * are pulled as its blobs are. What an image is called on the
  * cluster and what a pool off it pulls it by differ only in the host, so the
  * digest a pool is handed is the one its execution pinned, its attempt was
- * opened under, or its site publishes for sessions.
+ * opened under, its site publishes for sessions, or its plane's chat-image
+ * setting names.
  */
 import { textCodePointsCount } from "../contract/http.ts";
 import { workerImageCharsMax } from "../contract/workerPool.ts";
@@ -105,6 +106,30 @@ export function workerPoolImageHosted(
   if (published === undefined) return image;
   const hosted = `${published}${image.slice(slash)}`;
   return textCodePointsCount(hosted) > workerImageCharsMax ? image : hosted;
+}
+
+/** What reading the chat-image setting came to. */
+export type WorkerPoolChatImageRead =
+  | { readonly read: "Image"; readonly image: string | undefined }
+  | { readonly read: "Refused"; readonly why: string };
+
+/** The chat-image setting, a reference pinned by digest that an answer may carry; absent or empty, the plane names no chat image of its own. */
+export function workerPoolChatImageRead(
+  text: string | undefined,
+): WorkerPoolChatImageRead {
+  if (text === undefined || text.length === 0)
+    return { read: "Image", image: undefined };
+  if (textCodePointsCount(text) > workerImageCharsMax)
+    return {
+      read: "Refused",
+      why: `is longer than ${String(workerImageCharsMax)} characters`,
+    };
+  if (!workerPoolImagePinned(text))
+    return {
+      read: "Refused",
+      why: "is not an image reference pinned by digest",
+    };
+  return { read: "Image", image: text };
 }
 
 /** What reading the image-host setting came to. */

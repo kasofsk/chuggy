@@ -148,7 +148,8 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
   && chmod 0555 /shipped/git-askpass.sh
 
 # CHUGGY'S RUNTIME: the tree a job's container mounts read-only at `/opt/chuggy`
-# whatever image the job names, and the image every stage below is built on.
+# whatever image the job names, and the image every stage below is built on
+# but `chat`, which copies the tree.
 #
 #   bin/node      the `runtime-node` stage's node, which runs the core
 #   bin/claude    the Claude Code the core and a session's SDK both run
@@ -170,9 +171,9 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 #   check.sh      what a job's container runs first, in the job's own image
 #
 # The core finds `bin/` from where it sits, and nothing puts it on PATH. The
-# `worker-base` stage puts `path/` there instead, last, so a chat session's
-# shell, which is handed the supervisor's PATH, finds `chuggy` and runs it on
-# the image's own node.
+# `worker-base` and `chat` stages put `path/` there instead, last, so a chat
+# session's shell, which is handed the supervisor's PATH, finds `chuggy` and
+# runs it on the image's own node.
 #
 # A SITE COPIES THE TREE OUT OF THIS IMAGE with this image's `cp`, as the user a
 # job runs as. So `/opt/chuggy` is a directory and not a link, and every file in
@@ -477,69 +478,74 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
-# THE USERS A CHAT SESSION RUNS AS ARE NAMED. A member's chat container runs
-# the core's supervisor as root, and it starts each session through `setpriv`
-# and `prlimit` as a user of its own range, whose group is the same number and
-# whose home is under the core's sessions directory. Git, ssh and node's
-# `os.userInfo()` look up the user they run as, and refuse one the image does
-# not name. The range, the directory the homes are under and each user's home
-# are read off the core, as the `chatSessionUidFirst`, `chatSessionUidCount`,
-# `chatSessionsDirectory` and `chatSessionHome` of its `chatSession.mjs`, since
-# its supervisor refuses to start where a session user's home is not the one
-# `chatSessionHome` names. The groups a session reads its mirror through are
-# left unnamed: git, ssh and node look up none of them by name, and git holds a
-# tree to its owner's user and not its group. `id` and `groups` print such a
-# group by its number, and say they could not find its name.
-RUN /opt/chuggy/bin/node --input-type=module --eval ' \
-    import { chatSessionHome, chatSessionUidCount, chatSessionUidFirst, chatSessionsDirectory } \
-      from "/opt/chuggy/lib/chuggy/chatSession.mjs"; \
-    console.log(`${chatSessionUidFirst} ${chatSessionUidCount} ${chatSessionsDirectory}`); \
-    for (let uid = chatSessionUidFirst; uid < chatSessionUidFirst + chatSessionUidCount; uid++) \
-      console.log(`${uid} ${chatSessionHome(chatSessionsDirectory, uid)}`); \
-  ' > /tmp/sessions.txt \
-  && read -r first count sessions < /tmp/sessions.txt \
-  && last="$((first + count - 1))" \
-  && echo "chat sessions: users $first to $last, homes under $sessions" \
-  && tail -n +2 /tmp/sessions.txt > /tmp/homes.txt \
-  && rm /tmp/sessions.txt \
-  && while read -r uid home; do \
-       groupadd --gid "$uid" "chat-$uid" \
-       && useradd --uid "$uid" --gid "$uid" --no-create-home --no-log-init \
-         --home-dir "$home" --shell /bin/bash "chat-$uid" \
-       || exit 1; \
-     done < /tmp/homes.txt \
-  && rm /tmp/homes.txt \
-  && name="$(setpriv --reuid "$last" --regid "$last" --clear-groups id -un)" \
-  && if [ "$name" != "chat-$last" ]; then \
-       echo "the last session user is named $name, not chat-$last"; \
-       exit 1; \
-     fi \
-  && prlimit --version
-
 ENV DISABLE_AUTOUPDATER=1 \
     CHUG_WORKER_WORKSPACE=/workspace \
     PATH=${PATH}:/opt/chuggy/path \
     TMPDIR=/tmp
 
-# A SESSION'S SHELL FINDS `chuggy` ON PATH AND RUNS IT. Run as the last session
-# user with none of its shell credential's variables set, the command answers
-# that they are unset and exits 2, which it does only once its modules load.
-RUN last="$(getent passwd | awk -F: '$1 ~ /^chat-/ { uid = $3 } END { print uid }')" \
-  && [ "$(command -v chuggy)" = /opt/chuggy/path/chuggy ] \
-  && [ "$(ls -A /opt/chuggy/path)" = chuggy ] \
-  && { setpriv --reuid "$last" --regid "$last" --clear-groups \
-      env -i PATH="$PATH" chuggy read_ticket > /tmp/chuggy.out 2>&1; \
-    status=$?; } \
-  && if [ "$status" != 2 ] || ! grep -q ' unset' /tmp/chuggy.out; then \
-       echo "chuggy on PATH exited $status:"; \
-       cat /tmp/chuggy.out; \
-       exit 1; \
-     fi \
-  && rm /tmp/chuggy.out
+# The users a chat session runs as, and the `chuggy` its shell finds on PATH,
+# which `chat-sessions.sh` makes and proves, and whose header says why.
+RUN --mount=type=bind,source=images/worker/chat-sessions.sh,target=/tmp/worker/chat-sessions.sh \
+  sh /tmp/worker/chat-sessions.sh
 
 USER 1000:1000
 WORKDIR /workspace
 ENTRYPOINT ["/opt/chuggy/bin/node", "/opt/chuggy/lib/chuggy/worker.mjs"]
+
+# The runtime a chat image ships: the `runtime` stage's less its Codex, which
+# only a job runs and no session does.
+FROM runtime AS chat-runtime
+USER 0:0
+RUN rm -r /opt/chuggy/lib/codex /opt/chuggy/bin/codex
+
+# THE IMAGE A CHAT HOST STARTS ITS SESSIONS' CONTAINER FROM, where a site names
+# it one: the `chat-runtime` stage's tree, the session users, and git and a
+# shell's few tools, on the slim base, with none of what a tree of chuggy's own
+# is worked on with.
+# The host names the command and the user it runs, so the image names neither.
+#
+# THE RUNTIME'S LIBRARIES ARE THE BASE'S OWN, which the check holds as it does
+# in the `runtime` stage: the slim base ships the libstdc++ apt itself needs.
+# The check is handed a home, since the base names none for the user it runs
+# as, and a session is handed its own.
+#
+# THE IMAGE'S `node` IS THE RUNTIME'S, linked onto PATH by name as the
+# `worker-base` stage links `claude`, since the base ships none and the
+# `chuggy` a session's shell runs starts under the `node` it finds there.
+#
+# THE PACKAGES ARE FETCHED OVER HTTPS AGAINST THE `base` STAGE'S CA STORE. The
+# slim base has none and the build's pod reaches nothing on port 80, as the
+# `base` stage's comment says, so apt is handed the other stage's bundle until
+# the image's own `ca-certificates` is installed.
+#
+# The digest is the multi-architecture index's, read on 2026-11-16 with
+#   docker buildx imagetools inspect debian:trixie-slim
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS chat
+RUN --mount=type=bind,from=base,source=/etc/ssl/certs/ca-certificates.crt,target=/tmp/ca-certificates.crt \
+  sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
+    /etc/apt/sources.list.d/debian.sources \
+  && apt-get --option Acquire::https::CAInfo=/tmp/ca-certificates.crt update \
+  && apt-get --option Acquire::https::CAInfo=/tmp/ca-certificates.crt \
+    install --yes --no-install-recommends \
+    ca-certificates curl git jq openssh-client ripgrep \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+COPY --from=chat-runtime /opt/chuggy /opt/chuggy
+RUN ln -s /opt/chuggy/bin/node /usr/local/bin/node \
+  && node --version
+
+ENV DISABLE_AUTOUPDATER=1 \
+    PATH=${PATH}:/opt/chuggy/path \
+    TMPDIR=/tmp
+
+USER 1000:1000
+RUN home="$(mktemp -d)" \
+  && workspace="$(mktemp -d)" \
+  && HOME="$home" CHUG_WORKER_WORKSPACE="$workspace" /bin/sh /opt/chuggy/check.sh check \
+  && rm -rf "$home" "$workspace"
+USER 0:0
+RUN --mount=type=bind,source=images/worker/chat-sessions.sh,target=/tmp/worker/chat-sessions.sh \
+  sh /tmp/worker/chat-sessions.sh
 
 # The image this tree's own tickets run on.
 FROM worker-base AS worker

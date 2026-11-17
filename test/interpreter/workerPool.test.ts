@@ -1595,6 +1595,38 @@ test("only a chat host's poll names the published session image, by the host it 
   assert.equal(await chatImageOf(host, noSessions, unaddressed), undefined);
 });
 
+test("a plane that names a chat image of its own names it to a chat host in place of the session image, lets the host pull it, and names none where no launch is published", async () => {
+  const chatImage = `registry.chuggy.internal/chuggy/chat@sha256:${"d".repeat(64)}`;
+  const named: WorkerPoolPollSettings = { ...settings, chatImage };
+  const unpublished: WorkerPoolSessions = {
+    ...noSessions,
+    launch: () => Promise.resolve(undefined),
+  };
+  const polled = await workerPoolPoll(ports(), host, asked(), named);
+  if (polled.polled !== "Answered") throw new Error("a poll was refused");
+  assert.equal(
+    polled.answer.chatImage,
+    `registry.public.invalid/chuggy/chat@sha256:${"d".repeat(64)}`,
+  );
+  assert.deepEqual(await workerPoolHeldImages(ports(), host, named), [
+    chatImage,
+  ]);
+  for (const other of [identity, runner])
+    assert.deepEqual(
+      await workerPoolHeldImages(ports(), other, named),
+      [],
+      other.kind,
+    );
+  assert.deepEqual(
+    await workerPoolHeldImages(ports(idle, unpublished), host, named),
+    [],
+  );
+  assert.deepEqual(
+    await workerPoolHeldImages(ports(), host, { ...unaddressed, chatImage }),
+    [],
+  );
+});
+
 test("only a chat host's poll on a release that reads them is answered the threads it ran that have since closed, as many as an answer holds, and none where none has", async () => {
   const closed = [{ project: "project", session: "thread-closed" }];
   const asks: number[] = [];
