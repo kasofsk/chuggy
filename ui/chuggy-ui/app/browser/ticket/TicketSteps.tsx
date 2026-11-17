@@ -117,7 +117,7 @@ function TicketStepBoxDrawn(props: {
 }): ReactNode {
   const { box } = props;
   return (
-    <>
+    <div className="ticket-steps-body">
       <TicketStepLink
         address={box.address}
         params={props.params}
@@ -143,7 +143,7 @@ function TicketStepBoxDrawn(props: {
           ))}
         </ul>
       )}
-    </>
+    </div>
   );
 }
 

@@ -81,7 +81,7 @@ test("the epic is drawn with its figures, its graph and its history", async () =
     within(screen.getByRole("navigation", { name: "Epic" }))
       .getAllByRole("link")
       .map((link) => link.textContent),
-  ).toContain("History3");
+  ).toContain("History 3");
 });
 
 test("a reader who may not write epics is sent from the edit page to the Overview", async () => {

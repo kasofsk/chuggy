@@ -19,6 +19,7 @@ import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type { EpicViewResponse } from "../../../../src/contract/responses.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { epicGraphQuery, epicHistoryQuery, epicQuery } from "../core/epics.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
@@ -35,7 +36,7 @@ import { EpicTabs } from "./epic/EpicTabs.tsx";
 import { FreshnessInstants, useNowMs } from "./Freshness.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { ScreenTitle } from "./shell/slots.tsx";
-import { readValue } from "./ticket/TicketPageHeld.tsx";
+import { readValue } from "../core/freshness.ts";
 import { EmptyState } from "./ui/EmptyState.tsx";
 
 /** The graph read again once the epic's revision or the ticket list's rows
@@ -60,6 +61,24 @@ function useEpicGraphLive(
         exact: true,
       });
   }, [client, partition, epic, revision, rows]);
+}
+
+/** The header once the epic is read, and until then the line its read is
+ * drawn as under a title for whoever reads the page by its headings, so the
+ * page always holds one top heading. */
+function EpicPageHead(props: {
+  readonly held: EpicPageHeld;
+  readonly view: EpicViewResponse | undefined;
+}): ReactNode {
+  const text = useCopyText();
+  if (props.view === undefined)
+    return (
+      <>
+        <ScreenTitle>{text({ id: "epics-page-title" })}</ScreenTitle>
+        <PanelUnready state={props.held.epicState} />
+      </>
+    );
+  return <EpicHeader held={props.held} view={props.view} />;
 }
 
 function EpicPageOf(props: {
@@ -112,12 +131,7 @@ function EpicPageOf(props: {
   return (
     <FreshnessInstants>
       <div className="grid min-w-0 gap-4" data-fills-width>
-        <ScreenTitle>{text({ id: "epics-page-title" })}</ScreenTitle>
-        {view === undefined ? (
-          <PanelUnready state={epicState} />
-        ) : (
-          <EpicHeader held={held} view={view} />
-        )}
+        <EpicPageHead held={held} view={view} />
         <EpicTabs
           partition={partition}
           epic={epic}

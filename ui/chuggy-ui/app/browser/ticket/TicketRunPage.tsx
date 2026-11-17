@@ -56,11 +56,9 @@ import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import {
-  readValue,
-  useTicketPageHeld,
-  useTicketRunsWithin,
-} from "./TicketPageHeld.tsx";
+import { TabNav, TabNavLink } from "../ui/TabNav.tsx";
+import { useTicketPageHeld, useTicketRunsWithin } from "./TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 import { RunResultOpenedBody, useRunResultOpened } from "./TicketResult.tsx";
 import {
@@ -68,6 +66,7 @@ import {
   TicketRunApprovalTime,
 } from "./TicketRunApproval.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
+import { TicketTabHeading } from "./TicketPageTabs.tsx";
 import { TicketRunsRail, useTicketRuns } from "./TicketRuns.tsx";
 import type { TicketRunsRailCurrent } from "./TicketRuns.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
@@ -92,7 +91,8 @@ export function TicketRunsBack(props: {
   );
 }
 
-/** The rail beside a page of the Runs tab, and the page itself. */
+/** A page of the Runs tab under the tab's heading: the rail, and beside it
+ * the page itself. */
 export function TicketRunsFrame(props: {
   readonly held: TicketPageHeld;
   readonly current: TicketRunsRailCurrent;
@@ -100,16 +100,25 @@ export function TicketRunsFrame(props: {
 }): ReactNode {
   useTicketRunsWithin();
   const runs = useTicketRuns(props.held);
-  if (runs === undefined)
-    return <PanelUnready state={props.held.reads.pageState} />;
   return (
-    <div className="ticket-run-frame">
-      <TicketRunsRail held={props.held} runs={runs} current={props.current} />
-      <div className="ticket-run-main">
-        <TicketRunsBack held={props.held} />
-        {props.children}
-      </div>
-    </div>
+    <>
+      <TicketTabHeading tab="ticket-tab-runs" />
+      {runs === undefined ? (
+        <PanelUnready state={props.held.reads.pageState} />
+      ) : (
+        <div className="ticket-run-frame">
+          <TicketRunsRail
+            held={props.held}
+            runs={runs}
+            current={props.current}
+          />
+          <div className="ticket-run-main">
+            <TicketRunsBack held={props.held} />
+            {props.children}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -269,28 +278,21 @@ function TicketRunViewTabs(props: {
   };
   const text = useCopyText();
   return (
-    <nav
-      aria-label={text({ id: "ticket-run-nav-label" })}
-      className="ticket-tabs ticket-run-views"
-    >
-      <ul>
-        {props.offered.map((view) => (
-          <li key={view}>
-            <Link
-              to="/$tenant/$project/tickets/$ticket/runs/$task"
-              params={params}
-              search={{ view }}
-              activeOptions={{ exact: true, includeSearch: true }}
-              aria-current={view === props.shown ? "page" : undefined}
-              className="ticket-tab"
-              replace
-            >
-              {text(ticketRunViewLabel(view))}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    <TabNav label={text({ id: "ticket-run-nav-label" })}>
+      {props.offered.map((view) => (
+        <TabNavLink
+          key={view}
+          to="/$tenant/$project/tickets/$ticket/runs/$task"
+          params={params}
+          search={{ view }}
+          activeOptions={{ exact: true, includeSearch: true }}
+          aria-current={view === props.shown ? "page" : undefined}
+          replace
+        >
+          {text(ticketRunViewLabel(view))}
+        </TabNavLink>
+      ))}
+    </TabNav>
   );
 }
 

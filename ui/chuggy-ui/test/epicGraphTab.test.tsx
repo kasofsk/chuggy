@@ -6,8 +6,9 @@
  * written, the longest chain and its toggle, the ticket selected and how it is
  * cleared, the side panel with a ticket and without one, its dispatch, the
  * sheet in its place on a phone with its pills, the room it leaves and the
- * scroll a pill makes, the key, the toggle for the tickets outside the epic, the states before and
- * without a graph, and the reads that draw it again.
+ * scroll a pill makes, the key, the toggle for the tickets outside the epic,
+ * the way to the same tickets as a list, the states before and without a
+ * graph, and the reads that draw it again.
  */
 
 import { onlineManager } from "@tanstack/react-query";
@@ -1167,10 +1168,27 @@ test("the rendered graph carries no style attribute", async () => {
   }
 });
 
+test("a drawn graph offers its tickets as a list on the Tickets tab, which the sheet shows where the page is narrow, and its drawing stands in the box that pans", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  const link = screen.getByRole("link", {
+    name: "Read these tickets as a list",
+  });
+  expect(link.closest(".epic-graph-as-list")).not.toBeNull();
+  expect(link.getAttribute("href")).toBe(
+    `/${leadPartition.tenant}/${leadPartition.project}/epics/7/tickets`,
+  );
+  expect(
+    document.querySelector(".epic-graph-pan > .epic-graph-drawing"),
+  ).not.toBeNull();
+});
+
 test("an epic with no tickets draws no graph and says there is nothing to draw", async () => {
   epicServing.graph = { nodes: [], edges: [] };
   await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
   expect(screen.getByText("This epic has no tickets to draw")).toBeTruthy();
+  expect(document.querySelector(".epic-graph-as-list")).toBeNull();
   expect(
     screen.queryByRole("list", { name: /^Tickets of the epic/u }),
   ).toBeNull();

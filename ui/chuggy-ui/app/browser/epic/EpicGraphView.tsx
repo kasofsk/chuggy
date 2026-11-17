@@ -5,7 +5,8 @@
  * as a row, its number, its done count and a spine filled to the share done
  * beside its cards, which wrap; then the goal, where there is one, across the
  * foot; and the side panel, or on a phone a sheet while a ticket is selected
- * and nothing while none is.
+ * and nothing while none is. Where the page is narrow the drawing pans
+ * sideways in its box.
  *
  * The ticket in focus, a preview over the selection, keeps everything up and
  * down its chain as it is and dims the rest, and its lines are drawn under
@@ -46,7 +47,7 @@ import type { ProjectTableRow } from "../../core/projectTableRows.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketStateStanding } from "../../core/ticketHeader.ts";
 import { useViewportAtMostEm, viewportNarrowEm } from "../shell/viewport.ts";
-import { readValue } from "../ticket/TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
@@ -386,7 +387,7 @@ function useEpicGraphCardsHeld(
 }
 
 /** The layers, and the lines under their cards for the ticket in focus, or
- * for the longest chain while it is stepped. */
+ * for the longest chain while it is stepped, in the box the sheet pans. */
 function EpicGraphDrawing(props: {
   readonly layered: EpicGraphLayered;
   readonly held: EpicGraphCardsHeld;
@@ -399,21 +400,23 @@ function EpicGraphDrawing(props: {
     chain: held.focus === undefined && held.steps.size > 0,
   };
   return (
-    <div className="epic-graph-drawing" ref={setDrawing}>
-      <EpicGraphLines drawing={drawing} layered={layered} look={look} />
-      <ol
-        className="epic-graph-layers"
-        aria-label={text({ id: "epics-graph-label" })}
-      >
-        {layered.layers.map((tickets, at) => (
-          <EpicGraphLayer
-            key={at}
-            layer={at + 1}
-            tickets={tickets}
-            held={held}
-          />
-        ))}
-      </ol>
+    <div className="epic-graph-pan">
+      <div className="epic-graph-drawing" ref={setDrawing}>
+        <EpicGraphLines drawing={drawing} layered={layered} look={look} />
+        <ol
+          className="epic-graph-layers"
+          aria-label={text({ id: "epics-graph-label" })}
+        >
+          {layered.layers.map((tickets, at) => (
+            <EpicGraphLayer
+              key={at}
+              layer={at + 1}
+              tickets={tickets}
+              held={held}
+            />
+          ))}
+        </ol>
+      </div>
     </div>
   );
 }
