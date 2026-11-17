@@ -378,7 +378,9 @@ test.each(settingsRoots)(
       tenant: "acme-co",
       tenantName: "acme-co",
       project:
-        project === undefined ? undefined : { address: project, name: project },
+        project === undefined
+          ? undefined
+          : { address: project, name: project, administers: false },
       site: { workspaces: false, permissions: false },
     });
     expect(indexDrawn()).toStrictEqual(
@@ -430,6 +432,41 @@ test("in a project the navigation draws the project's group, the workspace's, th
   await drawnSettings("/acme-co/atlas-web/settings/permissions");
   expect(groupsDrawn()).toStrictEqual([...projectGroups, projectPersonGroup]);
 });
+
+test.each([
+  { administer: true, appearance: true },
+  { administer: false, appearance: false },
+])(
+  "in a project Appearance closes the project's group exactly where the project's abilities say the reader administers it: $administer",
+  async ({ administer, appearance }) => {
+    await drawnSettings("/acme-co/atlas-web/settings/permissions", (request) =>
+      request.url === "/api/v1/tenants/acme-co/projects/atlas-web/abilities"
+        ? answer({
+            principal: "issuer reader",
+            mutate: true,
+            dispatch: true,
+            manageSelector: administer,
+            overrideTicketConfig: administer,
+            skipPlannedEvaluations: administer,
+            administer,
+            writeEpic: true,
+          })
+        : undefined,
+    );
+    const [project, ...rest] = projectGroups;
+    const pages = project?.[1] ?? [];
+    expect(groupsDrawn()).toStrictEqual([
+      [
+        project?.[0],
+        appearance
+          ? [...pages, "Appearance /acme-co/atlas-web/settings/appearance"]
+          : pages,
+      ],
+      ...rest,
+      projectPersonGroup,
+    ]);
+  },
+);
 
 test("outside a project the navigation draws the workspace's group and the reader's own, every link at the workspace's own address", async () => {
   await drawnSettings("/tenants/acme-co/settings/permissions");

@@ -320,6 +320,10 @@
     --width-epic-overview-aside: 16rem; /* epic: what is running and next, beside the description */
     --width-theme-card: 8rem; /* preferences: a theme's card, before the row of them wraps */
     --height-theme-swatch: 2.5rem; /* preferences: a theme's colours on its card */
+    --size-project-icon: 1.5rem; /* a project's icon beside its name */
+    --size-project-icon-large: 3rem; /* a project's icon drawn large, apart from its name */
+    --height-project-banner: 7.5rem; /* a project's banner, the band above its tickets */
+    --width-preview-phone: 22.5rem; /* appearance: a phone's width, which a preview is drawn at */
   }
 
   :root[data-theme="light"] {
