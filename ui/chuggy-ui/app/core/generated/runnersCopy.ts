@@ -51,7 +51,6 @@ export interface RunnersCopy {
   };
   readonly "runners-ask-advanced": Record<never, never>;
   readonly "runners-ask-create": Record<never, never>;
-  readonly "runners-ask-cancel": Record<never, never>;
   readonly "runners-package-linux": Record<never, never>;
   readonly "runners-package-darwin": Record<never, never>;
   readonly "runners-package-needs-linux": Record<never, never>;
@@ -71,11 +70,12 @@ export interface RunnersCopy {
   readonly "runners-capability-twice": Record<never, never>;
   readonly "runners-steps-install": Record<never, never>;
   readonly "runners-steps-register": Record<never, never>;
-  readonly "runners-steps-finish": Record<never, never>;
   readonly "runners-steps-copy-install": Record<never, never>;
   readonly "runners-steps-copy-register": Record<never, never>;
   readonly "runners-steps-expires": Record<never, never>;
-  readonly "runners-steps-guide": Record<never, never>;
+  readonly "runners-register-line-about": Record<never, never>;
+  readonly "runners-register-by-hand": Record<never, never>;
+  readonly "runners-register-project": Record<never, never>;
   readonly "runners-personal-title": Record<never, never>;
   readonly "runners-personal-withheld": Record<never, never>;
   readonly "runners-personal-count": {
@@ -142,7 +142,6 @@ export interface RunnersCopy {
   readonly "runners-chat-host-removal": {
     readonly short: unknown;
   };
-  readonly "runners-chat-host-claude-code-about": Record<never, never>;
   readonly "runners-chat-host-replaces": {
     readonly short: unknown;
   };

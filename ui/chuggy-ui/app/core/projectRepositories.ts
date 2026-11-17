@@ -569,7 +569,7 @@ export const repositoryDeferrals: Readonly<
 };
 
 /** The line a bind leaves, whether it offers a first ticket as the next step,
- * and the line under it naming what under `.chug/` the step read none of. */
+ * and the line under it counting what under `.chug/` the step read none of. */
 export interface RepositoryNote {
   readonly status: CopyOrData;
   readonly ticketOffered: boolean;
@@ -583,40 +583,28 @@ const repositoryDeclarationDirectory = repositoryConfigurationRoot.replace(
   "",
 );
 
-/** The entries a configuration step read none of as a line's detail: the
- * first it names, and how many more there are. */
-export function repositoryIgnoredDetail(
+/** The line naming how many entries under `.chug/` a configuration step read
+ * none of, a count past what the answer names being a floor. */
+export function repositoryIgnoredLine(
   ignored: RepositoryConfigurationIgnoredResponse,
 ): Copy {
-  const [first, ...rest] = ignored.paths;
-  if (first === undefined)
-    return {
-      id: "repositories-ignored-entries",
-      args: { directory: repositoryDeclarationDirectory },
-    };
-  if (ignored.truncated)
-    return {
-      id: "repositories-ignored-more-truncated",
-      args: { first, count: rest.length + 1 },
-    };
-  return rest.length === 0
-    ? { id: "repositories-ignored-one", args: { first } }
-    : { id: "repositories-ignored-more", args: { first, count: rest.length } };
+  const directory = repositoryDeclarationDirectory;
+  const count = ignored.paths.length;
+  if (count === 0)
+    return { id: "repositories-ignored-some", args: { directory } };
+  return ignored.truncated
+    ? { id: "repositories-ignored-more", args: { count, directory } }
+    : { id: "repositories-ignored", args: { count, directory } };
 }
 
-/** The line under a step's own naming what it read none of, where there is
+/** The line under a step's own counting what it read none of, where there is
  * anything. */
 function repositoryConfigurationsNoteIgnored(
   ignored: RepositoryConfigurationIgnoredResponse | undefined,
 ): { readonly ignored?: Copy } {
   return ignored === undefined
     ? {}
-    : {
-        ignored: {
-          id: "repositories-ignored",
-          args: { detail: repositoryIgnoredDetail(ignored) },
-        },
-      };
+    : { ignored: repositoryIgnoredLine(ignored) };
 }
 
 /** What a repository's configuration step came to as a line, which offers a
@@ -671,7 +659,7 @@ export function repositoryConfigureStatus(
   return { status: repositoryRefusalStatus(result), retry: true };
 }
 
-/** What Unbind asks before it is sent: the question its confirm is named by,
+/** What Disconnect asks before it is sent: the question its confirm is named by,
  * and the line drawn above the press that sends it. */
 export interface RepositoryUnbindQuestion {
   readonly question: Copy;

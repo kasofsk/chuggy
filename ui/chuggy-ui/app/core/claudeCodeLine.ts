@@ -52,10 +52,10 @@ export function claudeCodeRunnerLine(
 /** What the card says of the line: where it is pasted, and where the reader is when it is. */
 export const claudeCodeLineAbout: Copy = { id: "chat-claude-code-about" };
 
-/** What the card says of the chat host's line: that it is pasted on the machine that will be the chat host. */
-export const claudeCodeChatHostLineAbout: Copy = {
-  id: "runners-chat-host-claude-code-about",
+/** What a register panel says of the chat host's line or the runner's: that it is pasted on the machine to be registered. */
+export const claudeCodeRegisterLineAbout: Copy = {
+  id: "runners-register-line-about",
 };
 
-/** What the control that copies either line is called. */
+/** What the control that copies any of the lines is called. */
 export const claudeCodeLineCopy: Copy = { id: "chat-claude-code-copy" };

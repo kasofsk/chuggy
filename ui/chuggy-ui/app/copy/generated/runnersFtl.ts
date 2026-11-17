@@ -56,7 +56,6 @@ runners-ask-capabilities = Capabilities
 runners-ask-capabilities-about = Optional · what { -run(form: "a") } may require, like { $example }
 runners-ask-advanced = Advanced
 runners-ask-create = Create token
-runners-ask-cancel = Cancel
 runners-package-linux = Linux
 runners-package-darwin = Mac
 runners-package-needs-linux = Linux · Node 24 · Docker or Podman
@@ -75,11 +74,16 @@ runners-capability-twice = A capability is listed twice
 
 runners-steps-install = Install
 runners-steps-register = Register
-runners-steps-finish = Finish
 runners-steps-copy-install = Copy install command
 runners-steps-copy-register = Copy register command
 runners-steps-expires = Expires
-runners-steps-guide = Setup guide
+
+## A register panel: the line pasted into the person's own coding agent, and registering by hand.
+
+# spells -agent: the person's own coding agent, not one of chuggy's
+runners-register-line-about = Paste this into your coding agent on the machine you want to use.
+runners-register-by-hand = Register by hand
+runners-register-project = { -project(case: "upper") }
 
 ## A member's personal runners.
 
@@ -131,7 +135,6 @@ runners-chat-host-empty = No { -chat-host } yet
 runners-chat-host-remove-named = Remove { -chat-host } { $short }
 runners-chat-host-remove-question = Remove { -chat-host } { $short }?
 runners-chat-host-removal = { -chat-host(case: "upper") } { $short } stops taking your { -thread(form: "plural") } in this { -workspace }, and the sessions it is running now end.
-runners-chat-host-claude-code-about = Paste into { -claude-code } on the machine that will be your { -chat-host }
 runners-chat-host-replaces = Replaces { -chat-host } { $short } · Ends its sessions
 runners-chat-host-threads = { -thread(case: "upper", form: "plural") } here may: { $capabilities }
 runners-chat-host-threads-whole = { -thread(case: "upper", form: "plural") } here may do everything their own roster allows

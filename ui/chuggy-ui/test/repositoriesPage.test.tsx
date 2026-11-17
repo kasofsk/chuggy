@@ -452,7 +452,7 @@ test("a retired binding is not listed, and a project with only retired ones read
   });
   const section = sectionOf("Repositories");
   expect(within(section).queryAllByRole("rowheader")).toStrictEqual([]);
-  expect(within(section).getByText("No repository bound")).toBeDefined();
+  expect(within(section).getByText("No repository connected")).toBeDefined();
   expect(addButtons()).toHaveLength(2);
 });
 
@@ -611,7 +611,7 @@ test("the picker reads every portal installation, then the worker's on a listed 
   const picker = within(screen.getByRole("dialog"));
   expect(picker.getByText("More than shown")).toBeTruthy();
   expect(picker.getByRole("button", { name: "kasofsk/chuggy" })).toBeTruthy();
-  expect(picker.getByText("Bound")).toBeTruthy();
+  expect(picker.getByText("Connected")).toBeTruthy();
   expect(picker.queryByText(/Worker app missing/u)).toBeNull();
 });
 
@@ -655,7 +655,7 @@ test("the picker asks every account's listing of one app at once, the portal app
   await settled();
   expect(listingsRead(sent)).toStrictEqual(["11", "13", "12", "14"]);
   expect(pickerRows()).toStrictEqual([
-    "kasofsk/chuggyBound",
+    "kasofsk/chuggyConnected",
     "gdoteof/scratchWorker app missing",
   ]);
 });
@@ -732,7 +732,9 @@ test("clearing the filter draws every row again, the bound mark with them", asyn
   expect(pickerRows()).toStrictEqual(["gdoteof/scratch"]);
   typedInPicker("");
   expect(pickerRows()).toStrictEqual(every);
-  expect(within(screen.getByRole("dialog")).getByText("Bound")).toBeTruthy();
+  expect(
+    within(screen.getByRole("dialog")).getByText("Connected"),
+  ).toBeTruthy();
 });
 
 test("a query narrows the picker and a row it kept still binds by address", async () => {
@@ -806,11 +808,17 @@ function grantOffered(
 }
 
 function portalGrant(): ReturnType<typeof grantOffered> {
-  return grantOffered("Not listed · grant it on GitHub", "Portal app");
+  return grantOffered(
+    "Repository not listed · add it to the portal app on GitHub",
+    "Portal app",
+  );
 }
 
 function workerGrant(): ReturnType<typeof grantOffered> {
-  return grantOffered("Worker app missing · grant it on GitHub", "Worker app");
+  return grantOffered(
+    "A row marked missing · add it to the worker app on GitHub",
+    "Worker app",
+  );
 }
 
 /** The transaction a followed link left for the setup landing to match. */
@@ -890,7 +898,7 @@ test("a repository the worker app does not grant is marked on its row, with the 
     ),
   );
   expect(pickerRows()).toStrictEqual([
-    "kasofsk/chuggyBoundWorker app missing",
+    "kasofsk/chuggyConnectedWorker app missing",
     "gdoteof/scratch",
   ]);
   const { line, link } = workerGrant();
@@ -921,7 +929,7 @@ test.each<readonly [string, () => Response]>([
   async (_how, answered) => {
     await openPickerAtProject(workerAnswering(answered));
     expect(pickerRows()).toStrictEqual([
-      "kasofsk/chuggyBound",
+      "kasofsk/chuggyConnected",
       "gdoteof/scratch",
     ]);
     expect(workerGrant()).toStrictEqual({ line: null, link: null });
@@ -942,14 +950,14 @@ test("a repository the worker app does not grant is marked on a row this project
       url.includes("/14/repositories") ? lacking() : answer(grantedBy(url)),
   });
   expect(pickerRows()).toStrictEqual([
-    "kasofsk/chuggyBound",
+    "kasofsk/chuggyConnected",
     "gdoteof/scratchWorker app missing",
   ]);
 });
 
 /** The roster with nothing known of the worker app, which is how it is drawn
  * until the worker app's listing is read and where that listing is not. */
-const unmarked = ["kasofsk/chuggyBound", "gdoteof/scratch"];
+const unmarked = ["kasofsk/chuggyConnected", "gdoteof/scratch"];
 
 /** The line the picker draws where a row was chosen with the worker app's
  * listings unread. */
@@ -982,7 +990,7 @@ const workerEnds: readonly (readonly [
   [
     "answers late",
     lacking,
-    ["kasofsk/chuggyBoundWorker app missing", "gdoteof/scratch"],
+    ["kasofsk/chuggyConnectedWorker app missing", "gdoteof/scratch"],
     true,
   ],
   ["is refused", () => answer({}, 404), unmarked, false],
@@ -1078,7 +1086,7 @@ test.each(workerEnds)(
     bind.release(answer({ repository: boundUrl }));
     await settled();
     expect(pickerRows()).toStrictEqual(unmarked);
-    expect(statusesOf()).toStrictEqual(["kasofsk/chuggy · Already bound"]);
+    expect(statusesOf()).toStrictEqual(["kasofsk/chuggy · Already connected"]);
     expect(workerReading()).not.toBeNull();
     worker.release(answered());
     await settled();
@@ -1114,7 +1122,10 @@ test("a roster read that a closed picker abandoned writes nothing over the read 
   await settled();
   fireEvent.click(screen.getByRole("button", { name: "Add" }));
   await settled();
-  const followed = ["kasofsk/chuggyBoundWorker app missing", "gdoteof/scratch"];
+  const followed = [
+    "kasofsk/chuggyConnectedWorker app missing",
+    "gdoteof/scratch",
+  ];
   expect(pickerRows()).toStrictEqual(followed);
   abandoned.release(lacking());
   await settled();
@@ -1139,7 +1150,7 @@ test("the page opened at the picker's address draws the picker open with its ros
   const sent = await drawAtPicker();
   expect(listingsRead(sent)).toStrictEqual(["11", "13", "12"]);
   expect(pickerRows()).toStrictEqual([
-    "kasofsk/chuggyBound",
+    "kasofsk/chuggyConnected",
     "gdoteof/scratch",
   ]);
   expect(portalGrant().link).not.toBeNull();
@@ -1440,7 +1451,7 @@ const lateListed = (): Response =>
 
 /** The roster the worker app lacks kasofsk's repository on, before and after
  * the late grant is listed. */
-const marked = ["kasofsk/chuggyBoundWorker app missing", "gdoteof/scratch"];
+const marked = ["kasofsk/chuggyConnectedWorker app missing", "gdoteof/scratch"];
 const markedLate = [...marked, "gdoteof/late"];
 
 /**
@@ -1850,7 +1861,7 @@ function forgeListing(): {
 
 /** The two rows the picker first draws, and the same with the repository the
  * forge came to list ahead of them drawn after them. */
-const twoDrawn = ["kasofsk/chuggyBound", "gdoteof/scratch"];
+const twoDrawn = ["kasofsk/chuggyConnected", "gdoteof/scratch"];
 const aheadAfter = [...twoDrawn, "kasofsk/ahead"];
 
 /** What the first row the picker draws binds when it is pressed. */
@@ -1920,7 +1931,7 @@ test("a row a reading no longer lists stands where it stood, says it is unlisted
   forge.ahead = true;
   await rosterIntervalPassed();
   expect(pickerRows()).toStrictEqual([
-    "kasofsk/chuggyBound",
+    "kasofsk/chuggyConnected",
     "gdoteof/scratchUnlisted",
     "kasofsk/ahead",
   ]);
@@ -1989,7 +2000,7 @@ test("a bind that bootstrapped draws Bound once and links a new ticket", async (
   await chooseFree();
   const picker = within(screen.getByRole("dialog"));
   const row = picker.getByRole("button", { name: "gdoteof/scratch" });
-  expect(row.parentElement?.textContent).toBe("gdoteof/scratchBound");
+  expect(row.parentElement?.textContent).toBe("gdoteof/scratchConnected");
   expect(statusesOf()).toStrictEqual([
     "gdoteof/scratch · Default configuration added · New ticket",
   ]);
@@ -2000,7 +2011,7 @@ test("a bind that bootstrapped draws Bound once and links a new ticket", async (
 
 /** What under `.chug/` the step read none of is a line of its own under the
  * one that says what the step came to. */
-test("a bind whose step read entries of `.chug/` none of names them under its line", async () => {
+test("a bind whose step read entries of `.chug/` none of counts them under its line", async () => {
   const chug = ".chug/";
   await drawPage({
     posted: () =>
@@ -2024,14 +2035,14 @@ test("a bind whose step read entries of `.chug/` none of names them under its li
   await chooseFree();
   expect(statusesOf()).toStrictEqual([
     "gdoteof/scratch · Default configuration added · New ticket",
-    `Not configurations · ${chug}evaluators/ and 1 more`,
+    `2 other items in ${chug} are not chuggy configurations and are ignored.`,
   ]);
 });
 
 test("a binding that already stood draws the repository's name and the one word and no more", async () => {
   await drawPage({ posted: () => answer({ repository: freeUrl }) });
   await chooseFree();
-  expect(statusesOf()).toStrictEqual(["gdoteof/scratch · Already bound"]);
+  expect(statusesOf()).toStrictEqual(["gdoteof/scratch · Already connected"]);
 });
 
 /**
@@ -2256,7 +2267,7 @@ test("a retry that meets the binding retired stales the bindings the page drew",
   });
   const raised = invalidationsAfterDraw();
   await retryFirst();
-  expect(bindingRowsText()[0]).toBe("kasofsk/chuggyUnbound");
+  expect(bindingRowsText()[0]).toBe("kasofsk/chuggyDisconnected");
   expect(raised).toStrictEqual(bindingsKeys);
 });
 
@@ -2687,7 +2698,7 @@ test("an empty roster carries Add under its line and how a repository comes to b
     "Both apps on your repository on GitHub, then Add · chuggy setup adds it itself",
   );
   expect(body.previousElementSibling?.previousElementSibling?.textContent).toBe(
-    "No repository bound",
+    "No repository connected",
   );
 
   fireEvent.click(head);
@@ -2764,7 +2775,7 @@ function unbindOffers(): readonly (readonly [string | null, boolean])[] {
     .flatMap((row) => {
       const named = within(row).queryByRole("rowheader");
       if (named === null) return [];
-      const offers = within(row).queryByRole("button", { name: "Unbind" });
+      const offers = within(row).queryByRole("button", { name: "Disconnect" });
       return [[named.textContent, offers !== null] as const];
     });
 }
@@ -2772,7 +2783,7 @@ function unbindOffers(): readonly (readonly [string | null, boolean])[] {
 const unbindOffered = [["kasofsk/chuggy", true]];
 
 test.each(abilitiesUnrefusing)(
-  "a reader the abilities read %s is offered Unbind on each binding listed",
+  "a reader the abilities read %s is offered Disconnect on each binding listed",
   async (_said, abilities) => {
     await drawPage({ bound: liveAndRetired, over: abilitiesOver(abilities) });
     expect(unbindOffers()).toStrictEqual(unbindOffered);
@@ -2784,43 +2795,47 @@ test.each(abilitiesUnrefusing)(
 test.each([
   ["may only view", abilitiesNone],
   ["may not administer", { ...abilitiesEvery, administer: false }],
-])("a reader who %s is offered no Unbind", async (_who, abilities) => {
+])("a reader who %s is offered no Disconnect", async (_who, abilities) => {
   await drawPage({ bound: liveAndRetired, over: abilitiesOver(abilities) });
   expect(unbindOffers()).toStrictEqual([["kasofsk/chuggy", false]]);
   expect(
     within(sectionOf("Repositories"))
       .getAllByRole("columnheader")
       .map((head) => head.textContent),
-  ).toStrictEqual(["Repository", "Bound"]);
+  ).toStrictEqual(["Repository", "Connected"]);
 });
 
 /** The question Unbind asks, which names the repository its press was on. */
 function unbindAsked(): HTMLElement | null {
-  return screen.queryByRole("group", { name: "Unbind kasofsk/chuggy?" });
+  return screen.queryByRole("group", { name: "Disconnect kasofsk/chuggy?" });
 }
 
 /** Unbind pressed on the live row, and the question's own press after it. */
-async function unbindAnswered(answer: "Cancel" | "Unbind"): Promise<void> {
+async function unbindAnswered(answer: "Cancel" | "Disconnect"): Promise<void> {
   fireEvent.click(
-    within(sectionOf("Repositories")).getByRole("button", { name: "Unbind" }),
+    within(sectionOf("Repositories")).getByRole("button", {
+      name: "Disconnect",
+    }),
   );
   await settled();
   fireEvent.click(
     within(
-      screen.getByRole("group", { name: "Unbind kasofsk/chuggy?" }),
+      screen.getByRole("group", { name: "Disconnect kasofsk/chuggy?" }),
     ).getByRole("button", { name: answer }),
   );
   await settled();
 }
 
-test("Unbind asks first, naming the repository and what unbinding ends and leaves", async () => {
+test("Disconnect asks first, naming the repository and what disconnecting ends and leaves", async () => {
   await drawPage({ bound: liveAndRetired });
   fireEvent.click(
-    within(sectionOf("Repositories")).getByRole("button", { name: "Unbind" }),
+    within(sectionOf("Repositories")).getByRole("button", {
+      name: "Disconnect",
+    }),
   );
   await settled();
   expect(unbindAsked()?.textContent).toBe(
-    "New tickets can't name kasofsk/chuggy. Existing tickets and their history stay. It can be added again, here or to another project.CancelUnbind",
+    "New tickets can't name kasofsk/chuggy. Existing tickets and their history stay. It can be added again, here or to another project.CancelDisconnect",
   );
 });
 
@@ -2850,7 +2865,7 @@ test("a confirmed unbind retires that repository by address and takes its row of
         },
       }),
   });
-  await unbindAnswered("Unbind");
+  await unbindAnswered("Disconnect");
   expect(
     sent
       .filter((one) => one.method !== "GET")
@@ -2865,7 +2880,7 @@ test("a confirmed unbind retires that repository by address and takes its row of
   expect(unbindAsked()).toBeNull();
   const section = sectionOf("Repositories");
   expect(within(section).queryAllByRole("rowheader")).toStrictEqual([]);
-  expect(within(section).getByText("No repository bound")).toBeDefined();
+  expect(within(section).getByText("No repository connected")).toBeDefined();
 });
 
 /** A contended retirement is the route's to answer again, and a binding it
@@ -2878,7 +2893,7 @@ test.each([
   async (_why, posted, word) => {
     await drawPage({ bound: liveAndRetired, posted });
     const raised = invalidationsAfterDraw();
-    await unbindAnswered("Unbind");
+    await unbindAnswered("Disconnect");
     const said = unbindAsked()?.nextElementSibling;
     expect(said?.getAttribute("role")).toBe("status");
     expect(said?.textContent).toBe(word);
@@ -2899,14 +2914,14 @@ test("a listing drawn again while an unbind is out asks its question busy, and s
     posted: () => unbinding.answered,
     client,
   });
-  await unbindAnswered("Unbind");
+  await unbindAnswered("Disconnect");
   cleanup();
   await drawPage({ bound: liveAndRetired, client });
 
   expect(
     within(unbindAsked() ?? document.body)
       .getByRole("button", {
-        name: "Unbind",
+        name: "Disconnect",
       })
       .hasAttribute("disabled"),
   ).toBe(true);
@@ -2934,13 +2949,13 @@ test("an unbind refused once the listing holds no live binding is the shell's to
     client,
     store,
   });
-  await unbindAnswered("Unbind");
+  await unbindAnswered("Disconnect");
   await turned(() => {
     void client.invalidateQueries();
   });
   await settled();
   expect(
-    within(sectionOf("Repositories")).getByText("No repository bound"),
+    within(sectionOf("Repositories")).getByText("No repository connected"),
   ).toBeDefined();
 
   await turned(() => {
@@ -2957,7 +2972,7 @@ test("an unbind refused under its question is no toast", async () => {
   const client = consoleQueryClient();
   const store = consoleStoreBare(client);
   await drawPage({ bound: liveAndRetired, posted: deferred, client, store });
-  await unbindAnswered("Unbind");
+  await unbindAnswered("Disconnect");
 
   expect(unbindAsked()?.nextElementSibling?.textContent).toBe("Deferring");
   expect(consoleWriteUnseenOf(store.getState())).toStrictEqual([]);
@@ -2977,7 +2992,7 @@ test("the picker offers a repository whose binding is retired, marks a live one 
   fireEvent.click(screen.getByRole("button", { name: "Add" }));
   await settled();
   expect(pickerRows()).toStrictEqual([
-    "kasofsk/chuggyBound",
+    "kasofsk/chuggyConnected",
     "gdoteof/scratch",
   ]);
   fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));

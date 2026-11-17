@@ -36,8 +36,6 @@ export interface RunnerPackage {
   readonly installCommand: string;
   /** Where the package says what is left to do after registering a runner. */
   readonly guideAddress: string;
-  /** Where the package says what is left to do after registering a chat host. */
-  readonly chatHostGuideAddress: string;
   /** How long the package's service manager waits before starting its runner again after an exit it restarts. */
   readonly restartIntervalSecs: number;
   /** The exit statuses the release pinned gives a meaning, each by what it means. */
@@ -90,7 +88,6 @@ export const runnerPackages = {
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.55.0/chuggy-linux-0.55.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
-    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-linux#a-chat-host",
     /** `RestartSec=` of the unit `serviceUnit` writes, in chuggy-linux's `systemdUnit.mjs`. */
     restartIntervalSecs: 10,
     exitsMeant: {
@@ -107,7 +104,6 @@ export const runnerPackages = {
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.25.0/chuggy-darwin-0.25.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
-    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-darwin#chat-host",
     /** `restartIntervalSecs`, the agent's `ThrottleInterval`, in chuggy-darwin's `launchAgent.mjs`. */
     restartIntervalSecs: 10,
     exitsMeant: {
@@ -222,20 +218,6 @@ export function runnerCapabilityLabel(capability: string): string {
 
 /** Whose a registered machine is: one of the project's pools, one of the reader's own runners, or the reader's chat host. */
 export type RunnerKind = "Pool" | "Personal" | "ChatHost";
-
-/** Where a package says what is left to do once a machine is registered as `kind`. */
-export function runnerGuideAddress(
-  offered: RunnerPackage,
-  kind: RunnerKind,
-): string {
-  switch (kind) {
-    case "Pool":
-    case "Personal":
-      return offered.guideAddress;
-    case "ChatHost":
-      return offered.chatHostGuideAddress;
-  }
-}
 
 /** What a reader's choices ask, or why they cannot be asked. */
 export function runnerAskRead(
