@@ -2,7 +2,8 @@
  * The directory adapter against a double answering what the deployment's Ory
  * Kratos answered: what a creation sends, which statuses are a conflict, a
  * refused email or an outage, and that nothing Kratos wrote in free text or in
- * a field the plane does not use is kept.
+ * a field the plane does not use is kept, and the caller's own account read
+ * through it.
  */
 
 import assert from "node:assert/strict";
@@ -17,6 +18,8 @@ import {
   accessDirectorySubjectsMax,
   checkedAccessDirectorySettings,
 } from "../../src/interpreter/accessDirectory.ts";
+import { accessCallerAccount } from "../../src/interpreter/accessCallerAccount.ts";
+import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import { fixtureForge } from "./forgeFixtures.ts";
 
 const settings = checkedAccessDirectorySettings({
@@ -232,6 +235,40 @@ test("an email or a login out of the shape the plane admits is dropped rather th
   assert.deepEqual(
     await kratosAccessDirectory(settings, forge.requestFetch).accounts([one]),
     [{ subject: one }],
+  );
+});
+
+test("the caller's own account is one ids question naming them alone, answered their own email and login and no other identity's", async () => {
+  const one = "5804d32a-77dc-4fd5-9ef6-8f102ea642b1";
+  const issuer = "https://id.example.invalid";
+  const forge = fixtureForge([
+    json([
+      listed("00000000-0000-4000-8000-000000000001", {
+        github_login: "Other",
+      }),
+      listed(one, { github_login: "Octo-Cat", invited_by: marker }),
+    ]),
+    json([listed(one, null)]),
+  ]);
+  const read = accessCallerAccount(
+    { directory: kratosAccessDirectory(settings, forge.requestFetch) },
+    { issuer },
+  );
+  const answered = await read.callerAccount(oidcPrincipal(issuer, one));
+  assert.deepEqual(answered, {
+    subject: one,
+    principal: oidcPrincipal(issuer, one),
+    account: true,
+    email: "access-plane-probe@example.com",
+    githubLogin: "Octo-Cat",
+  });
+  assert.ok(!JSON.stringify(answered).includes(marker));
+  const asked = new URL(forge.calls[0]?.url ?? "");
+  assert.deepEqual(asked.searchParams.getAll("ids"), [one]);
+  assert.equal(asked.searchParams.get("page_size"), "1");
+  assert.equal(
+    (await read.callerAccount(oidcPrincipal(issuer, one)))?.githubLogin,
+    undefined,
   );
 });
 

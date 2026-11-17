@@ -1,19 +1,23 @@
 /**
- * What the setup program keeps between runs, as values: the remembered
- * sign-in, the lock a run holds while it uses it, and the note a sign-in page
- * leaves.
+ * What the setup program keeps between runs, as values: the site it
+ * remembers, the sign-in it holds there, the lock a run holds while it uses
+ * that sign-in, and the note a sign-in page leaves.
  *
- * The remembered sign-in is a site's origin and the renewal token for it and
- * nothing else; the server is the record of everything else. A renewal token
- * is spent by the request that uses it and replaying a spent one ends the
- * whole sign-in, and each run is a process of its own, so a run holds the lock
- * from before it reads the token until after it has written the one that
- * replaced it. Room for that write is kept before the token is spent, so a
- * home that would not take the new token is found while the old one is still
- * good; and a write that fails all the same is noted here, because the holder
- * reads a store that threw as a renewal that failed. A file that does not read
- * as what this module wrote is treated as absent, which costs a sign-in and
- * never a wrong answer.
+ * The sign-in is a renewal token in the worker contract's shared store, a file
+ * a site, which the runner packages' `mcp` reads as the same sign-in; the
+ * program's own directory remembers which site is meant and nothing else, and
+ * the server is the record of everything else. A renewal token is spent by the
+ * request that uses it and replaying a spent one ends the whole sign-in, and
+ * each run is a process of its own, so a run holds the store's lock from
+ * before it reads the token until after it has written the one that replaced
+ * it. Room for that write is kept before the token is spent, so a home that
+ * would not take the new token is found while the old one is still good; and a
+ * write that fails all the same is noted here, because the holder reads a
+ * store that threw as a renewal that failed. A file that does not read as what
+ * this module wrote is treated as absent, which costs a sign-in and never a
+ * wrong answer. A token an older copy of this program kept beside the site it
+ * remembers is moved into the shared store once, by the first run that holds
+ * the lock, and is kept only where the store holds none for that site.
  *
  * The lock is one word, its holder's or none, and it changes hands only by a
  * swap that names the word it is changed from. So a lock whose holder is gone
@@ -25,26 +29,33 @@
 
 import { z } from "zod";
 
+import {
+  signInStoreFileName,
+  signInStoreLockHolder,
+  signInStoreLockStale,
+  signInStoreLockWord,
+  signInStoreText,
+  signInStoreTokenRead,
+} from "../../../../src/contract/signInStore.ts";
+
 import { setupSiteRead } from "./setupArguments.ts";
 import { setupFiles, SetupMachineError } from "./setupPorts.ts";
-import type { SetupFilesPort, SetupPorts } from "./setupPorts.ts";
+import type {
+  SetupFilesPort,
+  SetupPorts,
+  SetupStorePort,
+} from "./setupPorts.ts";
 import { setupSignInEndings } from "./setupReport.ts";
 import type { SetupSignInEnded } from "./setupReport.ts";
 import { sessionRefreshTokenKey } from "./sessionHolder.ts";
 import type { KeyValuePort } from "./sessionHolder.ts";
 
-/** Past this a lock is its holder's no longer, whoever that was: every run ends well inside it. */
-export const setupLockSecsMax = 300;
 export const setupLockRetryMs = 100;
 
 /** How long a command waits for a lock another run is holding. */
 export const setupLockWaitMs = 5_000;
 
-export interface SetupSession {
-  readonly site: string;
-  readonly refreshToken: string | undefined;
-}
-
+/** The site remembered, beside which an older copy of this program kept its token. */
 const setupSessionSchema = z.strictObject({
   site: z.string().min(1),
   refreshToken: z.string().min(1).optional(),
@@ -63,29 +74,56 @@ function setupParsed<T>(
   }
 }
 
-export function setupSessionRead(
+function setupSessionParsed(
   files: SetupFilesPort,
-): SetupSession | undefined {
+): z.infer<typeof setupSessionSchema> | undefined {
   const stored = setupParsed(
     setupSessionSchema,
     files.read(setupFiles.session),
   );
-  if (stored === undefined || setupSiteRead(stored.site) !== stored.site)
-    return undefined;
-  return { site: stored.site, refreshToken: stored.refreshToken };
+  return stored === undefined || setupSiteRead(stored.site) !== stored.site
+    ? undefined
+    : stored;
 }
 
-export function setupSessionWritten(
+/** The site the program remembers, or nothing where it remembers none. */
+export function setupSessionSite(files: SetupFilesPort): string | undefined {
+  return setupSessionParsed(files)?.site;
+}
+
+export function setupSessionSiteWritten(
   files: SetupFilesPort,
-  session: SetupSession,
+  site: string,
 ): void {
-  const { site, refreshToken } = session;
-  files.write(
-    setupFiles.session,
-    JSON.stringify(
-      refreshToken === undefined ? { site } : { site, refreshToken },
-    ),
-  );
+  files.write(setupFiles.session, JSON.stringify({ site }));
+}
+
+/** The renewal token the shared store holds for a site, or nothing where it holds none. */
+export function setupTokenRead(
+  store: SetupStorePort,
+  site: string,
+): string | undefined {
+  const text = store.read(signInStoreFileName(site));
+  return text === undefined ? undefined : signInStoreTokenRead(text);
+}
+
+/**
+ * Moves a token an older copy of this program kept beside the site it
+ * remembers into the shared store, where the store holds none for that site,
+ * and leaves the site remembered alone. The caller holds the lock.
+ */
+export function setupSessionMoved(
+  files: SetupFilesPort,
+  store: SetupStorePort,
+): void {
+  const stored = setupSessionParsed(files);
+  if (stored?.refreshToken === undefined) return;
+  if (setupTokenRead(store, stored.site) === undefined)
+    store.write(
+      signInStoreFileName(stored.site),
+      signInStoreText(stored.refreshToken),
+    );
+  setupSessionSiteWritten(files, stored.site);
 }
 
 /** The room kept for a write of the remembered sign-in: past any site's origin and any issuer's token together. */
@@ -112,15 +150,17 @@ function setupUnkept(failure: unknown): unknown {
 
 /**
  * The session holder's store for one site: the token it was opened with, and
- * every token after it written to the file before the write returns. The
+ * every token after it written to the site's file in the shared store before
+ * the write returns. The
  * first thing the machine refuses it is what that step and every refused step
  * after it throws, and what `kept` throws.
  */
 export function setupTokenStore(
-  files: SetupFilesPort,
+  store: SetupStorePort,
   site: string,
   held: string | undefined,
 ): SetupTokenStore {
+  const name = signInStoreFileName(site);
   let refreshToken = held;
   let room = false;
   let refused: { readonly failure: unknown } | undefined;
@@ -137,7 +177,8 @@ export function setupTokenStore(
     room = false;
     noting(
       () => {
-        setupSessionWritten(files, { site, refreshToken });
+        if (next === undefined) store.remove(name);
+        else store.write(name, signInStoreText(next));
       },
       next === undefined ? setupAsThrown : setupUnkept,
     );
@@ -155,7 +196,7 @@ export function setupTokenStore(
     roomed: () => {
       if (room) return;
       noting(() => {
-        files.reserve(setupFiles.session, setupSessionRoomBytes);
+        store.reserve(name, setupSessionRoomBytes);
       }, setupAsThrown);
       room = true;
     },
@@ -165,44 +206,21 @@ export function setupTokenStore(
   };
 }
 
-/** A holder's word: the process, and when it took the lock. */
-export function setupLockWord(pid: number, takenAtMs: number): string {
-  return `${String(pid)}.${String(Math.floor(takenAtMs))}`;
-}
-
-interface SetupLockHolder {
-  readonly pid: number;
-  readonly takenAtMs: number;
-}
-
-function setupLockHolder(word: string): SetupLockHolder | undefined {
-  const read = /^([1-9]\d{0,14})\.(\d{1,15})$/u.exec(word);
-  return read === null
-    ? undefined
-    : { pid: Number(read[1]), takenAtMs: Number(read[2]) };
-}
-
-/** Whether a word is nobody's: not a holder's, its holder gone, or older than any run lasts. */
-export function setupLockStale(
-  word: string,
-  nowMs: number,
-  alive: (pid: number) => boolean,
-): boolean {
-  const held = setupLockHolder(word);
-  if (held === undefined) return true;
-  if (nowMs - held.takenAtMs > setupLockSecsMax * 1_000) return true;
-  return !alive(held.pid);
-}
-
 type SetupLockPorts = Pick<
   SetupPorts,
-  "files" | "lock" | "nowMs" | "sleepMs" | "process"
+  "files" | "store" | "lock" | "nowMs" | "sleepMs" | "process"
 >;
+
+/** What a write cut short left of the files the lock's holder is the one writer of: the site remembered and the shared store's. */
+function setupLockSwept(ports: SetupLockPorts): void {
+  ports.files.sweep(setupFiles.session);
+  ports.store.sweep();
+}
 
 /**
  * Takes the lock, waiting at most `waitMs` for a run that holds it, and as the
- * one writer of the remembered sign-in removes what a write that was cut short
- * left of that file. Where that cannot be removed the lock is given back
+ * one writer of the remembered site and the shared store removes what a write
+ * that was cut short left of either. Where that cannot be removed the lock is given back
  * before the path is thrown, so a run that stops there leaves it nobody's.
  */
 export async function setupLockTaken(
@@ -214,11 +232,12 @@ export async function setupLockTaken(
     const held = ports.lock.read();
     const nowMs = ports.nowMs();
     const nobodys =
-      held === undefined || setupLockStale(held, nowMs, ports.process.alive);
-    const mine = setupLockWord(ports.process.pid, nowMs);
+      held === undefined ||
+      signInStoreLockStale(held, nowMs, ports.process.alive);
+    const mine = signInStoreLockWord(ports.process.pid, nowMs);
     if (nobodys && ports.lock.swap(held, mine)) {
       try {
-        ports.files.sweep(setupFiles.session);
+        setupLockSwept(ports);
       } catch (failure: unknown) {
         ports.lock.swap(mine, undefined);
         throw failure;
@@ -233,7 +252,7 @@ export async function setupLockTaken(
 /** The process the lock names as its holder, for a run that waited for it and did not get it. */
 export function setupLockHeldBy(ports: SetupLockPorts): number | undefined {
   const held = ports.lock.read();
-  return held === undefined ? undefined : setupLockHolder(held)?.pid;
+  return held === undefined ? undefined : signInStoreLockHolder(held)?.pid;
 }
 
 /**
@@ -244,9 +263,9 @@ export function setupLockHeldBy(ports: SetupLockPorts): number | undefined {
 export function setupLockReleased(ports: SetupLockPorts): void {
   const held = ports.lock.read();
   if (held === undefined) return;
-  if (setupLockHolder(held)?.pid !== ports.process.pid) return;
+  if (signInStoreLockHolder(held)?.pid !== ports.process.pid) return;
   try {
-    ports.files.sweep(setupFiles.session);
+    setupLockSwept(ports);
   } finally {
     ports.lock.swap(held, undefined);
   }

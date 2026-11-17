@@ -32,6 +32,7 @@ export function repositoryImportRefusedBinding(
     landing: { mode: "Push" },
     finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     pipelinesWritable: false,
+    pipelinesRunnable: false,
     configured: true,
     lastImport: repositoryImportRefused,
     ...(retiredAt === undefined ? {} : { retiredAt }),

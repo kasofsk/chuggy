@@ -124,13 +124,12 @@ export function runCommandTone(end: RunCommandEnd): Tone {
   }
 }
 
-/** Where one landing stands: moving, waiting on a hold or a person, or settled. */
+/** Where one landing stands: moving, held or waiting, or settled. */
 export function ticketLandingTone(state: TicketLandingState): Tone {
   switch (state) {
     case "Running":
       return "live";
     case "Held":
-    case "AwaitingApproval":
     case "AwaitingMerge":
     case "Unavailable":
       return "parked";
