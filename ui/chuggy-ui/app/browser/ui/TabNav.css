@@ -3,7 +3,7 @@
    ScrollSides.css cues. */
 
 @layer ui {
-  /* jscpd:ignore-start — the ticket page's tabs, lifted rule for rule so adopting this draws them unchanged */
+  /* jscpd:ignore-start — the epic page's tabs draw a copy of these rules until they adopt this */
   .tab-nav {
     min-width: 0;
     overflow-x: auto;
@@ -59,7 +59,7 @@
     font-size: var(--text-xs);
     line-height: var(--leading-dense);
   }
-  /* jscpd:ignore-end — the lifted tabs end here */
+  /* jscpd:ignore-end — the copied rules end here */
 
   /* The list is as wide as its tabs rather than its row, so a tab or count
      that arrives after mount resizes what the row's measure observes. */

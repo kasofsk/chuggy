@@ -80,7 +80,8 @@ import {
   useTicketDraftDeletion,
 } from "./ticket/TicketDraft.tsx";
 import type { TicketDraftDeletion } from "./ticket/TicketDraft.tsx";
-import { TicketHeader, TicketTabs } from "./ticket/TicketHeader.tsx";
+import { TicketHeader } from "./ticket/TicketHeader.tsx";
+import { TicketTabs } from "./ticket/TicketPageTabs.tsx";
 import { useLandingQueues } from "./ticket/LandingQueueChip.tsx";
 import { useTicketLandings } from "./ticket/TicketLandings.tsx";
 import { useTicketExecutions } from "./ticket/TicketRuns.tsx";

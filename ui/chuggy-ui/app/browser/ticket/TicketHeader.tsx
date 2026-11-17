@@ -1,15 +1,13 @@
 /**
  * The head of every tab of the ticket page, drawn through `PageHeader`: the
  * title with its number, the state label with the one fragment beside it and
- * its place in a landing queue where it holds one, the actions, the epics it
- * belongs to, and the tabs. Once the header has scrolled out of view, the
- * primitive's bar holds the small label and the title in its place.
+ * its place in a landing queue where it holds one, the actions, and the epics
+ * it belongs to. Once the header has scrolled out of view, the primitive's bar
+ * holds the small label and the title in its place.
  */
 
-import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { LandingQueuePlace } from "../../core/landingQueues.ts";
 import type {
   TicketHeaderFragment,
@@ -19,7 +17,6 @@ import { LandingQueueChip } from "./LandingQueueChip.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
 import { TicketStateLabel } from "./TicketStateLabel.tsx";
-import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { PageHeader } from "../ui/PageHeader.tsx";
 
 import "./ticket.css";
@@ -96,80 +93,5 @@ export function TicketHeader(props: {
       {props.epics}
       {props.notes}
     </PageHeader>
-  );
-}
-
-/** One tab: a link to its own address, which the router marks current, and
- * which `within` marks current under it as well. */
-function TicketTab(props: {
-  readonly to:
-    | "/$tenant/$project/tickets/$ticket"
-    | "/$tenant/$project/tickets/$ticket/runs"
-    | "/$tenant/$project/tickets/$ticket/configuration"
-    | "/$tenant/$project/tickets/$ticket/usage";
-  readonly params: PartitionIdentity & { readonly ticket: string };
-  readonly within?: boolean;
-  readonly children: ReactNode;
-}): ReactNode {
-  return (
-    <li>
-      <Link
-        to={props.to}
-        params={props.params}
-        activeOptions={{ exact: props.within !== true, includeSearch: false }}
-        aria-current={props.within === true ? "page" : undefined}
-        className="ticket-tab"
-      >
-        {props.children}
-      </Link>
-    </li>
-  );
-}
-
-/** The tabs, the same whatever the ticket's state; Runs carries how many runs
- * the page holds once it holds any, with a + where the page is cut off. */
-export function TicketTabs(props: {
-  readonly partition: PartitionIdentity;
-  readonly ticket: number;
-  readonly runCount: number | undefined;
-  readonly runCountCut: boolean;
-  /** Whether a page under the Runs tab is drawn, at an address of its own. */
-  readonly runsWithin: boolean;
-}): ReactNode {
-  const params = { ...props.partition, ticket: String(props.ticket) };
-  const runCount = props.runCount ?? 0;
-  const text = useCopyText();
-  return (
-    <nav
-      aria-label={text({ id: "ticket-tabs-nav-label" })}
-      className="ticket-tabs"
-    >
-      <ul>
-        <TicketTab to="/$tenant/$project/tickets/$ticket" params={params}>
-          {text({ id: "ticket-tab-overview" })}
-        </TicketTab>
-        <TicketTab
-          to="/$tenant/$project/tickets/$ticket/runs"
-          params={params}
-          within={props.runsWithin}
-        >
-          {text({ id: "ticket-tab-runs" })}
-          {runCount === 0 ? null : (
-            <span className="ticket-tab-count">
-              {props.runCountCut ? `${String(runCount)}+` : runCount}
-            </span>
-          )}
-        </TicketTab>
-        <TicketTab
-          to="/$tenant/$project/tickets/$ticket/configuration"
-          params={params}
-        >
-          {text({ id: "ticket-tab-configuration" })}
-        </TicketTab>
-        <TicketTab to="/$tenant/$project/tickets/$ticket/usage" params={params}>
-          {text({ id: "ticket-tab-usage" })}
-        </TicketTab>
-      </ul>
-    </nav>
   );
 }

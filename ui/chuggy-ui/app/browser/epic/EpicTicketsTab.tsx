@@ -48,6 +48,7 @@ import { useEpicPageHeld } from "./EpicPageHeld.tsx";
 import { useEpicTicketsWriting } from "./epicTicketsWriting.ts";
 
 import "../ProjectTable.css";
+import "./epic.css";
 import "./epicTickets.css";
 
 /** The standing a group's head is drawn by: Running is drawn as work is. */
@@ -253,7 +254,7 @@ function EpicTicketsGroupList(props: {
           <TicketStateMark standing={standing} />
         </span>
         <span>{word}</span>
-        <span className="ticket-tab-count">{count}</span>
+        <span className="epic-tab-count">{count}</span>
       </h3>
       <ul
         className="epic-tickets-rows"
