@@ -29,18 +29,14 @@
  * mailbox still says of it, and nothing moves for it.
  *
  * THE TURN THAT MOVES IS THE ONE STOP ENDS. Where the page takes a stop the
- * composer's button is Stop for as long as a turn is the thing moving, and one
- * press hands the page that turn through the library's own cancel.
+ * composer draws Stop beside Send for as long as a turn is the thing moving,
+ * and one press hands the page that turn through the library's own cancel.
  *
- * ONE PRESS STOPS ONE TURN. The button stays under the pointer and can be Stop
- * again at once, aimed at the turn behind, so a press that follows one of Stop
- * within a beat is taken for the same press and does nothing, and so is a
- * second Stop until the page's door has answered the first. The button is
- * drawn as taking no press for exactly as long as it takes none.
- *
- * A CLICK THAT SENDS BEGINS THE SAME BEAT. The button it leaves under the
- * pointer is Stop for the message just sent, and the second click of a double
- * click would end it.
+ * ONE PRESS STOPS ONE TURN. Stop stays under the pointer and is aimed at the
+ * turn behind as soon as the one it stopped ends, so a press of Stop that
+ * follows one within a beat is taken for the same press and does nothing, and so is one
+ * before the page's door has answered the last. Stop is drawn as taking no
+ * press for exactly as long as it takes none; Send is never in that beat.
  *
  * A MESSAGE HANDED BACK IS PUT BACK. The words the page could not take go back
  * in the box ahead of anything typed since, a blank line between, so neither
@@ -67,6 +63,11 @@
  * so never stands over a line of text. The library keeps the column pinned to
  * its foot only while the reader is at it, and its own control returns them
  * there and pins it again.
+ *
+ * WHAT CHANGES IS SAID ALOUD IN A LOG OF ITS OWN, which nobody sees and
+ * `conversationAnnounced` fills: a reply once as it begins and once whole, and
+ * nothing for history read in above, so the column itself is never a live
+ * region and no fragment of a reply is said as it streams.
  *
  * HOW WIDE THE COLUMN IS AND HOW LARGE ITS TEXT ARE THE MOUNT'S TO SAY, through
  * the custom properties `conversation.css` reads, so a pane that gives the
@@ -109,6 +110,9 @@ import type {
   ConversationAttachRefusal,
 } from "../../core/conversationAttachments.ts";
 import { conversationCommandTyped } from "../../core/conversationCommand.ts";
+import { conversationAnnounced } from "../../core/conversationAnnounced.ts";
+import type { ConversationAnnouncement } from "../../core/conversationAnnounced.ts";
+import { copyOrDataText } from "../../core/copy.ts";
 import {
   conversationExchangeNamed,
   conversationExchangeParts,
@@ -125,7 +129,6 @@ import type { RunPrompt } from "../../core/runConfiguration.ts";
 import { ConversationComposer } from "./ConversationComposer.tsx";
 import type {
   ConversationComposerAttached,
-  ConversationComposerButton,
   ConversationComposerProps,
 } from "./ConversationComposer.tsx";
 import {
@@ -248,27 +251,25 @@ function conversationAppendedText(message: AppendMessage): string {
     .join("");
 }
 
-/** How long after a press of Stop, or a click that sent, the composer's button
- * takes no other: the second press of a double click, and nothing a member
- * pressed after seeing what the button had become. */
+/** How long after a press of Stop it takes no other: the second press of a
+ * double click, and nothing a member pressed after seeing the turn behind take
+ * the place of the one stopped. */
 export const conversationStopBeatMs = 300;
 
-/** The last press of its button the surface took. */
+/** The last press of Stop the surface took. */
 interface ConversationStopPress {
   readonly atMs: number;
   answered: boolean;
 }
 
-/** What the surface holds of the presses of its button. */
+/** What the surface holds of the presses of Stop. */
 interface ConversationStopBeat {
-  /** Whether a press of `button` now is one to do nothing for. */
-  readonly ignores: (button: ConversationComposerButton) => boolean;
-  /** Whether `button` is drawn as one whose press does nothing. */
-  readonly rests: (button: ConversationComposerButton) => boolean;
+  /** Whether a press of Stop now is one to do nothing for. */
+  readonly ignores: () => boolean;
+  /** Whether Stop is drawn as one whose press does nothing. */
+  readonly rests: boolean;
   /** Notes a press of Stop as taken, answered when `stop` is. */
   readonly pressed: (stop: Promise<void>) => void;
-  /** Notes a click that sent, which no door answers. */
-  readonly sent: () => void;
 }
 
 /** What is drawn of the last press: its beat, and a stop no door has answered. */
@@ -277,10 +278,9 @@ interface ConversationStopResting {
   readonly unanswered: boolean;
 }
 
-/** The presses the surface took of its button, and what is drawn of the last:
- * an older stop's answer changes nothing drawn of a newer press. The beat is
- * drawn as over by the clock a press is asked against, so a timer that fires
- * ahead of that clock waits out what is left of it. */
+/** The presses the surface took of Stop, and what is drawn of the last. The
+ * beat is drawn as over by the clock a press is asked against, so a timer that
+ * fires ahead of that clock waits out what is left of it. */
 function useConversationStopBeat(): ConversationStopBeat {
   const last = useRef<ConversationStopPress | undefined>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -294,8 +294,14 @@ function useConversationStopBeat(): ConversationStopBeat {
     },
     [],
   );
-  const taken = useCallback((answered: boolean): ConversationStopPress => {
-    const press = { atMs: performance.now(), answered };
+  const ignores = useCallback(() => {
+    const press = last.current;
+    if (press === undefined) return false;
+    if (performance.now() - press.atMs < conversationStopBeatMs) return true;
+    return !press.answered;
+  }, []);
+  const pressed = useCallback((stop: Promise<void>) => {
+    const press = { atMs: performance.now(), answered: false };
     last.current = press;
     const over = (): void => {
       const leftMs = conversationStopBeatMs - (performance.now() - press.atMs);
@@ -304,39 +310,17 @@ function useConversationStopBeat(): ConversationStopBeat {
     };
     clearTimeout(timer.current);
     timer.current = setTimeout(over, conversationStopBeatMs);
-    setResting({ beat: true, unanswered: !answered });
-    return press;
+    setResting({ beat: true, unanswered: true });
+    const answered = (): void => {
+      press.answered = true;
+      setResting((was) => ({ ...was, unanswered: false }));
+    };
+    stop.then(answered, answered);
   }, []);
-  const ignores = useCallback((button: ConversationComposerButton) => {
-    const press = last.current;
-    if (press === undefined) return false;
-    if (performance.now() - press.atMs < conversationStopBeatMs) return true;
-    return button === "Stop" && !press.answered;
-  }, []);
-  const pressed = useCallback(
-    (stop: Promise<void>) => {
-      const press = taken(false);
-      const answered = (): void => {
-        press.answered = true;
-        if (last.current === press)
-          setResting((was) => ({ ...was, unanswered: false }));
-      };
-      stop.then(answered, answered);
-    },
-    [taken],
-  );
-  const sent = useCallback(() => {
-    taken(true);
-  }, [taken]);
+  const rests = resting.beat || resting.unanswered;
   return useMemo(
-    () => ({
-      ignores,
-      rests: (button) =>
-        resting.beat || (button === "Stop" && resting.unanswered),
-      pressed,
-      sent,
-    }),
-    [ignores, pressed, sent, resting],
+    () => ({ ignores, rests, pressed }),
+    [ignores, rests, pressed],
   );
 }
 
@@ -572,6 +556,71 @@ function ConversationBottom(): ReactNode {
   );
 }
 
+/** The most changes the log holds; an older one leaves it, which says nothing. */
+const conversationAnnouncementsMax = 8;
+
+/** One change the log holds, keyed by its place in every change said. */
+interface ConversationAnnouncementHeld {
+  readonly key: number;
+  readonly lines: ConversationAnnouncement;
+}
+
+interface ConversationAnnouncementsSeen {
+  /** What the column held at the last draw, undefined while it was read. */
+  readonly exchanges: readonly ConversationExchange[] | undefined;
+  readonly said: readonly ConversationAnnouncementHeld[];
+  readonly count: number;
+}
+
+/** The changes said so far, newest last, from each draw's exchanges against
+ * the last draw's. */
+function useConversationAnnouncements(
+  exchanges: readonly ConversationExchange[] | undefined,
+): readonly ConversationAnnouncementHeld[] {
+  const [seen, setSeen] = useState<ConversationAnnouncementsSeen>({
+    exchanges,
+    said: [],
+    count: 0,
+  });
+  if (seen.exchanges !== exchanges) {
+    const lines = conversationAnnounced(seen.exchanges, exchanges ?? []);
+    setSeen(
+      lines === undefined
+        ? { ...seen, exchanges }
+        : {
+            exchanges,
+            said: [...seen.said, { key: seen.count, lines }].slice(
+              -conversationAnnouncementsMax,
+            ),
+            count: seen.count + 1,
+          },
+    );
+  }
+  return seen.said;
+}
+
+/** The log the conversation's changes are said in, drawn for nobody. */
+function ConversationAnnouncements(props: {
+  readonly exchanges: readonly ConversationExchange[] | undefined;
+}): ReactNode {
+  const text = useCopyText();
+  const said = useConversationAnnouncements(props.exchanges);
+  return (
+    <div
+      role="log"
+      aria-live="polite"
+      aria-label={text({ id: "conversation-region" })}
+      className="visually-hidden"
+    >
+      {said.map((held) => (
+        <p key={held.key}>
+          {held.lines.map((line) => copyOrDataText(text, line)).join("\n")}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 /** Nothing said yet: the column's own name and one line about it, held in the
  * middle of the empty space above the composer. */
 function ConversationEmpty(props: {
@@ -688,8 +737,8 @@ export interface ConversationProps {
   ) => ReactNode;
 }
 
-/** The foot of the column: the composer, with what the surface holds of its
- * button and its images, or the line a page hands in its place. */
+/** The foot of the column: the composer, with what the surface holds of Stop
+ * and of the images, or the line a page hands in its place. */
 function ConversationFoot(props: {
   readonly composer: ConversationComposerProps | undefined;
   readonly unsendable: ReactNode;
@@ -712,9 +761,8 @@ function ConversationFoot(props: {
           {...composer}
           busy={props.sending}
           stops={props.stoppable !== undefined}
-          ignores={beat.ignores}
-          rests={beat.rests(props.stoppable === undefined ? "Send" : "Stop")}
-          onSendClick={beat.sent}
+          stopIgnores={beat.ignores}
+          stopRests={beat.rests}
           attached={attachments.attached}
           attachRefused={attachments.attachRefused}
           onAttach={attachments.onAttach}
@@ -771,11 +819,12 @@ export function Conversation(props: ConversationProps): ReactNode {
     onSending: setSending,
     attachments,
   });
-  const composed = props.composer !== undefined;
+  const heard = reading ? undefined : props.exchanges;
   const inset = props.pane === true ? "px-4 py-4" : "";
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="conversation flex h-full min-h-0 flex-col">
+        <ConversationAnnouncements exchanges={heard} />
         <ConversationViewport>
           <div
             className={`conversation-column mx-auto flex w-full flex-col gap-6 ${inset}`}
@@ -790,7 +839,7 @@ export function Conversation(props: ConversationProps): ReactNode {
               workOpen={props.workOpen === true}
               paced={props.paced === true}
               named={conversationIndicatedNamed(activeExchanges, indicator)}
-              engine={composed}
+              engine={props.composer !== undefined}
               image={props.image}
               offer={props.offer}
             >

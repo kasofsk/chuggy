@@ -21,7 +21,7 @@ export function BindingWorkerReach(props: {
   const line = repositoryWorkerReachLine(props.reach);
   return (
     <>
-      <Tooltip text={line.detail}>
+      <Tooltip trigger="abbreviation" text={line.detail}>
         <span>
           <Pill tone={repositoryWorkerReachTone(props.reach.reach)}>
             {text(line.status)}

@@ -10,6 +10,8 @@ chat-new = New { -thread }
 chat-fill = Full screen
 chat-restore = Exit full screen
 chat-collapse = Collapse
+chat-back = Back
+chat-more = { -thread(case: "upper") } menu
 chat-expand = Expand { -thread }
 chat-strip = { -thread(case: "upper") }
 chat-heading = { -thread(case: "upper") }
@@ -21,6 +23,25 @@ chat-title = { -thread(case: "upper") } title
 chat-standing-open = Open
 chat-standing-closed = Closed
 chat-standing-orphaned = Orphaned
+chat-kept-running = Kept running
+chat-kept-running-detail = This { -thread } holds processes your { -chat-host } restarts each time it starts again, so it is kept up. Close it, or ask it to stop them, to end that.
+chat-host-capabilities = On your { -chat-host }
+chat-host-capabilities-detail = On your { -chat-host }, this { -thread } may: { $capabilities }
+
+## What a chat may do, as its roster and its chat host's setting name it.
+
+chat-capability-repository-read = Read the { -repository }
+chat-capability-repository-write = Change the { -repository }
+# spells -run: to run is a verb here
+chat-capability-run-commands = Run commands
+chat-capability-project-read = Read the { -project }
+chat-capability-draft-author = Write { -draft(form: "plural") }
+chat-capability-draft-originate = Start new { -draft(form: "plural") }
+chat-capability-ticket-dispatch = { -dispatch(case: "upper") } { -ticket(form: "plural") }
+chat-capability-lead-decision = Decide as the { -lead }
+chat-capability-member-read = Read what is yours
+chat-capability-thread-offer = Offer you a page or an action
+chat-capabilities-none = nothing
 
 ## The history, and what is done to the chat the pane holds.
 
@@ -34,8 +55,6 @@ chat-history-row = { $title }, { $standing }, { $ago }
 chat-history-row-undated = { $title }, { $standing }
 chat-history-elsewhere = { $project } · { $title }
 chat-history-elsewhere-row = { $project } · { $title }, { $standing }
-chat-actions = { -thread(case: "upper") } actions
-chat-actions-none = No active { -thread }
 chat-open = Open
 chat-copy-link = Copy link
 chat-copied = Copied
@@ -46,6 +65,14 @@ chat-close-confirm = Close { -thread }
 chat-close-not-mine = Not your { -thread } · Ends it for its owner too
 chat-close-kept = Stays in { chat-history } · Takes no more messages
 chat-close-final = Drops any reply in progress · Cannot be undone
+
+## What a chat's own page says over and under its conversation.
+
+chat-page-project = In { $project }
+chat-page-host = Your { -chat-host }
+chat-page-standing = { $standing } · Takes no more messages
+chat-page-not-mine = Not your { -thread } · { shell-view-only }
+chat-page-back = Back to { $project }
 
 ## What a member's own chat outside a project says.
 
@@ -68,6 +95,10 @@ chat-wake-draft-deleted = { -draft(case: "upper") } deleted
 chat-wake-escalated = { -escalation(case: "upper") }
 chat-wake-done = Done
 chat-wake-revoked = { -revoke(case: "upper", form: "ed") }
+chat-wake-job-exited = Process exited
+chat-wake-watch-matched = Watch matched
+chat-wake-timer-due = Timer due
+chat-wake-attempt-ended = { -attempt(case: "upper") } ended, processes restored
 
 ## What a press of Send or Stop came to.
 
@@ -136,6 +167,7 @@ chat-offer-unread = Not open here · Its reply would be older than the { -turn(f
 chat-offer-draft-released = { -draft(case: "upper") } { $ticket } is { -release(form: "ed") }
 chat-offer-draft-deleted = { -draft(case: "upper") } { $ticket } is deleted
 chat-offer-ticket-phase = #{ $ticket } is { $phase }
+chat-offer-waiting = Waits on these to be { -release(form: "ed") } first
 chat-offer-unsent = { $settled } · Reply not sent
 chat-offer-resend = Send reply
 chat-offer-confirm = Confirm

@@ -13,6 +13,9 @@ import { workerPoolAssignmentSchema } from "./workerPool.ts";
 /** The longest single briefing line, which is one criterion, constraint or instruction. */
 export const briefingLineCharsMax = 512;
 
+/** The most paths one work task's push may be refused a change to. */
+export const pushPathsRefusedMax = 8;
+
 /** The most command lines one stage may name, whichever stage it is. */
 export const commandLinesMax = 8;
 
@@ -98,9 +101,29 @@ export const workTaskDocumentSchema = z.object({
     text: z.string(),
   }),
   authority: policyAuthorityGrantSchema,
+  /** The credentials the job's configuration listed, which may name more than `authority` grants; a task without it lists the granted ones. */
+  credentialsListed:
+    policyAuthorityGrantSchema.shape.credentials.exactOptional(),
   worker: workerConfigurationSchema.exactOptional(),
   /** The ref the ticket's finalization lands on, absent where it lands on none its brief or binding names. */
   targetRef: z.string().min(1).exactOptional(),
+  /** What the core merges into the workspace to meet the change it lands beside, absent where the task merges nothing. */
+  targetMerge: z
+    .object({
+      /** The ref merged: a push's target, a proposal's base, or `HEAD` where that base is the branch the remote defaults to. */
+      ref: z.string().min(1),
+      /** Whether the task's own repository's binding lets pipelines be written, and so whether a target's change to them may be merged. */
+      pipelinesWritable: z.boolean(),
+      /** The change commit of the failed landing a rework follows, merged after the target, and absent on every other task. */
+      change: z.string().min(1).exactOptional(),
+    })
+    .exactOptional(),
+  /** The pathspecs a push of this task's may change nothing under, absent where its binding allows pipelines or its forge names no such path. */
+  pushPathsRefused: z
+    .array(z.string().min(1))
+    .min(1)
+    .max(pushPathsRefusedMax)
+    .exactOptional(),
   workerPlane: z.object({
     url: z.string(),
     capabilityFile: z.string(),
@@ -114,10 +137,10 @@ export const workTaskAnswerSchema = workTaskDocumentSchema
   .omit({ workerPlane: true })
   .extend({ kind: z.literal("Work") });
 
-/** Every bound a session pod runs under, each one the deployment named. */
+/** Every bound a session pod runs under, each one the deployment named; `idleMs` is absent where the session has no idle limit. */
 const sessionBoundsSchema = z.object({
   mailboxPollMs: z.number(),
-  idleMs: z.number(),
+  idleMs: z.number().exactOptional(),
   resultDrainMs: z.number(),
   loadTimeoutMs: z.number(),
   turnsMax: z.number(),
@@ -189,6 +212,15 @@ type LaunchedDocument<Value> = Value extends object
 export type WorkTaskDocument = LaunchedDocument<
   z.infer<typeof workTaskDocumentSchema>
 >;
+/** The credentials a work task's configuration listed, which a task from before `credentialsListed` reads as its granted ones. */
+export function workTaskCredentialsListed(
+  task: Pick<WorkTaskDocument, "authority" | "credentialsListed">,
+): readonly string[] {
+  return task.credentialsListed ?? task.authority.credentials;
+}
+
+/** What a work task's core merges in, where it merges anything. */
+export type WorkTaskTargetMerge = NonNullable<WorkTaskDocument["targetMerge"]>;
 export type WorkTaskAnswer = LaunchedDocument<
   z.infer<typeof workTaskAnswerSchema>
 >;

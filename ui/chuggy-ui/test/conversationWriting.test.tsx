@@ -127,7 +127,7 @@ describe("what the work's line says is going on", () => {
     expect(moving(view.container)).toEqual(["card"]);
     expect(
       view.container.querySelector(
-        '.conversation-meta p [role="status"]:not(.visually-hidden)',
+        ".conversation-meta p [data-word]:not(.visually-hidden)",
       ),
     ).toBe(null);
   });
@@ -582,7 +582,7 @@ describe("the answer of a turn that was stopped", () => {
       drawn(running({ answer: whole, standing: { standing: "Stopped" } })),
     );
     const word = view.container.querySelector(
-      '.conversation-meta p [role="status"]',
+      ".conversation-meta p [data-word]",
     );
     expect(word?.textContent).toBe("Stopped");
     expect(word?.className).toBe("text-ink-3");

@@ -1,7 +1,8 @@
 /**
  * The epic's edit page, under the page's header with no tab current: its
- * title, its summary counted against the most it may hold, and its
- * description as Markdown; which tickets it holds changes on its Tickets tab.
+ * title, which it needs, its summary counted against the most it may hold,
+ * and its description as Markdown, each under its own label; which tickets it
+ * holds changes on its Tickets tab.
  * Save sends at the revision the page read and returns to the Overview;
  * Cancel returns with nothing written. A reader who may not write epics is
  * sent to the Overview.
@@ -13,87 +14,72 @@ import type { ReactNode } from "react";
 
 import { epicSummaryCharsMax } from "../../../../../src/contract/epics.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy, CopyText } from "../../core/copy.ts";
 import { epicFormFrom } from "../../core/epics.ts";
 import type { EpicForm } from "../../core/epics.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { EpicFormPanel } from "../EpicForm.tsx";
-import { readValue } from "../ticket/TicketPageHeld.tsx";
+import type { EpicFormFaulted } from "../EpicForm.tsx";
+import { readValue } from "../../core/freshness.ts";
 import { Input } from "../ui/Input.tsx";
 import { Textarea } from "../ui/Textarea.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";
 
 import "./epicEdit.css";
 
-/** A field's name over it, with what is said of it at the right. */
-function EpicEditField(props: {
-  readonly name: string;
-  readonly aside?: string;
-  readonly children: ReactNode;
-}): ReactNode {
-  return (
-    <div className="epic-edit-field">
-      <div className="epic-edit-field-head" aria-hidden="true">
-        <span className="epic-edit-field-name">{props.name}</span>
-        {props.aside === undefined ? null : (
-          <span className="epic-edit-field-aside num">{props.aside}</span>
-        )}
-      </div>
-      {props.children}
-    </div>
-  );
+/** A field's fault as its error, where it has one. */
+function epicEditError(
+  text: CopyText,
+  fault: Copy | undefined,
+): { readonly error?: string } {
+  return fault === undefined ? {} : { error: text(fault) };
 }
 
 function EpicEditFields(props: {
   readonly form: EpicForm;
+  readonly faulted: EpicFormFaulted;
   readonly onChange: (form: EpicForm) => void;
 }): ReactNode {
   const text = useCopyText();
-  const { form, onChange } = props;
-  const title = text({ id: "epics-field-title" });
-  const summary = text({ id: "epics-field-summary" });
-  const description = text({ id: "epics-field-description" });
+  const { form, faulted, onChange } = props;
   return (
     <div className="grid gap-4">
-      <EpicEditField name={title}>
-        <Input
-          label={title}
-          value={form.title}
-          onChange={(typed) => {
-            onChange({ ...form, title: typed });
-          }}
-        />
-      </EpicEditField>
-      <EpicEditField
-        name={summary}
-        aside={text({
+      <Input
+        labelShown
+        required
+        label={text({ id: "epics-field-title" })}
+        value={form.title}
+        {...epicEditError(text, faulted.title)}
+        onChange={(typed) => {
+          onChange({ ...form, title: typed });
+        }}
+      />
+      <Textarea
+        labelShown
+        label={text({ id: "epics-field-summary" })}
+        hint={text({
           id: "epics-field-summary-count",
           args: {
             count: String([...form.summary].length),
             most: String(epicSummaryCharsMax),
           },
         })}
-      >
-        <Textarea
-          label={summary}
-          value={form.summary}
-          onChange={(typed) => {
-            onChange({ ...form, summary: typed });
-          }}
-        />
-      </EpicEditField>
-      <EpicEditField
-        name={description}
-        aside={text({ id: "epics-field-description-format" })}
-      >
-        <Textarea
-          label={description}
-          value={form.description}
-          mono
-          onChange={(typed) => {
-            onChange({ ...form, description: typed });
-          }}
-        />
-      </EpicEditField>
+        value={form.summary}
+        {...epicEditError(text, faulted.summary)}
+        onChange={(typed) => {
+          onChange({ ...form, summary: typed });
+        }}
+      />
+      <Textarea
+        labelShown
+        label={text({ id: "epics-field-description" })}
+        hint={text({ id: "epics-field-description-format" })}
+        value={form.description}
+        mono
+        onChange={(typed) => {
+          onChange({ ...form, description: typed });
+        }}
+      />
     </div>
   );
 }

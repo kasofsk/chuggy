@@ -117,7 +117,7 @@ function TicketStepBoxDrawn(props: {
 }): ReactNode {
   const { box } = props;
   return (
-    <>
+    <div className="ticket-steps-body">
       <TicketStepLink
         address={box.address}
         params={props.params}
@@ -143,7 +143,7 @@ function TicketStepBoxDrawn(props: {
           ))}
         </ul>
       )}
-    </>
+    </div>
   );
 }
 
@@ -155,7 +155,7 @@ function ticketStepsPhaseLabel(phase: TicketStepPhase): Copy {
     case "Evaluation":
       return { id: "ticket-steps-phase-evaluation" };
     case "Finalization":
-      return { id: "ticket-steps-phase-landing" };
+      return { id: "ticket-steps-phase-finalization" };
   }
 }
 

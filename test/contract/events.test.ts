@@ -98,10 +98,10 @@ const leadRepresentation = {
 
 const nativeActionRepresentation = ticketNativeActionsResponse([
   {
-    action: "approval",
-    kind: "FinalizationApproval",
+    action: "escalation",
+    kind: "TicketEscalation",
     authorizingSequence: 11,
-    admits: ["Approve", "Decline"],
+    admits: ["Resume", "Revoke"],
     answerable: true,
   },
 ]).body;
@@ -214,7 +214,7 @@ test("a ticket's open actions are its own resource under the ticket's identity",
     opened.event === "NativeAction"
       ? opened.data.representation?.actions.map((action) => action.kind)
       : undefined,
-    ["FinalizationApproval"],
+    ["TicketEscalation"],
   );
   const answered = projectChangeDataSchemas.NativeAction.parse({
     version: projectStreamVersion,

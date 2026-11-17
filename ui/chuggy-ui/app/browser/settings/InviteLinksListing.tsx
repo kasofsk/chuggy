@@ -41,11 +41,11 @@ import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import type { TableColumn, TableRow } from "../ui/Table.tsx";
 import {
   SettingsListingNone,
-  settingsListingNone,
   SettingsListingSection,
-  SettingsListingTable,
+  SettingsListingStacked,
 } from "./SettingsListing.tsx";
 
 import "./tenantPeople.css";
@@ -65,6 +65,8 @@ export interface InviteLinkColumn<Link> {
 /** What one list hands the frame: its two columns, which links it may revoke, and the write that revokes one. */
 export interface InviteLinksListed<Link extends InviteLinkListed> {
   readonly links: readonly Link[];
+  /** What the list is headed, where it names its links for what they are for. */
+  readonly heading?: Copy;
   readonly first: InviteLinkColumn<Link>;
   readonly third: InviteLinkColumn<Link>;
   readonly revocable: (link: Link) => boolean;
@@ -143,9 +145,8 @@ function useInviteLinkRevoking(
 }
 
 /** Who made or used a link and when, down a narrow column: the name cut short
- * on a line as a person's row cuts it, under the column's words where one is given and the row is stacked. */
+ * on a line as a person's row cuts it. */
 export function InviteLinkWho(props: {
-  readonly label?: Copy;
   readonly person: TenantSubject;
   readonly atMs: number;
   readonly nowMs: number;
@@ -154,10 +155,7 @@ export function InviteLinkWho(props: {
   const named = tenantPersonName(props.person);
   return (
     <div className="grid min-w-0">
-      {props.label === undefined ? null : (
-        <span className="people-stacked-label">{text(props.label)}</span>
-      )}
-      <span className="people-name" title={named.name}>
+      <span className="tabular-cut" title={named.name}>
         {named.subject ? (
           <Identity label={{ text: named.name, title: named.name }} />
         ) : (
@@ -204,140 +202,114 @@ function InviteLinkStatus(props: {
  * revocation waits on. */
 function InviteLinkAsked(props: {
   readonly link: string;
-  readonly columns: number;
   readonly revoking: InviteLinkRevoking;
 }): ReactNode {
   const text = useCopyText();
   const { link, revoking } = props;
   const words = revoking.note?.link === link ? revoking.note.words : undefined;
   const asked = revoking.asking === link;
-  if (words === undefined && !asked) return null;
   return (
-    <tr className="people-asked">
-      <td colSpan={props.columns}>
-        <div className="ms-auto grid max-w-aside gap-2">
-          {words === undefined ? null : (
-            <Notice tone="danger" inline role="status" detail={words} />
-          )}
-          {asked ? (
-            <Confirm
-              question={text(inviteLinkRevocationQuestion.question)}
-              confirm={text(inviteLinksWords.revoke)}
-              busy={revoking.busy}
-              onConfirm={() => {
-                revoking.send(link);
-              }}
-              onCancel={revoking.cancel}
-            >
-              {text(inviteLinkRevocationQuestion.line)}
-            </Confirm>
-          ) : null}
-        </div>
-      </td>
-    </tr>
+    <div className="ms-auto grid max-w-aside gap-2">
+      {words === undefined ? null : (
+        <Notice tone="danger" inline role="status" detail={words} />
+      )}
+      {asked ? (
+        <Confirm
+          question={text(inviteLinkRevocationQuestion.question)}
+          confirm={text(inviteLinksWords.revoke)}
+          busy={revoking.busy}
+          onConfirm={() => {
+            revoking.send(link);
+          }}
+          onCancel={revoking.cancel}
+        >
+          {text(inviteLinkRevocationQuestion.line)}
+        </Confirm>
+      ) : null}
+    </div>
   );
 }
 
-interface InviteLinkRowDrawn<Link extends InviteLinkListed> {
-  readonly link: Link;
-  readonly listed: InviteLinksListed<Link>;
-  readonly revocable: boolean;
-  /** Whether the table has a column of revocations, which is the reader's to have and not this link's. */
-  readonly revocations: boolean;
-  readonly revoking: InviteLinkRevoking;
-  readonly nowMs: number;
+type InviteLinkColumnKey = "first" | "status" | "third" | "made" | "revoke";
+
+/** The columns a list draws, its revocations last where the reader has any. */
+function inviteLinkColumns(
+  first: Copy,
+  third: Copy,
+  revocations: boolean,
+  text: CopyText,
+): readonly TableColumn<InviteLinkColumnKey>[] {
+  const columns: TableColumn<InviteLinkColumnKey>[] = [
+    { key: "first", label: text(first), rowHeader: true },
+    {
+      key: "status",
+      label: text(inviteLinksWords.status),
+      headClassName: "people-col-status",
+    },
+    { key: "third", label: text(third), headClassName: "people-col-who" },
+    {
+      key: "made",
+      label: text(inviteLinksWords.madeBy),
+      headClassName: "people-col-who",
+    },
+  ];
+  if (revocations)
+    columns.push({
+      key: "revoke",
+      label: text(inviteLinksWords.revoke),
+      actions: true,
+      headClassName: "people-col-revoke",
+    });
+  return columns;
 }
 
-function InviteLinkRow<Link extends InviteLinkListed>(
-  props: InviteLinkRowDrawn<Link>,
-): ReactNode {
-  const text = useCopyText();
-  const { link, listed, revoking, nowMs } = props;
+function inviteLinkRow<Link extends InviteLinkListed>(
+  link: Link,
+  drawn: {
+    readonly listed: InviteLinksListed<Link>;
+    readonly revocable: boolean;
+    readonly revoking: InviteLinkRevoking;
+    readonly nowMs: number;
+    readonly text: CopyText;
+  },
+): TableRow<InviteLinkColumnKey> {
+  const { listed, revoking, nowMs, text } = drawn;
   const third = listed.third.cell(link, nowMs);
-  return (
-    <tr>
-      <th scope="row">{listed.first.cell(link, nowMs)}</th>
-      <td>
-        <InviteLinkStatus link={link} nowMs={nowMs} />
-      </td>
-      <td data-none={settingsListingNone(third === undefined)}>
-        {third === undefined ? <SettingsListingNone /> : third}
-      </td>
-      <td>
+  return {
+    key: link.link,
+    cells: {
+      first: listed.first.cell(link, nowMs),
+      status: <InviteLinkStatus link={link} nowMs={nowMs} />,
+      third: third === undefined ? <SettingsListingNone /> : third,
+      made: (
         <InviteLinkWho
-          label={inviteLinksWords.madeBy}
           person={link.mintedBy}
           atMs={link.mintedAtMs}
           nowMs={nowMs}
         />
-      </td>
-      {props.revocations ? (
-        <td className="people-edit">
-          {props.revocable ? (
-            <Button
-              variant="quiet"
-              size="sm"
-              disabled={revoking.busy || revoking.asking !== undefined}
-              onClick={() => {
-                revoking.press(link.link);
-              }}
-            >
-              {text(inviteLinksWords.revoke)}
-            </Button>
-          ) : null}
-        </td>
-      ) : null}
-    </tr>
-  );
-}
-
-const inviteLinkColumnsCount = 4;
-
-function InviteLinksHead(props: {
-  readonly first: Copy;
-  readonly third: Copy;
-  readonly revocations: boolean;
-}): ReactNode {
-  const text = useCopyText();
-  return (
-    <thead>
-      <tr>
-        <th scope="col">{text(props.first)}</th>
-        <th scope="col" className="people-col-status">
-          {text(inviteLinksWords.status)}
-        </th>
-        <th scope="col" className="people-col-who">
-          {text(props.third)}
-        </th>
-        <th scope="col" className="people-col-who">
-          {text(inviteLinksWords.madeBy)}
-        </th>
-        {props.revocations ? (
-          <th scope="col" className="people-col-revoke">
-            <span className="visually-hidden">
-              {text(inviteLinksWords.revoke)}
-            </span>
-          </th>
-        ) : null}
-      </tr>
-    </thead>
-  );
-}
-
-/** A link's row, and under it what its revocation asks or was refused with. */
-function InviteLinkRows<Link extends InviteLinkListed>(
-  props: InviteLinkRowDrawn<Link>,
-): ReactNode {
-  return (
-    <>
-      <InviteLinkRow {...props} />
-      <InviteLinkAsked
-        link={props.link.link}
-        columns={inviteLinkColumnsCount + (props.revocations ? 1 : 0)}
-        revoking={props.revoking}
-      />
-    </>
-  );
+      ),
+      revoke: drawn.revocable ? (
+        <Button
+          variant="quiet"
+          size="sm"
+          disabled={revoking.busy || revoking.asking !== undefined}
+          onClick={() => {
+            revoking.press(link.link);
+          }}
+        >
+          {text(inviteLinksWords.revoke)}
+        </Button>
+      ) : null,
+    },
+    empty: [
+      ...(third === undefined ? (["third"] as const) : []),
+      ...(drawn.revocable ? [] : (["revoke"] as const)),
+    ],
+    below:
+      revoking.asking === link.link || revoking.note?.link === link.link ? (
+        <InviteLinkAsked link={link.link} revoking={revoking} />
+      ) : undefined,
+  };
 }
 
 /** Drawn only where the list has a link in it. */
@@ -349,29 +321,28 @@ export function InviteLinksListing<Link extends InviteLinkListed>(
   const nowMs = useNowMs();
   if (props.links.length === 0) return null;
   const revocable = props.links.filter((link) => props.revocable(link));
-  const revocations = revocable.length > 0;
+  const heading = text(props.heading ?? inviteLinksWords.heading);
   return (
-    <SettingsListingSection heading={text(inviteLinksWords.heading)}>
-      <SettingsListingTable caption={text(inviteLinksWords.heading)}>
-        <InviteLinksHead
-          first={props.first.heading}
-          third={props.third.heading}
-          revocations={revocations}
-        />
-        <tbody>
-          {props.links.map((link) => (
-            <InviteLinkRows
-              key={link.link}
-              link={link}
-              listed={props}
-              revocable={revocable.includes(link)}
-              revocations={revocations}
-              revoking={revoking}
-              nowMs={nowMs}
-            />
-          ))}
-        </tbody>
-      </SettingsListingTable>
+    <SettingsListingSection heading={heading}>
+      <SettingsListingStacked
+        className="people-table"
+        caption={heading}
+        columns={inviteLinkColumns(
+          props.first.heading,
+          props.third.heading,
+          revocable.length > 0,
+          text,
+        )}
+        rows={props.links.map((link) =>
+          inviteLinkRow(link, {
+            listed: props,
+            revocable: revocable.includes(link),
+            revoking,
+            nowMs,
+            text,
+          }),
+        )}
+      />
     </SettingsListingSection>
   );
 }

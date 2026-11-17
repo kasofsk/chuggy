@@ -6,7 +6,7 @@ import {
   executionAgentCapability,
   executionRequirementConfigurationIsValid,
   materializeExecutionRequirement,
-} from "../../src/interpreter/executionRequirement.ts";
+} from "../../src/contract/executionRequirement.ts";
 
 const container = (
   image: string,

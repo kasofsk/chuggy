@@ -12,6 +12,7 @@ import {
   inviteModes,
   inviteModesLabel,
 } from "../../core/inviteLinks.ts";
+import type { Copy } from "../../core/copy.ts";
 import type { InviteMode, InviteSendWords } from "../../core/inviteLinks.ts";
 import { Button } from "../ui/Button.tsx";
 import { ToggleGroup } from "../ui/ToggleGroup.tsx";
@@ -22,9 +23,16 @@ export function InviteModes(props: {
   readonly mode: InviteMode;
   readonly busy: boolean;
   readonly onChoose: (mode: InviteMode) => void;
+  /** What the link is called where its dialog names it for what it is for. */
+  readonly linkLabel?: Copy;
 }): ReactNode {
   const text = useCopyText();
-  const label = (mode: InviteMode): string => text(inviteModeLabel(mode));
+  const label = (mode: InviteMode): string =>
+    text(
+      mode === "Link" && props.linkLabel !== undefined
+        ? props.linkLabel
+        : inviteModeLabel(mode),
+    );
   return (
     <div>
       <ToggleGroup

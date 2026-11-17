@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { assertNever } from "../../domain/assertNever.ts";
+import type { TicketId } from "../../domain/ids.ts";
 import type {
   ConfigurationPage,
   ConfigurationRevisionResource,
@@ -22,6 +23,7 @@ import type {
   ProjectInventoryPage,
   ProjectRead,
   TicketNativeAction,
+  TicketNativeActionHistoryPage,
   TicketResource,
 } from "../../interpreter/nativeWeb.ts";
 import type { SelectorOperationalContext } from "../../interpreter/selector.ts";
@@ -40,6 +42,7 @@ import {
 import type { ProjectInboxPage } from "../../interpreter/projectInbox.ts";
 import type { EpicRefusal } from "../../domain/epics.ts";
 import type { EpicRead, EpicWritten } from "../../interpreter/epics.ts";
+import type { TicketTakeWritten } from "../../interpreter/ticketTake.ts";
 import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
 import type {
   SelectorProposalReviews,
@@ -92,7 +95,9 @@ import {
   briefFinalizationModeOf,
   type BriefFinalizationMode,
   type NativeActionAnswerRefusalCode,
+  type TicketTakeRefusalCode,
   type ProjectArtifactUploadRefusalCode,
+  type ProjectImageRefusalCode,
   type SelectorReviewOutcome,
   type ThreadMessageRefusalCode,
 } from "../../contract/rosters.ts";
@@ -127,7 +132,11 @@ import type {
   ProjectRepositoryLandingResult,
   ProjectRepositoryRetirementResult,
 } from "../../interpreter/repositoryOnboarding.ts";
-import type { Partition, TenantId } from "../../interpreter/projectStore.ts";
+import type {
+  NamedPartition,
+  Partition,
+  TenantId,
+} from "../../interpreter/projectStore.ts";
 import type { ChatAbilitiesResponse } from "../../contract/responses.ts";
 import type {
   MemberChatProjectsRead,
@@ -138,6 +147,7 @@ import type {
   ProjectCreationResult,
 } from "../../interpreter/projectCreation.ts";
 import {
+  projectDisplayNameCharsMax,
   projectNameCharsMax,
   reservedTenantNames,
 } from "../../contract/requests.ts";
@@ -160,6 +170,7 @@ import {
   encodeInventoryCursor,
   encodeLatestExecutionCursor,
   encodeNativeActionCursor,
+  encodeNativeActionHistoryCursor,
   encodeTicketActivityCursor,
   encodeTicketNumberCursor,
 } from "./contract.ts";
@@ -203,10 +214,39 @@ import type {
 } from "../../interpreter/sessionPlacement.ts";
 import type {
   AgentAccountPressed,
+  AgentAccountRetired,
+  AgentAccountTurnedOff,
+  AgentAccountTurnedOn,
   AgentAccountView,
 } from "../../interpreter/agentAccount.ts";
 import type {
+  OwnedTheme,
+  OwnedThemeCreated,
+  OwnedThemeDeleted,
+  OwnedThemeWritten,
+  ThemeChosen,
+  ThemeContrastRefused,
+} from "../../interpreter/appearance.ts";
+import type { ThemeChoice } from "../../contract/appearance.ts";
+import type {
+  ProjectAppearanceView,
+  ProjectThemeOverrideChosen,
+  ProjectThemeView,
+  ProjectThemeWritten,
+} from "../../interpreter/projectAppearance.ts";
+import type {
+  ProjectImageNamed,
+  ProjectImagesView,
+} from "../../interpreter/projectImages.ts";
+import type {
   AgentAccountsResponse,
+  AgentPause,
+  OwnedThemeResponse,
+  OwnedThemesResponse,
+  ThemeChoiceResponse,
+  ProjectThemeResponse,
+  ProjectAppearanceResponse,
+  ProjectImagesResponse,
   ChatHostCredentialsResponse,
   ChatHostResponse,
   ExecutionPlacementResponse,
@@ -219,6 +259,13 @@ import type {
   SessionPlacementResponse,
   WorkerPoolCredentialsResponse,
   WorkerPoolsResponse,
+} from "../../contract/responses.ts";
+import {
+  agentAccountCredentialInUseCode,
+  agentAccountCredentialsOffFullCode,
+  deletionHeldCode,
+  projectCreatedSchema,
+  type ProjectCreatedResponse,
 } from "../../contract/responses.ts";
 import type { WorkerRunnerListed } from "../../interpreter/workerRunnerRelease.ts";
 
@@ -233,6 +280,10 @@ import type {
 } from "../../contract/responses.ts";
 import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 import type { LandingQueues } from "../../interpreter/landingQueues.ts";
+import type {
+  UnrunDeleted,
+  UnrunDeletionStanding,
+} from "../../interpreter/unrunDeletion.ts";
 import type { TicketLandings } from "../../interpreter/ticketLandings.ts";
 import type {
   ActionReachRead,
@@ -458,7 +509,7 @@ export function submissionResponse(
         403,
         nativeHttpError(
           programSkipsPlannedEvaluationsCode,
-          "The draft's program runs less than its configuration plans: it leaves out a stage, or an evaluator of a stage, the plan has. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it.",
+          "The draft's program runs less than its configuration plans: it leaves out the plan's last stages, or an evaluator of a stage it keeps, or, over a plan its overrides replace or add, it runs some workload at fewer positions than the catalog's plan for its selection, or the catalog's default where the catalog holds no plan of that name. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it. A program keeping a later stage of the plan and leaving out an earlier one is refused whoever releases it, as ProgramStageOutOfPosition.",
         ),
       );
     case "AnswerRefused":
@@ -602,6 +653,27 @@ export function nativeActionsResponse(
                 partition,
                 result.value.nextAfter,
               ),
+            }),
+      });
+}
+
+/** A ticket nobody may read and a ticket that does not exist answer alike, as the ticket's open actions do. */
+export function ticketNativeActionHistoryResponse(
+  partition: Partition,
+  ticket: TicketId,
+  page: TicketNativeActionHistoryPage | undefined,
+): NativeHttpResponse {
+  return page === undefined
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, {
+        actions: page.actions,
+        ...(page.nextAfter === undefined
+          ? {}
+          : {
+              nextCursor: encodeNativeActionHistoryCursor(partition, {
+                ticket,
+                ...page.nextAfter,
+              }),
             }),
       });
 }
@@ -862,11 +934,17 @@ export function projectArtifactReadResponse(
 ): NativeHttpResponse {
   switch (result.fetched) {
     case "Content":
-      return response(200, {
-        content: Buffer.from(result.content).toString(projectArtifactEncoding),
-        mediaType: result.mediaType,
-        encoding: projectArtifactEncoding,
-      });
+      return response(
+        200,
+        {
+          content: Buffer.from(result.content).toString(
+            projectArtifactEncoding,
+          ),
+          mediaType: result.mediaType,
+          encoding: projectArtifactEncoding,
+        },
+        { "x-content-type-options": "nosniff" },
+      );
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "Unavailable":
@@ -1420,6 +1498,9 @@ export function chatHostResponse(result: ChatHostRead): NativeHttpResponse {
           : { polledAt: result.value.polledAt }),
         live: result.value.live,
         ...runnerListedBody(result.value.runner),
+        ...(result.value.sessionCapabilities === undefined
+          ? {}
+          : { sessionCapabilities: [...result.value.sessionCapabilities] }),
       } satisfies ChatHostResponse);
     default:
       return assertNever(result);
@@ -1474,6 +1555,10 @@ export function personalRunnerResponse(
             waitingTruncated,
           }),
         ),
+        pauses: result.value.pauses.map(({ agent, pause }) => ({
+          agent,
+          pause: { ...pause, reasons: [...pause.reasons] },
+        })),
       } satisfies PersonalRunnerResponse);
     default:
       return assertNever(result);
@@ -1499,6 +1584,30 @@ export function ownerFallbackBody(
   };
 }
 
+/** A credential's pause's copy, or no field where none holds. */
+function agentAccountsResponsePause(
+  pause: AgentAccountView["credentials"][number]["pause"],
+): { pause?: AgentPause } {
+  return pause === undefined
+    ? {}
+    : { pause: { ...pause, reasons: [...pause.reasons] } };
+}
+
+/** The agent's pause's copy with the credentials holding it, or no field where none holds. */
+function agentAccountsResponseHeldPause(
+  pause: AgentAccountView["pause"],
+): Pick<AgentAccountsResponse["accounts"][number], "pause"> {
+  return pause === undefined
+    ? {}
+    : {
+        pause: {
+          ...pause,
+          reasons: [...pause.reasons],
+          credentials: [...pause.credentials],
+        },
+      };
+}
+
 /** Every agent of the caller's own account. */
 export function agentAccountsResponse(
   accounts: readonly AgentAccountView[],
@@ -1509,11 +1618,12 @@ export function agentAccountsResponse(
       settings: { ...account.settings },
       readings: account.readings.map((reading) => ({ ...reading })),
       ...(account.limit === undefined ? {} : { limit: { ...account.limit } }),
-      ...(account.pause === undefined
-        ? {}
-        : {
-            pause: { ...account.pause, reasons: [...account.pause.reasons] },
-          }),
+      ...agentAccountsResponseHeldPause(account.pause),
+      credentials: account.credentials.map((credential) => ({
+        name: credential.name,
+        readings: credential.readings.map((reading) => ({ ...reading })),
+        ...agentAccountsResponsePause(credential.pause),
+      })),
     })),
   } satisfies AgentAccountsResponse);
 }
@@ -1538,9 +1648,298 @@ export function agentAccountPressedResponse(
   }
 }
 
+/** A credential retired, none held under its name, or refused because a live runner of the account still names it. */
+export function agentAccountRetiredResponse(
+  result: AgentAccountRetired,
+): NativeHttpResponse {
+  switch (result) {
+    case "Retired":
+      return noContent();
+    case "NotHeld":
+      return notFound();
+    case "CredentialInUse":
+      return response(
+        409,
+        nativeHttpError(
+          agentAccountCredentialInUseCode,
+          "A live runner of the account still names this credential.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A credential off, or refused because as many of the agent's credentials as the account holds off are off. */
+export function agentAccountTurnedOffResponse(
+  result: AgentAccountTurnedOff,
+): NativeHttpResponse {
+  switch (result) {
+    case "Off":
+      return noContent();
+    case "OffFull":
+      return response(
+        409,
+        nativeHttpError(
+          agentAccountCredentialsOffFullCode,
+          "As many credentials of this agent as the account holds off are off.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A credential on again, or none of its name was off. */
+export function agentAccountTurnedOnResponse(
+  result: AgentAccountTurnedOn,
+): NativeHttpResponse {
+  switch (result) {
+    case "On":
+      return noContent();
+    case "NotOff":
+      return notFound();
+    default:
+      return assertNever(result);
+  }
+}
+
 /** One agent's settings written whole. */
 export function agentAccountWrittenResponse(): NativeHttpResponse {
   return noContent();
+}
+
+/** The most pairs a contrast refusal's message names, the rest counted. */
+const themeContrastRefusalPairsMax = 6;
+
+/** A document the contrast rule refuses, its message naming the pairs it draws too faintly. */
+function themeContrastRefusedResponse(
+  refused: ThemeContrastRefused,
+): NativeHttpResponse {
+  const named = refused.failures
+    .slice(0, themeContrastRefusalPairsMax)
+    .map(
+      (failure) =>
+        `${failure.foreground} on ${failure.background} in ${failure.scheme} is ${failure.ratio.toFixed(2)}, under ${String(failure.ratioMin)}`,
+    );
+  const unnamed = refused.failures.length - named.length;
+  return response(
+    422,
+    nativeHttpError(
+      "ThemeContrastInsufficient",
+      `The theme draws ${String(refused.failures.length)} pairs below the contrast they need: ${named.join("; ")}${unnamed > 0 ? `; and ${String(unnamed)} more` : ""}.`,
+    ),
+  );
+}
+
+function ownedThemeBody(theme: OwnedTheme): OwnedThemeResponse {
+  return { theme: theme.theme, document: theme.document };
+}
+
+/** Every theme of the caller's own. */
+export function ownedThemesResponse(
+  themes: readonly OwnedTheme[],
+): NativeHttpResponse {
+  return response(200, {
+    themes: themes.map(ownedThemeBody),
+  } satisfies OwnedThemesResponse);
+}
+
+/** One theme of the caller's own, or none of theirs by that number. */
+export function ownedThemeResponse(
+  theme: OwnedTheme | undefined,
+): NativeHttpResponse {
+  return theme === undefined
+    ? notFound()
+    : response(200, ownedThemeBody(theme));
+}
+
+/** A theme created, or refused at the caller's bound or by the contrast rule. */
+export function ownedThemeCreatedResponse(
+  result: OwnedThemeCreated,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Created":
+      return response(201, ownedThemeBody(result.theme));
+    case "LimitReached":
+      return response(
+        409,
+        nativeHttpError(
+          "ThemeLimitReached",
+          "The caller already owns their bound of themes.",
+        ),
+      );
+    case "ContrastInsufficient":
+      return themeContrastRefusedResponse(result);
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A theme written whole, or none of the caller's by that number, or refused by the contrast rule. */
+export function ownedThemeWrittenResponse(
+  result: OwnedThemeWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Written":
+      return noContent();
+    case "NotFound":
+      return notFound();
+    case "ContrastInsufficient":
+      return themeContrastRefusedResponse(result);
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A theme deleted, or none of the caller's by that number. */
+export function ownedThemeDeletedResponse(
+  result: OwnedThemeDeleted,
+): NativeHttpResponse {
+  switch (result) {
+    case "Deleted":
+      return noContent();
+    case "NotFound":
+      return notFound();
+    default:
+      return assertNever(result);
+  }
+}
+
+/** The caller's own global choice, absent where they hold none. */
+export function themeChoiceResponse(
+  choice: ThemeChoice | undefined,
+): NativeHttpResponse {
+  return response(200, {
+    ...(choice === undefined ? {} : { choice: { ...choice } }),
+  } satisfies ThemeChoiceResponse);
+}
+
+/** A choice written or cleared, or refused because the theme it names is none of the caller's. */
+export function themeChosenResponse(result: ThemeChosen): NativeHttpResponse {
+  switch (result) {
+    case "Chosen":
+      return noContent();
+    case "ThemeNotFound":
+      return response(
+        422,
+        nativeHttpError(
+          "ThemeNotFound",
+          "The choice names no theme the caller owns.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A project's default theme, and whether the caller may change it. */
+export function projectThemeBody(view: ProjectThemeView): ProjectThemeResponse {
+  return {
+    ...(view.document === undefined ? {} : { document: view.document }),
+    administers: view.administers,
+  };
+}
+
+/** A project's default written or cleared, answering it as it now stands, or refused by the contrast rule. */
+export function projectThemeWrittenResponse(
+  result: ProjectThemeWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "ContrastInsufficient":
+      return themeContrastRefusedResponse(result);
+    case "Written":
+    case "Unchanged":
+      return response(200, projectThemeBody(result.view));
+    default:
+      return assertNever(result);
+  }
+}
+
+/** The caller's own theme for a project, absent where they hold none. */
+export function projectThemeOverrideBody(
+  choice: ThemeChoice | undefined,
+): ThemeChoiceResponse {
+  return choice === undefined ? {} : { choice: { ...choice } };
+}
+
+/** The caller's own theme for a project written or cleared, or refused as their global choice is. */
+export function projectThemeOverrideChosenResponse(
+  result: ProjectThemeOverrideChosen,
+): NativeHttpResponse {
+  return result === "NotFound" ? notFound() : themeChosenResponse(result);
+}
+
+/** The theme a project wears for the caller, the layer it came from, and each layer's own value. */
+export function projectAppearanceBody(
+  view: ProjectAppearanceView,
+): ProjectAppearanceResponse {
+  const { override, projectDefault, global } = view.layers;
+  return {
+    theme: view.theme,
+    layer: view.layer,
+    layers: {
+      ...(override === undefined ? {} : { override: { ...override } }),
+      ...(projectDefault === undefined ? {} : { projectDefault }),
+      ...(global === undefined ? {} : { global: { ...global } }),
+    },
+  };
+}
+
+/** A project's icon and banner, each absent where it names none, and whether the caller may change them. */
+export function projectImagesBody(
+  view: ProjectImagesView,
+): ProjectImagesResponse {
+  const { icon, banner } = view.images;
+  return {
+    ...(icon === undefined ? {} : { icon }),
+    ...(banner === undefined ? {} : { banner }),
+    administers: view.administers,
+  };
+}
+
+/** What naming an artifact a project's icon or banner refuses a request with. */
+function projectImageRefusal(
+  code: ProjectImageRefusalCode,
+  message: string,
+  extra: Readonly<Record<string, number>> = {},
+): NativeHttpResponse {
+  return response(422, { ...nativeHttpError(code, message), ...extra });
+}
+
+/** An icon or banner named or cleared, answering the images as they now stand, or refused. */
+export function projectImageNamedResponse(
+  result: ProjectImageNamed,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "ImageNotFound":
+      return projectImageRefusal(
+        "ImageNotFound",
+        "The project holds no such artifact.",
+      );
+    case "ImageTypeNotAdmitted":
+      return projectImageRefusal(
+        "ImageTypeNotAdmitted",
+        "The artifact is not an image type a project's icon or banner may be.",
+      );
+    case "ImageTooLarge":
+      return projectImageRefusal(
+        "ImageTooLarge",
+        "The artifact is too large for its role.",
+        { bytesMax: result.bytesMax },
+      );
+    case "Unavailable":
+      return retry(503, result.retryAfterSeconds, artifactUnavailableCode);
+    case "Written":
+    case "Unchanged":
+      return response(200, projectImagesBody(result.view));
+    default:
+      return assertNever(result);
+  }
 }
 
 /** An allowlist addition: made, or a runner or a readable active project that is not there, or the allowlist at its bound. */
@@ -1729,6 +2128,42 @@ export function notFound(): NativeHttpResponse {
   return response(404, nativeHttpError("NotFound", "Resource not found."));
 }
 
+/** What holds a project or a workspace its reader may delete. */
+export function unrunDeletionStandingResponse<Holding extends string>(
+  standing: UnrunDeletionStanding<Holding>,
+): NativeHttpResponse {
+  switch (standing.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, { held: standing.held });
+    default:
+      return assertNever(standing);
+  }
+}
+
+/** A deletion: done, absent, or refused with what holds it. */
+export function unrunDeletedResponse<Holding extends string>(
+  deleted: UnrunDeleted<Holding>,
+): NativeHttpResponse {
+  switch (deleted.result) {
+    case "Deleted":
+      return noContent();
+    case "NotFound":
+      return notFound();
+    case "Held":
+      return response(409, {
+        ...nativeHttpError(
+          deletionHeldCode,
+          "It has run work, or holds what has, and is not deleted.",
+        ),
+        held: deleted.held,
+      });
+    default:
+      return assertNever(deleted);
+  }
+}
+
 /** What a session bearer is answered on a route no session may reach, RFC 6750's `insufficient_scope`. */
 export function sessionBearerRefusedResponse(): NativeHttpResponse {
   return response(
@@ -1886,12 +2321,23 @@ export function forgeInstallationPermissionsResponse(
   }
 }
 
-/** Why a name was refused, by the field it is in. */
-const projectNameInvalidCodes: Readonly<Record<ProjectCreationField, string>> =
-  {
-    tenant: "TenantNameInvalid",
-    project: "ProjectNameInvalid",
-  };
+/** Why a name was refused, by the field it is in, with the rule it broke. */
+const projectNameInvalid: Readonly<
+  Record<ProjectCreationField, { readonly code: string; readonly rule: string }>
+> = {
+  tenant: {
+    code: "TenantNameInvalid",
+    rule: `A tenant name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+  },
+  project: {
+    code: "ProjectNameInvalid",
+    rule: `A project name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+  },
+  name: {
+    code: "ProjectDisplayNameInvalid",
+    rule: `A project's display name is at most ${String(projectDisplayNameCharsMax)} characters once trimmed, is not empty, and holds no control character.`,
+  },
+};
 
 /** What creation answers a caller the site does not permit to create a tenant. */
 function tenantCreationRefused(): NativeHttpResponse {
@@ -1904,6 +2350,10 @@ function tenantCreationRefused(): NativeHttpResponse {
   );
 }
 
+function projectCreatedBody(project: NamedPartition): ProjectCreatedResponse {
+  return projectCreatedSchema.parse(project);
+}
+
 /**
  * A creation. A tenant another principal holds is a conflict rather than a
  * missing resource, because a tenant name is first-come and not a secret.
@@ -1913,15 +2363,15 @@ export function projectCreationResponse(
 ): NativeHttpResponse {
   switch (result.result) {
     case "Created":
-      return response(201, result.partition, {
+      return response(201, projectCreatedBody(result.project), {
         location: tenantResourcePath(
-          result.partition.tenant,
+          result.project.tenant,
           "projects",
-          result.partition.project,
+          result.project.project,
         ),
       });
     case "AlreadyCreated":
-      return response(200, result.partition);
+      return response(200, projectCreatedBody(result.project));
     case "ProjectExists":
       return response(
         409,
@@ -1947,8 +2397,8 @@ export function projectCreationResponse(
       return response(
         422,
         nativeHttpError(
-          projectNameInvalidCodes[result.field],
-          `A ${result.field} name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+          projectNameInvalid[result.field].code,
+          projectNameInvalid[result.field].rule,
         ),
       );
     case "TenantCreationNotPermitted":
@@ -2546,6 +2996,7 @@ function leadRefusalBody(refused: LeadRefused): unknown {
     reason: refused.reason,
     since: refused.since,
     ...(refused.until === undefined ? {} : { until: refused.until }),
+    ...(refused.off === undefined ? {} : { off: refused.off }),
   };
 }
 
@@ -2576,6 +3027,9 @@ export function leadResponse(result: LeadRead): NativeHttpResponse {
         handoffNote: handoffNotePreview(result.lead.handoffNote),
         turns: result.lead.turns.map(leadTurnBody),
         streams: result.streams,
+        ...(result.held === undefined
+          ? {}
+          : { held: { reason: result.held.reason } }),
         ...(result.refusal === undefined
           ? {}
           : { refusal: leadRefusalBody(result.refusal) }),
@@ -2770,6 +3224,10 @@ export function threadResponse(result: ThreadRead): NativeHttpResponse {
           ? {}
           : { nextBefore: result.nextBefore }),
         streams: result.streams,
+        ...(result.jobsStanding ? { jobsStanding: true } : {}),
+        ...(result.chatHostCapabilities === undefined
+          ? {}
+          : { chatHostCapabilities: result.chatHostCapabilities }),
       });
 }
 
@@ -3204,4 +3662,45 @@ export function epicWriteResponse(result: EpicWritten): NativeHttpResponse {
       ? { tickets: outcome.tickets }
       : {}),
   });
+}
+
+const ticketTakeRefusalMessage: Readonly<
+  Record<TicketTakeRefusalCode, string>
+> = {
+  TakerNotAPerson:
+    "A ticket is taken and returned by a person, never by an agent.",
+  Unreleased: "A draft never released is its author's.",
+  TicketDone: "The ticket is Done and runs nothing more.",
+  TicketRevoked: "The ticket is Revoked and runs nothing more.",
+  NotTaker: "Only the member who took the ticket may return it.",
+};
+
+/**
+ * A take or a return: what it did, with the owner it leaves, or a refusal
+ * named by its code. A caller who may read and not mutate meets `403`, as an
+ * agent does; a ticket in a state that refuses it is a `409`; a project or
+ * ticket the caller cannot see is a `404` like any other absence.
+ */
+export function ticketTakeResponse(
+  result: TicketTakeWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Forbidden":
+      return response(
+        403,
+        nativeHttpError("Forbidden", "The caller may not take tickets."),
+      );
+    case "Refused":
+      return response(
+        result.reason === "TakerNotAPerson" ? 403 : 409,
+        nativeHttpError(result.reason, ticketTakeRefusalMessage[result.reason]),
+      );
+    case "Written":
+      return response(200, {
+        outcome: result.outcome,
+        ...(result.owner === undefined ? {} : { owner: result.owner }),
+      });
+  }
 }

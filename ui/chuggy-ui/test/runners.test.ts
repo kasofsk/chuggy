@@ -1,5 +1,5 @@
 /**
- * The Runners page's words and drafts, derived: what a route and its source
+ * The runner pages' words and drafts, derived: what a route and its source
  * are called, which route a draft starts on, what a refused write says, the
  * package a machine is handed with its commands and its guide, and where the
  * control that hands it over is drawn.
@@ -10,7 +10,6 @@ import { expect, test } from "vitest";
 import type {
   ExecutionPlacementResponse,
   SessionPlacementResponse,
-  WorkerPoolsResponse,
 } from "../../../src/contract/responses.ts";
 import { selectorProjectSettingsResponseSchema } from "../../../src/contract/responses.ts";
 import {
@@ -22,9 +21,7 @@ import { copyTextEn } from "../app/copy/catalog.ts";
 import { leadSelectorSettingsBody } from "./leadFixture.ts";
 import type { Copy } from "../app/core/copy.ts";
 import { copyOrDataText } from "../app/core/copy.ts";
-import type { PanelState } from "../app/core/freshness.ts";
 import {
-  runnerAddPlace,
   runnerAskRead,
   runnerCapabilitiesTyped,
   runnerCapabilityLabel,
@@ -298,15 +295,16 @@ test("a write refused for the hosted grant is told apart from any other refusal"
   );
 });
 
-test("setup offers the Linux package: what it needs, the command that installs its current release, and its guide", () => {
+test("setup offers the Linux package: what it needs, the command that installs its pinned release, and its guide", () => {
   expect(runnerPackageOffered).toBe(runnerPackages.linux);
   expect(runnerPackageOffered).toStrictEqual({
     label: { id: "runners-package-linux" },
     program: "chuggy-linux",
     needs: { id: "runners-package-needs-linux" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/latest/download/chuggy-linux.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.53.0/chuggy-linux-0.53.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
+    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-linux#a-chat-host",
   });
   expect(copyTextEn(runnerPackageOffered.label)).toBe("Linux");
   expect(copyTextEn(runnerPackageOffered.needs)).toBe(
@@ -320,8 +318,9 @@ test("a Mac's package is the reader's other choice, and what they ask of either 
     program: "chuggy-darwin",
     needs: { id: "runners-package-needs-darwin" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/latest/download/chuggy-darwin.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.23.0/chuggy-darwin-0.23.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
+    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-darwin#chat-host",
   });
   expect(copyTextEn(runnerPackages.darwin.label)).toBe("Mac");
   expect(copyTextEn(runnerPackages.darwin.needs)).toBe(
@@ -442,60 +441,6 @@ test("a token that starts with a dash stays the token's value", () => {
       "Pool",
     ),
   ).toBe("chuggy-linux register --api https://chuggy.test --token=-tok");
-});
-
-function roster(count: number): PanelState<WorkerPoolsResponse> {
-  return {
-    state: "Ready",
-    observedAtMs: undefined,
-    value: {
-      truncated: false,
-      pools: Array.from({ length: count }, (_, at) => ({
-        pool: `pool-${String(at)}`,
-        capabilities: ["Platform:Linux:Amd64"],
-        registeredAt: "2026-09-29T00:00:00Z",
-        live: false,
-      })),
-    },
-  };
-}
-
-const adding = { administers: true, roster: roster(0), opened: false };
-
-test("a reader who may add is drawn the control under an empty roster's line, and in the head once a runner is registered", () => {
-  expect(runnerAddPlace(adding)).toBe("Empty");
-  expect(runnerAddPlace({ ...adding, roster: roster(1) })).toBe("Head");
-  expect(runnerAddPlace({ ...adding, roster: roster(1), opened: true })).toBe(
-    "Head",
-  );
-});
-
-test("a reader who may not add is drawn the control nowhere, whatever the roster holds", () => {
-  for (const held of [roster(0), roster(1)])
-    expect(
-      runnerAddPlace({ ...adding, administers: false, roster: held }),
-    ).toBeUndefined();
-});
-
-test("the control is drawn nowhere while the roster is unread, and in the head where its read came to nothing", () => {
-  expect(
-    runnerAddPlace({ ...adding, roster: { state: "Pending" } }),
-  ).toBeUndefined();
-  for (const state of ["Absent", "Failed"] as const)
-    expect(
-      runnerAddPlace({
-        ...adding,
-        roster:
-          state === "Absent"
-            ? { state }
-            : { state, failure: { outcome: "Unreachable", reason: "no" } },
-      }),
-      state,
-    ).toBe("Head");
-});
-
-test("an empty roster's control is not drawn again under the steps it opened", () => {
-  expect(runnerAddPlace({ ...adding, opened: true })).toBeUndefined();
 });
 
 test("a platform is drawn by its parts and any other capability as spelled", () => {

@@ -24,6 +24,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -36,7 +37,7 @@ import { setupSiteChatAdded } from "../../ui/chuggy-ui/test/setupSite.ts";
 import { pacingVariable } from "../../ui/chuggy-ui/terminal/ports.ts";
 
 import { machineLoginSecret } from "./machine.ts";
-import { program, shellWords, userSaid } from "./program.ts";
+import { program, servedArguments, shellWords, userSaid } from "./program.ts";
 import {
   type Stood,
   acts,
@@ -45,11 +46,12 @@ import {
   chatUnit,
   cleared,
   first,
+  flags,
   lines,
+  mcp,
   mint,
   next,
   poolFile,
-  probes,
   ran,
   redemption,
   rerun,
@@ -83,7 +85,76 @@ async function setUp(): Promise<Stood> {
   return on;
 }
 
-test("on a fresh machine the bare command offers a runner having changed nothing, and the command its rule names installs, registers, checks and starts one, with the token one word of one command, and ends on a checklist that says the runner live", async () => {
+test("on a fresh machine signed in, the bare command offers chuggy's MCP server once the project exists, having changed nothing, and the command its rule names installs the runner package and names the server in Claude Code here, after which the step is done with no second sign-in", async () => {
+  const on = await stood("InCluster", false);
+  const { did } = lines(on);
+  const offered = await ran(on, []);
+  assert.equal(offered.code, 0, offered.stdout);
+  assert.ok(
+    offered.lines.includes(
+      "step: mcp         todo     Claude Code here has no chuggy MCP server for acme/widgets",
+    ),
+    offered.stdout,
+  );
+  const rule = offered.lines.at(-2) ?? "";
+  const yes =
+    " only once the person says yes to chuggy's MCP server on this machine.";
+  assert.ok(rule.startsWith("rule: Run ") && rule.endsWith(yes), rule);
+  assert.deepEqual(words(on, "npm"), [["prefix", "-g"]]);
+  assert.deepEqual(words(on, "claude"), []);
+  assert.deepEqual(on.installation.writes, []);
+
+  cleared(on);
+  const argv = await commanded(rule.slice("rule: Run ".length, -yes.length));
+  assert.deepEqual(argv, mcp);
+  const done = await ran(on, argv);
+  assert.equal(done.code, 0, done.stdout);
+  const command = join(on.machine.prefix, "bin", "chuggy-linux");
+  const arguments_ = servedArguments(on.installation.site);
+  assert.deepEqual(done.lines, [
+    `site: ${on.installation.site}`,
+    did.package,
+    `did: named chuggy's MCP server for acme/widgets in Claude Code's configuration for this folder, in ${join(on.home.home, ".claude.json")}; a Claude Code session started here from now on has its tools`,
+    `next: node ${program} ${flags}`,
+  ]);
+  assert.deepEqual(words(on, "claude"), [
+    ["mcp", "add", "--scope", "local", "chuggy", "--", command, ...arguments_],
+  ]);
+  const config = JSON.parse(
+    readFileSync(join(on.home.home, ".claude.json"), "utf8"),
+  ) as {
+    readonly projects: Record<
+      string,
+      { readonly mcpServers: Record<string, unknown> }
+    >;
+  };
+  assert.deepEqual(config.projects[realpathSync(on.home.folder)]?.mcpServers, {
+    chuggy: { type: "stdio", command, args: arguments_, env: {} },
+  });
+  assert.deepEqual(on.installation.writes, []);
+  unasked(on);
+
+  const after = await ran(
+    on,
+    await commanded(done.lines.at(-1)?.slice("next: ".length) ?? ""),
+  );
+  assert.equal(after.lines[0], `site: ${on.installation.site}, signed in`);
+  assert.ok(
+    after.lines.includes(
+      "step: mcp         done     Claude Code here runs chuggy's MCP server for acme/widgets",
+    ),
+    after.stdout,
+  );
+  assert.deepEqual(
+    on.installation.grants.filter((grant) =>
+      grant.startsWith("authorization_code"),
+    ),
+    ["authorization_code granted"],
+  );
+  assert.ok(on.home.held(on.installation.site) === on.installation.renewal());
+});
+
+test("on a machine `mcp` has put the runner package on, the bare command offers a runner having changed nothing, and the command its rule names registers, checks and starts one, with the token one word of one command, and ends on a checklist that says the runner live", async () => {
   const on = await stood();
   const { found, did } = lines(on);
   const offered = await ran(on, []);
@@ -105,7 +176,7 @@ test("on a fresh machine the bare command offers a runner having changed nothing
     `site: ${on.installation.site}, signed in`,
     found.engine,
     found.login,
-    did.package,
+    found.package,
     did.settings,
     did.pool,
     found.check,
@@ -129,11 +200,7 @@ test("on a fresh machine the bare command offers a runner having changed nothing
     .flatMap((call) => call.argv)
     .filter((word) => word.includes(token));
   assert.equal(carrying.length, 1);
-  assert.deepEqual(words(on, "npm"), [
-    ["prefix", "-g"],
-    runnerPackageOffered.installCommand.split(" ").slice(1),
-    ["prefix", "-g"],
-  ]);
+  assert.deepEqual(words(on, "npm"), [["prefix", "-g"]]);
   assert.deepEqual(words(on, "loginctl"), [
     ["show-user", user, "--property", "Linger"],
     ["--no-ask-password", "enable-linger", user],
@@ -185,7 +252,7 @@ test("where the person's chats run on a chat host and they have none, the bare c
   assert.equal(offered.code, 0, offered.stdout);
   assert.match(
     offered.lines.at(-3) ?? "",
-    / two background services of yours that start when you log in: one for the work on your project's tickets, one your chat host, /u,
+    / two background services of yours, run by the runner package, chuggy-linux, that start when you log in: one for the work on your project's tickets, one your chat host, /u,
   );
   const rule = offered.lines.at(-2) ?? "";
   const yes = " only once the person says yes to a runner on this machine.";
@@ -202,7 +269,7 @@ test("where the person's chats run on a chat host and they have none, the bare c
     `site: ${on.installation.site}, signed in`,
     found.engine,
     found.login,
-    did.package,
+    found.package,
     did.settings,
     did.pool,
     found.check,
@@ -238,7 +305,7 @@ test("where the person's chats run on a chat host and they have none, the bare c
     "--pool",
     join(on.machine.pools, chatFile),
   ]);
-  assert.equal(acts(on).filter((act) => act === "install").length, 1);
+  assert.equal(acts(on).filter((act) => act === "install").length, 0);
   assert.ok(existsSync(join(on.machine.units, chatUnit)));
   assert.equal(readFileSync(on.machine.login, "utf8"), machineLoginSecret);
   unasked(on);
@@ -349,51 +416,90 @@ test("a chat host of the person's removed on the My runners page is said, and th
   });
 });
 
-test("a machine whose project's runner was set up on a package older than the first that updates itself has it installed again by the same command, its service restarted onto the new one, and the run finishes the job", async () => {
-  const on = await setUp();
-  const { found, did } = lines(on);
-  const installs = () => words(on, "npm").filter((argv) => argv[0] === "i");
-  const [install] = installs();
-  writeFileSync(
-    join(
-      on.machine.prefix,
-      "lib",
-      "node_modules",
-      "chuggy-linux",
-      "package.json",
-    ),
-    JSON.stringify({ name: "chuggy-linux", version: "0.13.0" }),
-  );
-  for (const project of on.installation.world.projects)
-    project.threads = "Pool";
-  cleared(on);
-  const done = await ran(on);
-  assert.equal(done.code, 0, done.stdout);
-  const command = join(on.machine.prefix, "bin", "chuggy-linux");
-  assert.deepEqual(done.lines, [
-    `site: ${on.installation.site}, signed in`,
-    found.engine,
-    found.settings,
-    found.login,
-    `found: the runner package is installed: chuggy-linux 0.13.0, at ${command}, and chuggy setup needs 0.35.0 or later`,
-    did.package,
-    found.pool,
-    found.check,
-    found.unit,
-    found.linger,
-    did.restarted,
-    found.live,
-    did.chat,
-    found.chatCheck,
-    did.chatUnit,
-    did.chatStarted,
-    found.chatLive,
-    next,
-  ]);
-  assert.deepEqual(installs(), [install]);
-  assert.equal(acts(on).filter((act) => act === "restart").length, 1);
-  assert.deepEqual(on.installation.writes, [chatMint, chatRedemption]);
-  unasked(on);
+/** The ways a machine that was set up can come to have no runner package `runner` can use: one older than the first that updates itself, and none at all. */
+const unpackaged: readonly (readonly [string, (on: Stood) => void])[] = [
+  [
+    "older",
+    (on) => {
+      writeFileSync(
+        join(
+          on.machine.prefix,
+          "lib",
+          "node_modules",
+          "chuggy-linux",
+          "package.json",
+        ),
+        JSON.stringify({ name: "chuggy-linux", version: "0.13.0" }),
+      );
+    },
+  ],
+  [
+    "gone",
+    (on) => {
+      rmSync(join(on.machine.prefix, "bin", "chuggy-linux"));
+    },
+  ],
+];
+
+test("a machine that was set up and has since come to have no runner package runner can use, older or gone, is sent to mcp having changed nothing, which installs it again by the same command, and the run after finishes the job on it", async () => {
+  for (const [how, lose] of unpackaged) {
+    const on = await setUp();
+    const { found, did } = lines(on);
+    const installs = () => words(on, "npm").filter((argv) => argv[0] === "i");
+    lose(on);
+    for (const project of on.installation.world.projects)
+      project.threads = "Pool";
+    cleared(on);
+    const stopped = await ran(on);
+    assert.equal(stopped.code, 0, `${how}: ${stopped.stdout}`);
+    assert.equal(
+      stopped.lines.at(-2),
+      `rule: Run node ${program} mcp ${flags} only once the person says yes to chuggy-linux and chuggy's MCP server on this machine.`,
+      how,
+    );
+    assert.deepEqual(acts(on), ["services", "docker"], how);
+    assert.deepEqual(on.installation.writes, [], how);
+
+    cleared(on);
+    const served = await ran(on, mcp);
+    assert.equal(served.code, 0, `${how}: ${served.stdout}`);
+    assert.ok(served.lines.includes(did.package), served.stdout);
+    assert.deepEqual(
+      installs(),
+      [runnerPackageOffered.installCommand.split(" ").slice(1)],
+      how,
+    );
+
+    cleared(on);
+    const done = await ran(on);
+    assert.equal(done.code, 0, `${how}: ${done.stdout}`);
+    assert.deepEqual(
+      done.lines,
+      [
+        `site: ${on.installation.site}, signed in`,
+        found.engine,
+        found.settings,
+        found.login,
+        found.package,
+        found.pool,
+        found.check,
+        found.unit,
+        found.linger,
+        found.running,
+        found.live,
+        did.chat,
+        found.chatCheck,
+        did.chatUnit,
+        did.chatStarted,
+        found.chatLive,
+        next,
+      ],
+      how,
+    );
+    assert.deepEqual(installs(), [], how);
+    assert.deepEqual(on.installation.writes, [chatMint, chatRedemption], how);
+    unasked(on);
+  }
 });
 
 type Did = ReturnType<typeof lines>["did"];
@@ -480,22 +586,6 @@ const losses: readonly Loss[] = [
     sent: [mint, redemption],
   },
   {
-    lost: "the package",
-    lose: (on) => {
-      rmSync(join(on.machine.prefix, "bin", "chuggy-linux"));
-    },
-    did: (did) => [did.package, did.restarted],
-    acts: [
-      ...probes.slice(0, 2),
-      "install",
-      "doctor",
-      "service",
-      ...probes.slice(3),
-      ...restarted,
-    ],
-    sent: [],
-  },
-  {
     lost: "its settings",
     lose: (on) => {
       rmSync(on.machine.settings);
@@ -526,11 +616,13 @@ test("a machine that was set up and has since lost one thing is given that thing
   unasked(on);
 });
 
-test("where the machine's own prefix is not this person's to write, the package goes under their own, by the console's install command with that prefix named, and no password is asked for", async () => {
-  const on = await stood();
+test("where the machine's own prefix is not this person's to write, mcp puts the package under their own, by the console's install command with that prefix named, and no password is asked for", async () => {
+  const on = await stood("InCluster", false);
   const sealed = join(on.machine.prefix, "bin");
   chmodSync(sealed, 0o555);
   try {
+    const served = await ran(on, mcp);
+    assert.equal(served.code, 0, served.stdout);
     const done = await ran(on);
     assert.equal(done.code, 0, done.stdout);
     const address = runnerPackageOffered.installCommand.split(" ").at(-1);
@@ -543,8 +635,14 @@ test("where the machine's own prefix is not this person's to write, the package 
     ]);
     const own = join(on.machine.own, "bin", "chuggy-linux");
     assert.ok(
-      done.lines.includes(
+      served.lines.includes(
         `did: installed the runner package, chuggy-linux 0.35.0, at ${own}`,
+      ),
+      served.stdout,
+    );
+    assert.ok(
+      done.lines.includes(
+        `found: the runner package is installed: chuggy-linux 0.35.0, at ${own}`,
       ),
       done.stdout,
     );
@@ -560,7 +658,9 @@ test("where the person keeps their configuration in a directory of their own cho
   const on = await stood();
   const config = join(on.home.beside, "config");
   mkdirSync(join(config, "chuggy-linux", "claude"), { recursive: true });
+  mkdirSync(join(config, "chuggy"));
   renameSync(on.machine.login, join(config, "chuggy-linux", "claude", "token"));
+  renameSync(on.home.store, join(config, "chuggy", "sign-ins"));
   const done = await ran(on, runner, { XDG_CONFIG_HOME: config });
   assert.equal(done.code, 0, done.stdout);
   assert.equal(done.lines.at(-1), next);

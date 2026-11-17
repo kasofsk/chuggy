@@ -4,9 +4,9 @@
 /** Each message's variables, by name. */
 export interface RunnersCopy {
   readonly "runners-title": Record<never, never>;
-  readonly "runners-about": Record<never, never>;
-  readonly "runners-none": Record<never, never>;
-  readonly "runners-caption": Record<never, never>;
+  readonly "runners-pools-title": Record<never, never>;
+  readonly "runners-pools-about": Record<never, never>;
+  readonly "runners-pools-none": Record<never, never>;
   readonly "runners-col-runner": Record<never, never>;
   readonly "runners-col-platforms": Record<never, never>;
   readonly "runners-col-version": Record<never, never>;
@@ -147,11 +147,14 @@ export interface RunnersCopy {
   readonly "runners-chat-host-removal": {
     readonly short: unknown;
   };
-  readonly "runners-chat-host-token-about": Record<never, never>;
-  readonly "runners-chat-host-copy-token": Record<never, never>;
+  readonly "runners-chat-host-claude-code-about": Record<never, never>;
   readonly "runners-chat-host-replaces": {
     readonly short: unknown;
   };
+  readonly "runners-chat-host-threads": {
+    readonly capabilities: unknown;
+  };
+  readonly "runners-chat-host-threads-whole": Record<never, never>;
   readonly "runners-member-label": Record<never, never>;
   readonly "runners-member-question": {
     readonly name: unknown;
@@ -163,6 +166,7 @@ export interface RunnersCopy {
   readonly "runners-member-none": Record<never, never>;
   readonly "runners-wait-waiting": Record<never, never>;
   readonly "runners-wait-offline": Record<never, never>;
+  readonly "runners-wait-unable": Record<never, never>;
   readonly "runners-fallback-title": Record<never, never>;
   readonly "runners-fallback-about": Record<never, never>;
   readonly "runners-fallback-none": Record<never, never>;
@@ -171,8 +175,7 @@ export interface RunnersCopy {
   readonly "runners-fallback-none-about": Record<never, never>;
   readonly "runners-fallback-strict-about": Record<never, never>;
   readonly "runners-fallback-preferred-about": Record<never, never>;
-  readonly "runners-writing": Record<never, never>;
-  readonly "runners-written": Record<never, never>;
+  readonly "runners-fallback-saved": Record<never, never>;
   readonly "runners-placement-title": Record<never, never>;
   readonly "runners-placement-about": Record<never, never>;
   readonly "runners-placement-col-kind": Record<never, never>;
@@ -183,6 +186,7 @@ export interface RunnersCopy {
   readonly "runners-placement-evaluation": Record<never, never>;
   readonly "runners-placement-chat": Record<never, never>;
   readonly "runners-placement-lead": Record<never, never>;
+  readonly "runners-placement-saved": Record<never, never>;
   readonly "runners-placement-landed": Record<never, never>;
   readonly "runners-placement-unhosted": Record<never, never>;
 }

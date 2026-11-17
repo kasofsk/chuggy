@@ -22,7 +22,12 @@ import { InboxScreen } from "../app/browser/Inbox.tsx";
 import type { ConsoleStore } from "../app/browser/store.ts";
 import { consoleQueryClient } from "../app/core/consoleWrite.ts";
 import { consoleWriteUnseenOf } from "../app/browser/consoleWriteUnseen.ts";
-import { inboxAsked, inboxBody, inboxEntry } from "./inboxFixture.ts";
+import {
+  inboxAsked,
+  inboxBody,
+  inboxEntry,
+  inboxItemOf,
+} from "./inboxFixture.ts";
 import {
   abilitiesEvery,
   abilitiesFetch,
@@ -186,15 +191,6 @@ function drawProject(served: {
   return { reviewed, client, store };
 }
 
-/** The row a ticket's number link sits in. */
-function row(ticket: number): HTMLElement {
-  const found = screen
-    .getByRole("link", { name: String(ticket) })
-    .closest("tr");
-  if (found === null) throw new Error(`no row for ticket ${String(ticket)}`);
-  return found;
-}
-
 function said(): string | undefined {
   return screen.queryByRole("status")?.textContent ?? undefined;
 }
@@ -203,15 +199,17 @@ test("each ticket a held decision names is a row with Approve and Reject", async
   drawProject({ held: [both] });
   await settled();
   for (const ticket of [7, 8]) {
-    expect(within(row(ticket)).getByText("Proposal")).toBeDefined();
+    expect(within(inboxItemOf(ticket)).getByText("Proposal")).toBeDefined();
     expect(
-      within(row(ticket)).getByRole("button", { name: "approve" }),
+      within(inboxItemOf(ticket)).getByRole("button", { name: "approve" }),
     ).toBeDefined();
     expect(
-      within(row(ticket)).getByRole("button", { name: "reject" }),
+      within(inboxItemOf(ticket)).getByRole("button", { name: "reject" }),
     ).toBeDefined();
     expect(
-      within(row(ticket)).queryByText("no action can be sent from here yet"),
+      within(inboxItemOf(ticket)).queryByText(
+        "no action can be sent from here yet",
+      ),
     ).toBeNull();
   }
 });
@@ -221,7 +219,7 @@ test("approve answers the decision whole, and its rows leave when the read no lo
   const api = drawProject({ held: [both] });
   await settled();
   await turned(() => {
-    within(row(8)).getByRole("button", { name: "approve" }).click();
+    within(inboxItemOf(8)).getByRole("button", { name: "approve" }).click();
   });
   await settled();
   expect(api.reviewed.map((review) => review.body)).toStrictEqual([
@@ -241,7 +239,7 @@ test("reject asks first, sends nothing on Cancel, and sends the note it was give
   const ask = () =>
     screen.queryByRole("group", { name: "Reject this proposal?" });
   await turned(() => {
-    within(row(7)).getByRole("button", { name: "reject" }).click();
+    within(inboxItemOf(7)).getByRole("button", { name: "reject" }).click();
   });
   const group = ask();
   if (group === null) throw new Error("reject opened no ask");
@@ -252,7 +250,7 @@ test("reject asks first, sends nothing on Cancel, and sends the note it was give
   expect(api.reviewed).toStrictEqual([]);
 
   await turned(() => {
-    within(row(7)).getByRole("button", { name: "reject" }).click();
+    within(inboxItemOf(7)).getByRole("button", { name: "reject" }).click();
   });
   fireEvent.change(screen.getByRole("textbox", { name: "Note" }), {
     target: { value: "  after the migration " },
@@ -273,12 +271,12 @@ test("a decision being answered cannot be answered again from either row", async
   const api = drawProject({ held: [both], unanswered: true });
   await settled();
   await turned(() => {
-    within(row(7)).getByRole("button", { name: "approve" }).click();
+    within(inboxItemOf(7)).getByRole("button", { name: "approve" }).click();
   });
   for (const ticket of [7, 8])
     for (const name of ["approve", "reject"])
       expect(
-        within(row(ticket))
+        within(inboxItemOf(ticket))
           .getByRole("button", { name })
           .hasAttribute("disabled"),
       ).toBe(true);
@@ -290,12 +288,12 @@ test("an answered decision cannot be answered again before the read that removes
   const api = drawProject({ held: [both], rereadHeld: true });
   await settled();
   await turned(() => {
-    within(row(7)).getByRole("button", { name: "approve" }).click();
+    within(inboxItemOf(7)).getByRole("button", { name: "approve" }).click();
   });
   await settled();
   expect(said()).toBe("Proposal 7, 8 · Approved");
   await turned(() => {
-    within(row(8)).getByRole("button", { name: "approve" }).click();
+    within(inboxItemOf(8)).getByRole("button", { name: "approve" }).click();
   });
   await settled();
   expect(api.reviewed.length).toBe(1);
@@ -308,7 +306,7 @@ test("an answer is still said once its review has been collected", async () => {
   const api = drawProject({ held: [both] });
   await settled();
   await turned(() => {
-    within(row(7)).getByRole("button", { name: "approve" }).click();
+    within(inboxItemOf(7)).getByRole("button", { name: "approve" }).click();
   });
   await settled();
   await turned(() => {
@@ -331,7 +329,7 @@ test("an inbox drawn while a review is out says its answer", async () => {
   });
   await settled();
   await turned(() => {
-    within(row(7)).getByRole("button", { name: "approve" }).click();
+    within(inboxItemOf(7)).getByRole("button", { name: "approve" }).click();
   });
   await settled();
   cleanup();
@@ -351,14 +349,14 @@ test("an answer said by an inbox that has gone is not said by the next", async (
   });
   await settled();
   await turned(() => {
-    within(row(7)).getByRole("button", { name: "approve" }).click();
+    within(inboxItemOf(7)).getByRole("button", { name: "approve" }).click();
   });
   await settled();
   expect(said()).toBe("Proposal 7, 8 · Approved");
   cleanup();
   inboxDrawn(api.client, api.store);
   await settled();
-  expect(row(9)).toBeDefined();
+  expect(inboxItemOf(9)).toBeDefined();
   expect(said()).toBeUndefined();
 });
 
@@ -366,7 +364,7 @@ test("a note is held to what the wire takes as it is typed", async () => {
   drawProject({ held: [both] });
   await settled();
   await turned(() => {
-    within(row(7)).getByRole("button", { name: "reject" }).click();
+    within(inboxItemOf(7)).getByRole("button", { name: "reject" }).click();
   });
   const note = screen.getByRole("textbox", { name: "Note" });
   fireEvent.change(note, {
@@ -381,7 +379,7 @@ test("a decision someone else answered first reads as stale, and its rows leave"
   const api = drawProject({ held: [both], answeredElsewhere: true });
   await settled();
   await turned(() => {
-    within(row(7)).getByRole("button", { name: "approve" }).click();
+    within(inboxItemOf(7)).getByRole("button", { name: "approve" }).click();
   });
   await settled();
   expect(api.reviewed.length).toBe(1);
@@ -393,12 +391,12 @@ test("a review the server failed says why, and leaves the decision to answer aga
   drawProject({ held: [both], failing: true });
   await settled();
   await turned(() => {
-    within(row(7)).getByRole("button", { name: "approve" }).click();
+    within(inboxItemOf(7)).getByRole("button", { name: "approve" }).click();
   });
   await settled();
   expect(said()).toBe("Proposal 7, 8 · Failed · InternalError");
   expect(
-    within(row(7))
+    within(inboxItemOf(7))
       .getByRole("button", { name: "approve" })
       .hasAttribute("disabled"),
   ).toBe(false);
@@ -466,7 +464,7 @@ test("a refused review the notice says is no toast", async () => {
   const api = drawRefusedBeside();
   await settled();
   await turned(() => {
-    within(row(7)).getByRole("button", { name: "approve" }).click();
+    within(inboxItemOf(7)).getByRole("button", { name: "approve" }).click();
   });
   await settled();
   await turned(api.reread);
@@ -480,11 +478,11 @@ test("a refused review whose notice a later answer took is the shell's toast", a
   const api = drawRefusedBeside();
   await settled();
   await turned(() => {
-    within(row(7)).getByRole("button", { name: "approve" }).click();
+    within(inboxItemOf(7)).getByRole("button", { name: "approve" }).click();
   });
   await settled();
   await turned(() => {
-    within(row(9)).getByRole("button", { name: "approve" }).click();
+    within(inboxItemOf(9)).getByRole("button", { name: "approve" }).click();
   });
   await settled();
   expect(said()).toBe("Proposal 9 · Approved");

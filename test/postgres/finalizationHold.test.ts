@@ -20,7 +20,6 @@ import {
   journalledRevocation,
   migratedDatabase,
   renamedAttemptFailed,
-  renamedAttemptPrepared,
   renamedFinalization,
 } from "./migrationHarness.ts";
 
@@ -67,25 +66,6 @@ test("the finalizer's door concludes at either spelling of the outcome it needs 
   });
 });
 
-test("the approval door binds to a ticket the projection holds at the renamed phase", async () => {
-  await migratedDatabase("rename_approval", async (subject) => {
-    await subject.query(
-      `${deletionPartition}\n${renamedFinalization(renamedAttemptPrepared)};
-       INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
-       VALUES('tenant-5','project-5',1,'Finalization',1)`,
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT result,action FROM request_finalization_approval
-             ('tenant-5','project-5','attempt-5','action-5','epoch-5')`,
-        )
-      ).rows,
-      [{ result: "Requested", action: "action-5" }],
-    );
-  });
-});
-
 /** A claimed request with no attempt behind it, which is what a held pass leaves. */
 const heldRequest = `${deletionJournalRow(1, journalledRevocation)};
   UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
@@ -98,7 +78,7 @@ const heldRequest = `${deletionJournalRow(1, journalledRevocation)};
 
 /** The hold door, by the signature a privilege is asked about. */
 const heldFunction =
-  "record_finalization_hold(text,text,text,text,text,bigint,bigint,text)";
+  "record_finalization_hold(text,text,text,text,text,bigint,bigint,text,text[],boolean)";
 
 /** The kind the cases below hold a request at, and the one they move it to. */
 const heldKind = "TargetUnreadable";
@@ -126,14 +106,25 @@ async function heldRecord(
     generation: 1,
   },
   request = "request-5",
+  refused: {
+    readonly paths: readonly string[];
+    readonly truncated: boolean;
+  } | null = null,
 ): Promise<
   readonly { readonly result: string; readonly hold_passes: number }[]
 > {
   return (
     await subject.query<{ result: string; hold_passes: number }>(
       `SELECT result,hold_passes FROM record_finalization_hold
-         ('tenant-5','project-5',$1,$2,$3,$4,1,'epoch-5')`,
-      [request, kind, claim.owner, claim.generation],
+         ('tenant-5','project-5',$1,$2,$3,$4,1,'epoch-5',$5,$6)`,
+      [
+        request,
+        kind,
+        claim.owner,
+        claim.generation,
+        refused === null ? null : [...refused.paths],
+        refused?.truncated ?? null,
+      ],
     )
   ).rows;
 }
@@ -326,6 +317,58 @@ test("a recorded hold counts its passes, restarts on another kind and clears on 
   });
 });
 
+test("a hold no job can clear records the files it is over, which go with it and are refused without it", async () => {
+  await migratedDatabase("unavailable_refused", async (subject) => {
+    await subject.query(`${deletionPartition}\n${heldRequest}`);
+    const refused = { paths: [".github/workflows/ci.yml"], truncated: false };
+    const files = async (): Promise<unknown> =>
+      (
+        await subject.query(
+          "SELECT hold_paths,hold_paths_truncated FROM finalization_request WHERE request='request-5'",
+        )
+      ).rows[0];
+    assert.deepEqual(
+      await heldRecord(
+        subject,
+        "TargetPathsRefused",
+        undefined,
+        "request-5",
+        refused,
+      ),
+      [{ result: "Recorded", hold_passes: 1 }],
+    );
+    assert.deepEqual(await files(), {
+      hold_paths: refused.paths,
+      hold_paths_truncated: false,
+    });
+    assert.deepEqual(await heldRecord(subject, heldKind), [
+      { result: "Recorded", hold_passes: 1 },
+    ]);
+    assert.deepEqual(await files(), {
+      hold_paths: null,
+      hold_paths_truncated: null,
+    });
+    await assert.rejects(
+      heldRecord(subject, "TargetPathsRefused"),
+      /finalization_request_hold_paths_are_whole/u,
+      "the kind without its files",
+    );
+    await assert.rejects(
+      heldRecord(subject, heldKind, undefined, "request-5", refused),
+      /finalization_request_hold_paths_are_whole/u,
+      "files beside another kind",
+    );
+    await assert.rejects(
+      heldRecord(subject, "TargetPathsRefused", undefined, "request-5", {
+        paths: [],
+        truncated: false,
+      }),
+      /finalization_request_hold_paths_are_whole/u,
+      "no file at all",
+    );
+  });
+});
+
 test("the hold is recorded by the pass holding the claim and by nothing else", async () => {
   await migratedDatabase("unavailable_claim", async (subject) => {
     await subject.query(`${deletionPartition}\n${heldRequest}`);
@@ -474,33 +517,6 @@ test("the finalizer records a hold the api role reads and cannot record itself",
         )
       ).rows[0]?.owner,
       boundaryOwnerRole,
-    );
-  });
-});
-
-test("the approval door writes a desk task at no escalation", async () => {
-  await migratedDatabase("escalation_approval", async (subject) => {
-    await subject.query(
-      `${deletionPartition}\n${renamedFinalization(renamedAttemptPrepared)};
-       INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
-       VALUES('tenant-5','project-5',1,'Finalization',1)`,
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT result,action FROM request_finalization_approval
-             ('tenant-5','project-5','attempt-5','action-5','epoch-5')`,
-        )
-      ).rows,
-      [{ result: "Requested", action: "action-5" }],
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT escalation FROM native_action WHERE action='action-5'",
-        )
-      ).rows,
-      [{ escalation: "NoEscalation" }],
     );
   });
 });

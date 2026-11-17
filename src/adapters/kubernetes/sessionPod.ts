@@ -42,16 +42,14 @@ import {
   workerWorkspaceDirectory,
   workerWorkspaceVariable,
 } from "../../contract/workerEnvironment.ts";
-import type {
-  SessionBounds,
-  SessionTaskDocument,
-} from "../../contract/workerTask.ts";
+import type { SessionTaskDocument } from "../../contract/workerTask.ts";
 import type { SessionAttemptId } from "../../interpreter/agentSession.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { SessionPlacement } from "../../interpreter/sessionScheduler.ts";
 import {
   sessionTask,
   sessionTaskInvocation,
+  type SessionSiteBounds,
 } from "../../interpreter/workerTask.ts";
 import {
   checkedKubernetesPodSite,
@@ -78,7 +76,7 @@ import {
  * task document rather than read from the image, so what a pod ran under is what
  * this deployment named.
  */
-export const kubernetesSessionBoundsDefaults: SessionBounds = {
+export const kubernetesSessionBoundsDefaults: SessionSiteBounds = {
   mailboxPollMs: 1_000,
   idleMs: 300_000,
   resultDrainMs: 2_000,
@@ -117,7 +115,7 @@ function kubernetesSessionBudget(value: number, what: string): number {
  * that the keys are all held.
  */
 const kubernetesSessionBoundChecks: {
-  readonly [Bound in keyof SessionBounds]: (
+  readonly [Bound in keyof SessionSiteBounds]: (
     value: number,
     what: string,
   ) => number;
@@ -133,7 +131,7 @@ const kubernetesSessionBoundChecks: {
 /** Every bound, read off the checks so the two can never name different sets. */
 const kubernetesSessionBoundNames = Object.keys(
   kubernetesSessionBoundChecks,
-) as readonly (keyof SessionBounds)[];
+) as readonly (keyof SessionSiteBounds)[];
 
 /** Everything a deployment supplies the session-launch adapter beyond the shared site. */
 export interface KubernetesSessionLaunchConfig extends KubernetesPodSite {
@@ -143,7 +141,7 @@ export interface KubernetesSessionLaunchConfig extends KubernetesPodSite {
   readonly resources: KubernetesResourceBudget;
   readonly activeDeadlineSecs: number;
   readonly environment: Readonly<Record<string, string>>;
-  readonly bounds: SessionBounds;
+  readonly bounds: SessionSiteBounds;
   /** Which model every session of this site speaks to, which is a site choice and not a session's. */
   readonly model: string;
   /**
@@ -210,7 +208,7 @@ export function checkedKubernetesSessionLaunchConfig(
     );
   for (const [credential, mount] of Object.entries(config.credentialMounts))
     for (const [bound, value] of Object.entries(mount.sessionBounds ?? {}))
-      kubernetesSessionBoundChecks[bound as keyof SessionBounds](
+      kubernetesSessionBoundChecks[bound as keyof SessionSiteBounds](
         value,
         `session credential ${credential} ${bound}`,
       );
@@ -269,7 +267,7 @@ export function kubernetesSessionSecret(
 function kubernetesSessionBounds(
   config: KubernetesSessionLaunchConfig,
   placement: SessionPlacement,
-): SessionBounds {
+): SessionSiteBounds {
   const slot = config.credentialMounts[placement.credentialSlot]?.sessionBounds;
   return slot === undefined ? config.bounds : { ...config.bounds, ...slot };
 }

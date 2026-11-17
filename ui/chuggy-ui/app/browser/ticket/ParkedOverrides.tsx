@@ -115,6 +115,7 @@ function ParkedOverridesNote(props: {
         : { more: text(operationRefusalSentence(refusal)) })}
     >
       <Tooltip
+        trigger="abbreviation"
         text={
           step.step === "Abandoned"
             ? operationAbandonWords(step.cause).detail

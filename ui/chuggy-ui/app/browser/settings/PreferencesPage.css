@@ -1,0 +1,82 @@
+/* The preferences page: its sections in one column, a section's choices
+   stacked in it, each choice's options wrapping onto as many rows as the
+   column needs. In a narrow column every option, and each action beside the
+   theme picker, is given a finger's height, an option's ring still 1em and
+   drawn in the middle of it, where the focus ring is drawn too. */
+
+@layer page {
+  .preferences {
+    container-type: inline-size;
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .preferences-section {
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .preferences-section [role="radiogroup"] {
+    flex-wrap: wrap;
+  }
+
+  .preferences-theme {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .preferences-theme-making {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .preferences-theme-applies {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: var(--space-2);
+  }
+
+  @container (max-width: 40em) {
+    .preferences-section .radio-item {
+      position: relative;
+      width: var(--height-touch);
+      height: var(--height-touch);
+      background: transparent;
+      border: 0;
+    }
+
+    .preferences-section .radio-item::before {
+      content: "";
+      position: absolute;
+      inset: calc((var(--height-touch) - 1em) / 2);
+      background: var(--surface-1);
+      border: var(--hairline) solid var(--edge-control);
+      border-radius: var(--radius-circle);
+    }
+
+    .preferences-section .radio-mark {
+      position: relative;
+    }
+
+    .preferences-section .radio-item:focus-visible {
+      box-shadow: none;
+    }
+
+    .preferences-section .radio-item:focus-visible::before {
+      box-shadow: var(--ring-focus);
+    }
+
+    .preferences-section [role="radiogroup"] {
+      column-gap: var(--space-2);
+    }
+
+    .preferences-section [role="radiogroup"] > span {
+      gap: 0;
+    }
+
+    .preferences-theme-making .btn {
+      min-height: var(--height-touch);
+    }
+  }
+}

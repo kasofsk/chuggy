@@ -3,6 +3,9 @@ import test from "node:test";
 
 import { poolClientTokens } from "../../src/adapters/http/poolTokens.ts";
 import {
+  workerContractFeatures,
+  workerContractFeaturesHeader,
+  workerContractFeaturesOf,
   workerContractHeader,
   workerContractRelease,
 } from "../../src/contract/workerContract.ts";
@@ -459,10 +462,14 @@ test("a token the plane refused is minted again on the next acquire", async () =
   assert.equal(granted, 2);
 });
 
-test("a poll and every settlement name the release this client was built with", async () => {
+test("a poll and every settlement name the release this client was built with and every feature in the roster", async () => {
   const named: string[] = [];
+  const listed: (readonly string[] | undefined)[] = [];
   const plane = poolPlaneClient(planeSettings, (_input, init) => {
     named.push(sentHeader(init, workerContractHeader));
+    listed.push(
+      workerContractFeaturesOf(sentHeader(init, workerContractFeaturesHeader)),
+    );
     return Promise.resolve(
       answered(
         200,
@@ -473,6 +480,8 @@ test("a poll and every settlement name the release this client was built with", 
   await plane.poll("pool-token", [], 1, 0);
   await plane.settle("pool-token", "one", { outcome: "Accepted" });
   assert.deepEqual(named, [workerContractRelease, workerContractRelease]);
+  const roster = Object.keys(workerContractFeatures);
+  assert.deepEqual(listed, [roster, roster]);
 });
 
 test("a plane refusing this client's release ends the pool rather than losing an assignment", async () => {
