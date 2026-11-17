@@ -28,6 +28,21 @@ export function projectImageSource(read: ProjectArtifactResponse): string {
   return `data:${read.mediaType};base64,${read.content}`;
 }
 
+/** An image's read as the `data:` URI it is drawn from, and whether the read
+ * has failed rather than not yet answered. */
+export function useProjectImageSource(
+  partition: PartitionIdentity,
+  artifact: string,
+): { readonly src: string | undefined; readonly failed: boolean } {
+  const state = usePanelState(projectImageQuery(partition, artifact));
+  if (state.state === "Ready")
+    return {
+      src: projectImageSource(state.value),
+      failed: false,
+    };
+  return { src: undefined, failed: state.state !== "Pending" };
+}
+
 export function ProjectImage(props: {
   readonly partition: PartitionIdentity;
   readonly artifact: string;

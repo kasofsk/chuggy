@@ -84,6 +84,7 @@ import {
   personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
   projectAbilitiesResponseSchema,
+  projectImagesResponseSchema,
   projectInventoryResponseSchema,
   projectOwnerFallbackResponseSchema,
   projectRepositoriesResponseSchema,
@@ -623,6 +624,11 @@ const consoleReads: readonly ConsoleRead[] = [
       layer: "BuiltInDefault",
       layers: {},
     }),
+  },
+  {
+    path: consoleReadAt(`${projectPath}/appearance/images`),
+    schema: projectImagesResponseSchema,
+    body: () => ({ administers: false }),
   },
   {
     path: consoleReadAt("/api/v1/appearance/choice"),

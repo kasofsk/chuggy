@@ -103,6 +103,7 @@ import type { ListFilterMark } from "./ui/ListFilter.tsx";
 import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { persistentStore } from "./ports.ts";
+import { ProjectBanner } from "./ProjectBanner.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { useProjectPeople } from "./settings/projectPermissionsResource.ts";
 import { ScreenTitle } from "./shell/slots.tsx";
@@ -860,9 +861,9 @@ function ProjectTableTitle(): ReactNode {
   return <ScreenTitle>{text({ id: "project-table-title" })}</ScreenTitle>;
 }
 
-/** The page's section, holding the list or the line that stands for it,
- * drawn knowing whether the section is wide, which is the width the bar is
- * laid out against. */
+/** The page's section, holding the project's banner over the list or the
+ * line that stands for it, drawn knowing whether the section is wide, which
+ * is the width the bar is laid out against. */
 function ProjectTableSection(props: {
   readonly partition: PartitionIdentity;
   readonly children: (wide: boolean) => ReactNode;
@@ -877,6 +878,7 @@ function ProjectTableSection(props: {
       data-fills-width
     >
       <ProjectTableTitle />
+      <ProjectBanner partition={props.partition} />
       <RepositoryImportRefusedNotice partition={props.partition} />
       {props.children(wide === true)}
     </section>
