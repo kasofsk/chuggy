@@ -1,11 +1,11 @@
 /**
  * The one property the inbox screen owns that no pure function can express: an
- * answered row stays until the project says it moved.
+ * answered item stays until the project says it moved.
  *
  * The core has no seam for the answer path — the click, the follow and the
  * cache are shell code by construction — so this is the lowest tier that can
  * express it, and the providers are `screenHarness.tsx`'s. The operation stays
- * pending, so the row is looked at while its answer is still in flight.
+ * pending, so the item is looked at while its answer is still in flight.
  */
 
 import { QueryClient } from "@tanstack/react-query";
@@ -170,9 +170,10 @@ function drawInboxOver(api: ApiDouble): ReturnType<typeof openedStream> {
   return server;
 }
 
-test("a row names the ticket it is about beside its number", async () => {
+test("an item names the ticket it is about after its number", async () => {
   drawInbox(served);
-  expect(await screen.findByText("Serve the reason")).toBeDefined();
+
+  expect(await screen.findByText("#4 Serve the reason")).toBeDefined();
 });
 
 test("an answered row stays until a Ticket frame moves it out of the section", async () => {
@@ -210,14 +211,15 @@ test("an answered row stays until a Ticket frame moves it out of the section", a
   expect(screen.getByText("Inbox is clear")).toBeDefined();
 });
 
-/** Revoke ends the ticket for good, so a row asks before it sends one: the
- * press and Cancel send nothing, and the ask stays, busy, once it has. */
-test("revoke asks before it is sent, and only the ask's own button sends it", async () => {
+/** Revoke ends the ticket for good, so an item asks in a dialog before it
+ * sends one: the press and Cancel send nothing, and once the dialog's own
+ * button has sent it no answer of the item can be pressed again. */
+test("revoke asks in a dialog before it is sent, and only the dialog's own button sends it", async () => {
   waiting.held = true;
   const api = drawInbox(served);
   await settled();
   const ask = (): HTMLElement | null =>
-    screen.queryByRole("group", { name: "Revoke this ticket?" });
+    screen.queryByRole("dialog", { name: "Revoke this ticket?" });
 
   await turned(() => {
     screen.getByRole("button", { name: "revoke" }).click();
@@ -241,11 +243,11 @@ test("revoke asks before it is sent, and only the ask's own button sends it", as
   expect(api.submitted()).toMatchObject({
     mutation: { mutation: "RevokeTicket", ticket: 4 },
   });
-  expect(
-    screen
-      .getByRole("button", { name: "Revoke ticket" })
-      .hasAttribute("disabled"),
-  ).toBe(true);
+  expect(ask()).toBeNull();
+  for (const name of ["resume", "revoke"])
+    expect(screen.getByRole("button", { name }).hasAttribute("disabled")).toBe(
+      true,
+    );
 });
 
 /** The bar's current entry already says Inbox and how many it holds, so the
@@ -271,30 +273,38 @@ test("an answer's button still opens the sentence it sends", async () => {
 
 /**
  * A refused ticket keeps its phase and has no open question behind it, so the
- * reason the refusal names is what the reader came for.
+ * reason the refusal names is what the reader came for, and it is in the item
+ * rather than behind a hover.
  */
-test("a ticket the lead refused is a row of its own, marked and reasoned", async () => {
+test("a ticket the lead refused is an item of its own, marked, its reason in the item", async () => {
   drawInbox(servedWithRefusal);
   await settled();
-  expect(screen.getByRole("link", { name: "42" })).toBeDefined();
-  const trigger = screen.getByText("Standing").closest('[tabindex="0"]');
-  if (trigger === null) throw new Error("no tooltip trigger around Standing");
-  fireEvent.focus(trigger);
-  expect((await screen.findByRole("tooltip")).textContent).toBe(
-    "the brief names no reference",
-  );
+  const item = screen
+    .getByRole("heading", { name: "Lead will not dispatch this ticket" })
+    .closest("li");
+  if (item === null) throw new Error("no item for the refusal");
+  expect(within(item).getByText("#42")).toBeDefined();
+  expect(within(item).getByText("Standing")).toBeDefined();
+  expect(
+    within(item)
+      .getByText("the brief names no reference")
+      .closest("[tabindex]"),
+  ).toBeNull();
 });
 
 /** The served policy refuses `style-src` but `'self'`, so nothing this screen
- * draws — a tooltip open included — may append a runtime style element. */
+ * draws — a tooltip or the Revoke dialog open included — may append a runtime
+ * style element. */
 test("nothing the inbox screen draws is a runtime style element", async () => {
   drawInbox(servedWithRefusal);
   await settled();
   expect(document.querySelectorAll("style").length).toBe(0);
-  const trigger = screen.getByText("Standing").closest('[tabindex="0"]');
-  if (trigger === null) throw new Error("no tooltip trigger around Standing");
-  fireEvent.focus(trigger);
+  fireEvent.focus(screen.getByRole("button", { name: "resume" }));
   await screen.findByRole("tooltip");
+  await turned(() => {
+    screen.getByRole("button", { name: "revoke" }).click();
+  });
+  expect(screen.getByRole("dialog")).toBeDefined();
   expect(document.querySelectorAll("style").length).toBe(0);
 });
 
@@ -399,14 +409,14 @@ test("a ticket escalating while the inbox is open draws how its last run ended",
     );
   });
   await settled();
-  expect(screen.getByText("Serve the reason")).toBeDefined();
+  expect(screen.getByText("#4 Serve the reason")).toBeDefined();
   expect(screen.getByText("Failed").className).toContain("pill-fail");
 });
 
 test("a reader who may not mutate keeps the row and is offered no answer", async () => {
   drawInbox(served, abilitiesOver({ ...abilitiesEvery, mutate: false }));
   await settled();
-  expect(screen.getByText("Serve the reason")).toBeDefined();
+  expect(screen.getByText("#4 Serve the reason")).toBeDefined();
   expect(screen.queryByRole("button", { name: "resume" })).toBeNull();
   expect(screen.queryByRole("button", { name: "revoke" })).toBeNull();
 });
@@ -454,7 +464,7 @@ test("a retired binding's refused import raises no notice", async () => {
     ),
   );
   await settled();
-  expect(await screen.findByText("Serve the reason")).toBeDefined();
+  expect(await screen.findByText("#4 Serve the reason")).toBeDefined();
   expect(importRefusedNotice()).toBeNull();
 });
 
@@ -608,16 +618,16 @@ test("a more pressed while the inbox is read again keeps its page and a frame fo
   expect(screen.getByText("Failed")).toBeDefined();
   const pressedAt = drawn.asked.length;
   await press("more");
-  expect(screen.getByText("Serve the second reason")).toBeDefined();
+  expect(screen.getByText("#5 Serve the second reason")).toBeDefined();
   expect(screen.getByText("Failed")).toBeDefined();
   const [stale, restarted] = drawn.holds;
   stale?.release(answer({}));
   await settled();
-  expect(screen.getByText("Serve the second reason")).toBeDefined();
+  expect(screen.getByText("#5 Serve the second reason")).toBeDefined();
   restarted?.release(answer({}));
   await settled();
-  expect(screen.getByText("Serve the reason")).toBeDefined();
-  expect(screen.getByText("Serve the second reason")).toBeDefined();
+  expect(screen.getByText("#4 Serve the reason")).toBeDefined();
+  expect(screen.getByText("#5 Serve the second reason")).toBeDefined();
   expect(screen.getByText("Failed")).toBeDefined();
   expect(drawn.asked.slice(pressedAt)).toStrictEqual([
     "inbox-2",
@@ -631,7 +641,7 @@ test("a more pressed while no read of the inbox is running starts none", async (
   await settled();
   const pressedAt = drawn.asked.length;
   await press("more");
-  expect(screen.getByText("Serve the second reason")).toBeDefined();
+  expect(screen.getByText("#5 Serve the second reason")).toBeDefined();
   expect(drawn.asked.slice(pressedAt)).toStrictEqual(["inbox-2"]);
 });
 
