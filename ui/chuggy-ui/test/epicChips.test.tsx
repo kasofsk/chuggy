@@ -1,6 +1,6 @@
 /**
- * The epics a ticket names, drawn where it is: one link each, its title then
- * its number, named by the whole of both so the cut title is still read; an
+ * The epics a ticket names, drawn where it is: one link each, its number then
+ * its title, named by the whole of both so the cut title is still read; an
  * archived one said so; the same chip in a list row as in the header; and
  * nothing for a ticket in none.
  */
@@ -46,7 +46,7 @@ afterEach(cleanup);
 const titleLong =
   "Console theming, design system, and mobile and accessible experience";
 
-/** The chip's parts as drawn, in order: what is cut, then what never is. */
+/** The chip's parts as drawn, in order: what never is cut, then what is. */
 function chipParts(chip: HTMLElement): readonly (string | null)[] {
   return [...chip.children].map((part) => part.textContent);
 }
@@ -64,15 +64,15 @@ test("each epic is a link to its page and an archived one says so", () => {
   const chips = screen.getByRole("group", { name: "Epics" });
   expect(
     within(chips)
-      .getByRole("link", { name: "Billing #7" })
+      .getByRole("link", { name: "#7 Billing" })
       .getAttribute("href"),
   ).toBe("/acme/atlas/epics/7");
-  const archived = screen.getByRole("link", { name: "Search #9 (archived)" });
-  expect(archived.getAttribute("title")).toBe("Search #9 (archived)");
-  expect(chipParts(archived)).toEqual(["Search", "#9", "(archived)"]);
+  const archived = screen.getByRole("link", { name: "#9 Search (archived)" });
+  expect(archived.getAttribute("title")).toBe("#9 Search (archived)");
+  expect(chipParts(archived)).toEqual(["#9", "Search", "(archived)"]);
 });
 
-test("the number is drawn after the title, short or long, outside the cut", () => {
+test("the number is drawn before the title, short or long, outside the cut", () => {
   renderCopied(
     <EpicChips
       partition={projectPartition}
@@ -86,10 +86,10 @@ test("the number is drawn after the title, short or long, outside the cut", () =
     [3, "Billing"],
     [24, titleLong],
   ] as const) {
-    const chip = screen.getByRole("link", { name: `${title} #${number}` });
-    expect(chipParts(chip)).toEqual([title, `#${number}`]);
-    expect(chip.children[0]?.className).toBe("epic-chip-title");
-    expect(chip.children[1]?.className).toBe("epic-chip-number");
+    const chip = screen.getByRole("link", { name: `#${number} ${title}` });
+    expect(chipParts(chip)).toEqual([`#${number}`, title]);
+    expect(chip.children[0]?.className).toBe("epic-chip-number");
+    expect(chip.children[1]?.className).toBe("epic-chip-title");
   }
 });
 
@@ -100,8 +100,8 @@ test("the link's name and tooltip carry the whole title and number", () => {
       epics={[{ number: 24, title: titleLong, visibility: "Active" }]}
     />,
   );
-  const chip = screen.getByRole("link", { name: `${titleLong} #24` });
-  expect(chip.getAttribute("title")).toBe(`${titleLong} #24`);
+  const chip = screen.getByRole("link", { name: `#24 ${titleLong}` });
+  expect(chip.getAttribute("title")).toBe(`#24 ${titleLong}`);
   expect(chip.getAttribute("href")).toBe("/acme/atlas/epics/24");
 });
 
