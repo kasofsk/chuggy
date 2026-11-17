@@ -15,6 +15,9 @@ export interface LeadCopy {
     readonly label: unknown;
     readonly time: unknown;
   };
+  readonly "lead-absence-off": {
+    readonly label: unknown;
+  };
   readonly "lead-absence-manual": Record<never, never>;
   readonly "lead-attention-monitoring": Record<never, never>;
   readonly "lead-attention-attention": Record<never, never>;
@@ -170,6 +173,10 @@ export interface LeadCopy {
   readonly "lead-settings-written": {
     readonly revision: unknown;
   };
+  readonly "lead-settings-saved": {
+    readonly section: unknown;
+    readonly revision: unknown;
+  };
   readonly "lead-settings-changed-by": Record<never, never>;
   readonly "lead-settings-changed-at": Record<never, never>;
   readonly "lead-settings-conflict-moved-by": {
@@ -189,6 +196,9 @@ export interface LeadCopy {
   readonly "lead-history-diff": Record<never, never>;
   readonly "lead-history-hide-diff": Record<never, never>;
   readonly "lead-history-restore": Record<never, never>;
+  readonly "lead-history-restored": {
+    readonly revision: unknown;
+  };
   readonly "lead-history-show-all": {
     readonly count: unknown;
   };

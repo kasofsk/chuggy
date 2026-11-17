@@ -17,7 +17,6 @@ import type { ConfigurationSummary } from "../../../../src/contract/responses.ts
 
 import type { ApiPorts, ApiResult } from "./apiRequest.ts";
 import { apiConfigurations, configurationPagesMax } from "./apiRoutes.ts";
-import { approvalLabel } from "./codeLabels.ts";
 import { configurationLabel, workerLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
@@ -37,7 +36,6 @@ export const repositoryConfigurationsDirectory =
 export interface RepositoryConfigurationFacts {
   readonly worker: RepositoryConfigurationCell;
   readonly stages: string;
-  readonly approval: Copy;
 }
 
 /** One row: the revision it names, and its facts where it has any. */
@@ -95,7 +93,6 @@ export function repositoryConfigurationRow(
                 ? workerLabel(summary.worker, summary.image)
                 : repositoryCatalogLabel(summary.catalog),
             stages: String(summary.evaluationStagesCount),
-            approval: approvalLabel(summary.finalization.approvalRequired),
           },
   };
 }

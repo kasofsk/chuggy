@@ -140,10 +140,11 @@ check "the restored tree replays the counterexample red at the divergence" 1 "$R
 
 # --- The cap: an overrun is a could-not-run ----------------------------------
 #
-# The sweep this case asks for cannot finish inside the cap it sets, so what is
-# under test is the cap firing rather than anything the walk found. The driver
-# carries its own bound too, because a gate that ignored the cap would hang
-# this suite instead of failing it.
+# The walk under test is a fixture that never finishes, so what is under test
+# is the cap firing and nothing the real walk does on the way to it: a real
+# sweep that ended early, by a finding or a crash, would read here as a cap
+# that did not fire. The driver carries its own bound too, because a gate that
+# ignored the cap would hang this suite instead of failing it.
 #
 # AND THE KILL HAS TO REACH THE RUNNER'S FORKED CHILDREN. Node runs each test
 # file in a process of its own and hands it --test-timeout=0, so a cap that
@@ -158,11 +159,15 @@ walk_processes() {
 	pgrep -f -- 'test/random[/]' 2>/dev/null | sort || true
 }
 
+cat >"$R/test/random/walk.test.ts" <<'FIXTURE'
+import { test } from "node:test"
+test("a sweep that never ends", () => new Promise(() => setInterval(() => {}, 1000)))
+FIXTURE
+rm -f "$R/test/random/shrink.test.ts"
 walk_processes >"$WORK/walkers-before"
 OUT="$WORK/.out"
 set +e
-(cd "$ROOT" && CHUG_WALK_SAMPLES=200000 CHUG_RANDOM_TIMEOUT_SECS=2 \
-	timeout 60 "$SUT") >"$OUT" 2>&1
+(cd "$R" && CHUG_RANDOM_TIMEOUT_SECS=2 timeout 60 "$SUT") >"$OUT" 2>&1
 RC=$?
 set -e
 check "a walk that outruns its cap exits 2, not 0 or 1" 2 "$RC" "did not finish inside 2s"
@@ -192,6 +197,21 @@ check "the cap kills the runner's forked children, not just the runner" 0 "$STRA
 while IFS= read -r STRAY; do
 	kill "$STRAY" 2>/dev/null || true
 done <"$WORK/strays"
+git -C "$R" checkout -- test/random
+
+# --- A walk process killed by a signal is a could-not-run, not a finding -----
+#
+# A file whose process was ended by a signal reached no verdict, whatever sent
+# it, so the run is a could-not-run and the gate names the signal.
+
+cat >"$R/test/random/walk.test.ts" <<'FIXTURE'
+process.kill(process.pid, "SIGKILL")
+FIXTURE
+run_gate "$R"
+check "a walk process killed by a signal exits 2, not 1" 2 "$RC" \
+	"killed by SIGKILL"
+check "a killed walk names the node it ran on" 2 "$RC" "under node $(node --version)"
+git -C "$R" checkout -- test/random
 
 # --- A cap the timer cannot apply is a could-not-run, not a finding ----------
 #

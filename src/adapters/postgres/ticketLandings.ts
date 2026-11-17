@@ -71,6 +71,8 @@ interface TicketLandingRow {
   readonly hold_kind: string | null;
   readonly hold_passes: number | null;
   readonly held_since: string | null;
+  readonly hold_paths: readonly string[] | null;
+  readonly hold_paths_truncated: boolean | null;
   readonly attempts: number | null;
   readonly outcome: string | null;
   readonly failure_kind: string | null;
@@ -79,7 +81,6 @@ interface TicketLandingRow {
   readonly candidate_commit: string | null;
   readonly prepared_at: string | null;
   readonly conflict_manifest: string | null;
-  readonly approval_open: boolean | null;
   readonly proposed: boolean | null;
   readonly head_ref: string | null;
   readonly base_ref: string | null;
@@ -152,6 +153,17 @@ function ticketLandingHold(
     passes: finalizerRowPresent(row.hold_passes, "hold passes"),
     since: asPublicInstant(finalizerRowPresent(row.held_since, "held since")),
     ...(removal === undefined ? {} : { removal }),
+    ...(row.hold_paths === null
+      ? {}
+      : {
+          refused: {
+            paths: row.hold_paths,
+            truncated: finalizerRowPresent(
+              row.hold_paths_truncated,
+              "hold paths truncated",
+            ),
+          },
+        }),
   };
 }
 
@@ -332,7 +344,6 @@ function ticketLandingRecord(row: TicketLandingRow): TicketLandingRecord {
     ...(row.conflict_manifest === null
       ? {}
       : { conflictManifest: asProjectArtifactId(row.conflict_manifest) }),
-    approvalOpen: finalizerRowPresent(row.approval_open, "approval open"),
     ...(proposal === undefined ? {} : { proposal }),
     ...(wait === undefined ? {} : { wait }),
     ...(row.landed_commit === null
@@ -356,14 +367,15 @@ async function ticketLandingsRead(
                l.attempts,l.outcome,l.failure_kind,l.target_ref,l.target_commit,
                l.candidate_commit,
                to_char(l.prepared_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS prepared_at,
-               l.conflict_manifest,l.approval_open,l.proposed,l.head_ref,
+               l.conflict_manifest,l.proposed,l.head_ref,
                l.base_ref,l.creation,l.url,l.merge,l.merge_reason,
                l.mergeability,l.merge_commit,l.landed_commit,l.merge_state,
                l.merge_wait,
                to_char(l.merge_heard_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS merge_heard_at,
                l.head_commit,l.merged_head,l.proposal_status,
                l.queue_removal_reason,l.queue_removal_actor,
-               l.recheck_reason,l.recheck_base_ref
+               l.recheck_reason,l.recheck_base_ref,
+               l.hold_paths,l.hold_paths_truncated
           FROM ticket_projection t
           LEFT JOIN LATERAL read_ticket_landings(t.tenant,t.project,t.ticket,${count}::integer) l
             ON true
@@ -392,6 +404,7 @@ interface TicketLandingStackRow {
   readonly beneath_tickets: string[] | null;
   readonly beneath_commits: string[] | null;
   readonly reason: string | null;
+  readonly restacked: boolean | null;
 }
 
 function ticketLandingStack(row: TicketLandingStackRow): TicketLandingStack {
@@ -399,9 +412,11 @@ function ticketLandingStack(row: TicketLandingStackRow): TicketLandingStack {
     finalizerRowPresent(row.work_cycle, "work cycle"),
     "work cycle",
   );
+  const restacked = row.restacked === true ? { restacked: true as const } : {};
   if (row.reason !== null)
     return {
       cycle,
+      ...restacked,
       prepared: "Unstacked",
       reason: finalizerRowValue(unstackedReasons, row.reason, "stack reason"),
     };
@@ -413,6 +428,7 @@ function ticketLandingStack(row: TicketLandingStackRow): TicketLandingStack {
     );
   return {
     cycle,
+    ...restacked,
     prepared: "Stacked",
     beneath: tickets.map((ticket, at) => ({
       ticket: asTicketId(projectRowCounter(ticket, "beneath ticket")),
@@ -432,7 +448,7 @@ async function ticketLandingStacksRead(
   const found = await pool.query<TicketLandingStackRow>(
     sql`SELECT s.work_cycle::text AS work_cycle,s.target_ref,s.tip,
                s.beneath_tickets::text[] AS beneath_tickets,
-               s.beneath_commits,s.reason
+               s.beneath_commits,s.reason,s.restacked
           FROM read_ticket_evaluation_stacks(${partition.tenant},${partition.project},${ticket},${count}::integer) s
          ORDER BY s.work_cycle`,
   );

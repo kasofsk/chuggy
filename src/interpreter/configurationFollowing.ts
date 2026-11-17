@@ -10,8 +10,11 @@
  * the plan's stages and the catalog's outputs. A difference in any of them
  * `Moves` the ticket, onto the head's default program for its selected plan.
  *
- * A TRIMMED TICKET STAYS. A program running less than its plan was signed off
- * against the plan it saw, so it is answered before the head is read at all.
+ * A TRIMMED TICKET STAYS. A program running less than its plan, or plans its
+ * overrides replace running less than the catalog's, was signed off against
+ * the plan it saw, so it is answered before the head is read at all. A ticket
+ * that would move onto a head whose plan its overrides run less than is
+ * trimmed too, as nobody signed that off.
  *
  * A REVISION NOT READY FOR THE TICKET HOLDS IT, the held one or the head's,
  * with the fault a release would be refused for. Nothing here remembers that
@@ -33,7 +36,7 @@ import {
   draftReleaseRefusalCode,
   releaseConfigurationReadiness,
   ticketConfigurationReadiness,
-  ticketProgramShort,
+  ticketRunsLessThanPlanned,
   type CanonicalConfiguration,
   type ReleaseConfigurationFault,
   type TicketConfiguration,
@@ -95,6 +98,22 @@ function configurationFollowingDigest(
   );
 }
 
+/** Whether the ticket, resolved from one revision, runs less under a program than that revision plans for it. */
+function configurationFollowingRunsLess(
+  ticket: ConfigurationFollowingTicket,
+  configuration: CanonicalConfiguration,
+  resolved: TicketConfiguration,
+  program: ReleaseAuthoringProgram,
+): boolean {
+  return ticketRunsLessThanPlanned(
+    configuration,
+    ticket.overrides,
+    ticket.selection,
+    resolved,
+    program,
+  );
+}
+
 /** Judges the held revision, the trim, the head's readiness under its default program, and then what the ticket would run. */
 export function configurationFollowingVerdict(
   ticket: ConfigurationFollowingTicket,
@@ -107,7 +126,14 @@ export function configurationFollowingVerdict(
   );
   if (held.readiness === "Incomplete")
     return { verdict: "Held", fault: held.fault };
-  if (ticketProgramShort(held.ticket, ticket.program))
+  if (
+    configurationFollowingRunsLess(
+      ticket,
+      ticket.held,
+      held.ticket,
+      ticket.program,
+    )
+  )
     return { verdict: "Trimmed" };
   if (!declaredConfigurationIsCatalog(JSON.parse(ticket.head)))
     return { verdict: "Held", fault: "SelectionUnsupported" };
@@ -144,10 +170,19 @@ export function configurationFollowingVerdict(
   const moved = configurationFollowingDigest(ticket, ticket.head, program);
   if (moved.resolved === "Unready")
     return { verdict: "Held", fault: moved.fault };
-  return kept.digest === moved.digest &&
+  if (
+    kept.digest === moved.digest &&
     configurationFollowingSurface(held.ticket) ===
       configurationFollowingSurface(head.ticket)
-    ? { verdict: "Current" }
+  )
+    return { verdict: "Current" };
+  return configurationFollowingRunsLess(
+    ticket,
+    ticket.head,
+    head.ticket,
+    program,
+  )
+    ? { verdict: "Trimmed" }
     : { verdict: "Moves", program };
 }
 

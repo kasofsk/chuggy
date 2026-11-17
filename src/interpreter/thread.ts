@@ -11,10 +11,17 @@
  * owner's with. So a thread CANNOT EXCEED ITS OWNER — a member holding only
  * read access has a thread that takes no turn at all, because every door and
  * every wake that starts one asks to change the project, and a thread does no
- * more than its owner may whatever roster it carries, because the roster is
- * enforced inside the pod and the membership is enforced by the database. A ROSTER IS NOT A CONTROL, and saying so is the
- * point: the roster below is the weaker of the two, and a control described as
- * stronger than it is, is worse than none.
+ * more than its owner may whatever roster it carries, because the membership
+ * is enforced by the database. THE ROSTER NARROWS THAT FURTHER, AND THE API
+ * ENFORCES IT BY ROUTE AND METHOD: beside the project's reads, which
+ * `ProjectRead` admits, a thread's bearer reaches only the routes some chuggy
+ * tool of the capabilities on its session row calls
+ * (`../adapters/http/sessionBearerScope.ts`). A route two capabilities' tools
+ * share admits either one's whole body, so a roster narrowed to `DraftAuthor`
+ * without `DraftOriginate` or `TicketDispatch` may still post any operation
+ * and a draft no parent bears. What a roster grants the agent runtime's own
+ * tools — reading, writing and running in the checkout — reaches no route,
+ * and is enforced inside the pod alone.
  *
  * THE DRAFT IS THE THREAD'S WORK, AND THE TREE IS READ, NOT CHANGED. The
  * runtime a thread runs on presents it as a coding agent, in a checkout where
@@ -46,7 +53,11 @@ import {
 } from "../contract/http.ts";
 import type { ConsolePage } from "../contract/consolePage.ts";
 import {
+  allThreadJobWakeReasons,
+  allThreadTicketWakeReasons,
   allThreadWakeReasons,
+  type ThreadJobWakeReason,
+  type ThreadTicketWakeReason,
   type ThreadWakeReason,
 } from "../contract/threadWake.ts";
 import {
@@ -69,7 +80,8 @@ import type { Partition } from "./projectStore.ts";
  * because a thread exists to find out what is going on — reading the tree,
  * running what it takes to read it, authoring the drafts its owner asks for,
  * and offering its owner a page to look at or an action to confirm. It is
- * generous against the pod alone, for the reason the header gives.
+ * generous because a thread still does no more than its owner may, for the
+ * reason the header gives.
  */
 export const threadCapabilitiesDefault = [
   "RepositoryRead",
@@ -105,7 +117,14 @@ export function threadStanding(input: {
     : input.state;
 }
 
-export { allThreadWakeReasons, type ThreadWakeReason };
+export {
+  allThreadJobWakeReasons,
+  allThreadTicketWakeReasons,
+  allThreadWakeReasons,
+  type ThreadJobWakeReason,
+  type ThreadTicketWakeReason,
+  type ThreadWakeReason,
+};
 
 /** The version every wake document this release writes carries. */
 export const threadWakeVersion = 1;
@@ -114,7 +133,7 @@ export const threadWakeVersion = 1;
 export interface ThreadWakeDocument {
   readonly version: typeof threadWakeVersion;
   readonly wake: ThreadWakeReason;
-  /** The ticket the event is about, as the change row named it. */
+  /** What the event is about: the ticket a change row named, or the name of the job, watch or timer the thread set. */
   readonly resource: string;
   readonly at: string;
   /** The standing rules, carried on the turn that could break them. */
@@ -211,7 +230,7 @@ export function parseThreadWake(text: string): ThreadWakeDocument {
  * and the checkout is what makes the draft accurate.
  */
 export const threadPurposeStanding =
-  "Your job is to turn what your owner asks for into tickets, and nothing else. A request for a change is a request for a draft: file it through the draft tools this session holds, one draft per piece of work small enough for one work attempt, with a brief whose title is one short line naming the work and whose intent names the real files and an acceptance check that can be run, and put it in front of your owner with `offer_release` rather than releasing it: release it yourself only on their explicit word, as when they ask you to file and release or to release it without asking. The lead dispatches what is released and the fabric does the work; you never do the work yourself. You dispatch or revoke a ticket only on your owner's word: their instruction, or their yes to one line from you naming the tickets. The checkout and the shell are for reading the tree so a draft is accurate: change nothing in it, commit nothing, and run no build or gate. A question is answered from what you read, and that answer says nothing about filing: no line that nothing was filed, and no offer to file, unless the question itself shows your owner wants the thing changed, when the answer ends with one line offering to file it. A turn asked for a change ends by saying what you filed, or why you filed nothing.";
+  "Your job is to turn what your owner asks for into tickets, and nothing else. A request for a change is a request for a draft: file it through the draft tools this session holds, one draft per piece of work small enough for one work attempt, with a brief whose title is one short line naming the work and whose intent names the real files and an acceptance check that can be run, and put it in front of your owner with `offer_release` rather than releasing it: release it yourself only on their explicit word, as when they ask you to file and release or to release it without asking. Releasing starts nothing: a released ticket runs once it is dispatched, by the project's lead unless read_lead answers a lead standing `paused`, or no lead for a reason other than `NotNeeded` or `AwaitingSelector`, and there only on someone's word, so say so when you release there. The fabric does the work; you never do the work yourself. You dispatch, revoke, take or return a ticket only on your owner's word: their instruction, or their yes to one line from you naming the tickets. An instruction to dispatch can reach tickets not yet ready, as when they ask you to carry an epic through, but you are woken only for tickets filed from this thread, so say so when it reaches others. The checkout and the shell are for reading the tree so a draft is accurate: change nothing in it, commit nothing, and run no build or gate. A question is answered from what you read, and that answer says nothing about filing: no line that nothing was filed, and no offer to file, unless the question itself shows your owner wants the thing changed, when the answer ends with one line offering to file it. A turn asked for a change ends by saying what you filed, or why you filed nothing.";
 
 /**
  * What a thread is told of choosing a configuration, which is where a ticket's

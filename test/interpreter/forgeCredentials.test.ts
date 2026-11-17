@@ -134,6 +134,7 @@ function fixtureBindings(
                 policy: "Direct",
               }),
               pipelinesWritable: false,
+              pipelinesRunnable: false,
               ...(retiredAt === undefined ? {} : { retiredAt }),
             }
           : undefined,

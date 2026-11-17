@@ -1,15 +1,14 @@
 /**
- * The head of every tab of the epic page, drawn in the ticket page's frame:
- * the title with its number, its status and whether it is archived; its
- * summary; a bar of where its tickets stand; what this reader may do to it;
- * and the notes that apply. Where the reader is narrow, the actions wrap under the title.
+ * The head of every tab of the epic page, drawn through `PageHeader` as the
+ * ticket page's is: the title with its number; its summary; its status and
+ * whether it is archived, with what this reader may do to it; a bar of where
+ * its tickets stand; and the notes that apply.
  *
  * An archive and a reactivation are each sent at the revision the page read,
  * so one made over another's is refused as stale.
  */
 
 import { Link } from "@tanstack/react-router";
-import { DropdownMenu } from "radix-ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -19,29 +18,27 @@ import type {
   EpicViewResponse,
 } from "../../../../../src/contract/responses.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { CopyText } from "../../core/copy.ts";
 import { consolePageHref } from "../../core/consolePage.ts";
 import {
   epicFormFrom,
   epicVisibilityWrite,
   epicWriteFrom,
 } from "../../core/epics.ts";
+import { readValue } from "../../core/freshness.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import { currentOrigin } from "../ports.ts";
-import { TicketActionConfirm } from "../ticket/TicketActionConfirm.tsx";
-import {
-  TicketHeaderFrame,
-  TicketHeaderTitle,
-} from "../ticket/TicketHeader.tsx";
-import { readValue } from "../ticket/TicketPageHeld.tsx";
-import { buttonLookClassName } from "../ui/Button.tsx";
+import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { CopySaid, useCopyPress } from "../ui/CopyButton.tsx";
 import type { CopyPress } from "../ui/CopyButton.tsx";
-import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
+import { MoreMenu } from "../ui/MoreMenu.tsx";
+import type { MoreMenuItem } from "../ui/MoreMenu.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
+import type { PageHeaderAction } from "../ui/PageHeader.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import type { EpicPageHeld } from "./EpicPageHeld.tsx";
 import { EpicProgressPage, EpicStatusChip } from "./EpicProgress.tsx";
 
-import "../ticket/ticket.css";
 import "./epic.css";
 
 function useEpicHeaderWriting(partition: PartitionIdentity) {
@@ -49,21 +46,6 @@ function useEpicHeaderWriting(partition: PartitionIdentity) {
 }
 
 type EpicHeaderWriting = ReturnType<typeof useEpicHeaderWriting>;
-
-function EpicHeaderMenuMark(): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="size-4"
-      fill="currentColor"
-    >
-      <circle cx="3" cy="8" r="1.4" />
-      <circle cx="8" cy="8" r="1.4" />
-      <circle cx="13" cy="8" r="1.4" />
-    </svg>
-  );
-}
 
 /** Archive, or Reactivate an archived epic, asked before it is sent at the
  * revision the page read. */
@@ -77,7 +59,7 @@ function EpicHeaderVisibilityConfirm(props: {
   const { view } = props;
   const archived = view.visibility === "Archived";
   return (
-    <TicketActionConfirm
+    <ConfirmDialog
       title={text({
         id: archived ? "epics-reactivate-title" : "epics-archive-title",
       })}
@@ -98,39 +80,32 @@ function EpicHeaderVisibilityConfirm(props: {
       {text({
         id: archived ? "epics-reactivate-body" : "epics-archive-body",
       })}
-    </TicketActionConfirm>
+    </ConfirmDialog>
   );
 }
 
 /** The menu's Copy link, which stays open to say it copied. */
-function EpicHeaderCopyLink(props: {
-  readonly held: EpicPageHeld;
-  readonly view: EpicViewResponse;
-  readonly copy: CopyPress;
-}): ReactNode {
-  const text = useCopyText();
-  const { copy } = props;
-  return (
-    <DropdownMenu.Item
-      className={menuItemClassName}
-      onSelect={(event) => {
-        event.preventDefault();
-        copy.press(
-          new URL(
-            consolePageHref(props.held.partition, {
-              page: "Epic",
-              epic: props.view.number,
-            }),
-            currentOrigin(),
-          ).href,
-        );
-      }}
-    >
-      {text({
-        id: copy.copied ? "epics-copy-link-copied" : "epics-copy-link",
-      })}
-    </DropdownMenu.Item>
-  );
+function epicHeaderMenuCopyItem(
+  held: EpicPageHeld,
+  view: EpicViewResponse,
+  copy: CopyPress,
+  text: CopyText,
+): MoreMenuItem {
+  return {
+    kind: "action",
+    label: text({
+      id: copy.copied ? "epics-copy-link-copied" : "epics-copy-link",
+    }),
+    onSelect: (event) => {
+      event.preventDefault();
+      copy.press(
+        new URL(
+          consolePageHref(held.partition, { page: "Epic", epic: view.number }),
+          currentOrigin(),
+        ).href,
+      );
+    },
+  };
 }
 
 /** The ⋯ menu: Archive, or Reactivate an archived epic, for a reader who may
@@ -145,38 +120,32 @@ function EpicHeaderMenu(props: {
   const copy = useCopyPress();
   const [asking, setAsking] = useState(false);
   const { held, view } = props;
-  const word = text({
-    id: view.visibility === "Archived" ? "epics-reactivate" : "epics-archive",
-  });
-  if (!held.writing && copy === undefined) return null;
+  const items: readonly MoreMenuItem[] = [
+    ...(held.writing
+      ? [
+          {
+            kind: "action",
+            label: text({
+              id:
+                view.visibility === "Archived"
+                  ? "epics-reactivate"
+                  : "epics-archive",
+            }),
+            disabled: props.writing.isPending,
+            onSelect: () => {
+              setAsking(true);
+            },
+          } satisfies MoreMenuItem,
+        ]
+      : []),
+    ...(copy === undefined
+      ? []
+      : [epicHeaderMenuCopyItem(held, view, copy, text)]),
+  ];
+  if (items.length === 0) return null;
   return (
     <>
-      <DropdownMenu.Root modal={false}>
-        <DropdownMenu.Trigger
-          className={buttonLookClassName({ size: "icon" })}
-          aria-label={text({ id: "epics-menu-label" })}
-        >
-          <EpicHeaderMenuMark />
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <MenuContent sideOffset={4} align="end">
-            {held.writing ? (
-              <DropdownMenu.Item
-                className={menuItemClassName}
-                disabled={props.writing.isPending}
-                onSelect={() => {
-                  setAsking(true);
-                }}
-              >
-                {word}
-              </DropdownMenu.Item>
-            ) : null}
-            {copy === undefined ? null : (
-              <EpicHeaderCopyLink held={held} view={view} copy={copy} />
-            )}
-          </MenuContent>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+      <MoreMenu label={text({ id: "epics-menu-label" })} items={items} />
       {copy === undefined ? null : <CopySaid copied={copy.copied} />}
       <EpicHeaderVisibilityConfirm
         view={view}
@@ -188,40 +157,37 @@ function EpicHeaderMenu(props: {
   );
 }
 
-/** New ticket on an Active epic, Edit for a reader who may write epics, and
- * the ⋯ menu. */
-function EpicHeaderActions(props: {
-  readonly held: EpicPageHeld;
-  readonly view: EpicViewResponse;
-  readonly writing: EpicHeaderWriting;
-}): ReactNode {
-  const text = useCopyText();
-  const { held, view } = props;
-  const params = { ...held.partition, epic: String(view.number) };
-  return (
-    <div className="epic-header-actions">
-      {view.visibility === "Active" ? (
-        <Link
-          to="/$tenant/$project/tickets/new"
-          params={held.partition}
-          search={{ epic: view.number }}
-          className={buttonLookClassName({ size: "sm" })}
-        >
-          {text({ id: "epics-new-ticket" })}
-        </Link>
-      ) : null}
-      {held.writing ? (
-        <Link
-          to="/$tenant/$project/epics/$epic/edit"
-          params={params}
-          className={buttonLookClassName({ size: "sm" })}
-        >
-          {text({ id: "ui-edit" })}
-        </Link>
-      ) : null}
-      <EpicHeaderMenu held={held} view={view} writing={props.writing} />
-    </div>
-  );
+/** New ticket on an Active epic, and Edit for a reader who may write epics. */
+function epicHeaderActions(
+  held: EpicPageHeld,
+  view: EpicViewResponse,
+  text: CopyText,
+): readonly PageHeaderAction[] {
+  return [
+    ...(view.visibility === "Active"
+      ? [
+          {
+            label: text({ id: "epics-new-ticket" }),
+            link: {
+              to: "/$tenant/$project/tickets/new",
+              params: held.partition,
+              search: { epic: view.number },
+            },
+          } satisfies PageHeaderAction,
+        ]
+      : []),
+    ...(held.writing
+      ? [
+          {
+            label: text({ id: "ui-edit" }),
+            link: {
+              to: "/$tenant/$project/epics/$epic/edit",
+              params: { ...held.partition, epic: String(view.number) },
+            },
+          } satisfies PageHeaderAction,
+        ]
+      : []),
+  ];
 }
 
 /** A ticket named by its number and, where the graph holds it, its title. */
@@ -257,7 +223,7 @@ function EpicHeaderNotes(props: {
     (node) => node.member && node.phase === "Escalated",
   );
   return (
-    <div className="ticket-header-notes">
+    <div className="epic-header-notes">
       {escalated.map((node) => (
         <p key={node.ticket} className="epic-header-note" data-note="attention">
           {text({ id: "epics-note-attention" })}{" "}
@@ -286,27 +252,26 @@ export function EpicHeader(props: {
   const { held, view } = props;
   const writing = useEpicHeaderWriting(held.partition);
   return (
-    <TicketHeaderFrame
-      label={<EpicStatusChip status={view.status} />}
+    <PageHeader
       title={view.title}
-    >
-      <div className="epic-header-top">
-        <div className="epic-header-heading">
-          <TicketHeaderTitle title={view.title} ticket={view.number} />
+      number={view.number}
+      {...(view.summary === undefined ? {} : { description: view.summary })}
+      status={
+        <>
           <EpicStatusChip status={view.status} />
           {view.visibility === "Archived" ? (
             <Pill tone="retired">
               {text({ id: "epics-visibility-archived" })}
             </Pill>
           ) : null}
-        </div>
-        <EpicHeaderActions held={held} view={view} writing={writing} />
-      </div>
-      {view.summary === undefined ? null : (
-        <p className="epic-header-summary">{view.summary}</p>
-      )}
+        </>
+      }
+      statusCondensed={<EpicStatusChip status={view.status} />}
+      secondary={epicHeaderActions(held, view, text)}
+      overflow={<EpicHeaderMenu held={held} view={view} writing={writing} />}
+    >
       <EpicProgressPage progress={view.progress} />
       <EpicHeaderNotes held={held} writing={writing} />
-    </TicketHeaderFrame>
+    </PageHeader>
   );
 }

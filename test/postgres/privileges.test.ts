@@ -3,6 +3,12 @@ import { after, before, test } from "node:test";
 import {
   acceptanceFunction,
   accessPlaneRole,
+  agentAccountCredentialOffFunction,
+  agentAccountCredentialOnFunction,
+  agentAccountCredentialRetireFunction,
+  agentAccountCredentialStandingFunction,
+  agentAccountNamedCredentialPausesFunction,
+  agentAccountNamedPauseFunction,
   agentAccountPauseFunction,
   agentAccountPressFunction,
   agentAccountSettingWriteFunction,
@@ -72,7 +78,7 @@ const executionRoutingColumns =
 const sessionRoutingColumns =
   "lead_route,project_routes,published_at,singleton,thread_route";
 const sessionLaunchColumns =
-  "authority,backoff_secs,bounds,deadline_secs,idle_secs_max,image,mirrors,model,published_at,singleton";
+  "authority,backoff_secs,bounds,deadline_secs,image,mirrors,model,published_at,singleton";
 /** The relations one run's evidence lives in, named once for every case. */
 const runEvidenceRelations = [
   "execution_run",
@@ -225,7 +231,14 @@ test("no runtime role but the API binds a repository, and none records one", asy
   }
 });
 
-test("the access plane's role reaches its invite links and is refused every relation that is not its own", async () => {
+test("the access plane's role reaches its invite links and tenants' display names, and is refused every relation that is not its own", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      accessPlaneRole,
+      "UPDATE tenant SET display_name=display_name WHERE false",
+    ),
+    undefined,
+  );
   assert.equal(
     await harness.attemptAs(
       accessPlaneRole,
@@ -242,7 +255,8 @@ test("the access plane's role reaches its invite links and is refused every rela
   );
   for (const [statement, relation] of [
     ["SELECT * FROM project", "project"],
-    ["SELECT * FROM tenant", "tenant"],
+    ["UPDATE tenant SET tenant=tenant", "tenant"],
+    ["DELETE FROM tenant", "tenant"],
     [
       "SELECT * FROM worker_pool_registration_token",
       "worker_pool_registration_token",
@@ -264,7 +278,7 @@ test("the metrics plane's role reads the columns its scrape names and nothing el
   for (const statement of [
     `SELECT tenant,project,execution,ticket,task,source_request,owner,placement,configuration_revision FROM execution`,
     "SELECT tenant,project,request,task,kind,stage,evaluator FROM execution_request_task",
-    "SELECT tenant,project,ticket,selection,overrides FROM ticket_definition",
+    "SELECT tenant,project,ticket,selection,overrides,repository FROM ticket_definition",
     "SELECT tenant,project,execution,attempt,state,personal,opened_at,ended_at FROM execution_attempt",
     "SELECT tenant,project,execution,attempt,turns,duration_ms,duration_api_ms FROM execution_run_total",
     "SELECT model,tokens_input,tokens_output,tokens_cache_creation,tokens_cache_read,cost_usd_micros FROM execution_run_model_usage",
@@ -302,14 +316,22 @@ test("the metrics plane's role reads the columns its scrape names and nothing el
     ["SELECT * FROM journal_entry", "journal_entry"],
     ["SELECT owner FROM journal_entry", "journal_entry"],
     ["SELECT authoring FROM draft_revision", "draft_revision"],
+    ["SELECT brief FROM ticket_definition", "ticket_definition"],
+    ["SELECT * FROM ticket_definition", "ticket_definition"],
+    ["SELECT repository FROM draft_brief", "draft_brief"],
     ["SELECT authority_subject FROM operation", "operation"],
     ["SELECT command FROM operation", "operation"],
     ["SELECT escalation_evidence FROM ticket_projection", "ticket_projection"],
     ["UPDATE ticket_projection SET phase=phase", "ticket_projection"],
+    ["SELECT credential FROM execution_run_total", "execution_run_total"],
     ["SELECT utilization FROM agent_account_usage", "agent_account_usage"],
     ["SELECT attempt FROM agent_account_limit", "agent_account_limit"],
     ["SELECT * FROM agent_account_setting", "agent_account_setting"],
     ["SELECT * FROM agent_account_press", "agent_account_press"],
+    [
+      "SELECT * FROM agent_account_credential_off",
+      "agent_account_credential_off",
+    ],
   ] as const)
     assert.match(
       (await harness.attemptAs(metricsPlaneRole, statement)) ?? "",
@@ -908,7 +930,7 @@ test("the function a migration grants execute on is the boundary owner's and is 
   );
 });
 
-test("the API reads a ticket's open questions and who answered an approval, and no more of the desk", async () => {
+test("the API reads a ticket's questions, how each was answered and by whom, and no more of the desk", async () => {
   assert.equal(
     await harness.attemptAs(
       apiRole,
@@ -919,9 +941,15 @@ test("the API reads a ticket's open questions and who answered an approval, and 
     ),
     undefined,
   );
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      `SELECT action,state,resolution,execution,answered_by,answered_at
+         FROM native_action WHERE ticket=1`,
+    ),
+    undefined,
+  );
   for (const column of [
-    "attempt",
-    "resolution",
     "effect_position",
     "action_version",
     "required_capability",
@@ -949,7 +977,7 @@ test("the API reads a ticket's open questions and who answered an approval, and 
         table_name: "native_action",
         privilege_type: "SELECT",
         columns:
-          "action,answered_at,answered_by,authorizing_seq,execution,feedback,kind,project,state,tenant,ticket",
+          "action,answered_at,answered_by,authorizing_seq,execution,feedback,kind,project,resolution,state,tenant,ticket",
       },
       {
         table_name: "native_action_resolution",
@@ -1072,11 +1100,15 @@ test("only the scheduler finds and resumes a job a usage limit stopped on its ru
   );
 });
 
-test("only the API reads, sets and presses a person's own agent account and reads an escalation's usage resume, through doors alone", async () => {
+test("only the API reads, sets, presses, retires and turns off and on a credential of a person's own agent account and reads an escalation's usage resume, through doors alone", async () => {
   for (const signature of [
     `${agentAccountStandingFunction}(text)`,
+    `${agentAccountCredentialStandingFunction}(text)`,
     `${agentAccountSettingWriteFunction}(text,text,smallint,smallint,boolean)`,
     `${agentAccountPressFunction}(text,text)`,
+    `${agentAccountCredentialRetireFunction}(text,text,text)`,
+    `${agentAccountCredentialOffFunction}(text,text,text)`,
+    `${agentAccountCredentialOnFunction}(text,text,text)`,
     `${ticketUsageResumeFunction}(text,text,bigint,bigint,bigint)`,
   ])
     assert.deepEqual(await changeLogExecutors(signature), [apiRole], signature);
@@ -1085,6 +1117,20 @@ test("only the API reads, sets and presses a person's own agent account and read
     [apiRole],
     "the API asks the rule of a waiting attempt's agent",
   );
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${agentAccountNamedPauseFunction}(text,text,text[])`,
+    ),
+    [apiRole],
+    "the API asks the rule of a waiting attempt's agent for the credentials a runner named",
+  );
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${agentAccountNamedCredentialPausesFunction}(text,text,text[])`,
+    ),
+    [],
+    "only the pool plane is answered which named credentials are paused",
+  );
   for (const [statement, relation] of [
     ["SELECT * FROM agent_account_usage", "agent_account_usage"],
     ["SELECT * FROM agent_account_limit", "agent_account_limit"],
@@ -1092,6 +1138,20 @@ test("only the API reads, sets and presses a person's own agent account and read
     [
       "INSERT INTO agent_account_press(principal,agent,pressed_at) VALUES('p','Claude',now())",
       "agent_account_press",
+    ],
+    ["DELETE FROM agent_account_usage", "agent_account_usage"],
+    ["DELETE FROM agent_account_limit", "agent_account_limit"],
+    [
+      "SELECT * FROM agent_account_credential_off",
+      "agent_account_credential_off",
+    ],
+    [
+      "INSERT INTO agent_account_credential_off VALUES('p','Claude','work')",
+      "agent_account_credential_off",
+    ],
+    [
+      "DELETE FROM agent_account_credential_off",
+      "agent_account_credential_off",
     ],
   ] as const)
     assert.match(
@@ -1194,7 +1254,7 @@ const schedulerWritePrivileges = [
     table_name: "execution_attempt",
     privilege_type: "INSERT",
     columns:
-      "agent,assignment,attempt,attempt_number,capability,capability_secret_digest,claimed_at,cleanup_completed_at,ended_at,evidence,execution,generation,invocation,invoked,lease_expires_at,lease_owner,manifest,opened_at,personal,pool,pool_principal,pool_refusal,pool_refusal_fault,project,recovery_epoch,runner_benches_credential,runtime,state,tenant,workload",
+      "agent,assignment,attempt,attempt_number,capability,capability_secret_digest,claimed_at,cleanup_completed_at,credential_absent,credential_absent_reason,ended_at,evidence,execution,generation,invocation,invoked,lease_expires_at,lease_owner,manifest,opened_at,personal,pool,pool_principal,pool_refusal,pool_refusal_fault,project,recovery_epoch,runner_benches_credential,runtime,state,tenant,workload",
   },
   {
     table_name: "execution_attempt",
@@ -1284,7 +1344,7 @@ test("the scheduler's write surface is exactly the columns execution and capacit
   );
 });
 
-test("the scheduler reads execution and capacity, of the project only its lifecycle, of a pool or a member's runner what it declared, who first drafted a ticket, which tickets a project holds, where each project runs, and why a finalization attempt failed", async () => {
+test("the scheduler reads execution and capacity, of the project only its lifecycle, of a pool or a member's runner what it declared, who first drafted a ticket and who took it, which tickets a project holds, where each project runs, and why a finalization attempt failed", async () => {
   const read = (await harness.query(
     `SELECT table_name AS relation,
             string_agg(column_name, ',' ORDER BY column_name) AS columns
@@ -1325,6 +1385,7 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
       "ticket_definition",
       "ticket_projection",
       "ticket_source",
+      "ticket_take",
       "worker_pool",
     ],
   );
@@ -1536,12 +1597,12 @@ test("no runtime role but the API writes a binding's settings or retires one, an
   const calls = [
     [
       repositoryLandingReadFunction,
-      `SELECT landing_kind,landing_mode,landing_policy,pipelines_writable FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
+      `SELECT landing_kind,landing_mode,landing_policy,pipelines_writable,pipelines_runnable FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
       [apiRole, workerPlaneRole, finalizerRole],
     ],
     [
       repositoryLandingWriteFunction,
-      `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','GitMerge','Push','Direct','GitMerge','Push','Direct',false,false)`,
+      `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','GitMerge','Push','Direct','GitMerge','Push','Direct',false,false,NULL,NULL)`,
       [apiRole],
     ],
     [

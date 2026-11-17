@@ -14,10 +14,25 @@ export interface UiCopy {
   readonly "ui-ledger-superseded": Record<never, never>;
   readonly "ui-locomotive": Record<never, never>;
   readonly "ui-no-match": Record<never, never>;
-  readonly "ui-refusals": Record<never, never>;
-  readonly "ui-refusals-held": {
+  readonly "ui-reload": Record<never, never>;
+  readonly "ui-required": Record<never, never>;
+  readonly "ui-save": Record<never, never>;
+  readonly "ui-saving": Record<never, never>;
+  readonly "ui-toasts": Record<never, never>;
+  readonly "ui-toasts-held": {
     readonly hotkey: unknown;
   };
-  readonly "ui-reload": Record<never, never>;
-  readonly "ui-save": Record<never, never>;
+  readonly "ui-toast-failure": Record<never, never>;
+  readonly "ui-toast-success": Record<never, never>;
+  readonly "ui-filter-set": {
+    readonly count: unknown;
+  };
+  readonly "ui-filter-clear-all": Record<never, never>;
+  readonly "ui-filter-mark": {
+    readonly field: unknown;
+    readonly value: unknown;
+  };
+  readonly "ui-filter-remove": {
+    readonly filter: unknown;
+  };
 }

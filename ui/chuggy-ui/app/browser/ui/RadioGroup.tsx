@@ -70,6 +70,8 @@ export function RadioGroup(props: {
   readonly value: string;
   readonly options: readonly RadioOption[];
   readonly disabled?: boolean;
+  /** What describes the group as a whole, such as the error a form states of it. */
+  readonly describedBy?: string | undefined;
   readonly onChoose: (value: string) => void;
 }): ReactNode {
   const group = useId();
@@ -80,6 +82,7 @@ export function RadioGroup(props: {
     <RadioGroupPrimitive.Root
       className={described ? "grid gap-2" : "flex items-center gap-4"}
       aria-label={props.label}
+      aria-describedby={props.describedBy}
       value={props.value}
       disabled={props.disabled ?? false}
       onValueChange={props.onChoose}

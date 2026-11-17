@@ -1,4 +1,4 @@
-/** PostgreSQL side of creating a project: the doors the API role executes to make a tenant and a project, and to record that its grants were written. */
+/** PostgreSQL side of creating a project: the doors the API role executes to make a tenant and a project, to record that its grants were written, and to read and fill a name a deleted project vacated. */
 
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
@@ -17,9 +17,10 @@ export function postgresProjectCreation(pool: pg.Pool): ProjectCreationStore {
         tenant_created: boolean | null;
         grants_written: boolean | null;
         operation: string | null;
+        name: string | null;
       }>(
-        sql`SELECT outcome, tenant_created, grants_written, operation FROM create_project(
-          ${write.partition.tenant},${write.partition.project},${write.standing},
+        sql`SELECT outcome, tenant_created, grants_written, operation, name FROM create_project(
+          ${write.partition.tenant},${write.partition.project},${write.name},${write.standing},
           ${write.reserved},${write.operation},${write.authority.kind},
           ${write.authority.subject})`,
       );
@@ -41,11 +42,23 @@ export function postgresProjectCreation(pool: pg.Pool): ProjectCreationStore {
         tenantCreated: row.tenant_created,
         grantsWritten: row.grants_written,
         operation: asOperationId(row.operation),
+        ...(row.name === null ? {} : { name: row.name }),
       };
     },
     recordGrants: async (operation) => {
       await pool.query<{ recorded: string | null }>(
         sql`SELECT record_project_creation_grants(${operation})::text AS recorded`,
+      );
+    },
+    vacated: async (partition) => {
+      const found = await pool.query<{ vacated: boolean | null }>(
+        sql`SELECT project_vacated(${partition.tenant},${partition.project})::boolean AS vacated`,
+      );
+      return found.rows[0]?.vacated === true;
+    },
+    fillVacancy: async (partition) => {
+      await pool.query<{ filled: string | null }>(
+        sql`SELECT fill_project_vacancy(${partition.tenant},${partition.project})::text AS filled`,
       );
     },
   };
