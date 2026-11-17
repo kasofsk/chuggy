@@ -7,6 +7,7 @@
  */
 
 import {
+  accessCallerAccountSchema,
   accessCallerTenantsSchema,
   accessInvitedSchema,
   accessInviteLinkMintedSchema,
@@ -25,6 +26,7 @@ import {
   accessTenantAuthoritiesSchema,
   accessTenantPeopleSchema,
   accessWorkspaceLinksSchema,
+  type AccessCallerAccount,
   type AccessCallerTenants,
   type AccessInvitation,
   type AccessInvitationGrants,
@@ -168,6 +170,15 @@ export function apiCallerTenants(
 ): Promise<ApiResult<AccessCallerTenants>> {
   return apiGet(ports, accessPlanePath("callerTenants", {}), (value) =>
     accessCallerTenantsSchema.parse(value),
+  );
+}
+
+/** Who the caller is: the GitHub login their account records, answered to anyone signed in about themself. */
+export function apiCallerAccount(
+  ports: ApiPorts,
+): Promise<ApiResult<AccessCallerAccount>> {
+  return apiGet(ports, accessPlanePath("callerAccount", {}), (value) =>
+    accessCallerAccountSchema.parse(value),
   );
 }
 

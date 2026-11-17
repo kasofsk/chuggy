@@ -25,7 +25,8 @@
  * does not exist, so nothing here tells the two apart; one answered the list
  * who lacks a change's kind is refused it. The caller's own tenants, in
  * `./accessCallerTenants.ts`, are the one list answered to any caller, because
- * it is about them alone.
+ * it is about them alone, and the caller's own account is answered to them on
+ * the same ground.
  *
  * WHO A SUBJECT IS IS THE DIRECTORY'S, asked once per list about at most
  * `accessDirectorySubjectsMax` subjects. A plane with no directory lists
@@ -44,6 +45,7 @@
 import {
   accessProjectRoles,
   accessTenantRoles,
+  type AccessCallerAccount,
   type AccessProjectPeople,
   type AccessProjectPerson,
   type AccessProjectRole,
@@ -236,6 +238,8 @@ export type AccessChange =
   "Absent" | "Changed" | "Refused" | "LastTenantAdministrator";
 
 export interface AccessPlane {
+  /** Who the caller is, as the directory records them. */
+  callerAccount(caller: Principal): Promise<AccessCallerAccount>;
   tenantPeople(
     caller: Principal,
     tenant: TenantId,
@@ -447,6 +451,27 @@ export async function accessAccountsNamed<
         : { githubLogin: account.githubLogin }),
     };
   });
+}
+
+/** The GitHub login the caller's own account records, asked of the directory in one question about them alone. */
+async function accessCallerAccountRead(
+  ports: AccessPlanePorts,
+  settings: AccessPlaneSettings,
+  caller: Principal,
+): Promise<AccessCallerAccount> {
+  const subject = oidcPrincipalSubject(settings.issuer, caller);
+  if (
+    ports.directory === undefined ||
+    subject === undefined ||
+    !accessDirectorySubject(subject)
+  )
+    return {};
+  const account = (await ports.directory.accounts([subject])).find(
+    (known) => known.subject.toLowerCase() === subject.toLowerCase(),
+  );
+  return account?.githubLogin === undefined
+    ? {}
+    : { githubLogin: account.githubLogin };
 }
 
 /** The tenant's projects as its `tenant` links name them, at most the bound. */
@@ -888,6 +913,7 @@ export function accessPlane(
   if (settings.issuer.length === 0)
     throw new RangeError("access plane: the issuer is empty");
   return {
+    callerAccount: (caller) => accessCallerAccountRead(ports, settings, caller),
     tenantPeople: async (caller, tenant) =>
       (await accessTenantListed(ports.access, caller, tenant))
         ? accessTenantPeopleRead(ports, settings, caller, tenant)

@@ -24,6 +24,7 @@ setup-stale = this copy of { setup-program } may be older than the { -site }
 setup-site-unknown = no { -brand-name } { -site } is remembered on this machine yet
 setup-site-named = { $site }
 setup-site-signed-in = { $site }, signed in
+setup-site-signed-in-as = { $site }, signed in as { $login }
 setup-site-signed-out = { $site }, not signed in
 setup-site-unconfirmed = { $site }, sign-in not confirmed
 setup-site-unreachable = { $site }, no answer
@@ -36,6 +37,8 @@ setup-site-issuer = { $site }, its sign-in server is not answering
 # spells -run: to run is a verb here
 setup-rule-drive = Run the command on the next: line exactly as written, and stop where it says { $stop }. Say each tell: line to the person as it is written. Put each ask: line to the person, and pass their answer in the flag it names.
 setup-rule-directory = Never read or print anything under { $directory }: it holds the sign-in.
+# spells -run: to run is a verb here
+setup-rule-sign-out = To change which { -github } account { setup-program } is signed in as, run { $command } and then sign in again.
 # spells -run: to run is a verb here
 setup-rule-site = Run { $command } with the address of the person's { setup-site } after it, such as { $example }. Ask the person for the address if you do not have it.
 # spells -run: to run is a verb here
@@ -51,7 +54,7 @@ setup-rule-ticket = Run { $command } with { $title } and a short title for what 
 ## The arguments, asked wrongly. Each flag and command word is the program's own.
 
 # spells -run: to run is a verb here
-setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $merged }, as { $served }, as { $filed }, as { $plugged } or as { $starred }
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $signOut }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $merged }, as { $served }, as { $filed }, as { $plugged } or as { $starred }
 setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin }, { $northStar } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag } with { $runner }, { $test } with { $configuration }, { $title }, { $intent } and { $chosen } with { $filed }, and { $text } with { $starred }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
@@ -84,13 +87,14 @@ setup-node-when = once node on this machine is { $needs }
 
 ## A sign-in page waiting.
 
-setup-waiting-finish = Sign in with { -github } there and allow { setup-program }. If the page is gone, open { $address } on this machine.
+setup-waiting-address = Open { $address } in the browser where you are signed in to { -github } as the account you want to use.
+setup-waiting-finish = { setup-waiting-address } Then allow { setup-program }.
 setup-waiting-opened = opened { $address } in a browser
 setup-waiting-open = the sign-in page is open and still waiting for someone to sign in
-setup-waiting-open-tell = A sign-in page is open in your browser and is waiting for you. { $finish }
+setup-waiting-open-tell = A sign-in page is open in a browser and is waiting for you. { $finish }
 setup-waiting-attached = the sign-in page opened earlier is still waiting
 setup-waiting-unopened = no browser could be opened from here
-setup-waiting-unopened-tell = Open { $address } in a browser on this machine, sign in with { -github } and allow { setup-program }.
+setup-waiting-unopened-tell = { setup-waiting-finish }
 # spells -run: to run is a verb here
 setup-waiting-rule = Run the command on the next: line again, and go on running it while the sign-in page waits: it waits on the same page and opens no other. Nothing has failed, so do not tell the person that it did or give them a deadline. Once the page has closed, that command says what became of it.
 
@@ -103,7 +107,7 @@ setup-ended-declined-found = the sign-in was declined in the browser
 setup-ended-declined-tell = The sign-in was declined in the browser, so { setup-program } is not signed in and { $left }. Tell me if you want to sign in after all.
 setup-ended-declined-when = if the person asks to sign in after all
 setup-ended-refused-found = the sign-in server refused the request
-setup-ended-refused-tell = The sign-in server refused the sign-in, so { setup-program } is not signed in. Tell me if you want to try signing in again.
+setup-ended-refused-tell = The sign-in server refused the sign-in, so { setup-program } is not signed in. Signing in again opens a new sign-in page, and a sign-in it refused can go through then. Tell me if you want to try signing in again.
 setup-ended-mismatched-found = the answer that came back did not belong to this sign-in
 setup-ended-mismatched-tell = The answer the browser brought back was not this sign-in's, so { setup-program } is not signed in. Tell me if you want to try signing in again.
 setup-ended-exchange-found = the sign-in server did not accept the answer
@@ -119,6 +123,12 @@ setup-ended-busy-found = another { setup-program } command held the sign-in
 setup-ended-busy-tell = The sign-in was answered while another { setup-program } command was running, so it was not kept. Tell me if you want to try signing in again.
 setup-ended-faulted-found = the sign-in page stopped on something it did not expect
 setup-ended-faulted-tell = The sign-in page stopped before the sign-in finished, so { setup-program } is not signed in. Tell me if you want to try signing in again.
+
+## A sign-in removed from this machine.
+
+setup-sign-out-did = removed this machine's sign-in to { $site }
+setup-sign-out-none = this machine held no sign-in to { $site }
+setup-sign-out-tell = Signed out of { -brand-name } on this machine. { -runner(case: "upper", form: "plural") } and { -chat-host(form: "plural") } keep running.
 
 ## How a sign-in ended, where the bare command says how the site stands.
 

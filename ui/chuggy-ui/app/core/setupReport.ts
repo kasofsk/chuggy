@@ -390,8 +390,16 @@ export type SetupReport =
       readonly ended: SetupSignInEnded | undefined;
     }
   | {
+      /** `sign-out` ran: this machine holds no sign-in to the site, and `held` says whether it held one before. */
+      readonly report: "SignedOutHere";
+      readonly site: string;
+      readonly held: boolean;
+    }
+  | {
       readonly report: "Checklist";
       readonly site: string;
+      /** The GitHub login the site named the person by, where it named one. */
+      readonly login?: string | undefined;
       /** What was found that is no one step's: what the folder's remote proposed. */
       readonly found: readonly Copy[];
       /** One a step, or none where which project is meant is still the person's to say. */
@@ -414,12 +422,16 @@ export type SetupReport =
       readonly report: "SignInEnded";
       readonly site: string;
       readonly ended: SetupSignInEnded;
+      /** The GitHub login the site named the person by once signed in, where it named one. */
+      readonly login?: string | undefined;
     }
   | {
       /** A run of `runner`, or of `chat-host` where it names no project. */
       readonly report: "Runner";
       /** The site the run was signed in to, or nothing where it stopped before it asked one. */
       readonly site: string | undefined;
+      /** The GitHub login the site named the person by, where it named one. */
+      readonly login?: string | undefined;
       readonly workspace: string;
       readonly project: string | undefined;
       readonly notes: readonly SetupRunnerNote[];
@@ -429,6 +441,8 @@ export type SetupReport =
       /** A run of `project`: the workspace, and its display name where the sign-in read one, the address it was given where it was given one, the name, and how it ended. */
       readonly report: "Project";
       readonly site: string;
+      /** The GitHub login the site named the person by, where it named one. */
+      readonly login?: string | undefined;
       readonly workspace: string;
       readonly workspaceName?: string;
       readonly project: string | undefined;
@@ -622,6 +636,7 @@ const setupSiteExample = "https://chuggy.example";
 function setupCommandWords() {
   const [
     signIn = "",
+    signOut = "",
     made = "",
     mcp = "",
     runner = "",
@@ -637,6 +652,7 @@ function setupCommandWords() {
     starred = "",
   ] = [
     ...setupCommandArguments("SignIn"),
+    ...setupCommandArguments("SignOut"),
     ...setupCommandArguments("Project"),
     ...setupCommandArguments("Mcp"),
     ...setupCommandArguments("Runner"),
@@ -653,6 +669,7 @@ function setupCommandWords() {
   ];
   return {
     signIn,
+    signOut,
     made,
     mcp,
     runner,
@@ -810,6 +827,13 @@ function setupUnservedLines(platform: string): readonly SetupLine[] {
   ];
 }
 
+/** A site signed in to, named with the account the site named the person by, where it named one. */
+function setupSignedInSaid(site: string, login: string | undefined): SetupLine {
+  return login === undefined
+    ? setupSiteSaid(site, "setup-site-signed-in")
+    : ["site", { id: "setup-site-signed-in-as", args: { site, login } }];
+}
+
 function setupSiteSaid(
   site: string,
   id:
@@ -825,10 +849,39 @@ function setupSiteSaid(
 }
 
 /** How to drive the program, said once: to whoever has not yet signed in. */
-function setupRuleLines(directory: string): readonly SetupLine[] {
+function setupRuleLines(
+  directory: string,
+  saying: SetupSaying,
+): readonly SetupLine[] {
   return [
     ["rule", { id: "setup-rule-drive", args: { stop: setupNextStop } }],
     ["rule", { id: "setup-rule-directory", args: { directory } }],
+    setupSignOutRule(saying),
+  ];
+}
+
+/** `sign-out`, named as the way to sign in as another account. */
+function setupSignOutRule(saying: SetupSaying): SetupLine {
+  const command = setupCommandLine([
+    "node",
+    saying.script,
+    ...setupCommandArguments("SignOut"),
+  ]);
+  return ["rule", { id: "setup-rule-sign-out", args: { command } }];
+}
+
+/** `sign-out`: what it removed, that what runs elsewhere keeps running, and nothing after it. */
+function setupSignedOutHereLines(
+  report: Extract<SetupReport, { readonly report: "SignedOutHere" }>,
+): readonly SetupLine[] {
+  const site = report.site;
+  return [
+    setupSiteSaid(site, "setup-site-signed-out"),
+    report.held
+      ? ["did", { id: "setup-sign-out-did", args: { site } }]
+      : ["found", { id: "setup-sign-out-none", args: { site } }],
+    ["tell", { id: "setup-sign-out-tell" }],
+    ["next", setupNextStop],
   ];
 }
 
@@ -998,7 +1051,8 @@ function setupEndedLines(
 ): readonly SetupLine[] {
   if (report.ended === "SignedIn")
     return [
-      setupSiteSaid(report.site, "setup-site-signed-in"),
+      setupSignedInSaid(report.site, report.login),
+      setupSignOutRule(saying),
       setupNextLine(saying, "Status"),
     ];
   const head = setupSiteSaid(report.site, "setup-site-signed-out");
@@ -1029,13 +1083,13 @@ function setupSignedOutLines(
   if (stood === undefined)
     return [
       head,
-      ...setupRuleLines(report.directory),
+      ...setupRuleLines(report.directory, saying),
       setupNextLine(saying, "SignIn"),
     ];
   return [
     head,
     ...setupStopSaid(stood),
-    ...setupRuleLines(report.directory),
+    ...setupRuleLines(report.directory, saying),
     ...setupStopRule(stood, setupCommandOf(saying, "SignIn")),
   ];
 }
@@ -1951,7 +2005,7 @@ function setupChecklistLines(
   saying: SetupSaying,
 ): readonly SetupLine[] {
   return [
-    setupSiteSaid(report.site, "setup-site-signed-in"),
+    setupSignedInSaid(report.site, report.login),
     ...report.found.map((found): SetupLine => ["found", found]),
     ...report.steps.map((step): SetupLine => ["step", step]),
     ...setupThingLines(report, saying),
@@ -1999,7 +2053,7 @@ function setupRunnerLines(
   const head: readonly SetupLine[] = [
     ...(report.site === undefined
       ? []
-      : [setupSiteSaid(report.site, "setup-site-signed-in")]),
+      : [setupSignedInSaid(report.site, report.login)]),
     ...setupNoteLines(report),
   ];
   switch (report.ended.ended) {
@@ -2059,7 +2113,7 @@ function setupProjectLines(
 ): readonly SetupLine[] {
   const { workspace, ended } = report;
   const skipped = setupAnswersSkipped(saying.answers);
-  const head = setupSiteSaid(report.site, "setup-site-signed-in");
+  const head = setupSignedInSaid(report.site, report.login);
   if (ended.ended === "Made")
     return [
       head,
@@ -2258,6 +2312,8 @@ function setupLines(
       ];
     case "SignInEnded":
       return setupEndedLines(report, saying);
+    case "SignedOutHere":
+      return setupSignedOutHereLines(report);
     case "SignedOut":
       return setupSignedOutLines(report, saying);
     case "SiteUnusable":
@@ -2364,6 +2420,7 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
     case "WorkspacesUnread":
       return 1;
     case "SignedOut":
+    case "SignedOutHere":
     case "SignInWaiting":
       return 0;
     case "SignInEnded":

@@ -9,8 +9,9 @@
  * way, and so are the site's workspace links, and either is redeemed by any
  * caller signed in, who needs no kind because the link's maker held them, and
  * summarized to whoever sends its token, with or without a bearer. The
- * tenants a caller is written into are answered to any caller signed in, about
- * them alone, and a tenant's administrators change its display name.
+ * tenants a caller is written into, and the GitHub login their account
+ * records, are answered to any caller signed in, about them alone, and a
+ * tenant's administrators change its display name.
  *
  * IT ANSWERS ITS CALLERS AS THE PUBLIC API DOES, because the console reads
  * both with the same code. A caller's body is read as the API's media type,
@@ -517,6 +518,10 @@ function accessAnsweredRoutes(
     [
       "callerTenants",
       (_request, caller) => service.callerTenants.callerTenants(caller),
+    ],
+    [
+      "callerAccount",
+      (_request, caller) => service.plane.callerAccount(caller),
     ],
   ];
   for (const [name, abilities] of answered)

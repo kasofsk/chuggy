@@ -98,6 +98,7 @@ export type SetupAskFault =
 export type SetupCommand =
   | "Status"
   | "SignIn"
+  | "SignOut"
   | "Project"
   | "Mcp"
   | "Runner"
@@ -172,6 +173,11 @@ export type SetupAsked =
       readonly asked: "SignIn";
       readonly site: string | undefined;
       readonly waitSecs: number;
+      readonly answers: SetupAnswers;
+    }
+  | {
+      readonly asked: "SignOut";
+      readonly site: string | undefined;
       readonly answers: SetupAnswers;
     }
   | {
@@ -284,6 +290,7 @@ type SetupRun = Exclude<SetupAsked["asked"], "Wrongly">;
 
 const setupCommandWords = {
   "sign-in": "SignIn",
+  "sign-out": "SignOut",
   project: "Project",
   mcp: "Mcp",
   runner: "Runner",
@@ -327,6 +334,7 @@ type SetupFlag = (typeof setupFlags)[number];
 const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
   Status: ["site", "workspace", "project", "plugin", "north-star"],
   SignIn: ["site", "wait-secs", "workspace", "project", "plugin", "north-star"],
+  SignOut: ["site", "workspace", "project", "plugin", "north-star"],
   Project: ["site", "workspace", "project", "name", "plugin", "north-star"],
   Mcp: ["site", "workspace", "project", "plugin", "north-star"],
   Runner: [
@@ -607,6 +615,7 @@ function setupAskedOf(
     return { asked: "Wrongly", fault: "WaitSecs" };
   switch (asked) {
     case "Status":
+    case "SignOut":
       return { asked, site, answers };
     case "SignIn":
     case "Merge":
@@ -659,6 +668,8 @@ export function setupCommandArguments(
       return [];
     case "SignIn":
       return ["sign-in"];
+    case "SignOut":
+      return ["sign-out"];
     case "Project":
       return ["project"];
     case "Mcp":

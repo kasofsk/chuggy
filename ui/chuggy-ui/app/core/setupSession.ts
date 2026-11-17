@@ -14,7 +14,7 @@
 
 import type { AccessCallerTenant } from "../../../../src/contract/accessPlane.ts";
 
-import { apiCallerTenants } from "./accessRoutes.ts";
+import { apiCallerAccount, apiCallerTenants } from "./accessRoutes.ts";
 import { apiPortsOver } from "./apiPorts.ts";
 import type { ApiFailure, ApiPorts } from "./apiRequest.ts";
 import {
@@ -195,4 +195,12 @@ export async function setupWorkspacesRead(
     tenants: read.value.tenants,
     truncated: read.value.truncated,
   };
+}
+
+/** The GitHub login the site says a session is signed in as, or nothing where it names none, or does not answer as a site that knows the read. */
+export async function setupLoginRead(
+  opened: SetupSessionOpened,
+): Promise<string | undefined> {
+  const read = await apiCallerAccount(opened.api);
+  return read.outcome === "Ok" ? read.value.githubLogin : undefined;
 }

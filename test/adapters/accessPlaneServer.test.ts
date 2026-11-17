@@ -48,6 +48,7 @@ import {
   accessSiteAuthorities,
   accessSiteAuthoritiesSchema,
   accessSiteTenantsSchema,
+  accessCallerAccountSchema,
   accessCallerTenantsSchema,
   accessTenantAbilitiesSchema,
   accessTenantAuthoritiesSchema,
@@ -148,6 +149,7 @@ const tokens: Readonly<Record<string, string>> = {
   "hal-token": "hal",
   "sam-token": "sam",
   "sita-token": "sita",
+  [`${directorySubject(7)}-token`]: directorySubject(7),
 };
 
 const as = (token: string) => ({ authorization: `Bearer ${token}` });
@@ -894,14 +896,14 @@ test("a tenant's administrators are added to the site's account creators once th
   );
 });
 
-test("an authority that cannot answer is retryable on every route but a link's summary, which asks it nothing, and unready on readiness", async () => {
+test("an authority that cannot answer is retryable on every route but a link's summary and the caller's own account, which ask it nothing, and unready on readiness", async () => {
   const { memory, app } = await served();
   const open = accessInviteLinkMintedSchema.parse(
     (await linkMinted(app, "alice-token", { role: "Member" })).json(),
   );
   memory.unavailable = true;
   for (const name of Object.keys(accessPlaneRoutes) as AccessPlaneRouteName[]) {
-    if (name === "inviteLinkSummary") continue;
+    if (name === "inviteLinkSummary" || name === "callerAccount") continue;
     const route = accessPlaneRoutes[name];
     const person = { github: "octo-cat", email: "octo@example.com" };
     const body =
@@ -1521,6 +1523,33 @@ test("the caller's own tenants read as their strict schema to any caller signed 
     tenants: [],
     truncated: false,
   });
+  const unauthenticated = await get();
+  assert.equal(unauthenticated.statusCode, 401);
+  enveloped(unauthenticated, "Unauthenticated");
+});
+
+test("the caller's own account reads as its strict schema to any caller signed in, naming the GitHub login the directory records for them, and is refused without a credential", async () => {
+  const subject = directorySubject(7);
+  const directory = directoryMemory([
+    { subject, email: "ana@example.com", githubLogin: "Ana-1" },
+  ]);
+  const { app } = await served(true, undefined, directory.directory);
+  const get = (token?: string) =>
+    app.inject({
+      method: "GET",
+      url: pathOf("callerAccount"),
+      ...(token === undefined ? {} : { headers: as(token) }),
+    });
+  const named = await get(`${subject}-token`);
+  assert.equal(named.statusCode, 200, named.body);
+  assert.deepEqual(accessCallerAccountSchema.parse(named.json()), {
+    githubLogin: "Ana-1",
+  });
+  const unnamed = await get("priya-token");
+  assert.equal(unnamed.statusCode, 200, unnamed.body);
+  assert.deepEqual(accessCallerAccountSchema.parse(unnamed.json()), {});
+  directory.unavailable = true;
+  enveloped(await get(`${subject}-token`), "Retryable", "DirectoryUnavailable");
   const unauthenticated = await get();
   assert.equal(unauthenticated.statusCode, 401);
   enveloped(unauthenticated, "Unauthenticated");

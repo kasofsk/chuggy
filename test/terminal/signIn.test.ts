@@ -79,9 +79,9 @@ test("a sign-in the person finishes is exchanged, remembered and said, on this m
     assert.equal(await answered.text(), "");
   });
   assert.match(address, /^http:\/\/127\.0\.0\.1:\d+\/$/u);
-  assert.deepEqual(done.lines.slice(0, -1), [
-    `site: ${installation.site}, signed in`,
-  ]);
+  assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
+  assert.match(done.lines[1] ?? "", signOutRule);
+  assert.equal(done.lines.length, 3);
   assert.match(done.lines.at(-1) ?? "", /^next: node \S+$/u);
   assert.equal(done.code, 0);
   assert.equal(done.stderr, "");
@@ -213,6 +213,9 @@ const declined = [
 const declinedRule =
   /^rule: Run node \S+ sign-in only if the person asks to sign in after all\.$/u;
 
+const signOutRule =
+  /^rule: To change which GitHub account chuggy setup is signed in as, run node \S+ sign-out and then sign in again\.$/u;
+
 /** How many times the issuer was asked to start a sign-in, which is how many pages were opened and followed. */
 function pages(installation: StandIn): number {
   return installation.asked.filter((line) => line.includes("/oauth2/auth"))
@@ -255,8 +258,9 @@ test("a declined sign-in stands: the bare command says it again and opens nothin
     ]);
     assert.match(stood.lines[3] ?? "", /^rule: Run the command on the next: /u);
     assert.match(stood.lines[4] ?? "", /^rule: Never read or print /u);
-    assert.match(stood.lines[5] ?? "", declinedRule);
-    assert.deepEqual(stood.lines.slice(6), ["next: stop"]);
+    assert.match(stood.lines[5] ?? "", signOutRule);
+    assert.match(stood.lines[6] ?? "", declinedRule);
+    assert.deepEqual(stood.lines.slice(7), ["next: stop"]);
   }
   assert.equal(pages(installation), 1);
   assert.equal(existsSync(join(machine.beside, "opened")), false);
@@ -437,9 +441,10 @@ test("where the opener cannot be run the address is printed at once, and the pag
   });
   assert.equal(handed.code, 0);
   assert.equal(handed.lines[1], "found: no browser could be opened from here");
-  const address = /Open (http:\/\/127\.0\.0\.1:\d+\/) in a browser/u.exec(
-    handed.lines[2] ?? "",
-  )?.[1];
+  const address =
+    /Open (http:\/\/127\.0\.0\.1:\d+\/) in the browser where/u.exec(
+      handed.lines[2] ?? "",
+    )?.[1];
   assert.ok(address !== undefined);
   const waiting = machine.run(["sign-in"]);
   assert.equal((await person(address)).status, 303);

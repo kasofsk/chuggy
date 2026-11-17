@@ -26,7 +26,7 @@ import { setupSiteAt } from "../../ui/chuggy-ui/test/setupSite.ts";
 const made = making();
 
 const wrongly: readonly (readonly string[])[] = [
-  ["sign-out"],
+  ["log-out"],
   ["sign-in", "now"],
   ["--verbose"],
   ["--site"],
@@ -50,7 +50,7 @@ test("a program asked wrongly exits two, says which way, and repeats nothing it 
     dialect(done, said);
     assert.match(done.lines[0] ?? "", /^found: /u, said);
     assert.match(done.lines.at(-1) ?? "", /^next: node \S+$/u, said);
-    for (const given of ["hunter2", "soon", "sign-out", "verbose", "invalid"])
+    for (const given of ["hunter2", "soon", "log-out", "verbose", "invalid"])
       assert.ok(!done.stdout.includes(given), said);
   }
   assert.deepEqual(readdirSync(machine.home), []);

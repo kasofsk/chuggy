@@ -17,6 +17,10 @@ export interface SetupCopy {
   readonly "setup-site-signed-in": {
     readonly site: unknown;
   };
+  readonly "setup-site-signed-in-as": {
+    readonly site: unknown;
+    readonly login: unknown;
+  };
   readonly "setup-site-signed-out": {
     readonly site: unknown;
   };
@@ -38,6 +42,9 @@ export interface SetupCopy {
   readonly "setup-rule-directory": {
     readonly directory: unknown;
   };
+  readonly "setup-rule-sign-out": {
+    readonly command: unknown;
+  };
   readonly "setup-rule-site": {
     readonly command: unknown;
     readonly example: unknown;
@@ -57,6 +64,7 @@ export interface SetupCopy {
   };
   readonly "setup-asked-command": {
     readonly signIn: unknown;
+    readonly signOut: unknown;
     readonly made: unknown;
     readonly mcp: unknown;
     readonly runner: unknown;
@@ -186,6 +194,9 @@ export interface SetupCopy {
   readonly "setup-node-when": {
     readonly needs: unknown;
   };
+  readonly "setup-waiting-address": {
+    readonly address: unknown;
+  };
   readonly "setup-waiting-finish": {
     readonly address: unknown;
   };
@@ -227,6 +238,13 @@ export interface SetupCopy {
   readonly "setup-ended-busy-tell": Record<never, never>;
   readonly "setup-ended-faulted-found": Record<never, never>;
   readonly "setup-ended-faulted-tell": Record<never, never>;
+  readonly "setup-sign-out-did": {
+    readonly site: unknown;
+  };
+  readonly "setup-sign-out-none": {
+    readonly site: unknown;
+  };
+  readonly "setup-sign-out-tell": Record<never, never>;
   readonly "setup-ended-site-changed": Record<never, never>;
   readonly "setup-ended-workspaces-unread": Record<never, never>;
   readonly "setup-fault-unwritable-found": {

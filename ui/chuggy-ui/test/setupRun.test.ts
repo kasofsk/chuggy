@@ -517,7 +517,7 @@ test("a lock whose holder is gone is taken, and the command runs", async () => {
 
 test("a command asked wrongly says which part, and reads nothing", async () => {
   const machine = setupMachine();
-  expect(await machine.command(["sign-out"])).toEqual({
+  expect(await machine.command(["log-out"])).toEqual({
     report: "AskedWrongly",
     fault: "Command",
   });

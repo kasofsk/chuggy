@@ -56,7 +56,11 @@ import type {
   SetupSignInEnded,
   SetupSignInOpened,
 } from "./setupReport.ts";
-import { setupSessionOpened, setupWorkspacesRead } from "./setupSession.ts";
+import {
+  setupLoginRead,
+  setupSessionOpened,
+  setupWorkspacesRead,
+} from "./setupSession.ts";
 import type { SetupSessionOpened } from "./setupSession.ts";
 import {
   setupLockReleased,
@@ -199,8 +203,14 @@ function setupSignInOpened(ports: SetupPorts, port: number): Promise<boolean> {
   return setupBrowserOpened(ports, setupLoopbackAddress(port));
 }
 
-function setupEndedReport(site: string, ended: SetupSignInEnded): SetupReport {
-  return { report: "SignInEnded", site, ended };
+function setupEndedReport(
+  site: string,
+  ended: SetupSignInEnded,
+  login?: string,
+): SetupReport {
+  return login === undefined
+    ? { report: "SignInEnded", site, ended }
+    : { report: "SignInEnded", site, ended, login };
 }
 
 /** A page that could not be started, or never said where it listens; its site is remembered by then. */
@@ -239,7 +249,10 @@ async function setupSignInStarted(
     const note = setupSignInNoteRead(ports.files);
     if (note?.note === "Ended") {
       setupSignInSaid(ports, note);
-      return { begun: "Reported", report: setupEndedReport(site, note.ended) };
+      return {
+        begun: "Reported",
+        report: setupEndedReport(site, note.ended, note.login),
+      };
     }
     if (note?.note === "Waiting")
       return {
@@ -302,6 +315,7 @@ async function setupSignInHeard(
   site: string,
   pid: number,
   ended: SetupSignInEnded,
+  login?: string,
 ): Promise<SetupReport> {
   if (await setupLockTaken(ports, setupLockWaitMs))
     try {
@@ -320,7 +334,7 @@ async function setupSignInHeard(
     } finally {
       setupLockReleased(ports);
     }
-  return setupEndedReport(site, ended);
+  return setupEndedReport(site, ended, login);
 }
 
 /** Waits on a page until `waitSecs` have passed on the clock, looking every `pollMs` for the note its listener leaves when it ends. */
@@ -337,7 +351,7 @@ async function setupSignInWaited(
     const alive = ports.process.alive(waiting.pid);
     const note = setupSignInNoteRead(ports.files);
     if (note?.note === "Ended")
-      return setupSignInHeard(ports, site, waiting.pid, note.ended);
+      return setupSignInHeard(ports, site, waiting.pid, note.ended, note.login);
     if (note?.pid !== waiting.pid || !alive)
       return setupSignInHeard(ports, site, waiting.pid, "Expired");
     if (ports.nowMs() >= endsAtMs)
@@ -455,6 +469,8 @@ interface SetupListener {
   readonly state: string | undefined;
   readonly decide: (ended: SetupSignInEnded) => void;
   deciding: boolean;
+  /** The GitHub login the site named the person by once this sign-in went through, where it named one. */
+  login?: string | undefined;
 }
 
 /**
@@ -501,6 +517,10 @@ async function setupListenerAnswered(
       read === "Code"
         ? await setupCallbackExchanged(listener.ports, listener.opened, heard)
         : read;
+    if (ended === "SignedIn")
+      listener.login = await setupLoginRead(listener.opened).catch(
+        () => undefined,
+      );
   } finally {
     listener.decide(ended);
   }
@@ -514,6 +534,7 @@ function setupListenerEnded(
   ports: SetupPorts,
   site: string,
   ended: SetupSignInEnded,
+  login: string | undefined,
 ): void {
   const note = setupSignInNoteRead(ports.files);
   if (note?.note !== "Waiting" || note.pid !== ports.process.pid) return;
@@ -523,6 +544,7 @@ function setupListenerEnded(
     ended,
     endedAtMs: ports.nowMs(),
     told: false,
+    ...(login === undefined ? {} : { login }),
   });
 }
 
@@ -602,8 +624,8 @@ export async function setupListened(
     const ended =
       first ?? (begun.listener.deciding ? await begun.decided : "Expired");
     begun.listener.deciding = true;
-    setupListenerEnded(ports, site, ended);
-    return setupEndedReport(site, ended);
+    setupListenerEnded(ports, site, ended, begun.listener.login);
+    return setupEndedReport(site, ended, begun.listener.login);
   } finally {
     life.abort();
     await listening.close(setupListenCloseWaitMs);

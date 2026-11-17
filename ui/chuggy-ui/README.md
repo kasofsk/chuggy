@@ -221,6 +221,12 @@ renewal token in the person's home directory and never prints the token. The
 issuer hands a new token back for each one it is shown, so before one is shown
 the program keeps room in that directory for the next: a home that will not
 take it is said as that, with its path, and the sign-in is not spent.
+Signed in, the `site:` line names the GitHub login the site records for the
+account, where it records one.
+
+`sign-out` removes this machine's sign-in for the site and asks nobody
+anything, so runners and chat hosts it set up keep running. It is how the
+person changes accounts: `sign-out`, then `sign-in` again.
 
 `project --workspace <w> --name <name>` makes a project in that workspace by
 the request the console's New project form sends, at the address the form
