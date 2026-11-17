@@ -1,6 +1,8 @@
 /* The epic page's History tab: a row a revision or a folded run, its label
    muted at the left, what changed and who over each other, and when at the
-   right. Where the reader is narrow, the label sits above the row. */
+   right. Every part wraps, a name or a title with no space in it too, so no
+   row is wider than the page; where the page is narrow, the label sits above
+   the row. */
 
 @layer page {
   .epic-history-tab {
@@ -31,8 +33,10 @@
 
   .epic-history-revision,
   .epic-history-who {
+    min-width: 0;
     color: var(--ink-3);
     font-size: var(--text-sm);
+    overflow-wrap: anywhere;
   }
 
   .epic-history-body {
@@ -65,9 +69,10 @@
     list-style: none;
     color: var(--ink-2);
     font-size: var(--text-sm);
+    overflow-wrap: anywhere;
   }
 
-  @media (max-width: 40em) {
+  @container page (max-width: 40em) {
     .epic-history-row {
       grid-template-columns: minmax(0, 1fr) auto;
     }

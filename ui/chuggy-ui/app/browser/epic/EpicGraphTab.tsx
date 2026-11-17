@@ -2,13 +2,15 @@
  * The epic page's Graph tab: the members and the tickets outside the epic
  * they wait on, drawn beside the ticket selected, or the one line its read is
  * drawn as while it is not ready. The ticket selected is the address's, and
- * none where it names none.
+ * none where it names none. Where the page is narrow a drawn graph is headed
+ * by the way to the same tickets as a list.
  */
 
 import type { ReactNode } from "react";
 
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import { TextLink } from "../ui/TextLink.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";
 import { EpicTabHeading } from "./EpicTabs.tsx";
 import { EpicGraphView } from "./EpicGraphView.tsx";
@@ -23,6 +25,22 @@ function EpicGraphFrameSaying(props: {
     <div className="epic-graph-frame">
       <p className="epic-graph-saying">{props.children}</p>
     </div>
+  );
+}
+
+/** The Tickets tab, which the sheet shows only where the page is narrow. */
+function EpicGraphAsList(): ReactNode {
+  const held = useEpicPageHeld();
+  const text = useCopyText();
+  return (
+    <p className="epic-graph-as-list">
+      <TextLink
+        to="/$tenant/$project/epics/$epic/tickets"
+        params={{ ...held.partition, epic: String(held.epic) }}
+      >
+        {text({ id: "epics-graph-as-list" })}
+      </TextLink>
+    </p>
   );
 }
 
@@ -48,12 +66,15 @@ export function EpicGraphTab(props: {
             {text({ id: "epics-graph-empty" })}
           </EpicGraphFrameSaying>
         ) : (
-          <EpicGraphView
-            held={held}
-            graph={state.value}
-            ticket={props.ticket}
-            onTicket={props.onTicket}
-          />
+          <>
+            <EpicGraphAsList />
+            <EpicGraphView
+              held={held}
+              graph={state.value}
+              ticket={props.ticket}
+              onTicket={props.onTicket}
+            />
+          </>
         );
       case "Absent":
       case "Failed":

@@ -119,6 +119,7 @@ export interface EpicsCopy {
   readonly "epics-graph-empty": Record<never, never>;
   readonly "epics-graph-loading": Record<never, never>;
   readonly "epics-graph-failed": Record<never, never>;
+  readonly "epics-graph-as-list": Record<never, never>;
   readonly "epics-graph-outside-shown": {
     readonly count: unknown;
   };
