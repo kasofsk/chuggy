@@ -1,0 +1,59 @@
+/* ProjectMark: a square box at its size, the icon filling it or the initial
+   centred on its tint. */
+
+@layer ui {
+  .project-mark {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: var(--radius-2);
+    color: var(--ink-1);
+    font-weight: var(--weight-strong);
+    line-height: 1;
+  }
+
+  .project-mark img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .project-mark-sm {
+    width: var(--size-mark-sm);
+    height: var(--size-mark-sm);
+    font-size: var(--text-xs);
+  }
+
+  .project-mark-md {
+    width: var(--size-mark-md);
+    height: var(--size-mark-md);
+    font-size: var(--text-sm);
+  }
+
+  .project-mark[data-tint="1"] {
+    background: var(--mark-tint-1);
+  }
+
+  .project-mark[data-tint="2"] {
+    background: var(--mark-tint-2);
+  }
+
+  .project-mark[data-tint="3"] {
+    background: var(--mark-tint-3);
+  }
+
+  .project-mark[data-tint="4"] {
+    background: var(--mark-tint-4);
+  }
+
+  .project-mark[data-tint="5"] {
+    background: var(--mark-tint-5);
+  }
+
+  .project-mark[data-tint="6"] {
+    background: var(--mark-tint-6);
+  }
+}

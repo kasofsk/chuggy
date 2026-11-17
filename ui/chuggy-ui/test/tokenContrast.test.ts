@@ -1,8 +1,9 @@
 /**
  * The console's tokens held to the contract's contrast rule in both schemes:
  * the inks and tones as text on the surfaces, washes and fills
- * `tokenContrastPairs` names, the marks as marks on the page and a panel, and
- * the focus outline as a mark on every ground it is drawn over,
+ * `tokenContrastPairs` names, a project's initial on its tints, the marks as
+ * marks on the page and a panel, and the focus outline as a mark on every
+ * ground it is drawn over,
  * each colour read out of `tokens.css` itself, `light-dark()` pairs and mixes
  * alike. Left out are the inverse ink on the context's slots, which the light
  * scheme draws below the text minimum, and the inks on a primary and a filled
@@ -22,6 +23,7 @@ import {
   themeFillDarkPercent,
   themeWashPercent,
 } from "../../../src/contract/appearance.ts";
+import { projectMarkTints } from "../app/core/projectMark.ts";
 import buttonSheet from "../app/browser/ui/Button.css?raw";
 import radioSheet from "../app/browser/ui/RadioGroup.css?raw";
 import tokenSheet from "../app/styles/tokens.css?raw";
@@ -95,6 +97,14 @@ const tokenContrastPairs: readonly TokenContrastPair[] = [
     themeContrastTextMin,
   ),
   ...tokenContrastPairsOf(["ink-on-accent"], ["accent"], themeContrastTextMin),
+  ...tokenContrastPairsOf(
+    ["ink-1"],
+    Array.from(
+      { length: projectMarkTints },
+      (_, at) => `mark-tint-${String(at + 1)}`,
+    ),
+    themeContrastTextMin,
+  ),
   ...tokenContrastPairsOf(
     ["tone-on-danger"],
     ["tone-fail"],
