@@ -2,19 +2,24 @@
 
 /**
  * Publishes the worker contract: packs it and releases the tarball on GitHub
- * under the tag `worker-contract-v<release>`, made at the commit it was packed
+ * under the tag `worker-contract-v<label>`, made at the commit it was packed
  * from. A consumer installs the release's asset by its URL, and its lockfile
  * pins the tarball's integrity.
  *
- * IT REFUSES BEFORE IT PACKS. A working tree with changes is not the commit the
- * tag would name; a history that does not name this release as the wire this
- * tree holds is a release that was never moved; and a release already made or
- * already tagged is one GitHub or git would refuse halfway through.
+ * THE LABEL IS THE PUBLISHER'S. `--release <label>` names it, as a major, a
+ * minor and a patch, and the package is versioned, tagged and titled by it.
+ * Without one the label is the release the contract names in its header, which
+ * is frozen, so it labels one package only.
  *
- * AND IT REFUSES BEFORE IT RELEASES a pack whose files are not the ones the
- * history records for this release, naming the pack's: that record is what an
- * installed copy of the asset is held to once a later release is served.
- * `--dry-run` does everything but the release and the tag.
+ * IT REFUSES BEFORE IT PACKS. A working tree with changes is not the commit the
+ * tag would name, and a label already released or already tagged is one GitHub
+ * or git would refuse halfway through. `--dry-run` does everything but the
+ * release and the tag.
+ *
+ * THE BUILD SYSTEM PUBLISHES, AT MERGE. When a merge that moves
+ * `workerContractRelease` lands on `main`, the build system runs this script
+ * there. A ticket's job never runs it; a person runs it by hand only where that
+ * release did not happen.
  */
 
 import { spawnSync } from "node:child_process";
@@ -24,19 +29,15 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { workerContractRelease } from "../src/contract/workerContract.ts";
+import {
+  workerContractRelease,
+  workerContractVersionOf,
+} from "../src/contract/workerContract.ts";
 import {
   packWorkerContract,
   workspaceManifest,
   type PackedWorkerContract,
 } from "./pack-worker-contract.ts";
-import {
-  workerContractFilesRefusal,
-  workerContractHistory,
-  workerContractHistoryRefusal,
-  workerContractWire,
-  type WorkerContractHistory,
-} from "./worker-contract-wire.ts";
 
 /** Everything a publish reads or changes outside this module, so a test can stand in for git and GitHub. */
 export interface WorkerContractPublishPorts {
@@ -44,9 +45,10 @@ export interface WorkerContractPublishPorts {
   readonly commit: () => string;
   readonly tagged: (tag: string) => boolean;
   readonly released: (tag: string) => boolean;
-  readonly history: () => WorkerContractHistory;
-  readonly wire: () => Promise<string>;
-  readonly pack: (outDirectory: string) => PackedWorkerContract;
+  readonly pack: (
+    outDirectory: string,
+    release: string,
+  ) => PackedWorkerContract;
   readonly release: (
     tag: string,
     commit: string,
@@ -66,40 +68,36 @@ export type WorkerContractPublished =
       readonly tag: string;
     };
 
-/** The tag a release is published under. */
+/** The tag a label is published under. */
 export function workerContractTag(release: string): string {
   return `worker-contract-v${release}`;
 }
 
-/** Packs `release` into `outDirectory` unless a refusal holds, then releases and tags it unless `dryRun`. */
-export async function publishWorkerContract(
+/** Packs the contract as `release` into `outDirectory` unless a refusal holds, then releases and tags it unless `dryRun`. */
+export function publishWorkerContract(
   ports: WorkerContractPublishPorts,
   name: string,
   release: string,
   outDirectory: string,
   dryRun: boolean,
-): Promise<WorkerContractPublished> {
+): WorkerContractPublished {
   const tag = workerContractTag(release);
   if (!ports.clean())
     return {
       published: "Refused",
       why: "the working tree has changes the tag would not name",
     };
-  const history = ports.history();
-  const unheld = workerContractHistoryRefusal(
-    history,
-    release,
-    await ports.wire(),
-  );
-  if (unheld !== undefined) return { published: "Refused", why: unheld };
+  if (workerContractVersionOf(release) === undefined)
+    return {
+      published: "Refused",
+      why: `${release} is not a major, a minor and a patch`,
+    };
   if (ports.tagged(tag))
     return { published: "Refused", why: `${tag} is already a tag` };
   if (ports.released(tag))
     return { published: "Refused", why: `${tag} is already released` };
   const commit = ports.commit();
-  const packed = ports.pack(outDirectory);
-  const unpacked = workerContractFilesRefusal(history, release, packed.files);
-  if (unpacked !== undefined) return { published: "Refused", why: unpacked };
+  const packed = ports.pack(outDirectory, release);
   if (dryRun) return { published: "Packed", packed, commit, tag };
   ports.release(
     tag,
@@ -190,22 +188,24 @@ const publishWorkerContractGit: Pick<
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { values } = parseArgs({
-    options: { "dry-run": { type: "boolean" }, out: { type: "string" } },
+    options: {
+      "dry-run": { type: "boolean" },
+      out: { type: "string" },
+      release: { type: "string" },
+    },
   });
-  const published = await publishWorkerContract(
+  const published = publishWorkerContract(
     {
       ...publishWorkerContractGit,
       released: (tag) =>
         publishWorkerContractReleased(
           publishWorkerContractCommand("gh", ["release", "view", tag], [0, 1]),
         ),
-      history: workerContractHistory,
-      wire: workerContractWire,
       pack: packWorkerContract,
       release: publishWorkerContractRelease,
     },
     workspaceManifest().name,
-    workerContractRelease,
+    values.release ?? workerContractRelease,
     values.out === undefined
       ? mkdtempSync(join(tmpdir(), "worker-contract-publish-"))
       : resolve(values.out),

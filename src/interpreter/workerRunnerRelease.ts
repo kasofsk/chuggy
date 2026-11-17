@@ -16,9 +16,9 @@ import {
   type WorkerRunnerRelease,
 } from "../contract/workerPool.ts";
 import {
-  contractVersionAccepted,
-  workerContractRunnerReleases,
-} from "./workerPlane.ts";
+  workerContractImplements,
+  type WorkerContractPeer,
+} from "../contract/workerContract.ts";
 
 /** The release pinned for each runner package, by package. */
 export type WorkerRunnerReleases = ReadonlyMap<string, WorkerRunnerRelease>;
@@ -40,16 +40,16 @@ export function workerRunnerReleasesRead(kept: unknown): WorkerRunnerReleases {
 
 /**
  * The release a poll's answer names: the one pinned for the package the poll's
- * runner named, where the release the poll offered reads one, and nothing
+ * runner named, where the poll's peer implements `RunnerReleases`, and nothing
  * otherwise.
  */
 export function workerRunnerReleaseAnswered(
   releases: WorkerRunnerReleases,
   runner: WorkerRunner | undefined,
-  offered: string | undefined,
+  offered: WorkerContractPeer,
 ): WorkerRunnerRelease | undefined {
   return runner !== undefined &&
-    contractVersionAccepted(workerContractRunnerReleases, offered)
+    workerContractImplements("RunnerReleases", offered)
     ? releases.get(runner.package)
     : undefined;
 }

@@ -2,7 +2,6 @@ import { selectorFailedDecisionsPerViewMax } from "../contract/http.ts";
 import { asOperationId } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import type { LeadAdmission } from "./sessionPlacement.ts";
-import type { ProjectInventoryPage } from "./nativeWeb.ts";
 import {
   leadInputBytesMax,
   observeSelectorProject,
@@ -65,7 +64,13 @@ export interface SelectorRuntimeSource
   projects(
     after: Partition | undefined,
     limit: number,
-  ): Promise<ProjectInventoryPage>;
+  ): Promise<SelectorInventoryPage>;
+}
+
+/** A page of the inventory as a sweep reads it: the projects, by partition alone, and where the next page starts. */
+export interface SelectorInventoryPage {
+  readonly projects: readonly Partition[];
+  readonly nextAfter?: Partition;
 }
 
 const selectorDecisionPrefix = "selector-decision-";
@@ -622,7 +627,7 @@ const pausedInventory = {
  */
 async function saveInventoryProgress(
   store: SelectorStateStore,
-  inventory: ProjectInventoryPage,
+  inventory: SelectorInventoryPage,
   scanned: number,
 ): Promise<void> {
   if (scanned === 0 && inventory.projects.length > 0) return;

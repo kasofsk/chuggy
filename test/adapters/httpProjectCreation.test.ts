@@ -30,13 +30,14 @@ const route = "/api/v1/projects";
 const authorized = { authorization: "Bearer valid" };
 const versioned = { ...authorized, "content-type": nativeHttpMediaType };
 const keyed = { ...versioned, "idempotency-key": "create-chuggy-1" };
-const body = { tenant: "vteng", project: "chuggy" };
+const body = { tenant: "vteng", project: "chuggy", name: "Chuggy" };
 
 /** The principal the fixture's `valid` bearer resolves to. */
 const caller = asPrincipal("issuer geoff");
 
 const createdAnswer: ProjectCreationAnswer = {
   outcome: "Created",
+  name: body.name,
   tenantCreated: true,
   grantsWritten: false,
   operation: asOperationId("create-chuggy-1"),
@@ -75,21 +76,26 @@ function creationCase(
           return Promise.resolve(answer);
         },
         recordGrants: () => Promise.resolve(),
+        vacated: () => Promise.resolve(false),
+        fillVacancy: () => Promise.resolve(),
       },
       ...(options.configured === false
         ? {}
         : {
-            grants: {
-              write: () => Promise.reject(new Error("never written alone")),
-              writeAll: (named) => {
-                if (options.grantFails === true)
-                  return Promise.reject(
-                    new ProjectAccessUnavailable("the write port refused"),
-                  );
-                grants.push(...named);
-                return Promise.resolve();
+            authority: {
+              grants: {
+                write: () => Promise.reject(new Error("never written alone")),
+                writeAll: (named) => {
+                  if (options.grantFails === true)
+                    return Promise.reject(
+                      new ProjectAccessUnavailable("the write port refused"),
+                    );
+                  grants.push(...named);
+                  return Promise.resolve();
+                },
+                remove: () => Promise.reject(new Error("never removed")),
               },
-              remove: () => Promise.reject(new Error("never removed")),
+              erasure: { projectErased: () => Promise.resolve() },
             },
           }),
     }),
@@ -132,6 +138,18 @@ test("a project is created at its own address, under the identity the caller key
   );
 });
 
+test("a creation is answered with the name the door read off the project, and writes the name it was sent trimmed", async (t) => {
+  const one = creationCase(t, {
+    ...createdAnswer,
+    outcome: "AlreadyCreated",
+    name: "Chuggy itself",
+  });
+  const served = await created(one, { ...body, name: "  Chuggy  " });
+  assert.equal(served.statusCode, 200);
+  assert.deepEqual(served.json(), { ...body, name: "Chuggy itself" });
+  assert.equal(one.writes[0]?.name, "Chuggy");
+});
+
 test("a replay answers the project it already created", async (t) => {
   const served = await created(
     creationCase(t, { ...createdAnswer, outcome: "AlreadyCreated" }),
@@ -169,8 +187,10 @@ test("a caller the site does not permit to create a tenant is refused with its o
 
 test("a name the rule refuses is the request's own fault and names its field", async (t) => {
   for (const [payload, expected] of [
-    [{ tenant: "Vteng", project: "chuggy" }, "TenantNameInvalid"],
-    [{ tenant: "vteng", project: "chuggy-" }, "ProjectNameInvalid"],
+    [{ ...body, tenant: "Vteng" }, "TenantNameInvalid"],
+    [{ ...body, project: "chuggy-" }, "ProjectNameInvalid"],
+    [{ ...body, name: "  " }, "ProjectDisplayNameInvalid"],
+    [{ ...body, name: "Chug\u0007gy" }, "ProjectDisplayNameInvalid"],
   ] as const) {
     const one = creationCase(t);
     const served = await created(one, payload);
@@ -186,7 +206,7 @@ test("a new tenant named for a path the service answers is the request's own fau
     outcome: "TenantReserved",
     tenantCreated: false,
   });
-  const served = await created(one, { tenant: "projects", project: "chuggy" });
+  const served = await created(one, { ...body, tenant: "projects" });
   assert.equal(served.statusCode, 422);
   assert.equal(code(served), "TenantNameReserved");
   assert.equal(one.writes[0]?.reserved, true);
@@ -262,8 +282,9 @@ test("a body the creation schema does not name is refused before the door", asyn
   const one = creationCase(t);
   for (const payload of [
     { tenant: "vteng" },
+    { tenant: "vteng", project: "chuggy" },
     { ...body, owner: "alice" },
-    { tenant: "", project: "chuggy" },
+    { ...body, tenant: "" },
   ]) {
     const served = await created(one, payload);
     assert.equal(served.statusCode, 400, JSON.stringify(payload));

@@ -115,7 +115,7 @@ function catalog(change: (value: Catalog) => void = () => undefined): Catalog {
       standard: [{ name: "review", evaluators: ["review"] }],
       tested: [{ name: "tests", evaluators: ["tests"] }],
     },
-    finalizers: { landed: { approvalRequired: false } },
+    finalizers: { landed: {} },
     defaults: {
       work: "build",
       evaluation: "standard",
@@ -457,7 +457,7 @@ test("a head changing only the selected finalizer moves the ticket", async () =>
     project,
     commits.second,
     catalog((value) => {
-      part(value, "finalizers")["landed"] = { approvalRequired: true };
+      part(value, "finalizers")["landed"] = { landing: { mode: "Push" } };
     }),
   );
   await swept(project, commits.second);

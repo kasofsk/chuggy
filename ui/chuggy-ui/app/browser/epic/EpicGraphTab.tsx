@@ -1,16 +1,16 @@
 /**
  * The epic page's Graph tab: the members and the tickets outside the epic
  * they wait on, drawn beside the ticket selected, or the one line its read is
- * drawn as while it is not ready. The ticket selected is the address's. The
- * graph's layout is loaded on its own, once the tab is.
+ * drawn as while it is not ready. The ticket selected is the address's, and
+ * none where it names none.
  */
 
-import { Suspense } from "react";
 import type { ReactNode } from "react";
 
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";
+import { EpicTabHeading } from "./EpicTabs.tsx";
 import { EpicGraphView } from "./EpicGraphView.tsx";
 
 import "./epicGraph.css";
@@ -29,7 +29,7 @@ function EpicGraphFrameSaying(props: {
 export function EpicGraphTab(props: {
   /** The ticket the address selects, if it names one. */
   readonly ticket: number | undefined;
-  readonly onTicket: (ticket: number) => void;
+  readonly onTicket: (ticket: number | undefined) => void;
 }): ReactNode {
   const held = useEpicPageHeld();
   const text = useCopyText();
@@ -48,20 +48,12 @@ export function EpicGraphTab(props: {
             {text({ id: "epics-graph-empty" })}
           </EpicGraphFrameSaying>
         ) : (
-          <Suspense
-            fallback={
-              <EpicGraphFrameSaying>
-                {text({ id: "epics-graph-loading" })}
-              </EpicGraphFrameSaying>
-            }
-          >
-            <EpicGraphView
-              held={held}
-              graph={state.value}
-              ticket={props.ticket}
-              onTicket={props.onTicket}
-            />
-          </Suspense>
+          <EpicGraphView
+            held={held}
+            graph={state.value}
+            ticket={props.ticket}
+            onTicket={props.onTicket}
+          />
         );
       case "Absent":
       case "Failed":
@@ -81,6 +73,7 @@ export function EpicGraphTab(props: {
       className="epic-graph-section"
       aria-label={text({ id: "epics-graph-label" })}
     >
+      <EpicTabHeading tab="epics-tab-graph" />
       {drawn()}
     </section>
   );

@@ -1,37 +1,19 @@
-/* The epic page's header, and the bar of where an epic's tickets stand, which
-   the epics list draws too: one segment a group, in the group's tone, Pending
-   in the track's, each named in a key or in words beside it. */
+/* The notes under the epic page's header, and the bar of where an epic's
+   tickets stand, which the epics list draws too: one segment a group, in the
+   group's tone, Pending in the track's, each named in a key or in words
+   beside it. */
 
 @layer page {
-  .epic-header-top {
+  /* The notes under the bar, wrapping; a header with none draws no row. */
+  .epic-header-notes {
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: var(--space-3);
-  }
-
-  /* It grows to push the actions to the far end, so once they wrap they
-     start under the title rather than at the right. */
-  .epic-header-heading {
-    display: flex;
-    flex: 1 1 auto;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2) var(--space-3);
-    min-width: 0;
   }
 
-  .epic-header-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .epic-header-summary {
-    max-width: var(--measure);
-    margin: 0;
-    color: var(--ink-2);
+  .epic-header-notes:empty {
+    display: none;
   }
 
   .epic-header-note {
@@ -46,10 +28,22 @@
     min-width: 0;
   }
 
+  /* One line of a row, the bar and its words each narrowing to fit it. */
   .epic-progress[data-size="row"] {
-    width: var(--width-progress-row);
-    max-width: 100%;
-    gap: var(--space-1);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .epic-progress[data-size="row"] .epic-progress-bar {
+    flex: 0 1 var(--width-progress-row);
+    min-width: var(--space-7);
+  }
+
+  .epic-progress[data-size="row"] .epic-progress-said {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .epic-progress-track {

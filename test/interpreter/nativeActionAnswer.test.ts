@@ -154,17 +154,16 @@ test("an agent or a session never answers an approval, whatever it holds or whoe
   }
 });
 
-test("an escalation or a finalization approval is answered under Mutate, by a session as by a person", async () => {
-  for (const kind of ["TicketEscalation", "FinalizationApproval"] as const) {
-    assert.equal(
-      (await answererOf(developer, { kind }, session)).answerer,
-      "Answerer",
-    );
-    assert.equal((await answererOf(selector, { kind })).answerer, "Answerer");
-    assert.deepEqual(await answererOf(reader, { kind }), {
-      answerer: "NotFound",
-    });
-  }
+test("an escalation is answered under Mutate, by a session as by a person", async () => {
+  const kind = "TicketEscalation";
+  assert.equal(
+    (await answererOf(developer, { kind }, session)).answerer,
+    "Answerer",
+  );
+  assert.equal((await answererOf(selector, { kind })).answerer, "Answerer");
+  assert.deepEqual(await answererOf(reader, { kind }), {
+    answerer: "NotFound",
+  });
 });
 
 test("only an evaluation approval takes feedback, and its Reject needs some", () => {
@@ -189,11 +188,7 @@ test("only an evaluation approval takes feedback, and its Reject needs some", ()
     "FeedbackNotAsked",
   );
   assert.equal(
-    nativeActionFeedbackRefusal("FinalizationApproval", "Approve", "note"),
-    "FeedbackNotAsked",
-  );
-  assert.equal(
-    nativeActionFeedbackRefusal("FinalizationApproval", "Approve", undefined),
+    nativeActionFeedbackRefusal("TicketEscalation", "Resume", undefined),
     undefined,
   );
 });

@@ -11,6 +11,10 @@
  * it is left out where it is shown and a field left out is read as the empty
  * value the catalog held there.
  *
+ * A WORKLOAD THE CATALOG LACKS IS ADDED WHOLE, as the evaluator a plan of the
+ * ticket's names: what is written is the override, held to the catalog's
+ * workload shape as well as the override's.
+ *
  * A FIELD IS REPLACED, NEVER REMOVED, since an override names what replaces a
  * field. The one exception is where the workload runs: an image and an
  * run requirement are one placement, and leaving both out runs it in
@@ -21,11 +25,17 @@ import {
   configurationWithOverrides,
   type WorkloadOverride,
 } from "../../../../src/contract/configurationOverrides.ts";
-import { workloadOverrideSchema } from "../../../../src/contract/configurationDocument.ts";
+import {
+  workloadOverrideSchema,
+  workloadSchema,
+} from "../../../../src/contract/configurationDocument.ts";
 
 import type { CopyOrData } from "./copy.ts";
 import { overridesSame } from "./ticketOverrides.ts";
-import { configurationCatalogOf } from "./configurationCatalog.ts";
+import {
+  configurationCatalogOf,
+  type CatalogOverrides,
+} from "./configurationCatalog.ts";
 
 type WorkloadRecord = Readonly<Record<string, unknown>>;
 
@@ -116,16 +126,21 @@ export function workloadsOverriddenOf(
   );
 }
 
-/** A catalog's canonical JSON with a ticket's workload overrides applied: the catalog as that ticket runs it. */
+/** A catalog's canonical JSON with a ticket's workload and plan overrides applied: the catalog as that ticket runs it. */
 export function workloadsEffectiveCanonicalOf(
   canonical: string,
-  overrides: Readonly<Record<string, WorkloadOverride>> | undefined,
+  overrides: CatalogOverrides | undefined,
 ): string {
   const document = workloadCatalogDocumentOf(canonical);
-  if (document === undefined || overrides === undefined) return canonical;
+  if (
+    document === undefined ||
+    (overrides?.workloads === undefined && overrides?.plans === undefined)
+  )
+    return canonical;
   return JSON.stringify(
     configurationWithOverrides(JSON.parse(canonical), {
-      workloads: overrides,
+      workloads: overrides.workloads,
+      plans: overrides.plans,
     }),
   );
 }
@@ -183,10 +198,24 @@ function workloadSwitchesRunner(written: unknown, held: WorkloadRecord) {
   );
 }
 
+/** One workload a catalog lacks as written: the whole of it, held to the override's schema and the catalog's workload shape. */
+function workloadAddedRead(written: unknown): WorkloadOverrideRead {
+  const override = workloadOverrideSchema.safeParse(written);
+  const whole = workloadSchema.safeParse(written);
+  if (override.success && whole.success)
+    return { read: "Override", override: override.data };
+  const issue = (override.error ?? whole.error)?.issues[0];
+  return {
+    read: "Refused",
+    message: issue?.message ?? { id: "ticket-authoring-workload-refused" },
+    path: issue?.path ?? [],
+  };
+}
+
 /**
  * One workload as written, read against the catalog's: every field that
  * differs, a field the catalog held and the text left out refused, and the
- * override held to the contract's schema.
+ * override held to the contract's schema. One the catalog lacks is added whole.
  */
 export function workloadOverrideRead(
   canonical: string,
@@ -194,8 +223,7 @@ export function workloadOverrideRead(
   written: unknown,
 ): WorkloadOverrideRead {
   const document = workloadCatalogDocumentOf(canonical);
-  const catalogHeld = document?.workloads[name];
-  if (document === undefined || !workloadIsRecord(catalogHeld))
+  if (document === undefined)
     return {
       read: "Refused",
       message: { id: "ticket-authoring-workload-unknown", args: { name } },
@@ -207,6 +235,8 @@ export function workloadOverrideRead(
       message: { id: "ticket-authoring-workload-unmapped" },
       path: [],
     };
+  const catalogHeld = document.workloads[name];
+  if (!workloadIsRecord(catalogHeld)) return workloadAddedRead(written);
   const held = workloadSwitchesRunner(written, catalogHeld) ? {} : catalogHeld;
   const restored = workloadRestored(written, held) as WorkloadRecord;
   if (workloadPlacementFields.every((field) => restored[field] !== undefined))

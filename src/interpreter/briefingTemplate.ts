@@ -45,11 +45,10 @@
  * have to be kept in step.
  */
 
-import { textCodePointsCount } from "../contract/http.ts";
+import { resultReportCharsMax, textCodePointsCount } from "../contract/http.ts";
 import { briefingLineCharsMax } from "../contract/workerTask.ts";
 import type { ChangeProposalStatus } from "./changeProposal.ts";
 import type { FinalizationFailureKind } from "./finalizer.ts";
-import { finalizerRemoteDefaultRef } from "./finalizerLanding.ts";
 import type {
   DependencyChange,
   DependencyDelivery,
@@ -92,7 +91,6 @@ export type BriefingSectionId =
   | "WhyItMatters"
   | "AcceptanceAndConstraints"
   | "DependencyDeliveries"
-  | "TargetMergeFirst"
   | "FailedLanding"
   | "PriorEvaluationReports"
   | "PriorWorkReports"
@@ -100,7 +98,6 @@ export type BriefingSectionId =
   | "CheckCommands"
   | "Practices"
   | "RuntimeContext"
-  | "TargetMergeLast"
   | "RequiredResult";
 
 /** The fixed order #97 pins, and the only statement of it in this tree. */
@@ -113,7 +110,6 @@ export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "WhyItMatters",
   "AcceptanceAndConstraints",
   "DependencyDeliveries",
-  "TargetMergeFirst",
   "FailedLanding",
   "PriorEvaluationReports",
   "PriorWorkReports",
@@ -121,7 +117,6 @@ export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "CheckCommands",
   "Practices",
   "RuntimeContext",
-  "TargetMergeLast",
   "RequiredResult",
 ];
 
@@ -132,7 +127,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 17;
+export const briefingTemplateVersion = 21;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -157,8 +152,6 @@ export function briefingHeading(
       return "Acceptance criteria and constraints";
     case "DependencyDeliveries":
       return "What this ticket's dependencies delivered";
-    case "TargetMergeFirst":
-      return "Bring the target in first";
     case "FailedLanding":
       return "The change that failed to land";
     case "PriorEvaluationReports":
@@ -177,8 +170,6 @@ export function briefingHeading(
       return "Practices for this task";
     case "RuntimeContext":
       return "Runtime context";
-    case "TargetMergeLast":
-      return "Bring the target in again before you report";
     case "RequiredResult":
       return carrier === "Commands"
         ? "The result this stage reports"
@@ -198,11 +189,20 @@ export const briefingLabels = {
   evaluationReports: "Evaluation reports:",
 } as const;
 
-/** What a work task is told where its own repository's binding does not let pipelines be written. */
-export const briefingPipelinesUnwritable: readonly string[] = [
-  "This job cannot change .github/workflows/: its repository's binding does not let it write pipelines, and a push carrying such a change is refused whole.",
-  "If the ticket needs a change there, report that rather than making it.",
-];
+/** The paths a push may not change, as a line names them. */
+function briefingPushPathsText(pushPathsRefused: readonly string[]): string {
+  return pushPathsRefused.join(", ");
+}
+
+/** What a work task is told of the paths its push may not change, which are the pipeline definitions its binding withholds. */
+export function briefingPipelinesUnwritable(
+  pushPathsRefused: readonly string[],
+): readonly string[] {
+  return [
+    `This job cannot change ${briefingPushPathsText(pushPathsRefused)}: its repository's binding does not let it write pipelines, and a push carrying such a change is refused whole.`,
+    "If the ticket needs a change there, report that rather than making it.",
+  ];
+}
 
 /**
  * What a work task is told before the failed reports of the evaluation before
@@ -211,7 +211,7 @@ export const briefingPipelinesUnwritable: readonly string[] = [
 export const briefingReworkPreface: readonly string[] = [
   "Evaluators of an earlier change made for this ticket reported the findings below.",
   "Address what the reports name before anything else the ticket asks for; where a report names a command, run it before you report.",
-  "Add commits on top of the commit this workspace is at. An amended or rebased commit is refused and the run's work is lost, so a finding about a commit's message is answered in the message of a new commit.",
+  "A finding about a commit's message is answered in the message of a new commit.",
 ];
 
 /**
@@ -238,25 +238,6 @@ export interface FailedLanding {
 const briefingWorkerGit =
   "git -c user.name=worker -c user.email=worker@invalid";
 
-/** How a merge stopped on a conflict is finished: its resolutions are the worker's own edits, so its message carries their reason. */
-const briefingMergeFinish = `finish the merge with \`${briefingWorkerGit} commit -m <message>\`, the message saying what each resolution kept and why`;
-
-/**
- * The one command that carries a whole change into the workspace, naming an
- * identity because it commits. A merge keeps every commit's message and the
- * change's descent, and one left stopped on a conflict is still committed with
- * both parents when the run reports, though not by the one-parent checkpoint of
- * a run stopped before it does.
- */
-export function briefingFailedLandingCommand(changeCommit: string): string {
-  return `${briefingWorkerGit} merge --no-ff --no-edit ${changeCommit}`;
-}
-
-/** The command that brings a pull request's base into the workspace as one merge commit. */
-export function briefingFailedLandingBaseCommand(baseCommit: string): string {
-  return `${briefingWorkerGit} merge --no-edit ${baseCommit}`;
-}
-
 /** Why the change failed to land, as far as anything that reached this task says. */
 function briefingFailedLandingReason(
   landing: FailedLanding,
@@ -281,115 +262,50 @@ function briefingFailedLandingReason(
   return ["Why it failed to land is not carried to this task."];
 }
 
-/** What a failure its pull request's forge reported adds: the base, the proposal kept open, and bringing that base in first. */
+/** What a failure its pull request's forge reported adds: the base, and the proposal kept open. */
 function briefingFailedLandingBaseLines(
   base: NonNullable<FailedLanding["proposalBase"]>,
 ): readonly string[] {
   return [
     `The pull request's base is ${base.ref}, which was at commit ${base.commit} when that was read.`,
     "The pull request stays open, and the change this task makes is adopted onto it.",
-    `Bring that base in first: run \`${briefingFailedLandingBaseCommand(base.commit)}\`, after \`git fetch origin ${base.ref}\` should this clone not hold that commit.`,
-    `Where it stops on a conflict, resolve it and ${briefingMergeFinish}, before going on.`,
   ];
 }
 
-/** What a work task following a failed landing is told, the conflict lines only where a manifest says there was one or a base is merged in first. */
+/**
+ * What a work task following a failed landing is told: why it failed, and what
+ * the worker's core merged before the agent started, which is the target and,
+ * where its commit is recorded, the change after it.
+ */
 export function briefingFailedLandingLines(
   landing: FailedLanding,
 ): readonly string[] {
-  const workspace = `This workspace started at the target's commit ${landing.targetCommit}, and does not hold that change.`;
   const opening = [
     "The change this ticket already made passed its evaluation and could not be landed on the target.",
     ...briefingFailedLandingReason(landing),
-    workspace,
+    `This workspace started at the target's commit ${landing.targetCommit}.`,
     ...(landing.proposalBase === undefined
       ? []
       : briefingFailedLandingBaseLines(landing.proposalBase)),
   ];
   const change = landing.changeCommit;
   if (change === undefined) {
-    return [...opening, "The commit of that change is not recorded."];
+    return [
+      ...opening,
+      "The commit of that change is not recorded.",
+      "Before you started, the core merged only the target into this workspace.",
+    ];
   }
   return [
     ...opening,
-    `That change ends at commit ${change}, which this clone already holds; it is everything between the target and that commit, and can be more than one commit.`,
-    `Bring that change into this workspace rather than writing it again: run \`${briefingFailedLandingCommand(change)}\`, which merges every commit of it, each with its message.`,
-    ...(landing.conflicted || landing.proposalBase !== undefined
-      ? [
-          `Where it stops on a conflict, resolve every conflict it marks and ${briefingMergeFinish}, and leave no conflict marker in the tree: whatever it holds when you finish is committed.`,
-        ]
-      : []),
+    `That change ends at commit ${change}; it is everything between the target and that commit, and can be more than one commit.`,
+    "Before you started, the core merged the target into this workspace and then that change.",
+    "A merge that stopped on a conflict is left in progress, with its files listed in the section the core adds. Where the target's own merge stopped, the change is not merged yet, and that section says so.",
     landing.failure === "QueueChecksFailed" &&
     landing.proposalBase !== undefined
       ? "Then run the checks on that tree and reproduce the failure there before changing anything to fix it. A failure that does not reproduce may have come from a change queued ahead of this one that never landed; say so in your report."
       : "Change nothing but what landing on this base forces, and that can include files git merged without a mark, such as a migration whose number the target has since used.",
     `Commit what you change after the merge on top of it, with \`${briefingWorkerGit} commit -m <message>\` saying why each change was needed.`,
-  ];
-}
-
-/** The command that lists what a merge of the fetched target would change under .github/workflows/. */
-const briefingTargetMergePipelineCheck =
-  "git diff --name-only HEAD FETCH_HEAD -- .github/workflows/";
-
-/**
- * The commands that fetch the ref a change lands on and merge its head into
- * the workspace, checking first, where pipelines are unwritable, that the
- * merge would change nothing under .github/workflows/.
- */
-function briefingTargetMergeCommands(
-  targetRef: string,
-  pipelinesWritable: boolean,
-): string {
-  const merge = `\`${briefingWorkerGit} merge --no-edit FETCH_HEAD\``;
-  return pipelinesWritable
-    ? `run \`git fetch origin ${targetRef}\`, then ${merge}`
-    : `run \`git fetch origin ${targetRef}\`, then \`${briefingTargetMergePipelineCheck}\`, and only where that lists nothing, ${merge}`;
-}
-
-/** What a work task that cannot write pipelines does with a target whose merge would change one. */
-const briefingTargetMergePipelineSkip =
-  "Where that check lists anything, the merge would carry a change to .github/workflows/ and its push would be refused: do not merge, go on without the target, and say in your report that it holds a pipeline change this job cannot push.";
-
-/** How a merge of the target that conflicts is resolved, the target's own side never rewritten. */
-function briefingTargetMergeResolution(
-  pipelinesWritable: boolean,
-): readonly string[] {
-  return [
-    ...(pipelinesWritable ? [] : [briefingTargetMergePipelineSkip]),
-    `Where a merge stops on a conflict, resolve every conflict it marks and ${briefingMergeFinish}, and leave no conflict marker in the tree.`,
-    "Where both sides took the same next number or version, such as a migration's or a release's, move this change's own to the next free one, and leave what the target already holds exactly as it is.",
-  ];
-}
-
-/** How a line names the ref a change lands on, the remote's default branch by what it is rather than by `HEAD`. */
-function briefingTargetName(targetRef: string): string {
-  return targetRef === finalizerRemoteDefaultRef
-    ? "origin's default branch"
-    : targetRef;
-}
-
-/** What a work task does before anything else: merge the head of the ref its change lands on. */
-export function briefingTargetMergeFirstLines(
-  targetRef: string,
-  pipelinesWritable: boolean,
-): readonly string[] {
-  return [
-    `This change lands on ${briefingTargetName(targetRef)}.`,
-    `Before anything else the ticket asks for, and before any change named below is merged in, bring that target's head into this workspace as one merge commit: ${briefingTargetMergeCommands(targetRef, pipelinesWritable)}.`,
-    "Where the workspace is already at that head, git says it is already up to date and nothing changes.",
-    ...briefingTargetMergeResolution(pipelinesWritable),
-  ];
-}
-
-/** What a work task does as its last step: merge the target's head again, and verify the merged tree where that brought anything in. */
-export function briefingTargetMergeLastLines(
-  targetRef: string,
-  pipelinesWritable: boolean,
-): readonly string[] {
-  return [
-    `As your last step before you report, bring ${briefingTargetName(targetRef)} in again: ${briefingTargetMergeCommands(targetRef, pipelinesWritable)}.`,
-    `Where that brought anything in, run the checks again on the merged tree, and commit what you change on top of the merge with \`${briefingWorkerGit} commit -m <message>\`; report a pass only where they pass on that merged tree.`,
-    ...briefingTargetMergeResolution(pipelinesWritable),
   ];
 }
 
@@ -548,6 +464,7 @@ export function briefingRoleInstructions(
         "Read the code you are about to change before you change it.",
         "Change the least that satisfies the acceptance criteria below, and leave the rest alone.",
         "If the ticket cannot be satisfied as written, report that rather than satisfying something adjacent to it.",
+        "Add commits on top of the commit this workspace is at, and bring another branch in by merging it; a rebased, squashed or amended commit is refused and the run's work is lost.",
       ];
     case "Review":
       return [
@@ -567,6 +484,9 @@ export function briefingRoleInstructions(
   }
 }
 
+/** The bound a manifest's report is held to, told from the constant that holds it. */
+const briefingRequiredResultReportBound = `Keep the manifest's report to at most ${String(resultReportCharsMax)} characters; a longer one is refused`;
+
 /** What the role must report, which is what the scheduler will read back as a result. */
 export function briefingRequiredResult(
   purpose: TaskPurpose,
@@ -579,17 +499,20 @@ export function briefingRequiredResult(
         "Report one result manifest: a verdict, and a handoff for anything the reviewer will need.",
         "Report a pass only for work you have verified running; an unverified pass is a false verdict.",
         "Report a failure plainly, with the criterion you could not satisfy and what stopped you.",
+        `${briefingRequiredResultReportBound}, and detail that does not fit belongs in the commit messages.`,
       ];
     case "Review":
       return [
         "Report one result manifest: a verdict, and one finding for each criterion or constraint the change fails.",
         "Give every finding a file, a line and the criterion or constraint it fails.",
         "Report a pass only when every criterion above is met by the change as it stands.",
+        `${briefingRequiredResultReportBound}; the findings are the report, so state each finding briefly, and leave out notes on what was checked and not flagged before leaving out a finding.`,
       ];
     case "Check":
       return [
         "Report one result manifest with the command and its actual exit status.",
         "Report a pass only when every requested command exits cleanly.",
+        `${briefingRequiredResultReportBound}.`,
       ];
   }
 }

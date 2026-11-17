@@ -23,6 +23,7 @@
 
 import { workerErrorPath } from "../../contract/http.ts";
 import {
+  workerContractFeaturesHeader,
   workerContractHeader,
   workerContractRelease,
 } from "../../contract/workerContract.ts";
@@ -31,6 +32,7 @@ import {
   workerPlaneBytesMediaType,
   workerPlaneRoutes,
 } from "../../contract/workerPlane.ts";
+import { workerContractClientFeatures } from "../../interpreter/workerContractClientFeatures.ts";
 import type {
   AttemptErrorWritten,
   AttemptWorkloadObserved,
@@ -162,6 +164,7 @@ export async function kubernetesWorkerErrorPosted(
           authorization: `Bearer ${bearer.token}`,
           "content-type": workerPlaneBytesMediaType,
           [workerContractHeader]: workerContractRelease,
+          [workerContractFeaturesHeader]: workerContractClientFeatures,
         },
         body: new TextEncoder().encode(text),
       },

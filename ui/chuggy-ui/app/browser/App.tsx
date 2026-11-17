@@ -40,7 +40,7 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
   if (snapshot.phase === "Loading")
     return (
       <SessionCard
-        title={text({ id: "session-brand" })}
+        title={text({ id: "session-opening" })}
         detail={text({ id: "session-loading" })}
         media={<Locomotive />}
       />
@@ -53,6 +53,7 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
           text,
           snapshot.reason ?? { id: "session-unconfigured-unsaid" },
         )}
+        next={text({ id: "session-unconfigured-next" })}
       />
     );
   if (snapshot.phase === "Unreachable")
@@ -63,6 +64,7 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
           text,
           snapshot.reason ?? { id: "session-unreachable-unsaid" },
         )}
+        next={text({ id: "session-unreachable-next" })}
         action={
           <Button
             variant="primary"

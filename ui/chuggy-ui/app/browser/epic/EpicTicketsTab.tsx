@@ -38,16 +38,19 @@ import {
   TicketStateMark,
   TicketStateWord,
 } from "../ticket/TicketStateLabel.tsx";
-import { readValue } from "../ticket/TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
+import { CountBadge } from "../ui/CountBadge.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Input } from "../ui/Input.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 import { EpicTicketsAdd } from "./EpicTicketsAdd.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";
+import { EpicTabHeading } from "./EpicTabs.tsx";
 import { useEpicTicketsWriting } from "./epicTicketsWriting.ts";
 
 import "../ProjectTable.css";
+import "./epic.css";
 import "./epicTickets.css";
 
 /** The standing a group's head is drawn by: Running is drawn as work is. */
@@ -253,7 +256,10 @@ function EpicTicketsGroupList(props: {
           <TicketStateMark standing={standing} />
         </span>
         <span>{word}</span>
-        <span className="ticket-tab-count">{count}</span>
+        <CountBadge
+          count={count}
+          name={text({ id: "epics-tickets-group-count", args: { count } })}
+        />
       </h3>
       <ul
         className="epic-tickets-rows"
@@ -338,6 +344,7 @@ export function EpicTicketsTab(): ReactNode {
       className="epic-tickets"
       aria-label={text({ id: "epics-tab-tickets" })}
     >
+      <EpicTabHeading tab="epics-tab-tickets" />
       <EpicTicketsBar typed={typed} onTyped={setTyped}>
         {changing ? (
           <EpicTicketsAdd

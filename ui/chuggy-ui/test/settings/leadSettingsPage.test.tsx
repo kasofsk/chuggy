@@ -261,7 +261,7 @@ test("a project with no lead and no runner is told so with where one is added", 
   expect(screen.getByText("No lead")).toBeDefined();
   expect(screen.queryByText(/No live runner/u)).toBeNull();
   expect(screen.getByText("No runner")).toBeDefined();
-  expect(screen.getByText("Runners")).toBeDefined();
+  expect(screen.getByRole("link", { name: "Pools" })).toBeDefined();
 });
 
 test("a project with a lead is told nothing of the hand", async () => {

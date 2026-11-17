@@ -25,11 +25,16 @@ export function lastProjectRead(
   }
 }
 
+/** Remembers the partition alone, whatever else the project it is handed
+ * carries, since that is all a read takes back. */
 export function lastProjectWrite(
   store: KeyValuePort,
   partition: PartitionIdentity,
 ): void {
-  store.write(lastProjectKey, JSON.stringify(partition));
+  store.write(
+    lastProjectKey,
+    JSON.stringify({ tenant: partition.tenant, project: partition.project }),
+  );
 }
 
 /** The remembered project if the inventory still has it, else the first one. */
