@@ -211,7 +211,7 @@ function LeadAskNotice(props: {
     case "Failed":
       return (
         <Notice tone="danger" inline>
-          <Tooltip text={ask.words.detail}>
+          <Tooltip trigger="abbreviation" text={ask.words.detail}>
             <span>{inquiryAskRefusalSentence(ask, text)}</span>
           </Tooltip>
         </Notice>
@@ -362,6 +362,7 @@ function LeadInquiryRow(props: {
           <Pill tone="neutral">{text({ id: "lead-inquiry-mine" })}</Pill>
         ) : null}
         <Tooltip
+          trigger="abbreviation"
           text={
             inquiry.failure === undefined
               ? undefined

@@ -265,11 +265,11 @@ async function landingAttempt(
     `INSERT INTO finalization_attempt
        (tenant,project,attempt,request,ticket,repository,input_bundle,input_bundle_digest,
         target_ref,target_commit,strategy,configuration_revision,configuration_digest,
-        attempt_digest,approval_required,outcome,failure_kind,proposal_base_ref,
+        attempt_digest,outcome,failure_kind,proposal_base_ref,
         proposal_base_commit,queue_group_commit)
      SELECT tenant,project,$4,$5,ticket,$6,input_bundle,input_bundle_digest,
             'refs/heads/head',$7,'Merge',configuration_revision,configuration_digest,
-            repeat('d',64),false,'Failed',$8,$9,$10,$11
+            repeat('d',64),'Failed',$8,$9,$10,$11
        FROM execution_request WHERE tenant=$1 AND project=$2 AND request=$3`,
     [
       tenant,

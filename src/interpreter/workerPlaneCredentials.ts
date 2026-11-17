@@ -27,7 +27,7 @@
  */
 
 import { assertNever } from "../domain/assertNever.ts";
-import type { ExecutionTaskKind } from "./executionRequirement.ts";
+import type { ExecutionTaskKind } from "../contract/executionRequirement.ts";
 import { asRepositoryId, type RepositoryId } from "./finalizer.ts";
 import type {
   ForgeInstallationToken,
@@ -104,8 +104,8 @@ export interface WorkerPlaneCredentialOptions {
  * does not pin exactly one: a bundle naming none has no repository to mint for,
  * and one naming several leaves the choice to the pod.
  */
-function workerPlaneCredentialRepository(
-  authority: WorkerAttemptAuthority,
+export function workerPlaneCredentialRepository(
+  authority: Pick<WorkerAttemptAuthority, "inputs">,
 ): RepositoryId | undefined {
   const named = authority.inputs.filter(
     (input) => input.kind === repositoryReferenceKind,

@@ -22,10 +22,7 @@ import {
   isApprovalFeedback,
 } from "../../../../src/contract/http.ts";
 import { nativeActionKindResolutions } from "../../../../src/contract/rosters.ts";
-import type {
-  NativeActionKind,
-  NativeActionResolution,
-} from "../../../../src/contract/rosters.ts";
+import type { NativeActionResolution } from "../../../../src/contract/rosters.ts";
 import type { NativeActionResponse } from "../../../../src/contract/responses.ts";
 
 import type { TicketAction, TicketActionName } from "./ticketActions.ts";
@@ -33,7 +30,6 @@ import type { TicketAction, TicketActionName } from "./ticketActions.ts";
 /** What the button says, which is the resolution without the noun the
  * mutation beside it already names, and an approval's by what it passes. */
 export function nativeActionAnswerName(
-  kind: NativeActionKind,
   resolution: NativeActionResolution,
 ): TicketActionName {
   switch (resolution) {
@@ -42,9 +38,7 @@ export function nativeActionAnswerName(
     case "Revoke":
       return "Revoke";
     case "Approve":
-      return kind === "EvaluationApproval" ? "ApproveEvaluation" : "Approve";
-    case "Decline":
-      return "Decline";
+      return "ApproveEvaluation";
     case "Reject":
       return "Reject";
   }
@@ -58,7 +52,6 @@ export function nativeActionOffered(action: NativeActionResponse): boolean {
     case "EvaluationApproval":
       return action.answerable;
     case "TicketEscalation":
-    case "FinalizationApproval":
       return true;
   }
 }
@@ -73,8 +66,6 @@ export function nativeActionAnswerApproval(action: TicketActionName): boolean {
     case "Dispatch":
     case "Resume":
     case "Revoke":
-    case "Approve":
-    case "Decline":
     case "Release":
       return false;
   }
@@ -91,7 +82,7 @@ export function nativeActionAnswers(
   return resolutions
     .filter((resolution) => action.admits.includes(resolution))
     .map((resolution) => ({
-      action: nativeActionAnswerName(kind, resolution),
+      action: nativeActionAnswerName(resolution),
       mutation: {
         mutation: "ResolveNativeAction",
         action: action.action,

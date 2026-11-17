@@ -111,7 +111,7 @@ import {
   briefRepositoryCharsMax,
 } from "../../src/contract/brief.ts";
 import { repositoryConfigurationImportReadiness } from "../../src/interpreter/repositoryConfiguration.ts";
-import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
+import { repositoryDeclarationRoot } from "../../src/contract/repositoryDeclaration.ts";
 import { populated } from "../interpreter/roster.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring } from "../actor/harness.ts";
@@ -522,11 +522,12 @@ test("notification authorization and reset remain visible without SSE", () => {
 });
 
 test("inventory exposes only an opaque continuation cursor", () => {
+  const named = { ...partition, name: "Acme Atlas" };
   const found = inventoryResponse({
-    projects: [partition],
+    projects: [named],
     nextAfter: partition,
   });
-  assert.deepEqual((found.body as { projects: unknown }).projects, [partition]);
+  assert.deepEqual((found.body as { projects: unknown }).projects, [named]);
   assert.equal(
     typeof (found.body as { nextCursor: unknown }).nextCursor,
     "string",
@@ -862,6 +863,35 @@ test("a draft the project's bindings do not answer for is not found", () => {
     }).status,
     404,
   );
+});
+
+test("an artifact's bytes are answered with the media type its identity carries, and a browser told not to sniff another", () => {
+  for (const mediaType of imageMediaTypes) {
+    const read = projectArtifactReadResponse({
+      fetched: "Content",
+      content: new Uint8Array(4),
+      mediaType,
+    });
+    assert.equal(read.headers["x-content-type-options"], "nosniff", mediaType);
+    assert.equal(
+      projectArtifactResponseSchema.parse(read.body).mediaType,
+      mediaType,
+    );
+  }
+});
+
+test("inventory lists a project's icon beside its name where it names one, and none where it does not", () => {
+  const icon = asProjectArtifactId("image/png:mark");
+  const found = inventoryResponse({
+    projects: [
+      { ...partition, name: "Acme Atlas", icon },
+      { ...partition, project: asProjectId("plain"), name: "Plain" },
+    ],
+  });
+  assert.deepEqual((found.body as { projects: unknown }).projects, [
+    { ...partition, name: "Acme Atlas", icon },
+    { ...partition, project: "plain", name: "Plain" },
+  ]);
 });
 
 test("the largest image an upload admits is answered within what fetch_image reads and past what an ordinary tool reads, in the encoding it decodes by", () => {

@@ -54,8 +54,6 @@ configuration-steps-completes-run = Completes { -run }
 configuration-steps-yes = Yes
 configuration-steps-no = No
 configuration-steps-policy = Policy
-configuration-steps-approval = { -approval(case: "upper") }
-configuration-steps-required = Required
 configuration-steps-approvers = Answered by
 
 ## A version 1 work's prompt, by part.

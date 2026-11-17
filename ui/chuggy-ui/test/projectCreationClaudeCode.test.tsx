@@ -1,15 +1,17 @@
 /**
  * The line to paste into Claude Code, on the page a project is made at and on
- * the landing a reader with no project meets: drawn for this console's own
- * site between what the page leads with and the form, before either read has
- * answered, and not drawn where an empty state stands in for the form.
+ * the welcome page a reader with no project lands on: one folded box drawn
+ * for this console's own site under the page's heading and, on the first,
+ * over the form, before either read has answered, and not drawn where an
+ * empty state stands in for the form.
  *
- * Its control puts the whole line on the clipboard and asks the network for
- * nothing.
+ * Folded, the box draws none of the line until its bar is pressed, and its
+ * control puts the whole line on the clipboard either way and asks the
+ * network for nothing.
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -85,9 +87,25 @@ const pages = {
   landing: <Landing />,
 };
 
-/** The line as the page draws it, none where no line is drawn. */
+/** The line as the page draws it, none where no line is drawn or it is folded. */
 function line(): HTMLElement | null {
   return document.querySelector("code");
+}
+
+/** The bar the folded line opens from, none where no line is drawn. */
+function bar(): HTMLElement | null {
+  return screen.queryByRole("button", {
+    name: copyTextEn(claudeCodeLineAbout),
+  });
+}
+
+function opened(): HTMLElement {
+  const pressed = bar();
+  if (pressed === null) throw new Error("no line is drawn");
+  fireEvent.click(pressed);
+  const drawnLine = line();
+  if (drawnLine === null) throw new Error("the bar opened no line");
+  return drawnLine;
 }
 
 function copyControl(): HTMLElement | null {
@@ -105,26 +123,34 @@ function precedes(earlier: Node, later: Node): boolean {
 
 test.each([
   ["the page a project is made at", "page", "New project"],
-  ["the no-project landing", "landing", "No projects"],
+  ["the welcome page", "landing", "Welcome to chuggy"],
 ] as const)(
-  "%s draws the line for its own site, broken between its words, under what leads the page and over the form",
+  "%s draws the line folded under its heading, and its bar opens the line for its own site, broken between its words",
   async (_page, page, leads) => {
     served([], created, accessHolding([administered("mimage")]));
     await drawn(pages[page]);
-    const drawnLine = line();
-    expect(drawnLine?.textContent).toBe(claudeCodeLine(site.origin));
-    expect(screen.getByText(copyTextEn(claudeCodeLineAbout))).toBeDefined();
-    if (drawnLine === null) throw new Error("no line is drawn");
+    expect(line()).toBeNull();
+    const folded = bar();
+    if (folded === null) throw new Error("no line is drawn");
+    expect(precedes(screen.getByRole("heading", { name: leads }), folded)).toBe(
+      true,
+    );
+    const drawnLine = opened();
+    expect(drawnLine.textContent).toBe(claudeCodeLine(site.origin));
     expect(drawnLine.classList.contains("wrap-anywhere")).toBe(true);
-    expect(
-      precedes(screen.getByRole("heading", { name: leads }), drawnLine),
-    ).toBe(true);
-    expect(precedes(drawnLine, workspaceChoice())).toBe(true);
-    expect(precedes(drawnLine, submit())).toBe(true);
+    expect(document.querySelectorAll("code")).toHaveLength(1);
   },
 );
 
-test("the control puts the whole line on the clipboard, says so, and asks the network for nothing", async () => {
+test("the page a project is made at draws the line over the form", async () => {
+  served([], created, accessHolding([administered("mimage")]));
+  await drawn(<ProjectCreationPage />);
+  const drawnLine = opened();
+  expect(precedes(drawnLine, workspaceChoice())).toBe(true);
+  expect(precedes(drawnLine, submit())).toBe(true);
+});
+
+test("the control puts the whole line on the clipboard while it is folded, says so, and asks the network for nothing", async () => {
   served([], created, accessHolding([administered("mimage")]));
   const asked = vi.fn(fetch);
   vi.stubGlobal("fetch", asked);
@@ -132,6 +158,7 @@ test("the control puts the whole line on the clipboard, says so, and asks the ne
   const before = asked.mock.calls.length;
   expect(before).toBeGreaterThan(0);
   await press(copyTextEn(claudeCodeLineCopy));
+  expect(line()).toBeNull();
   expect(site.copied).toStrictEqual([claudeCodeLine(site.origin)]);
   expect(
     screen
@@ -150,8 +177,8 @@ test("the line is drawn while the workspaces read is unsettled, and is the same 
   });
   await drawn(<ProjectCreationPage />);
   expect(screen.getByText("Loading…")).toBeDefined();
-  const early = line();
-  expect(early?.textContent).toBe(claudeCodeLine(site.origin));
+  const early = opened();
+  expect(early.textContent).toBe(claudeCodeLine(site.origin));
   expect(copyControl()).not.toBeNull();
   unsettled.release(
     answer({ tenants: [administered("mimage")], truncated: false }),
@@ -162,23 +189,17 @@ test("the line is drawn while the workspaces read is unsettled, and is the same 
 });
 
 test.each([
-  ["the page a project is made at", "no workspace", "page", []],
-  [
-    "the page a project is made at",
-    "none to add to",
-    "page",
-    [joined("zephyr")],
-  ],
-  ["the no-project landing", "no workspace", "landing", []],
-  ["the no-project landing", "none to add to", "landing", [joined("zephyr")]],
+  ["no workspace", []],
+  ["none to add to", [joined("zephyr")]],
 ] as const)(
-  "%s draws no line and no control for a reader with %s, who is drawn the empty state",
-  async (_page, _reader, page, tenants) => {
+  "the page a project is made at draws no line and no control for a reader with %s, who is drawn the empty state",
+  async (_reader, tenants) => {
     served([], created, accessHolding(tenants));
-    await drawn(pages[page]);
+    await drawn(<ProjectCreationPage />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(
-      /^No workspace/u,
+      /^No workspace|^Not a workspace admin/u,
     );
+    expect(bar()).toBeNull();
     expect(line()).toBeNull();
     expect(copyControl()).toBeNull();
     expect(screen.queryByText(copyTextEn(claudeCodeLineAbout))).toBeNull();

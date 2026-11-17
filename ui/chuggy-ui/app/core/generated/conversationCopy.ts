@@ -7,6 +7,7 @@ export interface ConversationCopy {
   readonly "conversation-loading": Record<never, never>;
   readonly "conversation-bottom": Record<never, never>;
   readonly "conversation-earlier": Record<never, never>;
+  readonly "conversation-announced-replying": Record<never, never>;
   readonly "conversation-message": Record<never, never>;
   readonly "conversation-send": Record<never, never>;
   readonly "conversation-stop": Record<never, never>;

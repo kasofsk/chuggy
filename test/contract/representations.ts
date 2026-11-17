@@ -21,7 +21,7 @@ import { dispatchViewSchemaVersion } from "../../src/contract/http.ts";
 import type { DispatchViewPage } from "../../src/interpreter/dispatchView.ts";
 import { asConfigurationVersion } from "../../src/interpreter/repositoryConfigurationIdentity.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
-import type { ExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
+import type { ExecutionRequirement } from "../../src/contract/executionRequirement.ts";
 import type {
   ExecutionResource,
   ExecutionSummary,

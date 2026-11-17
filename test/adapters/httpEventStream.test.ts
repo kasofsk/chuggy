@@ -115,6 +115,7 @@ function servedWeb(
     configurations: notFound,
     ticketNativeActions: () => Promise.resolve(actions()),
     nativeActions: notFound,
+    ticketNativeActionHistory: () => Promise.resolve(undefined),
     importRepositoryConfigurations: notFound,
     repositoryConfigurationHead: notFound,
     createDraft: notFound,
@@ -428,12 +429,12 @@ test("an execution change carries the list's row and reads none of its attempts 
   );
 });
 
-test("an approval reaches the stream when it opens and again when it is answered", async () => {
+test("an action reaches the stream when it opens and again when it is answered", async () => {
   const approval: TicketNativeAction = {
-    action: "approval-one",
-    kind: "FinalizationApproval",
+    action: "escalation-one",
+    kind: "TicketEscalation",
     authorizingSequence: 11,
-    admits: ["Approve", "Decline"],
+    admits: ["Resume", "Revoke"],
     answerable: true,
   };
   let waiting = true;

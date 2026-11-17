@@ -1,5 +1,6 @@
 /** Shared conversation and run-evidence endpoints for the server, browser, and contract document. */
 import { ticketActionReachResponseSchema } from "./actionReach.ts";
+import { themeChoiceSchema, themeDocumentSchema } from "./appearance.ts";
 import {
   epicHistoryQuerySchema,
   epicListQuerySchema,
@@ -25,6 +26,8 @@ import {
   threadHideRequestSchema,
   leadInquirySchema,
   selectorProposalReviewSchema,
+  projectThemeSchema,
+  projectImageSchema,
 } from "./requests.ts";
 import {
   operationalStatusResponseSchema,
@@ -62,8 +65,16 @@ import {
   selectorProposalReviewResponseSchema,
   inboxResponseSchema,
   ticketLandingsResponseSchema,
+  ticketNativeActionHistoryResponseSchema,
   landingQueuesResponseSchema,
   repositoryConfigurationHeadResponseSchema,
+  ticketTakeResponseSchema,
+  ownedThemeSchema,
+  ownedThemesResponseSchema,
+  themeChoiceResponseSchema,
+  projectThemeResponseSchema,
+  projectAppearanceResponseSchema,
+  projectImagesResponseSchema,
 } from "./responses.ts";
 
 function endpointInteger(name: string, fallback?: number) {
@@ -388,6 +399,18 @@ export const nativeHttpEndpoints = {
     body: selectorProposalReviewSchema,
     response: selectorProposalReviewResponseSchema,
   },
+  ticketNativeActionHistory: {
+    method: "GET",
+    path: nativeHttpRoutes.ticketNativeActionHistory,
+    query: endpointQuery({
+      cursor: z
+        .unknown()
+        .transform((value) => textField({ cursor: value }, "cursor"))
+        .optional(),
+      limit: endpointInteger("limit", nativeHttpPageItemsDefault),
+    }),
+    response: ticketNativeActionHistoryResponseSchema,
+  },
   ticketActionReach: {
     method: "GET",
     path: nativeHttpRoutes.ticketActionReach,
@@ -402,6 +425,103 @@ export const nativeHttpEndpoints = {
     method: "GET",
     path: nativeHttpRoutes.landingQueues,
     response: landingQueuesResponseSchema,
+  },
+  ticketTake: {
+    method: "POST",
+    path: nativeHttpRoutes.ticketTake,
+    body: emptyBody,
+    response: ticketTakeResponseSchema,
+  },
+  ticketReturn: {
+    method: "POST",
+    path: nativeHttpRoutes.ticketReturn,
+    body: emptyBody,
+    response: ticketTakeResponseSchema,
+  },
+  listOwnThemes: {
+    method: "GET",
+    path: nativeHttpRoutes.ownThemes,
+    response: ownedThemesResponseSchema,
+  },
+  createOwnTheme: {
+    method: "POST",
+    path: nativeHttpRoutes.ownThemes,
+    body: themeDocumentSchema,
+    response: ownedThemeSchema,
+  },
+  viewOwnTheme: {
+    method: "GET",
+    path: nativeHttpRoutes.ownTheme,
+    response: ownedThemeSchema,
+  },
+  writeOwnTheme: {
+    method: "PUT",
+    path: nativeHttpRoutes.ownTheme,
+    body: themeDocumentSchema,
+  },
+  deleteOwnTheme: {
+    method: "DELETE",
+    path: nativeHttpRoutes.ownTheme,
+  },
+  viewThemeChoice: {
+    method: "GET",
+    path: nativeHttpRoutes.themeChoice,
+    response: themeChoiceResponseSchema,
+  },
+  writeThemeChoice: {
+    method: "PUT",
+    path: nativeHttpRoutes.themeChoice,
+    body: themeChoiceSchema,
+  },
+  clearThemeChoice: {
+    method: "DELETE",
+    path: nativeHttpRoutes.themeChoice,
+  },
+  viewProjectTheme: {
+    method: "GET",
+    path: nativeHttpRoutes.projectTheme,
+    response: projectThemeResponseSchema,
+  },
+  writeProjectTheme: {
+    method: "PUT",
+    path: nativeHttpRoutes.projectTheme,
+    body: projectThemeSchema,
+    response: projectThemeResponseSchema,
+  },
+  viewProjectThemeOverride: {
+    method: "GET",
+    path: nativeHttpRoutes.projectThemeOverride,
+    response: themeChoiceResponseSchema,
+  },
+  writeProjectThemeOverride: {
+    method: "PUT",
+    path: nativeHttpRoutes.projectThemeOverride,
+    body: themeChoiceSchema,
+  },
+  clearProjectThemeOverride: {
+    method: "DELETE",
+    path: nativeHttpRoutes.projectThemeOverride,
+  },
+  viewProjectAppearance: {
+    method: "GET",
+    path: nativeHttpRoutes.projectAppearance,
+    response: projectAppearanceResponseSchema,
+  },
+  viewProjectImages: {
+    method: "GET",
+    path: nativeHttpRoutes.projectImages,
+    response: projectImagesResponseSchema,
+  },
+  nameProjectImage: {
+    method: "PUT",
+    path: nativeHttpRoutes.projectImage,
+    body: projectImageSchema,
+    response: projectImagesResponseSchema,
+  },
+  clearProjectImage: {
+    method: "DELETE",
+    path: nativeHttpRoutes.projectImage,
+    response: projectImagesResponseSchema,
   },
 } as const;
 

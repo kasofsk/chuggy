@@ -1,5 +1,6 @@
 /**
- * The setup program's files, in one directory only the person can read.
+ * The setup program's files, in one directory only the person can read, and
+ * the shared sign-in store's, in another, written the same way.
  *
  * A file is written beside its place, under a name that says whose write it
  * is, and moved onto it, so no reader ever finds half of one. A write that
@@ -31,14 +32,20 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 
+import {
+  signInStoreDraftName,
+  signInStoreDraftOf,
+} from "../../../src/contract/signInStore.ts";
 import { SetupMachineError } from "../app/core/setupPorts.ts";
-import type { SetupFile, SetupFilesPort } from "../app/core/setupPorts.ts";
+import type {
+  SetupFile,
+  SetupFilesPort,
+  SetupStorePort,
+} from "../app/core/setupPorts.ts";
 
 /** Read and written by the person alone. */
 export const fileMode = 0o600;
 export const directoryMode = 0o700;
-
-const draftSuffix = ".draft";
 
 export function failed(failure: unknown, code: string): boolean {
   return (
@@ -81,16 +88,17 @@ export function tried<T>(
   });
 }
 
-/** The names in the directory that are an unfinished write of `file`, whichever run's. */
-function drafts(directory: string, file: SetupFile): readonly string[] {
+/** The names in the directory that are an unfinished write of a file `of` takes, whichever run's. */
+function drafts(
+  directory: string,
+  of: (file: string) => boolean,
+): readonly string[] {
   const names =
     tried("Unreadable", directory, () => readdirSync(directory)) ?? [];
-  return names.filter(
-    (name) =>
-      name.startsWith(`${file}.`) &&
-      name.endsWith(draftSuffix) &&
-      /^[0-9]+$/u.test(name.slice(file.length + 1, -draftSuffix.length)),
-  );
+  return names.filter((name) => {
+    const file = signInStoreDraftOf(name);
+    return file !== undefined && of(file);
+  });
 }
 
 /** Writes the whole text over a copy kept ahead of the write and ends the copy there; false where the copy is no longer there to write over. */
@@ -107,10 +115,11 @@ function filled(draft: string, text: string): boolean {
   return true;
 }
 
-export function filesIn(directory: string): SetupFilesPort {
-  const placed = (file: SetupFile): string => join(directory, file);
-  const draft = (file: SetupFile): string =>
-    `${placed(file)}.${String(process.pid)}${draftSuffix}`;
+/** Files in `directory` by name, each written whole over a copy of its own, and `sweep` removing the copies left of every file `of` takes. */
+function filesAt<F extends string>(directory: string) {
+  const placed = (file: F): string => join(directory, file);
+  const draft = (file: F): string =>
+    join(directory, signInStoreDraftName(file, process.pid));
   const removed = (path: string): void => {
     tried("Unwritable", path, () => {
       rmSync(path, { force: true });
@@ -121,17 +130,17 @@ export function filesIn(directory: string): SetupFilesPort {
       mkdirSync(directory, { recursive: true, mode: directoryMode });
     });
   };
-  const kept = new Set<SetupFile>();
-  const fresh = (file: SetupFile, held: string | Buffer): void => {
+  const kept = new Set<F>();
+  const fresh = (file: F, held: string | Buffer): void => {
     rmSync(draft(file), { force: true });
     writeFileSync(draft(file), held, { mode: fileMode, flag: "wx" });
   };
   return {
-    read: (file) =>
+    read: (file: F) =>
       tried("Unreadable", placed(file), () =>
         readFileSync(placed(file), "utf8"),
       ),
-    write: (file, text) => {
+    write: (file: F, text: string) => {
       made();
       attempted("Unwritable", placed(file), () => {
         if (!(kept.delete(file) && filled(draft(file), text)))
@@ -139,7 +148,7 @@ export function filesIn(directory: string): SetupFilesPort {
         renameSync(draft(file), placed(file));
       });
     },
-    reserve: (file, bytes) => {
+    reserve: (file: F, bytes: number) => {
       made();
       attempted("Unwritable", placed(file), () => {
         kept.delete(file);
@@ -147,13 +156,33 @@ export function filesIn(directory: string): SetupFilesPort {
         kept.add(file);
       });
     },
-    remove: (file) => {
+    remove: (file: F) => {
       removed(placed(file));
     },
+    sweep: (of: (file: string) => boolean) => {
+      for (const file of kept) if (of(file)) kept.delete(file);
+      for (const name of drafts(directory, of)) removed(join(directory, name));
+    },
+  };
+}
+
+export function filesIn(directory: string): SetupFilesPort {
+  const files = filesAt<SetupFile>(directory);
+  return {
+    ...files,
     sweep: (file) => {
-      kept.delete(file);
-      for (const name of drafts(directory, file))
-        removed(join(directory, name));
+      files.sweep((name) => name === file);
+    },
+  };
+}
+
+/** The shared sign-in store, whose lock's holder is the one writer of every file in it. */
+export function storeIn(directory: string): SetupStorePort {
+  const files = filesAt<string>(directory);
+  return {
+    ...files,
+    sweep: () => {
+      files.sweep(() => true);
     },
   };
 }

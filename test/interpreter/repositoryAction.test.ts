@@ -19,7 +19,7 @@ import {
   repositoryDeclarationPathCharsMax,
   repositoryDeclarationsMax,
   type RepositoryDeclarationFile,
-} from "../../src/interpreter/repositoryDeclaration.ts";
+} from "../../src/contract/repositoryDeclaration.ts";
 import { asBriefTitle } from "../../src/interpreter/ticketBrief.ts";
 
 const repository = asRepositoryId("https://forge.example/acme/engine.git");

@@ -28,7 +28,7 @@ import {
 import { asPlacementId } from "../../src/interpreter/executionScheduler.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
-import { asExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
+import { asExecutionRequirement } from "../../src/contract/executionRequirement.ts";
 import {
   asProjectId,
   asRecoveryEpoch,

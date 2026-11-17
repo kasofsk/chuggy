@@ -107,7 +107,7 @@ function rowsSaid(cycles: readonly TicketRunsCycle[]) {
         ? `${row.name} ${String(row.task)}`
         : row.kind === "Gap"
           ? `${row.name} ${row.words}`
-          : `Landing ${row.lands ? (row.landing?.word ?? "Not reached") : "None"}`,
+          : `Finalization ${row.lands ? (row.landing?.word ?? "Not reached") : "None"}`,
     ),
   ]);
 }
@@ -117,7 +117,7 @@ test("cycles are newest first, each a run per step the plan names, the current o
     [
       2,
       "Failed at review",
-      ["Work 4", "checks 5", "review 6", "Landing Not reached"],
+      ["Work 4", "checks 5", "review 6", "Finalization Not reached"],
     ],
     [1, "Sent back by review", ["Work 1", "checks 2", "review 3"]],
   ]);
@@ -133,7 +133,7 @@ test("a stage the program never reached is a step not reached, and a landing is 
     [
       1,
       "Failed at checks",
-      ["Work 1", "checks 2", "review Not reached", "Landing Not reached"],
+      ["Work 1", "checks 2", "review Not reached", "Finalization Not reached"],
     ],
   ]);
   const landed = runsOf(twoCycles.slice(0, 2), [
@@ -142,8 +142,8 @@ test("a stage the program never reached is a step not reached, and a landing is 
   expect(rowsSaid(landed)).toEqual([
     [
       1,
-      "Landed",
-      ["Work 1", "checks 2", "review Not reached", "Landing Landed"],
+      "Finalized",
+      ["Work 1", "checks 2", "review Not reached", "Finalization Finalized"],
     ],
   ]);
 });
@@ -162,14 +162,14 @@ test("a cycle still running says which step it is at, and one its landing failed
       ),
     [ticketLandingOf(landingConflicted(1), copyTextEn)],
   );
-  expect(conflicted[0]?.outcome).toBe("Landing failed");
+  expect(conflicted[0]?.outcome).toBe("Finalization failed");
 });
 
 test("a ticket that lands nothing has a Landing row that waits on none", () => {
   const rows = runsOf(twoCycles, [], ticket21Program, false)[0]?.rows ?? [];
   expect(rows.at(-1)).toEqual({
     kind: "Landing",
-    name: "Landing",
+    name: "Finalization",
     landing: undefined,
     lands: false,
   });
@@ -462,6 +462,7 @@ test("a run's details say where it ran, how long it waited and what it spent, by
     waited: { kind: "Duration", text: "23m 30s" },
     attempts: 0,
     model: "claude-fable-5",
+    credential: undefined,
     turns: 26,
     apiTime: { kind: "Duration", text: "1m 18s" },
     tokens: "26k in · 26 out · 0 cache write · 0 cache read",
@@ -470,6 +471,56 @@ test("a run's details say where it ran, how long it waited and what it spent, by
       title: "execution-1c4680fa-9d2e-4c1b-8a7f-6",
     },
   });
+});
+
+test("a run's details name the distinct credentials its attempts ran on, in attempt order", () => {
+  const summary = ledgerExecution({
+    execution: "execution-credentials",
+    task: 1,
+    identity: workIdentity(1),
+    outcome: "Passed",
+    totals: { turns: 2, durationMs: 1_000, costUsdMicros: 10 },
+  });
+  const totals = summary.runTotals;
+  if (totals === undefined) throw new Error("no totals");
+  const attempt = (number: number, credential?: string) => ({
+    attempt: `a${String(number)}`,
+    number,
+    generation: 1,
+    state: "Reported" as const,
+    openedAt: "2026-08-26T00:00:00Z",
+    run: {
+      startedAt: "2026-08-26T00:00:00Z",
+      turnsRecorded: 0,
+      totals: {
+        ...totals,
+        ...(credential === undefined ? {} : { credential }),
+      },
+    },
+  });
+  const read = (
+    attempts: ExecutionResponse["attempts"],
+  ): ExecutionResponse => ({
+    ...summary,
+    attempts,
+  });
+  const at = Date.parse("2026-08-26T01:00:00Z");
+  expect(
+    ticketRunDetailsOf(
+      read([
+        attempt(1, "max-2"),
+        attempt(2),
+        attempt(3, "max-1"),
+        attempt(4, "max-2"),
+      ]),
+      at,
+      copyTextEn,
+    ).credential,
+  ).toBe("max-2, max-1");
+  expect(
+    ticketRunDetailsOf(read([attempt(1), attempt(2)]), at, copyTextEn)
+      .credential,
+  ).toBeUndefined();
 });
 
 test("a report's opening is read as words, without the marks it was set in", () => {

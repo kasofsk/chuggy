@@ -36,6 +36,50 @@
     }
   }
 
+  .locomotive-pixel-ink {
+    fill: var(--locomotive-ink);
+  }
+
+  .locomotive-pixel-body {
+    fill: var(--locomotive-body);
+  }
+
+  .locomotive-pixel-body-light {
+    fill: var(--locomotive-body-light);
+  }
+
+  .locomotive-pixel-body-shadow {
+    fill: var(--locomotive-body-shadow);
+  }
+
+  .locomotive-pixel-window {
+    fill: var(--locomotive-window);
+  }
+
+  .locomotive-pixel-cream {
+    fill: var(--locomotive-cream);
+  }
+
+  .locomotive-pixel-steel-highlight {
+    fill: var(--locomotive-steel-highlight);
+  }
+
+  .locomotive-pixel-steel-light {
+    fill: var(--locomotive-steel-light);
+  }
+
+  .locomotive-pixel-steel-dark {
+    fill: var(--locomotive-steel-dark);
+  }
+
+  .locomotive-pixel-lamp {
+    fill: var(--locomotive-lamp);
+  }
+
+  .locomotive-pixel-lamp-shadow {
+    fill: var(--locomotive-lamp-shadow);
+  }
+
   .locomotive-track {
     position: absolute;
     inset-inline: 0;

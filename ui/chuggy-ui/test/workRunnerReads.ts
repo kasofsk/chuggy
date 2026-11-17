@@ -1,9 +1,11 @@
 /**
  * The reads a project's runner for work is decided from, as a screen's case
  * scripts them: a `fetch` that answers each as the case says and hands every
- * other request to the screen's own.
+ * other request to the screen's own. The reader holds no personal runner
+ * unless a case gives them one.
  */
 
+import type { PersonalRunnerResponse } from "../../../src/contract/responses.ts";
 import type {
   OwnerFallback,
   PlacementRoute,
@@ -19,8 +21,13 @@ type WorkRunnerAnswer = () => Promise<Response>;
 export interface WorkRunnerReads {
   /** The runners registered to the project, or what that read answers instead. */
   readonly runners: SessionRunnerStanding | WorkRunnerAnswer;
-  /** The reader's own runner, live where a case names none. */
+  /** The reader's chat host, live where a case names none, which takes no work. */
   readonly mine?: SessionRunnerStanding;
+  /** The reader's own personal runner and the project it serves, none where a case names none. */
+  readonly personal?: {
+    readonly live: boolean;
+    readonly project: string;
+  };
   /** Where the project's work runs, which is to runners where a case names
    * nowhere, or what that read answers instead. */
   readonly work?: PlacementRoute | WorkRunnerAnswer;
@@ -31,6 +38,32 @@ export interface WorkRunnerReads {
 /** A read that fails, answered afresh for each request. */
 export function workRunnerUnreadable(): Promise<Response> {
   return Promise.resolve(answer({ error: { code: "InternalError" } }, 500));
+}
+
+function personalRunnerBody(
+  personal: NonNullable<WorkRunnerReads["personal"]>,
+): PersonalRunnerResponse {
+  return {
+    runners: [
+      {
+        id: "runner-1",
+        capabilities: ["Platform:Linux:Amd64"],
+        registeredAt: "2026-10-09T00:00:00Z",
+        live: personal.live,
+        executionsLive: personal.live,
+        held: [],
+        heldTruncated: false,
+      },
+    ],
+    projects: [
+      {
+        project: personal.project,
+        priority: "Normal",
+        waiting: 0,
+        waitingTruncated: false,
+      },
+    ],
+  };
 }
 
 /** What lays the reads over a case's own `fetch`. */
@@ -56,6 +89,12 @@ export function workRunnerOver(
         return typeof work === "function"
           ? work()
           : Promise.resolve(answer(executionPlacementBody(work)));
+      if (url.endsWith("/personal-runner"))
+        return Promise.resolve(
+          reads.personal === undefined
+            ? answer({ error: { code: "NotFound" } }, 404)
+            : answer(personalRunnerBody(reads.personal)),
+        );
       if (url.endsWith("/owner-fallback"))
         return Promise.resolve(
           answer({ fallback: reads.fallback, administers: false }),

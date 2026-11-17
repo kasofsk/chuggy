@@ -8,6 +8,7 @@ lead-session-open = Open
 lead-session-closed = Closed
 lead-absence-since = { $label } · since { $time }
 lead-absence-until = { $label } · until { $time }
+lead-absence-off = { $label } · credentials off
 lead-absence-manual = { -ticket(case: "upper", form: "plural") } are { -dispatch(form: "ed") } by hand
 
 lead-attention-monitoring = Monitoring
@@ -123,9 +124,9 @@ lead-mode-action-resume = Resume
 
 lead-dispatch-name = { -dispatch(case: "upper") }
 lead-dispatch-automatic = Automatic
-# spells -approval: approving a dispatch, never a landing
+# spells -approval: approving a dispatch, never a finalization
 lead-dispatch-approval = { -dispatch(case: "upper") } approval
-# spells -approval: approving a dispatch, never a landing
+# spells -approval: approving a dispatch, never a finalization
 lead-dispatch-action-require = Require { -dispatch } approval
 lead-dispatch-action-automatic = { -dispatch(case: "upper") } automatically
 
@@ -181,6 +182,7 @@ lead-settings-reset = Reset
 
 lead-settings-writing = Writing
 lead-settings-written = Written · { $revision }
+lead-settings-saved = { $section } saved · { -revision(case: "upper") } { $revision }
 lead-settings-changed-by = Changed by
 lead-settings-changed-at = at
 lead-settings-conflict-moved-by = Changed by { $subject } at { $time }
@@ -199,6 +201,7 @@ lead-history-no-change = No change
 lead-history-diff = Diff
 lead-history-hide-diff = Hide diff
 lead-history-restore = Restore
+lead-history-restored = Restored as { -revision } { $revision }
 lead-history-show-all = Show all { $count }
 lead-history-none-recorded = No { -revision(form: "plural") }
 lead-history-title = { -revision(case: "upper", form: "plural") }
