@@ -328,7 +328,7 @@ test("the page reads its own binding, and says what it lands as", async () => {
  * configurations of its own to list, so the page says only that. */
 test("a repository this project does not bind draws nothing but Not bound", async () => {
   await drawPage({ repository: "https://forge.test/kasofsk/none" });
-  expect(screen.getByText("Not bound")).toBeTruthy();
+  expect(screen.getByText("Not connected")).toBeTruthy();
   expect(screen.queryByRole("region", { name: /^Finalization/u })).toBeNull();
   expect(screen.queryByRole("region", { name: /^Configurations/u })).toBeNull();
 });
@@ -336,7 +336,11 @@ test("a repository this project does not bind draws nothing but Not bound", asyn
 /** A retired binding's page, reached by its address, says beside its name
  * that it is unbound; a live one's says nothing. */
 test.each([
-  ["a retired", "2026-09-14T00:00:00Z", "Repositories/kasofsk/chuggyUnbound"],
+  [
+    "a retired",
+    "2026-09-14T00:00:00Z",
+    "Repositories/kasofsk/chuggyDisconnected",
+  ],
   ["a live", undefined, "Repositories/kasofsk/chuggy"],
 ])(
   "%s binding's top bar says beside its name whether it is unbound",

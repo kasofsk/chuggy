@@ -7,7 +7,7 @@
  */
 
 import { useId, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import type { WorkerPoolTokenResponse } from "../../../../src/contract/responses.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
@@ -23,7 +23,7 @@ import { Button } from "./ui/Button.tsx";
 import { Checkbox } from "./ui/Checkbox.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
 import { Input } from "./ui/Input.tsx";
-import { RunnerSteps, useFocusedUnheld } from "./RunnerSteps.tsx";
+import { RunnerSteps } from "./RunnerSteps.tsx";
 import type { RunnerStepsKind } from "./RunnerSteps.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { ToggleGroup } from "./ui/ToggleGroup.tsx";
@@ -137,39 +137,16 @@ function RunnerAdvanced(props: {
   );
 }
 
-function RunnerAskPresses(props: {
-  readonly busy: boolean;
-  readonly onCancel: () => void;
-}): ReactNode {
-  const text = useCopyText();
-  return (
-    <div className="flex gap-2">
-      <Button
-        size="sm"
-        variant="primary"
-        type="submit"
-        busy={props.busy}
-        disabled={props.busy}
-      >
-        {text({ id: "runners-ask-create" })}
-      </Button>
-      <Button size="sm" disabled={props.busy} onClick={props.onCancel}>
-        {text({ id: "runners-ask-cancel" })}
-      </Button>
-    </div>
-  );
-}
-
 /** The line a refused mint leaves in its ask. */
 export function runnerMintRefusal(failure: ApiFailure): Copy {
   return failureWords(failure).word;
 }
 
-/** A registration token's mint, from the press that opens its ask through
+/** A registration token's mint, from the press that opens its panel through
  * the token it answered, which stands with the ask it declares until closed. */
 export interface RunnerMinting {
   readonly writing: ConsoleWriting<RunnerAsk, WorkerPoolTokenResponse>;
-  /** Whether the ask or the steps are drawn. */
+  /** Whether the panel the ask or the steps are drawn in is. */
   readonly opened: boolean;
   readonly open: () => void;
   readonly close: () => void;
@@ -198,12 +175,8 @@ export function useRunnerMinting(
   };
 }
 
-/**
- * The ask, while it is filled in and while the caller mints its token, a
- * member's own runner's. It takes the focus as it is drawn
- * only where nothing holds it, as the steps do, since the press that opened it
- * can be gone from under it.
- */
+/** The ask, while it is filled in and while the caller mints its token, a
+ * member's own runner's. */
 function RunnerAskForm(props: { readonly minting: RunnerMinting }): ReactNode {
   const [chosen, setChosen] = useState<RunnerPackageName>("linux");
   const [host, setHost] = useState(false);
@@ -211,14 +184,11 @@ function RunnerAskForm(props: { readonly minting: RunnerMinting }): ReactNode {
   const [fault, setFault] = useState<Copy | undefined>(undefined);
   const [advanced, setAdvanced] = useState(false);
   const writing = props.minting.writing;
-  const form = useFocusedUnheld<HTMLFormElement>();
   const text = useCopyText();
   return (
     <form
-      ref={form}
-      tabIndex={-1}
       aria-label={text({ id: "runners-ask-aria" })}
-      className="border-edge grid min-w-0 justify-items-start gap-3 border-b pt-3 pb-4"
+      className="grid min-w-0 justify-items-start gap-3"
       onSubmit={(event) => {
         event.preventDefault();
         const read = runnerAskRead(chosen, host, typed);
@@ -248,31 +218,29 @@ function RunnerAskForm(props: { readonly minting: RunnerMinting }): ReactNode {
           <ConsoleWriteRefusedWords refused={writing.error} />
         </Notice>
       )}
-      <RunnerAskPresses
+      <Button
+        size="sm"
+        variant="primary"
+        type="submit"
         busy={writing.isPending}
-        onCancel={props.minting.close}
-      />
+        disabled={writing.isPending}
+      >
+        {text({ id: "runners-ask-create" })}
+      </Button>
     </form>
   );
 }
 
-/** The ask while the token is unminted, and once it is, the steps it is
- * handed over in, until `onDone` closes them. */
-export function RunnerMintOpened(props: {
+/** Registering by hand: the ask while the token is unminted, and once it
+ * is, the steps it is handed over in. */
+export function RunnerByHand(props: {
   readonly minting: RunnerMinting;
   readonly kind: RunnerStepsKind;
-  readonly onDone: () => void;
-}): ReactNode {
-  const { minting } = props;
-  const { data: minted, variables: ask } = minting.writing;
-  if (minted !== undefined && ask !== undefined)
-    return (
-      <RunnerSteps
-        minted={minted}
-        ask={ask}
-        kind={props.kind}
-        onDone={props.onDone}
-      />
-    );
-  return minting.opened ? <RunnerAskForm minting={minting} /> : null;
+}): ReactElement {
+  const { data: minted, variables: ask } = props.minting.writing;
+  return minted !== undefined && ask !== undefined ? (
+    <RunnerSteps minted={minted} ask={ask} kind={props.kind} />
+  ) : (
+    <RunnerAskForm minting={props.minting} />
+  );
 }

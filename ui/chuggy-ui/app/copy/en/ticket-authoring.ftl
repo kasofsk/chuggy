@@ -137,7 +137,7 @@ ticket-authoring-fault-links = each link is an { $scheme } URL of at most { $cha
 ticket-authoring-fault-checks = each { -brief-check } is one command line of at most { $chars } characters, and one { -ticket } adds at most { $count }
 ticket-authoring-fault-branch = a branch is named here without its { $prefix } prefix, and the whole reference is at most { $chars } characters
 ticket-authoring-fault-finalization = this { -finalization } is not one the API will accept
-ticket-authoring-fault-repository = this { -project } binds { -repository(form: "a") }, so { -ticket(form: "a") } in it names which one
+ticket-authoring-fault-repository = this { -project } is connected to { -repository(form: "a") }, so { -ticket(form: "a") } in it names which one
 ticket-authoring-fault-authoring = one advanced setting is not one this { -project } offers
 ticket-authoring-fault-overrides = { -override(form: "a") } is not one { -ticket(form: "a") } may write
 ticket-authoring-fault-fence = this form no longer describes { -configuration(form: "a") } the API will accept
@@ -168,7 +168,7 @@ ticket-authoring-step-updated = updated
 
 ## Why a submit made no ticket.
 
-ticket-authoring-context-no-repository = No { -repository } bound
+ticket-authoring-context-no-repository = No { -repository } connected
 ticket-authoring-context-no-configuration = No { -configuration }
 ticket-authoring-context-unknown = No ready { -configuration } found
 ticket-authoring-stale = { -project(case: "upper") } changed · Submit again
@@ -192,7 +192,7 @@ ticket-authoring-keep-mine = Keep mine
 ## What a duplicate did not carry.
 
 ticket-authoring-dropped = Not carried · { $parts }
-ticket-authoring-dropped-repository = { -repository } { $repository }, no longer bound
+ticket-authoring-dropped-repository = { -repository } { $repository }, no longer connected
 ticket-authoring-dropped-dependency = { -dependency } on { -ticket } { $ticket }, { -revoke(form: "ed") }
 ticket-authoring-dropped-configuration = { -configuration } { $configuration }, no longer offered
 

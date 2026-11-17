@@ -449,7 +449,7 @@ test("not knowing, there being none and there being nowhere are drawn as three w
     ),
   ];
   expect(new Set(sentences).size).toBe(3);
-  expect(sentences[0]).toBe("No repository bound");
+  expect(sentences[0]).toBe("No repository connected");
   expect(sentences[1]).toBe("No configuration");
   expect(sentences[2]).toBe("No ready configuration found");
 });

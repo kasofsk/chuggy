@@ -268,7 +268,7 @@ const trips: {
       repository: "acme-org/widgets",
     },
     bindRun(
-      `The worker app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/repositories, press Add, and under the list find Worker app missing · grant it on GitHub. Follow the link beside it, Worker app, and on GitHub add acme-org/widgets to the repositories the app may reach.`,
+      `The worker app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/repositories, press Add, and under the list find A row marked missing · add it to the worker app on GitHub. Follow the link beside it, Worker app, and on GitHub add acme-org/widgets to the repositories the app may reach.`,
     ),
   ],
   Account: [
@@ -564,7 +564,7 @@ test("an app not granted the repository is mended from the line the Add picker d
   }
   expect(thing({ lacks: "Grant", app: "portal", ...grant })).toEqual(
     bindRun(
-      `The portal app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/repositories, press Add, and under the list find Not listed · grant it on GitHub. Follow the link beside it, Portal app, and on GitHub add acme-org/widgets to the repositories the app may reach.`,
+      `The portal app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/repositories, press Add, and under the list find Repository not listed · add it to the portal app on GitHub. Follow the link beside it, Portal app, and on GitHub add acme-org/widgets to the repositories the app may reach.`,
     ),
   );
 });

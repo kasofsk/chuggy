@@ -3,9 +3,9 @@
  * questions run on and their threads run on first: a row saying when it
  * registered and last polled, whether it is live and what the threads it hosts
  * may do, and taking it off; and the
- * registration of a host on the machine the reader chooses, which replaces the
- * one they hold: on Linux the line that has Claude Code make the machine it,
- * and on either machine the steps that do it by hand.
+ * registration of a host, which replaces the one they hold: the line that has
+ * their coding agent make the machine it is pasted on their host, and folded
+ * under it the steps that do it by hand on the machine they choose.
  *
  * A HOST THE READER HOLDS IS DRAWN WHETHER OR NOT THEY MAY REGISTER ONE NOW, as
  * their runners are, so a member whose permission was taken away can still see
@@ -27,11 +27,7 @@ import {
   apiMintChatHostToken,
 } from "../../core/apiRoutes.ts";
 import type { ApiFailure, ApiResult } from "../../core/apiRequest.ts";
-import {
-  claudeCodeChatHostLine,
-  claudeCodeChatHostLineAbout,
-  claudeCodeLineCopy,
-} from "../../core/claudeCodeLine.ts";
+import { claudeCodeChatHostLine } from "../../core/claudeCodeLine.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type {
   ConsoleWrite,
@@ -56,11 +52,11 @@ import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { currentOrigin } from "../ports.ts";
 import { RunnerMachine } from "../RunnerAsk.tsx";
-import { RunnerSteps, useFocusedUnheld } from "../RunnerSteps.tsx";
+import { RunnerRegister } from "../RunnerRegister.tsx";
+import { RunnerSteps } from "../RunnerSteps.tsx";
 import { RunnerVersion } from "../RunnerVersion.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
-import { CopyBox } from "../ui/CopyBox.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -260,33 +256,15 @@ function ChatHostTable(props: {
   );
 }
 
-/** The line that has Claude Code make the machine it is pasted on the reader's chat host. */
-function ChatHostClaudeCode(props: { readonly tenant: string }): ReactNode {
-  const text = useCopyText();
-  return (
-    <div className="w-full max-w-aside">
-      <CopyBox
-        about={text(claudeCodeChatHostLineAbout)}
-        text={claudeCodeChatHostLine(currentOrigin(), props.tenant)}
-        copyLabel={text(claudeCodeLineCopy)}
-        breaks="words"
-      />
-    </div>
-  );
-}
-
 /** The machine chosen before the token is minted, and why a mint was refused. */
 function ChatHostAsk(props: { readonly writing: ChatHostWriting }): ReactNode {
   const [chosen, setChosen] = useState<RunnerPackageName>("linux");
   const { minting } = props.writing;
-  const form = useFocusedUnheld<HTMLFormElement>();
   const text = useCopyText();
   return (
     <form
-      ref={form}
-      tabIndex={-1}
       aria-label={text({ id: "runners-chat-host-title" })}
-      className="border-edge grid min-w-0 justify-items-start gap-3 border-b pt-3 pb-4"
+      className="grid min-w-0 justify-items-start gap-3"
       onSubmit={(event) => {
         event.preventDefault();
         minting.mutate(chosen);
@@ -298,63 +276,61 @@ function ChatHostAsk(props: { readonly writing: ChatHostWriting }): ReactNode {
           <ConsoleWriteRefusedWords refused={minting.error} />
         </Notice>
       )}
-      <div className="flex gap-2">
-        <Button
-          size="sm"
-          variant="primary"
-          type="submit"
-          busy={minting.isPending}
-          disabled={minting.isPending}
-        >
-          {text({ id: "runners-ask-create" })}
-        </Button>
-        <Button
-          size="sm"
-          disabled={minting.isPending}
-          onClick={props.writing.done}
-        >
-          {text({ id: "runners-ask-cancel" })}
-        </Button>
-      </div>
+      <Button
+        size="sm"
+        variant="primary"
+        type="submit"
+        busy={minting.isPending}
+        disabled={minting.isPending}
+      >
+        {text({ id: "runners-ask-create" })}
+      </Button>
     </form>
   );
 }
 
-/** The token handed over for the machine chosen: on Linux the line first,
- * then the steps that do it by hand. */
-function ChatHostMinted(props: {
+/** The panel a host is registered in: what it replaces, where the reader
+ * holds one, the line, and by hand the machine chosen and then the steps its
+ * token is handed over in. */
+function ChatHostRegistering(props: {
   readonly tenant: string;
-  readonly minted: WorkerPoolTokenResponse;
-  readonly chosen: RunnerPackageName;
+  readonly writing: ChatHostWriting;
   /** The short id of the host the reader holds, where they hold one. */
   readonly short: string | undefined;
-  readonly onDone: () => void;
 }): ReactNode {
   const text = useCopyText();
+  const { data: minted, variables: chosen } = props.writing.minting;
   return (
-    <div className="grid min-w-0 gap-2">
-      {props.chosen === "linux" ? (
-        <ChatHostClaudeCode tenant={props.tenant} />
-      ) : null}
-      {props.short === undefined ? null : (
-        <p className="text-sm text-ink-3">
-          {text({
-            id: "runners-chat-host-replaces",
-            args: { short: props.short },
-          })}
-        </p>
-      )}
-      <RunnerSteps
-        minted={props.minted}
-        ask={{ package: props.chosen, host: false, capabilities: [] }}
-        kind="ChatHost"
-        onDone={props.onDone}
-      />
-    </div>
+    <RunnerRegister
+      label={text({ id: "runners-chat-host-register" })}
+      lead={
+        props.short === undefined ? null : (
+          <p className="text-sm text-ink-3">
+            {text({
+              id: "runners-chat-host-replaces",
+              args: { short: props.short },
+            })}
+          </p>
+        )
+      }
+      line={claudeCodeChatHostLine(currentOrigin(), props.tenant)}
+      byHand={
+        minted !== undefined && chosen !== undefined ? (
+          <RunnerSteps
+            minted={minted}
+            ask={{ package: chosen, host: false, capabilities: [] }}
+            kind="ChatHost"
+          />
+        ) : (
+          <ChatHostAsk writing={props.writing} />
+        )
+      }
+      onDone={props.writing.done}
+    />
   );
 }
 
-/** What the last change left: the machine asked for, the token minted for it, the question a removal waits on, or why it was refused. */
+/** What the last change left: the panel a host is registered in, the question a removal waits on, or why it was refused. */
 function ChatHostWritten(props: {
   readonly tenant: string;
   readonly writing: ChatHostWriting;
@@ -363,7 +339,6 @@ function ChatHostWritten(props: {
 }): ReactNode {
   const text = useCopyText();
   const { writing, short } = props;
-  const { data: minted, variables: chosen } = writing.minting;
   if (writing.asking)
     return (
       <Confirm
@@ -382,17 +357,14 @@ function ChatHostWritten(props: {
         })}
       </Confirm>
     );
-  if (minted !== undefined && chosen !== undefined)
+  if (writing.choosing)
     return (
-      <ChatHostMinted
+      <ChatHostRegistering
         tenant={props.tenant}
-        minted={minted}
-        chosen={chosen}
+        writing={writing}
         short={short}
-        onDone={writing.done}
       />
     );
-  if (writing.choosing) return <ChatHostAsk writing={writing} />;
   return writing.refused === undefined ? null : (
     <Notice tone="danger" inline>
       <ConsoleWriteRefusedWords refused={writing.refused} />
@@ -404,7 +376,7 @@ function ChatHostWritten(props: {
  * taken off once asked, and the refusal of the last pressed. */
 interface ChatHostWriting {
   readonly minting: ConsoleWriting<RunnerPackageName, WorkerPoolTokenResponse>;
-  /** Whether the machine a token is minted for is being chosen. */
+  /** Whether the panel a host is registered in is drawn. */
   readonly choosing: boolean;
   readonly asking: boolean;
   readonly refused: ConsoleWriteRefused | undefined;

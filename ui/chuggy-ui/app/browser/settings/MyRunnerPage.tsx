@@ -3,8 +3,10 @@
  * what it declared and runs, what it is running now and whether it is
  * polling, and taking it off; the projects every one of them takes work in,
  * each at the priority the reader gives it and with how many attempts wait
- * there; the command that registers one
- * more, where the workspace lets them and they hold fewer than a member may;
+ * there; registering one more, where the workspace lets them and they hold
+ * fewer than a member may, by the line that has their coding agent run the
+ * setup program for a project of theirs, and their chat host too where they
+ * hold none, or by hand;
  * their chat host; and each agent their runners are paused for, which none of
  * them takes work for until the pause ends.
  *
@@ -47,12 +49,14 @@ import type {
 } from "../../core/consoleWrite.ts";
 import { instantFigure } from "../../core/figures.ts";
 import type { Copy } from "../../core/copy.ts";
+import { claudeCodeRunnerLine } from "../../core/claudeCodeLine.ts";
 import { failureWords } from "../../core/failureWords.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { copyOrDataText } from "../../core/copy.ts";
 import {
   myRunnerAddable,
   myRunnerHeldLabel,
+  myRunnerLineProjects,
   myRunnerPriorityChosen,
   myRunnerPriorityLabel,
   myRunnerRemovalLine,
@@ -80,13 +84,15 @@ import { usePanelState } from "../api.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";
+import { currentOrigin } from "../ports.ts";
 import { personalRunnerReread, usePersonalRunner } from "../personalRunner.ts";
 import { useProjectNamed } from "../projectNamed.ts";
 import {
-  RunnerMintOpened,
+  RunnerByHand,
   runnerMintRefusal,
   useRunnerMinting,
 } from "../RunnerAsk.tsx";
+import { RunnerRegister } from "../RunnerRegister.tsx";
 import type { RunnerMinting } from "../RunnerAsk.tsx";
 import { RunnerVersion } from "../RunnerVersion.tsx";
 import { HostListingHead, MyChatHost, useChatHost } from "./MyChatHost.tsx";
@@ -232,6 +238,53 @@ function MyRunnerRegister(props: {
     >
       {text({ id: "runners-register" })}
     </Button>
+  );
+}
+
+/** The panel a runner is registered in: the line for the project chosen, chosen only where the page is framed in none and the reader reads more than one, and the ask and the steps by hand. */
+function MyRunnerRegistering(props: {
+  readonly tenant: string;
+  readonly minting: RunnerMinting;
+  /** The projects the line may be made for, the first chosen until another is. */
+  readonly projects: readonly string[];
+  /** Whether the line makes the machine the reader's chat host too. */
+  readonly chat: boolean;
+  readonly onDone: () => void;
+}): ReactNode {
+  const text = useCopyText();
+  const projectNamed = useProjectNamed();
+  const [chosen, setChosen] = useState<string | undefined>(undefined);
+  const project =
+    props.projects.find((each) => each === chosen) ?? props.projects[0];
+  return (
+    <RunnerRegister
+      label={text({ id: "runners-register" })}
+      lead={
+        project === undefined || props.projects.length < 2 ? null : (
+          <Picker
+            label={text({ id: "runners-register-project" })}
+            value={project}
+            options={props.projects.map((each) => ({
+              value: each,
+              text: projectNamed({ tenant: props.tenant, project: each }),
+            }))}
+            onChoose={setChosen}
+          />
+        )
+      }
+      line={
+        project === undefined
+          ? undefined
+          : claudeCodeRunnerLine(
+              currentOrigin(),
+              props.tenant,
+              project,
+              props.chat,
+            )
+      }
+      byHand={<RunnerByHand minting={props.minting} kind="Personal" />}
+      onDone={props.onDone}
+    />
   );
 }
 
@@ -727,6 +780,10 @@ function MyRunners(props: {
   readonly runner: PanelState<PersonalRunnerResponse>;
   readonly permit: PanelState<PersonalRunnerPermitResponse>;
   readonly addable: readonly string[] | undefined;
+  /** The projects a registration's line may be made for. */
+  readonly lineProjects: readonly string[];
+  /** Whether a registration's line makes the machine the reader's chat host too. */
+  readonly chat: boolean;
 }): ReactNode {
   const text = useCopyText();
   const client = useQueryClient();
@@ -756,14 +813,18 @@ function MyRunners(props: {
         />
       }
     >
-      <RunnerMintOpened
-        minting={minting}
-        kind="Personal"
-        onDone={() => {
-          minting.close();
-          void personalRunnerReread(client, props.tenant);
-        }}
-      />
+      {minting.opened ? (
+        <MyRunnerRegistering
+          tenant={props.tenant}
+          minting={minting}
+          projects={props.lineProjects}
+          chat={props.chat}
+          onDone={() => {
+            minting.close();
+            void personalRunnerReread(client, props.tenant);
+          }}
+        />
+      ) : null}
       {table}
     </SettingsListingSection>
   );
@@ -835,6 +896,7 @@ export function MyRunnerPage(): ReactNode {
   const runner = usePersonalRunner(tenant);
   const host = useChatHost(tenant);
   const inventory = usePanelState(projectsInventoryQuery());
+  const framed = useParams({ strict: false }).project;
   return (
     <SettingsPage title={text({ id: "runners-personal-title" })}>
       <SettingsListing>
@@ -848,6 +910,12 @@ export function MyRunnerPage(): ReactNode {
               ? myRunnerAddable(inventory.value, tenant, runner.value)
               : undefined
           }
+          lineProjects={myRunnerLineProjects(
+            inventory.state === "Ready" ? inventory.value : [],
+            tenant,
+            framed,
+          )}
+          chat={host.state === "Absent"}
         />
         <MyChatHost
           tenant={tenant}

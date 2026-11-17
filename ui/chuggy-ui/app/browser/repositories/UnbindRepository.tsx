@@ -99,7 +99,7 @@ export function useRepositoryUnbinding(
   };
 }
 
-/** Unbind on a live binding's row, held while any question is drawn. */
+/** Disconnect on a live binding's row, held while any question is drawn. */
 export function UnbindPress(props: {
   readonly repository: string;
   readonly unbinding: RepositoryUnbinding;

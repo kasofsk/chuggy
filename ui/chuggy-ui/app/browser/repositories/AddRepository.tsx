@@ -1,7 +1,8 @@
 /**
- * Adding a repository: what the tenant's portal installations grant, marked
- * against what this project already binds and against what the worker app was
- * read not to grant, and what choosing one came to.
+ * Adding a repository: the two apps it takes, what the tenant's portal
+ * installations grant, marked against what this project already binds and
+ * against what the worker app was read not to grant, and what choosing one
+ * came to.
  *
  * A refusal is one line under the roster and never a second dialog, because
  * the choice that earned it is still on screen and is what the reader would go
@@ -420,6 +421,16 @@ function useRepositoryBind(
   return { binding, note, bind };
 }
 
+/** What the dialog says first: the two apps a repository takes, and what each is for. */
+function AddRepositoryApps(): ReactNode {
+  const text = useCopyText();
+  return (
+    <p className="text-sm text-ink-3">
+      {text({ id: "repositories-add-apps" })}
+    </p>
+  );
+}
+
 function AddRepositoryBody(props: {
   readonly partition: PartitionIdentity;
   readonly installations: readonly ForgeInstallationResponse[];
@@ -441,6 +452,7 @@ function AddRepositoryBody(props: {
   );
   return (
     <>
+      <AddRepositoryApps />
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
         <SearchableRoster

@@ -200,7 +200,7 @@ test("a repository whose binding is retired is not carried, and is named", () =>
   expect(seed.form.repository).toBe("");
   expect(seed.form.finalization).toStrictEqual({ kind: "PullRequest" });
   expect(said(ticketDuplicateDroppedSentence(seed.dropped))).toBe(
-    "Not carried · repository kasofsk/chuggy, no longer bound",
+    "Not carried · repository kasofsk/chuggy, no longer connected",
   );
 });
 
@@ -221,7 +221,7 @@ test("everything not carried is said in one line", () => {
     },
   );
   expect(said(ticketDuplicateDroppedSentence(seed.dropped))).toBe(
-    "Not carried · repository kasofsk/chuggy, no longer bound · dependency on ticket 7, revoked · dependency on ticket 40, revoked · configuration opus, no longer offered",
+    "Not carried · repository kasofsk/chuggy, no longer connected · dependency on ticket 7, revoked · dependency on ticket 40, revoked · configuration opus, no longer offered",
   );
 });
 
