@@ -1,15 +1,16 @@
 import type {
+  InventoryPartition,
   Principal,
   ProjectAccess,
   ProjectInventory,
 } from "./nativeWeb.ts";
-import type { NamedPartition, Partition } from "./projectStore.ts";
+import type { Partition } from "./projectStore.ts";
 
 export interface ProjectInventoryStore {
   projects(
     after: Partition | undefined,
     limit: number,
-  ): Promise<readonly NamedPartition[]>;
+  ): Promise<readonly InventoryPartition[]>;
 }
 
 const inventoryScanPagesMax = 4;
@@ -20,7 +21,7 @@ export function authorizedProjectInventory(
 ): ProjectInventory {
   return {
     projects: async (principal: Principal, after, limit) => {
-      const visible: NamedPartition[] = [];
+      const visible: InventoryPartition[] = [];
       let cursor: Partition | undefined = after;
       let exhausted = false;
       for (let page = 0; page < inventoryScanPagesMax; page += 1) {

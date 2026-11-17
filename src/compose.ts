@@ -102,11 +102,13 @@ import { memberChat, type MemberChat } from "./interpreter/memberChat.ts";
 import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
 import { postgresProjectOwnerFallback } from "./adapters/postgres/projectOwnerFallback.ts";
 import { postgresProjectAppearance } from "./adapters/postgres/projectAppearance.ts";
-import { postgresAppearance } from "./adapters/postgres/appearance.ts";
+import { postgresProjectImages } from "./adapters/postgres/projectImages.ts";
 import {
-  projectAppearanceService,
-  type ProjectAppearanceService,
-} from "./interpreter/projectAppearance.ts";
+  projectImageService,
+  type ProjectAppearanceServices,
+} from "./interpreter/projectImages.ts";
+import { postgresAppearance } from "./adapters/postgres/appearance.ts";
+import { projectAppearanceService } from "./interpreter/projectAppearance.ts";
 import { postgresTicketTakes } from "./adapters/postgres/ticketTake.ts";
 import { ticketTakes, type TicketTakes } from "./interpreter/ticketTake.ts";
 import {
@@ -368,16 +370,24 @@ export function composeProjectOwnerFallback(
   );
 }
 
-/** Wires a project's appearance to API-role credentials, the access that gates it, and each person's own themes. */
+/** Wires a project's themes and images to API-role credentials, the access that gates them, each person's own themes, and the project-owned artifacts its images name. */
 export function composeProjectAppearance(
   apiPool: pg.Pool,
   access: ProjectAccess,
-): ProjectAppearanceService {
-  return projectAppearanceService(
-    access,
-    postgresProjectAppearance(apiPool),
-    postgresAppearance(apiPool),
-  );
+  artifacts: Pick<ProjectArtifactPort, "readArtifact">,
+): ProjectAppearanceServices {
+  return {
+    themes: projectAppearanceService(
+      access,
+      postgresProjectAppearance(apiPool),
+      postgresAppearance(apiPool),
+    ),
+    images: projectImageService({
+      access,
+      store: postgresProjectImages(apiPool),
+      artifacts,
+    }),
+  };
 }
 
 /** Wires a ticket's takes and returns to API-role credentials, the access that gates them, and the site's selector they refuse. */

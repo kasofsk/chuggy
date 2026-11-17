@@ -192,6 +192,7 @@ import { migration191 } from "./191-agent-account-credential-off.ts";
 import { migration192 } from "./192-target-paths-refused.ts";
 import { migration193 } from "./193-owned-themes.ts";
 import { migration194 } from "./194-project-themes.ts";
+import { migration195 } from "./195-project-images.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -389,4 +390,5 @@ export const migrations: readonly Migration[] = [
   migration192,
   migration193,
   migration194,
+  migration195,
 ];

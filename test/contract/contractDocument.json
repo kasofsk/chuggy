@@ -76,6 +76,7 @@
   "chatHostRegistration": "a member the tenant permits to register a personal runner mints, under the same permit and bound, a single-use token for their chat host in the tenant; redeeming it at the same route a runner's token is redeemed at registers the member's one chat host there, replacing any other and ending every session the replaced one held, and answers once with a file of kind ChatHost naming the tenant and the member and no project or capabilities; a chat host serves its member's threads and inquiries in every project of the tenant they may read, and needs no list; its owner reads its newest poll and whether it is live, and takes it off, which ends every session it held",
   "appearance": "a caller reads and writes their own themes and their own global choice alone, keyed by their principal and no workspace, and no route names another principal: a theme is a document, created under a number never given to another theme and answered with it, read, written whole, which is also how it is renamed, and deleted; a caller holds at most 24, and a creation past that is refused ThemeLimitReached; a document is refused InvalidRequest where it fails its schema and ThemeContrastInsufficient where it draws a pair below the contrast the pair needs; the choice is a built-in by its id or a theme of the caller's by its number, written whole, refused ThemeNotFound where it names none of theirs, and cleared; deleting the theme it names clears it, and a caller holding none reads no choice",
   "projectAppearance": "a project wears for each reader the first theme of four layers that names one: their own for the project, the project's default, their global choice, and the built-in default; the project's default is a document the project keeps, not a reference, read by anyone who may read the project, written whole and cleared by an administrator, and refused as a theme of a person's own is; a reader's own for the project is a built-in by its id or a theme of theirs by its number, written whole, refused ThemeNotFound where it names none of theirs, cleared, and read and written by that reader alone; deleting the theme it names clears it; the resolved read answers the document that applies, the layer it came from and each layer's own value, a layer naming a theme that no longer exists answered as unset",
+  "projectImages": "a project names an image artifact of its own its icon and another its banner, each read by anyone who may read the project and named or cleared by an administrator; naming one is refused ImageNotFound where the project holds no such artifact, ImageTypeNotAdmitted where it is not one of image/png, image/jpeg, image/webp, and ImageTooLarge past 262144 bytes for an icon or 2097152 for a banner; the inventory lists each project with the icon it names, and the bytes are read through the artifact route",
   "actionReports": "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, a verified request its scheme reads no outcome in is answered Ignored and records nothing, and a request that proves nothing is not found",
   "actionReach": "for each action a ticket's repository declares, whether what was reported of the action holds the commit the ticket landed at: Reached where its newest success does, Failed where its newest report is a failure that does, RolledBack where only a success beneath its newest, reported since the ticket landed, does, NotYet where none does, and Unknown where this server could not find out inside the time one read is given, which it answers rather than wait and a later read may answer otherwise; a mark read from a report shows it; a ticket that has landed nowhere, which one whose proposal a person is left to merge is, answers no repository, commit or actions; it is read as the ticket is and derived each time it is asked",
   "nativeActionHistory": "every native action a ticket has had, open and settled, oldest fence first, resumed by the cursor a page answers, which names the ticket and no other read takes: its kind, its state, Open, Resolved or Withdrawn, the answer a Resolved one was given, the execution an EvaluationApproval asked about, and who answered it and when where that is recorded, which is on an answered EvaluationApproval alone; it is read as the ticket is",
@@ -148,6 +149,8 @@
     "projectTheme": "/api/v1/tenants/:tenant/projects/:project/appearance/theme",
     "projectThemeOverride": "/api/v1/tenants/:tenant/projects/:project/appearance/override",
     "projectAppearance": "/api/v1/tenants/:tenant/projects/:project/appearance",
+    "projectImages": "/api/v1/tenants/:tenant/projects/:project/appearance/images",
+    "projectImage": "/api/v1/tenants/:tenant/projects/:project/appearance/images/:role",
     "hostedRuns": "/api/v1/tenants/:tenant/projects/:project/hosted-runs",
     "abilities": "/api/v1/tenants/:tenant/projects/:project/abilities",
     "workerPools": "/api/v1/tenants/:tenant/projects/:project/worker-pools",
@@ -3300,6 +3303,19 @@
           "additionalProperties": false
         }
       },
+      "additionalProperties": false
+    },
+    "projectImage": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "artifact": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": ["artifact"],
       "additionalProperties": false
     },
     "personalRunnerProject": {

@@ -783,6 +783,15 @@ it points at `project`, cascading from it as `project_theme` does, and at
 `owned_theme` by `(principal, owned)`, so deleting the theme deletes the
 override and the person reads none. It has no unfinished work.
 
+`project_image` — the artifact one project names in one role, its icon or its
+banner, by identity, and who named it. Owned by the boundary owner, which is
+what `set_project_image` runs as; the API role writes it through that door
+alone and reads it, for the project and for each project the inventory lists.
+Its key and identity are `(tenant, project, role)` and it points at `project`,
+cascading from it as `project_theme` does. It is changed by that door alone,
+which answers `Unchanged` where nothing moved; a row naming no artifact is a
+role that was cleared. It has no unfinished work.
+
 `epic` — a project's epic as it stands: its number, its revision and its
 content. Owned by the boundary owner, which `save_epic` runs as and which is the
 only role that may write it; the API role is granted SELECT and EXECUTE on that
