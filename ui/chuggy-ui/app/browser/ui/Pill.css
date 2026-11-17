@@ -73,6 +73,16 @@
     display: none;
   }
 
+  @media (forced-colors: active) {
+    .pill:not(.pill-queued) .pill-mark {
+      background: var(--forced-ink);
+    }
+
+    .pill-queued .pill-mark {
+      border: var(--hairline) solid var(--forced-ink);
+    }
+  }
+
   @keyframes pill-pulse {
     0%,
     100% {

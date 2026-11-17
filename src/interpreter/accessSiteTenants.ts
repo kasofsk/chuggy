@@ -12,6 +12,9 @@
  * site's `AccountCreators` is read first, so a cut never answers that a
  * tenant's administrators may not make accounts where they may.
  *
+ * EACH TENANT IS NAMED BY ITS DISPLAY NAME, read for the tenants listed in one
+ * question of the store, as `./accessTenantNames.ts` answers one.
+ *
  * AN ADMINISTRATOR NO PERSON NAMES IS COUNTED for its tenant as `unnamed`, as
  * an authority list counts one, and a person in several rows is named once. An
  * object no tenant's name decodes from is left out and not counted.
@@ -39,6 +42,10 @@ import {
 } from "./accessPlane.ts";
 import type { Principal } from "./principal.ts";
 import {
+  accessTenantDisplayNames,
+  type AccessTenantNameStore,
+} from "./accessTenantNames.ts";
+import {
   projectAccessObjectTenant,
   projectAccessSiteNamespace,
   projectAccessSiteObject,
@@ -55,6 +62,7 @@ export interface AccessSiteTenantsPorts {
   readonly access: ProjectAccess;
   readonly tuples: AccessTupleReader;
   readonly directory?: AccessDirectory | undefined;
+  readonly names?: AccessTenantNameStore | undefined;
 }
 
 /** The issuer every subject is derived under, and what one answer may read. */
@@ -126,7 +134,9 @@ async function accessSiteTenantsRead(
     await across(tenantAdministratorRelation),
     await across(tenantSiteRelation),
   );
-  const tenants: AccessSiteTenant[] = [...held.keys()].sort().map((tenant) => {
+  const listed = [...held.keys()].sort();
+  const displayName = await accessTenantDisplayNames(ports.names, listed);
+  const tenants: AccessSiteTenant[] = listed.map((tenant) => {
     const { principals, sets } = accessAuthorityHolders(held.get(tenant) ?? []);
     const administrators = principals.flatMap(
       (principal) =>
@@ -134,6 +144,7 @@ async function accessSiteTenantsRead(
     );
     return {
       tenant,
+      displayName: displayName(tenant),
       administrators,
       unnamed: sets.size + principals.length - administrators.length,
       createAccounts: creators.has(tenant),

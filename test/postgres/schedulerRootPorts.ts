@@ -13,6 +13,7 @@
  * is what keeps the suite's database as it was found however far a pass gets.
  */
 
+import { githubPipelinePaths } from "../../src/adapters/forge/githubPipelines.ts";
 import {
   executionSchedulerDefaults,
   silentSchedulerTelemetry,
@@ -61,6 +62,7 @@ export const schedulerRootService: Omit<
   },
   runtimeFacts: { facts: () => Promise.resolve({ read: "Unavailable" }) },
   practices: blessedPracticeCatalog,
+  pipelinePaths: githubPipelinePaths,
   workerRuntime: `registry.chuggy.internal/chuggy/worker-runtime@sha256:${"e".repeat(64)}`,
   poolMemoryMib: workerPoolMemoryMibDefault,
   config: executionSchedulerDefaults,

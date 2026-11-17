@@ -4,14 +4,20 @@
  * than its place and clips the chosen text to that, so a hint is how a caller
  * keeps the whole of it reachable.
  *
+ * Inside a `FormField` the trigger takes the field's binding: the drawn label
+ * and the chosen text together are its name, so the label names it without
+ * hiding what is chosen, and the field's hint and error describe it.
+ *
  * `modal={false}` keeps `react-remove-scroll` out of the tree: it appends a
  * `<style>` element the served `style-src 'self'` refuses.
  */
 
 import { DropdownMenu } from "radix-ui";
+import { useId } from "react";
 import type { ReactNode } from "react";
 
 import { buttonLookClassName } from "./Button.tsx";
+import type { FormFieldBinding } from "./FormField.tsx";
 import { MenuContent, menuItemClassName } from "./Menu.tsx";
 import { Tooltip } from "./Tooltip.tsx";
 
@@ -20,6 +26,8 @@ import "./Picker.css";
 export interface PickerOption {
   readonly value: string;
   readonly text: string;
+  /** A mark drawn before the option's text, which the text names. */
+  readonly glyph?: ReactNode;
 }
 
 /** An item under the roster that does something rather than choosing a value. */
@@ -60,14 +68,24 @@ function PickerTrigger(props: {
   readonly iconOnly: boolean;
   readonly text: string;
   readonly hint: string | undefined;
+  readonly field: FormFieldBinding | undefined;
 }): ReactNode {
+  const textId = useId();
+  const field = props.field;
+  const labelled =
+    field?.labelId === undefined ? undefined : `${field.labelId} ${textId}`;
   return (
-    <Tooltip text={props.hint}>
+    <Tooltip trigger="control" text={props.hint}>
       <DropdownMenu.Trigger
         className={`${buttonLookClassName({ size: "sm" })} min-w-0 max-w-full`}
+        id={field?.id}
+        aria-labelledby={labelled}
+        aria-describedby={field?.describedBy}
+        aria-invalid={field?.invalid === true ? true : undefined}
       >
         <span className="visually-hidden">{props.label}</span> {props.glyph}
         <span
+          id={textId}
           className={
             props.iconOnly ? "visually-hidden" : "picker-text min-w-0 truncate"
           }
@@ -98,6 +116,8 @@ export function Picker(props: {
   /** What hovering or focusing the trigger reveals. */
   readonly hint?: string | undefined;
   readonly actions?: readonly PickerAction[];
+  /** The binding of the `FormField` the picker is drawn in. */
+  readonly field?: FormFieldBinding;
 }): ReactNode {
   const chosen = props.options.find(
     (candidate) => candidate.value === props.value,
@@ -114,6 +134,7 @@ export function Picker(props: {
             ? (props.hint ?? `${props.label} · ${chosen?.text ?? props.value}`)
             : props.hint
         }
+        field={props.field}
       />
       <DropdownMenu.Portal>
         <MenuContent
@@ -133,6 +154,7 @@ export function Picker(props: {
                 <span className="picker-gutter">
                   <DropdownMenu.ItemIndicator className="picker-mark" />
                 </span>
+                {option.glyph}
                 {option.text}
               </DropdownMenu.RadioItem>
             ))}

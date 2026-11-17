@@ -112,7 +112,10 @@ test("the brief's landing comes before the finalizer's, and one that lands nothi
       ticket({ brief: { ...brief, finalization: { kind: "None" } } }),
       copyTextEn,
     ),
-  ).toMatchObject({ lands: false, landing: { id: "codes-landing-kind-none" } });
+  ).toMatchObject({
+    lands: false,
+    landing: { id: "codes-finalization-kind-none" },
+  });
   expect(
     ticketPlanOf(
       catalog,
@@ -131,10 +134,28 @@ test("the brief's landing comes before the finalizer's, and one that lands nothi
     ),
   ).toMatchObject({
     lands: true,
-    landing: { id: "codes-landing-kind-pull-request" },
+    landing: { id: "codes-finalization-kind-pull-request" },
   });
   expect(ticketPlanOf(undefined, ticket(), copyTextEn)).toMatchObject({
     lands: true,
     landing: undefined,
   });
+});
+
+test("a plan the ticket's overrides add names its stages, each evaluator the workload they add or the catalog's", () => {
+  const plan = ticketPlanOf(
+    catalog,
+    ticket({
+      selection: { evaluation: "gate" },
+      overrides: {
+        workloads: { approval: { runner: "Approval" } },
+        plans: { gate: [{ name: "sign-off", evaluators: ["ci", "approval"] }] },
+      },
+    }),
+    copyTextEn,
+  );
+  expect(plan.names).toEqual(["sign-off"]);
+  expect(
+    plan.stages.map((stage) => stage.evaluators.map((entry) => entry.name)),
+  ).toEqual([["ci", "approval"]]);
 });

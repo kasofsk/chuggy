@@ -23,6 +23,11 @@ import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { Lightbox } from "./ui/Lightbox.tsx";
 
+/** The `data:` URI an image is drawn from, out of the project's read of it. */
+export function projectImageSource(read: ProjectArtifactResponse): string {
+  return `data:${read.mediaType};base64,${read.content}`;
+}
+
 export function ProjectImage(props: {
   readonly partition: PartitionIdentity;
   readonly artifact: string;
@@ -35,7 +40,7 @@ export function ProjectImage(props: {
     projectImageQuery(props.partition, props.artifact),
   );
   if (state.state !== "Ready") return <PanelUnready state={state} />;
-  const src = `data:${state.value.mediaType};base64,${state.value.content}`;
+  const src = projectImageSource(state.value);
   if (props.opens === true)
     return <Lightbox src={src} alt={props.alt} className={props.className} />;
   return <img className={props.className} src={src} alt={props.alt} />;

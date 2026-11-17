@@ -37,8 +37,9 @@
   }
 
   /* A phone zooms into any field typed smaller than this, and what is read on
-   * one is read at the size it is typed in. */
-  @media (max-width: 40em) {
+   * one is read at the size it is typed in. A phone is a coarse pointer, not a
+   * narrow space: a pane is as narrow on a desk. */
+  @media (pointer: coarse) {
     .conversation {
       --conversation-text: var(--text-unzoomed);
     }
@@ -64,8 +65,9 @@
 
   /* The ring is the field's, not the textarea's: a box drawn around a box is
    * two rings, and the outer one is the control the reader sees. */
-  .conversation-field:focus-within {
-    box-shadow: var(--ring-focus);
+  .conversation-field:has(:focus-visible) {
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: var(--focus-offset);
   }
 
   .conversation-input {
@@ -78,7 +80,7 @@
   }
 
   .conversation-input:focus-visible {
-    box-shadow: none;
+    outline: none;
   }
 
   /* The controls are a row under the box, each as tall as the least a finger
@@ -89,9 +91,11 @@
     display: flex;
     align-items: center;
     justify-content: flex-end;
+    gap: var(--space-2);
   }
 
   .conversation-send,
+  .conversation-stop,
   .conversation-attach {
     display: flex;
     flex: none;
@@ -114,24 +118,38 @@
     color: var(--ink-1);
   }
 
-  .conversation-send-mark {
+  .conversation-send-mark,
+  .conversation-stop-mark {
     display: flex;
     align-items: center;
     justify-content: center;
     width: var(--height-icon);
     height: var(--height-icon);
     border-radius: var(--radius-circle);
+  }
+
+  .conversation-send-mark {
     background: var(--surface-inverse);
     color: var(--ink-inverse);
   }
 
+  /* Stop is the same round mark drawn as a ring, so beside Send it is told
+   * apart by more than its glyph. */
+  .conversation-stop-mark {
+    border: 1px solid var(--edge-strong);
+    background: var(--surface-1);
+    color: var(--ink-1);
+  }
+
   .conversation-send:disabled,
-  .conversation-send[aria-disabled="true"] {
+  .conversation-stop:disabled,
+  .conversation-stop[aria-disabled="true"] {
     cursor: default;
   }
 
   .conversation-send:disabled > .conversation-send-mark,
-  .conversation-send[aria-disabled="true"] > .conversation-send-mark {
+  .conversation-stop:disabled > .conversation-stop-mark,
+  .conversation-stop[aria-disabled="true"] > .conversation-stop-mark {
     background: var(--surface-2);
     color: var(--ink-3);
   }
@@ -141,7 +159,7 @@
     display: none;
   }
 
-  @media (max-width: 40em) {
+  @media (pointer: coarse) {
     .conversation-controls {
       --conversation-control: var(--height-touch);
     }
@@ -170,6 +188,13 @@
     background: var(--surface-2);
   }
 
+  @media (forced-colors: active) {
+    .conversation-trigger-item[data-highlighted] {
+      text-decoration: underline;
+      text-decoration-color: var(--forced-current);
+    }
+  }
+
   .conversation-chevron {
     transition: rotate var(--duration-1) var(--ease-out);
   }
@@ -195,10 +220,17 @@
     padding: var(--space-1);
   }
 
-  /* On a narrow screen a row that opens and the copy control answer a press
+  @media (forced-colors: active) {
+    .conversation-call[aria-current="location"] {
+      outline: var(--hairline) solid var(--forced-current);
+      outline-offset: calc(-1 * var(--hairline));
+    }
+  }
+
+  /* Under a finger a row that opens and the copy control answer a press
    * over the least a finger is given: an area laid over the control that takes
    * no room and draws nothing, so nothing drawn moves for it. */
-  @media (max-width: 40em) {
+  @media (pointer: coarse) {
     .conversation-trigger,
     .conversation-meta .copy-button {
       position: relative;
@@ -299,7 +331,7 @@
     color: var(--ink-1);
   }
 
-  @media (max-width: 40em) {
+  @media (pointer: coarse) {
     .conversation-bottom {
       width: var(--height-touch);
       height: var(--height-touch);
@@ -330,6 +362,12 @@
     border-radius: 50%;
     background: var(--ink-3);
     animation: conversation-pulse var(--duration-pulse) var(--ease-out) infinite;
+  }
+
+  @media (forced-colors: active) {
+    .conversation-writing .run-report-mark::after {
+      background: var(--forced-ink);
+    }
   }
 
   /* Where nothing written can carry it the report does, and it stands alone

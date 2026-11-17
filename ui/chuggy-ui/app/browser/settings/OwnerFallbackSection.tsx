@@ -29,36 +29,12 @@ import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { ownerFallbackQuery } from "../../core/projectQueries.ts";
 import { usePanelState } from "../api.ts";
-import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
-import type { ConsoleWriting } from "../consoleWrite.tsx";
+import { useConsoleWrite } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
-import { Notice } from "../ui/Notice.tsx";
+import { settingsSectionRefusalOf } from "../settingsSectionRefusal.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
-
-/** The write's line: under way, landed, or refused in the write's own words. */
-function OwnerFallbackNotice(props: {
-  readonly saving: ConsoleWriting<OwnerFallback | undefined, unknown>;
-}): ReactNode {
-  const text = useCopyText();
-  const saving = props.saving;
-  if (saving.isPending)
-    return (
-      <Notice tone="info" inline detail={text({ id: "runners-writing" })} />
-    );
-  if (saving.error !== null)
-    return (
-      <Notice tone="danger" inline>
-        <ConsoleWriteRefusedWords refused={saving.error} />
-      </Notice>
-    );
-  if (saving.isSuccess)
-    return (
-      <Notice tone="live" inline detail={text({ id: "runners-written" })} />
-    );
-  return null;
-}
 
 /** The project's fallback written, and the read under it answered before the
  * write is over. */
@@ -83,6 +59,7 @@ function ownerFallbackWrite(
       await client.cancelQueries({ queryKey: key });
       client.setQueryData(key, written);
     },
+    landedUnseen: () => ({ id: "runners-fallback-saved" }),
   };
 }
 
@@ -136,16 +113,16 @@ function OwnerFallbackEditing(props: {
   const saving = useConsoleWrite(ownerFallbackWrite(props.partition), {
     drawn: true,
   });
-  const shown = saving.isPending || saving.error !== null || saving.isSuccess;
   return (
     <SettingsSection
       title={text({ id: "runners-fallback-title" })}
       about={text(ownerFallbackAboutSection)}
       editing={editing}
       editable={props.read.administers}
-      savable={!saving.isPending}
+      changed={draft !== props.read.fallback}
+      saving={saving.isPending}
+      refusal={settingsSectionRefusalOf(saving.error)}
       footLead={null}
-      {...(shown ? { notice: <OwnerFallbackNotice saving={saving} /> } : {})}
       onEdit={() => {
         setDraft(props.read.fallback);
         saving.reset();
@@ -155,13 +132,11 @@ function OwnerFallbackEditing(props: {
         setEditing(false);
       }}
       onSave={() => {
-        if (draft === props.read.fallback) setEditing(false);
-        else
-          saving.mutate(draft, {
-            onSuccess: () => {
-              setEditing(false);
-            },
-          });
+        saving.mutate(draft, {
+          onSuccess: () => {
+            setEditing(false);
+          },
+        });
       }}
     >
       {editing ? (

@@ -1,0 +1,92 @@
+/* TabNav: a row of tabs over a hairline, the current one in full ink on a
+   rail. A row wider than its container scrolls inside it, which
+   ScrollSides.css cues, and clips anything drawn past a tab, so a tab's focus
+   outline is drawn inside it. */
+
+@layer ui {
+  .tab-nav {
+    min-width: 0;
+    overflow-x: auto;
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  .tab-nav ul {
+    display: flex;
+    gap: var(--space-1);
+  }
+
+  .tab-nav-tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    color: var(--ink-3);
+    font-size: var(--text-md);
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .tab-nav-tab:hover {
+    color: var(--ink-1);
+  }
+
+  .tab-nav-tab[aria-current="page"] {
+    color: var(--ink-1);
+    font-weight: var(--weight-medium);
+  }
+
+  .tab-nav-tab[aria-current="page"]::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: var(--rail);
+    background: var(--ink-1);
+  }
+
+  @media (max-width: 40em) {
+    .tab-nav-tab {
+      padding-inline: var(--space-2);
+    }
+  }
+
+  .tab-nav-count {
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-3);
+    background: var(--surface-2);
+    color: var(--ink-2);
+    font-size: var(--text-xs);
+    line-height: var(--leading-dense);
+  }
+
+  .tab-nav-tab:focus-visible {
+    outline-offset: var(--focus-inset);
+  }
+
+  @media (forced-colors: active) {
+    .tab-nav-tab[aria-current="page"]::after {
+      background: var(--forced-current);
+    }
+  }
+
+  /* The list is as wide as its tabs rather than its row, so a tab or count
+     that arrives after mount resizes what the row's measure observes. */
+  .tab-nav ul {
+    width: max-content;
+  }
+
+  /* A tab is what takes the focus, and its ring at a faded edge would be cut
+     away, so a fading row holding a keyboard focus drops its fade. */
+  .tab-nav.scroll-sides:is([data-more-start], [data-more-end]):has(
+      :focus-visible
+    ) {
+    mask-image: none;
+  }
+
+  @media (pointer: coarse) {
+    .tab-nav-tab {
+      min-height: var(--height-touch);
+    }
+  }
+}

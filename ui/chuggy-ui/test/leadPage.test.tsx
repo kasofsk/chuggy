@@ -602,7 +602,7 @@ function leadTurnOut(
 /** The word under each exchange the conversation draws. */
 function standingWords(conversation: HTMLElement): readonly string[] {
   return Array.from(
-    conversation.querySelectorAll('.conversation-meta p [role="status"]'),
+    conversation.querySelectorAll(".conversation-meta p [data-word]"),
     (status) => status.textContent,
   );
 }
@@ -996,7 +996,7 @@ test("a project with no lead on runners none of its own has says so under the li
   await mountLead();
   expect(screen.getByText("Tickets are dispatched by hand")).toBeDefined();
   expect(screen.getByText("No runner")).toBeDefined();
-  expect(screen.getByRole("link", { name: "Runners" })).toBeDefined();
+  expect(screen.getByRole("link", { name: "Pools" })).toBeDefined();
 });
 
 /** The runner notice already says no runner can take the lead's turn, and
@@ -1018,7 +1018,7 @@ test("a project refused for no live runner leaves it to the runner notice", asyn
   await mountLead();
   expect(screen.queryByText(/No live runner/u)).toBeNull();
   expect(screen.getByText("No runner")).toBeDefined();
-  expect(screen.getByRole("link", { name: "Runners" })).toBeDefined();
+  expect(screen.getByRole("link", { name: "Pools" })).toBeDefined();
 });
 
 /** A placement saying the project's runners are live makes a kept refusal for

@@ -248,6 +248,15 @@
     background: var(--slot-8);
   }
 
+  /* A category in the bar and its legend is told by its hue alone, so forced
+     colours keep the hues. */
+  @media (forced-colors: active) {
+    .context-seg,
+    .context-swatch {
+      forced-color-adjust: none;
+    }
+  }
+
   .context-swatch[data-kind="Free"] {
     background: var(--slot-free);
     border: var(--hairline) solid var(--edge-strong);
@@ -684,7 +693,8 @@
     grid-column: 1 / -1;
   }
 
-  /* A thread's panel: beside its conversation, or in its place on a phone. */
+  /* A thread's panel: beside its conversation, or in its place where the page
+     is narrow. */
 
   .context-beside {
     flex-direction: row;
@@ -722,7 +732,7 @@
     overflow-y: auto;
   }
 
-  @media (max-width: 40em) {
+  @container page (max-width: 40em) {
     .context-beside[data-open="true"] > [role="region"] {
       display: none;
     }

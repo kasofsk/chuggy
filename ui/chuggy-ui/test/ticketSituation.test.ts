@@ -69,9 +69,9 @@ function over21(
 
 const approval: NativeActionResponse = {
   action: "action-eleven",
-  kind: "FinalizationApproval",
+  kind: "EvaluationApproval",
   authorizingSequence: 51,
-  admits: ["Approve", "Decline"],
+  admits: ["Approve", "Reject"],
   answerable: true,
 };
 
@@ -190,11 +190,15 @@ test("a ticket parked with nowhere to run says so, and leads to Runners", () => 
 });
 
 /** A job a usage limit stopped is resumed by the scheduler once the pauses
- * holding it end, and the card says when in the reader's own zone. */
-test("a ticket the scheduler resumes once its usage pauses end says so under its wall, with when where a pause still holds it", () => {
+ * holding it end, and the card says when in the reader's own zone; one held
+ * by credentials turned off is not, and the card says that. */
+test("a ticket the scheduler resumes once its usage pauses end says so under its wall, with when where a pause still holds it, and one credentials turned off hold says that instead", () => {
   const nowMs = new Date(2026, 9, 3, 9, 0).getTime();
   const until = new Date(2026, 9, 3, 14, 5).toISOString();
-  const parked = (usageResume: { readonly until?: string }) =>
+  const parked = (usageResume: {
+    readonly until?: string;
+    readonly off?: true;
+  }) =>
     ticketSlot(
       reads({
         nowMs,
@@ -220,6 +224,7 @@ test("a ticket the scheduler resumes once its usage pauses end says so under its
     reason: undefined,
   });
   expect(parked({})).toMatchObject({ more: "Resumes automatically" });
+  expect(parked({ off: true })).toMatchObject({ more: "Credentials off" });
 });
 
 /**
@@ -270,10 +275,15 @@ test("a job lost on its runner says where, how often, and the attempt its worker
 /** The slot of a ticket whose work escalated at a failed step, to a reader offered the ticket's setup lines or not. */
 const parkedAtStep = (
   failed: {
-    readonly evidence: "RunSetupFailed" | "RunPushFailed" | "RunDiskLow";
+    readonly evidence:
+      "RunSetupFailed" | "RunPushFailed" | "RunDiskLow" | "RunCredentialAbsent";
     readonly execution: string;
     readonly attempt: string;
     readonly error?: { readonly bytes: number };
+    readonly absent?: {
+      readonly credential: string;
+      readonly reason: "NotGranted";
+    };
   },
   setupOverridable = true,
 ) =>
@@ -363,6 +373,41 @@ test("a run its runner stopped for low disk says that runner needs room, to any 
     step: undefined,
     more: "Free space on its runner, then Resume",
     reason: { execution: "execution-1", attempt: "attempt-3" },
+  });
+});
+
+/** A run ended for a credential not delivered says which and what to change
+ * where it was told, and keeps the wall's own line where it was not. */
+test("a run ended for a credential not delivered names it and what to change, to any reader", () => {
+  expect(
+    parkedAtStep(
+      {
+        evidence: "RunCredentialAbsent",
+        execution: "execution-1",
+        attempt: "attempt-3",
+        absent: { credential: "chuggy.github", reason: "NotGranted" },
+      },
+      false,
+    ),
+  ).toStrictEqual({
+    slot: "NeedsYou",
+    approvals: [],
+    detail: "Credential missing",
+    where: undefined,
+    run: undefined,
+    step: undefined,
+    more: "Let its workload mint chuggy.github, then Resume",
+    reason: undefined,
+  });
+  expect(
+    parkedAtStep({
+      evidence: "RunCredentialAbsent",
+      execution: "execution-1",
+      attempt: "attempt-3",
+    }),
+  ).toMatchObject({
+    detail: "Credential missing",
+    more: "Failed work is not reworked",
   });
 });
 
@@ -458,12 +503,12 @@ test("an open approval needs you even while the ticket is running", () => {
         status: "Running",
       },
     ],
-    { phase: "Finalization" },
+    { phase: "Evaluation" },
   );
   expect(ticketSlot({ ...running, open: [approval] }, copyTextEn)).toEqual({
     slot: "NeedsYou",
     approvals: [],
-    detail: "Awaiting approval",
+    detail: "Awaiting evaluation approval",
     where: undefined,
     run: undefined,
     more: undefined,
@@ -584,6 +629,64 @@ test("an escalation over a merge queue removal names the forge's reason and who 
     ).toMatchObject({
       more: "Queue removal: failed_checks by github-merge-queue",
     });
+});
+
+test("an escalation over a target that changed files no run may push names them and the landing by hand Resume finds, and says the second alone without its landing", () => {
+  const parked = (landings: SituationReads["landings"]) =>
+    ticketSlot(
+      reads({
+        ticket: ticket({
+          phase: "Escalated",
+          escalation: {
+            kind: "FinalizationUnavailableEscalated",
+            evidence: "TargetPathsRefused",
+            resumeAt: "ResumeFinalization",
+          },
+        }),
+        landings,
+      }),
+      copyTextEn,
+    );
+  const refusedFrom = (truncated: boolean): SituationReads["landings"] => {
+    const landing = landingEscalated(5, escalatedSince, "TargetPathsRefused");
+    return [
+      ticketLandingOf(
+        landing.state === "Unavailable" && landing.hold !== undefined
+          ? {
+              ...landing,
+              hold: {
+                ...landing.hold,
+                refused: {
+                  paths: [
+                    ".github/workflows/ci.yml",
+                    ".github/workflows/lint.yml",
+                  ],
+                  truncated,
+                },
+              },
+            }
+          : landing,
+        copyTextEn,
+      ),
+    ];
+  };
+  expect(parked(refusedFrom(false))).toStrictEqual({
+    slot: "NeedsYou",
+    approvals: [],
+    detail: "Target changed files no run may push",
+    where: undefined,
+    run: undefined,
+    step: undefined,
+    more: "The target changed .github/workflows/ci.yml, .github/workflows/lint.yml, which no run may push: merge its branch into the target yourself, then Resume",
+    reason: undefined,
+  });
+  expect(parked(refusedFrom(true))).toMatchObject({
+    more: "The target changed .github/workflows/ci.yml, .github/workflows/lint.yml, …, which no run may push: merge its branch into the target yourself, then Resume",
+  });
+  expect(parked([])).toMatchObject({
+    detail: "Target changed files no run may push",
+    more: "Merge its branch into the target yourself, then Resume",
+  });
 });
 
 test("an escalation over a hold that names no removal, or whose newest landing is not the escalated one, reads as the escalation alone", () => {

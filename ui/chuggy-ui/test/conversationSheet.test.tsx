@@ -23,6 +23,7 @@ import { elementScrollToStubbed } from "./scrolling.ts";
 import {
   sheetConditioned,
   sheetDeclared,
+  sheetCoarseCondition,
   sheetNarrowCondition,
   sheetRules,
 } from "./sheet.ts";
@@ -36,16 +37,17 @@ afterEach(cleanup);
 const sheets = [tokenSheet, buttonSheet, conversationSheet, shellSheet];
 
 const rulesWide = sheets.flatMap((sheet) => sheetRules(sheet, []));
-const rulesNarrow = sheets.flatMap((sheet) =>
-  sheetRules(sheet, [sheetNarrowCondition]),
+/** A phone is both narrow and pressed by a finger. */
+const rulesPhone = sheets.flatMap((sheet) =>
+  sheetRules(sheet, [sheetNarrowCondition, sheetCoarseCondition]),
 );
 
 function wide(element: Element, property: string): string {
   return sheetDeclared(rulesWide, element, property);
 }
 
-function narrow(element: Element, property: string): string {
-  return sheetDeclared(rulesNarrow, element, property);
+function phone(element: Element, property: string): string {
+  return sheetDeclared(rulesPhone, element, property);
 }
 
 function token(name: string): string {
@@ -90,10 +92,10 @@ function drawn(pane: string): {
   };
 }
 
-test("on a narrow screen a conversation is read and typed at the size a phone does not zoom into", () => {
+test("on a phone a conversation is read and typed at the size a phone does not zoom into", () => {
   const { root } = drawn("");
   expect(wide(root, "--conversation-text")).toBe("");
-  expect(narrow(root, "--conversation-text")).toBe("var(--text-unzoomed)");
+  expect(phone(root, "--conversation-text")).toBe("var(--text-unzoomed)");
   expect(wide(root, "font-size")).toBe("var(--conversation-text, inherit)");
   expect(token("--text-unzoomed")).toBe("16px");
 });
@@ -117,13 +119,11 @@ test("the box holds the text alone, evenly inset, and its controls are a row und
   expect(wide(controls, "--conversation-control")).toBe("var(--height-icon)");
 });
 
-test("on a narrow screen the controls are the least a finger is given", () => {
+test("on a phone the controls are the least a finger is given", () => {
   const { send } = drawn("");
   const controls = send.parentElement;
   if (controls === null) throw new Error("the button stands in nothing");
-  expect(narrow(controls, "--conversation-control")).toBe(
-    "var(--height-touch)",
-  );
+  expect(phone(controls, "--conversation-control")).toBe("var(--height-touch)");
   expect(token("--height-touch")).toBe("44px");
 });
 
@@ -135,31 +135,31 @@ test("a box with nothing to say over it has no line over it", () => {
   expect(wide(note, "display")).toBe("none");
 });
 
-test("a control that is only its glyph is a square, and on a narrow screen the least a finger is given", () => {
+test("a control that is only its glyph is a square, and on a phone the least a finger is given", () => {
   renderCopied(
     <ChatPaneIconButton glyph="new" label="New" onClick={() => undefined} />,
   );
   const control = screen.getByRole("button", { name: "New" });
   for (const side of ["width", "height"]) {
     expect(wide(control, side)).toBe("var(--height-icon)");
-    expect(narrow(control, side)).toBe("var(--height-touch)");
+    expect(phone(control, side)).toBe("var(--height-touch)");
   }
 });
 
-test("the way back to the foot is the least a finger is given on a narrow screen, and positioned over nothing", () => {
+test("the way back to the foot is the least a finger is given on a phone, and positioned over nothing", () => {
   const control = document.createElement("button");
   control.className = "conversation-bottom";
   for (const side of ["width", "height"])
-    expect(narrow(control, side)).toBe("var(--height-touch)");
+    expect(phone(control, side)).toBe("var(--height-touch)");
   expect(wide(control, "position")).toBe("");
 });
 
-/** What the narrow sheet lays over an element for a press: what its rules
+/** What the phone's sheet lays over an element for a press: what its rules
  * declare for the element's `::after`. */
-function narrowOver(element: Element, property: string): string {
+function phoneOver(element: Element, property: string): string {
   const after = "::after";
   let declared = "";
-  for (const rule of rulesNarrow) {
+  for (const rule of rulesPhone) {
     const value = rule.style.getPropertyValue(property);
     const over = rule.selectorText
       .split(",")
@@ -185,7 +185,7 @@ const called: ConversationExchange = {
   ],
 };
 
-test("on a narrow screen the copy of an answer and a row that opens take a press over the least a finger is given, and no room for it", () => {
+test("on a phone the copy of an answer and a row that opens take a press over the least a finger is given, and no room for it", () => {
   const view = renderCopied(
     <CopyProvider write={() => Promise.resolve(true)}>
       <Conversation exchanges={[called]} workOpen pane />
@@ -201,18 +201,18 @@ test("on a narrow screen the copy of an answer and a row that opens take a press
   ).toStrictEqual([false, false, true]);
   const least = "min(0px, calc((100% - var(--height-touch)) / 2))";
   for (const control of [copy, ...rows]) {
-    expect(narrow(control, "position")).toBe("relative");
-    expect(narrowOver(control, "position")).toBe("absolute");
-    expect(narrowOver(control, "inset-block")).toBe(least);
+    expect(phone(control, "position")).toBe("relative");
+    expect(phoneOver(control, "position")).toBe("absolute");
+    expect(phoneOver(control, "inset-block")).toBe(least);
     expect(wide(control, "position")).toBe("");
   }
-  for (const row of rows) expect(narrowOver(row, "inset-inline")).toBe(least);
-  expect(narrowOver(copy, "inset-inline")).toBe(
+  for (const row of rows) expect(phoneOver(row, "inset-inline")).toBe(least);
+  expect(phoneOver(copy, "inset-inline")).toBe(
     "calc(var(--space-1) - var(--space-4)) calc(100% - var(--height-touch) + var(--space-4) - var(--space-1))",
   );
 });
 
-test("on a narrow screen a step that opens is itself a row as tall as a finger is given, within the room the list keeps for it", () => {
+test("on a phone a step that opens is itself a row as tall as a finger is given, within the room the list keeps for it", () => {
   const view = renderCopied(
     <Conversation exchanges={[called]} workOpen pane />,
   );
@@ -223,13 +223,13 @@ test("on a narrow screen a step that opens is itself a row as tall as a finger i
   if (steps === null || line === undefined || step === undefined)
     throw new Error("no opened work was drawn");
   expect(wide(steps, "gap")).toBe("var(--space-3)");
-  expect(narrow(steps, "gap")).toBe("var(--space-3)");
-  expect(narrow(steps, "padding-block")).toBe("calc(var(--space-3) / 2)");
-  expect(narrow(step, "min-height")).toBe("var(--height-touch)");
-  expect(narrow(step, "margin-block")).toBe("calc(var(--space-3) / -2)");
+  expect(phone(steps, "gap")).toBe("var(--space-3)");
+  expect(phone(steps, "padding-block")).toBe("calc(var(--space-3) / 2)");
+  expect(phone(step, "min-height")).toBe("var(--height-touch)");
+  expect(phone(step, "margin-block")).toBe("calc(var(--space-3) / -2)");
   expect(wide(step, "min-height")).toBe("");
-  expect(narrow(line, "min-height")).toBe("var(--conversation-line)");
-  expect(narrow(line, "margin-block")).toBe("");
+  expect(phone(line, "min-height")).toBe("var(--conversation-line)");
+  expect(phone(line, "margin-block")).toBe("");
 });
 
 test("the line a waiting turn keeps is as tall as the engine that comes to run on it", () => {

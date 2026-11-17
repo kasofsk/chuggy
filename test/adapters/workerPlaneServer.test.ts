@@ -61,15 +61,25 @@ import {
 import {
   asForgeInstallationId,
   asForgeInstallationToken,
+  type ForgeTokenMinted,
 } from "../../src/interpreter/forgeInstallation.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
+import type { ProjectRepositoryBound } from "../../src/interpreter/repositoryBinding.ts";
 import {
-  workerPlaneHeldCredentials,
+  workflowRunsCredential,
+  workflowRunsCredentialIssuer,
+} from "../../src/interpreter/workflowRunsCredential.ts";
+import {
+  heldCredentialIssuer,
   type HeldCredential,
 } from "../../src/interpreter/workerPlaneHeldCredentials.ts";
+import {
+  credentialResolver,
+  type CredentialsAsk,
+} from "../../src/interpreter/credentialIssuers.ts";
 import { reporterSecretBytes } from "../../src/adapters/reporters/secretFile.ts";
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
@@ -148,6 +158,7 @@ function heldTask(
 ): WorkerTaskRead {
   return {
     live: true,
+    inputs: authority.inputs,
     identity: {
       partition,
       execution: authority.execution,
@@ -446,10 +457,11 @@ function workTaskAnswered(
 test("a task is answered only to a live attempt, and only once the scheduler recorded it", async () => {
   const identity = workTaskIdentity;
   const invocation = workTaskInvoked;
+  const inputs = authority.inputs;
   const answered = workTaskAnswered({
-    ended: { live: false, identity, invocation },
-    unrecorded: { live: true, identity },
-    held: { live: true, identity, invocation },
+    ended: { live: false, identity, invocation, inputs },
+    unrecorded: { live: true, identity, inputs },
+    held: { live: true, identity, invocation, inputs },
   });
   assert.deepEqual(await answered("ended"), {
     status: 401,
@@ -468,9 +480,10 @@ test("a task is answered only to a live attempt, and only once the scheduler rec
 test("a task names the ref its finalization lands on only to a release that reads one, and every release reads one that names none", async () => {
   const identity = workTaskIdentity;
   const invocation = { ...workTaskInvoked, targetRef: "refs/heads/release" };
+  const inputs = authority.inputs;
   const answered = workTaskAnswered({
-    named: { live: true, identity, invocation },
-    unnamed: { live: true, identity, invocation: workTaskInvoked },
+    named: { live: true, identity, invocation, inputs },
+    unnamed: { live: true, identity, invocation: workTaskInvoked, inputs },
   });
   const naming = { kind: "Work", ...workTask(identity, invocation) };
   const unnaming = { kind: "Work", ...workTask(identity, workTaskInvoked) };
@@ -1161,6 +1174,9 @@ const workerRunReadingHeaviest = {
   observedAt: runUsageInstantSecsMax,
 };
 
+/** A credential's name as long as `workerRunCredentialSchema` takes one. */
+const workerRunCredentialHeaviest = "c".repeat(64);
+
 /** A page of turns or of model usages, as full as a page may be. */
 function workerRunPageHeaviest(item: object): readonly object[] {
   return Array.from({ length: nativeHttpPageItemsMax }, () => item);
@@ -1305,6 +1321,7 @@ const workerPlaneHeaviest: Readonly<
       usage: Object.fromEntries(
         runUsageWindows.map((window) => [window, workerRunReadingHeaviest]),
       ),
+      credential: workerRunCredentialHeaviest,
     }),
     status: 204,
   },
@@ -1330,6 +1347,7 @@ const workerPlaneHeaviest: Readonly<
       limit: {
         window: workerRunWindowLongest,
         resetsAt: runUsageInstantSecsMax,
+        credential: workerRunCredentialHeaviest,
       },
     }),
     status: 204,
@@ -1667,6 +1685,74 @@ test("a run's usage reaches the boundary beside its totals and never inside them
   await app.close();
 });
 
+test("a run's credential reaches the boundary inside its totals with or without usage, its limit's beside its ending, and a name outside the pattern reaches nothing", async () => {
+  const offered: unknown[] = [];
+  const app = runEvidencePlane({
+    totals: {
+      record: (input) => {
+        offered.push([input.totals, input.usage]);
+        return Promise.resolve("Stored");
+      },
+    },
+    endings: {
+      end: (input) => {
+        offered.push([input.evidence, input.limit]);
+        return Promise.resolve(true);
+      },
+    },
+  });
+  const usage = {
+    five_hour: { utilization: 0.5, resetsAt: 1_800_000_000, observedAt: 1 },
+  };
+  const limit = { window: "five_hour", credential: "work_2" } as const;
+  for (const [url, payload] of [
+    ["/v1/run/totals", { ...runTotalsBody, usage, credential: "work-1" }],
+    ["/v1/run/totals", { ...runTotalsBody, credential: "work-1" }],
+    ["/v1/run/ended", { evidence: "RunRateLimited", limit }],
+  ] as const)
+    assert.equal(
+      (await app.inject({ method: "POST", url, headers: held, payload }))
+        .statusCode,
+      204,
+      JSON.stringify(payload),
+    );
+  for (const [url, payload] of [
+    ["/v1/run/totals", { ...runTotalsBody, credential: "" }],
+    ["/v1/run/totals", { ...runTotalsBody, credential: "work 1" }],
+    ["/v1/run/totals", { ...runTotalsBody, credential: "w".repeat(65) }],
+    [
+      "/v1/run/totals",
+      {
+        ...runTotalsBody,
+        usage: { ...usage, credential: "work-1" },
+      },
+    ],
+    [
+      "/v1/run/ended",
+      { evidence: "RunRateLimited", credential: "work-1", limit: {} },
+    ],
+    [
+      "/v1/run/ended",
+      { evidence: "RunRateLimited", limit: { credential: "work/1" } },
+    ],
+  ] as const)
+    assert.equal(
+      (await app.inject({ method: "POST", url, headers: held, payload }))
+        .statusCode,
+      400,
+      JSON.stringify(payload),
+    );
+  assert.deepEqual(offered, [
+    [{ ...runTotalsBody, credential: "work-1" }, usage],
+    [{ ...runTotalsBody, credential: "work-1" }, undefined],
+    ["RunRateLimited", limit],
+  ]);
+  await app.close();
+});
+
+/** The credential a run ended `RunCredentialAbsent` names as not delivered, and why. */
+const runEndedAbsent = { credential: "chuggy.github", reason: "NotEnabled" };
+
 test("a run's ending is taken under every label a run may end itself under", async () => {
   const offered: unknown[] = [];
   const app = runFigurePlane(offered);
@@ -1677,13 +1763,41 @@ test("a run's ending is taken under every label a run may end itself under", asy
           method: "POST",
           url: "/v1/run/ended",
           headers: held,
-          payload: { evidence },
+          payload:
+            evidence === "RunCredentialAbsent"
+              ? { evidence, absent: runEndedAbsent }
+              : { evidence },
         })
       ).statusCode,
       204,
       evidence,
     );
   assert.deepEqual(offered, [...runEndedEvidences]);
+  await app.close();
+});
+
+test("a run ended for a credential not delivered hands its boundary the credential and why", async () => {
+  const offered: unknown[] = [];
+  const app = runEvidencePlane({
+    endings: {
+      end: (input) => {
+        offered.push([input.evidence, input.absent]);
+        return Promise.resolve(true);
+      },
+    },
+  });
+  assert.equal(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/v1/run/ended",
+        headers: held,
+        payload: { evidence: "RunCredentialAbsent", absent: runEndedAbsent },
+      })
+    ).statusCode,
+    204,
+  );
+  assert.deepEqual(offered, [["RunCredentialAbsent", runEndedAbsent]]);
   await app.close();
 });
 
@@ -1720,6 +1834,15 @@ test("a totals or ending body the contract does not name reaches no boundary", a
       },
     ],
     ["/v1/run/ended", { evidence: "RunRateLimited", limit: { resetsAt: 0.5 } }],
+    ["/v1/run/ended", { evidence: "RunCredentialAbsent" }],
+    ["/v1/run/ended", { evidence: "RunFailed", absent: runEndedAbsent }],
+    [
+      "/v1/run/ended",
+      {
+        evidence: "RunCredentialAbsent",
+        absent: { ...runEndedAbsent, reason: "Expired" },
+      },
+    ],
   ] as const) {
     const refused = await app.inject({
       method: "POST",
@@ -2156,9 +2279,11 @@ function heldPlane(
     ...(file === undefined
       ? {}
       : {
-          heldCredentials: workerPlaneHeldCredentials(roster, async (path) =>
-            (await reporterSecretBytes(path))?.toString("utf8"),
-          ),
+          heldCredentials: credentialResolver([
+            heldCredentialIssuer(roster, async (path) =>
+              (await reporterSecretBytes(path))?.toString("utf8"),
+            ),
+          ]),
         }),
   });
 }
@@ -2220,34 +2345,89 @@ test("a plane holding no roster serves an empty list to a granted attempt", asyn
   await app.close();
 });
 
-test("a bundle is served only to a release that reads one, and named absent as too old to any other, beside every credential served and absent", async () => {
-  const bundle: WorkerHeldCredentialBundle = {
-    credential: "chuggy.github",
-    files: [{ file: "token", content: { kind: "Secret", secret: heldSecret } }],
-    variables: [{ kind: "Path", variable: "GH_TOKEN_FILE", file: "token" }],
+test("the resolver is handed the attempt's identity, the one repository its input bundle pinned, the names its configuration listed and its grant carries, and the names it asked", async () => {
+  const asks: CredentialsAsk[] = [];
+  const granted = heldTask(["track-record"]);
+  const { invocation } = granted;
+  assert.ok(invocation !== undefined);
+  for (const found of [
+    granted,
+    {
+      ...granted,
+      invocation: {
+        ...invocation,
+        credentialsListed: ["track-record", "unlisted-grant"],
+      },
+    },
+  ]) {
+    const app = createWorkerPlaneApp({
+      ...inertWorkerPlane(workerPlaneUploadBytesMax),
+      tasks: { ...inertTasks, work: () => Promise.resolve(found) },
+      heldCredentials: {
+        resolve: (ask) => {
+          asks.push(ask);
+          return Promise.resolve({
+            resolved: "Credentials",
+            credentials: [],
+            absent: [],
+          });
+        },
+      },
+    });
+    await heldAsked(app, { credentials: ["track-record", "other"] });
+    await app.close();
+  }
+  const requester = {
+    partition: authority.partition,
+    ticket: granted.identity.ticket,
+    task: granted.identity.task,
+    repository: asRepositoryId("source"),
   };
-  const entry = {
+  const asked = ["track-record", "other"];
+  assert.deepEqual(asks, [
+    { requester, listed: ["track-record"], granted: ["track-record"], asked },
+    {
+      requester,
+      listed: ["track-record", "unlisted-grant"],
+      granted: ["track-record"],
+      asked,
+    },
+  ]);
+});
+
+test("a release that reads bundles is served every bundle and every absence, and any other only the one-secret credentials and no absence", async () => {
+  const oneSecret: WorkerHeldCredentialBundle = {
     credential: "track-record",
-    variable: "TRACK_RECORD_TOKEN_FILE",
-    secret: heldSecret,
+    files: [
+      { file: "secret", content: { kind: "Secret", secret: heldSecret } },
+    ],
+    variables: [
+      { kind: "Path", variable: "TRACK_RECORD_TOKEN_FILE", file: "secret" },
+    ],
+    expiresAtMs: 1,
   };
-  const unheld = { credential: "unheld", reason: "NotHeld" } as const;
+  const wide: WorkerHeldCredentialBundle = {
+    credential: "gh",
+    files: oneSecret.files,
+    variables: [
+      { kind: "Path", variable: "GH_TOKEN_FILE", file: "secret" },
+      { kind: "Value", variable: "GH_HOST", value: "github.com" },
+    ],
+  };
+  const absent = [{ credential: "unheld", reason: "NotHeld" }] as const;
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
-    tasks: {
-      ...inertTasks,
-      work: () => Promise.resolve(heldTask(["track-record"])),
-    },
+    tasks: { ...inertTasks, work: () => Promise.resolve(heldTask()) },
     heldCredentials: {
-      served: () =>
+      resolve: () =>
         Promise.resolve({
-          answered: "Credentials",
-          credentials: [bundle, entry],
-          absent: [unheld],
+          resolved: "Credentials",
+          credentials: [wide, oneSecret],
+          absent,
         }),
     },
   });
-  const ask = { credentials: ["track-record"] };
+  const ask = { credentials: ["gh", "track-record", "unheld"] };
   assert.deepEqual(
     await heldAsked(app, ask, {
       ...held,
@@ -2255,7 +2435,7 @@ test("a bundle is served only to a release that reads one, and named absent as t
     }),
     {
       status: 200,
-      body: JSON.stringify({ credentials: [bundle, entry], absent: [unheld] }),
+      body: JSON.stringify({ credentials: [wide, oneSecret], absent }),
     },
   );
   for (const release of [undefined, "1.73.0"])
@@ -2270,15 +2450,70 @@ test("a bundle is served only to a release that reads one, and named absent as t
       {
         status: 200,
         body: JSON.stringify({
-          credentials: [entry],
-          absent: [
-            unheld,
-            { credential: "chuggy.github", reason: "WorkerTooOld" },
+          credentials: [
+            {
+              credential: "track-record",
+              variable: "TRACK_RECORD_TOKEN_FILE",
+              secret: heldSecret,
+              expiresAtMs: 1,
+            },
           ],
         }),
       },
       String(release),
     );
+  await app.close();
+});
+
+test("a release that reads bundles is served a held file as a bundle, and told which listed names are not granted or not held", async () => {
+  const file = join(heldRoot, "bundled");
+  writeFileSync(file, heldSecret);
+  const granted = heldTask(["track-record", "unheld"]);
+  assert.ok(granted.invocation !== undefined);
+  const app = heldPlane(
+    {
+      ...granted,
+      invocation: {
+        ...granted.invocation,
+        credentialsListed: ["track-record", "unheld", "ungranted"],
+      },
+    },
+    file,
+  );
+  assert.deepEqual(
+    await heldAsked(
+      app,
+      { credentials: ["ungranted", "track-record", "unlisted", "unheld"] },
+      { ...held, [workerContractHeader]: workerContractRelease },
+    ),
+    {
+      status: 200,
+      body: JSON.stringify({
+        credentials: [
+          {
+            credential: "track-record",
+            files: [
+              {
+                file: "secret",
+                content: { kind: "Secret", secret: heldSecret },
+              },
+            ],
+            variables: [
+              {
+                kind: "Path",
+                variable: "TRACK_RECORD_TOKEN_FILE",
+                file: "secret",
+              },
+            ],
+          },
+        ],
+        absent: [
+          { credential: "ungranted", reason: "NotGranted" },
+          { credential: "unheld", reason: "NotHeld" },
+        ],
+      }),
+    },
+  );
   await app.close();
 });
 
@@ -2362,7 +2597,10 @@ test("a bearer that is no live attempt is refused, and one whose grant is not re
     );
     await app.close();
   }
-  const app = heldPlane({ live: true, identity: heldTask().identity }, file);
+  const app = heldPlane(
+    { live: true, identity: heldTask().identity, inputs: authority.inputs },
+    file,
+  );
   assert.deepEqual(await heldAsked(app, { credentials: ["track-record"] }), {
     status: 409,
     body: JSON.stringify({ action: "stop", reason: "TaskNotRecorded" }),
@@ -2399,4 +2637,157 @@ test("a held file that cannot be read is an outage to wait out, naming no secret
     assert.doesNotMatch(answered.body, new RegExp(heldSecret, "u"));
   }
   await app.close();
+});
+
+/** The workflow runs credential's binding of the attempt's own repository, live with its runs on unless a case says otherwise. */
+function workflowRunsBound(
+  standing: Partial<ProjectRepositoryBound> = {},
+): ProjectRepositoryBound {
+  return {
+    repository: asRepositoryId("source"),
+    boundAt: "2026-11-01T00:00:00Z",
+    landing: { kind: "PullRequest" },
+    pipelinesWritable: false,
+    pipelinesRunnable: true,
+    ...standing,
+  };
+}
+
+/** A plane serving the workflow runs credential to an attempt granted it whose task read finds `inputs`, its forge answering `minted`, every mint recorded. */
+function workflowRunsPlane(options: {
+  readonly inputs?: WorkerTaskRead["inputs"];
+  readonly bound?: ProjectRepositoryBound | undefined;
+  readonly minted?: ForgeTokenMinted;
+  readonly mints?: unknown[];
+}): ReturnType<typeof createWorkerPlaneApp> {
+  const found: WorkerTaskRead = {
+    ...heldTask([workflowRunsCredential]),
+    inputs: options.inputs ?? authority.inputs,
+  };
+  return createWorkerPlaneApp({
+    ...inertWorkerPlane(workerPlaneUploadBytesMax),
+    tasks: { ...inertTasks, work: () => Promise.resolve(found) },
+    heldCredentials: credentialResolver([
+      workflowRunsCredentialIssuer({
+        bindings: {
+          landing: () =>
+            Promise.resolve(
+              "bound" in options ? options.bound : workflowRunsBound(),
+            ),
+        },
+        tokens: {
+          token: (repository, partition, permissions, mint) => {
+            options.mints?.push([repository, partition, permissions, mint]);
+            return Promise.resolve(
+              options.minted ?? {
+                minted: "Token",
+                token: asForgeInstallationToken("ghs_runs"),
+                expiresAtMs: 5_000,
+              },
+            );
+          },
+        },
+      }),
+    ]),
+  });
+}
+
+/** What a release that reads bundles is answered when it asks for the workflow runs credential. */
+async function workflowRunsAsked(app: ReturnType<typeof createWorkerPlaneApp>) {
+  const answered = await heldAsked(
+    app,
+    { credentials: [workflowRunsCredential] },
+    { ...held, [workerContractHeader]: workerContractRelease },
+  );
+  await app.close();
+  return answered;
+}
+
+test("an attempt granted the workflow runs credential is served a fresh token for the repository its own input bundle pinned", async () => {
+  const mints: unknown[] = [];
+  assert.deepEqual(await workflowRunsAsked(workflowRunsPlane({ mints })), {
+    status: 200,
+    body: JSON.stringify({
+      credentials: [
+        {
+          credential: workflowRunsCredential,
+          files: [
+            { file: "token", content: { kind: "Secret", secret: "ghs_runs" } },
+          ],
+          variables: [
+            { kind: "Path", variable: "GH_TOKEN_FILE", file: "token" },
+          ],
+          expiresAtMs: 5_000,
+        },
+      ],
+      absent: [],
+    }),
+  });
+  assert.deepEqual(mints, [
+    [
+      asRepositoryId("source"),
+      authority.partition,
+      "runPipelines",
+      { unheld: true },
+    ],
+  ]);
+});
+
+test("the workflow runs credential is absent, and nothing minted, where the attempt pins no one repository or its binding does not enable it", async () => {
+  const twoRepositories = [
+    ...authority.inputs,
+    { ordinal: 2, kind: "Repository", reference: "other", digest: "pin" },
+  ] as const;
+  for (const [why, options, reason] of [
+    ["no repository pinned", { inputs: [] }, "IssuerRefused"],
+    ["two repositories pinned", { inputs: twoRepositories }, "IssuerRefused"],
+    ["no binding", { bound: undefined }, "NotEnabled"],
+    [
+      "retired binding",
+      { bound: workflowRunsBound({ retiredAt: "2026-11-02T00:00:00Z" }) },
+      "NotEnabled",
+    ],
+    [
+      "workflow runs off",
+      { bound: workflowRunsBound({ pipelinesRunnable: false }) },
+      "NotEnabled",
+    ],
+  ] as const) {
+    const mints: unknown[] = [];
+    assert.deepEqual(
+      await workflowRunsAsked(workflowRunsPlane({ ...options, mints })),
+      {
+        status: 200,
+        body: JSON.stringify({
+          credentials: [],
+          absent: [{ credential: workflowRunsCredential, reason }],
+        }),
+      },
+      why,
+    );
+    assert.deepEqual(mints, [], why);
+  }
+});
+
+test("a workflow runs mint the forge refuses is absent, and one it could not answer is an outage", async () => {
+  assert.deepEqual(
+    await workflowRunsAsked(
+      workflowRunsPlane({ minted: { minted: "Denied" } }),
+    ),
+    {
+      status: 200,
+      body: JSON.stringify({
+        credentials: [],
+        absent: [
+          { credential: workflowRunsCredential, reason: "IssuerRefused" },
+        ],
+      }),
+    },
+  );
+  assert.deepEqual(
+    await workflowRunsAsked(
+      workflowRunsPlane({ minted: { minted: "Unavailable" } }),
+    ),
+    { status: 503, body: JSON.stringify({ action: "retry" }) },
+  );
 });

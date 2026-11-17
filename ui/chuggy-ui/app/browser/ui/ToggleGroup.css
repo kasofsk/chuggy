@@ -17,4 +17,10 @@
     border-color: var(--edge);
     color: var(--ink-1);
   }
+
+  @media (forced-colors: active) {
+    .toggle-group .btn[aria-checked="true"] {
+      border-color: var(--forced-current);
+    }
+  }
 }
