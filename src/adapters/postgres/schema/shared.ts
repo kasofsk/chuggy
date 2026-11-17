@@ -136,6 +136,8 @@ export const workerPoolAgentFunction = "worker_pool_agent_offered";
 export const executionAttemptStartedFunction = "execution_attempt_started";
 /** When a ticket's first execution was registered, which is its age to a claim. */
 export const executionTicketRegisteredFunction = "execution_ticket_registered";
+/** The completions of a cluster whose freed slot waits for their ticket's next stage: unanswered, or answered with a stage of that ticket not yet admitted. */
+export const executionBetweenStagesFunction = "execution_between_stages";
 export const projectOwnerFallbackSetFunction = "set_project_owner_fallback";
 /** When a session's oldest queued turn could first be claimed: its enqueue, the end of the turn before it, or its return to the queue by an attempt that had claimed it. */
 export const sessionClaimableSinceFunction = "session_turn_claimable_since";
