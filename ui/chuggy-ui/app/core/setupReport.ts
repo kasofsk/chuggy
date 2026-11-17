@@ -180,8 +180,8 @@ export interface SetupStepSaid {
  * past it; something `mcp` or `runner` would do on this machine for
  * the project named, or `chat-host` for the workspace where no project is, or
  * `serve` or `merge` at the site for the project named, and the yes it waits
- * on; `bind` run at once for the project named, beside what the person does on
- * GitHub where there is anything, or `merge` run again, beside setup said to
+ * on; `bind` run at once for the project named, beside what it tells of
+ * GitHub, or `merge` run again, beside setup said to
  * be done, where the import it waits on is still under way; a question only she answers, and the
  * flag her answer is passed in; what to call the project `project` makes in
  * the workspace, at the address named where one is; what she wants done
@@ -215,7 +215,7 @@ export type SetupThing =
   | {
       readonly thing: "Run";
       readonly command: "Bind";
-      readonly tell: Copy | undefined;
+      readonly tell: Copy;
       readonly workspace: string;
       readonly project: string;
     }
@@ -263,9 +263,13 @@ export type SetupThing =
       readonly stale: boolean;
     };
 
-/** What the site answered a bind, in the words the console's Add dialog says it in: added, or already, or refused. */
+/** What the site answered a bind, in the words the console's Add dialog says it in: added, or already, to `project`, or refused. */
 export type SetupBindAnswered =
-  | { readonly answered: "Bound"; readonly said: Copy }
+  | {
+      readonly answered: "Bound";
+      readonly said: Copy;
+      readonly project: string;
+    }
   | { readonly answered: "Refused"; readonly refusal: Copy };
 
 /** Why a merge was not made: the site's reason, or that the person does not hold the permit merging takes. */
@@ -1387,7 +1391,7 @@ function setupOfferLines(
   ];
 }
 
-/** `bind` to run at once, beside what the tell has the person do on GitHub, and again where a wait of its own ran out first; or `merge` run again, beside setup said to be done. */
+/** `bind` to run at once, beside what the tell says of GitHub, and again where a wait of its own ran out first; or `merge` run again, beside setup said to be done. */
 function setupRunLines(
   thing: Extract<SetupThing, { readonly thing: "Run" }>,
   saying: SetupSaying,
@@ -1398,15 +1402,11 @@ function setupRunLines(
       ["rule", { id: "setup-rule-merge-again" }],
       setupNextLine(setupSayingOf(saying, thing), thing.command),
     ];
-  const rule: Copy =
-    saying.again && thing.tell !== undefined
-      ? { id: "setup-rule-bind-again" }
-      : {
-          id: "setup-rule-bind",
-          args: { told: thing.tell === undefined ? "untold" : "told" },
-        };
+  const rule: Copy = saying.again
+    ? { id: "setup-rule-bind-again" }
+    : { id: "setup-rule-bind" };
   return [
-    ...(thing.tell === undefined ? [] : [["tell", thing.tell] as const]),
+    ["tell", thing.tell],
     ["rule", rule],
     setupNextLine(
       setupSayingOf(saying, thing),
@@ -1750,7 +1750,7 @@ function setupBindWaited(
   );
 }
 
-/** What `bind` asked of the site and what it answered, said where the checklist read after it says the site. */
+/** What `bind` asked of the site and what it answered, said where the checklist read after it says the site, and where it added the repository, that both apps reach it in the project. */
 function setupBindSaid(
   report: Extract<SetupReport, { readonly report: "Bind" }>,
 ): readonly SetupLine[] {
@@ -1770,6 +1770,13 @@ function setupBindSaid(
         [
           "did",
           { id: "setup-bind-did", args: { repository, said: answered.said } },
+        ],
+        [
+          "tell",
+          {
+            id: "setup-bind-connected",
+            args: { repository, project: answered.project },
+          },
         ],
       ]
     : [

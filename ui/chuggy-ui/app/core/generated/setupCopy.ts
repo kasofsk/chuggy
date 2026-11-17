@@ -497,6 +497,7 @@ export interface SetupCopy {
     readonly label: unknown;
   };
   readonly "setup-mend-account-tell": {
+    readonly explained: unknown;
     readonly page: unknown;
     readonly connect: unknown;
     readonly repository: unknown;
@@ -511,36 +512,57 @@ export interface SetupCopy {
     readonly connect: unknown;
     readonly account: unknown;
   };
+  readonly "setup-mend-apps-explained": {
+    readonly repository: unknown;
+  };
+  readonly "setup-mend-reach-app": {
+    readonly app: unknown;
+  };
+  readonly "setup-mend-reach-granted": {
+    readonly app: unknown;
+    readonly page: unknown;
+    readonly repository: unknown;
+  };
+  readonly "setup-mend-reach-granted-unread": {
+    readonly app: unknown;
+    readonly repository: unknown;
+  };
   readonly "setup-mend-reach-settings": {
     readonly app: unknown;
     readonly page: unknown;
+    readonly repository: unknown;
   };
   readonly "setup-mend-reach-install-portal": {
     readonly app: unknown;
+    readonly account: unknown;
     readonly page: unknown;
     readonly press: unknown;
-    readonly account: unknown;
   };
   readonly "setup-mend-reach-install-worker": {
     readonly app: unknown;
+    readonly account: unknown;
     readonly page: unknown;
     readonly press: unknown;
-    readonly account: unknown;
   };
   readonly "setup-mend-reach-install-worker-after": {
     readonly app: unknown;
     readonly account: unknown;
     readonly press: unknown;
   };
-  readonly "setup-mend-reach-tell": {
+  readonly "setup-mend-reach-installed-none": Record<never, never>;
+  readonly "setup-mend-reach-installed": {
     readonly count: unknown;
+    readonly accounts: unknown;
+  };
+  readonly "setup-mend-reach-tell": {
+    readonly installed: unknown;
     readonly repository: unknown;
-    readonly first: unknown;
-    readonly second: unknown;
+    readonly explained: unknown;
+    readonly portal: unknown;
+    readonly worker: unknown;
+    readonly granted: unknown;
   };
-  readonly "setup-rule-bind": {
-    readonly told: unknown;
-  };
+  readonly "setup-rule-bind": Record<never, never>;
   readonly "setup-rule-bind-again": Record<never, never>;
   readonly "setup-rule-merge-again": Record<never, never>;
   readonly "setup-mend-binding-yours": Record<never, never>;
@@ -622,6 +644,10 @@ export interface SetupCopy {
   readonly "setup-bind-did": {
     readonly repository: unknown;
     readonly said: unknown;
+  };
+  readonly "setup-bind-connected": {
+    readonly repository: unknown;
+    readonly project: unknown;
   };
   readonly "setup-bind-refused": {
     readonly repository: unknown;
