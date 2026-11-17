@@ -43,6 +43,8 @@ import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { Copy } from "../../core/copy.ts";
 
+import "../ExecutionArtifacts.css";
+
 /** A command's end as the one word its badge says. */
 function runCommandEndLabel(end: RunCommandEnd): Copy {
   switch (end) {

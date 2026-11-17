@@ -1,5 +1,6 @@
 /* A run's output drawn as it was written, in a framed box that scrolls past
-   its own height: an artifact's preview, and the transcript's raw text. */
+   its own height: an artifact's preview, the transcript's raw text, and a
+   command's output. */
 
 @layer page {
   .preview {
