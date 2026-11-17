@@ -137,11 +137,7 @@ test("a site set up one thing further at a time, from nothing to a landed first 
       continue;
     }
     const [tell = ""] = said(done, "tell");
-    assert.equal(
-      tell.includes(`${session.installation.site}/`),
-      stage !== "Offline",
-      tell,
-    );
+    assert.equal(tell.includes(`${session.installation.site}/`), true, tell);
     if (stage === "Landed") assert.deepEqual(said(done, "rule"), []);
     else assert.deepEqual(await ruled(done), [], stage);
   }
