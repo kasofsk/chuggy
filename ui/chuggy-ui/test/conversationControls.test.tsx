@@ -87,7 +87,7 @@ describe("the copy of an answer", () => {
       line?.querySelectorAll('[role="status"]') ?? [],
       (status) => status.textContent,
     );
-    expect(said).toEqual(["Copied", "Answered"]);
+    expect(said).toEqual(["Copied"]);
     styleless();
   });
 

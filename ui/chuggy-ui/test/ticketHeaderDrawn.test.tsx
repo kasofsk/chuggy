@@ -1,7 +1,7 @@
 /**
  * The ticket header as drawn: a label for every state that is never only a
- * colour, the bar that stands in for the header once it scrolls away, and the
- * epics under the title.
+ * colour, the bar that stands in for the header once it scrolls away, the
+ * epics under the title, and the status a change of state is said in.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -133,4 +133,43 @@ test("the epics the header is given are drawn in it, after the title", () => {
     screen.getByRole("heading", { level: 1 }).compareDocumentPosition(epics) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+});
+
+function headerOf(standing: TicketListStanding): ReactNode {
+  return (
+    <TicketHeader
+      ticket={335}
+      title="Lock the contract"
+      standing={standing}
+      fragment={{ fragment: "None" }}
+      nowMs={0}
+      actions={null}
+      epics={null}
+      notes={null}
+    />
+  );
+}
+
+test("a change of state is said once through a status, and the state the page opens on is not", () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  const view = renderCopied(headerOf("Ready"));
+  const status = screen.getByRole("status");
+  expect(status.classList.contains("visually-hidden")).toBe(true);
+  expect(status.textContent).toBe("");
+  view.rerender(headerOf("Ready"));
+  expect(status.textContent).toBe("");
+  view.rerender(headerOf("Work"));
+  expect(status.textContent).toBe("Ticket is now Working");
+  const changes = new MutationObserver(() => undefined);
+  changes.observe(status, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+  });
+  view.rerender(headerOf("Work"));
+  expect(changes.takeRecords()).toStrictEqual([]);
+  changes.disconnect();
+  view.rerender(headerOf("Done"));
+  expect(screen.getByRole("status")).toBe(status);
+  expect(status.textContent).toBe("Ticket is now Done");
 });
