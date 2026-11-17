@@ -182,13 +182,18 @@ test("on a machine `mcp` has put the runner package on, the bare command offers 
   assert.equal(offered.code, 0, offered.stdout);
   assert.equal(offered.lines.at(-1), "next: stop");
   const rule = offered.lines.at(-3) ?? "";
-  assert.ok(rule.startsWith("rule: Run ") && rule.endsWith(yes), rule);
+  assert.ok(
+    rule.startsWith("rule: Run ") && rule.endsWith(unlessObjected),
+    rule,
+  );
   assert.deepEqual(acts(on), ["services", "docker"]);
   assert.deepEqual(on.installation.writes, []);
   assert.ok(!existsSync(on.machine.settings));
 
   cleared(on);
-  const argv = await commanded(rule.slice("rule: Run ".length, -yes.length));
+  const argv = await commanded(
+    rule.slice("rule: Run ".length, -unlessObjected.length),
+  );
   assert.deepEqual(argv, runnerAlone);
   const done = await ran(on, argv);
   assert.equal(done.code, 0, done.stdout);
@@ -256,8 +261,8 @@ const chatAsked =
 const chatRuleNo =
   "rule: Run it with --chat-host no in place of --chat-host yes only where the person says they want no chat host. Before running it with --chat-host yes, tell the person: Downloading the chat image. This takes a few minutes the first time.";
 /** The end of the rule an offer of a runner names its command under. */
-const yes =
-  " only once the person has been told what it does here, and has not asked for it on another machine instead.";
+const unlessObjected =
+  " only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.";
 
 /** Every write a run that makes this machine the person's runner and their chat host sends. */
 const madeBoth = [mint, redemption, ...serve, chatMint, chatRedemption];
@@ -283,13 +288,16 @@ test("where the person's chats run on a chat host and they have none, the bare c
   assert.match(offered.lines.at(-5) ?? "", chatAsked);
   assert.equal(offered.lines.at(-3), chatRuleNo);
   const rule = offered.lines.at(-4) ?? "";
-  assert.ok(rule.startsWith("rule: Run ") && rule.endsWith(yes), rule);
+  assert.ok(
+    rule.startsWith("rule: Run ") && rule.endsWith(unlessObjected),
+    rule,
+  );
   assert.deepEqual(on.installation.writes, []);
 
   cleared(on);
   const done = await ran(
     on,
-    await commanded(rule.slice("rule: Run ".length, -yes.length)),
+    await commanded(rule.slice("rule: Run ".length, -unlessObjected.length)),
   );
   assert.equal(done.code, 0, done.stdout);
   assert.deepEqual(done.lines, [
