@@ -339,7 +339,7 @@ function stageAnswerDrawn(answered: Element): string {
         : part.textContent,
   );
   const word = answered.querySelector(
-    '.conversation-meta p [role="status"]:not(.visually-hidden)',
+    ".conversation-meta p [data-word]:not(.visually-hidden)",
   )?.textContent;
   return [...parts, ...(word ? [`(${word})`] : [])].join(" ");
 }

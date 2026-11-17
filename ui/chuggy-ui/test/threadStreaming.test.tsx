@@ -247,7 +247,7 @@ function shown(container: HTMLElement): {
     engine: container.querySelector(".conversation-waiting-engine") !== null,
     standing:
       last.querySelector(
-        '.conversation-meta p [role="status"]:not(.visually-hidden)',
+        ".conversation-meta p [data-word]:not(.visually-hidden)",
       )?.textContent ?? undefined,
   };
 }
@@ -907,7 +907,7 @@ function halves(
       [
         half.querySelector(".run-report-bare")?.textContent ?? undefined,
         half.querySelector(
-          '.conversation-meta p [role="status"]:not(.visually-hidden)',
+          ".conversation-meta p [data-word]:not(.visually-hidden)",
         )?.textContent ?? undefined,
       ] as const,
   );
@@ -1201,7 +1201,7 @@ function lineUnder(container: HTMLElement): readonly (Element | null)[] {
   return [
     last.querySelector(".conversation-meta"),
     last.querySelector(".conversation-meta-lead"),
-    last.querySelector('.conversation-meta p [role="status"]'),
+    last.querySelector(".conversation-meta p [data-word]"),
   ];
 }
 

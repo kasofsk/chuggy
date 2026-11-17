@@ -3003,9 +3003,7 @@ test("New the hosted grant refuses where the read said runners reads the placeme
 /** The word under the last answer of the conversation. */
 function lastWord(): string | undefined {
   return Array.from(
-    conversationRegion().querySelectorAll(
-      '.conversation-meta p [role="status"]',
-    ),
+    conversationRegion().querySelectorAll(".conversation-meta p [data-word]"),
     (status) => status.textContent,
   ).at(-1);
 }

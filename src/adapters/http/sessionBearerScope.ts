@@ -197,6 +197,8 @@ export const sessionBearerRouteClasses = {
   projectTheme: readRefusedReplace,
   projectThemeOverride: { GET: "Refused", PUT: "Refused", DELETE: "Refused" },
   projectAppearance: { GET: "Refused" },
+  projectImages: partitionRead,
+  projectImage: { PUT: "Refused", DELETE: "Refused" },
   hostedRuns: partitionRead,
   abilities: partitionRead,
   workerPools: partitionRead,
