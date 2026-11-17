@@ -5,7 +5,9 @@
    beside it; with motion reduced the wash holds still. A pane given the whole
    frame, and a thread's own page, set the conversation as a column to read —
    narrower than the frame, in larger text on a taller line — and beside the
-   pages the pane leaves the conversation the console's own.
+   pages the pane leaves the conversation the console's own. A chat's own page
+   insets its head as a page's column is, and where no shell draws it, keeps
+   inside the screen's safe edges itself.
 
    The edge between the pages and the pane is a hairline a reader drags, drawn
    over both so its ring is not cut by either; the library dividing the frame
@@ -48,6 +50,22 @@
 
   .shell-main:focus-visible {
     box-shadow: none;
+  }
+
+  /* A chat's own page: its head inset as any page's column is, over the
+     conversation that fills the rest of it. */
+  .chat-page-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-4) 0;
+  }
+
+  /* A frame no shell draws keeps the page inside the screen's safe edges
+     itself, since no bar along its foot does. */
+  .chat-page {
+    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom)
+      env(safe-area-inset-left);
   }
 
   .chat-reading {

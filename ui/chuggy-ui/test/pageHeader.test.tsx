@@ -96,6 +96,29 @@ test("the status sits under the title and the description between them", () => {
   expect(screen.queryAllByRole("button")).toHaveLength(0);
 });
 
+test("the meta line names what the page belongs to under the title, and links there", () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  renderCopied(
+    <PageHeader
+      title="Console"
+      meta={<a href="/atlas">In atlas</a>}
+      status={<span>Open</span>}
+    />,
+  );
+  const meta = screen.getByRole("link", { name: "In atlas" });
+  expect(meta.closest("p.page-header-meta")).not.toBeNull();
+  const standing = document.querySelector(".page-header-standing");
+  expect(standing).not.toBeNull();
+  expect(
+    pageHeaderHeading().compareDocumentPosition(meta) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
+  expect(
+    meta.compareDocumentPosition(standing as Element) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
+});
+
 test("the primary action is the one primary drawn, after the secondaries and before the overflow", () => {
   vi.stubGlobal("IntersectionObserver", undefined);
   renderCopied(

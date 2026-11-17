@@ -84,11 +84,12 @@ function SessionRunnerAddLink(props: {
 }
 
 /** Why no runner can take a turn now, and the link to where one is added
- * where none is. */
+ * where none is, or wherever `linked` says. */
 function SessionRunnerNoticeLine(props: {
   readonly session: SessionRunnerSession;
   readonly short: SessionRunnerShort;
   readonly add: ReactNode;
+  readonly linked?: boolean;
 }): ReactNode {
   const text = useCopyText();
   return (
@@ -97,7 +98,7 @@ function SessionRunnerNoticeLine(props: {
       inline
       detail={text(sessionRunnerNoticeWord(props.short, props.session))}
     >
-      {props.short === "NoRunner" ? (
+      {props.short === "NoRunner" || props.linked === true ? (
         <span className="text-ink-3">
           {" · "}
           {props.add}
@@ -128,7 +129,8 @@ export function SessionRunnerNotice(props: {
 }
 
 /** Why the reader's chat host cannot take a turn of their own chat now, with
- * their own page in the workspace, where one is registered, where none is. */
+ * their own page in the workspace, where one is registered and where one
+ * that is offline is replaced. */
 export function ChatHostNotice(props: {
   readonly tenant: string;
   readonly short: SessionRunnerShort;
@@ -138,6 +140,7 @@ export function ChatHostNotice(props: {
     <SessionRunnerNoticeLine
       session="Chat"
       short={props.short}
+      linked
       add={
         <Link
           to={settingsRoutes.workspace.myRunner}
