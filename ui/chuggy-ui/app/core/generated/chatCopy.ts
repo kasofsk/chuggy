@@ -61,7 +61,6 @@ export interface ChatCopy {
     readonly title: unknown;
     readonly standing: unknown;
   };
-  readonly "chat-actions": Record<never, never>;
   readonly "chat-open": Record<never, never>;
   readonly "chat-copy-link": Record<never, never>;
   readonly "chat-copied": Record<never, never>;
@@ -72,6 +71,17 @@ export interface ChatCopy {
   readonly "chat-close-not-mine": Record<never, never>;
   readonly "chat-close-kept": Record<never, never>;
   readonly "chat-close-final": Record<never, never>;
+  readonly "chat-page-project": {
+    readonly project: unknown;
+  };
+  readonly "chat-page-host": Record<never, never>;
+  readonly "chat-page-standing": {
+    readonly standing: unknown;
+  };
+  readonly "chat-page-not-mine": Record<never, never>;
+  readonly "chat-page-back": {
+    readonly project: unknown;
+  };
   readonly "chat-withheld": Record<never, never>;
   readonly "chat-turn-message": Record<never, never>;
   readonly "chat-turn-wake": Record<never, never>;
