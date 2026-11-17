@@ -68,7 +68,6 @@ import {
   repositoryImportWord,
   repositoryImportWordLabel,
 } from "./repositoryImport.ts";
-import { setupServerPackages } from "./setupAgent.ts";
 import type { SetupMcpPackaged } from "./setupAgent.ts";
 import { setupAnswersPlugin, setupNameFlag } from "./setupArguments.ts";
 import { setupConfigurationPath } from "./setupConfiguration.ts";
@@ -214,8 +213,6 @@ function setupProjectMend(at: SetupAt): SetupThing {
       id: "setup-ask-project-name",
       args: {
         workspace: at.named(workspace),
-        address: address === undefined ? "made" : "given",
-        project: address ?? "",
         flag: setupNameFlag,
       },
     },
@@ -480,37 +477,12 @@ const setupMcpOffers = {
  * its configuration on the person's yes, installing the platform's runner
  * package first where `packaged` says none here is one it leaves as it is.
  */
-function setupMcpMend(
-  at: SetupAt,
-  platform: SetupPlatform,
-  packaged: SetupMcpPackaged,
-): SetupThing {
-  const { site, workspace, project } = at;
-  const program = setupServerPackages[platform].offered.program;
-  const named = setupNamed(at);
-  const versioned = (version: string | undefined): Copy | string =>
-    version === undefined
-      ? program
-      : { id: "setup-runner-versioned", args: { program, version } };
+function setupMcpMend(at: SetupAt, packaged: SetupMcpPackaged): SetupThing {
+  const { workspace, project } = at;
   return {
     thing: "Offer",
     command: "Mcp",
-    tell:
-      packaged.packaged === "Behind"
-        ? {
-            id: setupMcpOffers.Behind,
-            args: {
-              project: named,
-              site,
-              program,
-              found: versioned(packaged.version),
-              installs: versioned(packaged.installs),
-            },
-          }
-        : {
-            id: setupMcpOffers[packaged.packaged],
-            args: { project: named, site, program },
-          },
+    tell: { id: setupMcpOffers[packaged.packaged] },
     when: { id: "setup-offer-mcp-when" },
     workspace,
     project,
@@ -1081,7 +1053,7 @@ function setupMend(
     case "Read":
       return setupUnreadMend(lack, step);
     case "Mcp":
-      return setupMcpMend(at, mcp.platform, mcp.packaged);
+      return setupMcpMend(at, mcp.packaged);
     case "Plugin":
       return setupPluginMend(lack.off);
     case "Workspace":

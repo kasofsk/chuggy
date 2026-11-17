@@ -43,7 +43,7 @@ test("the checklist names a workspace by its display name in its steps and its q
     `step: project     todo     ${named} has no project yet`,
   );
   expect(lines.slice(-3)).toEqual([
-    `ask: What should the new project in ${named} be called? Its address is made from the name. Pass the name as --name.`,
+    `ask: First, we'll create a new project in ${named}. What should it be called? Pass the name as --name.`,
     `rule: Run node ${machineScript} project --workspace acme --name with the person's answer after it, quoted as one word, only once the person has answered.`,
     "next: stop",
   ]);
@@ -53,8 +53,6 @@ test("a tell names the project by its workspace's display name, and the address 
   const offered = await said(
     await machineSignedIn(siteNamed("Project"), false),
   );
-  const tell = offered.find((line) => line.startsWith("tell: "));
-  expect(tell).toContain(`for ${named}/widgets at ${machineSite}`);
   expect(offered.at(-2)).toContain("mcp --workspace acme --project widgets");
   const done = await said(await machineSignedIn(siteNamed("Landed")));
   const finished = done.find((line) => line.startsWith("tell: "));

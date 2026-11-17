@@ -395,16 +395,9 @@ setup-serve-allowed-failed = { -brand-name } did not set { -personal-runner(case
 
 setup-offer-mcp-when = once the person says yes to { -brand-name }'s MCP server on this machine
 # spells -agent: the person's own coding agent, not one of chuggy's
-setup-mend-mcp-serves = { -claude-code } is the agent it is named in, for this folder, and it signs in as { setup-program } does, under the one sign-in, so you sign in once.
-# spells -agent: the person's own coding agent, not one of chuggy's
-# spells -configuration: Claude Code's own settings, not a chuggy configuration
-setup-mend-mcp-offer = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package here, { $program }, serves them as an MCP server. With your yes I will name that server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
-# spells -agent: the person's own coding agent, not one of chuggy's
-# spells -configuration: Claude Code's own settings, not a chuggy configuration
-setup-mend-mcp-offer-absent = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and it is not installed here. With your yes I will install it with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
-# spells -agent: the person's own coding agent, not one of chuggy's
-# spells -configuration: Claude Code's own settings, not a chuggy configuration
-setup-mend-mcp-offer-behind = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and the one installed here, { $found }, is older than { setup-program } uses. With your yes I will install { $installs } in its place with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
+setup-mend-mcp-offer = Next, let's connect { -brand-name } to your agent here. Okay?
+setup-mend-mcp-offer-absent = Next, let's install the { -brand-name } { -cli } here. Okay?
+setup-mend-mcp-offer-behind = Next, let's install the { -brand-name } { -cli } here. Okay?
 
 ## The plugin step, which the plugin command does in Claude Code with the
 ## person's yes, and passes over on their no.
@@ -656,10 +649,7 @@ setup-ask = { $of } is this for: { $names }?{ $whole ->
     [whole] { "" }
    *[part] { " " }{ setup-ask-part }
 } Pass the name as { $flag }.
-setup-ask-project-name = What should the new { -project } in { $workspace } be called?{ $address ->
-    [given] { " " }Its address will be { $project }.
-   *[made] { " " }Its address is made from the name.
-} Pass the name as { $flag }.
+setup-ask-project-name = First, we'll create a new { -project } in { $workspace }. What should it be called? Pass the name as { $flag }.
 setup-ask-unnamed = { $of } is this for?{ $whole ->
     [whole] { "" }
    *[part] { " " }{ setup-ask-part }

@@ -50,7 +50,7 @@ test("a person with a workspace and no project is asked what to call it, the pro
     copyTextEn,
   );
   expect(lines.slice(-3)).toEqual([
-    "ask: What should the new project in acme be called? Its address is made from the name. Pass the name as --name.",
+    "ask: First, we'll create a new project in acme. What should it be called? Pass the name as --name.",
     `rule: Run node ${machineScript} project --workspace acme --name with the person's answer after it, quoted as one word, only once the person has answered.`,
     "next: stop",
   ]);

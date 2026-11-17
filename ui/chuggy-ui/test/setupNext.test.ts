@@ -362,10 +362,7 @@ const mcpOffered = (tell: string): SaidThing => ({
   project: "widgets",
 });
 
-const mcpServes =
-  "Claude Code is the agent it is named in, for this folder, and it signs in as chuggy setup does, under the one sign-in, so you sign in once. Tell me yes to go ahead.";
-
-test("the MCP step offers mcp, which installs the runner package first where none here is one it leaves as it is, and names its server in the agent", () => {
+test("the MCP step offers mcp in one sentence naming the step, an install where the runner package here is absent or behind and a connection where it is current, and names nothing of how it is done", () => {
   const lacking = { lacks: "Mcp" } as const;
   const offered = (packaged?: SetupMcpPackaged) =>
     saidThing(
@@ -377,25 +374,12 @@ test("the MCP step offers mcp, which installs the runner package first where non
         packaged,
       ).thing,
     );
-  const opening = `The next step is chuggy's tools in your agent, for acme/widgets at ${stoodSite}.`;
-  const installing = `With your yes I will install it with npm, without a password, and then name its server in Claude Code's configuration for this folder. ${mcpServes}`;
+  const installing = "Next, let's install the chuggy cli here. Okay?";
   expect(thing(lacking)).toEqual(offered({ packaged: "Absent" }));
-  expect(offered({ packaged: "Absent" })).toEqual(
-    mcpOffered(
-      `${opening} The runner package, chuggy-linux, serves them as an MCP server, and it is not installed here. ${installing}`,
-    ),
-  );
-  expect(
-    offered({ packaged: "Behind", version: "0.3.0", installs: "0.4.0" }),
-  ).toEqual(
-    mcpOffered(
-      `${opening} The runner package, chuggy-linux, serves them as an MCP server, and the one installed here, chuggy-linux 0.3.0, is older than chuggy setup uses. With your yes I will install chuggy-linux 0.4.0 in its place with npm, without a password, and then name its server in Claude Code's configuration for this folder. ${mcpServes}`,
-    ),
-  );
+  expect(offered({ packaged: "Absent" })).toEqual(mcpOffered(installing));
+  expect(offered({ packaged: "Behind" })).toEqual(mcpOffered(installing));
   expect(offered({ packaged: "Current" })).toEqual(
-    mcpOffered(
-      `${opening} The runner package here, chuggy-linux, serves them as an MCP server. With your yes I will name that server in Claude Code's configuration for this folder. ${mcpServes}`,
-    ),
+    mcpOffered("Next, let's connect chuggy to your agent here. Okay?"),
   );
 });
 
@@ -405,27 +389,7 @@ function toldOf(said: SaidThing): string {
   return said.tell;
 }
 
-test("on a Mac the MCP step and the runner, with or without the chat host, offer the Mac's own package, as Linux's offer Linux's", () => {
-  const mcp = (packaged: SetupMcpPackaged) =>
-    toldOf(
-      saidThing(
-        setupNext(
-          lacking_({ lacks: "Mcp" }),
-          setupAnswersNone,
-          "darwin",
-          undefined,
-          packaged,
-        ).thing,
-      ),
-    );
-  for (const packaged of [
-    { packaged: "Current" },
-    { packaged: "Behind", version: "0.3.0", installs: "0.4.0" },
-    { packaged: "Absent" },
-  ] as const) {
-    expect(mcp(packaged)).toContain(", chuggy-darwin, serves them");
-    expect(mcp(packaged)).not.toContain("chuggy-linux");
-  }
+test("on a Mac the runner, with or without the chat host, offers the Mac's own package, as Linux's offers Linux's", () => {
   const looked: SetupRunnerHere = {
     room: { room: "Open", engine: "docker" },
     held: undefined,
@@ -640,14 +604,14 @@ test("a project lacking is asked a name for, to be made by project in the worksp
     thing({ lacks: "Project" }, { choice: { ...chosen, project: undefined } }),
   ).toEqual({
     thing: "Name",
-    ask: "What should the new project in acme be called? Its address is made from the name. Pass the name as --name.",
+    ask: "First, we'll create a new project in acme. What should it be called? Pass the name as --name.",
     workspace: "acme",
     project: undefined,
   });
   const named: SetupChoice = { ...chosen, by: "Named", project: "atlas" };
   expect(thing({ lacks: "Project" }, { choice: named })).toEqual({
     thing: "Name",
-    ask: "What should the new project in acme be called? Its address will be atlas. Pass the name as --name.",
+    ask: "First, we'll create a new project in acme. What should it be called? Pass the name as --name.",
     workspace: "acme",
     project: "atlas",
   });

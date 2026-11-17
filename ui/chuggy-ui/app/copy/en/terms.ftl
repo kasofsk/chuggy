@@ -286,6 +286,20 @@
     }
 }
 
+# The program a runner package installs, which a person runs at a command line.
+-cli = { $case ->
+    [upper] { $form ->
+        [plural] CLIs
+        [a] A CLI
+       *[one] CLI
+    }
+   *[lower] { $form ->
+        [plural] clis
+        [a] a cli
+       *[one] cli
+    }
+}
+
 # A runner a member registers for their own runs.
 # rejects: My runners, Your runners, own runner, own runners, runner of your own, runners of your own
 -personal-runner = { $case ->

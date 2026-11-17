@@ -435,8 +435,6 @@ const things: {
         id: "setup-ask-project-name",
         args: {
           workspace: "acme",
-          address: "made",
-          project: "",
           flag: "--name",
         },
       },
@@ -449,8 +447,6 @@ const things: {
         id: "setup-ask-project-name",
         args: {
           workspace: "two words",
-          address: "given",
-          project: "it's --site",
           flag: "--name",
         },
       },
@@ -1594,12 +1590,12 @@ test("whatever the person answers a question with, passed after the flag the rul
 test("a project lacking is asked a name for, and the rule names project for the workspace, with the address only where one is held, and the name last", () => {
   const [made, given] = things.Name;
   expect(ended(made as SetupThing)).toEqual([
-    "ask: What should the new project in acme be called? Its address is made from the name. Pass the name as --name.",
+    "ask: First, we'll create a new project in acme. What should it be called? Pass the name as --name.",
     `rule: Run node ${machineScript} project --workspace acme --name with the person's answer after it, quoted as one word, only once the person has answered.`,
     stop,
   ]);
   expect(ended(given as SetupThing)).toEqual([
-    "ask: What should the new project in two words be called? Its address will be it's --site. Pass the name as --name.",
+    "ask: First, we'll create a new project in two words. What should it be called? Pass the name as --name.",
     `rule: Run node ${machineScript} project --workspace 'two words' --project 'it'\\''s --site' --name with the person's answer after it, quoted as one word, only once the person has answered.`,
     stop,
   ]);

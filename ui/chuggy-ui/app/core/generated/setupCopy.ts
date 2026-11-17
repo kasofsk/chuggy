@@ -688,24 +688,9 @@ export interface SetupCopy {
     readonly failure: unknown;
   };
   readonly "setup-offer-mcp-when": Record<never, never>;
-  readonly "setup-mend-mcp-serves": Record<never, never>;
-  readonly "setup-mend-mcp-offer": {
-    readonly project: unknown;
-    readonly site: unknown;
-    readonly program: unknown;
-  };
-  readonly "setup-mend-mcp-offer-absent": {
-    readonly project: unknown;
-    readonly site: unknown;
-    readonly program: unknown;
-  };
-  readonly "setup-mend-mcp-offer-behind": {
-    readonly project: unknown;
-    readonly site: unknown;
-    readonly program: unknown;
-    readonly found: unknown;
-    readonly installs: unknown;
-  };
+  readonly "setup-mend-mcp-offer": Record<never, never>;
+  readonly "setup-mend-mcp-offer-absent": Record<never, never>;
+  readonly "setup-mend-mcp-offer-behind": Record<never, never>;
   readonly "setup-offer-plugin-when": Record<never, never>;
   readonly "setup-rule-plugin-skip": {
     readonly command: unknown;
@@ -1032,8 +1017,6 @@ export interface SetupCopy {
   };
   readonly "setup-ask-project-name": {
     readonly workspace: unknown;
-    readonly address: unknown;
-    readonly project: unknown;
     readonly flag: unknown;
   };
   readonly "setup-ask-unnamed": {
