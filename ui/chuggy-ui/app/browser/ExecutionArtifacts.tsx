@@ -120,6 +120,7 @@ function Artifact(props: {
               ? { id: "ticket-artifact-hide" }
               : { id: "ticket-artifact-preview" },
           )}
+          look={{ variant: "quiet", size: "sm" }}
         >
           <div className="basis-full">
             <ArtifactPreview
