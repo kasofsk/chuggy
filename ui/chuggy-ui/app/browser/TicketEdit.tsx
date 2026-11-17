@@ -100,6 +100,7 @@ import {
 import type { Attempt } from "./TicketCreation.tsx";
 import type { CopyText } from "../core/copy.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
+import "./DataPanel.css";
 
 /** What the edit is written against: the ticket as read, and its draft. */
 interface EditSubject {

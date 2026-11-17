@@ -148,6 +148,7 @@ import { copyOrDataText } from "../core/copy.ts";
 import type { Copy, CopyText } from "../core/copy.ts";
 
 import "./Inbox.css";
+import "./DataPanel.css";
 
 export interface InboxRowsHeld {
   readonly panel: PanelState<InboxRows>;

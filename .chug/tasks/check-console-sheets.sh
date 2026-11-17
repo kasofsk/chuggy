@@ -53,14 +53,9 @@
 # text `scripts/console-policy.ts` reads the cascade order from. Every other
 # Tailwind at-rule is a rule outside the layer like any other.
 #
-# SCOPE: tracked `*.css` under `ui/chuggy-ui/app/`, less two files. The token
-# file is where a colour and a length are stated, so clause 1 does not judge
-# it — clause 2 does. `ui/chuggy-ui/app/styles.css` is out of both: it is the
-# sheet the console drew before the design system, it is unlayered on purpose
-# while it lives, and it is being deleted a page at a time rather than
-# tokenised. Naming it here is what makes the exemption visible — when the last
-# page leaves it and the file goes, this line stops resolving and
-# `check-paths.sh` says so.
+# SCOPE: tracked `*.css` under `ui/chuggy-ui/app/`. The token file is where a
+# colour and a length are stated, so clause 1 does not judge it — clause 2
+# does.
 #
 # WHAT IT CANNOT SEE, said plainly so nobody trusts it further than it goes. A
 # colour reached through a variable this tree does not define is invisible, and
@@ -90,19 +85,18 @@ fi
 cd "$root" || exit 2
 
 tokens="ui/chuggy-ui/app/styles/tokens.css"
-legacy="ui/chuggy-ui/app/styles.css"
 
 if ! git ls-files --error-unmatch "$tokens" >/dev/null 2>&1; then
 	echo "check-console-sheets: LINTER ERROR — no $tokens, so there is no definition site to hold the sheets to"
 	exit 2
 fi
 
-# The arguments if given, else every tracked sheet of the console but the one
-# the scope leaves out. A named file is scanned wherever it lives.
+# The arguments if given, else every tracked sheet of the console. A named
+# file is scanned wherever it lives.
 set -f
 if [ "$#" -eq 0 ]; then
 	corpus="$(git ls-files 'ui/chuggy-ui/app/*.css' 'ui/chuggy-ui/app/**/*.css' \
-		":!:$legacy" 2>/dev/null || true)"
+		2>/dev/null || true)"
 	if [ -z "$corpus" ]; then
 		echo "check-console-sheets: LINTER ERROR — the corpus is empty though $tokens is tracked; the glob read nothing"
 		exit 2
