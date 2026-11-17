@@ -43,7 +43,6 @@ kubectl -n chuggy create secret generic chuggy-postgres-credentials \
 owner-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 ticket-service-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 api-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
-selector-service-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 scheduler-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 finalizer-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 worker-plane-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
@@ -80,7 +79,6 @@ export PGPASSWORD="$(secret postgres-superuser password)"
 export CHUG_PG_OWNER_PASSWORD="$(secret chuggy-postgres-credentials owner-password)"
 export CHUG_PG_TICKET_SERVICE_PASSWORD="$(secret chuggy-postgres-credentials ticket-service-password)"
 export CHUG_PG_API_PASSWORD="$(secret chuggy-postgres-credentials api-password)"
-export CHUG_PG_SELECTOR_SERVICE_PASSWORD="$(secret chuggy-postgres-credentials selector-service-password)"
 export CHUG_PG_SCHEDULER_PASSWORD="$(secret chuggy-postgres-credentials scheduler-password)"
 export CHUG_PG_FINALIZER_PASSWORD="$(secret chuggy-postgres-credentials finalizer-password)"
 export CHUG_PG_WORKER_PLANE_PASSWORD="$(secret chuggy-postgres-credentials worker-plane-password)"
@@ -93,7 +91,6 @@ export CHUG_PG_METRICS_PLANE_PASSWORD="$(secret chuggy-postgres-credentials metr
   "${CHUG_PG_OWNER_PASSWORD:?owner-password did not read back}" \
   "${CHUG_PG_TICKET_SERVICE_PASSWORD:?ticket-service-password did not read back}" \
   "${CHUG_PG_API_PASSWORD:?api-password did not read back}" \
-  "${CHUG_PG_SELECTOR_SERVICE_PASSWORD:?selector-service-password did not read back}" \
   "${CHUG_PG_SCHEDULER_PASSWORD:?scheduler-password did not read back}" \
   "${CHUG_PG_FINALIZER_PASSWORD:?finalizer-password did not read back}" \
   "${CHUG_PG_WORKER_PLANE_PASSWORD:?worker-plane-password did not read back}" \
@@ -254,9 +251,6 @@ spec:
         - name: CHUG_PG_API_PASSWORD
           valueFrom:
             secretKeyRef: { name: chuggy-postgres-credentials, key: api-password }
-        - name: CHUG_PG_SELECTOR_SERVICE_PASSWORD
-          valueFrom:
-            secretKeyRef: { name: chuggy-postgres-credentials, key: selector-service-password }
         - name: CHUG_PG_SCHEDULER_PASSWORD
           valueFrom:
             secretKeyRef: { name: chuggy-postgres-credentials, key: scheduler-password }
@@ -352,7 +346,6 @@ kubectl -n chuggy label pod probe chuggy.dev/postgres-client=true
 as chuggy_owner CHUG_PG_OWNER_PASSWORD chuggy_boundary_owner
 as chuggy_ticket_service_login CHUG_PG_TICKET_SERVICE_PASSWORD chuggy_ticket_service
 as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_api
-as chuggy_selector_service_login CHUG_PG_SELECTOR_SERVICE_PASSWORD chuggy_selector_service
 as chuggy_scheduler_login CHUG_PG_SCHEDULER_PASSWORD chuggy_scheduler
 as chuggy_finalizer_login CHUG_PG_FINALIZER_PASSWORD chuggy_finalizer
 as chuggy_worker_plane_login CHUG_PG_WORKER_PLANE_PASSWORD chuggy_worker_plane
