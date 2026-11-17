@@ -147,6 +147,8 @@ export interface ProjectRepositoryBound {
   readonly landing: RepositoryFinalization;
   /** Whether a mint for the jobs this project runs in the repository may ask the forge for its pipeline definitions, which a binding starts without. */
   readonly pipelinesWritable: boolean;
+  /** Whether a mint for the jobs this project runs in the repository may ask the forge to start and read its pipeline runs, which a binding starts without. */
+  readonly pipelinesRunnable: boolean;
   readonly retiredAt?: string;
 }
 
@@ -161,15 +163,23 @@ export interface ProjectRepositoryBindings {
   bindings(partition: Partition): Promise<readonly ProjectRepositoryBound[]>;
 }
 
-/** One write of a binding's settings as its writer asks for it, each against the value the writer read. */
+/** One boolean setting of a binding as its writer read it and as it wants it. */
+export interface ProjectRepositorySettingWrite {
+  readonly expected: boolean;
+  readonly wanted: boolean;
+}
+
+/**
+ * One write of a binding's settings as its writer asks for it, each against
+ * the value the writer read. `pipelinesRunnable` absent leaves that setting
+ * as it stands.
+ */
 export interface ProjectRepositoryLandingWrite {
   readonly repository: RepositoryId;
   readonly expected: RepositoryFinalization;
   readonly landing: RepositoryFinalization;
-  readonly pipelinesWritable: {
-    readonly expected: boolean;
-    readonly wanted: boolean;
-  };
+  readonly pipelinesWritable: ProjectRepositorySettingWrite;
+  readonly pipelinesRunnable?: ProjectRepositorySettingWrite;
 }
 
 /** One write of a binding's settings, in the project it binds into. */
@@ -179,7 +189,7 @@ export interface ProjectRepositoryLandingCommand extends ProjectRepositoryLandin
 
 /**
  * What writing one binding's settings came to. `LandingMoved` answers the row
- * where either setting stands at neither the value the writer read nor the one
+ * where any setting stands at neither the value the writer read nor the one
  * it asked for, because the writer's next act is to read it again, and
  * `Unavailable` is a write that did not complete under its lock and can be
  * made again.

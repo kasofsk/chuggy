@@ -23,6 +23,11 @@ export function textCodePointsCount(text: string): number {
  */
 const unpairedSurrogate = /\p{Cs}/u;
 
+/** Whether text holds no unpaired surrogate. */
+export function textWellFormed(text: string): boolean {
+  return !unpairedSurrogate.test(text);
+}
+
 /** Why one string is not text a bounded column holds, or nothing where it is. */
 export type BoundedTextRefusal =
   | { readonly refused: "Empty" }
@@ -44,7 +49,7 @@ export function boundedTextRefusal(
   charsMax: number,
 ): BoundedTextRefusal | undefined {
   if (value.length === 0) return { refused: "Empty" };
-  if (unpairedSurrogate.test(value)) return { refused: "Unpaired" };
+  if (!textWellFormed(value)) return { refused: "Unpaired" };
   if (value.includes("\u0000")) return { refused: "Nul" };
   const chars = textCodePointsCount(value);
   return chars > charsMax ? { refused: "TooLong", chars } : undefined;
@@ -263,6 +268,30 @@ export const projectArtifactEncoding = "base64";
  * because 64 KiB of base64 is well under one screenshot.
  */
 export const projectArtifactUploadBytesMax = 4_194_304;
+
+/**
+ * The image media types a project-owned artifact may be named a project's icon
+ * or banner in: the admitted roster without GIF.
+ */
+export const projectImageMediaTypes = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const satisfies readonly ImageMediaType[];
+
+/** The largest artifact a project may name its icon. */
+export const projectIconBytesMax = 262_144;
+
+/** The largest artifact a project may name its banner. */
+export const projectBannerBytesMax = 2_097_152;
+
+/** What a project names an image of its own as: the mark shown wherever it is named, and the image above its tickets. */
+export const projectImageRoles = ["icon", "banner"] as const;
+export type ProjectImageRole = (typeof projectImageRoles)[number];
+
+/** The largest artifact each role may name. */
+export const projectImageBytesMax: Readonly<Record<ProjectImageRole, number>> =
+  { icon: projectIconBytesMax, banner: projectBannerBytesMax };
 
 /**
  * Where an attempt that ended without a result leaves its worker's own text
@@ -637,12 +666,17 @@ export const nativeHttpRoutes = {
   forgeInstallationPermissions: `${nativeHttpBasePath}/tenants/:tenant/forge-installations/:installationId/permissions`,
   projects: `${nativeHttpBasePath}/projects`,
   project: `${nativeHttpBasePath}/tenants/:tenant/projects/:project`,
+  projectDeletion: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/deletion`,
+  tenantDeletion: `${nativeHttpBasePath}/tenants/:tenant/deletion`,
   tickets: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets`,
   ticket: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket`,
   ticketNativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-actions`,
+  ticketNativeActionHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-action-history`,
   ticketAgenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/agentic-refusals`,
   ticketActionReach: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/action-reach`,
   ticketLandings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/landings`,
+  ticketTake: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/take`,
+  ticketReturn: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/return`,
   landingQueues: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/landing-queues`,
   nativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/native-actions`,
   agenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/agentic-refusals`,
@@ -685,6 +719,11 @@ export const nativeHttpRoutes = {
   executionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/execution-placement`,
   sessionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/session-placement`,
   ownerFallback: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/owner-fallback`,
+  projectTheme: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance/theme`,
+  projectThemeOverride: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance/override`,
+  projectAppearance: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance`,
+  projectImages: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance/images`,
+  projectImage: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance/images/:role`,
   hostedRuns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/hosted-runs`,
   abilities: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/abilities`,
   workerPools: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pools`,
@@ -700,6 +739,11 @@ export const nativeHttpRoutes = {
   agentAccounts: `${nativeHttpBasePath}/agent-accounts`,
   agentAccountSettings: `${nativeHttpBasePath}/agent-accounts/:agent/settings`,
   agentAccountPresses: `${nativeHttpBasePath}/agent-accounts/:agent/presses`,
+  agentAccountCredential: `${nativeHttpBasePath}/agent-accounts/:agent/credentials/:credential`,
+  agentAccountCredentialOff: `${nativeHttpBasePath}/agent-accounts/:agent/credentials/:credential/off`,
+  ownThemes: `${nativeHttpBasePath}/appearance/themes`,
+  ownTheme: `${nativeHttpBasePath}/appearance/themes/:theme`,
+  themeChoice: `${nativeHttpBasePath}/appearance/choice`,
   chatHostRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/chat-host-registration-tokens`,
   chatHost: `${nativeHttpBasePath}/tenants/:tenant/chat-host`,
   chatAbilities: `${nativeHttpBasePath}/tenants/:tenant/chat/abilities`,
@@ -1049,6 +1093,20 @@ export const runUsageInstantSchema = z
   .int()
   .positive()
   .max(runUsageInstantSecsMax);
+/** The name of the agent credential a run spent, as its runner holds it: never the secret. */
+export const workerRunCredentialSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,64}$/u);
+
+/** The most credentials of one agent an account read names: those kept of its readings and limits, and those turned off beside them. */
+export const agentAccountCredentialsMax = 32;
+
+/** The name a run naming no credential is kept under, by the agent it spent: what a runner holding one credential of that agent names it. */
+export const workerRunCredentialDefaults = {
+  Claude: "claude",
+  Codex: "codex",
+} as const;
+
 export const ticketNumberSchema = z.number().int().safe().positive();
 export const digestSchema = z.string().regex(/^[0-9a-f]{64}$/u);
 /**

@@ -17,14 +17,10 @@
  * an entry nothing names is still one a ticket can choose.
  */
 
-import {
-  finalizationLine,
-  finalizationMethodLabel,
-  gitMergePolicyLabel,
-} from "./codeLabels.ts";
+import { finalizationLine, gitMergePolicyLabel } from "./codeLabels.ts";
 import {
   catalogApproversLine,
-  catalogFinalizerApproval,
+  catalogFinalizerLabel,
   catalogPlanLine,
   catalogWorkloadModel,
   catalogWorkloadRuns,
@@ -98,14 +94,14 @@ export interface CatalogEntries {
 const catalogGroupTitles: Readonly<Record<CatalogEntryKind, Copy>> = {
   Workload: { id: "configuration-catalog-group-workloads" },
   Plan: { id: "configuration-catalog-group-plans" },
-  Finalizer: { id: "configuration-catalog-group-landings" },
+  Finalizer: { id: "configuration-catalog-group-finalizers" },
   Prompt: { id: "configuration-catalog-group-prompts" },
 };
 
 const catalogKindLabels: Readonly<Record<CatalogEntryKind, Copy>> = {
   Workload: { id: "configuration-catalog-kind-workload" },
   Plan: { id: "configuration-catalog-kind-plan" },
-  Finalizer: { id: "configuration-catalog-kind-landing" },
+  Finalizer: { id: "configuration-catalog-kind-finalizer" },
   Prompt: { id: "configuration-catalog-kind-prompt" },
 };
 
@@ -288,7 +284,7 @@ export function catalogEntriesOf(
 const catalogDefaultLabels: Readonly<Record<CatalogDefaultRole, Copy>> = {
   work: { id: "configuration-catalog-default-work" },
   evaluation: { id: "configuration-catalog-default-evaluation" },
-  finalization: { id: "configuration-catalog-default-landing" },
+  finalization: { id: "configuration-catalog-default-finalization" },
 };
 
 export function catalogDefaultLabel(role: CatalogDefaultRole): Copy {
@@ -337,14 +333,7 @@ export function catalogEntrySummary(
     case "Plan":
       return copyOrDataText(text, detail.line);
     case "Finalizer":
-      return [
-        text(catalogFinalizerApproval(detail.finalizer)),
-        detail.finalizer.finalization === undefined
-          ? undefined
-          : text(finalizationMethodLabel(detail.finalizer.finalization)),
-      ]
-        .filter((part) => part !== undefined)
-        .join(" · ");
+      return text(catalogFinalizerLabel(detail.finalizer));
     case "Prompt":
       return catalogPromptOpening(detail.text);
   }
@@ -453,15 +442,11 @@ export function catalogEntryFields(
       const { finalizer } = detail;
       const finalization = finalizer.finalization;
       return [
-        field(
-          { id: "configuration-catalog-field-approval" },
-          catalogFinalizerApproval(finalizer),
-        ),
         ...(finalization === undefined
           ? []
           : [
               field(
-                { id: "configuration-catalog-field-landing" },
+                { id: "configuration-catalog-field-finalization" },
                 finalizationLine(finalization),
               ),
             ]),

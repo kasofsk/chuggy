@@ -3,7 +3,7 @@
  *
  * A run that uses the remembered sign-in holds the lock while it does, and
  * gives it up before it waits on a person, reads a checklist or touches the
- * machine for `runner`. Before it asks a site or an issuer
+ * machine for `runner` or `chat-host`. Before it asks a site or an issuer
  * anything it keeps room for what it may have to write, so a home that takes
  * no new file is found while the remembered sign-in is still good. Whatever
  * goes wrong on the machine ends as one report: which path it would not make,
@@ -12,21 +12,40 @@
  * message could carry, is ever printed.
  */
 
+import { setupAgentRead, setupMcpPackaged, setupServer } from "./setupAgent.ts";
 import { setupAsked } from "./setupArguments.ts";
 import type {
   SetupAnswers,
   SetupAsked,
   SetupCommand,
 } from "./setupArguments.ts";
-import { setupNext, setupRunnerDue } from "./setupNext.ts";
+import {
+  setupConfigurationChecked,
+  setupConfigurationWritten,
+  setupImportAsked,
+  setupImportWrites,
+} from "./setupConfiguration.ts";
+import {
+  setupConfigurationDue,
+  setupMcpDue,
+  setupNext,
+  setupRunnerDue,
+} from "./setupNext.ts";
 import type { SetupPacing } from "./setupPacing.ts";
 import { SetupMachineError, setupPlatforms } from "./setupPorts.ts";
 import type { SetupPorts } from "./setupPorts.ts";
-import { readSetup, setupReadPorts } from "./setupReads.ts";
+import { readSetup, setupPartition, setupReadPorts } from "./setupReads.ts";
+import type { SetupReads } from "./setupReads.ts";
+import { setupProject } from "./setupProject.ts";
+import type { SetupProjectAsked } from "./setupProject.ts";
 import { setupRemoteRead } from "./setupRemote.ts";
 import type { SetupFault, SetupReport } from "./setupReport.ts";
-import { setupRunner } from "./setupRunner.ts";
-import type { SetupRunnerAsked, SetupRunnerEntered } from "./setupRunner.ts";
+import { setupChatHost, setupRunner, setupWritePorts } from "./setupRunner.ts";
+import type {
+  SetupChatHostAsked,
+  SetupRunnerAsked,
+  SetupRunnerEntered,
+} from "./setupRunner.ts";
 import { setupRunnerHere } from "./setupRunnerMachine.ts";
 import { setupSessionOpened, setupWorkspacesRead } from "./setupSession.ts";
 import type {
@@ -42,13 +61,16 @@ import {
 } from "./setupSignIn.ts";
 import type { SetupSignInBegun } from "./setupSignIn.ts";
 import { setupStanding } from "./setupStanding.ts";
+import type { SetupStanding } from "./setupStanding.ts";
 import {
   setupLockHeldBy,
   setupLockReleased,
   setupLockTaken,
   setupLockWaitMs,
-  setupSessionRead,
-  setupSessionWritten,
+  setupSessionMoved,
+  setupSessionSite,
+  setupSessionSiteWritten,
+  setupTokenRead,
 } from "./setupStore.ts";
 
 type SetupBegun =
@@ -57,8 +79,8 @@ type SetupBegun =
 
 /**
  * The session a command works under: the site it was given or the one
- * remembered, loaded, with the remembered token only where it is that site's
- * and room for its renewal kept before anything is asked of either. A site is
+ * remembered, loaded, with the token the shared store holds for that site and
+ * room for its renewal kept before anything is asked of either. A site is
  * remembered once it has answered as one.
  */
 async function setupBegun(
@@ -66,11 +88,12 @@ async function setupBegun(
   given: string | undefined,
   asked: SetupCommand,
 ): Promise<SetupBegun> {
-  const stored = setupSessionRead(ports.files);
-  const site = given ?? stored?.site;
+  setupSessionMoved(ports.files, ports.store);
+  const remembered = setupSessionSite(ports.files);
+  const site = given ?? remembered;
   if (site === undefined)
     return { begun: "Reported", report: { report: "SiteUnknown" } };
-  const held = stored?.site === site ? stored.refreshToken : undefined;
+  const held = setupTokenRead(ports.store, site);
   const opened = setupSessionOpened(ports, site, held, undefined);
   opened.store.roomed();
   await opened.holder.load();
@@ -87,8 +110,7 @@ async function setupBegun(
             asked,
           },
     };
-  if (stored?.site !== site)
-    setupSessionWritten(ports.files, { site, refreshToken: undefined });
+  if (remembered !== site) setupSessionSiteWritten(ports.files, site);
   return { begun: "Session", opened };
 }
 
@@ -179,40 +201,64 @@ function setupBusy(
 /**
  * The checklist, read once the lock is given up: nothing from here on reads
  * or writes the session file, and no request is sent while the lock is held
- * for it. Everything goes out through ports that can only read, and where the
- * runner's step is the one next the machine is looked at and not touched.
+ * for it. Everything goes out through ports that can only read; the agent's
+ * configuration is read for the project chosen, and where the MCP step or the
+ * runner's is the one next the machine is looked at and not touched.
  */
 async function setupChecklist(
   ports: SetupPorts,
   signed: Extract<SetupSigned, { readonly signed: "In" }>,
   answers: SetupAnswers,
   pacing: SetupPacing,
-): Promise<SetupReport> {
-  const site = signed.opened.site;
-  const reads = await readSetup(
-    setupReadPorts(signed.opened.api, signed.bearer),
-    {
-      site,
-      answers,
-      remote: await setupRemoteRead(ports.process, pacing.remoteWaitMs),
-      workspaces: signed.workspaces,
-    },
-  );
-  const standing = setupStanding(reads);
+): Promise<Extract<SetupReport, { readonly report: "Checklist" }>> {
+  const standing = await setupStandingRead(ports, signed, answers, pacing);
   const due = setupRunnerDue(standing);
   const here =
     due === undefined ? undefined : await setupRunnerHere(ports, due);
+  const packaged =
+    setupMcpDue(standing) !== undefined && (await setupMcpPackaged(ports));
   return {
     report: "Checklist",
-    site,
+    site: standing.site,
     found: standing.found,
     steps: standing.steps.map(({ step, state, detail }) => ({
       step,
       state,
       detail,
     })),
-    next: setupNext(standing, answers, here),
+    next: setupNext(standing, answers, here, packaged),
   };
+}
+
+/** Where the person stands, from one bundle of reads sent through ports that can only read. */
+async function setupStandingRead(
+  ports: SetupPorts,
+  signed: Extract<SetupSigned, { readonly signed: "In" }>,
+  answers: SetupAnswers,
+  pacing: SetupPacing,
+): Promise<SetupStanding> {
+  const reads = await readSetup(
+    setupReadPorts(signed.opened.api, signed.bearer),
+    {
+      site: signed.opened.site,
+      answers,
+      remote: await setupRemoteRead(ports.process, pacing.remoteWaitMs),
+      workspaces: signed.workspaces,
+    },
+  );
+  return setupStanding(reads, await setupChecklistNamed(ports, reads));
+}
+
+/** Whether the agent's configuration for this folder names chuggy's server for the project the reads chose, where they chose one. */
+async function setupChecklistNamed(
+  ports: SetupPorts,
+  reads: SetupReads,
+): Promise<boolean> {
+  const partition = setupPartition(reads.choice, reads.inventory);
+  if (partition === undefined) return false;
+  const { tenant: workspace, project } = partition;
+  return (await setupAgentRead(ports, { site: reads.site, workspace, project }))
+    .named;
 }
 
 /**
@@ -257,21 +303,59 @@ async function setupStatus(
 }
 
 /**
- * One entry of the sign-in `runner` works under. Whatever does not end signed
- * in is answered as a report, a fault of this machine's among them, so a run
- * that enters again part-way has one way out and says what it had done ahead
- * of it.
+ * `import` works under the remembered sign-in as the bare command does. Where
+ * the checklist's next thing is the repository's configuration, it asks the
+ * site to import that repository, the one write its ports let through, and
+ * reads the checklist again, which says what the import came to as the site
+ * keeps it; where it is not, it imports nothing and says the checklist.
+ */
+async function setupImport(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Import" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const held = await setupEntered(ports, asked.site, "Import");
+  if (held === undefined) return setupBusy(ports, "Import", asked.site);
+  if (held.signed === "Out") return held.report;
+  const due = setupConfigurationDue(
+    await setupStandingRead(ports, held, asked.answers, pacing),
+  );
+  const answered =
+    due === undefined
+      ? undefined
+      : await setupImportAsked(
+          setupWritePorts(
+            held.opened.api,
+            held.bearer,
+            setupImportWrites(due.partition),
+          ),
+          due.partition,
+          due.repository,
+        );
+  return {
+    report: "Import",
+    repository: due?.repository,
+    answered,
+    checklist: await setupChecklist(ports, held, asked.answers, pacing),
+  };
+}
+
+/**
+ * One entry of the sign-in `project`, `runner` or `chat-host` works under. Whatever does
+ * not end signed in is answered as a report, a fault of this machine's among
+ * them, so a run that enters again part-way has one way out and says what it
+ * had done ahead of it.
  */
 async function setupRunnerEntry(
   ports: SetupPorts,
-  asked: SetupRunnerAsked,
+  asked: SetupProjectAsked | SetupRunnerAsked | SetupChatHostAsked,
 ): Promise<SetupRunnerEntered> {
   try {
-    const held = await setupEntered(ports, asked.site, "Runner");
+    const held = await setupEntered(ports, asked.site, asked.asked);
     if (held === undefined)
       return {
         entered: "Out",
-        report: setupBusy(ports, "Runner", asked.site),
+        report: setupBusy(ports, asked.asked, asked.site),
       };
     if (held.signed === "Out") return { entered: "Out", report: held.report };
     const { site, api } = held.opened;
@@ -282,21 +366,20 @@ async function setupRunnerEntry(
 }
 
 /**
- * `runner` works under the remembered sign-in as the bare command does, and
- * enters it again the same way where the site stops taking the bearer it
- * held, so the lock is never held while the machine is worked on.
+ * `runner` and `chat-host` work under the remembered sign-in as the bare
+ * command does, and enter it again the same way where the site stops taking
+ * the bearer they held, so the lock is never held while the machine is worked
+ * on.
  */
 function setupRunnerRun(
   ports: SetupPorts,
-  asked: SetupRunnerAsked,
+  asked: SetupRunnerAsked | SetupChatHostAsked,
   pacing: SetupPacing,
 ): Promise<SetupReport> {
-  return setupRunner(
-    ports,
-    asked,
-    () => setupRunnerEntry(ports, asked),
-    pacing.livePollMs,
-  );
+  const enter = () => setupRunnerEntry(ports, asked);
+  return asked.asked === "Runner"
+    ? setupRunner(ports, asked, enter, pacing.livePollMs)
+    : setupChatHost(ports, asked, enter, pacing.livePollMs);
 }
 
 type SetupSignInStep =
@@ -393,8 +476,29 @@ export async function setupRun(
         return await setupStatus(ports, asked, pacing);
       case "SignIn":
         return await setupSignIn(ports, asked.site, asked.waitSecs, pacing);
+      case "Project":
+        return await setupProject(
+          ports,
+          asked,
+          await setupRunnerEntry(ports, asked),
+        );
+      case "Mcp":
+        return await setupServer(ports, asked);
       case "Runner":
+      case "ChatHost":
         return await setupRunnerRun(ports, asked, pacing);
+      case "Configuration":
+        return {
+          report: "Configuration",
+          ended: await setupConfigurationWritten(ports, asked.test),
+        };
+      case "Check":
+        return {
+          report: "Check",
+          ended: await setupConfigurationChecked(ports),
+        };
+      case "Import":
+        return await setupImport(ports, asked, pacing);
       case "Listen":
         return await setupListened(ports, asked.site, asked.lifeSecs);
     }

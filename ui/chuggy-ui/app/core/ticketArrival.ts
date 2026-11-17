@@ -32,6 +32,7 @@ const ticketFieldOwnReadOnly = {
   title: false,
   repository: false,
   creator: false,
+  owner: false,
   revision: false,
   phase: false,
   sequence: false,

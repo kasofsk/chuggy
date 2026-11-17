@@ -38,7 +38,11 @@ import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import ticketSheet from "../app/browser/ticket/ticket.css?raw";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
+import {
+  sheetDeclared,
+  sheetPageNarrowCondition,
+  sheetRules,
+} from "./sheet.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
@@ -387,7 +391,7 @@ test("narrow, the heading's links take their own line, the column names go and a
   if (title === null || columns === null || runs === null)
     throw new Error("no table drawn");
   const desk = sheetRules(ticketSheet, []);
-  const narrow = sheetRules(ticketSheet, [sheetNarrowCondition]);
+  const narrow = sheetRules(ticketSheet, [sheetPageNarrowCondition]);
   expect(sheetDeclared(desk, columns, "display")).toBe("grid");
   expect(sheetDeclared(narrow, columns, "display")).toBe("none");
   expect(sheetDeclared(narrow, runs, "grid-column")).toBe("2 / -1");
@@ -468,7 +472,7 @@ test("instructions the ticket overrode are its prompt, marked over them", async 
 test("a catalog draws what the ticket selected of it: its work, its plan's stages in order and its landing", async () => {
   await drawExpanded(creationCatalogCanonical, undefined, undefined, {
     evaluation: "gated",
-    finalization: "approved",
+    finalization: "proposed",
   });
   expect(groupsDrawn()).toStrictEqual(["Work", "Evaluation", "Finalization"]);
   const work = row("Work");
@@ -484,8 +488,8 @@ test("a catalog draws what the ticket selected of it: its work, its plan's stage
   const gates = row("gates");
   expect(cell(gates, "workload")).toBeUndefined();
   expect(cell(gates, "runs")).toBe("Commands · npm test");
-  expect(details(row("Landing", group("Finalization")))).toStrictEqual(
-    new Map([["Approval", "Required"]]),
+  expect(details(row("Finalization", group("Finalization")))).toStrictEqual(
+    new Map(),
   );
   expect(screen.queryByText("Do it fast.")).toBeNull();
 });
@@ -554,7 +558,7 @@ test("a following ticket held on its revision, or trimmed, says why in one line,
   const cases = [
     [
       { verdict: "Held", code: "SelectionUnknown" },
-      "Stays on this revision · Workload, plan or landing not in the catalog",
+      "Stays on this revision · Workload, plan or finalizer not in the catalog",
     ],
     [
       { verdict: "Held", code: "ConfigurationInvalid" },
@@ -633,7 +637,7 @@ const briefFinalized = {
 
 /** The landing a brief's finalization is drawn as. */
 function landing(): HTMLElement {
-  return row("Landing", group("Finalization"));
+  return row("Finalization", group("Finalization"));
 }
 
 test("a version 1 ticket's landing is the one its brief names, and no Finalization is drawn where it names none", async () => {
@@ -653,19 +657,19 @@ test("a version 1 ticket's landing is the one its brief names, and no Finalizati
   expect(groupsDrawn()).not.toContain("Finalization");
 });
 
-test("a catalog ticket's landing is the brief's before its finalizer's, with the finalizer's approval", async () => {
+test("a catalog ticket's landing is the brief's before its finalizer's", async () => {
   await drawExpanded(
     creationCatalogCanonical,
     undefined,
     undefined,
-    { finalization: "approved" },
+    { finalization: "proposed" },
     undefined,
     briefFinalized,
   );
   expect(cell(landing(), "runs")).toBe(
     copyTextEn(finalizationLine(briefFinalized.finalization)),
   );
-  expect(details(landing())).toStrictEqual(new Map([["Approval", "Required"]]));
+  expect(details(landing())).toStrictEqual(new Map());
 });
 
 /** A policy orders a git merge alone, so it is drawn beside a git merge's

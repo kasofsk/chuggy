@@ -97,16 +97,21 @@ import {
   nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
+  projectImageRoles,
   selectorHistoryLimitMax,
   selectorProposalDispatchesAnsweredMax,
   ticketSearchCharsMax,
+  workerRunCredentialSchema,
 } from "../../contract/http.ts";
 import {
   workerRunnerReleasesPinnedRoute,
   type WorkerRunnerReleasesPinned,
 } from "../../contract/workerPool.ts";
 import type { WorkerRunnerReleases } from "../../interpreter/workerRunnerRelease.ts";
-import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
+import {
+  asProjectArtifactId,
+  type ProjectArtifactId,
+} from "../../interpreter/finalizerPreparation.ts";
 import {
   parseConfigurationCursor,
   parseDraftCursor,
@@ -114,6 +119,7 @@ import {
   parseLatestExecutionCursor,
   parseInventoryCursor,
   parseNativeActionCursor,
+  parseNativeActionHistoryCursor,
   parseTicketActivityCursor,
   parseTicketNumberCursor,
   parseForgeAuthorization,
@@ -187,6 +193,7 @@ import {
   projectResponse,
   projectEntryResponse,
   ticketNativeActionsResponse,
+  ticketNativeActionHistoryResponse,
   ticketResponse,
   executionResponse,
   executionsResponse,
@@ -242,9 +249,29 @@ import {
   workerPoolsResponse,
   personalRunnerAllowedResponse,
   agentAccountPressedResponse,
+  agentAccountRetiredResponse,
+  agentAccountTurnedOffResponse,
+  agentAccountTurnedOnResponse,
   agentAccountsResponse,
   agentAccountWrittenResponse,
+  ownedThemeCreatedResponse,
+  ownedThemeDeletedResponse,
+  ownedThemeResponse,
+  ownedThemesResponse,
+  ownedThemeWrittenResponse,
+  themeChoiceResponse,
+  themeChosenResponse,
+  projectAppearanceBody,
+  projectThemeBody,
+  projectThemeOverrideBody,
+  projectThemeOverrideChosenResponse,
+  projectThemeWrittenResponse,
+  projectImageNamedResponse,
+  projectImagesBody,
   personalRunnerDeregisteredResponse,
+  unrunDeletedResponse,
+  unrunDeletionStandingResponse,
+  ticketTakeResponse,
   personalRunnerDisallowedResponse,
   personalRunnerPermitResponse,
   personalRunnerRedemptionResponse,
@@ -273,12 +300,27 @@ import type { LandingQueueReads } from "../../interpreter/landingQueues.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegistration.ts";
 import type { AgentAccountService } from "../../interpreter/agentAccount.ts";
+import type { AppearanceService } from "../../interpreter/appearance.ts";
+import type { ProjectAppearanceService } from "../../interpreter/projectAppearance.ts";
+import type {
+  ProjectAppearanceServices,
+  ProjectImageService,
+} from "../../interpreter/projectImages.ts";
+import {
+  themeNumberSchema,
+  type ThemeDocument,
+} from "../../contract/appearance.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
+import type { TicketTakes } from "../../interpreter/ticketTake.ts";
 import type { ThreadLimitAdministration } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
+import type {
+  ProjectDeletion,
+  TenantDeletion,
+} from "../../interpreter/unrunDeletion.ts";
 import {
   sessionBearerAdmission,
   type SessionBearerConfinement,
@@ -288,10 +330,10 @@ import {
 export interface AuthenticatedBearer {
   readonly principal: Principal;
   readonly expiresAtMs?: number | undefined;
-  /** The session a session bearer carried, which a command records, and the partition and scope it is confined to. */
+  /** The session a session bearer carried, which a command records, and the partition, scope and capabilities it is confined to. */
   readonly viaSession?: Pick<
     SessionBearerIdentity,
-    "partition" | "session" | "scope"
+    "partition" | "session" | "scope" | "capabilities"
   >;
 }
 
@@ -347,6 +389,7 @@ type InitialNativeWeb = Pick<
   | "submit"
   | "ticket"
   | "ticketNativeActions"
+  | "ticketNativeActionHistory"
   | "nativeActions"
   | "execution"
   | "executions"
@@ -558,9 +601,10 @@ function registerAuthentication(
 
 /**
  * Whether a session bearer may reach the route this request matched, having
- * answered it when it may not: another partition, or a member's own session
- * whose owner may no longer open unscoped chat, as an unauthorized read is
- * answered, and a route no session may reach as `insufficient_scope`.
+ * answered it when it may not: another partition, a capability its session
+ * does not hold, or a member's own session whose owner may no longer open
+ * unscoped chat, as an unauthorized read is answered, and a route no session
+ * may reach as `insufficient_scope`.
  */
 async function registerAuthenticationSession(
   request: FastifyRequest,
@@ -585,6 +629,7 @@ async function registerAuthenticationSession(
       nativeHttpSend(reply, notFound());
       return false;
     case "OtherPartition":
+    case "Unheld":
       nativeHttpSend(reply, notFound());
       return false;
     case "Refused":
@@ -769,6 +814,7 @@ function projectReadQueryOf(
     "limit",
     "minimumSequence",
     "order",
+    "owner",
     "phase",
     "q",
   ]);
@@ -803,6 +849,9 @@ function projectReadQueryOf(
     ...(query["creator"] === undefined
       ? {}
       : { creator: asPrincipal(textField(query, "creator")) }),
+    ...(query["owner"] === undefined
+      ? {}
+      : { owner: asPrincipal(textField(query, "owner")) }),
     ...(query["active"] !== undefined && activeField(query["active"])
       ? { active: true }
       : {}),
@@ -1194,6 +1243,7 @@ function registerNativeActions(
     );
     nativeHttpSend(reply, ticketNativeActionsResponse(actions));
   });
+  registerNativeActionHistory(app, web);
   app.get(`${root}/native-actions`, async (request, reply) => {
     const query = fieldsOnly(request.query, ["cursor", "limit"]);
     const partition = partitionOf(request);
@@ -1215,6 +1265,52 @@ function registerNativeActions(
     );
     nativeHttpSend(reply, nativeActionsResponse(partition, result));
   });
+}
+
+/** Every action a ticket has had, behind a cursor that names the ticket it pages. */
+function registerNativeActionHistory(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.ticketNativeActionHistory,
+    async (request, principal, partition) => {
+      const ticket = asTicketIdField(record(request.params), "ticket");
+      const query = nativeHttpEndpoints.ticketNativeActionHistory.query.parse(
+        request.query,
+      );
+      const after =
+        query.cursor === undefined
+          ? undefined
+          : parseNativeActionHistoryCursor(query.cursor, partition);
+      if (after !== undefined && after.ticket !== ticket)
+        throw new RangeError(
+          "native action history cursor belongs to another ticket",
+        );
+      return {
+        ticket,
+        page: await web.ticketNativeActionHistory(
+          principal,
+          partition,
+          ticket,
+          {
+            ...(after === undefined
+              ? {}
+              : {
+                  after: {
+                    authorizingSequence: after.authorizingSequence,
+                    action: after.action,
+                  },
+                }),
+            limit: query.limit,
+          },
+        ),
+      };
+    },
+    ({ ticket, page }, partition) =>
+      ticketNativeActionHistoryResponse(partition, ticket, page),
+  );
 }
 
 function registerOperationalRoutes(
@@ -1654,12 +1750,32 @@ function accountAgentOf(request: FastifyRequest): AccountAgent | undefined {
   return parseAccountAgent(textField(record(request.params), "agent"));
 }
 
+/** The credential a route names, or none where its name is not one a credential is written in. */
+function agentAccountCredentialOf(request: FastifyRequest): string | undefined {
+  const named = workerRunCredentialSchema.safeParse(
+    record(request.params)["credential"],
+  );
+  return named.success ? named.data : undefined;
+}
+
 /**
  * The caller's own agent accounts: read whole, one agent's settings written
- * whole, and a press of one agent. Each is handed the request's own principal,
- * and no route names another, so no caller reaches anyone else's.
+ * whole, a press of one agent, one credential of an agent retired, and one
+ * turned off and on. Each is handed the request's own principal, and no route
+ * names another, so no caller reaches anyone else's.
  */
 function registerAgentAccounts(
+  app: FastifyInstance,
+  accounts: AgentAccountService,
+): void {
+  registerAgentAccountWrites(app, accounts);
+  registerBodylessRoutes(app, (scope) => {
+    registerAgentAccountBodyless(scope, accounts);
+  });
+}
+
+/** The caller's own accounts read whole, one agent's settings written, and one credential retired. */
+function registerAgentAccountWrites(
   app: FastifyInstance,
   accounts: AgentAccountService,
 ): void {
@@ -1683,19 +1799,317 @@ function registerAgentAccounts(
       nativeHttpSend(reply, agentAccountWrittenResponse());
     },
   );
-  registerBodylessRoutes(app, (scope) => {
-    scope.post(nativeHttpRoutes.agentAccountPresses, async (request, reply) => {
+  app.delete(
+    nativeHttpRoutes.agentAccountCredential,
+    async (request, reply) => {
       const agent = accountAgentOf(request);
+      const credential = agentAccountCredentialOf(request);
       nativeHttpSend(
         reply,
-        agent === undefined
+        agent === undefined || credential === undefined
           ? notFound()
-          : agentAccountPressedResponse(
-              await accounts.press(principalOf(request), agent),
+          : agentAccountRetiredResponse(
+              await accounts.retire(principalOf(request), agent, credential),
             ),
       );
-    });
+    },
+  );
+}
+
+/** A press of one agent, and one credential turned off by a put and on by a delete, none of which takes a body. */
+function registerAgentAccountBodyless(
+  scope: FastifyInstance,
+  accounts: AgentAccountService,
+): void {
+  scope.post(nativeHttpRoutes.agentAccountPresses, async (request, reply) => {
+    const agent = accountAgentOf(request);
+    nativeHttpSend(
+      reply,
+      agent === undefined
+        ? notFound()
+        : agentAccountPressedResponse(
+            await accounts.press(principalOf(request), agent),
+          ),
+    );
   });
+  scope.put(
+    nativeHttpRoutes.agentAccountCredentialOff,
+    async (request, reply) => {
+      const agent = accountAgentOf(request);
+      const credential = agentAccountCredentialOf(request);
+      nativeHttpSend(
+        reply,
+        agent === undefined || credential === undefined
+          ? notFound()
+          : agentAccountTurnedOffResponse(
+              await accounts.turnOff(principalOf(request), agent, credential),
+            ),
+      );
+    },
+  );
+  scope.delete(
+    nativeHttpRoutes.agentAccountCredentialOff,
+    async (request, reply) => {
+      const agent = accountAgentOf(request);
+      const credential = agentAccountCredentialOf(request);
+      nativeHttpSend(
+        reply,
+        agent === undefined || credential === undefined
+          ? notFound()
+          : agentAccountTurnedOnResponse(
+              await accounts.turnOn(principalOf(request), agent, credential),
+            ),
+      );
+    },
+  );
+}
+
+/** The number a route names of one of the caller's own themes. */
+function ownThemeOf(request: FastifyRequest): number {
+  return themeNumberSchema.parse(integerField(record(request.params), "theme"));
+}
+
+/**
+ * The caller's own themes, created, read, written whole and deleted, and
+ * their one global choice among the built-ins and those themes. Each is
+ * handed the request's own principal, and no route names another.
+ */
+function registerAppearance(
+  app: FastifyInstance,
+  appearance: AppearanceService,
+): void {
+  const versioned = { preValidation: requireVersionedJson };
+  app.get(nativeHttpRoutes.ownThemes, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      ownedThemesResponse(await appearance.themes(principalOf(request))),
+    );
+  });
+  app.post(nativeHttpRoutes.ownThemes, versioned, async (request, reply) => {
+    const document = nativeHttpEndpoints.createOwnTheme.body.parse(
+      request.body,
+    );
+    nativeHttpSend(
+      reply,
+      ownedThemeCreatedResponse(
+        await appearance.create(principalOf(request), document),
+      ),
+    );
+  });
+  app.get(nativeHttpRoutes.ownTheme, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      ownedThemeResponse(
+        await appearance.theme(principalOf(request), ownThemeOf(request)),
+      ),
+    );
+  });
+  app.put(nativeHttpRoutes.ownTheme, versioned, async (request, reply) => {
+    const theme = ownThemeOf(request);
+    const document = nativeHttpEndpoints.writeOwnTheme.body.parse(request.body);
+    nativeHttpSend(
+      reply,
+      ownedThemeWrittenResponse(
+        await appearance.write(principalOf(request), theme, document),
+      ),
+    );
+  });
+  app.delete(nativeHttpRoutes.ownTheme, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      ownedThemeDeletedResponse(
+        await appearance.delete(principalOf(request), ownThemeOf(request)),
+      ),
+    );
+  });
+  registerThemeChoice(app, appearance);
+}
+
+/** The caller's own global theme choice: read, written whole, and cleared. */
+function registerThemeChoice(
+  app: FastifyInstance,
+  appearance: AppearanceService,
+): void {
+  app.get(nativeHttpRoutes.themeChoice, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      themeChoiceResponse(await appearance.choice(principalOf(request))),
+    );
+  });
+  app.put(
+    nativeHttpRoutes.themeChoice,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const choice = nativeHttpEndpoints.writeThemeChoice.body.parse(
+        request.body,
+      );
+      nativeHttpSend(
+        reply,
+        themeChosenResponse(
+          await appearance.choose(principalOf(request), choice),
+        ),
+      );
+    },
+  );
+  app.delete(nativeHttpRoutes.themeChoice, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      themeChosenResponse(
+        await appearance.choose(principalOf(request), undefined),
+      ),
+    );
+  });
+}
+
+/**
+ * A project's appearance: its default theme, read under `Read` and written
+ * whole or cleared under `Administer`; the caller's own theme for it, read,
+ * written whole and cleared under `Read`; and the theme it resolves to for
+ * the caller.
+ */
+function registerProjectAppearance(
+  app: FastifyInstance,
+  appearance: ProjectAppearanceService,
+): void {
+  registerPlacement(
+    app,
+    nativeHttpRoutes.projectTheme,
+    {
+      read: (principal, partition) => appearance.theme(principal, partition),
+      write: (principal, partition, document: ThemeDocument | undefined) =>
+        appearance.writeTheme(principal, partition, document),
+    },
+    (body) => nativeHttpEndpoints.writeProjectTheme.body.parse(body).document,
+    projectThemeBody,
+    projectThemeWrittenResponse,
+  );
+  app.get(nativeHttpRoutes.projectAppearance, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      placementReadResponse(
+        await appearance.resolved(principalOf(request), partitionOf(request)),
+        projectAppearanceBody,
+      ),
+    );
+  });
+  registerProjectThemeOverride(app, appearance);
+}
+
+/** The caller's own theme for a project: read, written whole, and cleared. */
+function registerProjectThemeOverride(
+  app: FastifyInstance,
+  appearance: ProjectAppearanceService,
+): void {
+  const path = nativeHttpRoutes.projectThemeOverride;
+  app.get(path, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      placementReadResponse(
+        await appearance.override(principalOf(request), partitionOf(request)),
+        projectThemeOverrideBody,
+      ),
+    );
+  });
+  app.put(
+    path,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const choice = nativeHttpEndpoints.writeProjectThemeOverride.body.parse(
+        request.body,
+      );
+      nativeHttpSend(
+        reply,
+        projectThemeOverrideChosenResponse(
+          await appearance.chooseOverride(
+            principalOf(request),
+            partitionOf(request),
+            choice,
+          ),
+        ),
+      );
+    },
+  );
+  app.delete(path, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      projectThemeOverrideChosenResponse(
+        await appearance.chooseOverride(
+          principalOf(request),
+          partitionOf(request),
+          undefined,
+        ),
+      ),
+    );
+  });
+}
+
+/**
+ * A project's icon and banner: both read under `Read`, and each named by an
+ * artifact of the project's own, or cleared, under `Administer`. A role the
+ * route does not know is a path that is not there.
+ */
+function registerProjectImages(
+  app: FastifyInstance,
+  images: ProjectImageService,
+): void {
+  app.get(nativeHttpRoutes.projectImages, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      placementReadResponse(
+        await images.images(principalOf(request), partitionOf(request)),
+        projectImagesBody,
+      ),
+    );
+  });
+  const named = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    artifact: ProjectArtifactId | undefined,
+  ) => {
+    const role = projectImageRoles.find(
+      (known) => known === textField(record(request.params), "role"),
+    );
+    nativeHttpSend(
+      reply,
+      role === undefined
+        ? notFound()
+        : projectImageNamedResponse(
+            await images.name(
+              principalOf(request),
+              partitionOf(request),
+              role,
+              artifact,
+            ),
+          ),
+    );
+  };
+  app.put(
+    nativeHttpRoutes.projectImage,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const { artifact } = nativeHttpEndpoints.nameProjectImage.body.parse(
+        request.body,
+      );
+      await named(request, reply, asProjectArtifactId(artifact));
+    },
+  );
+  app.delete(nativeHttpRoutes.projectImage, async (request, reply) => {
+    await named(request, reply, undefined);
+  });
+}
+
+/** What a person keeps of their own in no workspace, their agent accounts and their appearance, and how each project appears to them. */
+function registerOwnSettings(
+  app: FastifyInstance,
+  agentAccounts: AgentAccountService | undefined,
+  appearance: AppearanceService | undefined,
+  projectAppearance: ProjectAppearanceServices | undefined,
+): void {
+  if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
+  if (appearance !== undefined) registerAppearance(app, appearance);
+  const { themes, images } = projectAppearance ?? {};
+  if (themes !== undefined) registerProjectAppearance(app, themes);
+  if (images !== undefined) registerProjectImages(app, images);
 }
 
 /**
@@ -1921,6 +2335,64 @@ function registerThreadLimits(
 
 function tenantOf(request: FastifyRequest): TenantId {
   return asTenantId(textField(record(request.params), "tenant"));
+}
+
+/** The deletions of a project that never ran work and of a workspace that holds no project. */
+export interface UnrunDeletions {
+  readonly projects: ProjectDeletion;
+  readonly tenants: TenantDeletion;
+}
+
+/**
+ * Each deletion's standing, which is what holds the project or the workspace,
+ * and the deletion itself, a project's by its tenant's administrator and a
+ * workspace's by the site's.
+ */
+function registerUnrunDeletions(
+  app: FastifyInstance,
+  deletions: UnrunDeletions,
+): void {
+  app.get(nativeHttpRoutes.projectDeletion, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      unrunDeletionStandingResponse(
+        await deletions.projects.standing(
+          principalOf(request),
+          partitionOf(request),
+        ),
+      ),
+    );
+  });
+  app.delete(nativeHttpRoutes.projectDeletion, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      unrunDeletedResponse(
+        await deletions.projects.delete(
+          principalOf(request),
+          partitionOf(request),
+        ),
+      ),
+    );
+  });
+  app.get(nativeHttpRoutes.tenantDeletion, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      unrunDeletionStandingResponse(
+        await deletions.tenants.standing(
+          principalOf(request),
+          tenantOf(request),
+        ),
+      ),
+    );
+  });
+  app.delete(nativeHttpRoutes.tenantDeletion, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      unrunDeletedResponse(
+        await deletions.tenants.delete(principalOf(request), tenantOf(request)),
+      ),
+    );
+  });
 }
 
 function installationIdOf(request: FastifyRequest): ForgeInstallationId {
@@ -2520,6 +2992,26 @@ function registerTicketLandings(
   );
 }
 
+/** A ticket taken by its caller, and returned by its taker. */
+function registerTicketTakes(app: FastifyInstance, takes: TicketTakes): void {
+  for (const [endpoint, kind] of [
+    [nativeHttpEndpoints.ticketTake, "Take"],
+    [nativeHttpEndpoints.ticketReturn, "Return"],
+  ] as const)
+    registerEndpoint(
+      app,
+      endpoint,
+      (request, principal, partition) =>
+        takes.write(
+          principal,
+          partition,
+          asTicketIdField(record(request.params), "ticket"),
+          kind,
+        ),
+      ticketTakeResponse,
+    );
+}
+
 function registerLandingQueues(
   app: FastifyInstance,
   queues: LandingQueueReads,
@@ -2532,14 +3024,36 @@ function registerLandingQueues(
   );
 }
 
-/** Where a project's work is landing: each ticket's landings, and the project's queues. */
-function registerLandingReads(
+/** A project made, and one that never ran work deleted. */
+function registerProjectLifecycle(
+  app: FastifyInstance,
+  creation: ProjectCreation | undefined,
+  deletions: UnrunDeletions | undefined,
+): void {
+  if (creation !== undefined) registerProjectCreation(app, creation);
+  if (deletions !== undefined) registerUnrunDeletions(app, deletions);
+}
+
+/** What an action reports it did, and what a ticket's actions may reach. */
+function registerActions(
+  app: FastifyInstance,
+  reports: ActionReports | undefined,
+  reach: TicketActionReaches | undefined,
+): void {
+  if (reports !== undefined) registerActionReports(app, reports);
+  if (reach !== undefined) registerActionReach(app, reach);
+}
+
+/** What a ticket landed and the queues it waits in, and the doors a member takes and returns it through. */
+function registerTicketDoors(
   app: FastifyInstance,
   landings: TicketLandingReads | undefined,
   landingQueues: LandingQueueReads | undefined,
+  takes: TicketTakes | undefined,
 ): void {
   if (landings !== undefined) registerTicketLandings(app, landings);
   if (landingQueues !== undefined) registerLandingQueues(app, landingQueues);
+  if (takes !== undefined) registerTicketTakes(app, takes);
 }
 
 function registerEndpointSession(request: FastifyRequest): SessionId {
@@ -3278,12 +3792,25 @@ function registerOnboarding(
   registerProjectRepositoryConfigurations(app, onboarding);
 }
 
+/** The credentials a project's forge is reached with, and the repositories onboarded from it. */
+function registerForge(
+  app: FastifyInstance,
+  credentials: ForgeCredentialMinting | undefined,
+  onboarding: RepositoryOnboarding | undefined,
+): void {
+  if (credentials !== undefined) registerForgeCredentials(app, credentials);
+  if (onboarding !== undefined) registerOnboarding(app, onboarding);
+}
+
 /** Every failure a route throws, answered as the wire's error. */
 function registerFailures(app: FastifyInstance): void {
   app.setErrorHandler((failure, _request, reply) => {
     nativeHttpSend(reply, failureResponse(failure));
   });
 }
+
+/** The path every project route is under. */
+const nativeHttpPartitionRoot = "/api/v1/tenants/:tenant/projects/:project";
 
 export function createNativeHttpApp(
   web: InitialNativeWeb,
@@ -3312,26 +3839,27 @@ export function createNativeHttpApp(
   agentAccounts?: AgentAccountService,
   runnerReleases?: WorkerRunnerReleases,
   landingQueues?: LandingQueueReads,
+  deletions?: UnrunDeletions,
+  takes?: TicketTakes,
+  appearance?: AppearanceService,
+  projectAppearance?: ProjectAppearanceServices,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
-  const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
   registerCapacity(app, limits.concurrentRequestsMax);
   registerAuthentication(app, authentication, chat);
   registerPublic(app, readiness, authority, runnerReleases);
   registerInventory(app, web);
-  if (creation !== undefined) registerProjectCreation(app, creation);
+  registerProjectLifecycle(app, creation, deletions);
   registerProject(app, web);
   registerHostedRuns(app, web);
   registerProjectAbilities(app, web);
   registerLead(app, web);
   registerSelectorContext(app, web);
-  registerSelectorHistory(app, web, partitionRoot);
+  registerSelectorHistory(app, web, nativeHttpPartitionRoot);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
   registerReviewsAndInbox(app, proposalReviews, inbox);
-  if (forgeCredentials !== undefined)
-    registerForgeCredentials(app, forgeCredentials);
-  if (onboarding !== undefined) registerOnboarding(app, onboarding);
+  registerForge(app, forgeCredentials, onboarding);
   registerOperations(app, web);
   registerProjectArtifacts(app, web, limits.projectArtifactUploadBytesMax);
   registerNotifications(app, web);
@@ -3346,12 +3874,11 @@ export function createNativeHttpApp(
   if (chat !== undefined) registerMemberChat(app, chat, threadLive);
   registerLeadInquiries(app, web);
   registerProjectViews(app, web);
-  registerRunners(app, partitionRoot, workerPools, personalRunners);
+  registerRunners(app, nativeHttpPartitionRoot, workerPools, personalRunners);
   registerPlacements(app, placement, sessionPlacement, ownerFallback);
-  if (actionReports !== undefined) registerActionReports(app, actionReports);
-  if (actionReach !== undefined) registerActionReach(app, actionReach);
-  registerLandingReads(app, landings, landingQueues);
-  if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
+  registerActions(app, actionReports, actionReach);
+  registerTicketDoors(app, landings, landingQueues, takes);
+  registerOwnSettings(app, agentAccounts, appearance, projectAppearance);
   registerFailures(app);
   return app;
 }

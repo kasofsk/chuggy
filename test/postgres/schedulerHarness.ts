@@ -41,6 +41,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import type pg from "pg";
 import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
+import type { ConfigurationSelection } from "../../src/contract/configurationSelection.ts";
 
 import type { Config } from "../../src/domain/config.ts";
 import { revokeTicketCommand } from "../../src/actor/command.ts";
@@ -290,6 +291,7 @@ export async function schedulerProject(
   release: {
     readonly authoring?: ReleaseAuthoring;
     readonly config?: Config;
+    readonly selection?: ConfigurationSelection;
   } = {},
 ): Promise<SchedulerProject> {
   await rig.harness.store.createProject(partition);
@@ -302,6 +304,7 @@ export async function schedulerProject(
     canonical,
     overrides,
     release.config,
+    release.selection,
   );
   const spawn = await schedulerSpawnRequest(rig, partition);
   return {

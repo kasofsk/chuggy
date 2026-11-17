@@ -1,6 +1,6 @@
 /**
- * The setup program's files and its lock on a real disk, and the lock between
- * real processes.
+ * The setup program's files, the shared sign-in store and the store's lock on
+ * a real disk, and the lock between real processes.
  *
  * What the decisions assume of the two ports is held here against the
  * adapters that fill them: a file only its owner can read, a write no reader
@@ -26,7 +26,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
@@ -450,7 +450,7 @@ const taker = `
   import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
   import { setTimeout as slept } from 'node:timers/promises';
   const [files, lock, store, root, startsAtMs, periodMs, rounds] = process.argv.slice(1);
-  const { filesIn } = await import(files);
+  const { filesIn, storeIn } = await import(files);
   const { lockIn } = await import(lock);
   const { setupLockTaken } = await import(store);
   const alive = (pid) => {
@@ -461,6 +461,7 @@ const taker = `
     const directory = root + '/round-' + round;
     const ports = {
       files: filesIn(directory),
+      store: storeIn(directory),
       lock: lockIn(directory),
       nowMs: () => Date.now(),
       sleepMs: () => Promise.resolve(),
@@ -537,9 +538,9 @@ async function signedIn(): Promise<{
 
 test("a run that finds the lock held by a running process spends nothing and says it is busy", async () => {
   const { installation, machine } = await signedIn();
-  const session = machine.file("session.json");
+  const token = machine.held(installation.site);
   const held = `${String(process.pid)}.${String(Date.now())}`;
-  left(machine.directory, held);
+  left(machine.store, held);
   const busy = await machine.run([]);
   assert.equal(busy.code, 1);
   assert.equal(busy.stderr, "");
@@ -553,20 +554,20 @@ test("a run that finds the lock held by a running process spends nothing and say
   );
   assert.deepEqual(busy.lines.slice(3), ["next: stop"]);
   assert.equal(machine.lock(), held);
-  assert.ok(machine.file("session.json") === session);
+  assert.ok(machine.held(installation.site) === token);
   assert.deepEqual(installation.grants, ["authorization_code granted"]);
 });
 
 test("a name a file manager left in the lock's folder stops no command, and is still there afterwards", async () => {
   const { installation, machine } = await signedIn();
-  const stray = join(machine.directory, "lock", ".DS_Store");
+  const stray = join(machine.store, "lock", ".DS_Store");
   writeFileSync(stray, "");
   for (let asked = 0; asked < 2; asked += 1) {
     const done = await machine.run([]);
     assert.equal(done.code, 0, done.stdout);
     assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
   }
-  assert.deepEqual(readdirSync(join(machine.directory, "lock")).toSorted(), [
+  assert.deepEqual(readdirSync(join(machine.store, "lock")).toSorted(), [
     ".DS_Store",
     "free",
   ]);
@@ -579,11 +580,11 @@ test("a name a file manager left in the lock's folder stops no command, and is s
 
 test("a lock whose holder has gone is taken, and given up when the run ends", async () => {
   const { installation, machine } = await signedIn();
-  left(machine.directory, `${String(departed())}.${String(Date.now())}`);
+  left(machine.store, `${String(departed())}.${String(Date.now())}`);
   const done = await machine.run([]);
   assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
   assert.equal(machine.lock(), undefined);
-  assert.deepEqual(readdirSync(join(machine.directory, "lock")), ["free"]);
+  assert.deepEqual(readdirSync(join(machine.store, "lock")), ["free"]);
 });
 
 const together = 4;
@@ -592,7 +593,7 @@ const meetings = 5;
 test("runs that meet a dead run's lock together renew in turn all the same, and no spent token is ever sent", async () => {
   const { installation, machine } = await signedIn();
   for (let meeting = 0; meeting < meetings; meeting += 1) {
-    left(machine.directory, `${String(departed())}.${String(Date.now())}`);
+    left(machine.store, `${String(departed())}.${String(Date.now())}`);
     const runs = await Promise.all(
       Array.from({ length: together }, () => machine.run([])),
     );
@@ -606,22 +607,23 @@ test("runs that meet a dead run's lock together renew in turn all the same, and 
       () => "refresh_token granted",
     ),
   ]);
-  const stored = JSON.parse(machine.file("session.json") ?? "{}") as {
-    readonly refreshToken?: string;
-  };
-  assert.ok(stored.refreshToken === installation.renewal());
+  assert.ok(machine.held(installation.site) === installation.renewal());
+  assert.equal(
+    machine.file("session.json"),
+    JSON.stringify({ site: installation.site }),
+  );
 });
 
 test("what a write that was killed part-way left of the sign-in is gone after the next run", async () => {
   const { installation, machine } = await signedIn();
-  const draft = `session.json.${String(departed())}.draft`;
-  writeFileSync(join(machine.directory, draft), "a token being written");
+  const token = encodeURIComponent(installation.site);
+  const gone = String(departed());
+  writeFileSync(join(machine.directory, `session.json.${gone}.draft`), "{");
+  writeFileSync(join(machine.store, `${token}.${gone}.draft`), "a token being");
   const done = await machine.run([]);
   assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
-  assert.deepEqual(readdirSync(machine.directory).toSorted(), [
-    "lock",
-    "session.json",
-  ]);
+  assert.deepEqual(readdirSync(machine.directory), ["session.json"]);
+  assert.deepEqual(readdirSync(machine.store).toSorted(), [token, "lock"]);
 });
 
 test("runs started together each renew in turn with what the one before stored", async () => {
@@ -639,38 +641,39 @@ test("runs started together each renew in turn with what the one before stored",
     "refresh_token granted",
     "refresh_token granted",
   ]);
-  const stored = JSON.parse(machine.file("session.json") ?? "{}") as {
-    readonly refreshToken?: string;
-  };
-  assert.ok(stored.refreshToken === installation.renewal());
+  assert.ok(machine.held(installation.site) === installation.renewal());
+  assert.equal(
+    machine.file("session.json"),
+    JSON.stringify({ site: installation.site }),
+  );
 });
 
 test("a home the program cannot keep its files in is a failure that names the path, with no trace of why, and names no command to run until it can", async () => {
   const machine = made.machine();
-  mkdirSync(machine.home, { recursive: true });
-  writeFileSync(machine.directory, "in the way");
+  mkdirSync(dirname(machine.store), { recursive: true });
+  writeFileSync(machine.store, "in the way");
   for (const argv of [["--site", "http://127.0.0.1:9"], ["sign-in"]]) {
     const done = await machine.run(argv);
     assert.equal(done.code, 1);
     assert.equal(done.stderr, "");
     assert.deepEqual(done.lines.slice(0, 2), [
-      `found: chuggy setup could not make or write ${machine.directory}`,
-      `tell: chuggy setup stopped because it could not write ${machine.directory} on this machine. Tell me once it can.`,
+      `found: chuggy setup could not make or write ${machine.store}`,
+      `tell: chuggy setup stopped because it could not write ${machine.store} on this machine. Tell me once it can.`,
     ]);
     const rule = done.lines[2] ?? "";
     assert.ok(rule.startsWith("rule: Run node "), rule);
     assert.ok(
-      rule.endsWith(` only once ${machine.directory} can be made and written.`),
+      rule.endsWith(` only once ${machine.store} can be made and written.`),
       rule,
     );
     assert.deepEqual(done.lines.slice(3), ["next: stop"]);
   }
-  assert.equal(readFileSync(machine.directory, "utf8"), "in the way");
+  assert.equal(readFileSync(machine.store, "utf8"), "in the way");
 });
 
 test("a home in which neither the directory nor its lock can be changed names the lock, whichever command is run, and nothing is asked of the site", async () => {
   const { installation, machine } = await signedIn();
-  const kept = [machine.directory, join(machine.directory, "lock")];
+  const kept = [machine.store, join(machine.store, "lock")];
   const asked = installation.asked.length;
   for (const path of kept) chmodSync(path, 0o500);
   try {
@@ -692,11 +695,11 @@ test("a home in which neither the directory nor its lock can be changed names th
 
 test("a home that takes no new file while its lock still changes hands costs no sign-in: each run, bare or a sign-in, names the file it could not write and stops, the issuer is asked nothing, and once the home is mended the sign-in is still good", async () => {
   const { installation, machine } = await signedIn();
-  const session = join(machine.directory, "session.json");
-  const before = machine.file("session.json");
+  const session = join(machine.store, encodeURIComponent(installation.site));
+  const before = machine.held(installation.site);
   const asked = installation.asked.length;
   const grants = installation.grants.length;
-  chmodSync(machine.directory, 0o500);
+  chmodSync(machine.store, 0o500);
   try {
     for (const argv of [[], [], ["sign-in"], []]) {
       const done = await machine.run(argv);
@@ -715,9 +718,9 @@ test("a home that takes no new file while its lock still changes hands costs no 
     }
     assert.equal(installation.asked.length, asked);
     assert.equal(installation.grants.length, grants);
-    assert.equal(machine.file("session.json"), before);
+    assert.equal(machine.held(installation.site), before);
   } finally {
-    chmodSync(machine.directory, 0o700);
+    chmodSync(machine.store, 0o700);
   }
   const mended = await machine.run([]);
   assert.equal(mended.code, 0, mended.stdout);
@@ -729,9 +732,9 @@ test("a home that takes no new file while its lock still changes hands costs no 
 
 test("a home that stops taking changes as the issuer hands back the renewed sign-in is told the sign-in was not kept, by the file it could not write; the run after names what it could not remove, and neither leaves the lock its own", async () => {
   const { installation, machine } = await signedIn();
-  const session = join(machine.directory, "session.json");
+  const session = join(machine.store, encodeURIComponent(installation.site));
   installation.renewed = () => {
-    chmodSync(machine.directory, 0o500);
+    chmodSync(machine.store, 0o500);
   };
   try {
     const lost = await machine.run([]);
@@ -749,19 +752,19 @@ test("a home that stops taking changes as the issuer hands back the renewed sign
     );
     assert.deepEqual(lost.lines.slice(3), ["next: stop"]);
     assert.equal(machine.lock(), undefined);
-    const [left] = readdirSync(machine.directory).filter((name) =>
+    const [left] = readdirSync(machine.store).filter((name) =>
       name.endsWith(".draft"),
     );
     const after = await machine.run([]);
     assert.equal(after.code, 1, after.stdout);
     assert.equal(
       after.lines[0],
-      `found: chuggy setup could not make or write ${join(machine.directory, left ?? "")}`,
+      `found: chuggy setup could not make or write ${join(machine.store, left ?? "")}`,
     );
     assert.deepEqual(after.lines.slice(3), ["next: stop"]);
     assert.equal(machine.lock(), undefined);
   } finally {
-    chmodSync(machine.directory, 0o700);
+    chmodSync(machine.store, 0o700);
   }
   assert.deepEqual(installation.grants.slice(1), ["refresh_token granted"]);
   const wrote = machine.written.join("\n");

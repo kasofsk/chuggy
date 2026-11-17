@@ -1,17 +1,20 @@
 /**
- * The project's catalog: the configurations its repositories declare, as
- * their imports stored them, and for one version of one of them every
- * workload, evaluation plan, finalizer and prompt file it holds.
+ * The project's catalog: each repository with the configurations it declares
+ * and the fragments they are made of, and, once the address names a
+ * configuration, every workload, evaluation plan, finalizer and prompt file
+ * one version of it holds, chosen among its own repository's.
  *
  * THE ADDRESS HOLDS THE CHOICE, the version drawn, the entry shown and
  * whether the repository's head is drawn in the version's place, so a reader
- * can hand any of them to someone else.
+ * can hand any of them to someone else. The search is the reader's own, and
+ * narrows whichever list is drawn.
  *
  * A version 1 configuration is no catalog, and is drawn as a ticket's page
  * draws the configuration it runs under.
  */
 
 import { useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -20,7 +23,6 @@ import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   catalogConfigurationHolding,
   catalogConfigurationNewestFrom,
-  catalogConfigurationOpening,
   catalogConfigurationsOf,
   catalogConfigurationVersionOf,
 } from "../../core/catalogConfigurations.ts";
@@ -29,6 +31,11 @@ import type {
   CatalogQuery,
 } from "../../core/catalogConfigurations.ts";
 import { catalogEntriesOf } from "../../core/catalogEntries.ts";
+import {
+  catalogRepositoriesOf,
+  catalogRepositoryHolding,
+} from "../../core/catalogRepositories.ts";
+import type { CatalogRepository } from "../../core/catalogRepositories.ts";
 import { configurationCatalogOf } from "../../core/configurationCatalog.ts";
 import {
   catalogConfigurationsQuery,
@@ -37,22 +44,37 @@ import {
 import { instantFigure } from "../../core/figures.ts";
 import { configurationCommitShort } from "../../core/labels.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
-import {
-  configurationsPartialLabel,
-  repositoryConfigurationsDirectory,
-} from "../../core/repositoryConfigurations.ts";
+import type { PanelState } from "../../core/freshness.ts";
+import { configurationsPartialLabel } from "../../core/repositoryConfigurations.ts";
 import { usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useNowMs } from "../Freshness.tsx";
-import { ScreenTitle } from "../shell/slots.tsx";
 import { ConfigurationBody } from "../TicketProvenance.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
+import {
+  ListControls,
+  ListGlyph,
+  ListSearch,
+  listFilterGlyph,
+} from "../ui/ListControls.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
+import type { PageHeaderBack } from "../ui/PageHeader.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Picker } from "../ui/Picker.tsx";
-import { navRoutes } from "../../core/shellNav.ts";
+import { settingsRoutes } from "../../core/settingsNav.ts";
 import { CatalogHeadLine, CatalogHeadRevision } from "./CatalogHead.tsx";
-import { CatalogShown, useCatalogPartition } from "./CatalogShown.tsx";
+import {
+  CatalogRepositoryPicker,
+  CatalogRepositorySection,
+  catalogRepositoryChosen,
+} from "./CatalogRepositories.tsx";
+import {
+  CatalogSearchProvider,
+  CatalogShown,
+  CatalogSkeleton,
+  useCatalogPartition,
+} from "./CatalogShown.tsx";
 
 import "./catalog.css";
 
@@ -96,7 +118,7 @@ function CatalogProvenance(props: {
   );
 }
 
-/** The repository's head against the configuration drawn, where an import from a repository drew it. */
+/** What the repository's head says of the configuration, where the address draws the head in the import's place. */
 function CatalogChosenHead(props: {
   readonly configurations: readonly CatalogConfiguration[];
   readonly revision: string;
@@ -110,7 +132,11 @@ function CatalogChosenHead(props: {
   const summary = holding?.revisions.find(
     (version) => version.revision === props.revision,
   );
-  if (holding === undefined || summary?.provenance.source !== "Repository")
+  if (
+    props.query.source !== "head" ||
+    holding === undefined ||
+    summary?.provenance.source !== "Repository"
+  )
     return null;
   return (
     <CatalogHeadLine
@@ -127,8 +153,16 @@ function CatalogChosenHead(props: {
   );
 }
 
-/** Which configuration, and which version of it, the page draws; another version keeps the entry shown. */
-function CatalogChooser(props: {
+const catalogRevisionGlyph = (
+  <ListGlyph>
+    <circle cx="8" cy="8" r="5.5" />
+    <path d="M8 5v3l2 1.5" />
+  </ListGlyph>
+);
+
+/** Which configuration, and which version of it, the page draws; another
+ * version keeps the entry shown. */
+function CatalogConfigurationPickers(props: {
   readonly configurations: readonly CatalogConfiguration[];
   readonly revision: string;
   readonly query: CatalogQuery;
@@ -142,63 +176,57 @@ function CatalogChooser(props: {
   );
   const choose = (configuration: string, entry?: string): void => {
     void navigate({
-      to: navRoutes.catalog,
+      to: settingsRoutes.project.catalog,
       params: partition,
       search:
         entry === undefined ? { configuration } : { configuration, entry },
     });
   };
-  const summary = holding?.revisions.find(
-    (version) => version.revision === props.revision,
-  );
   const version =
     holding === undefined
       ? undefined
       : catalogConfigurationVersionOf(holding, props.revision);
   return (
-    <div className="catalog-chooser">
-      <div className="catalog-chooser-pickers">
-        <Picker
-          label={text({ id: "configuration-catalog-picker-configuration" })}
-          value={holding?.versions[0]?.revision ?? props.revision}
-          placeholder={props.revision}
-          options={props.configurations.flatMap((configuration) =>
-            configuration.versions.slice(0, 1).map((newest) => ({
-              value: newest.revision,
-              text: configuration.name,
-            })),
-          )}
-          onChoose={choose}
-          align="start"
-        />
-        {holding === undefined || holding.versions.length < 2 ? null : (
-          <Picker
-            label={text({ id: "configuration-catalog-picker-revision" })}
-            value={version?.revision ?? props.revision}
-            options={holding.versions.map((held) => ({
-              value: held.revision,
-              text: catalogVersionText(held),
-            }))}
-            onChoose={(chosen) => {
-              choose(chosen, props.query.entry);
-            }}
-            align="start"
-          />
+    <>
+      <Picker
+        label={text({ id: "configuration-catalog-picker-configuration" })}
+        iconOnly
+        glyph={listFilterGlyph}
+        value={holding?.versions[0]?.revision ?? props.revision}
+        placeholder={props.revision}
+        options={props.configurations.flatMap((configuration) =>
+          configuration.versions.slice(0, 1).map((newest) => ({
+            value: newest.revision,
+            text: configuration.name,
+          })),
         )}
-      </div>
-      {summary === undefined ? null : <CatalogProvenance summary={summary} />}
-      <CatalogChosenHead
-        configurations={props.configurations}
-        revision={props.revision}
-        query={props.query}
+        onChoose={choose}
+        align="end"
       />
-    </div>
+      {holding === undefined || holding.versions.length < 2 ? null : (
+        <Picker
+          label={text({ id: "configuration-catalog-picker-revision" })}
+          iconOnly
+          glyph={catalogRevisionGlyph}
+          value={version?.revision ?? props.revision}
+          options={holding.versions.map((held) => ({
+            value: held.revision,
+            text: catalogVersionText(held),
+          }))}
+          onChoose={(chosen) => {
+            choose(chosen, props.query.entry);
+          }}
+          align="end"
+        />
+      )}
+    </>
   );
 }
 
 /** One version, read by its revision so a version past the listing's budget is still drawn. */
 function CatalogRevision(props: {
   readonly partition: PartitionIdentity;
+  readonly repository: string | undefined;
   readonly revision: string;
   readonly selected: string | undefined;
 }): ReactNode {
@@ -206,6 +234,7 @@ function CatalogRevision(props: {
   const state = usePanelState(
     configurationQuery(props.partition, props.revision, "Streamed"),
   );
+  if (state.state === "Pending") return <CatalogSkeleton />;
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   const configuration = state.value;
   const catalog = configurationCatalogOf(configuration.canonical);
@@ -225,6 +254,7 @@ function CatalogRevision(props: {
   return (
     <CatalogShown
       base={{ configuration: props.revision }}
+      repository={props.repository}
       canonical={configuration.canonical}
       entries={catalogEntriesOf(catalog, configuration.workloadPaths)}
       selected={props.selected}
@@ -246,6 +276,8 @@ function CatalogDrawn(props: {
   const provenance = holding?.revisions.find(
     (summary) => summary.revision === props.revision,
   )?.provenance;
+  const repository =
+    provenance?.source === "Repository" ? provenance.repository : undefined;
   if (
     props.query.source === "head" &&
     holding !== undefined &&
@@ -260,6 +292,7 @@ function CatalogDrawn(props: {
         imported={
           <CatalogRevision
             partition={props.partition}
+            repository={repository}
             revision={props.revision}
             selected={props.query.entry}
           />
@@ -269,9 +302,164 @@ function CatalogDrawn(props: {
   return (
     <CatalogRevision
       partition={props.partition}
+      repository={repository}
       revision={props.revision}
       selected={props.query.entry}
     />
+  );
+}
+
+/** The page's head: its title, the line saying the listing is partial where
+ * it is, what the view draws under them, and the bar after it. */
+function CatalogPageHead(props: {
+  readonly title?: string | undefined;
+  readonly number?: number | undefined;
+  readonly back?: PageHeaderBack | undefined;
+  readonly partial: boolean;
+  readonly controls?: ReactNode;
+  readonly children?: ReactNode;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <PageHeader
+      title={props.title ?? text({ id: "configuration-catalog-title" })}
+      {...(props.number === undefined ? {} : { number: props.number })}
+      {...(props.back === undefined ? {} : { back: props.back })}
+      controls={props.controls}
+    >
+      {props.partial ? (
+        <p className="catalog-none">{text(configurationsPartialLabel)}</p>
+      ) : null}
+      {props.children}
+    </PageHeader>
+  );
+}
+
+/** One configuration: its name and version over where it was read and the
+ * bar choosing among the repository's, then its entries. */
+function CatalogConfigurationView(props: {
+  readonly partition: PartitionIdentity;
+  readonly configurations: readonly CatalogConfiguration[];
+  readonly revision: string;
+  readonly query: CatalogQuery;
+  readonly partial: boolean;
+  readonly search: ReactNode;
+}): ReactNode {
+  const text = useCopyText();
+  const holding = catalogConfigurationHolding(
+    props.configurations,
+    props.revision,
+  );
+  const summary = holding?.revisions.find(
+    (version) => version.revision === props.revision,
+  );
+  const provenance = summary?.provenance;
+  return (
+    <>
+      <CatalogPageHead
+        title={holding?.name}
+        number={summary?.version?.number}
+        back={
+          provenance?.source === "Repository"
+            ? {
+                label: text({
+                  id: "configuration-catalog-repository-back",
+                  args: { repository: repositoryLabel(provenance.repository) },
+                }),
+                link: {
+                  to: settingsRoutes.project.catalog,
+                  params: props.partition,
+                  search: { repository: provenance.repository },
+                },
+              }
+            : undefined
+        }
+        partial={props.partial}
+        controls={
+          <ListControls>
+            {props.search}
+            <CatalogConfigurationPickers
+              configurations={props.configurations}
+              revision={props.revision}
+              query={props.query}
+            />
+          </ListControls>
+        }
+      >
+        {summary === undefined ? null : <CatalogProvenance summary={summary} />}
+        <CatalogChosenHead
+          configurations={props.configurations}
+          revision={props.revision}
+          query={props.query}
+        />
+      </CatalogPageHead>
+      <CatalogDrawn
+        key={props.revision}
+        partition={props.partition}
+        configurations={props.configurations}
+        revision={props.revision}
+        query={props.query}
+      />
+    </>
+  );
+}
+
+/** Every repository's catalog, one drawn at a time under the bar choosing it. */
+function CatalogRepositoriesView(props: {
+  readonly partition: PartitionIdentity;
+  readonly repositories: readonly CatalogRepository[];
+  readonly chosen: string | undefined;
+  readonly partial: boolean;
+  readonly search: ReactNode;
+}): ReactNode {
+  const text = useCopyText();
+  const repository = catalogRepositoryChosen(props.repositories, props.chosen);
+  if (repository === undefined)
+    return (
+      <>
+        <CatalogPageHead partial={props.partial} />
+        <EmptyState label={text({ id: "configuration-catalog-none" })} />
+      </>
+    );
+  return (
+    <>
+      <CatalogPageHead
+        partial={props.partial}
+        controls={
+          <ListControls>
+            {props.search}
+            {props.repositories.length < 2 ? null : (
+              <CatalogRepositoryPicker
+                partition={props.partition}
+                repositories={props.repositories}
+                chosen={repository}
+              />
+            )}
+          </ListControls>
+        }
+      />
+      <CatalogRepositorySection
+        key={repository.repository}
+        partition={props.partition}
+        repository={repository}
+      />
+    </>
+  );
+}
+
+/** The listing's read, rows standing for it until it is read. */
+function CatalogUnread(props: {
+  readonly state: PanelState<unknown>;
+}): ReactNode {
+  return (
+    <>
+      <CatalogPageHead partial={false} />
+      {props.state.state === "Pending" ? (
+        <CatalogSkeleton />
+      ) : (
+        <PanelUnready state={props.state} />
+      )}
+    </>
   );
 }
 
@@ -281,43 +469,54 @@ export function CatalogPage(props: {
   const text = useCopyText();
   const partition = useCatalogPartition();
   const state = usePanelState(catalogConfigurationsQuery(partition));
+  const [typed, setTyped] = useState("");
   const read = state.state === "Ready" ? state.value : undefined;
-  const configurations =
-    read === undefined ? [] : catalogConfigurationsOf(read.configurations);
-  const revision =
-    props.query.configuration ?? catalogConfigurationOpening(configurations);
+  const summaries = read?.configurations ?? [];
+  const revision = props.query.configuration;
+  const repository =
+    revision === undefined
+      ? undefined
+      : catalogRepositoryHolding(summaries, revision);
+  const search = (
+    <ListSearch
+      label={text({ id: "configuration-catalog-search" })}
+      placeholder={text({ id: "configuration-catalog-search-placeholder" })}
+      search={typed}
+      onSearch={setTyped}
+    />
+  );
   return (
     <div className="catalog-page" data-fills-width>
-      <ScreenTitle>{text({ id: "configuration-catalog-title" })}</ScreenTitle>
-      <PanelUnready state={state} />
-      {read === undefined ? null : revision === undefined ? (
-        <EmptyState
-          variant="page"
-          label={text({ id: "configuration-catalog-none" })}
-          detail={text({
-            id: "configuration-catalog-none-detail",
-            args: { directory: repositoryConfigurationsDirectory },
-          })}
-        />
-      ) : (
-        <>
-          <CatalogChooser
-            configurations={configurations}
-            revision={revision}
-            query={props.query}
-          />
-          {read.partial ? (
-            <p className="catalog-none">{text(configurationsPartialLabel)}</p>
-          ) : null}
-          <CatalogDrawn
-            key={revision}
+      <CatalogSearchProvider value={typed}>
+        {read === undefined ? (
+          <CatalogUnread state={state} />
+        ) : revision === undefined ? (
+          <CatalogRepositoriesView
             partition={partition}
-            configurations={configurations}
+            repositories={catalogRepositoriesOf(summaries)}
+            chosen={props.query.repository}
+            partial={read.partial}
+            search={search}
+          />
+        ) : (
+          <CatalogConfigurationView
+            partition={partition}
+            configurations={catalogConfigurationsOf(
+              repository === undefined
+                ? summaries
+                : summaries.filter(
+                    (summary) =>
+                      summary.provenance.source === "Repository" &&
+                      summary.provenance.repository === repository,
+                  ),
+            )}
             revision={revision}
             query={props.query}
+            partial={read.partial}
+            search={search}
           />
-        </>
-      )}
+        )}
+      </CatalogSearchProvider>
     </div>
   );
 }

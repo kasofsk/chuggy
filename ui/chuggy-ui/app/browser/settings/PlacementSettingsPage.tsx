@@ -76,18 +76,16 @@ import type {
   RunnersPlacementWrites,
 } from "../../core/runners.ts";
 import { usePanelState } from "../api.ts";
-import {
-  ConsoleWriteRefusedWords,
-  useConsoleWrite,
-  useConsoleWriteProgress,
-} from "../consoleWrite.tsx";
+import { useConsoleWrite, useConsoleWriteProgress } from "../consoleWrite.tsx";
 import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useSessionPlacement } from "../sessionPlacement.tsx";
+import { settingsSectionRefusalOf } from "../settingsSectionRefusal.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
+import type { SettingsSectionRefusal } from "../ui/SettingsSection.tsx";
 import { Table } from "../ui/Table.tsx";
 import { OwnerFallbackSection } from "./OwnerFallbackSection.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
@@ -135,30 +133,41 @@ function PlacementTable(props: {
     },
   ];
   return (
-    <Table caption={text({ id: "runners-placement-title" })}>
-      <thead>
-        <tr>
-          <th scope="col">{text({ id: "runners-placement-col-kind" })}</th>
-          <th scope="col">{text({ id: "runners-placement-col-runs-on" })}</th>
-          <th scope="col">{text({ id: "runners-placement-col-set-by" })}</th>
-          <th scope="col">{text({ id: "runners-placement-col-runner" })}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={row.kind}>
-            <th scope="row">{text(placementKindLabels[row.kind])}</th>
-            <td>{text(runnersPlacementLabel(row.placed))}</td>
-            <td>{text(runnerRouteSourceLabel(row.resolved.source))}</td>
-            <td>
-              {row.runners === undefined || row.resolved.route !== "Pool"
-                ? null
-                : text(runnerStandingLabel(row.runners))}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </Table>
+    <Table
+      caption={text({ id: "runners-placement-title" })}
+      stacked={{
+        columns: [
+          {
+            key: "kind",
+            label: text({ id: "runners-placement-col-kind" }),
+            rowHeader: true,
+          },
+          { key: "on", label: text({ id: "runners-placement-col-runs-on" }) },
+          { key: "by", label: text({ id: "runners-placement-col-set-by" }) },
+          {
+            key: "runner",
+            label: text({ id: "runners-placement-col-runner" }),
+          },
+        ],
+        rows: rows.map((row) => {
+          const runner =
+            row.runners === undefined || row.resolved.route !== "Pool"
+              ? undefined
+              : row.runners;
+          return {
+            key: row.kind,
+            cells: {
+              kind: text(placementKindLabels[row.kind]),
+              on: text(runnersPlacementLabel(row.placed)),
+              by: text(runnerRouteSourceLabel(row.resolved.source)),
+              runner:
+                runner === undefined ? null : text(runnerStandingLabel(runner)),
+            },
+            empty: runner === undefined ? ["runner"] : [],
+          };
+        }),
+      }}
+    />
   );
 }
 
@@ -194,41 +203,6 @@ function PlacementChoice<T extends RunnersPlacementChoice>(props: {
       />
     </div>
   );
-}
-
-function PlacementNotice(props: {
-  readonly saving: ConsoleWriting<PlacementSave, unknown>;
-}): ReactNode {
-  const text = useCopyText();
-  const saving = props.saving;
-  const step = useConsoleWriteProgress(saving.variables?.progress);
-  if (saving.isPending)
-    return (
-      <Notice tone="info" inline detail={text({ id: "runners-writing" })} />
-    );
-  if (saving.error !== null) {
-    const failure = saving.error.failure;
-    return (
-      <>
-        <PlacementLanded landed={step === "ExecutionWritten"} />
-        <Notice
-          tone={
-            failure !== undefined && runnersPlacementUnhosted(failure)
-              ? "parked"
-              : "danger"
-          }
-          inline
-        >
-          <ConsoleWriteRefusedWords refused={saving.error} />
-        </Notice>
-      </>
-    );
-  }
-  if (saving.isSuccess)
-    return (
-      <Notice tone="live" inline detail={text({ id: "runners-written" })} />
-    );
-  return null;
 }
 
 /** The placement a save wrote before the one refused, which stands. */
@@ -389,7 +363,24 @@ function placementWrite(
           session,
         );
     },
+    landedUnseen: () => ({ id: "runners-placement-saved" }),
   };
+}
+
+/** A save's refusal, parked where the grant refused it, beside what it wrote
+ * before it was refused. */
+function usePlacementRefusal(
+  saving: ConsoleWriting<PlacementSave, unknown>,
+): SettingsSectionRefusal | undefined {
+  const step = useConsoleWriteProgress(saving.variables?.progress);
+  const failure = saving.error?.failure;
+  return settingsSectionRefusalOf(
+    saving.error,
+    failure !== undefined && runnersPlacementUnhosted(failure)
+      ? "parked"
+      : "danger",
+    <PlacementLanded landed={step === "ExecutionWritten"} />,
+  );
 }
 
 function PlacementSection(props: {
@@ -401,11 +392,12 @@ function PlacementSection(props: {
   const saving = useConsoleWrite(placementWrite(props.partition, text), {
     drawn: true,
   });
-  const shown = saving.isPending || saving.error !== null || saving.isSuccess;
+  const refusal = usePlacementRefusal(saving);
   const [editing, setEditing] = useState(false);
   const [moves, setMoves] = useState<RunnersPlacementMoves>({});
   const read = runnersPlacementDraft(props.execution, props.session);
   const draft = runnersPlacementMoved(read, moves);
+  const writes = runnersPlacementWrites(read, draft);
   const choices = {
     execution: props.execution.choices,
     session: props.session.choices,
@@ -416,9 +408,10 @@ function PlacementSection(props: {
       about={text({ id: "runners-placement-about" })}
       editing={editing}
       editable={choices.execution.length > 0 && choices.session.length > 0}
-      savable={!saving.isPending}
+      changed={writes.execution !== undefined || writes.session !== undefined}
+      saving={saving.isPending}
+      refusal={refusal}
       footLead={null}
-      {...(shown ? { notice: <PlacementNotice saving={saving} /> } : {})}
       onEdit={() => {
         setMoves({});
         saving.reset();
@@ -428,18 +421,14 @@ function PlacementSection(props: {
         setEditing(false);
       }}
       onSave={() => {
-        const writes = runnersPlacementWrites(read, draft);
-        if (writes.execution === undefined && writes.session === undefined)
-          setEditing(false);
-        else
-          saving.mutate(
-            { writes, progress: new ConsoleWriteProgress() },
-            {
-              onSuccess: () => {
-                setEditing(false);
-              },
+        saving.mutate(
+          { writes, progress: new ConsoleWriteProgress() },
+          {
+            onSuccess: () => {
+              setEditing(false);
             },
-          );
+          },
+        );
       }}
     >
       {editing ? (

@@ -118,6 +118,20 @@ export const ticketStateWords: readonly Copy[] = ticketStateStandings.map(
   (standing) => ticketStateLabelOf(standing).word,
 );
 
+/** What the ticket page says aloud when the ticket's state changes under it:
+ * the new state in the word its label shows, and nothing on the page's first
+ * draw or where the state is the one it was. */
+export function ticketStateAnnounced(
+  previous: TicketStateStanding | undefined,
+  next: TicketStateStanding,
+): Copy | undefined {
+  if (previous === undefined || previous === next) return undefined;
+  return {
+    id: "ticket-state-announced",
+    args: { state: ticketStateLabelOf(next).word },
+  };
+}
+
 /** A pull request as the header links it: by its number where its address
  * names one, else by its host. */
 export interface TicketHeaderLink {
@@ -213,7 +227,7 @@ function ticketHeaderLanded(
       newest.state === "Proposed"
         ? newest.word
         : base === undefined
-          ? text({ id: "ticket-landing-merged" })
+          ? text({ id: "ticket-finalization-merged" })
           : text({ id: "ticket-header-merged-into", args: { base } }),
     link: ticketHeaderLinkOf(newest.link, text),
   };
@@ -276,8 +290,6 @@ export interface TicketHeaderActions {
 const ticketHeaderMainOrder: readonly TicketActionName[] = [
   "ApproveEvaluation",
   "Reject",
-  "Approve",
-  "Decline",
   "Resume",
   "Dispatch",
 ];

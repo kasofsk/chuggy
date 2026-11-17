@@ -220,7 +220,7 @@ import type {
   ExecutionRequirement,
   OperatingSystem as RequiredOperatingSystem,
   RequirementSource as MaterializedRequirementSource,
-} from "../../src/interpreter/executionRequirement.ts";
+} from "../../src/contract/executionRequirement.ts";
 import { executionRequirementSchema } from "../../src/contract/responses.ts";
 import { allBriefingCarriers } from "../../src/interpreter/briefingTemplate.ts";
 import {
@@ -467,10 +467,10 @@ test("the briefing carriers are the interpreter's", () => {
  * The unavailable kinds are the wire's own list and the finalizer's holds are
  * the interpreter's, so this is a containment rather than an equality: what it
  * holds is that every member is a hold the finalizer can reach, and that the
- * six left out are exactly the ones named for staying holds. A kind added to
+ * five left out are exactly the ones named for staying holds. A kind added to
  * either side without the other lands in one of the two assertions.
  */
-test("the unavailable kinds are finalization holds, less the six that stay holds", () => {
+test("the unavailable kinds are finalization holds, less the five that stay holds", () => {
   const roster: readonly FinalizationHoldKind[] = finalizationUnavailableKinds;
   assert.deepEqual(
     roster.filter((kind) => !allFinalizationHoldKinds.includes(kind)),
@@ -481,13 +481,31 @@ test("the unavailable kinds are finalization holds, less the six that stay holds
       (kind) => !roster.some((named) => named === kind),
     ),
     [
-      "ApprovalDeclined",
       "ContradictoryEvidence",
       "ProposalRefused",
       "ProposalHeadMoved",
       "ProposalMergeBlocked",
       "ProposalQueued",
     ],
+  );
+});
+
+/**
+ * The sets a member may mint through the API are the interpreter's, less the
+ * one only a job is issued. A set added to the interpreter lands in the second
+ * assertion until it is placed on one side or the other.
+ */
+test("the credential permissions are the interpreter's sets, less the one only a job is issued", () => {
+  const roster: readonly string[] = forgeCredentialPermissions;
+  assert.deepEqual(
+    roster.filter(
+      (set) => !allForgePermissionSets.some((named) => named === set),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    allForgePermissionSets.filter((set) => !roster.includes(set)),
+    ["runPipelines"],
   );
 });
 
@@ -715,6 +733,7 @@ test("the refusal code roster is exhaustive over its union", () => {
     SelectionUnsupported: true,
     ProgramExceedsPlan: true,
     ProgramSkipsBriefChecks: true,
+    ProgramStageOutOfPosition: true,
     OverridesUnsupported: true,
     OverridesUnknown: true,
     TicketCapacityReached: true,
@@ -783,6 +802,7 @@ test("the authoring rosters are exhaustive over the model unions", () => {
     DuplicatePath: true,
     ReferenceAbsent: true,
     TooManyReferences: true,
+    ApprovalOutsidePlan: true,
   };
   assert.deepEqual(sorted(draftStates), keysOf(states));
   assert.deepEqual(sorted(configurationProvenanceSources), keysOf(provenance));
@@ -821,7 +841,6 @@ test("every session and refusal roster restates the interpreter's own", () => {
     ...allPlatformTurnFailures,
   ]);
   assert.deepEqual(threadStandings, allThreadStandings);
-  assert.deepEqual(forgeCredentialPermissions, allForgePermissionSets);
   assert.deepEqual(forgeIds, allForgeIds);
   assert.deepEqual(forgeApps, allForgeApps);
   assert.deepEqual(forgeAccountKinds, allForgeAccountKinds);

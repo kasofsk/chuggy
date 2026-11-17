@@ -306,23 +306,65 @@ function fixtureInstallationRead(grantsWorkflows: boolean): Response {
 
 test("a set naming no pipelines is the whole of what a body asks for, and reads no installation whatever its binding allows", async (t) => {
   const asked: unknown[] = [];
+  for (const permissions of ["read", "runPipelines"] as const)
+    for (const allowed of [false, true]) {
+      const which = `${permissions} ${String(allowed)}`;
+      const recorder = fixtureForge([fixtureMinted()]);
+      await fixtureAdapter(t, recorder).mint(
+        fixtureRequest({
+          permissions,
+          ...(allowed ? { pipelinesAllowed: true } : {}),
+        }),
+      );
+      assert.equal(recorder.calls.length, 1, which);
+      assert.equal(recorder.calls[0]?.method, "POST", which);
+      asked.push(fixtureAskedOf(recorder, 0));
+    }
+  assert.deepEqual(asked, [
+    { contents: "read" },
+    { contents: "read" },
+    { contents: "read", actions: "write" },
+    { contents: "read", actions: "write" },
+  ]);
+});
+
+test("a mint asking for pipeline runs the installation does not hold is the forge's refusal, never a token without them", async (t) => {
   for (const allowed of [false, true]) {
     const which = String(allowed);
-    const recorder = fixtureForge([fixtureMinted()]);
-    await fixtureAdapter(t, recorder).mint(
+    const recorder = fixtureForge([
+      Response.json(
+        {
+          message:
+            "The permissions requested are not granted to this installation.",
+        },
+        { status: 422 },
+      ),
+    ]);
+    const minted = await fixtureAdapter(t, recorder).mint(
       fixtureRequest({
-        permissions: "read",
+        permissions: "runPipelines",
         ...(allowed ? { pipelinesAllowed: true } : {}),
       }),
     );
-    assert.equal(recorder.calls.length, 1, which);
-    assert.equal(recorder.calls[0]?.method, "POST", which);
-    asked.push(fixtureAskedOf(recorder, 0));
+    assert.deepEqual(
+      minted,
+      { minted: "Denied", evidence: { mint: "Status", status: 422 } },
+      which,
+    );
+    assert.deepEqual(
+      recorder.calls.map((call) => call.method),
+      ["POST"],
+      which,
+    );
+    assert.deepEqual(
+      fixtureAskedOf(recorder, 0),
+      { contents: "read", actions: "write" },
+      which,
+    );
   }
-  assert.deepEqual(asked, [{ contents: "read" }, { contents: "read" }]);
 });
 
-test("no set asks the forge for more than contents, pull requests and workflows, wherever its binding and the installation allow them", async (t) => {
+test("no set asks the forge for more than contents, pull requests, workflows and actions, wherever its binding and the installation allow them", async (t) => {
   const asked = new Set<string>();
   const recorder: ForgeRecorder = {
     calls: [],
@@ -348,6 +390,7 @@ test("no set asks the forge for more than contents, pull requests and workflows,
       assert.equal(minted.minted, "Token", `${permissions} ${String(allowed)}`);
     }
   assert.deepEqual([...asked].sort(), [
+    "actions",
     "contents",
     "pull_requests",
     "workflows",
@@ -955,6 +998,34 @@ test("a token held is keyed by everything it is good for", async (t) => {
     }),
   );
   assert.equal(recorder.calls.length, 4, "two repositories are a third token");
+});
+
+test("a token held for pipeline runs answers a mint for that set alone, and no other set's token answers one for it", async (t) => {
+  const minting = [
+    ...allForgePermissionSets.filter((set) => set !== "runPipelines"),
+    "runPipelines",
+  ] as const;
+  const recorder = fixtureForge(
+    minting.map((permissions) =>
+      fixtureMinted({ token: `ghs-${permissions}-p8o9i0` }),
+    ),
+  );
+  const tokens = fixtureAdapter(t, recorder);
+  const asking = [...minting, ...minting];
+  const answered: string[] = [];
+  for (const permissions of asking)
+    answered.push(
+      fixtureTokenOf(await tokens.mint(fixtureRequest({ permissions }))),
+    );
+  assert.deepEqual(
+    answered,
+    asking.map((permissions) => `ghs-${String(permissions)}-p8o9i0`),
+  );
+  assert.equal(
+    recorder.calls.length,
+    allForgePermissionSets.length,
+    "each set is minted once and then held",
+  );
 });
 
 /**

@@ -62,7 +62,7 @@ const said: ConversationStep = { step: "Text", text: answer };
 /** The status under each answer, which a reader who cannot see is told. */
 function word(container: HTMLElement): readonly string[] {
   return Array.from(
-    container.querySelectorAll('.conversation-meta p [role="status"]'),
+    container.querySelectorAll(".conversation-meta p [data-word]"),
     (status) => status.textContent,
   );
 }
@@ -71,7 +71,7 @@ function word(container: HTMLElement): readonly string[] {
  * a line that shows none. */
 function shownWord(container: HTMLElement): readonly string[] {
   return Array.from(
-    container.querySelectorAll('.conversation-meta p [role="status"]'),
+    container.querySelectorAll(".conversation-meta p [data-word]"),
     (status) =>
       status.classList.contains("visually-hidden") ? "" : status.textContent,
   );
@@ -307,32 +307,28 @@ describe("the word under an answer", () => {
 });
 
 describe("what a reader who cannot see the answer arriving is told", () => {
-  test("is one status that is there throughout, so a reader is told when it changes and of no word of the text", async () => {
+  test("is the conversation's log: told once that it is being written and once of the whole of it, and of no fragment between", async () => {
+    const live = '[aria-live], [role="status"], [role="log"], [role="alert"]';
     const view = renderCopied(drawn([running({})]));
-    const status = found(
-      view.container,
-      '.conversation-meta p [role="status"]',
-    );
-    expect(status.textContent).toBe("");
+    const log = screen.getByRole("log", { name: "Conversation" });
     view.rerender(drawn([running({ answer, activity: writing })]));
     await waitFor(() => {
       expect(view.container.querySelector(".run-report")?.textContent).toBe(
         answer,
       );
     });
-    expect(status.isConnected).toBe(true);
-    expect(status.textContent).toBe("Working");
-    const report = found(view.container, ".run-report");
+    expect(log.textContent).toBe("Agent is replying");
+    expect(found(view.container, ".run-report").closest(live)).toBe(null);
     expect(
-      report.closest(
-        '[aria-live], [role="status"], [role="log"], [role="alert"]',
-      ),
+      found(view.container, ".conversation-meta p [data-word]").closest(live),
     ).toBe(null);
     view.rerender(
       drawn([running({ answer, standing: { standing: "Answered" } })]),
     );
-    expect(status.isConnected).toBe(true);
-    expect(status.textContent).toBe("Answered");
+    expect(Array.from(log.children, (line) => line.textContent)).toStrictEqual([
+      "Agent is replying",
+      answer,
+    ]);
   });
 
   test("the answer is marked busy for as long as its turn is out", () => {
@@ -354,7 +350,7 @@ describe("the line under an answer, from the turn's last word to its settling", 
     return [
       found(container, ".conversation-meta"),
       found(container, ".conversation-meta-lead"),
-      found(container, '.conversation-meta p [role="status"]'),
+      found(container, ".conversation-meta p [data-word]"),
     ];
   }
 

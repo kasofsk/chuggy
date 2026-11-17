@@ -68,7 +68,6 @@ const landingOpen: TicketLandingRecord = {
   generation: 1,
   request: "Fulfilled",
   attempts: 1,
-  approvalOpen: false,
   attempt: {
     outcome: "Prepared",
     targetRef: "refs/heads/main",

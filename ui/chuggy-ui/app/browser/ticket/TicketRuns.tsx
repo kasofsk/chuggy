@@ -68,7 +68,7 @@ import {
 } from "./TicketRunApproval.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
-import { readValue } from "./TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
@@ -189,7 +189,7 @@ function ticketRunsRowWords(
 ): string {
   if (row.kind === "Gap") return row.words;
   if (!row.lands) return text({ id: "ticket-value-none" });
-  return row.landing?.word ?? text({ id: "ticket-landing-not-reached" });
+  return row.landing?.word ?? text({ id: "ticket-finalization-not-reached" });
 }
 
 type TicketRunsParams = PartitionIdentity & { readonly ticket: string };
