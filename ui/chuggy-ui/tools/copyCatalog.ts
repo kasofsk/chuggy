@@ -45,6 +45,9 @@ const copyVernacularsModule = "vernaculars.ts";
  * Node alike can import. */
 const copySourcesDir = "generated";
 
+/** The formatter's line width, its default, past which it breaks a line. */
+const copyFormatterWidth = 80;
+
 /** The file that holds the terms, and the only one that does. */
 const copyTermsFile = "terms.ftl";
 
@@ -409,7 +412,12 @@ function copyModule(
     const variables = copyVariables(entry, messagesAll);
     const id = JSON.stringify(entry.id.name);
     if (variables.length === 0) {
-      lines.push(`  readonly ${id}: Record<never, never>;`);
+      const line = `  readonly ${id}: Record<never, never>;`;
+      lines.push(
+        ...(line.length <= copyFormatterWidth
+          ? [line]
+          : [`  readonly ${id}: Record<`, "    never,", "    never", "  >;"]),
+      );
       continue;
     }
     lines.push(`  readonly ${id}: {`);

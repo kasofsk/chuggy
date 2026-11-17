@@ -10,13 +10,12 @@
  * holds a roster of reads alone. It acts as the member who asked rather than as
  * the lead, so every read it makes is one that member already had.
  *
- * A ROSTER IS NOT A CONTROL, for the reason `../contract/sessionTools.ts`
- * gives: a roster is enforced by the agent runtime inside the pod, and the pod
- * is the thing being controlled. What is a control is the membership the
- * database authorizes each read against, and — for the transcript — that the
- * durable write door stays bound to the bearer's own session while only the
- * reads widen to the parent. A control described as stronger than it is, is
- * worse than none.
+ * ITS ROSTER IS A CONTROL, for the reason `../contract/sessionTools.ts`
+ * gives: the API admits an inquiry's bearer only to the routes its session's
+ * capabilities admit, so a read roster reaches no write. Beside it stand the
+ * membership the database authorizes each read against, and — for the
+ * transcript — that the durable write door stays bound to the bearer's own
+ * session while only the reads widen to the parent.
  *
  * IT LEAVES NO OPERATION ROW. `operation.via_session` records which session
  * issued a command, and this roster registers no tool that issues one. So the

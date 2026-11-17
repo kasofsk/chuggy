@@ -450,6 +450,26 @@ test("the mailbox tail draws what the pod measured of each turn", async () => {
   expect(within(turns as HTMLElement).getByText("$0.21")).toBeDefined();
 });
 
+test("a failed turn says why beside its state, in the document without a hover", async () => {
+  const body = leadBody(opening.batches, 1);
+  const [turn] = body.turns;
+  if (turn === undefined) throw new Error("no turn in the fixture");
+  await drawLead(() => ({
+    ...opening,
+    lead: {
+      ...body,
+      turns: [{ ...turn, state: "Failed", failure: "AgentFailed" }],
+    },
+  }));
+  const turns = screen
+    .getByRole("heading", { name: "Turns" })
+    .closest("section");
+  expect(
+    within(turns as HTMLElement).getByText(/· Agent failed/u).className,
+  ).toBe("word-detail");
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
 /**
  * The transcript's own chain is the conversation's spine: a user entry opens
  * an exchange and the assistant entries that follow it are the exchange's
@@ -602,7 +622,7 @@ function leadTurnOut(
 /** The word under each exchange the conversation draws. */
 function standingWords(conversation: HTMLElement): readonly string[] {
   return Array.from(
-    conversation.querySelectorAll('.conversation-meta p [role="status"]'),
+    conversation.querySelectorAll(".conversation-meta p [data-word]"),
     (status) => status.textContent,
   );
 }
@@ -996,7 +1016,7 @@ test("a project with no lead on runners none of its own has says so under the li
   await mountLead();
   expect(screen.getByText("Tickets are dispatched by hand")).toBeDefined();
   expect(screen.getByText("No runner")).toBeDefined();
-  expect(screen.getByRole("link", { name: "Runners" })).toBeDefined();
+  expect(screen.getByRole("link", { name: "Pools" })).toBeDefined();
 });
 
 /** The runner notice already says no runner can take the lead's turn, and
@@ -1018,7 +1038,7 @@ test("a project refused for no live runner leaves it to the runner notice", asyn
   await mountLead();
   expect(screen.queryByText(/No live runner/u)).toBeNull();
   expect(screen.getByText("No runner")).toBeDefined();
-  expect(screen.getByRole("link", { name: "Runners" })).toBeDefined();
+  expect(screen.getByRole("link", { name: "Pools" })).toBeDefined();
 });
 
 /** A placement saying the project's runners are live makes a kept refusal for

@@ -17,6 +17,8 @@ import {
   apiOwnerFallback,
   apiProjectAbilities,
   apiProjectArtifact,
+  apiProjectDeletion,
+  apiProjectImages,
   apiProjectRepositories,
   apiSelectorSettings,
   apiSelectorSettingsHistory,
@@ -29,6 +31,13 @@ import { sessionPlacementPolledMs } from "./sessionRunners.ts";
 export function projectAbilitiesQuery(partition: PartitionIdentity) {
   return consolePartitionQuery(partition, "abilities", (ports) =>
     apiProjectAbilities(ports, partition),
+  );
+}
+
+/** What holds the project from deletion, absent to a reader who may not delete it. */
+export function projectDeletionQuery(partition: PartitionIdentity) {
+  return consolePartitionQuery(partition, "deletion", (ports) =>
+    apiProjectDeletion(ports, partition),
   );
 }
 
@@ -132,6 +141,16 @@ export function projectPermissionsQuery(partition: PartitionIdentity) {
 export function projectPeopleQuery(partition: PartitionIdentity) {
   return consolePartitionQuery(partition, "access-people", (ports) =>
     apiProjectPeople(ports, partition.tenant, partition.project),
+  );
+}
+
+/** The artifacts the project names its icon and its banner, and whether the
+ * reader may change them. */
+export function projectImagesQuery(partition: PartitionIdentity) {
+  return consolePartitionQuery(
+    partition,
+    "appearance-images",
+    (ports, signal) => apiProjectImages(ports, partition, signal),
   );
 }
 

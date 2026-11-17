@@ -43,12 +43,27 @@ const failed = {
   failure: { outcome: "Unreachable", reason: "the plane failed" },
 } as const;
 
+/** What each workspace is named to a reader, which is never its id here. */
+function shown(tenant: string): string {
+  return `The ${tenant} workspace`;
+}
+
 function administered(tenant: string): AccessCallerTenant {
-  return { tenant, roles: ["Admin"], administer: true };
+  return {
+    tenant,
+    displayName: shown(tenant),
+    roles: ["Admin"],
+    administer: true,
+  };
 }
 
 function joined(tenant: string): AccessCallerTenant {
-  return { tenant, roles: ["Member"], administer: false };
+  return {
+    tenant,
+    displayName: shown(tenant),
+    roles: ["Member"],
+    administer: false,
+  };
 }
 
 function listed(
@@ -78,7 +93,7 @@ const mayNothing = absent;
 const mayCreate = abilities(true);
 
 function held(tenant: string): ProjectCreationWorkspaceEntry {
-  return { entry: "Held", tenant };
+  return { entry: "Held", tenant, displayName: shown(tenant) };
 }
 
 const creation: ProjectCreationWorkspaceEntry = { entry: "New" };
@@ -257,8 +272,20 @@ test("the abilities read failing over one workspace to add to starts the free te
   );
 });
 
-test("an entry is called by its workspace, and the making of one by its own words", () => {
-  expect(projectCreationWorkspaceEntryText(held("mimage"))).toBe("mimage");
+test("an entry is called by its workspace's display name, the form sends its id, and the making of one is called by its own words", () => {
+  expect(projectCreationWorkspaceEntryText(held("mimage"))).toBe(
+    "The mimage workspace",
+  );
+  expect(
+    projectCreationWorkspaceTenant(
+      projectCreationWorkspaceOffer(
+        listed(administered("mimage")),
+        mayNothing,
+        undefined,
+      ),
+      undefined,
+    ),
+  ).toBe("mimage");
   expect(projectCreationWorkspaceEntryText(creation)).toStrictEqual({
     id: "project-creation-workspace-new",
   });

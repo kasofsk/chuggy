@@ -95,7 +95,7 @@ async function pageDrawn(
   });
   await settled();
   const state = document.querySelector<HTMLElement>(
-    "header.ticket-header .ticket-header-state",
+    "header.page-header .page-header-status",
   );
   if (state === null) throw new Error("the header's state is drawn");
   return state;
@@ -111,7 +111,7 @@ test("a queued ticket's header draws its place after its state label's fragment"
     "success",
   );
   const chip = within(state).getByRole("img", {
-    name: `Waiting 2 of 2 to land: #8 holds ${repository}'s default branch`,
+    name: `Waiting 2 of 2 to finalize: #8 holds ${repository}'s default branch`,
   });
   expect(chip.textContent).toBe("2/2");
   expect(state.lastElementChild).toBe(chip);
@@ -127,7 +127,7 @@ test("a ticket in no queue draws no chip in its header", async () => {
       }),
     "success",
   );
-  expect(state.querySelector(".landing-queue-chip")).toBeNull();
+  expect(state.querySelector(".finalization-queue-chip")).toBeNull();
 });
 
 test("a queue read that fails draws no chip and leaves the page drawn", async () => {
@@ -137,7 +137,7 @@ test("a queue read that fails draws no chip and leaves the page drawn", async ()
     return answer({ error: { code: "InternalError" } }, 500);
   }, "error");
   expect(asked).toBeGreaterThan(0);
-  expect(state.querySelector(".landing-queue-chip")).toBeNull();
+  expect(state.querySelector(".finalization-queue-chip")).toBeNull();
   expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(
     "Land the console",
   );

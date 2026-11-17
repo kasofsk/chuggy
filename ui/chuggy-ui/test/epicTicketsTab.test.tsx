@@ -93,18 +93,29 @@ function tab(): HTMLElement {
   return screen.getByRole("region", { name: "Tickets" });
 }
 
+/** The row whose title links to the ticket. */
 function rowOf(ticket: number): HTMLElement {
-  const row = tab().querySelector<HTMLElement>(
-    `li[data-ticket="${String(ticket)}"]`,
-  );
-  if (row === null) throw new Error(`#${String(ticket)} has a row`);
+  const row = within(tab())
+    .getAllByRole("listitem")
+    .find(
+      (item) =>
+        item.querySelector(
+          `.record-row-title a[href="${ticketsPath}/${String(ticket)}"]`,
+        ) !== null,
+    );
+  if (row === undefined) throw new Error(`#${String(ticket)} has a row`);
   return row;
 }
 
+/** Each group's heading as it is drawn: its word, then the figure its count
+ * shows, whose name only assistive technology reads. */
 function heads(): readonly string[] {
   return within(tab())
     .queryAllByRole("heading", { level: 3 })
-    .map((head) => head.textContent ?? "");
+    .map((head) => {
+      const named = head.querySelector(".count-badge .visually-hidden");
+      return (head.textContent ?? "").replace(named?.textContent ?? "", "");
+    });
 }
 
 function writes(sent: readonly SentRequest[]): readonly SentRequest[] {
@@ -141,9 +152,9 @@ test("a group's rows are in the order the work will happen, through the chain an
   epicChained();
   await drawn(abilitiesNone);
   const blocked = within(screen.getByRole("list", { name: "Blocked, 3" }))
-    .getAllByRole("listitem")
-    .map((row) => row.getAttribute("data-ticket"));
-  expect(blocked).toStrictEqual(["5", "8", "6"]);
+    .getAllByRole("heading", { level: 4 })
+    .map((title) => title.textContent);
+  expect(blocked).toStrictEqual(["Row 5", "Row 8", "Row 6"]);
 });
 
 test("a row names the unfinished dependencies it comes after, in the epic and out of it, each a link, and how many members wait on it", async () => {
@@ -162,6 +173,38 @@ test("a row names the unfinished dependencies it comes after, in the epic and ou
   expect(
     within(rowOf(5)).getByRole("link", { name: "Row 5" }).getAttribute("href"),
   ).toBe(`${ticketsPath}/5`);
+});
+
+test("a row is the ticket list's record row: its title a heading under its group's that links to the ticket, its number in its line, and its state's badge in its foot", async () => {
+  epicChained();
+  await drawn(abilitiesNone);
+  const row = rowOf(10);
+  const title = within(row).getByRole("heading", { level: 4 });
+  expect(title.closest(".record-row-title")).toBe(title);
+  expect(within(title).getByRole("link").textContent).toBe("Row 10");
+  expect(
+    row.querySelector(".record-row-meta .ticket-list-number")?.textContent,
+  ).toBe("#10");
+  const badge = row.querySelector(".record-row-foot .status-badge");
+  expect(badge?.getAttribute("data-tone")).toBe("parked");
+  expect(badge?.textContent).toBe("Escalated");
+  expect(tab().querySelector(".epic-tickets-row")).toBeNull();
+});
+
+test("a member the ticket list holds no row of is badged as the graph says it stands, and one without a title is drawn with the dash", async () => {
+  epicChained();
+  epicServing.graph = {
+    nodes: [{ ticket: 9, member: true }],
+    edges: [],
+  };
+  epicServing.view = { ...epicView, tickets: [9] };
+  epicServing.rows = [];
+  await drawn(abilitiesNone);
+  const row = rowOf(9);
+  expect(within(row).getByRole("heading", { level: 4 }).textContent).toBe("—");
+  const badge = row.querySelector(".record-row-foot .status-badge");
+  expect(badge?.getAttribute("data-tone")).toBe("queued");
+  expect(badge?.textContent).toBe("Draft");
 });
 
 test("a Done row says nothing of what waits on it", async () => {
@@ -274,6 +317,11 @@ test("Remove from epic sends one revision without the ticket, at the revision re
   const { sent } = await drawn(abilitiesEvery, () =>
     answer({ epic: 7, revision: 4 }),
   );
+  expect(
+    within(rowOf(4))
+      .getByRole("button", { name: "More actions for #4" })
+      .closest(".record-row-trailing"),
+  ).not.toBeNull();
   await removed(4);
   expect(writes(sent)).toHaveLength(1);
   expect(writes(sent)[0]?.body).toMatchObject({
@@ -299,7 +347,7 @@ test("a removal over another's revision is refused as stale, and the page reads 
   const before = reads();
   await removed(4);
   expect(within(tab()).getByRole("alert").textContent).toBe(
-    "The epic was changed since you opened it. Reload it and make the change again.",
+    "The epic was changed since you opened it. Reload it and make the change again. · StaleRevision",
   );
   expect(reads()).toBeGreaterThan(before);
 });

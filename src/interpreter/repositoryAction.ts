@@ -32,14 +32,14 @@ import {
   repositoryDeclarationContent,
   repositoryDeclarationsMax,
   type RepositoryDeclarationFile,
-} from "./repositoryDeclaration.ts";
+} from "../contract/repositoryDeclaration.ts";
 import {
   repositoryDeclarationUnavailableOutcome,
   type RepositoryDeclarationSnapshotRead,
   type RepositoryDeclarationSnapshotRequest,
   type RepositoryDeclarationUnavailable,
 } from "./repositoryDeclarationSnapshot.ts";
-import { taskConfigurationLineFault } from "./taskConfiguration.ts";
+import { taskConfigurationLineFault } from "../contract/taskConfiguration.ts";
 
 declare const repositoryActionIdBrand: unique symbol;
 declare const repositoryActionNameBrand: unique symbol;

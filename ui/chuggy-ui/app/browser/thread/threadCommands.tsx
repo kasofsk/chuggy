@@ -45,7 +45,7 @@ import { usePanelState } from "../api.ts";
 import type { ConversationCommands } from "../conversation/ConversationComposer.tsx";
 import { useSessionPlacement } from "../sessionPlacement.tsx";
 import { Figure } from "../ui/Figure.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
+import { WordDetail } from "../ui/WordDetail.tsx";
 
 /** Every command, where the pane hands the box a start. */
 const threadCommandsEvery: readonly ConversationCommandName[] =
@@ -172,9 +172,12 @@ function ThreadCommandSaid(props: {
       return (
         <ThreadCommandLine name="clear">
           {[
-            <Tooltip key="why" text={saying.why.detail}>
-              <span>{copyOrDataText(text, saying.why.word)}</span>
-            </Tooltip>,
+            <span key="why">
+              <WordDetail
+                word={copyOrDataText(text, saying.why.word)}
+                detail={saying.why.detail}
+              />
+            </span>,
           ]}
         </ThreadCommandLine>
       );

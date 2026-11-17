@@ -6,12 +6,20 @@
 
 import { expect, test } from "vitest";
 
+import {
+  signInStoreFileName,
+  signInStoreLockSecsMax,
+  signInStoreLockStale,
+  signInStoreLockWord,
+  signInStoreText,
+} from "../../../src/contract/signInStore.ts";
 import { sessionRefreshTokenKey } from "../app/core/sessionHolder.ts";
 import { setupFiles, SetupMachineError } from "../app/core/setupPorts.ts";
 import type {
   SetupFile,
   SetupFilesPort,
   SetupLockPort,
+  SetupStorePort,
 } from "../app/core/setupPorts.ts";
 import { setupSignInEndings } from "../app/core/setupReport.ts";
 import type { SetupSignInEnded } from "../app/core/setupReport.ts";
@@ -25,45 +33,63 @@ import {
   setupLockHeldBy,
   setupLockReleased,
   setupLockRetryMs,
-  setupLockSecsMax,
-  setupLockStale,
   setupLockTaken,
-  setupLockWord,
-  setupSessionRead,
+  setupSessionMoved,
   setupSessionRoomBytes,
-  setupSessionWritten,
+  setupSessionSite,
+  setupSessionSiteWritten,
   setupSignInNoteRead,
   setupSignInNoteWritten,
+  setupTokenRead,
   setupTokenStore,
 } from "../app/core/setupStore.ts";
 import type { SetupSignInNote } from "../app/core/setupStore.ts";
 
 const site = "https://chuggy.example";
 
+/** The site's file in the shared store. */
+const siteFile = signInStoreFileName(site);
+
+/** What the swept log says for a sweep of the shared store, which is of every file in it. */
+const storeSwept = "store";
+
 interface Held {
   readonly files: SetupFilesPort;
+  readonly store: SetupStorePort;
   readonly texts: Map<SetupFile, string>;
-  /** How many times each file was written whole. */
-  readonly writes: SetupFile[];
-  /** Each file whose unfinished writes were asked to be removed. */
-  readonly swept: SetupFile[];
+  readonly stored: Map<string, string>;
+  /** Each file of either that was written whole. */
+  readonly writes: string[];
+  /** Each file whose unfinished writes were asked to be removed, the store's as `storeSwept`. */
+  readonly swept: string[];
   /** Each file room was asked for, with how much. */
-  readonly reserved: (readonly [SetupFile, number])[];
+  readonly reserved: (readonly [string, number])[];
   /** What the machine refuses from here on: room, a write, a sweep, or nothing. */
   refuses: "Room" | "Write" | "Sweep" | undefined;
 }
 
-const sessionPath = "/home/person/.chuggy-setup/session.json";
+const storePath = `/home/person/.config/chuggy/sign-ins/${siteFile}`;
 
 function unwritable(): SetupMachineError {
-  return new SetupMachineError({ fault: "Unwritable", path: sessionPath });
+  return new SetupMachineError({ fault: "Unwritable", path: storePath });
 }
 
-function held(session?: string): Held {
+function held(session?: string, token?: string): Held {
   const texts = new Map<SetupFile, string>();
   if (session !== undefined) texts.set(setupFiles.session, session);
+  const stored = new Map<string, string>();
+  if (token !== undefined) stored.set(siteFile, token);
+  const writing = (name: string): void => {
+    if (kept.refuses === "Write") throw unwritable();
+    kept.writes.push(name);
+  };
+  const sweeping = (name: string): void => {
+    kept.swept.push(name);
+    if (kept.refuses === "Sweep") throw unwritable();
+  };
   const kept: Held = {
     texts,
+    stored,
     writes: [],
     swept: [],
     reserved: [],
@@ -71,8 +97,7 @@ function held(session?: string): Held {
     files: {
       read: (file) => texts.get(file),
       write: (file, text) => {
-        if (kept.refuses === "Write") throw unwritable();
-        kept.writes.push(file);
+        writing(file);
         texts.set(file, text);
       },
       reserve: (file, bytes) => {
@@ -82,26 +107,35 @@ function held(session?: string): Held {
       remove: (file) => {
         texts.delete(file);
       },
-      sweep: (file) => {
-        kept.swept.push(file);
-        if (kept.refuses === "Sweep") throw unwritable();
+      sweep: sweeping,
+    },
+    store: {
+      read: (name) => stored.get(name),
+      write: (name, text) => {
+        writing(name);
+        stored.set(name, text);
+      },
+      reserve: (name, bytes) => {
+        kept.reserved.push([name, bytes]);
+        if (kept.refuses === "Room") throw unwritable();
+      },
+      remove: (name) => {
+        writing(name);
+        stored.delete(name);
+      },
+      sweep: () => {
+        sweeping(storeSwept);
       },
     },
   };
   return kept;
 }
 
-test("what is remembered is a site and the renewal token for it, and nothing else", () => {
+test("what the program's own directory remembers is a site, and nothing else", () => {
   const { files, texts } = held();
-  setupSessionWritten(files, { site, refreshToken: "renewal-1" });
-  expect(JSON.parse(texts.get(setupFiles.session) ?? "")).toEqual({
-    site,
-    refreshToken: "renewal-1",
-  });
-  expect(setupSessionRead(files)).toEqual({ site, refreshToken: "renewal-1" });
-  setupSessionWritten(files, { site, refreshToken: undefined });
+  setupSessionSiteWritten(files, site);
   expect(JSON.parse(texts.get(setupFiles.session) ?? "")).toEqual({ site });
-  expect(setupSessionRead(files)).toEqual({ site, refreshToken: undefined });
+  expect(setupSessionSite(files)).toBe(site);
 });
 
 test.each([
@@ -114,43 +148,92 @@ test.each([
   ],
   ["a site that is not an origin", JSON.stringify({ site: `${site}/acme` })],
   ["an empty token", JSON.stringify({ site, refreshToken: "" })],
-])("a remembered sign-in that is %s is read as none", (_name, text) => {
-  expect(setupSessionRead(held(text).files)).toBeUndefined();
+])("a remembered site that is %s is read as none", (_name, text) => {
+  expect(setupSessionSite(held(text).files)).toBeUndefined();
 });
 
-test("the holder's store reads the token it was opened with and writes each one after it to the file at once", () => {
-  const { files, texts, writes } = held();
-  const store = setupTokenStore(files, site, "renewal-1");
+test("the sign-in is the token the shared store holds for the site, as the contract writes it, and nothing it did not write", () => {
+  expect(setupTokenRead(held(undefined, "renewal-1\n").store, site)).toBe(
+    "renewal-1",
+  );
+  expect(
+    setupTokenRead(
+      held(undefined, "renewal-1\n").store,
+      "https://other.example",
+    ),
+  ).toBeUndefined();
+  for (const text of ["", "two words\n", "one\ntwo\n"])
+    expect(setupTokenRead(held(undefined, text).store, site), text).toBe(
+      undefined,
+    );
+});
+
+test("a token an older copy kept beside the site is moved into the shared store once, and the site stays remembered", () => {
+  const kept = held(JSON.stringify({ site, refreshToken: "renewal-old" }));
+  setupSessionMoved(kept.files, kept.store);
+  expect(kept.stored.get(siteFile)).toBe(signInStoreText("renewal-old"));
+  expect(JSON.parse(kept.texts.get(setupFiles.session) ?? "")).toEqual({
+    site,
+  });
+  expect(setupSessionSite(kept.files)).toBe(site);
+  kept.writes.length = 0;
+  kept.stored.set(siteFile, signInStoreText("renewal-new"));
+  setupSessionMoved(kept.files, kept.store);
+  expect(kept.writes).toEqual([]);
+  expect(setupTokenRead(kept.store, site)).toBe("renewal-new");
+});
+
+test("a token an older copy kept is dropped where the shared store already holds the site's sign-in, which is the one kept", () => {
+  const kept = held(
+    JSON.stringify({ site, refreshToken: "renewal-old" }),
+    signInStoreText("renewal-mcp"),
+  );
+  setupSessionMoved(kept.files, kept.store);
+  expect(setupTokenRead(kept.store, site)).toBe("renewal-mcp");
+  expect(JSON.parse(kept.texts.get(setupFiles.session) ?? "")).toEqual({
+    site,
+  });
+});
+
+test("nothing is moved where the program's directory holds no token or nothing it wrote", () => {
+  for (const text of [undefined, JSON.stringify({ site }), "{"]) {
+    const kept = held(text);
+    setupSessionMoved(kept.files, kept.store);
+    expect(kept.writes, String(text)).toEqual([]);
+    expect(kept.stored.size).toBe(0);
+  }
+});
+
+test("the holder's store reads the token it was opened with and writes each one after it to the site's file in the shared store at once", () => {
+  const { store: shared, stored, writes } = held();
+  const store = setupTokenStore(shared, site, "renewal-1");
   expect(store.read(sessionRefreshTokenKey)).toBe("renewal-1");
   expect(writes).toEqual([]);
   store.write(sessionRefreshTokenKey, "renewal-2");
-  expect(JSON.parse(texts.get(setupFiles.session) ?? "")).toEqual({
-    site,
-    refreshToken: "renewal-2",
-  });
+  expect(stored.get(siteFile)).toBe(signInStoreText("renewal-2"));
   expect(store.read(sessionRefreshTokenKey)).toBe("renewal-2");
   store.remove(sessionRefreshTokenKey);
-  expect(JSON.parse(texts.get(setupFiles.session) ?? "")).toEqual({ site });
+  expect(stored.has(siteFile)).toBe(false);
   expect(store.read(sessionRefreshTokenKey)).toBeNull();
 });
 
 test("the holder's store keeps nothing but the renewal token", () => {
-  const { files, writes } = held();
-  const store = setupTokenStore(files, site, undefined);
+  const { store: shared, writes } = held();
+  const store = setupTokenStore(shared, site, undefined);
   store.write("chuggy.authorization", "verifier");
   store.remove("chuggy.authorization");
   store.remove(sessionRefreshTokenKey);
   expect(store.read("chuggy.authorization")).toBeNull();
   expect(writes).toEqual([]);
-  const holding = setupTokenStore(files, site, "renewal-1");
+  const holding = setupTokenStore(shared, site, "renewal-1");
   expect(holding.read("chuggy.authorization")).toBeNull();
 });
 
-const room = [setupFiles.session, setupSessionRoomBytes] as const;
+const room = [siteFile, setupSessionRoomBytes] as const;
 
 test("room is kept for one write of the remembered sign-in at a time: once before a write, and again only after one took it", () => {
   const kept = held();
-  const store = setupTokenStore(kept.files, site, "renewal-1");
+  const store = setupTokenStore(kept.store, site, "renewal-1");
   expect(kept.reserved).toEqual([]);
   store.roomed();
   store.roomed();
@@ -179,9 +262,9 @@ function fault(call: () => void): unknown {
 
 test("room the machine would not give is thrown as the path, when it is asked for and again by whoever asks what the store was refused", () => {
   const kept = held();
-  const store = setupTokenStore(kept.files, site, "renewal-1");
+  const store = setupTokenStore(kept.store, site, "renewal-1");
   kept.refuses = "Room";
-  const refused = { fault: "Unwritable", path: sessionPath };
+  const refused = { fault: "Unwritable", path: storePath };
   expect(fault(store.roomed)).toEqual(refused);
   expect(fault(store.kept)).toEqual(refused);
   kept.refuses = undefined;
@@ -192,24 +275,24 @@ test("room the machine would not give is thrown as the path, when it is asked fo
 
 test("a token the machine would not write is a sign-in that was not kept, with the path, to the holder that wrote it and to whoever asks afterwards", () => {
   const kept = held();
-  const store = setupTokenStore(kept.files, site, "renewal-1");
+  const store = setupTokenStore(kept.store, site, "renewal-1");
   store.roomed();
   kept.refuses = "Write";
-  const unkept = { fault: "Unkept", path: sessionPath };
+  const unkept = { fault: "Unkept", path: storePath };
   expect(
     fault(() => {
       store.write(sessionRefreshTokenKey, "renewal-2");
     }),
   ).toEqual(unkept);
   expect(fault(store.kept)).toEqual(unkept);
-  expect(kept.texts.get(setupFiles.session)).toBeUndefined();
+  expect(kept.stored.get(siteFile)).toBeUndefined();
 });
 
 test("a sign-in the machine would not forget is the path it would not write, and no token is said to be lost", () => {
   const kept = held();
-  const store = setupTokenStore(kept.files, site, "renewal-1");
+  const store = setupTokenStore(kept.store, site, "renewal-1");
   kept.refuses = "Write";
-  const refused = { fault: "Unwritable", path: sessionPath };
+  const refused = { fault: "Unwritable", path: storePath };
   expect(
     fault(() => {
       store.remove(sessionRefreshTokenKey);
@@ -220,8 +303,8 @@ test("a sign-in the machine would not forget is the path it would not write, and
 
 test("what the store was first refused is what it goes on saying, whatever it is refused afterwards: a forgetting that fails after a token was lost is thrown as the token that was lost", () => {
   const kept = held();
-  const store = setupTokenStore(kept.files, site, "renewal-1");
-  const unkept = { fault: "Unkept", path: sessionPath };
+  const store = setupTokenStore(kept.store, site, "renewal-1");
+  const unkept = { fault: "Unkept", path: storePath };
   kept.refuses = "Write";
   fault(() => {
     store.write(sessionRefreshTokenKey, "renewal-2");
@@ -241,7 +324,7 @@ test("something the files threw that is no path of the machine's is thrown again
   const odd = new Error("not the machine's");
   const store = setupTokenStore(
     {
-      ...kept.files,
+      ...kept.store,
       write: () => {
         throw odd;
       },
@@ -261,14 +344,24 @@ const nowMs = 5_000_000;
 
 test("a word is nobody's when it is not a holder's, its holder is gone, or it is older than any run", () => {
   const alive = (pid: number) => pid === 7;
-  expect(setupLockStale(setupLockWord(7, nowMs), nowMs, alive)).toBe(false);
-  expect(setupLockStale(setupLockWord(8, nowMs), nowMs, alive)).toBe(true);
+  expect(
+    signInStoreLockStale(signInStoreLockWord(7, nowMs), nowMs, alive),
+  ).toBe(false);
+  expect(
+    signInStoreLockStale(signInStoreLockWord(8, nowMs), nowMs, alive),
+  ).toBe(true);
   for (const word of ["", "7", "7.", ".7", "seven.5000000", "7.5000000.1"])
-    expect(setupLockStale(word, nowMs, alive), word).toBe(true);
-  expect(setupLockStale(`0.${String(nowMs)}`, nowMs, () => true)).toBe(true);
-  const oldest = nowMs - setupLockSecsMax * 1_000;
-  expect(setupLockStale(setupLockWord(7, oldest), nowMs, alive)).toBe(false);
-  expect(setupLockStale(setupLockWord(7, oldest - 1), nowMs, alive)).toBe(true);
+    expect(signInStoreLockStale(word, nowMs, alive), word).toBe(true);
+  expect(signInStoreLockStale(`0.${String(nowMs)}`, nowMs, () => true)).toBe(
+    true,
+  );
+  const oldest = nowMs - signInStoreLockSecsMax * 1_000;
+  expect(
+    signInStoreLockStale(signInStoreLockWord(7, oldest), nowMs, alive),
+  ).toBe(false);
+  expect(
+    signInStoreLockStale(signInStoreLockWord(7, oldest - 1), nowMs, alive),
+  ).toBe(true);
 });
 
 interface Cell {
@@ -306,13 +399,14 @@ function locker(
 ) {
   const slept: number[] = [];
   const kept = held();
-  const { files, swept } = kept;
+  const { files, store, swept } = kept;
   return {
     slept,
     swept,
     kept,
     ports: {
       files,
+      store,
       lock: lock.port,
       nowMs: () => clockMs,
       sleepMs: (ms: number) => {
@@ -335,7 +429,7 @@ test("a free lock is taken at once, and says whose it is and when", async () => 
   const lock = cell();
   const mine = locker(lock, 11, [11]);
   expect(await setupLockTaken(mine.ports, 1_000)).toBe(true);
-  expect(lock.said).toBe(setupLockWord(11, nowMs));
+  expect(lock.said).toBe(signInStoreLockWord(11, nowMs));
   expect(lock.said).toBe("11.5000000");
   expect(mine.slept).toEqual([]);
 });
@@ -348,17 +442,17 @@ test("a lock a running command holds is waited for no longer than the wait, and 
   expect(second.slept).toEqual(
     Array.from({ length: 1_000 / setupLockRetryMs }, () => setupLockRetryMs),
   );
-  expect(lock.said).toBe(setupLockWord(7, nowMs));
+  expect(lock.said).toBe(signInStoreLockWord(7, nowMs));
 });
 
 test("a lock nobody holds is taken from the word it says", async () => {
-  const lock = cell(setupLockWord(7, nowMs));
+  const lock = cell(signInStoreLockWord(7, nowMs));
   expect(await setupLockTaken(locker(lock, 11, [11]).ports, 0)).toBe(true);
-  expect(lock.said).toBe(setupLockWord(11, nowMs));
+  expect(lock.said).toBe(signInStoreLockWord(11, nowMs));
 });
 
 test("of two runs that both read a lock nobody holds, the one whose swap comes second does not take it", async () => {
-  const lock = cell(setupLockWord(7, nowMs));
+  const lock = cell(signInStoreLockWord(7, nowMs));
   const first = locker(lock, 11, [11, 12]);
   const second = locker(lock, 12, [11, 12]);
   let overtaken: Promise<boolean> | undefined;
@@ -368,34 +462,34 @@ test("of two runs that both read a lock nobody holds, the one whose swap comes s
   };
   expect(await setupLockTaken(first.ports, 0)).toBe(false);
   expect(await overtaken).toBe(true);
-  expect(lock.said).toBe(setupLockWord(12, nowMs));
+  expect(lock.said).toBe(signInStoreLockWord(12, nowMs));
 });
 
 test("a clock that reads between two milliseconds still writes a word that is its holder's", async () => {
   const lock = cell();
   const mine = locker(lock, 11, [11], nowMs + 0.5);
   expect(await setupLockTaken(mine.ports, 0)).toBe(true);
-  expect(lock.said).toBe(setupLockWord(11, nowMs));
+  expect(lock.said).toBe(signInStoreLockWord(11, nowMs));
   expect(await setupLockTaken(locker(lock, 12, [11, 12]).ports, 0)).toBe(false);
 });
 
-test("taking the lock removes what a write of the remembered sign-in left unfinished, and not taking it removes nothing", async () => {
+test("taking the lock removes what a write of the remembered site or the shared store left unfinished, and not taking it removes nothing", async () => {
   const lock = cell();
   const first = locker(lock, 7, [7]);
   expect(await setupLockTaken(first.ports, 0)).toBe(true);
-  expect(first.swept).toEqual([setupFiles.session]);
+  expect(first.swept).toEqual([setupFiles.session, storeSwept]);
   const second = locker(lock, 11, [7, 11]);
   expect(await setupLockTaken(second.ports, 0)).toBe(false);
   expect(second.swept).toEqual([]);
 });
 
 test("a lock taken by a run that cannot remove what a cut-short write left is given back before the path is thrown, whether it was free or a dead run's", async () => {
-  for (const said of [undefined, setupLockWord(7, nowMs)]) {
+  for (const said of [undefined, signInStoreLockWord(7, nowMs)]) {
     const lock = cell(said);
     const mine = locker(lock, 11, [11]);
     mine.kept.refuses = "Sweep";
     await expect(setupLockTaken(mine.ports, 0)).rejects.toMatchObject({
-      fault: { fault: "Unwritable", path: sessionPath },
+      fault: { fault: "Unwritable", path: storePath },
     });
     expect(mine.swept).toEqual([setupFiles.session]);
     expect(lock.said).toBeUndefined();
@@ -406,16 +500,16 @@ test("a run that did not get the lock is told which process it names, and nothin
   const lock = cell();
   const asking = locker(lock, 11, [7, 11]).ports;
   expect(setupLockHeldBy(asking)).toBeUndefined();
-  lock.said = setupLockWord(7, nowMs);
+  lock.said = signInStoreLockWord(7, nowMs);
   expect(setupLockHeldBy(asking)).toBe(7);
   lock.said = "left by hand";
   expect(setupLockHeldBy(asking)).toBeUndefined();
 });
 
 test("a run gives up its own lock and nobody else's", () => {
-  const lock = cell(setupLockWord(7, nowMs));
+  const lock = cell(signInStoreLockWord(7, nowMs));
   setupLockReleased(locker(lock, 11, [7, 11]).ports);
-  expect(lock.said).toBe(setupLockWord(7, nowMs));
+  expect(lock.said).toBe(signInStoreLockWord(7, nowMs));
   setupLockReleased(locker(lock, 7, [7, 11]).ports);
   expect(lock.said).toBeUndefined();
   setupLockReleased(locker(lock, 7, [7, 11]).ports);
@@ -423,7 +517,7 @@ test("a run gives up its own lock and nobody else's", () => {
 });
 
 test("giving the lock up gives back room no write took, while the lock is still this run's and for no lock that is another's", () => {
-  const lock = cell(setupLockWord(7, nowMs));
+  const lock = cell(signInStoreLockWord(7, nowMs));
   const other = locker(lock, 11, [7, 11]);
   setupLockReleased(other.ports);
   expect(other.swept).toEqual([]);
@@ -431,31 +525,31 @@ test("giving the lock up gives back room no write took, while the lock is still 
   const said: (string | undefined)[] = [];
   const ports = {
     ...mine.ports,
-    files: {
-      ...mine.ports.files,
-      sweep: (file: SetupFile) => {
+    store: {
+      ...mine.ports.store,
+      sweep: () => {
         said.push(lock.said);
-        mine.ports.files.sweep(file);
+        mine.ports.store.sweep();
       },
     },
   };
   setupLockReleased(ports);
-  expect(said).toEqual([setupLockWord(7, nowMs)]);
-  expect(mine.swept).toEqual([setupFiles.session]);
+  expect(said).toEqual([signInStoreLockWord(7, nowMs)]);
+  expect(mine.swept).toEqual([setupFiles.session, storeSwept]);
   expect(lock.said).toBeUndefined();
   setupLockReleased(ports);
-  expect(mine.swept).toEqual([setupFiles.session]);
+  expect(mine.swept).toEqual([setupFiles.session, storeSwept]);
 });
 
 test("a lock is given up even where the room could not be given back, and the path is what is thrown", () => {
-  const lock = cell(setupLockWord(7, nowMs));
+  const lock = cell(signInStoreLockWord(7, nowMs));
   const mine = locker(lock, 7, [7]);
   mine.kept.refuses = "Sweep";
   expect(
     fault(() => {
       setupLockReleased(mine.ports);
     }),
-  ).toEqual({ fault: "Unwritable", path: sessionPath });
+  ).toEqual({ fault: "Unwritable", path: storePath });
   expect(lock.said).toBeUndefined();
 });
 

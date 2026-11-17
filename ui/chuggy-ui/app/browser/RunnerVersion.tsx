@@ -1,6 +1,7 @@
 /**
  * A runner's version as a table cell: the release it runs, after its package
- * where `named`, with Outdated where chuggy pins a later one, and the dash
+ * where `named`, with Outdated and the version available where chuggy pins a
+ * later one, and the dash
  * where its poll named none.
  */
 
@@ -11,7 +12,7 @@ import { useCopyText } from "../copy/CopyProvider.tsx";
 import { runnerOutdated } from "../core/runners.ts";
 import { cellAbsent } from "./TicketCells.tsx";
 import { Pill } from "./ui/Pill.tsx";
-import { Tooltip } from "./ui/Tooltip.tsx";
+import { WordDetail } from "./ui/WordDetail.tsx";
 
 export function RunnerVersion(props: {
   readonly runner: RunnerListedResponse | undefined;
@@ -30,15 +31,19 @@ export function RunnerVersion(props: {
           })
         : runner.version}
       {pinned !== undefined && runnerOutdated(runner.version, pinned) ? (
-        <Tooltip
-          text={{ id: "runners-version-available", args: { version: pinned } }}
-        >
-          <span>
-            <Pill tone="parked">
-              {text({ id: "runners-version-outdated" })}
-            </Pill>
-          </span>
-        </Tooltip>
+        <span>
+          <WordDetail
+            word={
+              <Pill tone="parked">
+                {text({ id: "runners-version-outdated" })}
+              </Pill>
+            }
+            detail={{
+              id: "runners-version-available",
+              args: { version: pinned },
+            }}
+          />
+        </span>
       ) : null}
     </span>
   );

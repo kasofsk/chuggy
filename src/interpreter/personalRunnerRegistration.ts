@@ -29,7 +29,10 @@
  * host's redemption answers its own credentials, which name no capabilities.
  */
 
-import type { PersonalRunnerPriority } from "../contract/rosters.ts";
+import type {
+  AccountAgent,
+  PersonalRunnerPriority,
+} from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import type { TaskIdentity } from "../domain/generated/modelTypes.ts";
 import {
@@ -43,6 +46,7 @@ import {
   type ChatHostRead,
   type ChatHostRegistry,
 } from "./chatHostRegistration.ts";
+import type { AgentAccountPause } from "./agentAccount.ts";
 import { oidcPrincipal, type Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { ProjectId, TenantId } from "./projectStore.ts";
@@ -118,10 +122,23 @@ export interface PersonalRunnerProjectView {
   readonly waitingTruncated: boolean;
 }
 
-/** A member's runners in a tenant, oldest first, and the projects they serve, in project order. */
+/** One agent the member's runners are paused for, and the pause that ends first of theirs. */
+export interface PersonalRunnerPauseView {
+  readonly agent: AccountAgent;
+  readonly pause: AgentAccountPause;
+}
+
+/**
+ * A member's runners in a tenant, oldest first, the projects they serve, in
+ * project order, and each agent their runners are paused for, in roster order.
+ * An agent is paused for where every runner offered it that counts holds a
+ * pause by the credentials it named: those polling for executions now where
+ * any is, and every one where none is.
+ */
 export interface PersonalRunnerOwnerView {
   readonly runners: readonly PersonalRunnerView[];
   readonly projects: readonly PersonalRunnerProjectView[];
+  readonly pauses: readonly PersonalRunnerPauseView[];
 }
 
 /** What one registration came to: written, no tenant to write it in, or the member already holding `personalRunnersMax`. */

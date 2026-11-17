@@ -1,8 +1,9 @@
 /**
- * A ticket's state where the ticket list draws it: the row's state label, a
- * dependency's number in its state's colours, and each state's count. Where a
- * dispatch is offered the row's label is the button that asks for it, which
- * cannot be pressed while one is going or this tab is offline.
+ * A ticket's state where the ticket list draws it: the row's state, as the
+ * ticket's own label or as a status badge, and a dependency's number in its
+ * state's colours. Where a dispatch is offered the
+ * row's state is the button that asks for it, which cannot be pressed while
+ * one is going or this tab is offline.
  */
 
 import type { ReactNode } from "react";
@@ -12,8 +13,10 @@ import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { CopyText } from "../../core/copy.ts";
 import type { TicketPhase } from "../../../../../src/contract/rosters.ts";
 import type { TicketListStanding } from "../../core/ticketListView.ts";
+import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import { phaseTone } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
 import { TicketStateLabel } from "./TicketStateLabel.tsx";
 
@@ -34,45 +37,60 @@ function standingWord(standing: TicketListStanding, text: CopyText): string {
 export interface TicketStateDispatch {
   readonly busy: boolean;
   readonly offline: boolean;
-  readonly effect: string;
   readonly press: () => void;
+}
+
+/** What a row's state is drawn as: the ticket's own small label, or the
+ * status badge every list shares. */
+export type TicketStateChipLook = "Label" | "Badge";
+
+function TicketStateChipDrawn(props: {
+  readonly standing: TicketListStanding;
+  readonly look: TicketStateChipLook;
+}): ReactNode {
+  const text = useCopyText();
+  if (props.look === "Label")
+    return <TicketStateLabel standing={props.standing} size="small" />;
+  const label = ticketStateLabelOf(props.standing);
+  return (
+    <StatusBadge tone={label.tone} size="regular">
+      {text(label.word)}
+    </StatusBadge>
+  );
 }
 
 export function TicketStateChip(props: {
   readonly ticket: number;
   readonly standing: TicketListStanding;
-  /** What holds the ticket in this state, on hover. */
-  readonly hint: string | undefined;
   readonly dispatch?: TicketStateDispatch | undefined;
+  readonly look?: TicketStateChipLook | undefined;
 }): ReactNode {
   const { standing, dispatch } = props;
   const text = useCopyText();
-  const label = <TicketStateLabel standing={standing} size="small" />;
+  const label = (
+    <TicketStateChipDrawn standing={standing} look={props.look ?? "Label"} />
+  );
   if (dispatch !== undefined)
     return (
-      <Tooltip text={dispatch.effect}>
-        <button
-          type="button"
-          className="ticket-list-standing"
-          data-standing={standing}
-          aria-label={text({
-            id: "ticket-dispatch-aria-label",
-            args: { number: String(props.ticket) },
-          })}
-          aria-busy={dispatch.busy || undefined}
-          disabled={dispatch.busy || dispatch.offline}
-          onClick={dispatch.press}
-        >
-          {label}
-        </button>
-      </Tooltip>
+      <button
+        type="button"
+        className="ticket-list-standing"
+        data-standing={standing}
+        aria-label={text({
+          id: "ticket-dispatch-aria-label",
+          args: { number: String(props.ticket) },
+        })}
+        aria-busy={dispatch.busy || undefined}
+        disabled={dispatch.busy || dispatch.offline}
+        onClick={dispatch.press}
+      >
+        {label}
+      </button>
     );
   return (
-    <Tooltip text={props.hint}>
-      <span className="ticket-list-standing" data-standing={standing}>
-        {label}
-      </span>
-    </Tooltip>
+    <span className="ticket-list-standing" data-standing={standing}>
+      {label}
+    </span>
   );
 }
 
@@ -86,59 +104,22 @@ export function dependencyStandingOf(
   return phase === "Pending" ? (pending ?? "Blocked") : phase;
 }
 
-/** A dependency as its number in the colours of the state it stands in. */
+/** A dependency as its number in the colours of the state it stands in, the
+ * state's word on hover or press. */
 export function TicketDependencyChip(props: {
   readonly ticket: number;
   readonly standing: TicketListStanding;
 }): ReactNode {
   const text = useCopyText();
   return (
-    <span
-      className="ticket-list-state ticket-dependency"
-      data-tone={standingTone(props.standing)}
-      data-standing={props.standing}
-      title={standingWord(props.standing, text)}
-    >
-      {`#${String(props.ticket)}`}
-    </span>
-  );
-}
-
-/** A state's label holding how many tickets stand in it, as the button that
- * filters the list to it; pressed while it is the filter, dimmed while another
- * filter is, and its number as wide as the widest count beside it. */
-export function TicketStateCount(props: {
-  readonly standing: TicketListStanding;
-  readonly count: number;
-  readonly pressed: boolean;
-  readonly dimmed?: boolean | undefined;
-  /** The widest count drawn beside this one. */
-  readonly countWidest?: number | undefined;
-  readonly onPress: () => void;
-}): ReactNode {
-  const text = useCopyText();
-  return (
-    <button
-      type="button"
-      className="ticket-state-count"
-      data-standing={props.standing}
-      data-dimmed={props.dimmed === true || undefined}
-      title={standingWord(props.standing, text)}
-      aria-pressed={props.pressed}
-      onClick={props.onPress}
-    >
-      <TicketStateLabel standing={props.standing} size="small">
-        <b
-          className="num"
-          data-widest={
-            props.countWidest === undefined
-              ? undefined
-              : String(props.countWidest)
-          }
-        >
-          {props.count}
-        </b>
-      </TicketStateLabel>
-    </button>
+    <Tooltip trigger="abbreviation" text={standingWord(props.standing, text)}>
+      <span
+        className="ticket-list-state ticket-dependency"
+        data-tone={standingTone(props.standing)}
+        data-standing={props.standing}
+      >
+        {`#${String(props.ticket)}`}
+      </span>
+    </Tooltip>
   );
 }

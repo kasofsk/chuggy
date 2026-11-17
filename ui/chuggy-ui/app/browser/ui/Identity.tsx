@@ -23,7 +23,7 @@ export function Identity(props: {
 }): ReactNode {
   const form = props.block === true ? "identity identity-block" : "identity";
   return (
-    <Tooltip text={props.label.title}>
+    <Tooltip trigger="abbreviation" text={props.label.title}>
       <code className={form}>{props.label.text}</code>
     </Tooltip>
   );

@@ -161,6 +161,57 @@ console built '{ "name": "c", "version": "0.0.0", "private": true, "scripts": {
 seal
 check "a declared \`format\` that fails is a finding like any other" 1 "$RC" "npm run format\` failed"
 
+# --- `render`, the optional script that draws the build ------------------------
+
+fixture
+console built "$WHOLE"
+seal
+refute "a console without \`render\` is not asked for it" "declares no \`render\` script"
+
+WITH_RENDER='{ "name": "c", "version": "0.0.0", "private": true, "scripts": {
+	"typecheck": "true", "lint": "true", "test": "true", "build": "true",
+	"render": "true" } }'
+
+fixture
+console built "$WITH_RENDER"
+seal
+check "a console that declares \`render\` has it run" 0 "$RC" "5 script(s) clean across 1 built console(s)"
+
+fixture
+console built '{ "name": "c", "version": "0.0.0", "private": true, "scripts": {
+	"typecheck": "true", "lint": "true", "test": "true", "build": "true",
+	"render": "echo case-failed; exit 1" } }'
+seal
+check "a \`render\` that fails is a finding" 1 "$RC" "npm run render\` failed"
+check "and its own output is shown" 1 "$RC" "case-failed"
+
+fixture
+console built '{ "name": "c", "version": "0.0.0", "private": true, "scripts": {
+	"typecheck": "true", "lint": "true", "test": "true", "build": "true",
+	"render": "echo no-browser-here; exit 2" } }'
+seal
+check "a \`render\` that exits 2 could not run, and is not a pass" 2 "$RC" "npm run render\` could not run"
+check "and its remedy is shown" 2 "$RC" "no-browser-here"
+check "the could-not-run line counts it" 2 "$RC" "1 script(s) could not run across 1 built console(s)"
+refute "and no console is reported clean" "script(s) clean"
+
+# A 2 is a could-not-run for `render` alone: a compiler exits 2 on a finding.
+fixture
+console built '{ "name": "c", "version": "0.0.0", "private": true, "scripts": {
+	"typecheck": "exit 2", "lint": "true", "test": "true", "build": "true" } }'
+seal
+check "any other script's 2 is a finding" 1 "$RC" "npm run typecheck\` failed"
+
+# What `render` would draw is the build, so a console whose build failed has
+# none drawn: the finding is the build's, and a stale `dist` is never judged.
+fixture
+console built '{ "name": "c", "version": "0.0.0", "private": true, "scripts": {
+	"typecheck": "true", "lint": "true", "test": "true",
+	"build": "exit 1", "render": "echo drew-it" } }'
+seal
+check "a failed build leaves \`render\` unrun" 1 "$RC" "render not run, because a script before it failed"
+refute "so nothing it would print is shown" "drew-it"
+
 # --- A finding ---------------------------------------------------------------
 
 fixture

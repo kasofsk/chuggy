@@ -1,0 +1,23 @@
+/* WordDetail: the detail after its word, quieter, and wrapping anywhere; one
+   of more than one line is a block of its own, its lines kept. */
+
+@layer ui {
+  .word-detail {
+    color: var(--ink-3);
+    overflow-wrap: anywhere;
+  }
+
+  .word-detail-more {
+    display: block;
+    margin-block-start: var(--space-1);
+    color: var(--ink-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .word-detail-more[hidden] {
+    display: none;
+  }
+}

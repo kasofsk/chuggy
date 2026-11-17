@@ -3,14 +3,14 @@
  * reader who does not see it and, for the icon buttons among them, beside the
  * same name again as hover-and-focus text for a reader who does.
  *
- * THE HEADER IS ONE ROW of them beside the thread's title, and anything it has
- * to say in words goes on a row of its own under that one.
+ * THE HEADER IS ONE ROW: the thread's title and the few controls beside it,
+ * and anything it has to say in words goes on a row of its own under that one.
  */
 
 import type { ReactNode } from "react";
 
 import { Button } from "../ui/Button.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
+import { Tooltip, tooltipTriggerWrapping } from "../ui/Tooltip.tsx";
 
 function ChatPaneGlyph(props: { readonly children: ReactNode }): ReactNode {
   return (
@@ -49,16 +49,7 @@ const chatPaneGlyphPaths = {
       <path d="M8 5v3l2 1.5" />
     </>
   ),
-  fill: (
-    <ChatPaneLucide>
-      <path d="M15 3h6v6M21 3l-7 7M3 21l7-7M9 21H3v-6" />
-    </ChatPaneLucide>
-  ),
-  restore: (
-    <ChatPaneLucide>
-      <path d="m14 10 7-7M20 10h-6V4M3 21l7-7M4 14h6v6" />
-    </ChatPaneLucide>
-  ),
+  back: <path d="M13 8H3m4-4L3 8l4 4" />,
   rename: <path d="M10.5 2.5l3 3L6 13H3v-3z" />,
   close: <path d="M4 4l8 8M12 4l-8 8" />,
   collapseRight: (
@@ -112,11 +103,6 @@ const chatPaneGlyphPaths = {
       <circle cx="5" cy="12" r="1" />
     </ChatPaneLucide>
   ),
-  page: (
-    <ChatPaneLucide>
-      <path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6M21 3l-9 9M15 3h6v6" />
-    </ChatPaneLucide>
-  ),
   link: (
     <ChatPaneLucide>
       <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
@@ -154,9 +140,9 @@ export function ChatPaneIcon(props: {
  * An icon button of the pane's own quiet look, its name spoken once and
  * read twice: as the hidden label that stays its accessible name, and as the
  * tooltip a pointer or a keyboard focus reveals. The tooltip wraps the button
- * rather than sitting on it, so it still opens on focus even where the button
- * itself is disabled and so cannot take focus directly — New, while the open
- * it asked is out.
+ * rather than sitting on it, so it still opens on hover where the button is
+ * disabled, and the wrapper takes the focus a disabled button cannot — New,
+ * while the open it asked is out.
  */
 export function ChatPaneIconButton(props: {
   readonly glyph: ChatPaneGlyphName;
@@ -166,7 +152,10 @@ export function ChatPaneIconButton(props: {
   readonly disabled?: boolean;
 }): ReactNode {
   return (
-    <Tooltip text={props.label}>
+    <Tooltip
+      trigger={tooltipTriggerWrapping(props.disabled === true)}
+      text={props.label}
+    >
       <span className="flex">
         <Button
           variant="quiet"

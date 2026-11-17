@@ -138,7 +138,7 @@ test("a run's prompt is read only once its Transcript is shown", async () => {
 /** The word under each exchange a conversation draws. */
 function standingWords(conversation: HTMLElement): readonly string[] {
   return Array.from(
-    conversation.querySelectorAll('.conversation-meta p [role="status"]'),
+    conversation.querySelectorAll(".conversation-meta p [data-word]"),
     (status) => status.textContent,
   );
 }

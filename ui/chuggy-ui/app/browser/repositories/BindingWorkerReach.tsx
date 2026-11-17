@@ -1,6 +1,6 @@
 /**
  * Why the worker app cannot be said to reach a bound repository, on that
- * binding's row: the word, why on hover, and the installation's own page on
+ * binding's row: the word, why after it, and the installation's own page on
  * the forge where an owner changes what it selects.
  */
 
@@ -12,7 +12,7 @@ import { repositoryWorkerReachLine } from "../../core/projectRepositories.ts";
 import { repositoryWorkerReachTone } from "../../core/tones.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
+import { WordDetail } from "../ui/WordDetail.tsx";
 
 export function BindingWorkerReach(props: {
   readonly reach: ProjectRepositoryWorkerReachResponse;
@@ -21,13 +21,16 @@ export function BindingWorkerReach(props: {
   const line = repositoryWorkerReachLine(props.reach);
   return (
     <>
-      <Tooltip text={line.detail}>
-        <span>
-          <Pill tone={repositoryWorkerReachTone(props.reach.reach)}>
-            {text(line.status)}
-          </Pill>
-        </span>
-      </Tooltip>
+      <span>
+        <WordDetail
+          word={
+            <Pill tone={repositoryWorkerReachTone(props.reach.reach)}>
+              {text(line.status)}
+            </Pill>
+          }
+          detail={line.detail}
+        />
+      </span>
       {line.settingsUrl === undefined ? null : (
         <a
           href={line.settingsUrl}

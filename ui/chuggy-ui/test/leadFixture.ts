@@ -403,6 +403,8 @@ export interface LeadServed {
   readonly placement?: SessionPlacementResponse;
   readonly settings?: unknown;
   readonly context?: SessionContextResponse;
+  /** The lead's own read, where a case draws one `leadBody` does not. */
+  readonly lead?: LeadResponse;
 }
 
 /** The body and status every route the lead page reads answers with, so a case
@@ -424,11 +426,12 @@ export function leadRouteAnswer(
   }
   if (url.includes("/lead"))
     return found(
-      leadBody(
-        served.batches,
-        served.turns,
-        served.note ?? leadHandoffNote(false),
-      ),
+      served.lead ??
+        leadBody(
+          served.batches,
+          served.turns,
+          served.note ?? leadHandoffNote(false),
+        ),
     );
   if (url.includes("/selector-settings"))
     return found(served.settings ?? leadSelectorSettingsBody());

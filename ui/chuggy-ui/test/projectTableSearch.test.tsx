@@ -38,6 +38,11 @@ import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { readFailedLines } from "./readFailedLines.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import {
+  ticketListFilterChosen,
+  ticketListFilterHeld,
+  ticketListFilterOpened,
+} from "./ticketListFilter.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -224,9 +229,7 @@ test("a search under a standing counts only the rows of that standing, of those 
           nextCursor: "x-2",
         });
   });
-  expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
-    new Set(["Pending", ""]),
-  );
+  expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(new Set(["Pending"]));
   expect(titlesDrawn()).toStrictEqual(["Ticket 5"]);
   expect(screen.getByRole("status").textContent).toBe(
     "1 matching ticket so far",
@@ -269,7 +272,8 @@ test("the search is a button that opens out to a focused box and closes on Escap
   await drawnAt({ q: "#121" }, () => served([held(121, "Done")]));
   const toggle = screen.getByRole("button", { name: "Search tickets" });
   const box = screen.getByRole("textbox", { name: "Search tickets" });
-  const field = box.closest(".ticket-list-search-field");
+  const field = box.closest(".list-search-field");
+  expect(field?.closest(".list-controls .list-selects")).not.toBeNull();
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(toggle.hasAttribute("data-active")).toBe(true);
   expect(field?.hasAttribute("inert")).toBe(true);
@@ -365,8 +369,9 @@ test("a further page that could not be read says so in one line, keeping its row
   await press("Show more");
   await press("Show more");
   expect(titlesDrawn()).toStrictEqual(["Ticket 150", "Ticket 120"]);
-  expect(readFailedLines()).toStrictEqual(["More · Not read · Server error"]);
-  expect(document.body.textContent).not.toContain("InternalError");
+  expect(readFailedLines()).toStrictEqual([
+    "More · Not read · Server error · InternalError",
+  ]);
   expect(showMores()).toBe(1);
 });
 
@@ -400,6 +405,7 @@ test("an empty active list says so and offers the finished tickets behind one Sh
     "No active or recently finished tickets.",
   );
   expect(titlesDrawn()).toStrictEqual([]);
+  expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
   const activeReads = drawn.asked.filter((asked) => asked.has("active"));
   const finishedReads = drawn.asked.filter((asked) => asked.has("phase"));
   expect(finishedReads.length).toBe(activeReads.length);
@@ -503,13 +509,13 @@ test("a Show more pressed while no read of the list is running starts none", asy
   expect(pagesAsked(drawn.asked.slice(pressedAt))).toStrictEqual(["finished"]);
 });
 
-/** The filter the list is drawn under, as its control names it. */
-function filterDrawn(): string | null {
-  return screen.getByRole("button", { name: /^Filter/u }).textContent;
+/** The state the list is drawn under, as the Filter control's panel holds it. */
+async function filterDrawn(): Promise<string | undefined> {
+  return ticketListFilterHeld("State", settled);
 }
 
-/** The phases each read asked for, one read to an entry: the filter's, and
- * none for the counts, which are of every ticket. */
+/** The phases each read asked for, one read to an entry, which is the
+ * filter's. */
 function phasesAsked(asked: readonly URLSearchParams[]): readonly string[] {
   return asked.map((each) => each.getAll("phase").join(","));
 }
@@ -533,9 +539,9 @@ test("a filter the address names is the list drawn, whatever this browser kept",
   const drawn = await drawnAt({ filter: "Escalated" }, servedByPhase);
   expect(titlesDrawn()).toStrictEqual(["Ticket 4"]);
   expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
-    new Set(["Escalated", ""]),
+    new Set(["Escalated"]),
   );
-  expect(filterDrawn()).toContain("Escalated");
+  expect(await filterDrawn()).toBe("Escalated");
   expect(drawn.written).toStrictEqual([]);
 });
 
@@ -553,21 +559,40 @@ test("where the address names no filter the kept one is drawn, and one kept by a
   expect(drawn.written).toStrictEqual([{ sort: "Oldest" }]);
   expect(titlesDrawn()).toStrictEqual(["Ticket 4"]);
   expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
-    new Set(["Escalated", ""]),
+    new Set(["Escalated"]),
   );
 });
 
 test("a filter chosen is written to the address and kept by this browser", async () => {
   const drawn = await drawnAt({ q: "gate" }, servedByPhase);
-  fireEvent.keyDown(screen.getByRole("button", { name: /^Filter/u }), {
-    key: "ArrowDown",
-  });
-  await screen.findByRole("menu");
-  fireEvent.click(screen.getByRole("menuitemradio", { name: "Done" }));
-  await settled();
+  await ticketListFilterChosen("State", "Done", settled);
   expect(drawn.written).toStrictEqual([{ q: "gate", filter: "Done" }]);
   expect(localStorage.getItem(ticketListFilterStored)).toBe("Done");
   expect(titlesDrawn()).toStrictEqual(["Ticket 120"]);
+});
+
+test("Clear all writes every state and no member to the address, keeping the search and the sort, and a mark writes its own away", async () => {
+  const drawn = await drawnAt(
+    { q: "gate", sort: "Oldest", filter: "Done", creator: "s-ada" },
+    servedByPhase,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Remove State: Done" }));
+  await settled();
+  expect(drawn.written).toStrictEqual([
+    { q: "gate", sort: "Oldest", filter: "All", creator: "s-ada" },
+  ]);
+  fireEvent.click(
+    within(await ticketListFilterOpened(settled)).getByRole("button", {
+      name: "Clear all",
+    }),
+  );
+  await settled();
+  expect(drawn.written.at(-1)).toStrictEqual({
+    q: "gate",
+    sort: "Oldest",
+    filter: "All",
+  });
+  expect(localStorage.getItem(ticketListFilterStored)).toBe("All");
 });
 
 test("a standing none of whose rows the first page holds says so of the rows read, and Show more reads the page that holds one", async () => {
@@ -589,3 +614,74 @@ test("a standing none of whose rows the first page holds says so of the rows rea
   expect(titlesDrawn()).toStrictEqual(["Ticket 130"]);
   expect(screen.queryByRole("status")).toBeNull();
 });
+
+/** The rows a list holds for no reader: the skeletons standing in for rows. */
+function skeletonsDrawn(list: HTMLElement): number {
+  return list.querySelectorAll('li[aria-hidden="true"]').length;
+}
+
+test("the first read stands as skeleton rows a reader is not told of, under a list named as loading, until its rows replace them", async () => {
+  const first = heldAnswer();
+  await drawnAt({}, (asked) =>
+    asked.get("active") === "true" ? first.answered : served([]),
+  );
+  const loading = screen.getByRole("list", { name: "Loading…" });
+  expect(skeletonsDrawn(loading)).toBe(3);
+  expect(within(loading).queryAllByRole("listitem")).toStrictEqual([]);
+  first.release(served([held(150, "Work")]));
+  await settled();
+  expect(screen.queryByRole("list", { name: "Loading…" })).toBeNull();
+  expect(titlesDrawn()).toStrictEqual(["Ticket 150"]);
+  expect(skeletonsDrawn(screen.getByRole("list", { name: "Tickets" }))).toBe(0);
+});
+
+test("a further page being read stands as skeleton rows at the list's end, under the rows already drawn", async () => {
+  const finished = heldAnswer();
+  await drawnAt({}, (asked) =>
+    asked.get("active") === "true"
+      ? served([held(150, "Work")])
+      : finished.answered,
+  );
+  await press("Show more");
+  const list = screen.getByRole("list", { name: "Tickets" });
+  expect(titlesDrawn()).toStrictEqual(["Ticket 150"]);
+  expect(skeletonsDrawn(list)).toBe(3);
+  expect(list.lastElementChild?.getAttribute("aria-hidden")).toBe("true");
+  expect(showMores()).toBe(0);
+  finished.release(served([held(120, "Done")]));
+  await settled();
+  expect(titlesDrawn()).toStrictEqual(["Ticket 150", "Ticket 120"]);
+  expect(skeletonsDrawn(list)).toBe(0);
+});
+
+test.each([
+  [
+    "a state filter",
+    { filter: "Escalated" },
+    "No active or recently finished tickets.",
+  ],
+  [
+    "a search under a filter and a sort",
+    { q: "nomatch", filter: "Work", sort: "Oldest" },
+    "0 matching tickets",
+  ],
+] as const)(
+  "%s that matches nothing says so in one line beside Clear filters, which draws every ticket under the sort it had",
+  async (_narrowing, address, said) => {
+    const drawn = await drawnAt(address, (asked) =>
+      asked.has("q") || asked.has("phase")
+        ? served([], { matched: 0 })
+        : served([held(150, "Work")]),
+    );
+    expect(screen.getByRole("status").textContent).toBe(said);
+    expect(titlesDrawn()).toStrictEqual([]);
+    await press("Clear filters");
+    expect(drawn.written.at(-1)).toStrictEqual({
+      ...("sort" in address ? { sort: address.sort } : {}),
+      filter: "All",
+    });
+    expect(localStorage.getItem(ticketListFilterStored)).toBe("All");
+    expect(titlesDrawn()).toStrictEqual(["Ticket 150"]);
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+  },
+);

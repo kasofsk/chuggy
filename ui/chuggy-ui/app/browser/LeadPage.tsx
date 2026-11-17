@@ -64,6 +64,7 @@ import {
   sessionStateTone,
   sessionTurnStateTone,
 } from "../core/tones.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 import { usePanelState } from "./api.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { DataPanel, PanelUnready } from "./DataPanel.tsx";
@@ -90,7 +91,7 @@ import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
-import { Tooltip } from "./ui/Tooltip.tsx";
+import { WordDetail } from "./ui/WordDetail.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 
 /**
@@ -242,19 +243,18 @@ function LeadTurnRow(props: { readonly turn: LeadTurnResponse }): ReactNode {
       <td className="num">{turn.ordinal}</td>
       <td>{text(leadTurnInputKindLabel(turn.inputKind))}</td>
       <td>
-        <Tooltip
-          text={
-            turn.failure === undefined
-              ? undefined
-              : text(leadTurnFailureLabel(turn.failure))
-          }
-        >
-          <span>
+        <WordDetail
+          word={
             <Pill tone={sessionTurnStateTone(turn.state)}>
               {text(leadTurnStateLabel(turn.state))}
             </Pill>
-          </span>
-        </Tooltip>
+          }
+          detail={
+            turn.failure === undefined
+              ? undefined
+              : leadTurnFailureLabel(turn.failure)
+          }
+        />
       </td>
       <td>{turn.model ?? "—"}</td>
       <td className="num">
@@ -404,7 +404,7 @@ function LeadBody(props: {
 
 export function LeadPage(): ReactNode {
   const text = useCopyText();
-  const params = useParams({ from: "/$tenant/$project/lead" });
+  const params = useParams({ from: settingsRoutes.project.leadSession });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
     project: params.project,
@@ -428,11 +428,12 @@ export function LeadPage(): ReactNode {
       <>
         <LeadSelectorStrip partition={partition} />
         {absence === undefined ? (
-          <EmptyState label={label} variant="page" action={action} />
+          <EmptyState label={label} variant="page" level={1} action={action} />
         ) : (
           <EmptyState
             label={label}
             variant="page"
+            level={1}
             detail={absence}
             action={action}
           />

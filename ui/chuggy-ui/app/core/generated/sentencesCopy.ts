@@ -7,9 +7,11 @@ export interface SentencesCopy {
   readonly "sentences-escalation-evaluation-failure": Record<never, never>;
   readonly "sentences-escalation-work-unavailable": Record<never, never>;
   readonly "sentences-escalation-evaluation-blocked": Record<never, never>;
-  readonly "sentences-escalation-landing-unavailable": Record<never, never>;
+  readonly "sentences-escalation-finalization-unavailable": Record<
+    never,
+    never
+  >;
   readonly "sentences-native-escalation": Record<never, never>;
-  readonly "sentences-native-approval": Record<never, never>;
   readonly "sentences-native-evaluation-approval": Record<never, never>;
   readonly "sentences-native-evaluation-approval-awaited": Record<never, never>;
   readonly "sentences-state-pending": Record<never, never>;
@@ -82,7 +84,7 @@ export interface SentencesCopy {
     readonly cycle: unknown;
     readonly ticket: unknown;
   };
-  readonly "sentences-refusal-landing-not-current": {
+  readonly "sentences-refusal-finalization-not-current": {
     readonly cycle: unknown;
     readonly ticket: unknown;
   };
@@ -99,10 +101,14 @@ export interface SentencesCopy {
   readonly "sentences-refusal-selection-unsupported": Record<never, never>;
   readonly "sentences-refusal-program-exceeds-plan": Record<never, never>;
   readonly "sentences-refusal-program-skips-checks": Record<never, never>;
+  readonly "sentences-refusal-program-stage-misplaced": Record<never, never>;
   readonly "sentences-refusal-overrides-unsupported": Record<never, never>;
   readonly "sentences-refusal-overrides-unknown": Record<never, never>;
   readonly "sentences-refusal-capacity-reached": Record<never, never>;
-  readonly "sentences-refusal-landing-request-closed": Record<never, never>;
+  readonly "sentences-refusal-finalization-request-closed": Record<
+    never,
+    never
+  >;
   readonly "sentences-refusal-overrides-move-definition": Record<never, never>;
   readonly "sentences-refusal-approval-as-work": Record<never, never>;
   readonly "sentences-refusal-overrides-change-approval": Record<never, never>;

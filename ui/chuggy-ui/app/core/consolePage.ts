@@ -18,6 +18,8 @@ import type {
 } from "../../../../src/contract/consolePage.ts";
 import type { Copy } from "./copy.ts";
 import { repositoryLabel } from "./projectRepositories.ts";
+import { settingsGroupLabels, settingsSection } from "./settingsNav.ts";
+import type { SettingsSectionId } from "./settingsNav.ts";
 import { ticketCreationQueryOf } from "./ticketCreationQuery.ts";
 
 /** The route a router matched, as plain data: its identity, the parameters
@@ -53,14 +55,17 @@ function consolePageTicketNew(match: ConsolePageMatch): unknown {
 const consolePagePlainPaths = {
   Tickets: "",
   Inbox: "inbox",
-  Lead: "lead",
-  Catalog: "catalog",
-  Repositories: "repositories",
-  Runners: "runners",
+  Lead: "settings/lead-session",
+  Catalog: "settings/catalog",
+  Repositories: "settings/repositories",
   Epics: "epics",
 } as const satisfies Readonly<Record<string, string>>;
 
 type ConsolePagePlain = keyof typeof consolePagePlainPaths;
+
+/** Where a page the contract still names as Runners is, an address that only
+ * redirects and so is no page this table reads a match as. */
+const consolePageRunnersPath = "runners";
 
 /** Each settings section, by where under the project its page is. */
 const consolePageSettingsPaths: Readonly<
@@ -68,6 +73,7 @@ const consolePageSettingsPaths: Readonly<
 > = {
   ProjectLead: "settings/lead",
   ProjectPlacement: "settings/placement",
+  ProjectPools: "settings/pools",
   ProjectPermissions: "settings/permissions",
   WorkspacePeople: "settings/workspace/people",
   WorkspaceAccounts: "settings/workspace/accounts",
@@ -107,7 +113,9 @@ function consolePageRouteId(path: string): string {
 }
 
 /** Each route under a project, by the identity the router gives it, and the
- * page it is. A settings address that only redirects names no section. */
+ * page it is. A settings address that only redirects names no section, and
+ * nor do the reader's preferences or the project's appearance, which the
+ * contract names none for. */
 const consolePageRoutes: ReadonlyMap<
   string,
   (match: ConsolePageMatch) => unknown
@@ -116,7 +124,7 @@ const consolePageRoutes: ReadonlyMap<
     ([page, path]) => [consolePageRouteId(path), () => ({ page })] as const,
   ),
   [
-    "/$tenant/$project/repositories/$repository",
+    "/$tenant/$project/settings/repositories/$repository",
     (match) => ({ page: "Repository", repository: match.params["repository"] }),
   ],
   ["/$tenant/$project/tickets/new", consolePageTicketNew],
@@ -148,6 +156,8 @@ const consolePageRoutes: ReadonlyMap<
   ["/$tenant/$project/settings/", consolePageSettings()],
   ["/$tenant/$project/settings/workspace", consolePageSettings()],
   ["/$tenant/$project/settings/workspace/", consolePageSettings()],
+  ["/$tenant/$project/settings/preferences", consolePageSettings()],
+  ["/$tenant/$project/settings/appearance", consolePageSettings()],
   ...Object.entries(consolePageSettingsPaths).map(
     ([section, path]) =>
       [
@@ -165,13 +175,14 @@ function consolePagePathOf(page: ConsolePage): string {
     case "Lead":
     case "Catalog":
     case "Repositories":
-    case "Runners":
     case "Epics":
       return consolePagePlainPaths[page.page satisfies ConsolePagePlain];
+    case "Runners":
+      return consolePageRunnersPath;
     case "Epic":
       return `epics/${String(page.epic)}`;
     case "Repository":
-      return `repositories/${encodeURIComponent(page.repository)}`;
+      return `settings/repositories/${encodeURIComponent(page.repository)}`;
     case "Ticket":
       return `tickets/${String(page.ticket)}`;
     case "TicketEdit":
@@ -212,48 +223,21 @@ export function consolePageOf(
   return parsed.success ? parsed.data : undefined;
 }
 
-/** The settings section's words, as the settings' side navigation draws its
- * level and its page. */
-const consolePageSectionWords: Readonly<
-  Record<ConsolePageSettingsSection, readonly [Copy, Copy]>
+/** Each section of the contract's, by the settings roster's section it is. */
+const consolePageSectionIds: Readonly<
+  Record<ConsolePageSettingsSection, SettingsSectionId>
 > = {
-  ProjectLead: [{ id: "settings-nav-project" }, { id: "settings-nav-lead" }],
-  ProjectPlacement: [
-    { id: "settings-nav-project" },
-    { id: "settings-nav-placement" },
-  ],
-  ProjectPermissions: [
-    { id: "settings-nav-project" },
-    { id: "settings-nav-permissions" },
-  ],
-  WorkspacePeople: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-people" },
-  ],
-  WorkspaceAccounts: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-accounts" },
-  ],
-  WorkspacePermissions: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-permissions" },
-  ],
-  WorkspaceRunners: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-personal-runners" },
-  ],
-  WorkspaceUsage: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-usage" },
-  ],
-  SiteWorkspaces: [
-    { id: "settings-nav-site" },
-    { id: "settings-nav-workspaces" },
-  ],
-  SitePermissions: [
-    { id: "settings-nav-site" },
-    { id: "settings-nav-permissions" },
-  ],
+  ProjectLead: "lead",
+  ProjectPlacement: "placement",
+  ProjectPools: "pools",
+  ProjectPermissions: "permissions",
+  WorkspacePeople: "people",
+  WorkspaceAccounts: "accounts",
+  WorkspacePermissions: "workspace-permissions",
+  WorkspaceRunners: "my-runner",
+  WorkspaceUsage: "usage",
+  SiteWorkspaces: "site-workspaces",
+  SitePermissions: "site-permissions",
 };
 
 const consolePageListWords: Readonly<
@@ -328,8 +312,14 @@ export function consolePageLabel(page: ConsolePage): Copy {
       };
     case "Settings": {
       if (page.section === undefined) return { id: "pages-settings" };
-      const [level, section] = consolePageSectionWords[page.section];
-      return { id: "pages-settings-section", args: { level, section } };
+      const section = settingsSection(consolePageSectionIds[page.section]);
+      return {
+        id: "pages-settings-section",
+        args: {
+          level: settingsGroupLabels[section.group],
+          section: section.label,
+        },
+      };
     }
   }
 }

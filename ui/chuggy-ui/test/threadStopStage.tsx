@@ -285,7 +285,7 @@ export function stageBox(): HTMLTextAreaElement {
   return screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
 }
 
-/** The composer's one button, by the word it says. */
+/** The composer's buttons that are drawn, by the word each says. */
 export function stageButton(): string {
   const found = ["Stop", "Send"].filter(
     (name) => screen.queryByRole("button", { name }) !== null,
@@ -339,7 +339,7 @@ function stageAnswerDrawn(answered: Element): string {
         : part.textContent,
   );
   const word = answered.querySelector(
-    '.conversation-meta p [role="status"]:not(.visually-hidden)',
+    ".conversation-meta p [data-word]:not(.visually-hidden)",
   )?.textContent;
   return [...parts, ...(word ? [`(${word})`] : [])].join(" ");
 }

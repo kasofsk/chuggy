@@ -20,7 +20,7 @@ import { landingQueuesQuery } from "../../core/ticketQueries.ts";
 import { usePanelState } from "../api.ts";
 import { pillLookClassName } from "../ui/Pill.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
-import { readValue } from "./TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 
 import "./ticket.css";
@@ -36,8 +36,9 @@ export function useLandingQueues(
 /** The place `landingQueuePlaceOf` answers, nothing where it answers none. */
 export function LandingQueueChip(props: {
   readonly place: LandingQueuePlace | undefined;
-  /** Inside a link, whose own focus the chip must not split, the words are a
-   * title rather than a tooltip that takes focus. */
+  /** Inside a link or button, whose own focus the chip must not split, the
+   * words are the chip's name alone: the ticket's page draws them on hover or
+   * press. */
   readonly inLink?: boolean | undefined;
 }): ReactNode {
   const text = useCopyText();
@@ -47,15 +48,20 @@ export function LandingQueueChip(props: {
   const words = text(landingQueuePlaceWords(place));
   const chip = (
     <span
-      className={`${pillLookClassName({ tone })} landing-queue-chip`}
+      className={`${pillLookClassName({ tone })} finalization-queue-chip`}
       role="img"
       aria-label={words}
-      title={props.inLink === true ? words : undefined}
       data-holding={place.holding || undefined}
     >
       <TicketRunMarkDrawn mark="Merge" tone={tone} />
       <span aria-hidden="true">{text(landingQueuePlaceFigure(place))}</span>
     </span>
   );
-  return props.inLink === true ? chip : <Tooltip text={words}>{chip}</Tooltip>;
+  return props.inLink === true ? (
+    chip
+  ) : (
+    <Tooltip trigger="abbreviation" text={words}>
+      {chip}
+    </Tooltip>
+  );
 }
