@@ -64,7 +64,9 @@ import { Tooltip } from "./ui/Tooltip.tsx";
 
 import "./shell/shell.css";
 
-/** The bar's frame with no project in it, the page filling what is left. */
+/** The bar's frame with no project in it, the page filling what is left. What
+ * is left is the page's container, named `page` as the shell names its own,
+ * since no shell draws this one. */
 function MemberChatFrame(props: {
   readonly tenant: string;
   readonly children: ReactNode;
@@ -75,7 +77,7 @@ function MemberChatFrame(props: {
         <StreamPortsProvider>
           <div className="bg-surface-0 grid h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
             <TopBar partition={undefined} chat={props.tenant} />
-            <main className="flex min-h-0 min-w-0 flex-col">
+            <main className="@container/page flex min-h-0 min-w-0 flex-col">
               {props.children}
             </main>
           </div>
