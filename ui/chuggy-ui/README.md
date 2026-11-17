@@ -47,8 +47,6 @@ builds with.
   run's page, the usage panel and the overview. `ticketPageFacts.ts` derives what the page
   draws from the reads it already holds, so each part is handed facts rather
   than a query.
-- `ui/chuggy-ui/app/styles.css` — what the pages that have not moved to the
-  design system still draw with; it shrinks as they move.
 - `ui/chuggy-ui/terminal/` — the setup program's entry and its Node adapters:
   files, a lock, a listener, child processes, the machine's own paths and
   requests, filling the ports `ui/chuggy-ui/app/core/setupPorts.ts` declares.

@@ -92,6 +92,7 @@ import {
 } from "./ticket/TicketPageTabs.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
+import "./DataPanel.css";
 
 /** The root: the project last opened or else the first, and for a reader
  * with none the welcome page. */

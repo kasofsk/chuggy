@@ -14,6 +14,7 @@ import { instantExactText } from "../core/figures.ts";
 import { freshnessIsStale, freshnessLabel } from "../core/freshness.ts";
 import { nowMs } from "./ports.ts";
 import { Tooltip } from "./ui/Tooltip.tsx";
+import "./Freshness.css";
 
 export const freshnessTickMs = 5_000;
 

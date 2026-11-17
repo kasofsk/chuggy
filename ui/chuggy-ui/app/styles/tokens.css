@@ -278,6 +278,7 @@
     --hairline: 1px;
     --rail: 2px; /* the standing rail of a ledger group */
     --height-clip: 24em; /* the tallest a quoted block stands before it scrolls */
+    --height-preview: 24rem; /* the tallest a run's output stands before it scrolls */
     --height-run-conversation: 70vh; /* a run's conversation, which scrolls itself */
     --height-image-opened: 70dvh; /* an image opened over the page, under its title */
     --height-touch: 44px; /* the least a finger is given to press */

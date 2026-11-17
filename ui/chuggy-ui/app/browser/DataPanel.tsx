@@ -23,6 +23,7 @@ import { Notice } from "./ui/Notice.tsx";
 import { Panel } from "./ui/Panel.tsx";
 import { Skeleton, type SkeletonShape } from "./ui/Skeleton.tsx";
 import { WordDetail } from "./ui/WordDetail.tsx";
+import "./Freshness.css";
 
 /** Retry for a failed read, or nothing when the read carries no retry. */
 function PanelRetry(props: {

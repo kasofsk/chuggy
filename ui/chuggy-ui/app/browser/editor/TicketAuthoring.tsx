@@ -42,6 +42,7 @@ import {
   ticketYamlStored,
 } from "./authoringGuards.tsx";
 import type { TicketYamlAuthoringProps } from "./TicketYamlAuthoring.tsx";
+import "../DataPanel.css";
 
 const TicketYamlAuthoring = lazy(() => import("./TicketYamlAuthoring.tsx"));
 

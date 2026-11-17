@@ -17,6 +17,9 @@
  * where the pane leaves the page narrow the overview lays one column while
  * the screen is still a desk's, which is the page asking its own width, and a
  * step's evaluator list sits below its box rather than over it.
+ *
+ * Last, a run's artifact previewed from its details: the output stands in its
+ * own framed box and scrolls inside it past that box's height.
  */
 
 import { ticketActionReachResponseSchema } from "../../../../src/contract/actionReach.ts";
@@ -24,6 +27,7 @@ import {
   configurationResponseSchema,
   executionResponseSchema,
   executionsResponseSchema,
+  outputContentResponseSchema,
   projectResponseSchema,
   ticketLandingsResponseSchema,
   ticketNativeActionsResponseSchema,
@@ -61,6 +65,7 @@ import {
   stubApiRead,
   stubApiTenant,
 } from "./stubApi.ts";
+import type { StubApiRead } from "./stubApi.ts";
 
 const zodProbeViolation = { directive: "script-src", blocked: "eval" };
 
@@ -473,4 +478,92 @@ for (const screen of renderedScreens)
         await ticketPageRanFits(page);
       },
     });
+  });
+
+/** Run 7 of ticket 21 with one JSON artifact in its result, and that artifact
+ * longer than its preview's box. */
+function ticketPageRanArtifactReads(): readonly StubApiRead[] {
+  const shape = ticket21Parked.find((parked) => parked.task === 7);
+  if (shape === undefined) throw new Error("ticket 21 holds no run 7");
+  const path = `${ticketPageProjectPath}/executions/${shape.execution}`;
+  return [
+    stubApiRead(path, executionResponseSchema, {
+      ...ledgerExecution(shape),
+      attempts: [],
+      result: {
+        manifest: "m1",
+        attempt: "a1",
+        schemaVersion: 1,
+        digest: "d".repeat(64),
+        verdict: "Fail",
+        recordedAt: "2026-08-27T00:00:00Z",
+        artifacts: [
+          {
+            ordinal: 1,
+            role: "Diagnostic",
+            path: ".chuggy/check-output.json",
+            digest: "e".repeat(64),
+            bytes: 2048,
+            output: {
+              name: "check-output",
+              path: ".chuggy/check-output.json",
+              mediaType: "application/json",
+              renderer: "Json",
+            },
+          },
+        ],
+      },
+    }),
+    stubApiRead(`${path}/artifacts/1`, outputContentResponseSchema, {
+      read: "Content",
+      mediaType: "application/json",
+      renderer: "Json",
+      encoding: "Utf8",
+      content: JSON.stringify(
+        Array.from({ length: 80 }, (_, line) => ({ line })),
+      ),
+    }),
+  ];
+}
+
+for (const viewport of ticketPageViewports)
+  test(`a run's artifact preview stands in its own framed box and scrolls inside it, on the ${viewport}`, async ({
+    browser,
+  }) => {
+    const served = await servedOpen({
+      root: renderedDist,
+      reads: [...ticketPageRanArtifactReads(), ...ticketPageRanReads],
+    });
+    try {
+      const rendered = await renderedOpen(browser, served.origin, {
+        route: `/${stubApiTenant}/${stubApiProject}/tickets/21/runs/7?view=details`,
+        viewport,
+        signedIn: true,
+        ready: (page) => page.getByText(".chuggy/check-output.json"),
+      });
+      const page = rendered.page;
+      await page.getByRole("button", { name: "Preview" }).click();
+      const preview = page.locator('pre[data-renderer="Json"]');
+      await expect(preview).toBeVisible();
+      const box = await preview.evaluate((drawn) => {
+        const style = getComputedStyle(drawn);
+        const rem = parseFloat(
+          getComputedStyle(document.documentElement).fontSize,
+        );
+        return {
+          tallest: parseFloat(style.maxHeight) / rem,
+          framed: style.borderTopStyle !== "none",
+          scrolls: drawn.scrollHeight > drawn.clientHeight,
+        };
+      });
+      expect(box, "the preview's box").toEqual({
+        tallest: 24,
+        framed: true,
+        scrolls: true,
+      });
+      renderedNoViolations(rendered, [zodProbeViolation]);
+      expect(served.unanswered).toEqual([]);
+    } finally {
+      await served.close();
+    }
   });

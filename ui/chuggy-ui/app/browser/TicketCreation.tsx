@@ -162,6 +162,7 @@ import type { Copy, CopyText } from "../core/copy.ts";
 import { settingsRoutes } from "../core/settingsNav.ts";
 
 import "./TicketCreation.css";
+import "./DataPanel.css";
 
 export type Attempt<Held extends DraftHeld = DraftHeld> =
   | { readonly attempt: "Idle" }
