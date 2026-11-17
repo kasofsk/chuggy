@@ -34,9 +34,9 @@
  * Attribute values are read in all three forms the markup allows — double
  * quoted, single quoted and bare — because which one a bundler writes is the
  * bundler's business and not a property this may depend on. A rule outside
- * every layer is invisible to the cascade half — the console still serves one
- * unlayered sheet by design — and `.chug/tasks/check-console-sheets.sh` is
- * what reads the sheets a rule may not leave. The layer scan skips a quoted
+ * every layer is invisible to the cascade half, and
+ * `.chug/tasks/check-console-sheets.sh` is what reads the sheets a rule may
+ * not leave. The layer scan skips a quoted
  * string, so a brace inside one no longer closes a layer early; a brace inside
  * an unquoted `url()` still does. The value scans read a layer's whole body,
  * so a length or a colour inside a `var()` fallback or a data URI is read like

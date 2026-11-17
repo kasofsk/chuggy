@@ -59,7 +59,6 @@ import { schemeChoiceApply, schemeChoiceRead } from "./scheme.ts";
 import { themeColorFollow } from "./themeColor.ts";
 import { themeAssignmentsPut, themeScopeAt } from "./themeWorn.ts";
 import { WordingProvider, wordingApply, wordingRead } from "./wording.tsx";
-import "../styles.css";
 
 const queryClient = consoleQueryClient();
 
