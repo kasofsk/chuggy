@@ -981,7 +981,14 @@ test("with neither a runner nor the person's chat host, the offer explains both 
     setupChatSized(undefined, 0, {}),
   ])
     expect(
-      here({ lacks: "Runner", chat: true }, roomy, undefined, false, "linux", size),
+      here(
+        { lacks: "Runner", chat: true },
+        roomy,
+        undefined,
+        false,
+        "linux",
+        size,
+      ),
     ).toEqual(
       offered(
         `${runnerAndHost} ${putHere} ${holds("2 GiB whenever it runs: 2 GiB a chat, for up to 1")} ${takesWork}`,
