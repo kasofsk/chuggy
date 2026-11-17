@@ -91,7 +91,7 @@ import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
-import { Tooltip } from "./ui/Tooltip.tsx";
+import { WordDetail } from "./ui/WordDetail.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 
 /**
@@ -243,20 +243,18 @@ function LeadTurnRow(props: { readonly turn: LeadTurnResponse }): ReactNode {
       <td className="num">{turn.ordinal}</td>
       <td>{text(leadTurnInputKindLabel(turn.inputKind))}</td>
       <td>
-        <Tooltip
-          trigger="abbreviation"
-          text={
-            turn.failure === undefined
-              ? undefined
-              : text(leadTurnFailureLabel(turn.failure))
-          }
-        >
-          <span>
+        <WordDetail
+          word={
             <Pill tone={sessionTurnStateTone(turn.state)}>
               {text(leadTurnStateLabel(turn.state))}
             </Pill>
-          </span>
-        </Tooltip>
+          }
+          detail={
+            turn.failure === undefined
+              ? undefined
+              : leadTurnFailureLabel(turn.failure)
+          }
+        />
       </td>
       <td>{turn.model ?? "—"}</td>
       <td className="num">

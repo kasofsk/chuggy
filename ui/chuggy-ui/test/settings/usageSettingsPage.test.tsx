@@ -20,6 +20,7 @@ import { UsageSettingsPage } from "../../app/browser/settings/UsageSettingsPage.
 import { copyTextEn } from "../../app/copy/catalog.ts";
 import { copyOrDataText } from "../../app/core/copy.ts";
 import { instantText } from "../../app/core/figures.ts";
+import { agentAccountReadingStaleLine } from "../../app/core/agentAccounts.ts";
 import {
   answer,
   drawnStrict,
@@ -186,6 +187,9 @@ test("each window's reading is drawn as its share and how long ago it was read, 
   expect(claude).toContain("pauses at 80 %");
   expect(claude).toContain("95 %");
   expect(within(sectionOf("Claude")).getAllByText("Stale")).toHaveLength(1);
+  expect(sectionOf("Claude").textContent).toContain(
+    `Stale · ${copyTextEn(agentAccountReadingStaleLine)}`,
+  );
   expect(claude).toContain("Chats and questionsPause with it");
   expect(claude).not.toMatch(/lead/iu);
   const codex = sectionOf("Codex").textContent ?? "";
@@ -219,7 +223,9 @@ test("a pause held only by credentials turned off says so and no until, and offe
   await drawUsage();
   const line = sectionOf("Claude").textContent ?? "";
   expect(line).toContain("Paused · Off");
-  expect(line).not.toContain("until");
+  expect(
+    line.replace(copyTextEn(agentAccountReadingStaleLine), ""),
+  ).not.toContain("until");
   expect(
     within(sectionOf("Claude")).queryByRole("button", {
       name: "Try Claude again now",

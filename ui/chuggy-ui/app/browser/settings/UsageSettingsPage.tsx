@@ -76,7 +76,7 @@ import { Figure } from "../ui/Figure.tsx";
 import { Input } from "../ui/Input.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
+import { WordDetail } from "../ui/WordDetail.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
 
@@ -279,11 +279,14 @@ function UsageSettingsReading(props: {
         <Figure figure={agoFigure(reading.observedAt, props.nowMs)} />
       </span>
       {agentAccountReadingStale(reading, props.nowMs) ? (
-        <Tooltip trigger="abbreviation" text={agentAccountReadingStaleLine}>
-          <span>
-            <Pill tone="parked">{text(agentAccountReadingStaleWord)}</Pill>
-          </span>
-        </Tooltip>
+        <span>
+          <WordDetail
+            word={
+              <Pill tone="parked">{text(agentAccountReadingStaleWord)}</Pill>
+            }
+            detail={agentAccountReadingStaleLine}
+          />
+        </span>
       ) : null}
     </span>
   );

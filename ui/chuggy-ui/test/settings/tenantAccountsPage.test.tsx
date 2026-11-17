@@ -338,7 +338,7 @@ test("a reader the accounts are withheld from is told who connects them and offe
 test("a listing that failed keeps its own line", async () => {
   await drawAccounts({ listing: () => answer({}, 500) });
   expect(readFailedLines(sectionOf("GitHub accounts"))).toStrictEqual([
-    "Not read · Server error",
+    "Not read · Server error · InternalError",
   ]);
 });
 

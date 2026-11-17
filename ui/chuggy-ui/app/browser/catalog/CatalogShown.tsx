@@ -38,6 +38,7 @@ import { RecordList, RecordRow, RecordRowSkeleton } from "../ui/RecordList.tsx";
 import { TextLink } from "../ui/TextLink.tsx";
 import { catalogEntrySource } from "./catalogSource.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 export function useCatalogPartition(): PartitionIdentity {
   const params = useParams({ from: settingsRoutes.project.catalog });
@@ -161,9 +162,11 @@ export function CatalogRowMeta(props: {
   return (
     <>
       {props.repository === undefined ? null : (
-        <span title={props.repository}>
-          {repositoryLabel(props.repository)}
-        </span>
+        <Tooltip trigger="abbreviation" text={props.repository}>
+          <span className="catalog-row-repository">
+            {repositoryLabel(props.repository)}
+          </span>
+        </Tooltip>
       )}
       {props.said === "" ? null : <span>{props.said}</span>}
     </>

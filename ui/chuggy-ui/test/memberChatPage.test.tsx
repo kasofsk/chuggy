@@ -338,7 +338,9 @@ test("abilities not read yet draw the page as loading, and no composer", async (
 
 test("abilities whose read failed say so, and draw no composer", async () => {
   await mountedAt(`/tenants/${tenant}/chat`, { abilities: "Failed" });
-  expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
+  expect(readFailedLines()).toStrictEqual([
+    "Not read · Server error · Internal",
+  ]);
   expect(screen.queryByText(copyTextEn(memberChatWithheld))).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   styleless();

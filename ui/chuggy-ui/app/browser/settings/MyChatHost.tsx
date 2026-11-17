@@ -72,6 +72,7 @@ import {
 } from "./SettingsListing.tsx";
 
 import "./tenantPeople.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 /** Answered as absent where the reader registers none. */
 export function useChatHost(tenant: string): PanelState<ChatHostResponse> {
@@ -158,7 +159,9 @@ function chatHostCells(
     host: (
       <>
         <span className="tabular-cut block font-strong text-ink-1">
-          <span title={host.id}>{short}</span>
+          <Tooltip trigger="abbreviation" text={host.id}>
+            <span>{short}</span>
+          </Tooltip>
         </span>
         <ChatHostThreadsMay host={host} />
       </>

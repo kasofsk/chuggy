@@ -176,7 +176,7 @@ test("the workspace's read loading or failed is its unready line", async () => {
   cleanup();
   await drawPermissions({ tenant: () => answer({}, 500) });
   expect(readFailedLines(sectionOf("Workspace"))).toStrictEqual([
-    "Not read · Server error",
+    "Not read · Server error · InternalError",
   ]);
 });
 

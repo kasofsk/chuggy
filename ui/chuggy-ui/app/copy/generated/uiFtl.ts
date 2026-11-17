@@ -10,6 +10,8 @@ ui-copied = Copied
 ui-copy-code = Copy code
 ui-dismiss = Dismiss
 ui-edit = Edit
+# What opens a detail too long for the line it follows.
+ui-detail-more = Details
 ui-ledger-current = Current
 ui-ledger-superseded = Superseded
 ui-locomotive = { -brand-name } is under way

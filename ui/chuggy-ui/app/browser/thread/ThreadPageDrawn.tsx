@@ -36,7 +36,7 @@ import {
 import { ChatPaneMenu, useChatThreadMenu } from "../shell/ChatPaneHeader.tsx";
 import { PageHeader } from "../ui/PageHeader.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
+import { WordDetail } from "../ui/WordDetail.tsx";
 import { ThreadEntryRename } from "./ThreadEntryLabel.tsx";
 
 /** The thread's standing, which is all the bar standing in for the head
@@ -53,7 +53,7 @@ function ThreadPageStandingPill(props: {
 }
 
 /** The thread's standing, then whether it is kept running and what its chat
- * host lets it do, each with what it means on focus. */
+ * host lets it do, after the words that say so. */
 function ThreadPageStanding(props: {
   readonly thread: ThreadResponse;
 }): ReactNode {
@@ -63,32 +63,19 @@ function ThreadPageStanding(props: {
     <>
       <ThreadPageStandingPill thread={thread} />
       {thread.jobsStanding === true ? (
-        <Tooltip
-          trigger="abbreviation"
-          text={{ id: "chat-kept-running-detail" }}
-        >
-          <span>
-            <Pill tone="live">{text({ id: "chat-kept-running" })}</Pill>
-          </span>
-        </Tooltip>
+        <Pill tone="live">{text({ id: "chat-kept-running" })}</Pill>
       ) : null}
       {thread.chatHostCapabilities === undefined ? null : (
-        <Tooltip
-          trigger="abbreviation"
-          text={text({
-            id: "chat-host-capabilities-detail",
-            args: {
-              capabilities: sessionCapabilitiesSaid(
-                text,
-                thread.chatHostCapabilities,
-              ),
-            },
-          })}
-        >
-          <span>
-            <Pill tone="neutral">{text({ id: "chat-host-capabilities" })}</Pill>
-          </span>
-        </Tooltip>
+        <span>
+          <WordDetail
+            word={
+              <Pill tone="neutral">
+                {text({ id: "chat-host-capabilities" })}
+              </Pill>
+            }
+            detail={sessionCapabilitiesSaid(text, thread.chatHostCapabilities)}
+          />
+        </span>
       )}
     </>
   );
@@ -131,6 +118,11 @@ export function ThreadPageHeader(props: {
           initial={thread.title ?? ""}
           actions={menu.actions}
         />
+      ) : null}
+      {thread.jobsStanding === true ? (
+        <p className="text-ink-3 max-w-measure m-0 text-sm">
+          {text({ id: "chat-kept-running-detail" })}
+        </p>
       ) : null}
       {menu.said}
     </PageHeader>

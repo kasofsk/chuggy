@@ -196,36 +196,35 @@ function ticketListFilterOf(word: unknown): TicketFilter {
   return ticketFilterOf(word) ?? ticketFilterAll;
 }
 
-/** The row's state: a chip as wide on every row, so the column lines up, with
- * what holds it there on hover. */
+/** The row's state: a chip as wide on every row, so the column lines up. What
+ * holds it there is on the row's own lines: what it waits on at the end of
+ * its first, and an escalation's cause in its meta. */
 export function TicketListState(props: {
   readonly row: ProjectTableRow;
   readonly dispatch?: TicketRowDispatch | undefined;
   readonly look?: TicketStateChipLook | undefined;
 }): ReactNode {
   const row = props.row;
-  const text = useCopyText();
-  const standing = ticketListStandingOf(row);
-  const unfinished =
-    row.openDependencies.length + row.revokedDependencies.length;
   return (
     <TicketStateChip
       ticket={row.ticket}
-      standing={standing}
-      hint={
-        standing === "Blocked"
-          ? text({
-              id: "project-table-blocked-hint",
-              args: { count: unfinished },
-            })
-          : row.badge === undefined
-            ? undefined
-            : text(row.badge)
-      }
+      standing={ticketListStandingOf(row)}
       dispatch={props.dispatch}
       look={props.look}
     />
   );
+}
+
+/** Why an escalated row is held, in its meta, where its badge says more than
+ * the phase its state chip already shows. */
+export function TicketListEscalation(props: {
+  readonly row: ProjectTableRow;
+}): ReactNode {
+  const text = useCopyText();
+  const badge = props.row.badge;
+  if (badge === undefined || badge.id === phaseLabel(props.row.phase).id)
+    return null;
+  return <span className="ticket-list-escalation">{text(badge)}</span>;
 }
 
 /** The repository the ticket works in, by owner and name, with its whole address on hover. */
@@ -402,6 +401,7 @@ export function TicketListRow(props: {
           <span className="ticket-list-activity">
             <TicketActivity activityAt={row.activityAt} nowMs={props.nowMs} />
           </span>
+          <TicketListEscalation row={row} />
           <TicketListRepository row={row} />
           <TicketListCreator
             row={row}

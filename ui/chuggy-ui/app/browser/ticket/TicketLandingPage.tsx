@@ -33,6 +33,7 @@ import { useTicketRuns } from "./TicketRuns.tsx";
 import { TicketRunsFrame } from "./TicketRunPage.tsx";
 
 import "./ticket.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 function TicketLandingHead(props: {
   readonly landing: TicketLanding;
@@ -96,10 +97,14 @@ function TicketLandingFields(props: {
       {proposal === undefined ? null : (
         <>
           <Field name={text({ id: "ticket-finalization-from" })}>
-            <code title={proposal.head}>{branchName(proposal.head)}</code>
+            <Tooltip trigger="abbreviation" text={proposal.head}>
+              <code>{branchName(proposal.head)}</code>
+            </Tooltip>
           </Field>
           <Field name={text({ id: "ticket-finalization-into" })}>
-            <code title={proposal.base}>{branchName(proposal.base)}</code>
+            <Tooltip trigger="abbreviation" text={proposal.base}>
+              <code>{branchName(proposal.base)}</code>
+            </Tooltip>
           </Field>
         </>
       )}

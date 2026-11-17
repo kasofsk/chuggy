@@ -566,7 +566,7 @@ test("the bindings are drawn while the worker app's reach is unread, and its mar
   await settled();
   expect(rowsDrawn()).toStrictEqual([
     "kasofsk/chuggy",
-    "gdoteof/scratchWorker app missingReview on GitHub",
+    "gdoteof/scratchWorker app missing · The worker app's installation 156786211 does not select this repository.Review on GitHub",
   ]);
   expect(bindingRows()).toStrictEqual(drawnRows);
 });
@@ -2020,7 +2020,7 @@ test("a listing that fails is a picker that offers nothing", async () => {
   const picker = within(screen.getByRole("dialog"));
   expect(picker.queryByRole("button", { name: "kasofsk/chuggy" })).toBeNull();
   expect(readFailedLines(screen.getByRole("dialog"))).toStrictEqual([
-    "Not read · Busy",
+    "Not read · Busy · Retryable",
   ]);
 });
 

@@ -403,6 +403,24 @@ test("a refused change is drawn on the card, holding what was typed, and Resume 
   ).toBeDefined();
 });
 
+test("a save whose follow is abandoned says why after its word, in the document without a hover", async () => {
+  serving("WorkFailureEscalated", "Answered");
+  const card = await drawn();
+  await overridesOpened(card);
+  await modelTyped(card, "opus");
+  const served = globalThis.fetch;
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
+    url.includes("/operations/")
+      ? Promise.reject(new Error("the line dropped"))
+      : served(url, init),
+  );
+  await pressed(card, "Save overrides");
+  expect(within(card).getByRole("alert").textContent).toBe(
+    "Not saved · No connection · the line dropped",
+  );
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
 /** The served double with the save's settlement held until `release`. */
 function settlementHeld(): {
   readonly asked: () => boolean;

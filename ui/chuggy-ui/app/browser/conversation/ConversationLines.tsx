@@ -57,7 +57,7 @@ import { conversationStandingArm } from "../../core/tones.ts";
 import { CopyButton } from "../ui/CopyButton.tsx";
 import { useCopyHeld } from "../ui/copyHeld.tsx";
 import { Figure } from "../ui/Figure.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
+import { WordDetail } from "../ui/WordDetail.tsx";
 import { ConversationGlyph } from "./ConversationCard.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
@@ -73,7 +73,7 @@ export type ConversationStandingDrawn = Exclude<
 /**
  * A centred line that belongs to neither speaker. `ruled` draws a hairline
  * through it, which is what separates a fact about the record from a turn the
- * runtime opened, and `detail` is on hover of the words.
+ * runtime opened, and `detail` follows the words.
  */
 export function ConversationSystemLine(props: {
   readonly words: CopyOrData;
@@ -88,9 +88,12 @@ export function ConversationSystemLine(props: {
   return (
     <p className="text-ink-3 flex items-center justify-center gap-3 text-xs">
       {rule}
-      <Tooltip trigger="abbreviation" text={props.detail}>
-        <span>{copyOrDataText(text, props.words)}</span>
-      </Tooltip>
+      <span>
+        <WordDetail
+          word={copyOrDataText(text, props.words)}
+          detail={props.detail}
+        />
+      </span>
       {rule}
     </p>
   );

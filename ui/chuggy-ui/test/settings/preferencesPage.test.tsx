@@ -447,7 +447,7 @@ test("a refused write puts the picker and the page back and says why", async () 
   expect(checkedIn("Theme")).toBe("Ember");
   expect(rootAccent()).toBe(accentOf(builtInThemes.ember));
   expect(document.querySelector(".notice")?.textContent).toBe(
-    "Theme not saved · that theme is no longer one of yours",
+    "Theme not saved · that theme is no longer one of yours · ThemeNotFound",
   );
 });
 
@@ -556,7 +556,7 @@ test("a later press refused puts back the earlier one the server kept", async ()
   expect(checkedIn("Theme")).toBe("Harbour");
   expect(rootAccent()).toBe(accentOf(builtInThemes.harbour));
   expect(document.querySelector(".notice")?.textContent).toBe(
-    "Theme not saved · that theme is no longer one of yours",
+    "Theme not saved · that theme is no longer one of yours · ThemeNotFound",
   );
 });
 

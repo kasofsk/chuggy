@@ -10,6 +10,7 @@ export interface UiCopy {
   readonly "ui-copy-code": Record<never, never>;
   readonly "ui-dismiss": Record<never, never>;
   readonly "ui-edit": Record<never, never>;
+  readonly "ui-detail-more": Record<never, never>;
   readonly "ui-ledger-current": Record<never, never>;
   readonly "ui-ledger-superseded": Record<never, never>;
   readonly "ui-locomotive": Record<never, never>;

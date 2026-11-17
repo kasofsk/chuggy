@@ -259,10 +259,11 @@ test("a thread kept running says so beside its standing, with how to end it, and
   expect(
     within(threadPageHead()).getByText("Open").closest(".page-header-status"),
   ).not.toBeNull();
-  fireEvent.focus(kept.closest("[tabindex]") ?? kept);
-  expect(
-    (await screen.findAllByText(/Close it, or ask it to stop them/u)).length,
-  ).toBeGreaterThan(0);
+  expect(kept.closest('[tabindex="0"]')).toBeNull();
+  expect(threadPageHead().textContent).toMatch(
+    /Close it, or ask it to stop them/u,
+  );
+  expect(screen.queryByRole("tooltip")).toBeNull();
 });
 
 test("a thread its owner's chat host holds says so beside its standing, with what it may do there, and one no chat host holds says nothing of it", async () => {
@@ -282,14 +283,10 @@ test("a thread its owner's chat host holds says so beside its standing, with wha
       }) as typeof fetch,
   );
   const hosted = screen.getByText("On your chat host");
-  fireEvent.focus(hosted.closest("[tabindex]") ?? hosted);
-  expect(
-    (
-      await screen.findAllByText(
-        "On your chat host, this chat may: Read the repository, Run commands",
-      )
-    ).length,
-  ).toBeGreaterThan(0);
+  expect(hosted.closest(".pill")?.parentElement?.textContent).toBe(
+    "On your chat host · Read the repository, Run commands",
+  );
+  expect(screen.queryByRole("tooltip")).toBeNull();
 });
 
 test("the bar's Context opens the thread's context beside its conversation, and its close takes it away", async () => {

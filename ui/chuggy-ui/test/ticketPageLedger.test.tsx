@@ -415,12 +415,19 @@ test("the resume states what it re-runs", async () => {
 
 /** The sidebar's Repository field: its value, and the address it keeps for
  * hover. */
-function repositoryCell(): { text: string; title: string | null } {
+/** The Repository field's text, and what its tooltip spells out where it has
+ * one, read by focusing it; no field carries a `title`. */
+async function repositoryCell(): Promise<{
+  text: string;
+  title: string | null;
+}> {
   const value = screen.getByText("Repository").nextElementSibling;
-  return {
-    text: value?.textContent ?? "",
-    title: value?.querySelector("[title]")?.getAttribute("title") ?? null,
-  };
+  const text = value?.textContent ?? "";
+  expect(value?.querySelector("[title]")).toBeNull();
+  const trigger = value?.querySelector<HTMLElement>('[tabindex="0"], a');
+  if (trigger === null || trigger === undefined) return { text, title: null };
+  fireEvent.focus(trigger);
+  return { text, title: (await screen.findByRole("tooltip")).textContent };
 }
 
 test("the sidebar names the repository by its label, the address on hover", async () => {
@@ -435,7 +442,7 @@ test("the sidebar names the repository by its label, the address on hover", asyn
       },
     },
   });
-  expect(repositoryCell()).toEqual({
+  expect(await repositoryCell()).toEqual({
     text: "acme/atlas",
     title: "https://example.test/acme/atlas.git",
   });
@@ -443,7 +450,7 @@ test("the sidebar names the repository by its label, the address on hover", asyn
 
 test("a brief naming no repository says so in the sidebar", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
-  expect(repositoryCell()).toEqual({ text: "None", title: null });
+  expect(await repositoryCell()).toEqual({ text: "None", title: null });
 });
 
 test("the sidebar's repository links to its page on the forge for an https clone URL", async () => {
@@ -462,7 +469,10 @@ test("the sidebar's repository links to its page on the forge for an https clone
     .getByText("Repository")
     .nextElementSibling?.querySelector("a");
   expect(link?.getAttribute("href")).toBe("https://github.com/kasofsk/chuggy");
-  expect(link?.getAttribute("title")).toBe(
+  if (link === null || link === undefined) throw new Error("no link drawn");
+  expect(link.hasAttribute("title")).toBe(false);
+  fireEvent.focus(link);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
     "https://github.com/kasofsk/chuggy.git",
   );
 });

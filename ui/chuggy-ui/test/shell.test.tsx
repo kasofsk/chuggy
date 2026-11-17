@@ -2151,7 +2151,7 @@ test("/clear whose close is refused opens nothing, and says the refusal over the
   );
   await commanded("/clear");
   expect(postsNamed(posts)).toStrictEqual(["close"]);
-  expect(commandSaid()).toBe("/clear·Refused");
+  expect(commandSaid()).toBe("/clear·Refused · Conflict");
   styleless();
 });
 

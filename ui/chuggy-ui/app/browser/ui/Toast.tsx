@@ -19,7 +19,7 @@ import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { CopyOrData } from "../../core/copy.ts";
 import { buttonLookClassName } from "./Button.tsx";
 import { StatusBadge } from "./StatusBadge.tsx";
-import { Tooltip } from "./Tooltip.tsx";
+import { WordDetail } from "./WordDetail.tsx";
 import "./Toast.css";
 
 /** What Radix replaces with the viewport's keys, handed to the catalog as
@@ -33,7 +33,7 @@ export interface ToastLine {
   readonly id: number;
   readonly tone: ToastTone;
   readonly line: string;
-  /** On hover of the line, for a reader reporting it. */
+  /** After the line, for a reader reporting it. */
   readonly detail?: CopyOrData | undefined;
 }
 
@@ -97,9 +97,7 @@ export function Toasts(props: {
           <RadixToast.Description className="toast-said">
             <ToastWord tone={toast.tone} />
             <span className="toast-line">
-              <Tooltip trigger="abbreviation" text={toast.detail}>
-                <span>{toast.line}</span>
-              </Tooltip>
+              <WordDetail word={toast.line} detail={toast.detail} />
             </span>
           </RadixToast.Description>
           <RadixToast.Close

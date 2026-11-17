@@ -13,6 +13,7 @@ import { Input } from "./Input.tsx";
 import { useHeadroom } from "./useHeadroom.ts";
 
 import "./ListControls.css";
+import { Tooltip } from "./Tooltip.tsx";
 
 export function ListGlyph(props: { readonly children: ReactNode }): ReactNode {
   return (
@@ -110,21 +111,22 @@ export function ListSearch(props: {
         if (!event.currentTarget.contains(event.relatedTarget)) close();
       }}
     >
-      <button
-        type="button"
-        className={`${buttonLookClassName({ size: "sm" })} list-search-toggle`}
-        aria-label={props.label}
-        aria-expanded={open}
-        aria-controls={fieldId}
-        title={props.label}
-        data-active={props.search === "" ? undefined : ""}
-        onClick={() => {
-          if (open) close();
-          else show();
-        }}
-      >
-        {listSearchGlyph}
-      </button>
+      <Tooltip trigger="control" text={props.label}>
+        <button
+          type="button"
+          className={`${buttonLookClassName({ size: "sm" })} list-search-toggle`}
+          aria-label={props.label}
+          aria-expanded={open}
+          aria-controls={fieldId}
+          data-active={props.search === "" ? undefined : ""}
+          onClick={() => {
+            if (open) close();
+            else show();
+          }}
+        >
+          {listSearchGlyph}
+        </button>
+      </Tooltip>
       <span
         className="list-search-field"
         id={fieldId}

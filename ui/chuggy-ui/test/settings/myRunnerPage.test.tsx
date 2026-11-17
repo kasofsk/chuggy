@@ -282,7 +282,7 @@ test("a mint the API refuses says so, draws no step and returns to the ask, whic
   await press("Register runner");
   await press("Create token");
   expect(screen.getByText("Refused")).toBeTruthy();
-  expect(document.body.textContent).not.toContain("Forbidden");
+  expect(screen.getByText(/· Forbidden/u)).toBeTruthy();
   expect(screen.queryByRole("list", { name: "Register runner" })).toBeNull();
   expect(screen.getByRole("form", { name: "Runner" })).toBeTruthy();
   await press("Cancel");

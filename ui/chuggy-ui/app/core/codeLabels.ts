@@ -1088,7 +1088,7 @@ export function operationFailureLabel(failure: ApiFailure): Copy {
   }
 }
 
-/** The word an abandoned follow is drawn as, and what hovering it says. */
+/** The word an abandoned follow is drawn as, and what is said after it. */
 export interface AbandonWords {
   readonly word: Copy;
   readonly detail?: CopyOrData;
@@ -1096,7 +1096,7 @@ export interface AbandonWords {
 
 /**
  * The word an abandoned follow is drawn as, and the detail a reader reporting
- * it reads on hover. The switch is total over the cause, so a cause gained
+ * it reads after the word. The switch is total over the cause, so a cause gained
  * does not compile until it has a word.
  */
 export function operationAbandonWords(

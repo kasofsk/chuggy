@@ -23,9 +23,6 @@ export interface ChatCopy {
   readonly "chat-kept-running": Record<never, never>;
   readonly "chat-kept-running-detail": Record<never, never>;
   readonly "chat-host-capabilities": Record<never, never>;
-  readonly "chat-host-capabilities-detail": {
-    readonly capabilities: unknown;
-  };
   readonly "chat-capability-repository-read": Record<never, never>;
   readonly "chat-capability-repository-write": Record<never, never>;
   readonly "chat-capability-run-commands": Record<never, never>;

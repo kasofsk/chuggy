@@ -80,7 +80,6 @@ function EpicProgressBar(props: {
       aria-valuemax={props.progress.total}
       aria-valuenow={props.progress.done}
       aria-label={said}
-      title={said}
     >
       <EpicProgressTrack segments={props.segments} />
     </div>

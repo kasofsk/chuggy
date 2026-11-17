@@ -88,7 +88,7 @@ export function agentAccountReading(
 
 export const agentAccountReadingStaleWord: Copy = { id: "usage-stale" };
 
-/** Why a stale reading is marked, said where a reader hovers the mark. */
+/** Why a stale reading is marked, said after the mark. */
 export const agentAccountReadingStaleLine: Copy = { id: "usage-stale-line" };
 
 /** A reading whose window has reset since it was read, or whose reset the clock cannot read. */

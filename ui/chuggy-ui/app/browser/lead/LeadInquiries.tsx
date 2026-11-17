@@ -113,7 +113,7 @@ import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
+import { WordDetail } from "../ui/WordDetail.tsx";
 
 import "./LeadInquiries.css";
 
@@ -211,9 +211,10 @@ function LeadAskNotice(props: {
     case "Failed":
       return (
         <Notice tone="danger" inline>
-          <Tooltip trigger="abbreviation" text={ask.words.detail}>
-            <span>{inquiryAskRefusalSentence(ask, text)}</span>
-          </Tooltip>
+          <WordDetail
+            word={inquiryAskRefusalSentence(ask, text)}
+            detail={ask.words.detail}
+          />
         </Notice>
       );
   }
@@ -361,20 +362,20 @@ function LeadInquiryRow(props: {
         {inquiry.mine ? (
           <Pill tone="neutral">{text({ id: "lead-inquiry-mine" })}</Pill>
         ) : null}
-        <Tooltip
-          trigger="abbreviation"
-          text={
-            inquiry.failure === undefined
-              ? undefined
-              : text(leadTurnFailureLabel(inquiry.failure))
-          }
-        >
-          <span>
-            <Pill tone={sessionTurnStateTone(inquiry.turnState)}>
-              {text(leadTurnStateLabel(inquiry.turnState))}
-            </Pill>
-          </span>
-        </Tooltip>
+        <span>
+          <WordDetail
+            word={
+              <Pill tone={sessionTurnStateTone(inquiry.turnState)}>
+                {text(leadTurnStateLabel(inquiry.turnState))}
+              </Pill>
+            }
+            detail={
+              inquiry.failure === undefined
+                ? undefined
+                : leadTurnFailureLabel(inquiry.failure)
+            }
+          />
+        </span>
         <Figure figure={instantFigure(inquiry.askedAt, props.nowMs)} />
         <LeadInquiryRollup inquiry={inquiry} />
       </div>

@@ -39,6 +39,7 @@ import { RecordList, RecordRow, RecordRowSkeleton } from "./ui/RecordList.tsx";
 import { StatusBadge } from "./ui/StatusBadge.tsx";
 
 import "./Epic.css";
+import { Tooltip } from "./ui/Tooltip.tsx";
 
 /** The status an epic stands at, and Archived beside it where it is. */
 function EpicRowStatus(props: {
@@ -77,9 +78,9 @@ function EpicRow(props: {
         <>
           <EpicProgressRow progress={epic.progress} />
           {epic.summary === undefined ? null : (
-            <span className="epic-list-summary" title={epic.summary}>
-              {epic.summary}
-            </span>
+            <Tooltip trigger="abbreviation" text={epic.summary}>
+              <span className="epic-list-summary">{epic.summary}</span>
+            </Tooltip>
           )}
         </>
       }

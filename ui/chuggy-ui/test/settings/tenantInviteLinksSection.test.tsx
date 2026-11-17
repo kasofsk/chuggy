@@ -6,7 +6,7 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -164,9 +164,14 @@ test("a person is named on one line under their whole name, and a maker who is n
       }),
   });
   const [named, unnamed] = rows().map((row) => cells(row)["Made by"]);
-  const name = named?.querySelector(".tabular-cut");
-  expect(name?.textContent).toBe("ada@example.com");
-  expect(name?.getAttribute("title")).toBe("ada@example.com");
+  const name = named?.querySelector<HTMLElement>(".tabular-cut");
+  if (name === null || name === undefined) throw new Error("no name drawn");
+  expect(name.textContent).toBe("ada@example.com");
+  expect(name.hasAttribute("title")).toBe(false);
+  fireEvent.focus(name);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "ada@example.com",
+  );
   expect(named?.textContent).not.toContain("No account");
   expect(unnamed?.querySelector(".identity")?.textContent).toBe(
     "chuggy-selector",

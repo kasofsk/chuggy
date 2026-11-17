@@ -385,7 +385,9 @@ test("a listing past the bound is refused rather than drawn", async () => {
     rows().length,
     "a listing past the route's own bound was drawn anyway",
   ).toBe(0);
-  expect(readFailedLines()).toStrictEqual(["Not read · Unreadable"]);
+  const [line] = readFailedLines();
+  expect(line?.startsWith("Not read · Unreadable Details")).toBe(true);
+  expect(line).toContain("too_big");
 });
 
 /** A lead that has never settled a turn has no head to fork from, so there is
@@ -496,6 +498,18 @@ test("an inquiry that was timed and billed nothing draws its duration", async ()
     }),
   });
   expect(screen.getByText("21s")).toBeDefined();
+});
+
+test("a failed inquiry says why beside its state, in the document without a hover", async () => {
+  await drawInquiries({
+    listing: () => ({
+      inquiries: [
+        leadInquiry(1, { turnState: "Failed", failure: "AgentFailed" }),
+      ],
+    }),
+  });
+  expect(screen.getByText(/· Agent failed/u).className).toBe("word-detail");
+  expect(screen.queryByRole("tooltip")).toBeNull();
 });
 
 /** A control nobody has touched is not one a reader got wrong, and marking it

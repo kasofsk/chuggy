@@ -347,7 +347,7 @@ test("a removal over another's revision is refused as stale, and the page reads 
   const before = reads();
   await removed(4);
   expect(within(tab()).getByRole("alert").textContent).toBe(
-    "The epic was changed since you opened it. Reload it and make the change again.",
+    "The epic was changed since you opened it. Reload it and make the change again. · StaleRevision",
   );
   expect(reads()).toBeGreaterThan(before);
 });

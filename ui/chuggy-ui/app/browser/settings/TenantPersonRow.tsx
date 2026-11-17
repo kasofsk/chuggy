@@ -34,6 +34,7 @@ import { SettingsListingNone } from "./SettingsListing.tsx";
 import { TenantPersonEditor } from "./TenantPersonEditor.tsx";
 
 import "./tenantPeople.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 /** Who one person is on one line: their address or their subject, then
  * quietly their login, that they are no account, and that they are the reader. */
@@ -81,12 +82,11 @@ function TenantPersonNamed(props: {
             <Identity label={{ text: named.name, title: named.name }} />
           </span>
         ) : (
-          <span
-            className="tabular-cut font-strong text-ink-1"
-            title={named.name}
-          >
-            {named.name}
-          </span>
+          <Tooltip trigger="abbreviation" text={named.name}>
+            <span className="tabular-cut font-strong text-ink-1">
+              {named.name}
+            </span>
+          </Tooltip>
         )}
         {props.person.mine ? (
           <span className="shrink-0 text-sm font-regular text-ink-3">

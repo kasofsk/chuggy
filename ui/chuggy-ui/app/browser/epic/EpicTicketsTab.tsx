@@ -32,7 +32,7 @@ import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketStateStanding } from "../../core/ticketHeader.ts";
 import { ConsoleWriteRefusedWords } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
-import { TicketListState } from "../ProjectTable.tsx";
+import { TicketListEscalation, TicketListState } from "../ProjectTable.tsx";
 import { TicketRowDispatchScope } from "../TicketActions.tsx";
 import { TicketTitleNumber, cellAbsent } from "../TicketCells.tsx";
 import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
@@ -220,6 +220,9 @@ function EpicTicketsRow(props: {
       meta={
         <>
           <span className="ticket-list-number">{`#${String(member.ticket)}`}</span>
+          {member.row === undefined ? null : (
+            <TicketListEscalation row={member.row} />
+          )}
           <EpicTicketsMeta partition={partition} member={member} />
         </>
       }

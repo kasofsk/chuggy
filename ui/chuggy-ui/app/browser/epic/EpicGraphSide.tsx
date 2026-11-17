@@ -22,7 +22,6 @@ import type { TicketStateStanding } from "../../core/ticketHeader.ts";
 import { TicketRowDispatchScope } from "../TicketActions.tsx";
 import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
 import { Button, buttonLookClassName } from "../ui/Button.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
 
 import "./epicGraph.css";
 
@@ -106,17 +105,15 @@ function EpicGraphSideDispatch(props: {
       {(dispatch, notes) =>
         dispatch === undefined ? null : (
           <>
-            <Tooltip trigger="control" text={dispatch.effect}>
-              <Button
-                variant="primary"
-                size="sm"
-                busy={dispatch.busy}
-                disabled={dispatch.busy || dispatch.offline}
-                onClick={dispatch.press}
-              >
-                {text({ id: "epics-side-dispatch" })}
-              </Button>
-            </Tooltip>
+            <Button
+              variant="primary"
+              size="sm"
+              busy={dispatch.busy}
+              disabled={dispatch.busy || dispatch.offline}
+              onClick={dispatch.press}
+            >
+              {text({ id: "epics-side-dispatch" })}
+            </Button>
             <span className="epic-graph-side-notes">{notes}</span>
           </>
         )

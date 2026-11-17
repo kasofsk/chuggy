@@ -799,7 +799,7 @@ test("a ticket the side panel lists selects that ticket when pressed", async () 
   expect(written).toStrictEqual([5, 2]);
 });
 
-test("dispatch is offered for a Ready ticket to a reader who may dispatch, and nowhere else", async () => {
+test("dispatch is offered for a Ready ticket to a reader who may dispatch, says why it waits while offline, and is nowhere else", async () => {
   epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
   await epicPageDrawn(abilitiesEvery, {
     tab: <EpicGraphTabAddressed ticket={5} />,
@@ -809,10 +809,14 @@ test("dispatch is offered for a Ready ticket to a reader who may dispatch, and n
     name: "Dispatch",
   });
   expect(dispatch.hasAttribute("disabled")).toBe(false);
+  expect(side().textContent).not.toContain("Offline");
   act(() => {
     onlineManager.setOnline(false);
   });
   expect(dispatch.hasAttribute("disabled")).toBe(true);
+  expect(side().textContent).toContain(
+    "Offline: dispatch waits until this tab reconnects",
+  );
   act(() => {
     onlineManager.setOnline(true);
   });
@@ -1123,7 +1127,8 @@ test("a queued member's card draws its place in the landing queue", async () => 
   await graphic();
   const chip = card(5).querySelector<HTMLElement>(".finalization-queue-chip");
   expect(chip?.textContent).toBe("2/2");
-  expect(chip?.getAttribute("title")).toBe(
+  expect(chip?.hasAttribute("title")).toBe(false);
+  expect(chip?.getAttribute("aria-label")).toBe(
     "Waiting 2 of 2 to finalize: #9 holds https://forge.test/acme/billing's default branch",
   );
   expect(card(4).querySelector(".finalization-queue-chip")).toBeNull();
