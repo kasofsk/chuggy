@@ -710,7 +710,8 @@ export type Admitted =
   | { readonly admitted: "Admitted"; readonly execution: ExecutionId }
   | { readonly admitted: "NoCandidate" }
   | { readonly admitted: "ClusterFull" }
-  | { readonly admitted: "AccountAtMaximum" };
+  | { readonly admitted: "AccountAtMaximum" }
+  | { readonly admitted: "HeldBetweenStages" };
 
 /** What opening an attempt is asked for, every bound of it an operational choice. */
 export interface AttemptOpening {
