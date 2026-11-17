@@ -99,7 +99,7 @@ export function ConversationSystemLine(props: {
   );
 }
 
-/** One marker in the words the lead's panels already say it in. */
+/** One marker in the words a thread's panels already say it in. */
 export function conversationMarkerWords(
   marker: ConversationMarker,
 ): CopyOrData {

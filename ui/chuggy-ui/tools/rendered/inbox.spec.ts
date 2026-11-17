@@ -1,8 +1,7 @@
 /**
  * The inbox at a phone's width and the desk's: an evaluation approval asking
- * this reader, a decision proposing two tickets, an escalation whose title
- * runs past a phone and a refusal whose reason does, each group under its
- * heading. The phone's is under a coarse pointer, as a phone's is. Neither
+ * this reader, an escalation whose title runs past a phone and a ticket its
+ * phase alone puts there, each group under its heading. The phone's is under a coarse pointer, as a phone's is. Neither
  * scrolls the page sideways, at rest or with Revoke's dialog open; on the
  * phone every control the page and the dialog draw is at least the touch
  * height; and every read is one the stub answers.
@@ -55,10 +54,8 @@ function inboxEntry(
   ticket: ReturnType<typeof inboxTicket>,
   over: Readonly<Record<string, unknown>> = {},
 ) {
-  return { ticket, actions: [], refusals: [], proposals: [], ...over };
+  return { ticket, actions: [], ...over };
 }
-
-const inboxProposed = { decision: "decision-rendered", tickets: [7, 8] };
 
 const inboxEntries = [
   inboxEntry(inboxTicket(11, "Evaluation", "Release notes"), {
@@ -83,12 +80,6 @@ const inboxEntries = [
       },
     ],
   }),
-  inboxEntry(inboxTicket(7, "Pending", "Search index"), {
-    proposals: [inboxProposed],
-  }),
-  inboxEntry(inboxTicket(8, "Pending", "Billing export"), {
-    proposals: [inboxProposed],
-  }),
   inboxEntry(
     inboxTicket(
       4,
@@ -99,19 +90,7 @@ const inboxEntries = [
       },
     ),
   ),
-  inboxEntry(inboxTicket(42, "Pending", "Write the brief"), {
-    refusals: [
-      {
-        ticket: 42,
-        ticketVersion: 2,
-        reason:
-          "the brief names no reference to the repository its change is meant to land in",
-        decision: "decision-refused",
-        recordedAt: "2026-11-02T00:00:00Z",
-        superseded: false,
-      },
-    ],
-  }),
+  inboxEntry(inboxTicket(42, "Pending", "Write the brief")),
 ];
 
 for (const viewport of inboxViewports)
@@ -140,10 +119,9 @@ for (const viewport of inboxViewports)
       const inbox = page.locator(".inbox-page");
       await expect(inbox.getByRole("heading", { level: 2 })).toHaveText([
         /^Approvals/u,
-        /^Proposals/u,
         /^Questions/u,
       ]);
-      await expect(inbox.getByRole("heading", { level: 3 })).toHaveCount(5);
+      await expect(inbox.getByRole("heading", { level: 3 })).toHaveCount(3);
       await renderedNoOverflow(page);
       if (viewport === "phone") await renderedTouchTargets(page, inbox);
       await page.getByRole("button", { name: "revoke" }).click();

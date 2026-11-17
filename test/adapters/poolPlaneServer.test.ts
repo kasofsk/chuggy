@@ -38,7 +38,6 @@ import {
   type WorkerPoolThreadClosed,
 } from "../../src/contract/workerPool.ts";
 import { metricsExposition } from "../../src/adapters/http/metricsExposition.ts";
-import type { SessionKind } from "../../src/contract/rosters.ts";
 import {
   asSessionAttemptId,
   asSessionBearerId,
@@ -256,14 +255,13 @@ const launch: SessionLaunchFacts = {
 
 /**
  * Records every call a route made of the session side, which holds `holding`
- * and offers `offered` as sessions of `kind`, each opened as the claim asks,
+ * and offers `offered` as threads, each opened as the claim asks,
  * and answers `closed` as the threads a chat host ran that have since closed.
  */
 function sessionCalls(
   holding: readonly string[] = [],
   offered: readonly string[] = [],
   closed: readonly WorkerPoolThreadClosed[] = [],
-  kind: SessionKind = "Lead",
 ): { readonly made: unknown[]; readonly store: WorkerPoolSessions } {
   const made: unknown[] = [];
   const answer = <T>(call: unknown[], value: T): Promise<T> =>
@@ -284,7 +282,7 @@ function sessionCalls(
           offered.slice(0, max).map((session) => ({
             project: partition.project,
             session: asSessionId(session),
-            kind,
+            kind: "Thread" as const,
             capabilities: [],
           })),
         ),
@@ -302,6 +300,8 @@ function sessionCalls(
       heldImages: (_identity, max) =>
         answer(["heldImages", max], holding.length > 0 ? [sessionImage] : []),
       polled: () => answer(["polled"], undefined),
+      unlistedEnded: (_identity, listed) =>
+        answer(["unlistedEnded", [...listed]], 0),
     },
   };
 }
@@ -359,6 +359,7 @@ function runnerCalls(): {
   readonly agents: unknown[];
   readonly credentials: unknown[];
   readonly hosted: unknown[];
+  readonly ticketWakes: unknown[];
   readonly runners: WorkerPoolRunners;
 } {
   const named: unknown[] = [];
@@ -367,6 +368,7 @@ function runnerCalls(): {
   const agents: unknown[] = [];
   const credentials: unknown[] = [];
   const hosted: unknown[] = [];
+  const ticketWakes: unknown[] = [];
   return {
     named,
     advertised,
@@ -374,6 +376,7 @@ function runnerCalls(): {
     agents,
     credentials,
     hosted,
+    ticketWakes,
     runners: {
       named: (
         caller: PoolPlaneIdentity,
@@ -383,8 +386,10 @@ function runnerCalls(): {
         agentsAdvertised,
         credentialsNamed,
         sessionCapabilities,
+        ticketWakesNamed,
       ) => {
         hosted.push([caller.kind, sessionCapabilities]);
+        ticketWakes.push([caller.kind, ticketWakesNamed]);
         named.push([caller.kind, runner]);
         advertised.push([caller.kind, capabilities]);
         ceilings.push([caller.kind, ceiling]);
@@ -1450,6 +1455,9 @@ function poolReplayPorts(
   };
 }
 
+/** The fields a release reads as optional that this server names on every answer carrying their parent, since every session it hands a chat host is a thread's. */
+const poolReplayAlwaysNamed: readonly string[] = ["answer.sessions[].thread"];
+
 /**
  * Every poll a pool built with `older` makes, through the names its own
  * release exports, read by its own reconciliation schema, each naming a
@@ -1458,7 +1466,7 @@ function poolReplayPorts(
  * whole.
  */
 function poolReplayPolled(older: WorkerContractReleasePool): void {
-  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and a pool or a chat host is handed the session it has room for`, async () => {
+  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and only a chat host is handed the session it has room for`, async () => {
     const seen = new Map<string, Set<boolean>>();
     for (const [
       what,
@@ -1480,7 +1488,6 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
         [],
         ["session-waiting"],
         [{ project: partition.project, session: "thread-closed" }],
-        token === hostToken ? "Thread" : "Lead",
       );
       const query = new URLSearchParams([
         ...held.map((assignment) => [older.pollQuery.held, assignment]),
@@ -1511,7 +1518,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       assert.deepEqual(older.reconciliation.parse(body), body, what);
       assert.deepEqual(
         offering.made.filter((call) => (call as unknown[])[0] === "open"),
-        Array(token === runnerToken ? 0 : sessions).fill([
+        Array(token === hostToken ? sessions : 0).fill([
           "open",
           "session-waiting",
           "minted-1",
@@ -1521,11 +1528,15 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       workerContractOptionalsSeen(older.reconciliation, body, "answer", seen);
     }
     for (const [field, held] of seen)
-      assert.equal(held.size, 2, `${field} is seen only one way`);
+      assert.equal(
+        held.size,
+        poolReplayAlwaysNamed.includes(field) ? 1 : 2,
+        `${field} is seen only one way`,
+      );
   });
 }
 
-test("a pool of this release with room for a session is handed the one waiting, on the plane's terms, and is recorded as polling", async () => {
+test("a pool of this release with room for a session is handed none while one waits, asks for none, and is recorded as polling", async () => {
   const recorded = calls();
   const offering = sessionCalls([], ["session-waiting"]);
   const answered = await createPoolPlaneApp(
@@ -1538,27 +1549,10 @@ test("a pool of this release with room for a session is handed the one waiting, 
   assert.equal(answered.statusCode, 200);
   assert.deepEqual(answered.json(), {
     assignments: [],
-    sessions: [
-      {
-        assignment: "minted-1",
-        capabilities: [],
-        image: sessionPublished,
-        cpuMillis: 500,
-        memoryMib: 256,
-        deadlineSecs: launch.deadlineSecs,
-        callbackUrl: "https://plane.invalid/v1/ticket-execution",
-        bearer: sessionSecret,
-      },
-    ],
+    sessions: [],
     stop: [],
   });
-  assert.deepEqual(offering.made, [
-    ["among", []],
-    ["polled"],
-    ["launch"],
-    ["awaiting", 1],
-    ["open", "session-waiting", "minted-1"],
-  ]);
+  assert.deepEqual(offering.made, [["among", []], ["polled"]]);
   assert.deepEqual(recorded.made, []);
 });
 
@@ -2337,6 +2331,24 @@ test("a chat host's declared idle bound is recorded on its claim as named and la
   }
 });
 
+/** What the runner a poll ending in `suffix` named was recorded as, the poll having been answered. */
+async function pollRecorded(
+  headers: Record<string, string>,
+  suffix: string,
+): Promise<ReturnType<typeof runnerCalls>> {
+  const recorded = runnerCalls();
+  const answered = await createPoolPlaneApp(
+    plane(
+      calls().ports,
+      authority("Allow"),
+      openingsRecorded().store,
+      recorded.runners,
+    ),
+  ).inject({ method: "GET", url: `${polling([], 0, 1)}${suffix}`, headers });
+  assert.equal(answered.statusCode, 200, suffix);
+  return recorded;
+}
+
 test("a chat host's poll names the capabilities its threads may hold as it wrote them, a pool's is not read, and a set naming one twice is refused", async () => {
   const set = ["RunCommands", "ProjectRead"] as const;
   const query = `&${workerPoolPollQuery.sessionCapabilities}=`;
@@ -2354,16 +2366,7 @@ test("a chat host's poll names the capabilities its threads may hold as it wrote
       ["Dedicated", undefined],
     ],
   ] as const) {
-    const recorded = runnerCalls();
-    const answered = await createPoolPlaneApp(
-      plane(
-        calls().ports,
-        authority("Allow"),
-        openingsRecorded().store,
-        recorded.runners,
-      ),
-    ).inject({ method: "GET", url: `${polling([], 0, 1)}${suffix}`, headers });
-    assert.equal(answered.statusCode, 200, suffix);
+    const recorded = await pollRecorded(headers, suffix);
     assert.deepEqual(recorded.hosted, [kept], suffix);
   }
   const refused = await createPoolPlaneApp(
@@ -2376,7 +2379,36 @@ test("a chat host's poll names the capabilities its threads may hold as it wrote
   assert.equal(refused.statusCode, 400);
 });
 
-test("a pool's declared idle bound is not read, and a bound of no seconds is refused", async () => {
+test("a chat host's poll naming a retired session capability is served, and keeps the rest of its set", async () => {
+  const recorded = await pollRecorded(
+    hostSpeaking,
+    `&${workerPoolPollQuery.sessionCapabilities}=ProjectRead,LeadDecision`,
+  );
+  assert.deepEqual(recorded.hosted, [["ChatHost", ["ProjectRead"]]]);
+});
+
+test("a chat host's poll names its threads' ticket wakes as it wrote them, none where it named none, a pool's is not read, and anything but On or Off is refused", async () => {
+  const query = `&${workerPoolPollQuery.ticketWakes}=`;
+  for (const [headers, suffix, kept] of [
+    [hostSpeaking, `${query}On`, ["ChatHost", "On"]],
+    [hostSpeaking, `${query}Off`, ["ChatHost", "Off"]],
+    [hostSpeaking, "", ["ChatHost", undefined]],
+    [speaking, `${query}On`, ["Dedicated", undefined]],
+  ] as const) {
+    const recorded = await pollRecorded(headers, suffix);
+    assert.deepEqual(recorded.ticketWakes, [kept], suffix);
+  }
+  const refused = await createPoolPlaneApp(
+    plane(calls().ports, authority("Allow"), openingsRecorded().store),
+  ).inject({
+    method: "GET",
+    url: `${polling([], 0, 1)}${query}on`,
+    headers: hostSpeaking,
+  });
+  assert.equal(refused.statusCode, 400);
+});
+
+test("a pool's declared idle bound is accepted and opens nothing, and a bound of no seconds is refused", async () => {
   const sessions = openingsRecorded();
   const answered = await createPoolPlaneApp(
     plane(calls().ports, authority("Allow"), sessions.store),
@@ -2386,9 +2418,7 @@ test("a pool's declared idle bound is not read, and a bound of no seconds is ref
     headers: speaking,
   });
   assert.equal(answered.statusCode, 200);
-  const [opening] = sessions.opened;
-  assert.equal(opening?.idleSecs, undefined);
-  assert.equal(opening?.launch.bounds.idleMs, launch.bounds.idleMs);
+  assert.deepEqual(sessions.opened, []);
   const refused = await createPoolPlaneApp(
     plane(calls().ports, authority("Allow"), openingsRecorded().store),
   ).inject({

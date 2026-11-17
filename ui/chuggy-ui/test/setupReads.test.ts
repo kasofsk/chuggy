@@ -589,7 +589,7 @@ test("nothing is asked of what an installation grants where no repository is add
   expect(await sentFor(unread)).toEqual(reads);
 });
 
-test("the landings of a ticket being landed are read, and of no other ticket", async () => {
+test("the landings of a ticket being landed are read, and of no other ticket, and the executions of one in its work, and of no other", async () => {
   const site = setupSiteAt("Live");
   site.projects[0]?.tickets.push(
     { ticket: 4, phase: "Work" },
@@ -600,6 +600,7 @@ test("the landings of a ticket being landed are read, and of no other ticket", a
     ...reads,
     ...grants,
     `GET ${project}/tickets/3/landings`,
+    `GET ${project}/executions?ticket=4`,
   ]);
 });
 
@@ -613,6 +614,7 @@ test("the landings of the ticket that is done are read only where the repository
   expect(await sentFor(setupSiteBootstrap(setupSiteAt("Moving")))).toEqual([
     ...reads,
     ...grants,
+    `GET ${project}/executions?ticket=1`,
   ]);
   const beside = setupSiteAt("Landed");
   beside.projects[0]?.repositories.push({

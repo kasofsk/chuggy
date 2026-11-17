@@ -88,6 +88,7 @@ function appearanceServer(drawing: Drawing): (request: Sent) => Response {
         manageSelector: false,
         overrideTicketConfig: false,
         skipPlannedEvaluations: false,
+        mergeProposals: false,
         administer: drawing.administer ?? true,
         writeEpic: true,
       });

@@ -29,6 +29,7 @@ import {
 
 import {
   accessCallerAccountSchema,
+  accessInviteLinkSummarySchema,
   accessCallerTenantsSchema,
   accessProjectPeopleSchema,
   accessSiteAbilitiesSchema,
@@ -50,7 +51,6 @@ import {
   executionPlacementResponseSchema,
   inboxResponseSchema,
   landingQueuesResponseSchema,
-  leadReadResponseSchema,
   projectAbilitiesResponseSchema,
   projectDeletionResponseSchema,
   projectOwnerFallbackResponseSchema,
@@ -388,39 +388,14 @@ const forgeApps = {
   },
 };
 
-/** The lead's limits, each the installation's. */
-const selectorLimits = {
-  tokensPerDecision: 200_000,
-  millisecondsPerDecision: 900_000,
-  toolCallsPerDecision: 40,
-  dispatchesPerDecision: 3,
-  inputBytesPerDecision: 1_048_576,
-  candidatePagesPerDecision: 4,
-  autoCompactWindow: 400_000,
-  concurrentDecisions: 2,
-  selectionsPerMinute: 6,
-};
-
-/** The project's lead settings: nothing of its own, running on the
- * installation's. */
+/** The project's thread settings: nothing of its own, under the
+ * installation's standing rules. */
 const selectorSettings = {
   partition,
   revision: 0,
   overrides: {},
   effective: {
-    revision: 1,
-    projectRevision: 0,
-    mode: "Running",
-    installationMode: "Running",
-    dispatchMode: "Automatic",
-    basePrompt: "choose the next ticket",
     threadStandingRules: "- You act through your owner's own commands.",
-    modelAllowlist: [],
-    toolAllowlist: [],
-    limits: selectorLimits,
-    installationLimits: selectorLimits,
-    operationalContextMaxAgeMs: 60_000,
-    leadOffering: "Own",
   },
 };
 
@@ -542,6 +517,7 @@ export const stubApiReads: readonly StubApiRead[] = [
     manageSelector: false,
     overrideTicketConfig: false,
     skipPlannedEvaluations: false,
+    mergeProposals: false,
     administer: false,
     writeEpic: true,
   }),
@@ -561,7 +537,6 @@ export const stubApiReads: readonly StubApiRead[] = [
     count: 0,
     more: false,
   }),
-  stubApiRead(`${projectPath}/lead`, leadReadResponseSchema, { lead: "None" }),
   stubApiRead(
     `${projectPath}/selector-settings`,
     selectorProjectSettingsResponseSchema,
@@ -678,6 +653,18 @@ export const stubApiReads: readonly StubApiRead[] = [
     githubLogin: stubApiLogin,
     email: stubApiEmail,
   }),
+  stubApiRead(
+    "/access/v1/invite-links/summaries",
+    accessInviteLinkSummarySchema,
+    {
+      state: "Open",
+      kind: "Tenant",
+      displayName: stubApiTenant,
+      role: "Member",
+      mintedBy: stubApiLogin,
+    },
+    "POST",
+  ),
   stubApiRead("/access/v1/workspaces", accessCallerTenantsSchema, {
     tenants: [
       {

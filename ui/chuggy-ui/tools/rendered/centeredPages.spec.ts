@@ -19,6 +19,7 @@ import {
   test,
 } from "./driver.ts";
 import type { RenderedViewport } from "./driver.ts";
+import { stubApiTenant } from "./stubApi.ts";
 
 const zodProbeViolation = { directive: "script-src", blocked: "eval" };
 
@@ -45,8 +46,9 @@ const centeredPageCases: readonly CenteredPageCase[] = [
     name: "an invite link opened signed out",
     route: "/invite#t0ken",
     signedIn: false,
-    title: "You are invited to chuggy",
-    primary: (within) => within.getByRole("button", { name: "Sign in" }),
+    title: `Join ${stubApiTenant}`,
+    primary: (within) =>
+      within.getByRole("button", { name: "Sign in with GitHub" }),
   },
   {
     name: "the forge's setup landing",

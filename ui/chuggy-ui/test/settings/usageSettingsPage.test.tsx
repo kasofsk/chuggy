@@ -30,7 +30,7 @@ import {
   turned,
 } from "../screenHarness.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
-import { leadPartition } from "../leadFixture.ts";
+import { projectPartition } from "../projectFixture.ts";
 import { resizeObserverStubbed } from "../resizeObserver.ts";
 import { toastsDrawn } from "../toastsDrawn.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
@@ -48,7 +48,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  useParams: () => ({ tenant: leadPartition.tenant }),
+  useParams: () => ({ tenant: projectPartition.tenant }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
@@ -190,7 +190,7 @@ test("each window's reading is drawn as its share and how long ago it was read, 
   expect(sectionOf("Claude").textContent).toContain(
     `Stale · ${copyTextEn(agentAccountReadingStaleLine)}`,
   );
-  expect(claude).toContain("Chats and questionsPause with it");
+  expect(claude).toContain("ChatsPause with it");
   expect(claude).not.toMatch(/lead/iu);
   const codex = sectionOf("Codex").textContent ?? "";
   expect(codex).toContain("No reading");
@@ -665,7 +665,7 @@ test("an agent's thresholds and options are written whole, at either end of the 
   await turned(() => {
     fireEvent.click(
       within(section).getByRole("checkbox", {
-        name: "Chats and questions pause with it",
+        name: "Chats pause with it",
       }),
     );
   });

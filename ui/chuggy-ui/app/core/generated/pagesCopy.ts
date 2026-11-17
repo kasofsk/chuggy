@@ -5,7 +5,6 @@
 export interface PagesCopy {
   readonly "pages-tickets": Record<never, never>;
   readonly "pages-inbox": Record<never, never>;
-  readonly "pages-lead": Record<never, never>;
   readonly "pages-catalog": Record<never, never>;
   readonly "pages-repositories": Record<never, never>;
   readonly "pages-runners": Record<never, never>;

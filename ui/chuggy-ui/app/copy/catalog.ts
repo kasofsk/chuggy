@@ -18,7 +18,6 @@ import { epicsFtl } from "./generated/epicsFtl.ts";
 import { failureFtl } from "./generated/failureFtl.ts";
 import { figuresFtl } from "./generated/figuresFtl.ts";
 import { inboxFtl } from "./generated/inboxFtl.ts";
-import { leadFtl } from "./generated/leadFtl.ts";
 import { operationFtl } from "./generated/operationFtl.ts";
 import { pagesFtl } from "./generated/pagesFtl.ts";
 import { panelFtl } from "./generated/panelFtl.ts";
@@ -58,7 +57,6 @@ export const copyCatalogEn: readonly string[] = [
   failureFtl,
   figuresFtl,
   inboxFtl,
-  leadFtl,
   operationFtl,
   pagesFtl,
   panelFtl,

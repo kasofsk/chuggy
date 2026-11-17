@@ -27,7 +27,7 @@ import type {
 } from "../contract/rosters.ts";
 import type { Principal } from "./principal.ts";
 
-/** The share of each window a reading pauses an agent at, as a whole percentage, and whether threads and inquiries pause with it. */
+/** The share of each window a reading pauses an agent at, as a whole percentage, and whether threads pause with it. */
 export interface AgentAccountSettings {
   readonly fiveHourPercent: number;
   readonly sevenDayPercent: number;

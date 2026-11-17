@@ -51,13 +51,14 @@ repositories-accounts-withheld = { -workspace(case: "upper", form: "a") } { -rol
 ## The page, and the line under Add.
 
 repositories-title = { -repository(case: "upper", form: "plural") }
-repositories-about = What this { -project } binds. { -ticket(case: "upper", form: "a") } names one of these.
-repositories-none = No { -repository } bound
+repositories-about = What this { -project } is connected to. { -ticket(case: "upper", form: "a") } names one of these.
+repositories-none = No { -repository } connected
 repositories-add = Add
-repositories-add-how = Create one on { -github }, install both apps on it, then Add
-repositories-bound-caption = Bound { -repository(form: "plural") }
-repositories-bound = Bound
-repositories-unbind = Unbind
+repositories-add-apps = Adding { -repository(form: "a") } takes two { -github } apps on it: the { -portal-app }, which lists it here, and the { -worker-app }, which { -run(form: "plural") } act as.
+repositories-add-how = Both apps on your { -repository } on { -github }, then Add · { setup-program } adds it itself
+repositories-bound-caption = Connected { -repository(form: "plural") }
+repositories-bound = Connected
+repositories-unbind = Disconnect
 repositories-offers-withheld = { -workspace(case: "upper", form: "a") } { -role-admin } adds { -repository(form: "plural") }
 repositories-offers-failed = Accounts failed to load
 repositories-offers-not-configured = { -github } not configured · ask an operator
@@ -73,7 +74,7 @@ repositories-step-install-worker = Install the { -worker-app }
 repositories-step-add = Add a { -repository }
 repositories-step-done = Done
 
-## The worker app's reach on a bound row, and the picker's roster.
+## The worker app's reach on a connected row, and the picker's roster.
 
 repositories-worker-missing = { -worker-app(case: "upper") } missing
 repositories-reach-unselected = The { -worker-app }'s installation { $installation } does not select this { -repository }.
@@ -83,24 +84,25 @@ repositories-reach-unknown = { -github } did not say whether the { -worker-app }
 repositories-reach-review = Review on { -github }
 repositories-filter = Filter
 repositories-unlisted = Unlisted
-repositories-unbound = Unbound
+repositories-unbound = Disconnected
 repositories-truncated = More than shown
-repositories-grant-portal = Not listed · grant it on { -github }
-repositories-grant-worker = { -worker-app(case: "upper") } missing · grant it on { -github }
+repositories-grant-portal = { -repository(case: "upper") } not listed · add it to the { -portal-app } on { -github }
+repositories-grant-worker = A row marked missing · add it to the { -worker-app } on { -github }
 repositories-worker-reading = { -worker-app(case: "upper") } · loading…
 
-## What a bind, a configuration step and an unbind came to.
+## What connecting, a configuration step and disconnecting came to.
 
 repositories-bound-named = { $repository } · { $status }
-repositories-bound-already = { $repository } · Already bound
-repositories-bound-elsewhere = Bound elsewhere
+repositories-bound-already = { $repository } · Already connected
+repositories-bound-elsewhere = Connected elsewhere
 repositories-configurations-imported = { -configuration(case: "upper", form: "plural") } imported
 repositories-configuration-added = Default { -configuration } added
-repositories-ignored = Not { -configuration(form: "plural") } · { $detail }
-repositories-ignored-entries = entries in { $directory }
-repositories-ignored-one = { $first }
-repositories-ignored-more = { $first } and { $count } more
-repositories-ignored-more-truncated = { $first } and { $count }+ more
+repositories-ignored = { $count ->
+    [one] { $count } other item in { $directory } is not a { -brand-name } { -configuration } and is ignored.
+   *[other] { $count } other items in { $directory } are not { -brand-name } { -configuration(form: "plural") } and are ignored.
+}
+repositories-ignored-more = { $count }+ other items in { $directory } are not { -brand-name } { -configuration(form: "plural") } and are ignored.
+repositories-ignored-some = Other items in { $directory } are not { -brand-name } { -configuration(form: "plural") } and are ignored.
 repositories-new-ticket = New { -ticket }
 repositories-deferred = Deferred
 repositories-retry = Retry
@@ -109,21 +111,21 @@ repositories-step-added = Added
 repositories-deferral-not-configured = No { -configuration } step · ask an operator
 repositories-deferral-no-bootstrap-image = No worker image · ask an operator
 repositories-deferral-default-branch-absent = Empty { -repository } · push a commit
-repositories-deferral-repository-absent = Not bound · bind again
+repositories-deferral-repository-absent = Not connected · connect again
 repositories-deferral-snapshot-absent = Head unreadable
 repositories-deferral-snapshot-refused = Unreadable { -configuration(form: "plural") } · fix the { -repository }
 repositories-deferral-declarations-refused = Invalid { -configuration(form: "plural") } · fix the { -repository }
 repositories-deferral-identity-conflict = { -configuration(case: "upper") } conflict · ask an operator
 repositories-deferral-bootstrap-differs = Bootstrap differs · add { -configuration(form: "plural") }
-repositories-deferral-stale-binding = Binding changed
+repositories-deferral-stale-binding = Connection changed
 repositories-deferral-project-not-found = { -project(case: "upper") } not found · ask an operator
 repositories-deferral-step-failed = Step failed
-repositories-unbind-question = Unbind { $repository }?
+repositories-unbind-question = Disconnect { $repository }?
 repositories-unbind-line = New { -ticket(form: "plural") } can't name { $repository }. Existing { -ticket(form: "plural") } and their history stay. It can be added again, here or to another { -project }.
 
 ## A repository's page: its settings, what it declares, and its last import.
 
-repositories-not-bound = Not bound
+repositories-not-bound = Not connected
 repositories-saved = { $setting } saved
 repositories-finalization-title = { -finalization(case: "upper") }
 repositories-finalization-about = How a finished { -ticket } is { -finalization(form: "ed") }. { -ticket(case: "upper", form: "a") } may choose otherwise.

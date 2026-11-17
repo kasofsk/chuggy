@@ -7,6 +7,7 @@
     "@chuggy/worker-contract-1.11.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.11.0/chuggy-worker-contract-1.11.0.tgz",
     "@chuggy/worker-contract-1.115.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.115.0/chuggy-worker-contract-1.115.0.tgz",
     "@chuggy/worker-contract-1.117.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.117.0/chuggy-worker-contract-1.117.0.tgz",
+    "@chuggy/worker-contract-1.131.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.131.0/chuggy-worker-contract-1.131.0.tgz",
     "@chuggy/worker-contract-1.14.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.14.0/chuggy-worker-contract-1.14.0.tgz",
     "@chuggy/worker-contract-1.15.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.15.0/chuggy-worker-contract-1.15.0.tgz",
     "@chuggy/worker-contract-1.16.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.16.0/chuggy-worker-contract-1.16.0.tgz",
@@ -34,8 +35,6 @@
     "@chuggy/worker-contract-1.49.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.49.0/chuggy-worker-contract-1.49.0.tgz",
     "@chuggy/worker-contract-1.5.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.5.0/chuggy-worker-contract-1.5.0.tgz",
     "@chuggy/worker-contract-1.50.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.50.0/chuggy-worker-contract-1.50.0.tgz",
-    "@chuggy/worker-contract-1.62.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.62.0/chuggy-worker-contract-1.62.0.tgz",
-    "@chuggy/worker-contract-1.63.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.63.0/chuggy-worker-contract-1.63.0.tgz",
     "@chuggy/worker-contract-1.7.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.7.0/chuggy-worker-contract-1.7.0.tgz",
     "@chuggy/worker-contract-1.73.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.73.0/chuggy-worker-contract-1.73.0.tgz",
     "@chuggy/worker-contract-1.74.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.74.0/chuggy-worker-contract-1.74.0.tgz",
@@ -84,8 +83,7 @@
     "provision:access-defaults": "node --experimental-strip-types src/roots/provisionAccessDefaults.ts",
     "provision:session": "node --experimental-strip-types src/roots/provisionAgentSession.ts",
     "bind:project-repository": "node --experimental-strip-types src/roots/bindProjectRepository.ts",
-    "import:repository-configurations": "node --experimental-strip-types src/roots/configurationImporter.ts",
-    "start:selector": "node --experimental-strip-types src/roots/selector.ts"
+    "import:repository-configurations": "node --experimental-strip-types src/roots/configurationImporter.ts"
   },
   "dependencies": {
     "@ts-safeql/sql-tag": "^0.2.2",

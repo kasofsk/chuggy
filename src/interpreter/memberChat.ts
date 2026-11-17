@@ -37,7 +37,10 @@ import {
   type SessionScope,
   type SessionTurnId,
 } from "./agentSession.ts";
-import type { LeadTranscriptQuery, LeadTranscriptRead } from "./leadRead.ts";
+import type {
+  SessionTranscriptQuery,
+  SessionTranscriptRead,
+} from "./sessionTranscriptPage.ts";
 import { nativeThreadMethods, type NativeThreadPorts } from "./nativeWeb.ts";
 import type { Authority } from "./operationInbox.ts";
 import type {
@@ -151,8 +154,8 @@ export interface MemberChat {
     principal: Principal,
     tenant: TenantId,
     session: SessionId,
-    query: LeadTranscriptQuery,
-  ): Promise<LeadTranscriptRead>;
+    query: SessionTranscriptQuery,
+  ): Promise<SessionTranscriptRead>;
   threadContext(
     principal: Principal,
     tenant: TenantId,
@@ -375,13 +378,7 @@ function memberChatOpenMethod(
     const own = memberScopePartition(tenant, principal);
     const authority = await access.authorize(principal, own, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
-    const spend = await sessionSpendRoute(
-      access,
-      routes,
-      principal,
-      own,
-      "Thread",
-    );
+    const spend = await sessionSpendRoute(access, routes, principal, own);
     if (spend.spend !== "Admitted") return { result: spend.spend };
     const opened = await threads.threads.openUnscoped({
       partition: own,
@@ -417,13 +414,7 @@ function memberChatSendMethod(
     const own = memberScopePartition(tenant, principal);
     if ((await access.authorize(principal, own, "Mutate")) === undefined)
       return { result: "NotFound" };
-    const spend = await sessionSpendRoute(
-      access,
-      routes,
-      principal,
-      own,
-      "Thread",
-    );
+    const spend = await sessionSpendRoute(access, routes, principal, own);
     if (spend.spend !== "Admitted") return { result: spend.spend };
     const message = checkedThreadMessage(input.message);
     if (checkedThreadMessageImages(input.images ?? []).length > 0)

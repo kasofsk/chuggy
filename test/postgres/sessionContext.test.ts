@@ -63,7 +63,6 @@ async function mailbox(label: string, count: number) {
   const partition = await sessionRigProject(rig, label);
   const session = await sessionRigSession(rig, partition, label, {
     systemPrompt: `the ${label} objectives`,
-    autoCompactWindow: 150_000,
   });
   const turns: SessionTurnId[] = [];
   for (let index = 1; index <= count; index += 1)
@@ -117,7 +116,6 @@ test("a turn's readings are stored with its answer and read back in the order it
   );
   assert.deepEqual(await context.opening(partition, session), {
     systemPrompt: "the stored objectives",
-    autoCompactWindow: 150_000,
   });
 });
 

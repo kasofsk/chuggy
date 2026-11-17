@@ -54,6 +54,7 @@ async function repositoriesServed(): Promise<Served> {
           manageSelector: false,
           overrideTicketConfig: false,
           skipPlannedEvaluations: false,
+          mergeProposals: true,
           administer: true,
           writeEpic: true,
         },
@@ -63,7 +64,7 @@ async function repositoriesServed(): Promise<Served> {
 }
 
 for (const viewport of repositoriesViewports)
-  test(`the repositories list and its unbind question do not scroll sideways on the ${viewport}, and nothing else is refused`, async ({
+  test(`the repositories list and its disconnect question do not scroll sideways on the ${viewport}, and nothing else is refused`, async ({
     browser,
   }) => {
     const served = await repositoriesServed();
@@ -90,8 +91,10 @@ for (const viewport of repositoriesViewports)
       await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
       await renderedNoOverflow(page);
       if (viewport === "phone") await renderedTouchTargets(page, column);
-      await page.getByRole("button", { name: "Unbind" }).first().click();
-      await expect(page.getByRole("group", { name: /^Unbind / })).toBeVisible();
+      await page.getByRole("button", { name: "Disconnect" }).first().click();
+      await expect(
+        page.getByRole("group", { name: /^Disconnect / }),
+      ).toBeVisible();
       await renderedNoOverflow(page);
       if (viewport === "phone") await renderedTouchTargets(page, column);
       renderedNoViolations(rendered, [zodProbeViolation]);

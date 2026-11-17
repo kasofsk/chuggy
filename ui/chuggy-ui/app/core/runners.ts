@@ -7,7 +7,6 @@
 
 import type {
   ExecutionPlacementResponse,
-  SelectorProjectSettingsResponse,
   SessionPlacementResponse,
 } from "../../../../src/contract/responses.ts";
 import { hostedRunsNotGrantedCode } from "../../../../src/contract/rosters.ts";
@@ -37,9 +36,18 @@ export interface RunnerPackage {
   readonly installCommand: string;
   /** Where the package says what is left to do after registering a runner. */
   readonly guideAddress: string;
-  /** Where the package says what is left to do after registering a chat host. */
-  readonly chatHostGuideAddress: string;
+  /** How long the package's service manager waits before starting its runner again after an exit it restarts. */
+  readonly restartIntervalSecs: number;
+  /** The exit statuses the release pinned gives a meaning, each by what it means. */
+  readonly exitsMeant: Readonly<Partial<Record<number, RunnerExitMeant>>>;
 }
+
+/**
+ * What a runner's exit status means where its package gives it one: that no
+ * restart would be answered differently, so it is not started again, or that
+ * it installed a release of itself and is started again on it.
+ */
+export type RunnerExitMeant = "Unrestarted" | "Updated";
 
 const runnerReleasePattern =
   /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u;
@@ -64,6 +72,13 @@ export function runnerOutdated(
   return false;
 }
 
+/** The release a package's install command installs, as its archive's name carries it, or nothing where it names none. */
+export function runnerInstalledVersion(
+  offered: RunnerPackage,
+): string | undefined {
+  return /-([0-9]+\.[0-9]+\.[0-9]+)\.tgz$/u.exec(offered.installCommand)?.[1];
+}
+
 /** The packages a machine is made a runner with, an entry a package. */
 export const runnerPackages = {
   linux: {
@@ -71,26 +86,37 @@ export const runnerPackages = {
     program: "chuggy-linux",
     needs: { id: "runners-package-needs-linux" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.53.0/chuggy-linux-0.53.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.55.0/chuggy-linux-0.55.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
-    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-linux#a-chat-host",
+    /** `RestartSec=` of the unit `serviceUnit` writes, in chuggy-linux's `systemdUnit.mjs`. */
+    restartIntervalSecs: 10,
+    exitsMeant: {
+      /** `unrestartedExitStatus`, in chuggy-linux's `systemdUnit.mjs`. */
+      3: "Unrestarted",
+      /** `updatedExitStatus`, in chuggy-linux's `systemdUnit.mjs`. */
+      75: "Updated",
+    },
   },
   darwin: {
     label: { id: "runners-package-darwin" },
     program: "chuggy-darwin",
     needs: { id: "runners-package-needs-darwin" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.23.0/chuggy-darwin-0.23.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.25.0/chuggy-darwin-0.25.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
-    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-darwin#chat-host",
+    /** `restartIntervalSecs`, the agent's `ThrottleInterval`, in chuggy-darwin's `launchAgent.mjs`. */
+    restartIntervalSecs: 10,
+    exitsMeant: {
+      /** The one exit launchd does not restart, as chuggy-darwin's `launchAgent.mjs` says in its header. */
+      0: "Unrestarted",
+      /** `updatedExitStatus`, in chuggy-darwin's `launchAgent.mjs`. */
+      75: "Updated",
+    },
   },
 } as const satisfies Record<string, RunnerPackage>;
 
 /** A package by the name the reader chooses it under. */
 export type RunnerPackageName = keyof typeof runnerPackages;
-
-/** The package chuggy setup installs, on the Linux machine it runs on. */
-export const runnerPackageOffered: RunnerPackage = runnerPackages.linux;
 
 /** What a reader asks a runner to declare beside its platforms. */
 export interface RunnerAsk {
@@ -193,20 +219,6 @@ export function runnerCapabilityLabel(capability: string): string {
 /** Whose a registered machine is: one of the project's pools, one of the reader's own runners, or the reader's chat host. */
 export type RunnerKind = "Pool" | "Personal" | "ChatHost";
 
-/** Where a package says what is left to do once a machine is registered as `kind`. */
-export function runnerGuideAddress(
-  offered: RunnerPackage,
-  kind: RunnerKind,
-): string {
-  switch (kind) {
-    case "Pool":
-    case "Personal":
-      return offered.guideAddress;
-    case "ChatHost":
-      return offered.chatHostGuideAddress;
-  }
-}
-
 /** What a reader's choices ask, or why they cannot be asked. */
 export function runnerAskRead(
   chosen: RunnerPackageName,
@@ -235,24 +247,22 @@ export function runnerRegisterCommand(
   return `${installed.program} register${personal} --api ${origin} --token=${token}${chat}${host}${declared}`;
 }
 
-/** Where the lead runs and as which offering: its route, and whether it is
- * the members' own or the subsidized lead. */
+/** The `lead` and `leadOffering` a session placement's write still names, as
+ * read: the server answers fixed values for both and ignores what is written. */
 export interface RunnersLeadPlacement {
   readonly route: PlacementRoute;
   readonly offering: LeadOffering;
 }
 
-/** Every kind's route, the lead's with its offering, written as two
- * placements: work and evaluation, and a thread and the lead. */
+/** Every kind's route, written as two placements: work and evaluation, and a
+ * thread. `lead` is held as read and never moved here; the session placement's
+ * write still names it. */
 export interface RunnersPlacementDraft {
   readonly work: PlacementRoute;
   readonly evaluation: PlacementRoute;
   readonly thread: PlacementRoute;
   readonly lead: RunnersLeadPlacement;
 }
-
-/** What one kind is placed on: a route, or for the lead a route and offering. */
-export type RunnersPlacementChoice = PlacementRoute | RunnersLeadPlacement;
 
 /** Every kind's route as read, which a save is told apart from. */
 export function runnersPlacementDraft(
@@ -267,8 +277,11 @@ export function runnersPlacementDraft(
   };
 }
 
-/** The kinds the reader has chosen a route for since opening the editor. */
-export type RunnersPlacementMoves = Partial<RunnersPlacementDraft>;
+/** The kinds the reader has chosen a route for since opening the editor, which
+ * never include `lead`. */
+export type RunnersPlacementMoves = Partial<
+  Omit<RunnersPlacementDraft, "lead">
+>;
 
 /** Each kind the reader moved where they moved it, and every other kind as the
  * newest read says, so a move made since the editor opened is kept. */
@@ -279,83 +292,28 @@ export function runnersPlacementMoved(
   return { ...read, ...moves };
 }
 
-/** The value a radio group answers a choice under: its route, and
- * `Subsidized` for the subsidized lead. */
-export function runnersPlacementValue(choice: RunnersPlacementChoice): string {
-  if (typeof choice === "string") return choice;
-  switch (choice.offering) {
-    case "Own":
-      return choice.route;
-    case "Subsidized":
-      return "Subsidized";
-  }
-}
-
-/** The word a choice is drawn under, beside the route labels. */
-export function runnersPlacementLabel(choice: RunnersPlacementChoice): Copy {
-  if (typeof choice === "string") return runnerRouteLabel(choice);
-  switch (choice.offering) {
-    case "Own":
-      return runnerRouteLabel(choice.route);
-    case "Subsidized":
-      return { id: "runners-route-subsidized" };
-  }
-}
-
-/** The lead's choices: each route the reader may choose, as the members' own,
- * and the subsidized lead in cluster wherever the deployment admits it. */
-export function runnersLeadPlacementChoices(
-  session: SessionPlacementResponse,
-): readonly RunnersLeadPlacement[] {
-  const own = session.choices.map((route): RunnersLeadPlacement => ({
-    route,
-    offering: "Own",
-  }));
-  return session.leadOfferings.includes("Subsidized")
-    ? [...own, { route: "InCluster", offering: "Subsidized" }]
-    : own;
-}
-
-/**
- * The subsidized lead's line: that it is chuggy's, the model it runs, and that
- * it is free up to a monthly allowance. The effective settings name the
- * profile's model only once the project's lead is subsidized, so before then
- * the line names none.
- */
-export function runnersSubsidizedLine(
-  effective: SelectorProjectSettingsResponse["effective"] | undefined,
-): Copy {
-  const model =
-    effective?.leadOffering === "Subsidized" ? effective.leadModel : undefined;
-  return model === undefined
-    ? { id: "runners-subsidized-about-unnamed" }
-    : { id: "runners-subsidized-about", args: { model } };
-}
-
 /** One choice a kind draws, and whether the reader may choose it. */
-export interface RunnersPlacementOption<T extends RunnersPlacementChoice> {
-  readonly choice: T;
+export interface RunnersPlacementOption {
+  readonly choice: PlacementRoute;
   readonly choosable: boolean;
 }
 
 /** The choices the reader may make, after the one the kind was read on where
  * it is not among them, which is drawn as standing and kept until another is
  * chosen. */
-export function runnersPlacementOptions<T extends RunnersPlacementChoice>(
-  read: T,
-  choices: readonly T[],
-): readonly RunnersPlacementOption<T>[] {
+export function runnersPlacementOptions(
+  read: PlacementRoute,
+  choices: readonly PlacementRoute[],
+): readonly RunnersPlacementOption[] {
   const offered = choices.map((choice) => ({ choice, choosable: true }));
-  const value = runnersPlacementValue(read);
-  return choices.some((choice) => runnersPlacementValue(choice) === value)
+  return choices.includes(read)
     ? offered
     : [{ choice: read, choosable: false }, ...offered];
 }
 
 /** What a save writes: each placement only where one of its own kinds differs
  * from the read, since a write names both its kinds, and the session's with
- * the lead's offering always named, since one left out is the row's stored
- * offering rather than the one read. */
+ * `lead` and `leadOffering` as read. */
 export interface RunnersPlacementWrites {
   readonly execution:
     | { readonly work: PlacementRoute; readonly evaluation: PlacementRoute }
@@ -379,14 +337,12 @@ export function runnersPlacementWrites(
         ? undefined
         : { work: draft.work, evaluation: draft.evaluation },
     session:
-      draft.thread === read.thread &&
-      draft.lead.route === read.lead.route &&
-      draft.lead.offering === read.lead.offering
+      draft.thread === read.thread
         ? undefined
         : {
             thread: draft.thread,
-            lead: draft.lead.route,
-            leadOffering: draft.lead.offering,
+            lead: read.lead.route,
+            leadOffering: read.lead.offering,
           },
   };
 }

@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 import { EpicsPage } from "../app/browser/EpicsPage.tsx";
 import { epicsSearchWaitMs } from "../app/core/epics.ts";
 import type { EpicsQuery } from "../app/core/epics.ts";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import { abilitiesFetch, abilitiesNone } from "./projectAbilitiesFixture.ts";
 import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import {
@@ -42,7 +42,7 @@ vi.mock("@tanstack/react-router", () => {
       ) =>
       (props: Linked) =>
         component({ href: hrefOf(props), children: props.children }),
-    useParams: () => ({ ...leadPartition }),
+    useParams: () => ({ ...projectPartition }),
     useNavigate: () => () => Promise.resolve(),
   };
 });
@@ -86,7 +86,7 @@ const epicsPagePending = "Pending";
 function screenAt(query: EpicsQuery, onQuery: (query: EpicsQuery) => void) {
   return (
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }

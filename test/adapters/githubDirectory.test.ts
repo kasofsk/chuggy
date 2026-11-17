@@ -131,11 +131,22 @@ const fixtureOrganization = {
  */
 const fixturePageSize = 100;
 
+/** The number of the account the fixture installation's repositories stand on. */
+const fixtureOwnerId = 1342004;
+
 /** One page of a listing: `count` rows named apart, out of `total` in all. */
-function fixturePage(from: number, count: number, total: number): Response {
+function fixturePage(
+  from: number,
+  count: number,
+  total: number,
+  selection = "selected",
+): Response {
   return fixtureAnswer(200, {
     total_count: total,
+    repository_selection: selection,
     repositories: Array.from({ length: count }, (_row, index) => ({
+      id: 1296268 + from + index,
+      owner: { id: fixtureOwnerId },
       name: `repo-${String(from + index)}`,
       full_name: `kasofsk/repo-${String(from + index)}`,
       clone_url: `https://github.com/kasofsk/repo-${String(from + index)}.git`,
@@ -531,8 +542,11 @@ test("a short page ends the listing and the clone address is the identity", asyn
   assert.deepEqual(read, {
     read: "Repositories",
     truncated: false,
+    selection: "Selected",
+    accountId: String(fixtureOwnerId),
     repositories: [
       {
+        id: "1296269",
         name: "repo-1",
         fullName: "kasofsk/repo-1",
         url: "https://github.com/kasofsk/repo-1.git",
@@ -540,6 +554,7 @@ test("a short page ends the listing and the clone address is the identity", asyn
         private: false,
       },
       {
+        id: "1296270",
         name: "repo-2",
         fullName: "kasofsk/repo-2",
         url: "https://github.com/kasofsk/repo-2.git",
@@ -549,6 +564,57 @@ test("a short page ends the listing and the clone address is the identity", asyn
     ],
   });
   assert.equal(recorder.calls.length, 1);
+});
+
+test("an installation given every repository says so, and one listing none names no account", async () => {
+  for (const [page, expected] of [
+    [
+      fixturePage(1, 1, 1, "all"),
+      { selection: "All", accountId: String(fixtureOwnerId) },
+    ],
+    [fixturePage(1, 0, 0, "selected"), { selection: "Selected" }],
+  ] as const) {
+    const read = await githubInstallationRepositories({
+      fetch: fixtureForge([page]).requestFetch,
+      apiUrl: fixtureApiUrl,
+      tokens: fixtureTokens(fixtureGranted),
+    }).repositories(fixtureInstallation);
+    assert.equal(read.read, "Repositories");
+    if (read.read !== "Repositories") return;
+    assert.deepEqual(
+      {
+        selection: read.selection,
+        ...(read.accountId === undefined ? {} : { accountId: read.accountId }),
+      },
+      expected,
+    );
+  }
+});
+
+test("a listing naming no selection, or two owners, is an outage", async () => {
+  const twoOwners = fixtureAnswer(200, {
+    total_count: 2,
+    repository_selection: "selected",
+    repositories: [1, 2].map((owner) => ({
+      id: owner,
+      owner: { id: owner },
+      name: `repo-${String(owner)}`,
+      full_name: `kasofsk/repo-${String(owner)}`,
+      clone_url: `https://github.com/kasofsk/repo-${String(owner)}.git`,
+      default_branch: "main",
+      private: false,
+    })),
+  });
+  const unselected = fixtureAnswer(200, { total_count: 0, repositories: [] });
+  for (const answered of [twoOwners, unselected])
+    assert.deepEqual(
+      await githubInstallationRepositories({
+        fetch: fixtureForge([answered]).requestFetch,
+        apiUrl: fixtureApiUrl,
+        tokens: fixtureTokens(fixtureGranted),
+      }).repositories(fixtureInstallation),
+      { read: "Unavailable" },
+    );
 });
 
 test("a full page is followed by the next, and the bound stops the paging", async () => {

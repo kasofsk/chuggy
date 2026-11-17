@@ -12,6 +12,9 @@
  * message could carry, is ever printed.
  */
 
+import type { ApiFailure } from "./apiRequest.ts";
+import { base64urlFromBytes } from "./base64url.ts";
+import { operationIdBytesCount } from "./operationFollow.ts";
 import { setupAgentRead, setupMcpPackaged, setupServer } from "./setupAgent.ts";
 import { setupAsked } from "./setupArguments.ts";
 import type {
@@ -25,34 +28,73 @@ import {
   setupImportAsked,
   setupImportWrites,
 } from "./setupConfiguration.ts";
+import { setupBindAsked, setupBindWrites } from "./setupBind.ts";
 import {
+  setupHistoryRead,
+  setupMergeAsked,
+  setupMergeImportFailed,
+  setupMergeWrites,
+} from "./setupMerge.ts";
+import {
+  setupBindAwaited,
+  setupBindDue,
   setupConfigurationDue,
+  setupConnectDue,
   setupMcpDue,
+  setupMergeAwaited,
+  setupMergeDue,
+  setupMergeUnseen,
   setupNext,
+  setupNorthStarDue,
   setupRunnerDue,
+  setupServeDue,
+  setupTicketDue,
+  setupWatchAwaited,
 } from "./setupNext.ts";
+import type { SetupMergeSeen } from "./setupNext.ts";
 import type { SetupPacing } from "./setupPacing.ts";
-import { SetupMachineError, setupPlatforms } from "./setupPorts.ts";
+import {
+  SetupMachineError,
+  setupPlatformOf,
+  setupPlatformServed,
+} from "./setupPorts.ts";
 import type { SetupPorts } from "./setupPorts.ts";
+import { setupPlugin, setupPluginHad } from "./setupPlugin.ts";
+import {
+  setupNorthStarWrites,
+  setupNorthStarWritten,
+  setupTrackedRead,
+} from "./setupNorthStar.ts";
 import { readSetup, setupPartition, setupReadPorts } from "./setupReads.ts";
 import type { SetupReads } from "./setupReads.ts";
 import { setupProject } from "./setupProject.ts";
 import type { SetupProjectAsked } from "./setupProject.ts";
 import { setupRemoteRead } from "./setupRemote.ts";
+import { setupServeAsked } from "./setupServe.ts";
 import type { SetupFault, SetupReport } from "./setupReport.ts";
-import { setupChatHost, setupRunner, setupWritePorts } from "./setupRunner.ts";
+import {
+  setupChatHost,
+  setupRunner,
+  setupServeWrites,
+  setupWritePorts,
+} from "./setupRunner.ts";
 import type {
   SetupChatHostAsked,
   SetupRunnerAsked,
   SetupRunnerEntered,
 } from "./setupRunner.ts";
 import { setupRunnerHere } from "./setupRunnerMachine.ts";
-import { setupSessionOpened, setupWorkspacesRead } from "./setupSession.ts";
+import {
+  setupLoginRead,
+  setupSessionOpened,
+  setupWorkspacesRead,
+} from "./setupSession.ts";
 import type {
   SetupSessionOpened,
   SetupWorkspacesAnswered,
 } from "./setupSession.ts";
 import {
+  setupBrowserOpened,
   setupListened,
   setupSignInAwaited,
   setupSignInBegun,
@@ -61,6 +103,11 @@ import {
 } from "./setupSignIn.ts";
 import type { SetupSignInBegun } from "./setupSignIn.ts";
 import { setupStanding } from "./setupStanding.ts";
+import {
+  setupTicketFiled,
+  setupTicketOffersRead,
+  setupTicketWrites,
+} from "./setupTicket.ts";
 import type { SetupStanding } from "./setupStanding.ts";
 import {
   setupLockHeldBy,
@@ -71,6 +118,7 @@ import {
   setupSessionSite,
   setupSessionSiteWritten,
   setupTokenRead,
+  setupTokenRemoved,
 } from "./setupStore.ts";
 
 type SetupBegun =
@@ -114,13 +162,14 @@ async function setupBegun(
   return { begun: "Session", opened };
 }
 
-/** Whether a session is signed in: with the bearer the site took and the workspaces it answered, or the report that says why it is not. */
+/** Whether a session is signed in: with the bearer the site took, the workspaces it answered and, once asked after the lock is given up, the GitHub login it named where it named one, or the report that says why it is not. */
 type SetupSigned =
   | {
       readonly signed: "In";
       readonly opened: SetupSessionOpened;
       readonly bearer: string;
       readonly workspaces: SetupWorkspacesAnswered;
+      readonly login: string | undefined;
     }
   | { readonly signed: "Out"; readonly report: SetupReport };
 
@@ -164,7 +213,7 @@ async function setupSigned(
     });
   const bearer = (await opened.holder.bearer()) ?? renewed;
   opened.store.kept();
-  return { signed: "In", opened, bearer, workspaces };
+  return { signed: "In", opened, bearer, workspaces, login: undefined };
 }
 
 /**
@@ -201,32 +250,71 @@ function setupBusy(
 /**
  * The checklist, read once the lock is given up: nothing from here on reads
  * or writes the session file, and no request is sent while the lock is held
- * for it. Everything goes out through ports that can only read; the agent's
- * configuration is read for the project chosen, and where the MCP step or the
- * runner's is the one next the machine is looked at and not touched.
+ * for it. Everything goes out through ports that can only read; Claude Code's
+ * list of plugins is read where the plugin step was not passed over, the agent's
+ * configuration is read for the project chosen, where the MCP step or the
+ * runner's is the one next the machine is looked at and not touched, where
+ * the project's first ticket is, what it may be drawn under is read, where the
+ * project's North Star is, the files the folder's checkout tracks are counted,
+ * and where
+ * the merge is offered and `merged` says nothing of one, the folder's history
+ * is counted.
  */
 async function setupChecklist(
   ports: SetupPorts,
   signed: Extract<SetupSigned, { readonly signed: "In" }>,
   answers: SetupAnswers,
   pacing: SetupPacing,
+  merged?: SetupMergeSeen,
 ): Promise<Extract<SetupReport, { readonly report: "Checklist" }>> {
   const standing = await setupStandingRead(ports, signed, answers, pacing);
   const due = setupRunnerDue(standing);
   const here =
     due === undefined ? undefined : await setupRunnerHere(ports, due);
   const packaged =
-    setupMcpDue(standing) !== undefined && (await setupMcpPackaged(ports));
+    setupMcpDue(standing) === undefined
+      ? undefined
+      : await setupMcpPackaged(ports);
+  const filing = setupTicketDue(standing);
+  const offers =
+    filing === undefined
+      ? undefined
+      : await setupTicketOffersRead(
+          setupReadPorts(signed.opened.api, signed.bearer),
+          filing,
+        );
+  const tracked =
+    setupNorthStarDue(standing) === undefined
+      ? undefined
+      : await setupTrackedRead(ports.process, pacing.remoteWaitMs);
+  const merge =
+    merged ??
+    (setupMergeDue(standing) === undefined
+      ? setupMergeUnseen
+      : {
+          seen: "Offered",
+          history: await setupHistoryRead(ports.process, pacing.remoteWaitMs),
+        });
   return {
     report: "Checklist",
     site: standing.site,
+    login: signed.login,
     found: standing.found,
     steps: standing.steps.map(({ step, state, detail }) => ({
       step,
       state,
       detail,
     })),
-    next: setupNext(standing, answers, here, packaged),
+    next: setupNext(
+      standing,
+      answers,
+      setupPlatformOf(ports.surroundings),
+      here,
+      packaged,
+      offers,
+      merge,
+      tracked,
+    ),
   };
 }
 
@@ -246,7 +334,12 @@ async function setupStandingRead(
       workspaces: signed.workspaces,
     },
   );
-  return setupStanding(reads, await setupChecklistNamed(ports, reads));
+  return setupStanding(
+    reads,
+    await setupChecklistNamed(ports, reads),
+    await setupPluginHad(ports, answers),
+    answers.northStar,
+  );
 }
 
 /** Whether the agent's configuration for this folder names chuggy's server for the project the reads chose, where they chose one. */
@@ -264,15 +357,16 @@ async function setupChecklistNamed(
 /**
  * The remembered sign-in entered under the lock, for a command that opens no
  * page: signed in, or the report that says why not, which for a run not
- * signed in says how the last sign-in ended while that ending stands. Nothing
- * is answered where another run kept the lock past the wait.
+ * signed in says how the last sign-in ended while that ending stands, and
+ * signed in, named by the login the site then gives once the lock is given
+ * up. Nothing is answered where another run kept the lock past the wait.
  */
-function setupEntered(
+async function setupEntered(
   ports: SetupPorts,
   given: string | undefined,
   asked: SetupCommand,
 ): Promise<SetupSigned | undefined> {
-  return setupLocked(ports, async (): Promise<SetupSigned> => {
+  const held = await setupLocked(ports, async (): Promise<SetupSigned> => {
     const begun = await setupBegun(ports, given, asked);
     if (begun.begun === "Reported")
       return { signed: "Out", report: begun.report };
@@ -282,6 +376,9 @@ function setupEntered(
     const ended = setupSignInStoodSaid(ports, signed.report.site);
     return { signed: "Out", report: { ...signed.report, ended } };
   });
+  return held?.signed === "In"
+    ? { ...held, login: await setupLoginRead(held.opened) }
+    : held;
 }
 
 /**
@@ -340,6 +437,363 @@ async function setupImport(
   };
 }
 
+/** The repositories page that begins Connect GitHub, opened in a browser where connecting GitHub is the next thing and the opener took it. */
+async function setupBindConnectOpened(
+  ports: SetupPorts,
+  standing: SetupStanding,
+): Promise<string | undefined> {
+  const address = setupConnectDue(standing);
+  if (address === undefined) return undefined;
+  return (await setupBrowserOpened(ports, address)) ? address : undefined;
+}
+
+/** The one bind `bind` asks of the site, under an operation of its own, and the checklist read after it. */
+async function setupBound(
+  ports: SetupPorts,
+  held: Extract<SetupSigned, { readonly signed: "In" }>,
+  due: NonNullable<ReturnType<typeof setupBindDue>>,
+  checklist: () => Promise<
+    Extract<SetupReport, { readonly report: "Checklist" }>
+  >,
+): Promise<
+  Omit<
+    Extract<SetupReport, { readonly report: "Bind" }>,
+    "opened" | "openBefore"
+  >
+> {
+  const answered = await setupBindAsked(
+    setupWritePorts(
+      held.opened.api,
+      held.bearer,
+      setupBindWrites(due.partition),
+    ),
+    due.partition,
+    due.url,
+    base64urlFromBytes(ports.drawBytes(operationIdBytesCount)),
+  );
+  return {
+    report: "Bind",
+    repository: due.repository,
+    answered,
+    checklist: await checklist(),
+  };
+}
+
+/** Whether a look `bind` could not finish may be answered otherwise at the next: where the site did not answer, failed or was rolling out, and not where it answered with a refusal. */
+function setupBindAgain(outcome: ApiFailure["outcome"]): boolean {
+  switch (outcome) {
+    case "Unreachable":
+    case "Fault":
+    case "Retryable":
+      return true;
+    case "Absent":
+    case "Rejected":
+    case "Conflict":
+    case "Unauthenticated":
+    case "Unreadable":
+      return false;
+  }
+}
+
+/** Whether the sign-in `bind` entered failed in a way its next look may not: the site, the issuer or the workspaces read did not answer. */
+function setupBindAgainEntered(report: SetupReport): boolean {
+  if (report.report === "IssuerUnanswered") return true;
+  if (report.report === "SiteUnusable") return report.phase === "Unreachable";
+  if (report.report === "WorkspacesUnread")
+    return setupBindAgain(report.outcome);
+  return false;
+}
+
+/** Whether the first thing `bind` read lacking is a read that failed in a way its next look may not. */
+function setupBindAgainRead(standing: SetupStanding): boolean {
+  const lack = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
+  return (
+    lack?.lacks === "Read" &&
+    lack.fate.fate === "Failed" &&
+    setupBindAgain(lack.fate.outcome)
+  );
+}
+
+/**
+ * `bind` works under the remembered sign-in as `import` does, entered again at
+ * each look so a wait outlasts its first bearer, and reads the checklist again
+ * at `pacing.bindPollMs`, for as long as the run was given, while the next
+ * thing waits on GitHub or a look failed where the next may not, opening the
+ * page that connects GitHub where its first look to read the standing finds
+ * that next and no `bind` before it opened one, and ending a look still
+ * failing when the time is up as it would have at once. Once the next thing is
+ * adding the folder's repository it binds it, the one write its ports let
+ * through, and reads the checklist again; where the next thing waits on
+ * neither, it binds nothing.
+ */
+async function setupBind(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Bind" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const endsAtMs = ports.nowMs() + asked.waitSecs * 1_000;
+  let opened: string | undefined;
+  for (let looked = false; ;) {
+    const held = await setupEntered(ports, asked.site, "Bind");
+    if (held === undefined) return setupBusy(ports, "Bind", asked.site);
+    if (held.signed === "Out") {
+      if (ports.nowMs() >= endsAtMs || !setupBindAgainEntered(held.report))
+        return held.report;
+      await ports.sleepMs(pacing.bindPollMs);
+      continue;
+    }
+    const checklist = () => setupChecklist(ports, held, asked.answers, pacing);
+    const standing = await setupStandingRead(
+      ports,
+      held,
+      asked.answers,
+      pacing,
+    );
+    const due = setupBindDue(standing);
+    const open = { opened, openBefore: asked.opened };
+    if (due !== undefined)
+      return { ...(await setupBound(ports, held, due, checklist)), ...open };
+    const failed = setupBindAgainRead(standing);
+    if (!failed && !looked && !asked.opened)
+      opened = await setupBindConnectOpened(ports, standing);
+    looked ||= !failed;
+    const waits = failed || setupBindAwaited(standing);
+    if (!waits || ports.nowMs() >= endsAtMs)
+      return {
+        report: "Bind",
+        opened,
+        openBefore: asked.opened,
+        repository: undefined,
+        answered: undefined,
+        checklist: await checklist(),
+      };
+    await ports.sleepMs(pacing.bindPollMs);
+  }
+}
+
+type SetupMergeReport = Extract<SetupReport, { readonly report: "Merge" }>;
+
+/** The one merge `merge` asks of the site, where the checklist offers it, and what it looked at before. */
+async function setupMergeFirst(
+  held: Extract<SetupSigned, { readonly signed: "In" }>,
+  standing: SetupStanding,
+): Promise<
+  Pick<SetupMergeReport, "url" | "answered"> & {
+    readonly since: Extract<SetupMergeSeen, { readonly seen: "Merged" }>;
+  }
+> {
+  const due = setupMergeDue(standing);
+  const answered =
+    due === undefined
+      ? undefined
+      : await setupMergeAsked(
+          setupWritePorts(
+            held.opened.api,
+            held.bearer,
+            setupMergeWrites(due.partition, due.unmerged.ticket),
+          ),
+          due.partition,
+          due.unmerged.ticket,
+        );
+  return {
+    url: due?.unmerged.url,
+    answered,
+    since: {
+      seen: "Merged",
+      before: standing.bootstrap?.lastImport,
+      mergeCommit:
+        answered?.answered === "Merged"
+          ? answered.mergeCommit
+          : standing.bootstrap?.mergeCommit,
+    },
+  };
+}
+
+/**
+ * `merge` works under the remembered sign-in as `bind` does, asking the site
+ * for the merge where the checklist offers it, the one write its ports let
+ * through, and ending on a refusal with setup said to be done. Once it is
+ * merged, or where nothing stands unmerged and the repository still holds only
+ * the bootstrap, it reads the checklist again at `pacing.mergePollMs`, entered
+ * again at each look, until the repository's own configuration is imported,
+ * its import is refused, or the run's wait ends.
+ */
+async function setupMergeRun(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Merge" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const endsAtMs = ports.nowMs() + asked.waitSecs * 1_000;
+  const first = await setupEntered(ports, asked.site, "Merge");
+  if (first === undefined) return setupBusy(ports, "Merge", asked.site);
+  if (first.signed === "Out") return first.report;
+  const standing = await setupStandingRead(ports, first, asked.answers, pacing);
+  const { url, answered, since } = await setupMergeFirst(first, standing);
+  const report = async (
+    held: Extract<SetupSigned, { readonly signed: "In" }>,
+    merged: SetupMergeSeen | undefined,
+  ): Promise<SetupReport> => ({
+    report: "Merge",
+    url,
+    answered,
+    checklist: await setupChecklist(ports, held, asked.answers, pacing, merged),
+  });
+  if (answered?.answered === "Refused")
+    return report(first, { seen: "Refused" });
+  if (answered?.answered === "Failed") return report(first, undefined);
+  if (answered === undefined && !setupMergeAwaited(standing))
+    return report(first, undefined);
+  for (let held = first, looked = standing; ;) {
+    const imported =
+      !setupMergeAwaited(looked) ||
+      setupMergeImportFailed(since, looked.bootstrap?.lastImport);
+    if (imported || ports.nowMs() >= endsAtMs) return report(held, since);
+    await ports.sleepMs(pacing.mergePollMs);
+    const again = await setupEntered(ports, asked.site, "Merge");
+    if (again === undefined) return setupBusy(ports, "Merge", asked.site);
+    if (again.signed === "Out") return again.report;
+    held = again;
+    looked = await setupStandingRead(ports, held, asked.answers, pacing);
+  }
+}
+
+/**
+ * `serve` works under the remembered sign-in as `bind` does. Where the
+ * checklist's next thing is a personal runner of the person's taking the
+ * project's work, it asks the site for the writes that are due, the only ones
+ * its ports let through, and reads the checklist again; where it is not, it
+ * writes nothing and says the checklist.
+ */
+async function setupServe(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Serve" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const held = await setupEntered(ports, asked.site, "Serve");
+  if (held === undefined) return setupBusy(ports, "Serve", asked.site);
+  if (held.signed === "Out") return held.report;
+  const due = setupServeDue(
+    await setupStandingRead(ports, held, asked.answers, pacing),
+  );
+  const answered =
+    due === undefined
+      ? undefined
+      : await setupServeAsked(
+          setupWritePorts(held.opened.api, held.bearer, setupServeWrites(due)),
+          due,
+        );
+  return {
+    report: "Serve",
+    project: due?.partition.project,
+    answered,
+    checklist: await setupChecklist(ports, held, asked.answers, pacing),
+  };
+}
+
+/**
+ * `ticket` works under the remembered sign-in as `import` does. Where the
+ * checklist's next thing is the project's first ticket, it files one from
+ * what the person said, as the console's Create ticket does, through ports
+ * that let out only that creation's writes, each submission under an
+ * operation of its own, and reads the checklist again; where it is not, it
+ * files nothing and says the checklist.
+ */
+async function setupTicket(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Ticket" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const held = await setupEntered(ports, asked.site, "Ticket");
+  if (held === undefined) return setupBusy(ports, "Ticket", asked.site);
+  if (held.signed === "Out") return held.report;
+  const due = setupTicketDue(
+    await setupStandingRead(ports, held, asked.answers, pacing),
+  );
+  const drawn = (): string =>
+    base64urlFromBytes(ports.drawBytes(operationIdBytesCount));
+  const answered =
+    due === undefined
+      ? undefined
+      : await setupTicketFiled(
+          setupWritePorts(held.opened.api, held.bearer, setupTicketWrites(due)),
+          due,
+          asked,
+          { release: drawn(), dispatch: drawn() },
+          ports.text,
+        );
+  return {
+    report: "Ticket",
+    answered,
+    checklist: await setupChecklist(ports, held, asked.answers, pacing),
+  };
+}
+
+/**
+ * `watch` works under the remembered sign-in as the bare command does, and
+ * reads the checklist again at `pacing.watchPollMs`, entered again at each
+ * look, while its next thing is the first ticket on its way to its landing and
+ * the run's wait has not ended, then says the checklist. It writes nothing.
+ */
+async function setupWatch(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Watch" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const endsAtMs = ports.nowMs() + asked.waitSecs * 1_000;
+  for (;;) {
+    const held = await setupEntered(ports, asked.site, "Watch");
+    if (held === undefined) return setupBusy(ports, "Watch", asked.site);
+    if (held.signed === "Out") return held.report;
+    const standing = await setupStandingRead(
+      ports,
+      held,
+      asked.answers,
+      pacing,
+    );
+    if (!setupWatchAwaited(standing) || ports.nowMs() >= endsAtMs)
+      return setupChecklist(ports, held, asked.answers, pacing);
+    await ports.sleepMs(pacing.watchPollMs);
+  }
+}
+
+/**
+ * `north-star` works under the remembered sign-in as `ticket` does. Where the
+ * checklist's next thing is the project's North Star, it writes the text it
+ * was given as that, through ports that let out only the settings' write, and
+ * reads the checklist again; where it is not, it writes nothing and says the
+ * checklist.
+ */
+async function setupNorthStar(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "NorthStar" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const held = await setupEntered(ports, asked.site, "NorthStar");
+  if (held === undefined) return setupBusy(ports, "NorthStar", asked.site);
+  if (held.signed === "Out") return held.report;
+  const due = setupNorthStarDue(
+    await setupStandingRead(ports, held, asked.answers, pacing),
+  );
+  const answered =
+    due === undefined
+      ? undefined
+      : await setupNorthStarWritten(
+          setupWritePorts(
+            held.opened.api,
+            held.bearer,
+            setupNorthStarWrites(due),
+          ),
+          due,
+          asked.text,
+        );
+  return {
+    report: "NorthStar",
+    project: due === undefined ? undefined : `${due.tenant}/${due.project}`,
+    answered,
+    checklist: await setupChecklist(ports, held, asked.answers, pacing),
+  };
+}
+
 /**
  * One entry of the sign-in `project`, `runner` or `chat-host` works under. Whatever does
  * not end signed in is answered as a report, a fault of this machine's among
@@ -359,7 +813,16 @@ async function setupRunnerEntry(
       };
     if (held.signed === "Out") return { entered: "Out", report: held.report };
     const { site, api } = held.opened;
-    return { entered: "In", session: { site, api, bearer: held.bearer } };
+    return {
+      entered: "In",
+      session: {
+        site,
+        api,
+        bearer: held.bearer,
+        workspaces: held.workspaces.tenants,
+        login: held.login,
+      },
+    };
   } catch (failure: unknown) {
     return { entered: "Out", report: setupFaulted(asked, failure) };
   }
@@ -384,6 +847,7 @@ function setupRunnerRun(
 
 type SetupSignInStep =
   | { readonly step: "Reported"; readonly report: SetupReport }
+  | { readonly step: "SignedIn"; readonly opened: SetupSessionOpened }
   | {
       readonly step: "Waiting";
       readonly site: string;
@@ -405,10 +869,7 @@ async function setupSignInStep(
   const signed = await setupSigned(ports, begun.opened, "SignIn");
   if (signed.signed === "In") {
     setupSignInSettled(ports);
-    return {
-      step: "Reported",
-      report: { report: "SignInEnded", site, ended: "SignedIn" },
-    };
+    return { step: "SignedIn", opened: signed.opened };
   }
   if (signed.report.report !== "SignedOut")
     return { step: "Reported", report: signed.report };
@@ -429,6 +890,13 @@ async function setupSignIn(
   );
   if (step === undefined) return setupBusy(ports, "SignIn", given);
   if (step.step === "Reported") return step.report;
+  if (step.step === "SignedIn")
+    return {
+      report: "SignInEnded",
+      site: step.opened.site,
+      ended: "SignedIn",
+      login: await setupLoginRead(step.opened),
+    };
   return setupSignInAwaited(
     ports,
     step.site,
@@ -436,6 +904,31 @@ async function setupSignIn(
     waitSecs,
     pacing.signInPollMs,
   );
+}
+
+/**
+ * `sign-out` removes the sign-in this machine holds for the site, asking the
+ * site nothing, and leaves the site remembered and whatever runs from that
+ * sign-in elsewhere alone.
+ */
+async function setupSignOut(
+  ports: SetupPorts,
+  given: string | undefined,
+): Promise<SetupReport> {
+  const report = await setupLocked(ports, (): Promise<SetupReport> => {
+    setupSessionMoved(ports.files, ports.store);
+    const site = given ?? setupSessionSite(ports.files);
+    return Promise.resolve(
+      site === undefined
+        ? { report: "SiteUnknown" }
+        : {
+            report: "SignedOutHere",
+            site,
+            held: setupTokenRemoved(ports.store, site),
+          },
+    );
+  });
+  return report ?? setupBusy(ports, "SignOut", given);
 }
 
 /** What a port threw, as a member of a closed set: the machine's own word for what it would not do, or only that something unexpected happened. */
@@ -465,7 +958,7 @@ export async function setupRun(
   pacing: SetupPacing,
 ): Promise<SetupReport> {
   const platform = ports.surroundings.platform;
-  if (!setupPlatforms.some((served) => served === platform))
+  if (setupPlatformServed(platform) === undefined)
     return { report: "Unserved", platform };
   const asked = setupAsked(argv);
   if (asked.asked === "Wrongly")
@@ -476,6 +969,8 @@ export async function setupRun(
         return await setupStatus(ports, asked, pacing);
       case "SignIn":
         return await setupSignIn(ports, asked.site, asked.waitSecs, pacing);
+      case "SignOut":
+        return await setupSignOut(ports, asked.site);
       case "Project":
         return await setupProject(
           ports,
@@ -484,6 +979,8 @@ export async function setupRun(
         );
       case "Mcp":
         return await setupServer(ports, asked);
+      case "Plugin":
+        return await setupPlugin(ports, asked);
       case "Runner":
       case "ChatHost":
         return await setupRunnerRun(ports, asked, pacing);
@@ -499,6 +996,18 @@ export async function setupRun(
         };
       case "Import":
         return await setupImport(ports, asked, pacing);
+      case "Bind":
+        return await setupBind(ports, asked, pacing);
+      case "Merge":
+        return await setupMergeRun(ports, asked, pacing);
+      case "Serve":
+        return await setupServe(ports, asked, pacing);
+      case "Ticket":
+        return await setupTicket(ports, asked, pacing);
+      case "Watch":
+        return await setupWatch(ports, asked, pacing);
+      case "NorthStar":
+        return await setupNorthStar(ports, asked, pacing);
       case "Listen":
         return await setupListened(ports, asked.site, asked.lifeSecs);
     }

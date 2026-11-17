@@ -220,7 +220,11 @@ type SessionHoldRows<Identity> = Omit<
   keyof SessionClaimRows<Identity>
 >;
 
-/** A pool's claims: every call keyed by its project, its name and the registration that claimed. */
+/**
+ * A pool's claims, every call keyed by its project, its name and the
+ * registration that claimed: it finds which assignments it holds, and is
+ * offered no session, because a chat host alone claims one.
+ */
 function postgresPoolSessionClaims(
   pool: pg.Pool,
 ): SessionClaimRows<WorkerPoolIdentity> {
@@ -235,43 +239,8 @@ function postgresPoolSessionClaims(
                     ${identity.pool},${identity.principal},${[...assignments]}::text[]) AS a`,
             ),
           ),
-    awaiting: async (identity, backoffSecs, max) =>
-      sessionCandidatesOf(
-        (
-          await pool.query<{
-            session: string | null;
-            kind: string | null;
-            capabilities: string[] | null;
-            agent_reference: string | null;
-          }>(
-            sql`SELECT session,kind,capabilities,agent_reference
-                  FROM pool_sessions_awaiting_claim(
-                    ${identity.partition.tenant},${identity.partition.project},
-                    ${identity.pool},${identity.principal},${backoffSecs},
-                    ${workerPoolSessionBound(max, "claim bound")})`,
-          )
-        ).rows.map((row) => ({
-          ...row,
-          project: identity.partition.project,
-        })),
-      ),
-    open: async (identity, opening) => {
-      const { candidate } = opening;
-      const terms = sessionOpeningTerms(opening);
-      return sessionOpenedOf(
-        await pool.query<{ opened: string | null }>(
-          sql`SELECT open_pool_session_attempt(
-                ${identity.partition.tenant},${identity.partition.project},
-                ${identity.pool},${identity.principal},${candidate.session},
-                ${terms.capabilities}::text[],${terms.agentReference}::text,
-                ${opening.attempt},${opening.assignment},${opening.bearer},
-                ${opening.bearerSecretDigest},${terms.leaseSecs},
-                ${opening.placementBackoffSecs},${terms.heldMax},
-                ${terms.invocation}::jsonb,${opening.image},
-                ${terms.launch}::jsonb)::text AS opened`,
-        ),
-      );
-    },
+    awaiting: () => Promise.resolve([]),
+    open: () => Promise.resolve("NotClaimable"),
   };
 }
 
@@ -356,7 +325,7 @@ function postgresChatHostSessionClaims(
           await pool.query<{
             project: string | null;
             session: string | null;
-            kind: string | null;
+            kind: string;
             capabilities: string[] | null;
             agent_reference: string | null;
           }>(
@@ -364,7 +333,8 @@ function postgresChatHostSessionClaims(
                   FROM chat_host_sessions_awaiting_claim(
                     ${identity.tenant},${identity.owner},${identity.principal},
                     ${backoffSecs},${workerPoolSessionBound(max, "claim bound")},
-                    ${memberScope})`,
+                    ${memberScope})
+                 WHERE kind = 'Thread'`,
           )
         ).rows,
       ),
@@ -415,6 +385,25 @@ async function chatHostThreadsClosed(
     project: sessionRowText(row.project, "project"),
     session: sessionRowText(row.session, "session"),
   }));
+}
+
+/** Ends the attempts a chat host's registration holds that its poll did not list. */
+async function chatHostUnlistedEnded(
+  pool: pg.Pool,
+  identity: ChatHostIdentity,
+  listed: readonly string[],
+  max: number,
+): Promise<number> {
+  const found = await pool.query<{ ended: string | null }>(
+    sql`SELECT end_unlisted_chat_host_session_attempts(
+          ${identity.tenant},${identity.owner},${identity.principal},
+          ${[...listed]}::text[],
+          ${workerPoolSessionBound(max, "unlisted bound")})::text AS ended`,
+  );
+  return projectRowCounter(
+    sessionRowText(found.rows[0]?.ended ?? null, "unlisted attempts ended"),
+    "unlisted attempts ended",
+  );
 }
 
 /** What a chat host holds, through the registration that claimed it. */
@@ -512,6 +501,8 @@ export function postgresWorkerPoolSessions(pool: pg.Pool): WorkerPoolSessions {
     launch: () => sessionLaunch(pool),
     threadsClosed: (identity, max) =>
       chatHostThreadsClosed(pool, identity, max),
+    unlistedEnded: (identity, listed, max) =>
+      chatHostUnlistedEnded(pool, identity, listed, max),
     among: (identity, assignments) =>
       sessionsRouted(identity, sides, (side, held) =>
         side.among(held, assignments),

@@ -69,7 +69,7 @@ import { test } from "node:test";
 
 import * as schema from "../../src/adapters/postgres/schema.ts";
 
-const { apiRole, migrations, selectorReviewRole, workerPlaneRole } = schema;
+const { migrations, workerPlaneRole } = schema;
 const rolesFilePath = "deploy/rig/postgres/postgres-roles.sql";
 const rolesFile = readFileSync(rolesFilePath, "utf8")
   .replaceAll(/--.*$/gmu, " ")
@@ -101,15 +101,20 @@ function migrationReceivingRoles(): ReadonlySet<string> {
   return found;
 }
 
-/** Every role the migrations let read the ledger the shared precondition reads. */
+/**
+ * Every role the migrations leave able to read the ledger the shared
+ * precondition reads, a later revoke undoing an earlier grant, whether it names
+ * the ledger or every table in the schema.
+ */
 function migrationLedgerReaders(): ReadonlySet<string> {
   const found = new Set<string>();
   for (const statement of migrationStatements)
-    for (const [, granted] of statement.matchAll(
-      /GRANT SELECT ON (?:TABLE public\.)?schema_migration TO ((?:\s*chuggy_\w+\s*,?)+)/gu,
+    for (const [, verb, roles] of statement.matchAll(
+      /(GRANT|REVOKE) (?:SELECT|ALL) ON (?:(?:TABLE public\.)?schema_migration|ALL TABLES IN SCHEMA public) (?:TO|FROM) ((?:\s*chuggy_\w+\s*,?)+)/gu,
     ))
-      for (const [role] of String(granted).matchAll(/chuggy_\w+/gu))
-        found.add(role);
+      for (const [role] of String(roles).matchAll(/chuggy_\w+/gu))
+        if (verb === "GRANT") found.add(role);
+        else found.delete(role);
   return found;
 }
 
@@ -340,12 +345,16 @@ test("every login role's password is the distinct variable its own name names", 
   }
 });
 
-test("the API's credential can become the role its second pool asserts", () => {
-  const login = /GRANT chuggy_api TO (chuggy_\w+);/u.exec(rolesFile)?.[1];
-  assert.equal(login, `${apiRole}_login`);
-  assert.match(
-    rolesFile,
-    new RegExp(`GRANT ${selectorReviewRole} TO ${String(login)};`, "u"),
-    `${rolesFilePath} leaves ${selectorReviewRole} with no login role, and the API refuses to start without one`,
+test("every environment name the file reads sets a login role's password", () => {
+  const used = new Set(
+    Array.from(
+      rolesFile.matchAll(/ALTER ROLE chuggy_\w+ PASSWORD :'(\w+)';/gu),
+      ([, variable]) => String(variable),
+    ),
   );
+  for (const [, variable, name] of rolesFile.matchAll(/\\getenv (\w+) (\w+)/gu))
+    assert.ok(
+      used.has(String(variable)),
+      `${rolesFilePath} reads ${name} and sets no password from it, so a deployment must issue a credential nothing uses`,
+    );
 });

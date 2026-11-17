@@ -25,7 +25,6 @@ import {
 import type { SessionId } from "../../src/interpreter/agentSession.ts";
 import { nativeWeb } from "../../src/interpreter/nativeWeb.ts";
 import { projectInbox } from "../../src/interpreter/projectInbox.ts";
-import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 import { unaskedNativeWebPorts } from "../interpreter/nativeWebFixtures.ts";
 import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import type { Config } from "../../src/domain/config.ts";
@@ -254,7 +253,6 @@ test("the ticket's and the project's action reads and the inbox say what the app
   );
   const inbox = await postgresInboxReads(ingress).inbox(at.project.partition, {
     phases: [],
-    named: [],
     limit: 10,
   });
   assert.deepEqual(
@@ -323,14 +321,6 @@ function answerableReads(at: Evaluating) {
   const desk = projectInbox(access, {
     store: postgresInboxReads(ingress),
     operationalReads: postgresOperationalReads(ingress),
-    refusals: { binding: () => Promise.resolve([]) },
-    proposals: selectorProposalReviews(access, {
-      awaitingApproval: () => Promise.resolve([]),
-      approve: () => Promise.resolve(false),
-      reject: () => Promise.resolve(false),
-      reviewFeedback: () => Promise.resolve([]),
-      recentReviewFeedback: () => Promise.resolve([]),
-    }),
   });
   return { web, desk };
 }

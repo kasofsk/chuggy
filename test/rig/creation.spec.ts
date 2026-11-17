@@ -3,9 +3,9 @@
  * and an installation can be able to show one without the other.
  *
  * THE CREATION HALF needs the journalled actor, because releasing a draft is its
- * work. THE EXECUTION HALF needs the selector as well, because dispatch is the
- * selector's and no console action can stand in for it. Each states what it
- * needs and skips when the installation has not got it, and a skip is what
+ * work. THE EXECUTION HALF needs it too, and dispatches the released ticket by
+ * hand from its page. Each states what it needs and skips when the
+ * installation has not got it, and a skip is what
  * `test/rig/verdict.ts` turns into a could-not-run: a run that could not exercise
  * a numbered criterion must not report that it did.
  *
@@ -22,10 +22,10 @@ import {
   drill,
   evidence,
   frameTimeoutMs,
+  mutationTimeoutMs,
   openProject,
   panel,
   rigActorDeployment,
-  rigSelectorDeployment,
   ticketLink,
 } from "./rig.ts";
 
@@ -34,8 +34,6 @@ const dispatchTimeoutMs = 120_000;
 
 const noActor =
   "the installation has no journalled actor up, so no release can settle";
-const noSelector =
-  "the installation runs its selector at no replicas, so nothing dispatches";
 
 drill(
   "a created ticket and its transition reach an unreloaded table",
@@ -70,11 +68,17 @@ drill(
   "a dispatched ticket's execution appears with its status",
   async ({ signedIn }) => {
     drill.skip(!(await deploymentReady(rigActorDeployment)), noActor);
-    drill.skip(!(await deploymentReady(rigSelectorDeployment)), noSelector);
     const ticket = await createTicket(
       signedIn.page,
       `execution observed at ${new Date().toISOString()}`,
     );
+    await signedIn.page
+      .getByRole("button", { name: "Dispatch", exact: true })
+      .click({ timeout: mutationTimeoutMs });
+    await signedIn.page
+      .getByRole("dialog", { name: `Dispatch ticket #${String(ticket)}?` })
+      .getByRole("button", { name: "Dispatch", exact: true })
+      .click({ timeout: frameTimeoutMs });
     const executions = panel(signedIn.page, "executions");
     await expect(executions.locator("li.execution").first()).toBeVisible({
       timeout: dispatchTimeoutMs,

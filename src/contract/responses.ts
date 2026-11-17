@@ -4,9 +4,7 @@
  * A representation the server assembles by hand is parsed leniently — the
  * named fields are guaranteed and anything further is dropped — while the
  * shapes the server itself pins before sending are strict here too, because
- * those are the ones a missing field would be a server fault in. The
- * selector's operational context is not among them: it is an agent's resource
- * rather than a browser's.
+ * those are the ones a missing field would be a server fault in.
  */
 
 import {
@@ -28,16 +26,13 @@ import {
   agentAccountCredentialsMax,
   imageMediaTypes,
   projectArtifactEncoding,
-  sessionEfforts,
-  sessionModelSchema,
   agentSessionPromptCharsMax,
-  agenticRefusalLedgerAnsweredMax,
-  agenticRefusalReasonCharsMax,
-  agenticRefusalsAnsweredMax,
   countSchema,
   cursorSchema,
   forgeAuthorizationAccountsAnsweredMax,
   forgeInstallationsAnsweredMax,
+  proposalForgeFailureCharsMax,
+  proposalForgeMessageCharsMax,
   proposalMergeStateCharsMax,
   proposalQueueWordCharsMax,
   forgeRepositoriesAnsweredMax,
@@ -47,14 +42,8 @@ import {
   digestSchema,
   dispatchViewSchemaVersion,
   identitySchema,
-  inquiriesAnsweredMax,
-  leadDispatchesMax,
-  inquiryQuestionCharsMax,
   instantSchema,
   isBoundedText,
-  leadAutoCompactWindowTokensMax,
-  leadAutoCompactWindowTokensMin,
-  leadTurnsAnsweredMax,
   nativeHttpDraftDependenciesMax,
   nativeHttpPageItemsMax,
   partitionSchema,
@@ -75,10 +64,6 @@ import {
   runToolUseIdCharsMax,
   runTranscriptPageBatchesMax,
   runTurnSeriesMax,
-  selectorHandoffNoteBytesMax,
-  selectorHandoffNotePreviewCharsMax,
-  selectorHistoryLimitMax,
-  selectorProposalDispatchesAnsweredMax,
   sessionContextPageTurnsMax,
   sessionStoreStreamCharsMax,
   sessionStoreStreamsAnswered,
@@ -97,6 +82,7 @@ import {
   ticketLandingStackDepthMax,
   ticketLandingStacksAnsweredMax,
   ticketNumberSchema,
+  landingQueueHolderSinceDigits,
   landingQueueTicketsAnsweredMax,
   workerRunCredentialSchema,
 } from "./http.ts";
@@ -138,6 +124,7 @@ import {
   changeProposalMergeReasons,
   changeProposalMergeWaits,
   changeProposalStatuses,
+  changeProposalMergeOutcomes,
   changeProposalMerges,
   draftLandingSources,
   draftReleaseRefusalCodes,
@@ -182,16 +169,9 @@ import {
   runStepEvidences,
   runUsageWindows,
   schedulerFreshnesses,
-  selectorAttentions,
-  selectorDeliveryStates,
-  selectorReviewOutcomes,
-  selectorDispatchModes,
-  selectorModes,
-  agenticRefusalEvents,
   sessionCapabilities,
   sessionRunnerStandings,
   sessionScopes,
-  sessionStates,
   projectLifecycles,
   sessionTurnFailures,
   sessionTurnInputKinds,
@@ -203,15 +183,14 @@ import {
   forgeAccountProofs,
   forgeAppClaims,
   forgeInstallationPermissions,
+  forgeRepositorySelections,
   forgeApps,
-  leadAbsencesUntimed,
-  leadAdmissionRefusals,
-  leadHolds,
   projectRepositoryConfigurationDeferrals,
   repositoryConfigurationImportAbsences,
   repositoryConfigurationImportResults,
   workerHeldCredentialAbsences,
   ticketTakeOutcomes,
+  proposalMergeRefusals,
 } from "./rosters.ts";
 import { accessProjectRoles } from "./accessPlane.ts";
 import {
@@ -873,45 +852,13 @@ export type OperationalStatusResponse = z.infer<
   typeof operationalStatusResponseSchema
 >;
 
-const selectorLimitsResponseSchema = z.object({
-  tokensPerDecision: countSchema,
-  millisecondsPerDecision: countSchema,
-  toolCallsPerDecision: countSchema,
-  dispatchesPerDecision: countSchema,
-  inputBytesPerDecision: countSchema,
-  candidatePagesPerDecision: countSchema,
-  autoCompactWindow: countSchema,
-  concurrentDecisions: countSchema,
-  selectionsPerMinute: countSchema,
-});
-
 /**
- * What the selector actually runs a project under: every field is either the
- * project's own or the installation default, and both revisions are named
- * because a decision is fenced on the pair. `installationMode` is beside the
- * resolved `mode` so a reader can tell a project's own pause from the
- * installation-wide one it cannot lift, and `installationLimits` is beside the
- * resolved `limits` so a reader can tell an overridden limit from an inherited
- * one and say what it would fall back to.
+ * What a project's threads run under: its North Star where it set one, and the
+ * standing rules, which are the project's own or the default.
  */
 export const selectorEffectiveSettingsResponseSchema = z.strictObject({
-  revision: countSchema,
-  projectRevision: countSchema,
-  mode: z.enum(selectorModes),
-  installationMode: z.enum(selectorModes),
-  dispatchMode: z.enum(selectorDispatchModes),
-  basePrompt: z.string().min(1),
   northStar: z.string().min(1).optional(),
   threadStandingRules: z.string().min(1),
-  modelAllowlist: z.array(z.string()),
-  toolAllowlist: z.array(z.string()),
-  limits: selectorLimitsResponseSchema,
-  installationLimits: selectorLimitsResponseSchema,
-  operationalContextMaxAgeMs: countSchema,
-  /** The model and effort the lead runs on, each absent where it takes the site's model or the runtime's effort, and whether they are the subsidized lead's. */
-  leadModel: sessionModelSchema.optional(),
-  leadEffort: z.enum(sessionEfforts).optional(),
-  leadOffering: z.enum(leadOfferings),
 });
 
 export const selectorProjectSettingsResponseSchema = z.strictObject({
@@ -1130,6 +1077,22 @@ export const executionSummarySchema = z.object({
    * one of them is held.
    */
   paused: agentPauseSchema.optional(),
+  /**
+   * The largest memory room, in MiB, of the `Live` runners it waits on and the
+   * memory it needs, present only where every one of them named a room above
+   * nothing and below that, and none is paused.
+   */
+  personalRunnerRoom: z
+    .strictObject({ freeMib: countSchema, neededMib: countSchema })
+    .optional(),
+  /**
+   * The largest memory room, in MiB, of the live pools of its project it waits
+   * on and the memory it needs, present only where every one of them named a
+   * room above nothing and below that.
+   */
+  poolRoom: z
+    .strictObject({ freeMib: countSchema, neededMib: countSchema })
+    .optional(),
   /**
    * The earlier execution of the same ticket whose passing verdict settled
    * this one, its task and the work cycle it ran in, present only on an
@@ -1799,83 +1762,8 @@ export type DraftInitializationResponse = z.infer<
 >;
 
 /**
- * How large the note a lead leaves its successor is, and as much of it as the
- * lead read carries. The note itself is opaque to everything but the lead, and
- * at its own ceiling it weighs a whole wire body, so the read that carries a
- * mailbox tail and a stream listing beside it carries this instead.
- */
-const handoffNotePreviewSchema = z.strictObject({
-  bytes: countSchema.max(selectorHandoffNoteBytesMax),
-  preview: z.string().max(selectorHandoffNotePreviewCharsMax),
-  truncated: z.boolean(),
-});
-
-/** One entry of one ticket's refusal ledger, as the ledger recorded it. */
-export const agenticRefusalEntryResponseSchema = z.object({
-  ordinal: countSchema,
-  event: z.enum(agenticRefusalEvents),
-  ticketVersion: countSchema,
-  reason: z.string().min(1).max(agenticRefusalReasonCharsMax),
-  decision: identitySchema,
-  recordedAt: instantSchema,
-});
-export type AgenticRefusalEntryResponse = z.infer<
-  typeof agenticRefusalEntryResponseSchema
->;
-
-/**
- * One page of one ticket's refusal ledger, oldest first, `more` saying whether
- * the page ends the ledger. `standing` is present exactly where this page holds
- * the ledger's latest entry and that entry is a refusal, which is what standing
- * means and is why no entry carries it: a page that stops short of the latest
- * entry says nothing about what stands.
- */
-export const ticketAgenticRefusalsResponseSchema = z.object({
-  ticket: ticketNumberSchema,
-  entries: z
-    .array(agenticRefusalEntryResponseSchema)
-    .max(agenticRefusalLedgerAnsweredMax),
-  more: z.boolean(),
-  standing: z
-    .object({
-      ticketVersion: countSchema,
-      reason: z.string().min(1).max(agenticRefusalReasonCharsMax),
-      recordedAt: instantSchema,
-    })
-    .optional(),
-});
-export type TicketAgenticRefusalsResponse = z.infer<
-  typeof ticketAgenticRefusalsResponseSchema
->;
-
-/** One standing refusal across a project, with the ticket as its identity. */
-export const agenticRefusalResponseSchema = z.object({
-  ticket: ticketNumberSchema,
-  ticketVersion: countSchema,
-  reason: z.string().min(1).max(agenticRefusalReasonCharsMax),
-  decision: identitySchema,
-  recordedAt: instantSchema,
-  /** Whether the ticket has moved past the version it was refused at. */
-  superseded: z.boolean(),
-});
-export type AgenticRefusalResponse = z.infer<
-  typeof agenticRefusalResponseSchema
->;
-
-export const agenticRefusalsResponseSchema = z.object({
-  refusals: z
-    .array(agenticRefusalResponseSchema)
-    .max(agenticRefusalsAnsweredMax),
-  more: z.boolean(),
-});
-export type AgenticRefusalsResponse = z.infer<
-  typeof agenticRefusalsResponseSchema
->;
-
-/**
- * What a pod measured of one turn and which batches it wrote, on a lead's turn
- * and a member's alike. It is one shape rather than two copies, because a turn
- * is measured the same way whatever kind of session took it.
+ * What a pod measured of one turn and which batches it wrote, whatever kind of
+ * session took it.
  */
 const sessionTurnMeasureShape = {
   model: z.string().min(1).max(sessionTurnModelCharsMax).optional(),
@@ -1890,124 +1778,17 @@ const sessionTurnMeasureShape = {
   batchLast: countSchema.optional(),
 };
 
-/**
- * One turn of the lead's mailbox and what the pod measured of it. The turn's
- * input is absent: it is the observation document, the decision log already
- * holds it, and shipping it twice would double the page for nothing.
- */
-export const leadTurnResponseSchema = z.object({
-  turn: identitySchema,
-  ordinal: countSchema,
-  inputKind: z.enum(sessionTurnInputKinds),
-  state: z.enum(sessionTurnStates),
-  decision: identitySchema.optional(),
-  failure: z.enum(sessionTurnFailures).optional(),
-  ...sessionTurnMeasureShape,
-});
-export type LeadTurnResponse = z.infer<typeof leadTurnResponseSchema>;
-
 /** One stream a session's store holds, and how many batches stand under it. */
-export const leadStoreStreamResponseSchema = z.object({
+export const sessionStoreStreamResponseSchema = z.object({
   stream: z.string().min(1).max(sessionStoreStreamCharsMax),
   batches: countSchema,
 });
-
-/**
- * The admission refusal the last cycle that needed a lead met, which has been
- * the answer since `since`. A `UsagePaused` refusal names in `until` the
- * earliest instant one of the live pools stops being paused, each on the
- * Claude credentials it named or, where it named none, on the whole agent, as
- * the pause stands at the read, and never whose account it is or why, or
- * `off` in its place where every live pool is held only by credentials turned
- * off; a `SubsidyExhausted` one names the first instant of the next calendar
- * month in UTC.
- */
-export const leadRefusalResponseSchema = z.object({
-  reason: z.enum(leadAdmissionRefusals),
-  since: instantSchema,
-  until: instantSchema.optional(),
-  off: z.literal(true).optional(),
-});
-export type LeadRefusalResponse = z.infer<typeof leadRefusalResponseSchema>;
-
-/**
- * What a subsidized lead's tenant has spent of the subsidy this calendar month
- * in UTC, and its cap, each in micro-dollars.
- */
-export const leadSubsidyResponseSchema = z.object({
-  tenantMicros: countSchema,
-  tenantMonthlyMicros: countSchema,
-});
-
-/**
- * The project's lead session: what it is, what it decided under, its mailbox
- * tail, the refusal kept for it where one stands and neither the selector's
- * pause nor its want of a grant outranks it, and a subsidized lead's spend
- * this month, absent for a lead run as its own.
- */
-export const leadResponseSchema = z.object({
-  session: identitySchema,
-  state: z.enum(sessionStates),
-  attention: z.enum(selectorAttentions),
-  agentReference: identitySchema.optional(),
-  notificationCursor: countSchema,
-  handoffNote: handoffNotePreviewSchema,
-  turns: z.array(leadTurnResponseSchema).max(leadTurnsAnsweredMax),
-  streams: z
-    .array(leadStoreStreamResponseSchema)
-    .max(sessionStoreStreamsAnswered),
-  refusal: leadRefusalResponseSchema.optional(),
-  subsidy: leadSubsidyResponseSchema.optional(),
-});
-export type LeadResponse = z.infer<typeof leadResponseSchema>;
-
-/**
- * Why a project holds no lead: `Paused` while its selector is paused, by the
- * project or the whole installation, then `SelectorNotGranted` while the site's
- * selector may not read the project, each ahead of any refusal it keeps, and
- * otherwise the admission refusal the last cycle that needed a lead met. Where
- * none holds and a released ticket waits on a dispatch decision,
- * `AwaitingSelector`, or `SelectorUnnamed` where the API names no selector to
- * say whether one reaches the project; `NotNeeded` where none waits.
- */
-export const leadAbsenceResponseSchema = z.discriminatedUnion("reason", [
-  z.object({ reason: z.enum(leadAbsencesUntimed) }),
-  leadRefusalResponseSchema,
-]);
-export type LeadAbsenceResponse = z.infer<typeof leadAbsenceResponseSchema>;
-
-/**
- * A project the reader may read that holds no lead session: an answer, where a
- * refusal is a 404. `absence` is absent from a server that predates it.
- */
-export const leadNoneResponseSchema = z.object({
-  lead: z.literal("None"),
-  absence: leadAbsenceResponseSchema.optional(),
-});
-export type LeadNoneResponse = z.infer<typeof leadNoneResponseSchema>;
-
-/**
- * A project the reader may read that holds a lead session: the session, and
- * `held`, where the lead stands but dispatches no ticket, the reason a project
- * holding none would answer as its absence: `Paused` while its selector is
- * paused, by the project or the whole installation, then `SelectorNotGranted`
- * while the site's selector may not read the project. No `Session` frame
- * carries it, and a server that predates it never answers it.
- */
-export const leadFoundResponseSchema = leadResponseSchema.extend({
-  held: z.object({ reason: z.enum(leadHolds) }).optional(),
-});
-export type LeadFoundResponse = z.infer<typeof leadFoundResponseSchema>;
-
-/** What the lead route answers: the project's lead, or that it has none. */
-export const leadReadResponseSchema = z.union([
-  leadFoundResponseSchema,
-  leadNoneResponseSchema,
-]);
-export type LeadReadResponse = z.infer<typeof leadReadResponseSchema>;
+export type SessionStoreStreamResponse = z.infer<
+  typeof sessionStoreStreamResponseSchema
+>;
 
 /** One entry of a session's transcript, parsed no further than a reader draws it. */
-export const leadTranscriptEntryResponseSchema = z.object({
+export const sessionTranscriptEntryResponseSchema = z.object({
   uuid: identitySchema.optional(),
   type: identitySchema,
   timestamp: instantSchema.optional(),
@@ -2025,15 +1806,15 @@ export const sessionTranscriptCompactionResponseSchema = z.object({
 
 /**
  * The chain over the batches read, with `held` naming the entries of this page
- * the lead still holds, decided by the last compaction in the whole stream and
+ * the session still holds, decided by the last compaction in the whole stream and
  * absent only where that walk could not reach the stream's end. An elided batch
  * is one whose row exists and whose object cannot be drawn, which is what a run
  * that died leaves behind.
  */
-export const leadTranscriptResponseSchema = z.object({
+export const sessionTranscriptResponseSchema = z.object({
   stream: z.string().min(1).max(sessionStoreStreamCharsMax),
   entries: z
-    .array(leadTranscriptEntryResponseSchema)
+    .array(sessionTranscriptEntryResponseSchema)
     .max(sessionTranscriptEntriesMax),
   held: z.array(identitySchema).max(sessionTranscriptEntriesMax).optional(),
   /**
@@ -2064,8 +1845,8 @@ export const leadTranscriptResponseSchema = z.object({
   truncated: z.boolean(),
   nextAfter: countSchema.optional(),
 });
-export type LeadTranscriptResponse = z.infer<
-  typeof leadTranscriptResponseSchema
+export type SessionTranscriptResponse = z.infer<
+  typeof sessionTranscriptResponseSchema
 >;
 
 /** One turn's readings of its session's context window, in the order the turn took them. */
@@ -2082,100 +1863,23 @@ export const sessionContextTurnResponseSchema = z.object({
  * One page of a session's context readings, by turn ascending and resumed by
  * the last turn's ordinal. The first page alone carries what the session was
  * opened under: the text it appends to the agent runtime's own system prompt,
- * and the window at which its runtime compacts, each where it has one.
+ * where it has one.
  */
 export const sessionContextResponseSchema = z.object({
   turns: z
     .array(sessionContextTurnResponseSchema)
     .max(sessionContextPageTurnsMax),
   systemPrompt: z.string().min(1).max(agentSessionPromptCharsMax).optional(),
-  autoCompactWindow: z
-    .number()
-    .int()
-    .min(leadAutoCompactWindowTokensMin)
-    .max(leadAutoCompactWindowTokensMax)
-    .optional(),
   nextAfter: countSchema.optional(),
 });
 export type SessionContextResponse = z.infer<
   typeof sessionContextResponseSchema
 >;
 
-/** One dispatch of one decision, and where the delivery record left it. */
-export const selectorDispatchResponseSchema = z.object({
-  ticket: ticketNumberSchema,
-  state: z.enum(selectorDeliveryStates),
-  outcome: identitySchema.optional(),
-});
-
-/** What one decision did, which is what the decision log draws and not what it saw. */
-export const selectorDecisionResponseSchema = z.object({
-  ordinal: countSchema,
-  decision: identitySchema,
-  instructionsVersion: identitySchema,
-  dispatches: z
-    .array(selectorDispatchResponseSchema)
-    .max(nativeHttpPageItemsMax),
-  refused: z.array(ticketNumberSchema).max(nativeHttpPageItemsMax),
-  lifted: z.array(ticketNumberSchema).max(nativeHttpPageItemsMax),
-  attention: z.enum(selectorAttentions).optional(),
-  outcome: identitySchema.optional(),
-  modelRevision: identitySchema,
-  policyRevision: identitySchema,
-  tokens: countSchema.optional(),
-  costMicros: countSchema.optional(),
-  durationMs: countSchema.optional(),
-  startedAt: instantSchema,
-  completedAt: instantSchema,
-});
-export type SelectorDecisionResponse = z.infer<
-  typeof selectorDecisionResponseSchema
->;
-
-export const selectorHistoryResponseSchema = z.object({
-  decisions: z
-    .array(selectorDecisionResponseSchema)
-    .max(selectorHistoryLimitMax),
-  nextAfter: countSchema.optional(),
-});
-export type SelectorHistoryResponse = z.infer<
-  typeof selectorHistoryResponseSchema
->;
-
-/** One decision held for a reviewer, and every ticket an approval would dispatch. */
-export const selectorProposalResponseSchema = z.object({
-  decision: identitySchema,
-  tickets: z.array(ticketNumberSchema).min(1).max(leadDispatchesMax),
-});
-export type SelectorProposalResponse = z.infer<
-  typeof selectorProposalResponseSchema
->;
-
-/** `more` says a held decision was left unread, which answering these reaches. */
-export const selectorProposalsResponseSchema = z.object({
-  proposals: z
-    .array(selectorProposalResponseSchema)
-    .max(selectorProposalDispatchesAnsweredMax),
-  more: z.boolean(),
-});
-export type SelectorProposalsResponse = z.infer<
-  typeof selectorProposalsResponseSchema
->;
-
-/**
- * One ticket the inbox holds: the row the tickets list answers for it, its
- * open actions, the refusals it has not moved past and the decisions naming
- * it, any of them empty.
- */
+/** One ticket the inbox holds: the row the tickets list answers for it, and its open actions. */
 export const inboxEntryResponseSchema = z.object({
   ticket: projectTicketSchema,
   actions: page(projectNativeActionResponseSchema),
-  refusals: z
-    .array(agenticRefusalResponseSchema)
-    .max(agenticRefusalsAnsweredMax),
-  proposals: z
-    .array(selectorProposalResponseSchema)
-    .max(selectorProposalDispatchesAnsweredMax),
 });
 export type InboxEntryResponse = z.infer<typeof inboxEntryResponseSchema>;
 
@@ -2187,14 +1891,6 @@ export const inboxResponseSchema = z.object({
   nextCursor: cursorSchema.optional(),
 });
 export type InboxResponse = z.infer<typeof inboxResponseSchema>;
-
-export const selectorProposalReviewResponseSchema = z.object({
-  decision: identitySchema,
-  outcome: z.enum(selectorReviewOutcomes),
-});
-export type SelectorProposalReviewResponse = z.infer<
-  typeof selectorProposalReviewResponseSchema
->;
 
 /**
  * One member thread as a listing names it, `owner` being the authority its
@@ -2247,10 +1943,9 @@ export const chatThreadsResponseSchema = z.object({
 export type ChatThreadsResponse = z.infer<typeof chatThreadsResponseSchema>;
 
 /**
- * One turn of a thread's mailbox, carrying its `input` and its `result` where
- * `leadTurnResponseSchema` carries neither: a lead's are the observation and
- * the decision its log already holds, and a member's are what they typed and
- * the answer they are waiting for. Each is bounded by the column that holds it.
+ * One turn of a thread's mailbox, carrying its `input` and its `result`: what
+ * the member typed and the answer they are waiting for. Each is bounded by the
+ * column that holds it.
  */
 export const threadTurnResponseSchema = z.object({
   turn: identitySchema,
@@ -2265,10 +1960,7 @@ export const threadTurnResponseSchema = z.object({
 export type ThreadTurnResponse = z.infer<typeof threadTurnResponseSchema>;
 
 /**
- * One member thread: what it is, whose it is, and its mailbox tail. It is its
- * own shape rather than the lead's reused, because `attention` and
- * `notificationCursor` are facts about the project's selector state and neither
- * is a fact about a thread.
+ * One member thread: what it is, whose it is, and its mailbox tail.
  */
 export const threadResponseSchema = z.object({
   session: identitySchema,
@@ -2284,7 +1976,7 @@ export const threadResponseSchema = z.object({
   /** The cursor an older page is asked for with, absent where this page holds the first turn. */
   nextBefore: countSchema.optional(),
   streams: z
-    .array(leadStoreStreamResponseSchema)
+    .array(sessionStoreStreamResponseSchema)
     .max(sessionStoreStreamsAnswered),
   /**
    * Present where the thread holds jobs its chat host restarts with each
@@ -2298,13 +1990,11 @@ export const threadResponseSchema = z.object({
 export type ThreadResponse = z.infer<typeof threadResponseSchema>;
 
 /**
- * A thread's transcript is the lead's page over a different session: the same
- * walk, over the same store, answering the same chain. It is aliased rather
- * than forked so the two cannot drift; the rename that makes the name
- * session-keyed rather than lead-keyed belongs with the walk it renames.
+ * A thread's transcript is a session's transcript page. It is aliased rather
+ * than forked so the two cannot drift.
  */
-export const threadTranscriptResponseSchema = leadTranscriptResponseSchema;
-export type ThreadTranscriptResponse = LeadTranscriptResponse;
+export const threadTranscriptResponseSchema = sessionTranscriptResponseSchema;
+export type ThreadTranscriptResponse = SessionTranscriptResponse;
 
 /**
  * What the rename and the hide doors answer: the entry as it now stands, which
@@ -2332,56 +2022,6 @@ export const threadTurnStopResponseSchema = z.object({
 export type ThreadTurnStopResponse = z.infer<
   typeof threadTurnStopResponseSchema
 >;
-/**
- * What the pod measured of the one turn an inquiry takes, reused from the
- * lead's own turn shape rather than respelled: a turn is measured the same way
- * whatever kind of session took it.
- */
-const inquiryMeasureShape = leadTurnResponseSchema.pick({
-  model: true,
-  tokens: true,
-  costMicros: true,
-  durationMs: true,
-}).shape;
-
-/**
- * One inquiry against the project's lead, carrying its `question` and its
- * `answer` where `leadTurnResponseSchema` carries neither: a lead's input is
- * the observation its decision log already holds, and an inquiry's is what the
- * member typed and the answer they are waiting for. `asker` is the authority
- * its member acts under, absent where the project no longer admits them
- * (`threadEntryResponseSchema.owner`'s shape, for its reason), and `mine` is
- * computed against the request's own principal so a browser can name "my
- * inquiry" without decoding a token.
- */
-export const leadInquiryResponseSchema = z.object({
-  session: identitySchema,
-  asker: identitySchema.optional(),
-  mine: z.boolean(),
-  state: z.enum(sessionStates),
-  turnState: z.enum(sessionTurnStates),
-  ordinal: countSchema,
-  question: z.string().min(1).max(inquiryQuestionCharsMax),
-  answer: z.string().max(sessionTurnResultCharsMax).optional(),
-  failure: z.enum(sessionTurnFailures).optional(),
-  askedAt: instantSchema,
-  ...inquiryMeasureShape,
-});
-export type LeadInquiryResponse = z.infer<typeof leadInquiryResponseSchema>;
-
-/** A lead's inquiries, newest first, because one is read right after it is asked. */
-export const leadInquiriesResponseSchema = z.object({
-  inquiries: z.array(leadInquiryResponseSchema).max(inquiriesAnsweredMax),
-});
-export type LeadInquiriesResponse = z.infer<typeof leadInquiriesResponseSchema>;
-
-/** What the ask door answers: the fork it opened, its one turn, and where that turn sits. */
-export const leadInquiryAcceptedSchema = z.object({
-  session: identitySchema,
-  turn: identitySchema,
-  ordinal: countSchema,
-});
-export type LeadInquiryAccepted = z.infer<typeof leadInquiryAcceptedSchema>;
 
 /** One app this deployment holds the key of, and the address a tenant's administrator installs it from. */
 export const forgeAppResponseSchema = z.object({
@@ -2467,8 +2107,12 @@ export type ForgeAuthorizationResponse = z.infer<
   typeof forgeAuthorizationResponseSchema
 >;
 
-/** One repository an installation grants, `url` being the address a binding names it by. */
+/** A number the forge names something by, written as its digits. */
+const forgeNumberSchema = identitySchema.regex(/^[1-9][0-9]*$/u);
+
+/** One repository an installation grants, `url` being the address a binding names it by and `id` the forge's own number for it. */
 export const forgeRepositoryResponseSchema = z.object({
+  id: forgeNumberSchema,
   name: identitySchema,
   fullName: z.string().min(1),
   url: z.string().min(1),
@@ -2480,15 +2124,19 @@ export type ForgeRepositoryResponse = z.infer<
 >;
 
 /**
- * What one installation grants. `truncated` says the installation holds more
- * than this deployment pages for, so a reader that cannot find a repository
- * knows the listing is partial rather than that the repository is absent.
+ * What one installation grants, whether it was given every repository on its
+ * account or chosen ones, and the forge's number for that account where a
+ * listed repository names it. `truncated` says the installation holds more than
+ * this deployment pages for, so a reader that cannot find a repository knows
+ * the listing is partial rather than that the repository is absent.
  */
 export const forgeRepositoriesResponseSchema = z.object({
   repositories: z
     .array(forgeRepositoryResponseSchema)
     .max(forgeRepositoriesAnsweredMax),
   truncated: z.boolean(),
+  selection: z.enum(forgeRepositorySelections),
+  accountId: forgeNumberSchema.optional(),
 });
 export type ForgeRepositoriesResponse = z.infer<
   typeof forgeRepositoriesResponseSchema
@@ -2741,11 +2389,11 @@ export type ExecutionPlacementResponse = z.infer<
 >;
 
 /**
- * Where a project's threads and its lead run and what decided each, the lead's
- * offering and the ones the deployment admits, the routes this caller may
- * choose, and the runners each would run on: the caller's own for their
- * thread, their chat host for their inquiry, and any of the project's pools
- * for the lead.
+ * Where a project's threads run and what decided it, the routes this caller
+ * may choose, and the runners a thread would run on: `mine` the caller's chat
+ * host for the project's threads, `inquiry` theirs for their own chat's, and
+ * `project` whether any of the project's pools is live. `lead`, `leadOffering`
+ * and `leadOfferings` are fixed values for older clients: there is no lead.
  */
 export const sessionPlacementResponseSchema = z.object({
   thread: placementRouteResolvedSchema,
@@ -2818,7 +2466,7 @@ export const threadLimitResponseSchema = z.strictObject({
 });
 export type ThreadLimitResponse = z.infer<typeof threadLimitResponseSchema>;
 
-/** Whether the project's tenant grants the caller the hosted runs a thread or an inquiry spends in cluster. */
+/** Whether the project's tenant grants the caller the hosted runs a thread spends in cluster. */
 export const hostedRunsResponseSchema = z.strictObject({
   granted: z.boolean(),
 });
@@ -2957,6 +2605,8 @@ export const projectAbilitiesResponseSchema = z.strictObject({
   manageSelector: z.boolean(),
   overrideTicketConfig: z.boolean(),
   skipPlannedEvaluations: z.boolean(),
+  /** Whether the reader may have chuggy merge a pull request one of the project's tickets opened. */
+  mergeProposals: z.boolean(),
   administer: z.boolean(),
   /** Whether the reader may create and revise epics, which is the `Mutate` kind. */
   writeEpic: z.boolean(),
@@ -3379,14 +3029,40 @@ const ticketLandingConflictSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
+/** Text a forge answered with, bounded as the row keeps it. */
+function ticketLandingForgeTextSchema(charsMax: number) {
+  return z.string().refine((value) => isBoundedText(value, charsMax));
+}
+
+/**
+ * What the forge answered the newest merge it was asked for: when it was asked
+ * and, once heard, when it answered, what that came to, and its status and
+ * message, cut where `messageCut` says so, or the failure that reached no forge.
+ */
+const ticketLandingMergeAnswerSchema = z.strictObject({
+  askedAt: instantSchema,
+  answeredAt: instantSchema.optional(),
+  outcome: z.enum(changeProposalMergeOutcomes).optional(),
+  status: countSchema.optional(),
+  failure: ticketLandingForgeTextSchema(
+    proposalForgeFailureCharsMax,
+  ).optional(),
+  message: ticketLandingForgeTextSchema(
+    proposalForgeMessageCharsMax,
+  ).optional(),
+  messageCut: z.literal(true).optional(),
+});
+
 /**
  * The pull request one landing opened at `headCommit`, each other field present
  * where its row holds it. `url` is absent where none was recorded or the one
  * recorded is not a link a report could carry; `creation` is absent where the
  * proposal was found by reading it back; `status` and `mergeability` are what
- * the forge last said of it, and `mergeState` its own word for the second; and
+ * the forge last said of it, and `mergeState` its own word for the second;
  * `mergedHead` is the head the forge merged, present only where it is not the
- * one this landing opened it at.
+ * one this landing opened it at; and `mergesAsked` is how many merges of it the
+ * forge was asked for, absent where none was, and `mergeAnswer` what the forge
+ * answered the newest of them.
  */
 const ticketLandingProposalSchema = z.strictObject({
   url: actionReportDocumentSchema.shape.link,
@@ -3401,6 +3077,8 @@ const ticketLandingProposalSchema = z.strictObject({
   mergeState: z.string().min(1).max(proposalMergeStateCharsMax).optional(),
   mergeCommit: landingCommitSchema.optional(),
   mergedHead: landingCommitSchema.optional(),
+  mergesAsked: countSchema.optional(),
+  mergeAnswer: ticketLandingMergeAnswerSchema.optional(),
 });
 
 const ticketLandingFields = {
@@ -3528,14 +3206,43 @@ export type TicketLandingsResponse = z.infer<
 >;
 
 /**
+ * What a merge of a ticket's pull request answers where the pull request is
+ * merged, by this press or before it: the commit the merge left, absent where
+ * the forge named none, and the pull request's link where a report could
+ * carry it.
+ */
+export const ticketProposalMergeResponseSchema = z.strictObject({
+  outcome: z.literal("Merged"),
+  mergeCommit: landingCommitSchema.optional(),
+  url: actionReportDocumentSchema.shape.link,
+});
+export type TicketProposalMergeResponse = z.infer<
+  typeof ticketProposalMergeResponseSchema
+>;
+
+/** What a merge of a ticket's pull request the forge did not make answers: why, and the pull request's link where a report could carry it. */
+export const ticketProposalMergeRefusedResponseSchema = z.strictObject({
+  error: z.strictObject({ code: identitySchema, message: z.string() }),
+  refused: z.enum(proposalMergeRefusals),
+  url: actionReportDocumentSchema.shape.link,
+});
+export type TicketProposalMergeRefusedResponse = z.infer<
+  typeof ticketProposalMergeRefusedResponseSchema
+>;
+
+/**
  * One reference's landing queue: its repository, the target its briefs name,
- * absent where they name none, the ticket holding it, and the tickets waiting
- * on it in rank order.
+ * absent where they name none, the ticket holding it, since when it has held
+ * it and in what phase it is, and the tickets waiting on it in rank order.
+ * `holderSince` is the later of when the holder took its rank and when the
+ * ticket ranked ahead of it last stopped holding, in UTC.
  */
 export const landingQueueSchema = z.strictObject({
   repository: briefRepositorySchema,
   target: briefBranchSchema.optional(),
   holder: ticketNumberSchema,
+  holderSince: z.iso.datetime({ precision: landingQueueHolderSinceDigits }),
+  holderPhase: z.enum(phaseRoster),
   waiting: z.array(ticketNumberSchema).max(landingQueueTicketsAnsweredMax - 1),
 });
 

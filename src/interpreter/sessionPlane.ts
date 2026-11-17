@@ -12,9 +12,7 @@
  * THE PLANE READS NO PAYLOAD. A turn's input and result are opaque text it
  * carries, and a store batch is bytes it counts newlines in. Deduplication on
  * the wire is the batch number and its digest and nothing narrower, because
- * anything narrower is a reading of the transcript — and a fork re-appends its
- * parent's entries under their own identities, so a reading of it would discard
- * most of every inquiry.
+ * anything narrower is a reading of the transcript.
  */
 
 import type {
@@ -34,6 +32,10 @@ import type { SessionEffort } from "../contract/http.ts";
 import type { SessionContextOffered } from "../contract/responses.ts";
 import type { SessionContainerEnd } from "../contract/rosters.ts";
 import type { SessionLiveEvent } from "../contract/sessionLive.ts";
+import type {
+  ThreadTicketWakeSetting,
+  ThreadTicketWakes,
+} from "../contract/threadWake.ts";
 import type { Partition } from "./projectStore.ts";
 import {
   sessionPodEvidence,
@@ -55,21 +57,10 @@ export interface SessionPlaneIdentity {
   readonly agentReference?: string;
   /** What the session was told it is, absent for a session opened without objectives. */
   readonly systemPrompt?: string;
-  /** The context, in tokens, a lead's runtime compacts at, absent for every other session. */
-  readonly autoCompactWindow?: number;
-  /** The model the session runs on, absent where it takes the site's session model; an inquiry's is its lead's. */
+  /** The model the session runs on, absent where it takes the site's session model. */
   readonly model?: string;
-  /** The effort the session runs at, absent where the runtime chooses; an inquiry's is its lead's. */
+  /** The effort the session runs at, absent where the runtime chooses. */
   readonly effort?: SessionEffort;
-  /**
-   * The transcript this attempt forks from, which is the parent's runtime
-   * reference and is present only for an inquiry. It is the parent's and never
-   * the session's own, so an attempt that follows a lost one forks again from
-   * the lead rather than resuming a fork whose store holds nothing.
-   */
-  readonly forkFrom?: string;
-  /** Present where the session runs on its own system prompt with none of its project's settings; an inquiry's is its lead's. */
-  readonly systemPromptOwn?: true;
   /** Present only for a thread a chat host whose poll named a capability set holds, whose shell is handed its credential. */
   readonly shellCredentialHanded?: true;
   /** Whether the attempt may still act, which every route requires before anything else. */
@@ -177,6 +168,28 @@ export interface SessionStandingPort {
     readonly generation: number;
     readonly standing: boolean;
   }): Promise<SessionStandingRecorded>;
+}
+
+/**
+ * What a thread's attempt choosing whether it is woken for its tickets found:
+ * the thread's choice and its host's setting after it, the bearer no live
+ * attempt's, or a session that is no thread.
+ */
+export type SessionTicketWakesChosen =
+  | { readonly chosen: "Recorded"; readonly wakes: ThreadTicketWakes }
+  | { readonly chosen: "Fenced" | "NotThread" };
+
+/** A thread's ticket wake settings under its own live attempt's bearer, `thread` absent to follow its host. */
+export interface SessionTicketWakesPort {
+  readTicketWakes(input: {
+    readonly secret: SessionBearerSecret;
+    readonly generation: number;
+  }): Promise<ThreadTicketWakes | undefined>;
+  chooseTicketWakes(input: {
+    readonly secret: SessionBearerSecret;
+    readonly generation: number;
+    readonly thread?: ThreadTicketWakeSetting;
+  }): Promise<SessionTicketWakesChosen>;
 }
 
 /** One turn as the mailbox hands it over, its input opaque to everything here. */

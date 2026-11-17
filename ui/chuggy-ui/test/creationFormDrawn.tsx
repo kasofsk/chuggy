@@ -11,7 +11,7 @@ import { SessionProvider } from "../app/browser/session.tsx";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import type { CreationOffer } from "../app/core/ticketCreation.ts";
-import { creationContextList } from "../app/core/ticketCreationRun.ts";
+import { creationContextList } from "../app/core/configurationQueries.ts";
 import { holderDouble, queryClientUnretried } from "./screenHarness.tsx";
 import { creationPartition } from "./ticketCreationFixture.ts";
 import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";

@@ -39,7 +39,6 @@ import {
   runnerLossResumeFunction,
   runnerLostTicketsFunction,
   schedulerRole,
-  selectorReviewRole,
   selectorServiceRole,
   ticketUpdatedDependenciesFunction,
   ticketRateLimitResumableFunction,
@@ -76,7 +75,7 @@ const admittedWorkerColumns = "image,name,published_at,version";
 const executionRoutingColumns =
   "evaluation_route,project_routes,published_at,singleton,work_route";
 const sessionRoutingColumns =
-  "lead_route,project_routes,published_at,singleton,thread_route";
+  "project_routes,published_at,singleton,thread_route";
 const sessionLaunchColumns =
   "authority,backoff_secs,bounds,deadline_secs,image,mirrors,model,published_at,singleton";
 /** The relations one run's evidence lives in, named once for every case. */
@@ -108,8 +107,6 @@ test("every runtime role may read only the migration ledger contract", async () 
     metricsPlaneRole,
     apiRole,
     ticketServiceRole,
-    selectorServiceRole,
-    selectorReviewRole,
     schedulerRole,
     finalizerRole,
   ]) {
@@ -1344,7 +1341,44 @@ test("the scheduler's write surface is exactly the columns execution and capacit
   );
 });
 
-test("the scheduler reads execution and capacity, of the project only its lifecycle, of a pool or a member's runner what it declared, who first drafted a ticket and who took it, which tickets a project holds, where each project runs, and why a finalization attempt failed", async () => {
+/** Every relation the scheduler is granted a column of to read. */
+const schedulerReadRelations: readonly string[] = [
+  "admitted_worker",
+  "capacity_account",
+  "configuration_revision",
+  "draft_revision",
+  "execution",
+  "execution_attempt",
+  "execution_cluster",
+  "execution_request",
+  "execution_request_task",
+  "execution_result",
+  "execution_result_artifact",
+  "execution_result_report",
+  "execution_result_source",
+  "execution_routing",
+  "finalization_attempt",
+  "input_bundle_reference",
+  "personal_runner",
+  "personal_runner_project",
+  "project",
+  "project_execution_placement",
+  "project_owner_fallback",
+  "recovery_epoch",
+  "scheduler_incident",
+  "schema_migration",
+  "selector_project_settings",
+  "session_launch",
+  "session_routing",
+  "thread_wake_cursor",
+  "ticket_definition",
+  "ticket_projection",
+  "ticket_source",
+  "ticket_take",
+  "worker_pool",
+];
+
+test("the scheduler reads execution and capacity, of the project only its lifecycle, of a pool or a member's runner what it declared, who first drafted a ticket and who took it, which tickets a project holds, where each project runs, why a finalization attempt failed, a project's thread standing rules, and how far the thread wake pass has read", async () => {
   const read = (await harness.query(
     `SELECT table_name AS relation,
             string_agg(column_name, ',' ORDER BY column_name) AS columns
@@ -1355,39 +1389,7 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
   )) as readonly { relation: string; columns: string }[];
   assert.deepEqual(
     read.map((row) => row.relation),
-    [
-      "admitted_worker",
-      "capacity_account",
-      "configuration_revision",
-      "draft_revision",
-      "execution",
-      "execution_attempt",
-      "execution_cluster",
-      "execution_request",
-      "execution_request_task",
-      "execution_result",
-      "execution_result_artifact",
-      "execution_result_report",
-      "execution_result_source",
-      "execution_routing",
-      "finalization_attempt",
-      "input_bundle_reference",
-      "personal_runner",
-      "personal_runner_project",
-      "project",
-      "project_execution_placement",
-      "project_owner_fallback",
-      "recovery_epoch",
-      "scheduler_incident",
-      "schema_migration",
-      "session_launch",
-      "session_routing",
-      "ticket_definition",
-      "ticket_projection",
-      "ticket_source",
-      "ticket_take",
-      "worker_pool",
-    ],
+    schedulerReadRelations,
   );
   assert.equal(
     read.find((row) => row.relation === "ticket_projection")?.columns,
@@ -1403,15 +1405,28 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
   );
   assert.equal(
     read.find((row) => row.relation === "worker_pool")?.columns,
-    "capabilities,class,memory_ceiling_mib,pool,principal,project,tenant",
+    "capabilities,class,memory_ceiling_mib,memory_room_mib,pool,principal,project,tenant",
   );
   assert.equal(
     read.find((row) => row.relation === "personal_runner")?.columns,
-    "capabilities,memory_ceiling_mib,owner,principal,tenant",
+    "capabilities,memory_ceiling_mib,memory_room_mib,owner,principal,tenant",
   );
   assert.equal(
     read.find((row) => row.relation === "draft_revision")?.columns,
     "authoring_version,authority_kind,authority_subject,project,tenant,ticket",
+  );
+});
+
+test("of a project's selector settings the scheduler reads only its North Star and its thread standing rules", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT string_agg(column_name, ',' ORDER BY column_name) AS columns
+         FROM information_schema.role_column_grants
+        WHERE grantee=$1 AND table_schema='public' AND privilege_type='SELECT'
+          AND table_name='selector_project_settings'`,
+      [schedulerRole],
+    ),
+    [{ columns: "north_star,project,tenant,thread_standing_rules" }],
   );
 });
 

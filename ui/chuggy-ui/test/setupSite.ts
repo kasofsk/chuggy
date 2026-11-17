@@ -8,7 +8,7 @@
  * command makes and refuses, as the server does, what it would not show:
  * a project the caller is not listed in is not found, a workspace's accounts
  * and what each installation on them grants are not found by anyone who does
- * not administer it, and lead settings are not found by whoever is not shown
+ * not administer it, and settings are not found by whoever is not shown
  * them. The list of projects is answered a
  * page at a time, each page but the last naming the next, since the server
  * answers a page of what it scanned and not of what the caller is shown. A
@@ -28,6 +28,22 @@
  * personal runners in a workspace are held apart from it, with the projects
  * they serve, and are not found where they hold none.
  *
+ * It binds a repository as the server does, only where a portal installation
+ * of the workspace's lists it, writing the bootstrap a binding of a repository
+ * declaring nothing holds; it answers the deployment's apps, each with its
+ * install page, and the client a person authorizes unless a case takes it
+ * away; and each installation's settings page.
+ *
+ * It files a ticket as the server does: a draft created under a revision the
+ * project offers, at its fence, released into a ticket that waits to start,
+ * and dispatched where the dispatch view lists it; every brief it was sent is
+ * kept, so a suite can say what was filed. Each operation is decided as it is
+ * submitted.
+ *
+ * It writes a project's settings as the server does: whole, under the
+ * revision they were read at, a write the revision moved under answered with
+ * the settings standing in its place.
+ *
  * It imports a repository's configuration as the server does: from what was
  * pushed to the repository's default branch, judged by the contract's own
  * judgment of a configuration directory, kept as the binding's last import,
@@ -46,6 +62,7 @@ import type { RepositoryConfigurationReferenced } from "../../../src/contract/re
 import type {
   DraftResponse,
   ExecutionPlacementResponse,
+  ExecutionSummary,
   ForgeInstallationResponse,
   ForgeRepositoryResponse,
   ProjectRepositoryConfigurationsHeldResponse,
@@ -56,12 +73,20 @@ import type {
   TicketLandingResponse,
   TicketResponse,
 } from "../../../src/contract/responses.ts";
+import { bootstrapConfigurationRevisionPrefix } from "../../../src/contract/responses.ts";
 import type {
   ForgeAppName,
   OwnerFallback,
+  PersonalRunnerWait,
   PlacementRoute,
+  ProposalMergeRefusal,
   SessionRunnerStanding,
 } from "../../../src/contract/rosters.ts";
+import {
+  proposalMergeForbiddenCode,
+  proposalMergeRefusedCode,
+} from "../../../src/contract/rosters.ts";
+import { ledgerExecution, workIdentity } from "./ticketLedgerFixture.ts";
 
 export interface SetupSiteRepository {
   readonly repository: string;
@@ -71,6 +96,18 @@ export interface SetupSiteRepository {
   readonly bootstrapped?: boolean;
   /** The import of it that finished last, where one did. */
   readonly lastImport?: RepositoryConfigurationImportAttemptResponse;
+  /** How its work is finalized: pushed unless a case has it merged through a pull request, or left in one for the person to merge. */
+  readonly mode?: "Push" | "PullRequestMerge" | "PullRequest";
+}
+
+/** A draft as it was created: the revision it is drawn under, and its brief. */
+export interface SetupSiteFiled {
+  readonly configurationRevision: string;
+  readonly brief: {
+    readonly title?: string;
+    readonly intent: string;
+    readonly branch?: string;
+  };
 }
 
 export interface SetupSiteTicket {
@@ -83,11 +120,12 @@ export interface SetupSiteProject {
   readonly project: string;
   /** The page of the list of projects this one is answered on, the first being zero. */
   page: number;
-  northStar: string | undefined;
-  /** A North Star the installation gives every project that has none of its own. */
-  inherited: string | undefined;
-  /** Whether the caller is shown the project's lead settings. */
+  /** Whether the caller is shown the project's settings. */
   settled: boolean;
+  /** The project's settings as they stand, by their revision, and how many writes the revision is moved under by someone else before one is taken. */
+  overrides: SelectorProjectSettingsResponse["overrides"];
+  revision: number;
+  races: number;
   repositories: SetupSiteRepository[];
   /** Where the project's work runs, and where the caller's chats in it run. */
   work: PlacementRoute;
@@ -99,11 +137,18 @@ export interface SetupSiteProject {
   tickets: SetupSiteTicket[];
   drafts: number[];
   landings: Map<number, readonly TicketLandingResponse[]>;
+  executions: Map<number, readonly ExecutionSummary[]>;
   /** Whether the caller administers the project, which its abilities read says and the mint goes by. */
   administer: boolean;
   /** The pools registered for the project, by name, and the registration tokens minted for it that nobody has redeemed. */
   pools: string[];
   tokens: string[];
+  /** The names a repository holding its own configuration declares, each ready at the one commit imported. */
+  declared: string[];
+  /** Every draft created, by its ticket, with the body it was created from. */
+  readonly filed: Map<number, SetupSiteFiled>;
+  /** Every operation submitted, by its identity, with what it was submitted to do. */
+  readonly operations: Map<string, unknown>;
   /** What the project is called, where it is other than its address, and whether the caller made it. */
   name?: string;
   made?: true;
@@ -125,15 +170,27 @@ export type SetupSiteRead =
   | "landed"
   | "moving"
   | "drafts"
-  | "landings";
+  | "landings"
+  | "executions";
 
 /** The caller's principal, which their chat host is registered under: their issuer's length and their issuer, then their subject, as the site derives one. */
 export const setupSiteMember =
   "20:https://auth.example0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f";
 
-/** What only `runner` asks, which a case moves likewise; `mint` and `chatMint` are writes. */
+/** What only `runner`, `bind`, `serve`, `ticket` or `north-star` asks, which a case moves likewise; `mint`, `chatMint`, `bind`, `serve`, `allow`, `file` and `star` are writes, `file` the draft's creation, `serve` the project given the caller's runners, `allow` the owner fallback named and `star` the project's settings written. */
 export type SetupSiteRunnerAsk =
-  "abilities" | "pools" | "mint" | "permit" | "chat" | "chatMint";
+  | "abilities"
+  | "serve"
+  | "allow"
+  | "pools"
+  | "mint"
+  | "permit"
+  | "chat"
+  | "chatMint"
+  | "bind"
+  | "configurations"
+  | "file"
+  | "star";
 
 /** The caller's chat host in a workspace: the id it is held by, and whether it has polled lately, which is what the site sees as live. */
 export interface SetupSiteChatHost {
@@ -153,6 +210,8 @@ export type SetupSiteFate =
 
 export interface SetupSite {
   tenants: AccessCallerTenant[];
+  /** The GitHub login the caller's account records, where a case gives it one. */
+  login?: string | undefined;
   projects: SetupSiteProject[];
   /** How many pages the list of projects is answered in, where that is more than the projects' own pages come to. */
   inventoryPages: number;
@@ -161,6 +220,8 @@ export interface SetupSite {
   /** The repositories an installation grants, by installation, where a case says other than every repository of the workspace's projects on its account. */
   grants: Map<string, string[]>;
   fates: Map<SetupSiteRead | SetupSiteRunnerAsk, SetupSiteFate>;
+  /** Whether the deployment answers a client to authorize, without which it offers no install the workspace can claim. */
+  authorizing: boolean;
   /** Every registration token and every runner credential the site handed out, in order. */
   readonly secrets: string[];
   /** The caller's subject, which their chat host is registered under. */
@@ -171,6 +232,8 @@ export interface SetupSite {
   readonly chat: Map<string, SetupSiteChatHost>;
   readonly chatTokens: Map<string, string>;
   chatMade: number;
+  /** The tokens minted for a personal runner of the caller's that nobody has redeemed, each with its workspace. */
+  readonly personalTokens: Map<string, string>;
   /** The caller's personal runners, by workspace, where they hold any. */
   readonly personal: Map<string, SetupSitePersonalRunners>;
   /** What each mint that was answered asked for. */
@@ -179,7 +242,30 @@ export interface SetupSite {
   readonly pushed: Map<string, ReadonlyMap<string, string>>;
   /** The letters the site draws a token from, which a case changes to draw one nothing knows by its shape, or one no command line carries whole. */
   letters: string;
+  /** How the site meets a merge of a ticket's pull request, which it merges unless a case says otherwise, and the import that merge brings on while it is still to finish. */
+  merging?: SetupSiteMerging;
+  importing?: SetupSiteImporting | undefined;
 }
+
+/** How a merge is met: merged, its import finishing as `outcome` after the project's repositories are read `reads` times, or refused for a reason, or refused to a caller without the permit. */
+export type SetupSiteMerging =
+  | {
+      readonly merging: "Merged";
+      readonly reads: number;
+      readonly outcome: RepositoryConfigurationImportAttemptResponse["outcome"];
+    }
+  | { readonly merging: "Refused"; readonly refused: ProposalMergeRefusal }
+  | { readonly merging: "Forbidden" };
+
+/** The import a merge brought on, which finishes once the project's repositories have been read `reads` more times. */
+export interface SetupSiteImporting {
+  readonly project: SetupSiteProject;
+  reads: number;
+  readonly outcome: RepositoryConfigurationImportAttemptResponse["outcome"];
+}
+
+/** The commit a merge leaves, which the import it brings on is of. */
+export const setupSiteMergeCommit = "c".repeat(40);
 
 export interface SetupSiteMint {
   readonly lifetimeSecs: number;
@@ -204,9 +290,10 @@ export function setupSiteProject(
     tenant,
     project,
     page: 0,
-    northStar: undefined,
-    inherited: undefined,
     settled: true,
+    overrides: { northStar: setupSiteNorthStar },
+    revision: 1,
+    races: 0,
     repositories: [],
     work: "Pool",
     threads: "Pool",
@@ -215,9 +302,13 @@ export function setupSiteProject(
     tickets: [],
     drafts: [],
     landings: new Map(),
+    executions: new Map(),
     administer: true,
     pools: [],
     tokens: [],
+    declared: ["development"],
+    filed: new Map(),
+    operations: new Map(),
   };
 }
 
@@ -230,12 +321,14 @@ export function setupSiteEmpty(): SetupSite {
     installations: new Map(),
     grants: new Map(),
     fates: new Map(),
+    authorizing: true,
     secrets: [],
     member: setupSiteMember,
     withheld: new Set(),
     chat: new Map(),
     chatTokens: new Map(),
     chatMade: 0,
+    personalTokens: new Map(),
     personal: new Map(),
     mints: [],
     pushed: new Map(),
@@ -302,6 +395,9 @@ export const setupSiteHeld: TicketLandingResponse = {
 
 export const setupSiteWorkspace = "acme";
 export const setupSiteProjectName = "widgets";
+
+/** The North Star a project this site holds carries, unless it was made by the caller or a case takes it away. */
+export const setupSiteNorthStar = "Widgets for everyone.";
 export const setupSiteAccount = "acme-org";
 export const setupSiteRepositoryAddress = "https://github.com/acme-org/widgets";
 
@@ -310,7 +406,6 @@ export const setupSiteStages = [
   "Nothing",
   "Workspace",
   "Project",
-  "NorthStar",
   "Portal",
   "Apps",
   "Added",
@@ -339,7 +434,6 @@ export function setupSiteAt(stage: SetupSiteStage): SetupSite {
   if (!reached("Project")) return site;
   const project = setupSiteProject(setupSiteWorkspace, setupSiteProjectName);
   site.projects.push(project);
-  if (reached("NorthStar")) project.northStar = "Widgets, made well.";
   const claims: ForgeInstallationResponse[] = [];
   if (reached("Portal"))
     claims.push(setupSiteClaim(setupSiteAccount, "portal"));
@@ -423,43 +517,22 @@ function cut(
 }
 
 function settings(project: SetupSiteProject): SelectorProjectSettingsResponse {
-  const limits = {
-    tokensPerDecision: 1,
-    millisecondsPerDecision: 1,
-    toolCallsPerDecision: 1,
-    dispatchesPerDecision: 1,
-    inputBytesPerDecision: 1,
-    candidatePagesPerDecision: 1,
-    autoCompactWindow: 200_000,
-    concurrentDecisions: 1,
-    selectionsPerMinute: 1,
-  };
-  const northStar =
-    project.northStar === undefined ? {} : { northStar: project.northStar };
-  const inherited =
-    project.inherited === undefined ? {} : { northStar: project.inherited };
   return {
     partition: { tenant: project.tenant, project: project.project },
-    revision: 1,
-    overrides: northStar,
+    revision: project.revision,
+    overrides: project.overrides,
     effective: {
-      revision: 1,
-      projectRevision: 1,
-      mode: "Running",
-      installationMode: "Running",
-      dispatchMode: "Automatic",
-      basePrompt: "Lead the project.",
-      ...inherited,
-      ...northStar,
-      threadStandingRules: "Be brief.",
-      modelAllowlist: [],
-      toolAllowlist: [],
-      limits,
-      installationLimits: limits,
-      operationalContextMaxAgeMs: 1,
-      leadOffering: "Own",
+      ...(project.overrides.northStar === undefined
+        ? {}
+        : { northStar: project.overrides.northStar }),
+      threadStandingRules: project.overrides.threadStandingRules ?? "Be brief.",
     },
   };
+}
+
+/** A stand-in for the revision the server authors a repository's bootstrap at, which names the repository. */
+export function setupSiteBootstrapRevision(repository: string): string {
+  return `${bootstrapConfigurationRevisionPrefix}${repository}`;
 }
 
 /** What the project holds for a repository it holds a configuration for. */
@@ -467,7 +540,10 @@ function configurations(
   repository: SetupSiteRepository,
 ): ProjectRepositoryConfigurationsHeldResponse {
   return repository.bootstrapped === true
-    ? { result: "Bootstrapped", revision: "bootstrap-widgets" }
+    ? {
+        result: "Bootstrapped",
+        revision: setupSiteBootstrapRevision(repository.repository),
+      }
     : { result: "Imported", count: 1 };
 }
 
@@ -477,8 +553,15 @@ function binding(
   return {
     repository: repository.repository,
     boundAt: "2026-08-26T00:00:00Z",
-    landing: { mode: "Push" },
-    finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+    landing: { mode: repository.mode ?? "Push" },
+    finalization:
+      repository.mode === "PullRequest"
+        ? { kind: "PullRequest" }
+        : {
+            kind: "GitMerge",
+            mode: repository.mode ?? "Push",
+            policy: "Direct",
+          },
     pipelinesWritable: false,
     pipelinesRunnable: false,
     ...(repository.retired === true
@@ -673,6 +756,59 @@ export function setupSiteChatRedeemed(
   };
 }
 
+/** The id the site holds the caller's personal runner at `at` in a workspace's list by. */
+export function setupSitePersonalId(at: number): string {
+  return `chuggy-runner-${String(at + 1)}`;
+}
+
+/** A redemption of a token minted for a personal runner of the caller's: a new runner of theirs in its workspace, which has not polled. */
+export function setupSitePersonalRedeemed(
+  site: SetupSite,
+  token: string,
+): SetupSiteAnswer {
+  const tenant = site.personalTokens.get(token);
+  if (tenant === undefined) return refused();
+  site.personalTokens.delete(token);
+  const held = site.personal.get(tenant) ?? { live: [], projects: [] };
+  site.personal.set(tenant, held);
+  held.live.push(false);
+  return {
+    status: 201,
+    body: {
+      kind: "Personal",
+      tenant,
+      owner: site.member,
+      capabilities: ["Platform:Linux:Amd64"],
+      tokenUrl: "https://auth.example/oauth2/token",
+      audience: "https://chuggy.example/pool",
+      planeUrl: "https://pool.chuggy.example/",
+      clientId: setupSitePersonalId(held.live.length - 1),
+      clientSecret: drawn(site, "credential"),
+    },
+  };
+}
+
+/** A token for a personal runner of the caller's in a workspace, to a caller it lets register one and while it holds fewer than the bound. */
+function personalMinted(
+  site: SetupSite,
+  tenant: string,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "mint");
+  if (fate !== undefined) return fate;
+  if (site.withheld.has(tenant)) return refused();
+  const held = [...site.personalTokens.values()].filter((of) => of === tenant);
+  if (held.length >= setupSiteTokensMax)
+    return {
+      status: 409,
+      body: { error: { code: "TokenLimitReached", message: "At its bound." } },
+    };
+  site.mints.push(JSON.parse(body ?? "{}") as SetupSiteMint);
+  const token = drawn(site, "personalregistration");
+  site.personalTokens.set(token, tenant);
+  return { status: 201, body: { token, expiresAtMs: 4_102_444_800_000 } };
+}
+
 /** A token for the caller's chat host in a workspace, to a caller it lets register one and while it holds fewer than the bound. */
 function chatMinted(
   site: SetupSite,
@@ -719,7 +855,7 @@ function personalAnswered(site: SetupSite, tenant: string): SetupSiteAnswer {
       ? refused()
       : answered({
           runners: held.live.map((live, at) => ({
-            id: `chuggy-runner-${String(at + 1)}`,
+            id: setupSitePersonalId(at),
             capabilities: ["Platform:Linux:Amd64"],
             registeredAt: "2026-10-09T00:00:00Z",
             ...(live ? { polledAt: "2026-10-09T00:01:00Z" } : {}),
@@ -768,10 +904,193 @@ function abilities(
       manageSelector: administer,
       overrideTicketConfig: administer,
       skipPlannedEvaluations: administer,
+      mergeProposals: administer,
       administer,
       writeEpic: true,
     })
   );
+}
+
+const filedAt = "2026-08-28T00:00:00Z";
+const filedDigest = "c".repeat(64);
+const filedCommit = "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23";
+
+/** The revision a declared name is imported at. */
+export function setupSiteDeclaredRevision(name: string): string {
+  return `declared-${name}`;
+}
+
+/** The project's revisions, newest first: each name each binding holding its own configuration declares, ready at the one commit imported. */
+function configurationsListed(
+  site: SetupSite,
+  project: SetupSiteProject,
+): SetupSiteAnswer {
+  const declaring = project.repositories.filter(
+    (held) =>
+      held.configured && held.bootstrapped !== true && held.retired !== true,
+  );
+  return (
+    fated(site, "configurations") ??
+    answered({
+      configurations: declaring.flatMap((held) =>
+        project.declared.map((name) => ({
+          revision: setupSiteDeclaredRevision(name),
+          digest: filedDigest,
+          createdAt: filedAt,
+          provenance: {
+            source: "Repository",
+            repository: held.repository,
+            commit: filedCommit,
+            path: `configurations/${name}.json`,
+            name,
+          },
+          readiness: "Ready",
+          image: "an-image",
+          practices: [],
+          workInstructionsCount: 1,
+          reviewInstructionsCount: 1,
+          evaluationStagesCount: 1,
+        })),
+      ),
+    })
+  );
+}
+
+/** The project's head, which every ticket's sequence is at or below. */
+function headOf(project: SetupSiteProject): number {
+  return Math.max(1, ...project.tickets.map((held) => held.ticket));
+}
+
+/** What a draft drawn under `revision` starts on, fenced at the project's head. */
+function initialization(
+  project: SetupSiteProject,
+  revision: string,
+): SetupSiteAnswer {
+  return answered({
+    configuration: {
+      partition: { tenant: project.tenant, project: project.project },
+      revision,
+      canonical: "{}",
+      digest: filedDigest,
+    },
+    fence: {
+      projectSequence: headOf(project),
+      configurationDigest: filedDigest,
+    },
+    defaults: {
+      dependencies: [],
+      program: [{ key: 1, evaluators: [{ key: 1 }] }],
+    },
+    choices: { programStagesMax: 2, evaluatorsMax: 3 },
+    dependencyCandidates: [],
+    dependencyCandidatesTruncated: false,
+  });
+}
+
+/** A draft created from `body`, under the ticket number after every one the project holds, and kept with its brief. */
+function filed(
+  site: SetupSite,
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "file");
+  if (fate !== undefined) return fate;
+  const asked = JSON.parse(body ?? "{}") as SetupSiteFiled & {
+    readonly expectedProjectSequence: number;
+  };
+  if (asked.expectedProjectSequence !== headOf(project))
+    return conflict("ProjectSequenceStale");
+  const number =
+    Math.max(
+      0,
+      ...project.tickets.map((held) => held.ticket),
+      ...project.drafts,
+      ...project.filed.keys(),
+    ) + 1;
+  project.drafts.push(number);
+  project.filed.set(number, {
+    configurationRevision: asked.configurationRevision,
+    brief: asked.brief,
+  });
+  return {
+    status: 201,
+    body: {
+      ...draft(project, number),
+      configurationRevision: asked.configurationRevision,
+    },
+  };
+}
+
+/** A submission, decided as it arrives: a release makes its draft a ticket that waits to start, and a dispatch starts one that waits. */
+function submitted(
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const asked = JSON.parse(body ?? "{}") as {
+    readonly operation: string;
+    readonly mutation: { readonly mutation: string; readonly ticket: number };
+  };
+  const { mutation } = asked;
+  project.operations.set(asked.operation, mutation);
+  if (mutation.mutation === "ReleaseDraft") {
+    project.drafts = project.drafts.filter((held) => held !== mutation.ticket);
+    project.tickets.unshift({ ticket: mutation.ticket, phase: "Pending" });
+  }
+  if (mutation.mutation === "ManualDispatch")
+    project.tickets = project.tickets.map((held) =>
+      held.ticket === mutation.ticket ? { ...held, phase: "Work" } : held,
+    );
+  return {
+    status: 202,
+    body: { operation: asked.operation, state: "Pending" },
+  };
+}
+
+/** An operation submitted, as decided; one never submitted is not found. */
+function operationAnswered(
+  project: SetupSiteProject,
+  operation: string,
+): SetupSiteAnswer {
+  return project.operations.has(operation)
+    ? answered({
+        operation,
+        acceptedAt: filedAt,
+        state: "Succeeded",
+        decidedSequence: headOf(project),
+      })
+    : refused();
+}
+
+/** The page of the dispatch view a ticket is looked for on: each ticket that waits to start, after the one named. */
+function dispatchView(
+  project: SetupSiteProject,
+  query: URLSearchParams,
+): SetupSiteAnswer {
+  const after = Number(query.get("after") ?? "0");
+  return answered({
+    result: "Page",
+    token: {
+      tenant: project.tenant,
+      project: project.project,
+      recoveryEpoch: "epoch-1",
+      schemaVersion: 1,
+      watermark: headOf(project),
+      digest: filedDigest,
+    },
+    candidates: project.tickets
+      .filter((held) => held.phase === "Pending" && held.ticket > after)
+      .map((held) => ({
+        ticket: held.ticket,
+        ticketVersion: 1,
+        dependencies: [],
+        program: [{ key: 1, evaluators: [{ key: 1 }] }],
+        configurationRevision:
+          project.filed.get(held.ticket)?.configurationRevision ?? "r1",
+        configurationDigest: filedDigest,
+        configurationCanonical: "{}",
+      })),
+    notificationCursor: 1,
+  });
 }
 
 /** One page of the project's tickets in the phases asked for, which is where a done one and those on their way part. */
@@ -811,9 +1130,64 @@ function landings(
   );
 }
 
+/** The caller's own execution of `ticket`'s work, admitted and not begun, waiting on their personal runners as `wait` says, and short of `room` where a case says so. */
+export function setupSiteWaiting(
+  ticket: number,
+  wait: PersonalRunnerWait,
+  room?: ExecutionSummary["personalRunnerRoom"],
+): ExecutionSummary {
+  return {
+    ...ledgerExecution({
+      execution: `execution-${String(ticket)}`,
+      task: 1,
+      identity: workIdentity(1),
+      status: "Admitted",
+    }),
+    ticket,
+    mine: true,
+    ownerFallback: "Strict",
+    personalRunnerWait: wait,
+    ...(room === undefined ? {} : { personalRunnerRoom: room }),
+  };
+}
+
+/** Another member's execution of `ticket`'s work, admitted and not begun, waiting on its project's live pools short of `room`. */
+export function setupSitePoolWaiting(
+  ticket: number,
+  room: NonNullable<ExecutionSummary["poolRoom"]>,
+): ExecutionSummary {
+  return {
+    ...ledgerExecution({
+      execution: `execution-${String(ticket)}`,
+      task: 1,
+      identity: workIdentity(1),
+      status: "Admitted",
+    }),
+    ticket,
+    mine: false,
+    poolRoom: room,
+  };
+}
+
+/** A ticket's executions, the whole of them on one page unless a case cut it. */
+function executions(
+  site: SetupSite,
+  project: SetupSiteProject,
+  query: URLSearchParams,
+): SetupSiteAnswer {
+  return (
+    fated(site, "executions") ??
+    answered({
+      executions: project.executions.get(Number(query.get("ticket"))) ?? [],
+      ...(cut(site, "executions") ? { nextCursor: "more" } : {}),
+    })
+  );
+}
+
 const mintPath = "/worker-pool-registration-tokens";
 const redeemPath = "/api/v1/worker-pool-registrations";
 const chatMintPath = "/chat-host-registration-tokens";
+const personalMintPath = "/personal-runner-registration-tokens";
 /** Where a chat host's token is redeemed, which is where a member's runner's is. */
 const chatRedeemPath = "/api/v1/personal-runner-registrations";
 
@@ -825,6 +1199,12 @@ function projectAnswered(
 ): SetupSiteAnswer | undefined {
   const landed = /^\/tickets\/(\d+)\/landings$/u.exec(rest);
   if (landed !== null) return landings(site, project, landed[1] ?? "");
+  const initialized = /^\/draft-initializations\/([^/]+)$/u.exec(rest);
+  if (initialized !== null)
+    return initialization(project, decodeURIComponent(initialized[1] ?? ""));
+  const operation = /^\/operations\/([^/]+)$/u.exec(rest);
+  if (operation !== null)
+    return operationAnswered(project, decodeURIComponent(operation[1] ?? ""));
   switch (rest) {
     case "":
       return tickets(site, project, query);
@@ -834,12 +1214,15 @@ function projectAnswered(
         (project.settled ? answered(settings(project)) : refused())
       );
     case "/repositories":
+      importedAfterMerge(site, project);
       return (
         fated(site, "repositories") ??
         answered({ repositories: bindings(site, project) })
       );
     case "/execution-placement":
       return fated(site, "work") ?? answered(work(project));
+    case "/executions":
+      return executions(site, project, query);
     case "/session-placement":
       return fated(site, "placement") ?? answered(placement(site, project));
     case "/owner-fallback":
@@ -854,6 +1237,10 @@ function projectAnswered(
       );
     case "/abilities":
       return abilities(site, project);
+    case "/configurations":
+      return configurationsListed(site, project);
+    case "/dispatch-view":
+      return dispatchView(project, query);
     case "/worker-pools":
       return pools(site, project);
     case "/drafts":
@@ -875,6 +1262,7 @@ function projectAnswered(
 function granted(address: string): ForgeRepositoryResponse {
   const [owner = "", name = ""] = address.split("/").slice(-2);
   return {
+    id: "1296269",
     name,
     fullName: `${owner}/${name}`,
     url: address,
@@ -894,17 +1282,130 @@ function grant(
     ?.find((held) => held.installationId === installation);
   if (claim === undefined) return refused();
   const read = claim.app === "portal" ? "portalGrant" : "workerGrant";
-  const held =
-    site.grants.get(installation) ??
+  const held = grantedBy(site, tenant, claim);
+  return (
+    fated(site, read) ??
+    answered({
+      repositories: held.map(granted),
+      truncated: cut(site, read),
+      selection: "Selected",
+    })
+  );
+}
+
+/** Every repository an installation grants: those a case names, or every repository of the workspace's projects on its account. */
+function grantedBy(
+  site: SetupSite,
+  tenant: string,
+  claim: ForgeInstallationResponse,
+): readonly string[] {
+  return (
+    site.grants.get(claim.installationId) ??
     site.projects
       .filter((project) => project.tenant === tenant)
       .flatMap((project) => project.repositories)
       .map((repository) => repository.repository)
-      .filter((address) => address.split("/").at(-2) === claim.account);
-  return (
-    fated(site, read) ??
-    answered({ repositories: held.map(granted), truncated: cut(site, read) })
+      .filter((address) => address.split("/").at(-2) === claim.account)
   );
+}
+
+/** The forge's settings page of one installation of the workspace, which nobody is shown of an installation the workspace does not hold. */
+function settingsAnswered(
+  site: SetupSite,
+  tenant: string,
+  installation: string,
+): SetupSiteAnswer {
+  const claim = site.installations
+    .get(tenant)
+    ?.find((held) => held.installationId === installation);
+  return claim === undefined
+    ? refused()
+    : answered({
+        permissions: "Current",
+        settingsUrl: setupSiteSettingsUrl(claim),
+      });
+}
+
+/** The address the forge gives an installation's settings, as a case expects to be sent to it. */
+export function setupSiteSettingsUrl(claim: ForgeInstallationResponse): string {
+  return `https://github.com/organizations/${claim.account}/settings/installations/${claim.installationId}`;
+}
+
+/** The address each app is installed from, as the deployment answers it. */
+export function setupSiteInstallUrl(app: ForgeAppName): string {
+  return `https://github.com/apps/chuggy-${app}/installations/new`;
+}
+
+/** The deployment's apps, each with the page it is installed from, and the client a person authorizes where a case has not taken it away. */
+function appsAnswered(site: SetupSite): SetupSiteAnswer {
+  return answered({
+    apps: (["portal", "worker"] as const).map((app) => ({
+      app,
+      id: `${app}-id`,
+      slug: `chuggy-${app}`,
+      installUrl: setupSiteInstallUrl(app),
+    })),
+    ...(site.authorizing
+      ? {
+          authorization: {
+            clientId: "portal-client",
+            authorizeUrl: "https://github.com/login/oauth/authorize",
+          },
+        }
+      : {}),
+  });
+}
+
+/**
+ * A bind, as the server answers it: refused where no portal installation of
+ * the workspace lists the repository, answered as it stood where the project
+ * already binds it, and otherwise bound, holding the bootstrap.
+ */
+function bound(
+  site: SetupSite,
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "bind");
+  if (fate !== undefined) return fate;
+  const asked =
+    (JSON.parse(body ?? "{}") as { readonly repository?: string }).repository ??
+    "";
+  const listed = (site.installations.get(project.tenant) ?? []).some(
+    (claim) =>
+      claim.app === "portal" &&
+      grantedBy(site, project.tenant, claim).includes(asked),
+  );
+  if (!listed)
+    return {
+      status: 422,
+      body: {
+        error: { code: "RepositoryNotInstalled", message: "Not installed." },
+      },
+    };
+  if (
+    project.repositories.some(
+      (held) => held.repository === asked && held.retired !== true,
+    )
+  )
+    return answered({ repository: asked });
+  project.repositories.push({
+    repository: asked,
+    configured: true,
+    bootstrapped: true,
+  });
+  return {
+    status: 201,
+    body: {
+      repository: asked,
+      landing: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+      configurations: {
+        result: "Bootstrapped",
+        revision: setupSiteBootstrapRevision(asked),
+      },
+    },
+  };
 }
 
 const importsPath = "/configurations/imports";
@@ -998,6 +1499,87 @@ function imported(
       };
 }
 
+/** A merge of `ticket`'s pull request, as `site.merging` says it is met: its landings' pull request marked merged at the merge's commit, and an import of the repository brought on. */
+function merged(
+  site: SetupSite,
+  project: SetupSiteProject,
+  ticket: number,
+): SetupSiteAnswer {
+  const held = project.landings.get(ticket) ?? [];
+  const url = held.find((landing) => landing.proposal !== undefined)?.proposal
+    ?.url;
+  if (url === undefined) return refused();
+  const merging = site.merging ?? {
+    merging: "Merged",
+    reads: 0,
+    outcome: { result: "Imported" },
+  };
+  if (merging.merging === "Forbidden")
+    return {
+      status: 403,
+      body: {
+        error: { code: proposalMergeForbiddenCode, message: "Forbidden." },
+      },
+    };
+  if (merging.merging === "Refused")
+    return {
+      status: 409,
+      body: {
+        error: { code: proposalMergeRefusedCode, message: "Refused." },
+        refused: merging.refused,
+        url,
+      },
+    };
+  const already = held.some((landing) => landing.proposal?.merge === "Merged");
+  project.landings.set(
+    ticket,
+    held.map((landing) =>
+      landing.proposal === undefined
+        ? landing
+        : {
+            ...landing,
+            proposal: {
+              ...landing.proposal,
+              merge: "Merged",
+              mergeCommit: setupSiteMergeCommit,
+            },
+          },
+    ),
+  );
+  if (!already)
+    site.importing = {
+      project,
+      reads: merging.reads,
+      outcome: merging.outcome,
+    };
+  return answered({
+    outcome: "Merged",
+    mergeCommit: setupSiteMergeCommit,
+    url,
+  });
+}
+
+/** The import a merge brought on finished where its reads have run out: the repository's own configuration held, or the outcome recorded as the import of the merge's commit. */
+function importedAfterMerge(site: SetupSite, project: SetupSiteProject): void {
+  const importing = site.importing;
+  if (importing?.project !== project) return;
+  if (importing.reads > 0) {
+    importing.reads -= 1;
+    return;
+  }
+  site.importing = undefined;
+  const done = importing.outcome.result === "Imported";
+  project.repositories = project.repositories.map((held) => ({
+    ...held,
+    bootstrapped: !done && held.bootstrapped === true,
+    lastImport: {
+      attemptedAt: "2026-11-16T00:00:00Z",
+      commit: setupSiteMergeCommit,
+      outcome: importing.outcome,
+    },
+  }));
+}
+
 function projectOf(
   site: SetupSite,
   tenant: string,
@@ -1010,7 +1592,75 @@ function projectOf(
   );
 }
 
-/** A write within a workspace: the mint for a project the caller is shown, the mint for their chat host, or nothing the site answers. */
+/** The caller's runners given a project they are shown, where they hold any. */
+function personalServed(
+  site: SetupSite,
+  tenant: string,
+  project: SetupSiteProject,
+): SetupSiteAnswer {
+  const held = site.personal.get(tenant);
+  if (held === undefined) return refused();
+  const fate = fated(site, "serve");
+  if (fate !== undefined) return fate;
+  if (!held.projects.includes(project.project))
+    held.projects.push(project.project);
+  return answered({});
+}
+
+/** A project's owner fallback named whole, by a caller who administers it. */
+function fallbackWritten(
+  site: SetupSite,
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "allow");
+  if (fate !== undefined) return fate;
+  if (!project.administer)
+    return {
+      status: 403,
+      body: { error: { code: "Forbidden", message: "Forbidden." } },
+    };
+  const asked = JSON.parse(body ?? "{}") as {
+    readonly fallback?: OwnerFallback;
+  };
+  project.fallback = asked.fallback;
+  return answered({
+    ...(asked.fallback === undefined ? {} : { fallback: asked.fallback }),
+    administers: true,
+  });
+}
+
+/** The project's settings written whole under the revision the writer read, refused as the server refuses a write the revision moved under. */
+function settingsWritten(
+  site: SetupSite,
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "star");
+  if (fate !== undefined) return fate;
+  if (!project.settled) return refused();
+  const asked = JSON.parse(body ?? "{}") as {
+    readonly expectedRevision: number;
+    readonly overrides: SelectorProjectSettingsResponse["overrides"];
+  };
+  if (project.races > 0) {
+    project.races -= 1;
+    project.revision += 1;
+  }
+  if (asked.expectedRevision !== project.revision)
+    return {
+      status: 409,
+      body: {
+        error: { code: "SettingsRevisionConflict", message: "Conflict." },
+        settings: settings(project),
+      },
+    };
+  project.overrides = asked.overrides;
+  project.revision += 1;
+  return answered(settings(project));
+}
+
+/** A write within a workspace: the mint for a project the caller is shown, the mint for their chat host, the caller's runners given a project, a project's owner fallback named, or nothing the site answers. */
 function tenantWritten(
   site: SetupSite,
   tenant: string,
@@ -1019,7 +1669,47 @@ function tenantWritten(
 ): SetupSiteAnswer | undefined {
   if (sent.method === "POST" && rest === chatMintPath)
     return chatMinted(site, tenant, sent.body);
+  if (sent.method === "POST" && rest === personalMintPath)
+    return personalMinted(site, tenant, sent.body);
+  const served = /^\/personal-runner\/projects\/([^/]+)$/u.exec(rest);
+  if (sent.method === "PUT" && served !== null) {
+    const project = projectOf(site, tenant, served[1]);
+    return project === undefined
+      ? refused()
+      : personalServed(site, tenant, project);
+  }
   const within = /^\/projects\/([^/]+)(\/.*)$/u.exec(rest);
+  if (sent.method === "POST" && within?.[2] === "/repositories") {
+    const project = projectOf(site, tenant, within[1]);
+    return project === undefined ? refused() : bound(site, project, sent.body);
+  }
+  if (sent.method === "PUT" && within?.[2] === "/selector-settings") {
+    const project = projectOf(site, tenant, within[1]);
+    return project === undefined
+      ? refused()
+      : settingsWritten(site, project, sent.body);
+  }
+  if (sent.method === "PUT" && within?.[2] === "/owner-fallback") {
+    const project = projectOf(site, tenant, within[1]);
+    return project === undefined
+      ? refused()
+      : fallbackWritten(site, project, sent.body);
+  }
+  if (sent.method === "POST" && within?.[2] === "/drafts") {
+    const project = projectOf(site, tenant, within[1]);
+    return project === undefined ? refused() : filed(site, project, sent.body);
+  }
+  if (sent.method === "POST" && within?.[2] === "/operations") {
+    const project = projectOf(site, tenant, within[1]);
+    return project === undefined ? refused() : submitted(project, sent.body);
+  }
+  const merging = /^\/tickets\/(\d+)\/proposal-merge$/u.exec(within?.[2] ?? "");
+  if (sent.method === "POST" && merging !== null) {
+    const project = projectOf(site, tenant, within?.[1]);
+    return project === undefined
+      ? refused()
+      : merged(site, project, Number(merging[1]));
+  }
   if (sent.method === "POST" && within?.[2] === importsPath) {
     const project = projectOf(site, tenant, within[1]);
     return project === undefined
@@ -1046,6 +1736,11 @@ function tenantAnswered(
     );
   if (rest === "/chat-host") return chatAnswered(site, tenant);
   if (rest === "/personal-runner") return personalAnswered(site, tenant);
+  const settings = /^\/forge-installations\/([^/]+)\/permissions$/u.exec(rest);
+  if (settings !== null)
+    return administers
+      ? settingsAnswered(site, tenant, decodeURIComponent(settings[1] ?? ""))
+      : refused();
   const listing = /^\/forge-installations\/([^/]+)\/repositories$/u.exec(rest);
   if (listing !== null)
     return administers
@@ -1143,6 +1838,7 @@ function projectCreated(
       : conflict("ProjectExists");
   site.projects.push({
     ...setupSiteProject(tenant, project),
+    overrides: {},
     name: name.trim(),
     made: true,
   });
@@ -1165,12 +1861,14 @@ export function setupSiteAnswered(
     return redeemed(site, sent.body);
   if (sent.method === "POST" && url.pathname === "/api/v1/projects")
     return projectCreated(site, sent.body);
-  if (sent.method === "POST" && url.pathname === chatRedeemPath)
-    return setupSiteChatRedeemed(
-      site,
+  if (sent.method === "POST" && url.pathname === chatRedeemPath) {
+    const token =
       (JSON.parse(sent.body ?? "{}") as { readonly token?: string }).token ??
-        "",
-    );
+      "";
+    return site.personalTokens.has(token)
+      ? setupSitePersonalRedeemed(site, token)
+      : setupSiteChatRedeemed(site, token);
+  }
   const tenant = /^\/api\/v1\/tenants\/([^/]+)(\/.*)$/u.exec(url.pathname);
   const named = decodeURIComponent(tenant?.[1] ?? "");
   const rest = tenant?.[2] ?? "";
@@ -1183,6 +1881,13 @@ export function setupSiteAnswered(
       fated(site, "workspaces") ??
       answered({ tenants: site.tenants, truncated: cut(site, "workspaces") })
     );
+  if (url.pathname === "/access/v1/account")
+    return answered({
+      subject: "0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f",
+      principal: setupSiteMember,
+      ...(site.login === undefined ? {} : { githubLogin: site.login }),
+    });
+  if (url.pathname === "/api/v1/forge/github") return appsAnswered(site);
   return url.pathname === "/api/v1/projects"
     ? inventory(site, url.searchParams.get("cursor"))
     : undefined;

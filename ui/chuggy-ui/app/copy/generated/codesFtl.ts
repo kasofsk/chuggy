@@ -44,7 +44,7 @@ codes-git-workflows-refused = Workflows refused
 
 ## Which hold a finalization is stuck on.
 
-codes-hold-repository-unbound = { -repository(case: "upper") } unbound
+codes-hold-repository-unbound = { -repository(case: "upper") } disconnected
 codes-hold-target-unreadable = Target unreadable
 codes-hold-base-unreadable = { -pull-request(case: "upper") } base unreadable
 codes-hold-base-is-head = { -pull-request(case: "upper") } base at head
@@ -67,18 +67,6 @@ codes-hold-dequeued = Removed from merge queue
 # spells -brief-check: to re-check is to evaluate again
 codes-hold-rechecks-exhausted = Re-checks exhausted
 codes-hold-target-paths-refused = Target changed files no { -run } may push
-
-## Why a project holds no lead.
-
-codes-lead-absence-not-needed = Opens when { -ticket(form: "a") } is { -release(form: "ed") }
-codes-lead-absence-paused = { -lead(case: "upper") } paused
-codes-lead-absence-not-granted = { -lead(case: "upper") } not granted this { -project }
-codes-lead-absence-awaiting = Opens at the { -lead }'s next pass
-codes-lead-absence-unnamed = No { -lead } named for this { -site }
-codes-lead-absence-hosted-runs = { -hosted-runs(case: "upper") } not granted
-codes-lead-absence-runner-offline = No live { -runner }
-codes-lead-absence-usage-paused = Paused for usage
-codes-lead-absence-subsidy-exhausted = Month's allowance spent · Resumes next month or on { -runner(form: "plural") }
 
 ## Where one finalization stands.
 

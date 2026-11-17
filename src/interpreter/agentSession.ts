@@ -154,7 +154,7 @@ export function asSessionBearerSecret(value: string): SessionBearerSecret {
 }
 
 /** What a session is for, which is what decides whose turns it takes and what it may write. */
-export const allSessionKinds = ["Lead", "Thread", "Inquiry"] as const;
+export const allSessionKinds = ["Thread"] as const;
 export type SessionKind = (typeof allSessionKinds)[number];
 
 /**
@@ -206,21 +206,18 @@ export const allSessionCapabilities = [
   "DraftAuthor",
   /**
    * Originating a draft from nothing, applying a Pending ticket's revision
-   * and revoking a ticket, which a member may do and the lead may not. It is its own member rather than part of
-   * `DraftAuthor` because `DraftAuthor` is where the derived-work rule sits —
-   * a dependent is filed against a parent that already exists, and there is
-   * no bare create — and widening it would hand the lead the one thing that
-   * rule withholds.
+   * and revoking a ticket, on a member's own word. It is its own member rather
+   * than part of `DraftAuthor` because `DraftAuthor` is where the derived-work
+   * rule sits — a dependent is filed against a parent that already exists, and
+   * there is no bare create — and widening it would hand every session holding
+   * `DraftAuthor` the one thing that rule withholds.
    */
   "DraftOriginate",
   /**
    * Dispatching a released ticket as the session's principal, which the API
-   * authorizes as that principal's own dispatch. It is not `LeadDecision`
-   * because a decision tool writes nothing and this one submits a command.
+   * authorizes as that principal's own dispatch.
    */
   "TicketDispatch",
-  /** The decision tools, which write nothing and compose the turn's answer. */
-  "LeadDecision",
   /**
    * What a member's own session reads of them: who they are, the projects
    * they may list, their threads and their machines. A project's session never
@@ -242,10 +239,8 @@ export const sessionCapabilitiesMax = 16;
 
 /** Who or what put a turn in the mailbox, which the session reads as context and never as trust. */
 export const allSessionTurnInputKinds = [
-  "Observation",
   "UserMessage",
   "Wake",
-  "Inquiry",
   /** A member's confirmation or decline of an action their thread offered them. */
   "OfferReply",
 ] as const;
@@ -282,8 +277,8 @@ export const allAgentReportedTurnFailures = [
 
 /**
  * Why one turn ended without an answer by the platform's own act. Rules 6 and 7
- * above write the first two, the selector's withdrawal and the scheduler's of
- * a turn no runner served write the third, and rule 8 writes the last two, each
+ * above write the first two, the scheduler's withdrawal of a turn no runner
+ * served writes the third, and rule 8 writes the last two, each
  * from a definer function; a pod naming one would be provenance nobody wrote,
  * and a pod claiming its own session closed would leave a row saying so while
  * the session is open.
@@ -328,7 +323,6 @@ export interface AgentSessionOpening {
   readonly session: SessionId;
   readonly kind: SessionKind;
   readonly principal: Principal;
-  readonly parent?: SessionId;
   readonly capabilities: readonly SessionCapability[];
   readonly credentialSlot: string;
   /** What the session was told it is, recorded once and read by the pod as its system prompt. */
@@ -351,23 +345,6 @@ export type SessionTurnEnqueued =
       readonly ordinal: number;
     }
   | { readonly enqueued: "Closed" | "Backlogged" };
-
-/** What setting a lead's objectives answered: they moved, they were already these, or there is no lead. */
-export type LeadSystemPromptSet = "Set" | "Unchanged" | "NoLead";
-
-/**
- * The one durable door that moves a lead's objectives onto what the project now
- * asks of it. It names a project and never a session, because a door that could
- * name any session could rewrite a member's thread prompt; and it is separate
- * from `AgentSessionStore` because that store's doors are the boundary owner's
- * and this one is the selector's.
- */
-export interface LeadSystemPromptPort {
-  setSystemPrompt(
-    partition: Partition,
-    prompt: string,
-  ): Promise<LeadSystemPromptSet>;
-}
 
 /** Who the pool connected as, and whether that identity may open a session at all. */
 export interface AgentSessionWriter {
@@ -452,10 +429,8 @@ export interface AgentSession {
   readonly partition: Partition;
   readonly session: SessionId;
   readonly kind: SessionKind;
-  /** Whose authorization the session acts under: a human's for a thread, the lead's own for a lead. */
+  /** Whose authorization the session acts under: the member whose thread it is. */
   readonly principal: Principal;
-  /** The lead an inquiry forked from, absent for every other kind. */
-  readonly parent?: SessionId;
   /** The agent runtime's own session id, absent until the first turn reports one. */
   readonly agentReference?: string;
   readonly capabilities: readonly SessionCapability[];

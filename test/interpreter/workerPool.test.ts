@@ -159,6 +159,7 @@ const noSessions: WorkerPoolSessions = {
   release: () => Promise.resolve(false),
   heldImages: () => Promise.resolve([]),
   polled: () => Promise.resolve(),
+  unlistedEnded: () => Promise.resolve(0),
 };
 
 /** Where no runner a poll names is kept. */
@@ -496,6 +497,32 @@ test("a held list longer than either kind's bound is refused whole rather than c
   assert.equal(workerPoolHeldNamedMax(settings), 4);
 });
 
+test("a chat host's poll ends what it holds unlisted against the sessions it arrived holding, to its held bound and before any claim, and no other caller's poll, nor one refused over its bound, ends any", async () => {
+  const ended = ["unlistedEnded", ["s1"], settings.sessionsHeldMax];
+  for (const [caller, held, made] of [
+    [host, ["j1", "s1"], [ended, ["awaiting"]]],
+    [host, ["s1", "s2", "s3"], []],
+    [identity, ["s1"], []],
+    [runner, [], []],
+  ] as const) {
+    const calls: unknown[] = [];
+    const store = holdingSessions(["s1", "s2", "s3"], {
+      unlistedEnded: (_identity, listed, max) =>
+        Promise.resolve(
+          (calls.push(["unlistedEnded", [...listed], max]), listed.length),
+        ),
+      awaiting: () => Promise.resolve((calls.push(["awaiting"]), [])),
+    });
+    await workerPoolPoll(
+      ports(idle, store),
+      caller,
+      asked({ held, wantedSessions: caller === host ? 1 : 0 }),
+      { ...settings, pollsMax: 1 },
+    );
+    assert.deepEqual(calls, made, `${caller.kind} ${held.join(",")}`);
+  }
+});
+
 test("a bound that is not a positive whole number refuses the poll", async () => {
   for (const bound of [
     "pollIntervalMs",
@@ -590,11 +617,25 @@ function offering(
   };
 }
 
+test("a pool is claimed no session, however many wait, and its rows are asked for none", async () => {
+  const { store, opened, asked: awaited } = offering([candidate]);
+  const answered = await workerPoolReconcile(
+    ports(idle, store),
+    identity,
+    nothingHeld,
+    { wanted: 0, wantedSessions: 4 },
+    settings,
+  );
+  assert.deepEqual(answered.sessions, []);
+  assert.deepEqual(awaited, []);
+  assert.deepEqual(opened, []);
+});
+
 test("a claimed session is opened with its invocation and launch and handed out on the plane's own terms", async () => {
   const { store, opened } = offering([candidate]);
   const answered = await workerPoolReconcile(
     ports(idle, store, () => "assignment-one"),
-    identity,
+    host,
     nothingHeld,
     { wanted: 0, wantedSessions: 1 },
     settings,
@@ -630,7 +671,7 @@ test("a claimed session is opened with its invocation and launch and handed out 
       image: launch.image,
       launch: {
         api: { url: settings.sessionApiUrl },
-        bounds: launch.bounds,
+        bounds: workerPoolSessionBounds(host, launch, undefined),
         model: launch.model,
       },
     },
@@ -729,23 +770,17 @@ test("a chat host is claimed sessions alone, each in a project its owner may sti
   );
 });
 
-test("a chat host's thread is opened under its roster less what its host named, which its attempt records, and its inquiry and a pool's thread keep their roster", async () => {
+test("a chat host's thread is opened under its roster less what its host named, which its attempt records", async () => {
   const roster = ["RepositoryRead", "RunCommands", "ProjectRead"] as const;
   const thread = { ...candidate, capabilities: roster };
-  const inquiry = {
-    ...candidate,
-    session: asSessionId("inquiry-one"),
-    kind: "Inquiry" as const,
-    capabilities: roster,
-  };
-  const named = ["ProjectRead", "RepositoryRead", "LeadDecision"] as const;
+  const named = ["ProjectRead", "RepositoryRead", "MemberRead"] as const;
   const claimedBy = async (claimant: PoolPlaneIdentity) => {
-    const { store, opened } = offering([thread, inquiry]);
+    const { store, opened } = offering([thread]);
     await workerPoolReconcile(
       ports(idle, store),
       claimant,
       nothingHeld,
-      { wanted: 0, wantedSessions: 2, sessionCapabilities: named },
+      { wanted: 0, wantedSessions: 1, sessionCapabilities: named },
       settings,
     );
     return opened.map((opening) => [
@@ -756,11 +791,6 @@ test("a chat host's thread is opened under its roster less what its host named, 
   };
   assert.deepEqual(await claimedBy(host), [
     [thread.session, ["RepositoryRead", "ProjectRead"], named],
-    [inquiry.session, roster, undefined],
-  ]);
-  assert.deepEqual(await claimedBy(identity), [
-    [thread.session, roster, undefined],
-    [inquiry.session, roster, undefined],
   ]);
 });
 
@@ -821,57 +851,40 @@ test("a chat host's poll keeps the capabilities it named for its threads, and no
   }
 });
 
-test("only a chat host on a release that reads it is handed each session naming the thread it is an attempt of, and an inquiry or a lead names none", async () => {
-  const inquiry = {
-    ...candidate,
-    session: asSessionId("inquiry-one"),
-    kind: "Inquiry" as const,
-  };
-  const lead = {
-    ...candidate,
-    session: asSessionId("lead-one"),
-    kind: "Lead" as const,
-  };
+test("only a chat host on a release that reads it is handed each session naming the thread it is an attempt of", async () => {
   const threadsOf = async (
     caller: PoolPlaneIdentity,
     contract: string | undefined,
   ): Promise<unknown[]> => {
-    const { store } = offering([candidate, inquiry, lead]);
+    const { store } = offering([candidate]);
     const answered = await workerPoolReconcile(
       ports(idle, store),
       caller,
       nothingHeld,
       {
         wanted: 0,
-        wantedSessions: 3,
+        wantedSessions: 1,
         ...(contract === undefined
           ? {}
           : { contract: workerContractPeerNaming(contract) }),
       },
-      { ...settings, sessionsPerPollMax: 3, sessionsHeldMax: 3 },
+      settings,
     );
-    assert.equal(answered.sessions.length, 3);
+    assert.equal(answered.sessions.length, 1);
     return answered.sessions.map((session) => session.thread);
   };
   assert.deepEqual(await threadsOf(host, workerContractRelease), [
     { project: candidate.project, session: candidate.session },
-    undefined,
-    undefined,
   ]);
   for (const contract of ["1.96.0", "1.97.0", undefined])
     assert.deepEqual(
       await threadsOf(host, contract),
-      [undefined, undefined, undefined],
+      [undefined],
       String(contract),
     );
-  assert.deepEqual(await threadsOf(identity, workerContractRelease), [
-    undefined,
-    undefined,
-    undefined,
-  ]);
 });
 
-test("a session is claimed only up to the least of the pool's room, the per-poll bound and what the held bound leaves", async () => {
+test("a session is claimed only up to the least of the chat host's room, the per-poll bound and what the held bound leaves", async () => {
   const many = ["a", "b", "c", "d", "e"].map((name) => ({
     ...candidate,
     session: asSessionId(name),
@@ -886,7 +899,7 @@ test("a session is claimed only up to the least of the pool's room, the per-poll
     const { store } = offering(many);
     const answered = await workerPoolReconcile(
       ports(idle, store),
-      identity,
+      host,
       { jobs: [], sessions: held },
       { wanted: 0, wantedSessions },
       { ...settings, ...over },
@@ -899,12 +912,12 @@ test("a session is claimed only up to the least of the pool's room, the per-poll
   }
 });
 
-test("a session another claim took is skipped, and a pool the durable side finds full ends the claims", async () => {
+test("a session another claim took is skipped, and a chat host the durable side finds full ends the claims", async () => {
   const two = [candidate, { ...candidate, session: asSessionId("two") }];
   const skipped = offering(two, ["NotClaimable", "Opened"]);
   const one = await workerPoolReconcile(
     ports(idle, skipped.store),
-    identity,
+    host,
     nothingHeld,
     { wanted: 0, wantedSessions: 2 },
     settings,
@@ -914,7 +927,7 @@ test("a session another claim took is skipped, and a pool the durable side finds
   const full = offering(two, ["PoolFull", "Opened"]);
   const none = await workerPoolReconcile(
     ports(idle, full.store),
-    identity,
+    host,
     nothingHeld,
     { wanted: 0, wantedSessions: 2 },
     settings,
@@ -929,7 +942,7 @@ test("a plane naming no session API, or with no launch published, claims no sess
     (
       await workerPoolReconcile(
         ports(idle, unnamed.store),
-        identity,
+        host,
         nothingHeld,
         { wanted: 0, wantedSessions: 1 },
         unaddressed,
@@ -946,7 +959,7 @@ test("a plane naming no session API, or with no launch published, claims no sess
           ...unpublished.store,
           launch: () => Promise.resolve(undefined),
         }),
-        identity,
+        host,
         nothingHeld,
         { wanted: 0, wantedSessions: 1 },
         settings,
@@ -1582,6 +1595,38 @@ test("only a chat host's poll names the published session image, by the host it 
   assert.equal(await chatImageOf(host, noSessions, unaddressed), undefined);
 });
 
+test("a plane that names a chat image of its own names it to a chat host in place of the session image, lets the host pull it, and names none where no launch is published", async () => {
+  const chatImage = `registry.chuggy.internal/chuggy/chat@sha256:${"d".repeat(64)}`;
+  const named: WorkerPoolPollSettings = { ...settings, chatImage };
+  const unpublished: WorkerPoolSessions = {
+    ...noSessions,
+    launch: () => Promise.resolve(undefined),
+  };
+  const polled = await workerPoolPoll(ports(), host, asked(), named);
+  if (polled.polled !== "Answered") throw new Error("a poll was refused");
+  assert.equal(
+    polled.answer.chatImage,
+    `registry.public.invalid/chuggy/chat@sha256:${"d".repeat(64)}`,
+  );
+  assert.deepEqual(await workerPoolHeldImages(ports(), host, named), [
+    chatImage,
+  ]);
+  for (const other of [identity, runner])
+    assert.deepEqual(
+      await workerPoolHeldImages(ports(), other, named),
+      [],
+      other.kind,
+    );
+  assert.deepEqual(
+    await workerPoolHeldImages(ports(idle, unpublished), host, named),
+    [],
+  );
+  assert.deepEqual(
+    await workerPoolHeldImages(ports(), host, { ...unaddressed, chatImage }),
+    [],
+  );
+});
+
 test("only a chat host's poll on a release that reads them is answered the threads it ran that have since closed, as many as an answer holds, and none where none has", async () => {
   const closed = [{ project: "project", session: "thread-closed" }];
   const asks: number[] = [];
@@ -1675,7 +1720,7 @@ test("a personal runner claims only in the projects it allowlists that its owner
   ]);
 });
 
-test("a personal runner's job names its own attempt's project to a poll whose release reads one, and a pool's session or an earlier release's poll none", async () => {
+test("a personal runner's job names its own attempt's project to a poll whose release reads one, and a pool's job or an earlier release's poll none", async () => {
   /** What each poll's claims and sessions name of a project, by the release it offered. */
   const named = async (
     caller: PoolPlaneIdentity,
@@ -1722,7 +1767,6 @@ test("a personal runner's job names its own attempt's project to a poll whose re
   for (const contract of ["1.14.0", undefined])
     assert.deepEqual(await named(runner, contract), ["none", "none"]);
   assert.deepEqual(await named(identity, workerContractRelease), [
-    "none",
     "none",
     "none",
   ]);
@@ -2117,16 +2161,16 @@ test("a personal runner renews, settles and pulls the images of its executions t
   ]);
 });
 
-test("a personal runner's every poll is recorded, and a pool's or a personal runner's as one that could take an execution where it has room for one, holds one or names a memory room above nothing, a personal runner's never as one that could take a session, and a chat host's not at all", async () => {
+test("a personal runner's and a pool's every poll is recorded with the memory room it named, as one that could take an execution where it has room for one, holds one or names a memory room above nothing, a personal runner's never as one that could take a session, and a chat host's not at all", async () => {
   for (const [caller, over, recorded] of [
     [runner, { wanted: 1 }, ["executions"]],
     [runner, { held: ["j1"] }, ["executions"]],
     [runner, { memoryRoomMib: 1 }, ["executions"]],
     [runner, { memoryRoomMib: 0 }, ["polled"]],
-    [identity, { memoryRoomMib: 4_096 }, ["executions"]],
-    [identity, { memoryRoomMib: 0 }, []],
+    [identity, { memoryRoomMib: 4_096 }, ["executions:4096"]],
+    [identity, { memoryRoomMib: 0 }, ["polled:0"]],
     [runner, {}, ["polled"]],
-    [identity, {}, []],
+    [identity, {}, ["polled"]],
     [runner, { wantedSessions: 1 }, ["polled"]],
     [runner, { wanted: 1, wantedSessions: 1 }, ["executions"]],
     [identity, { wanted: 1 }, ["executions"]],
@@ -2138,9 +2182,15 @@ test("a personal runner's every poll is recorded, and a pool's or a personal run
       ports(
         {
           ...idle,
-          polled: (_, executions) =>
+          polled: (polling, executions, memoryRoomMib) =>
             Promise.resolve(
-              void reached.push(executions ? "executions" : "polled"),
+              void reached.push(
+                `${executions ? "executions" : "polled"}${
+                  polling.kind === "Dedicated" && memoryRoomMib !== undefined
+                    ? `:${String(memoryRoomMib)}`
+                    : ""
+                }`,
+              ),
             ),
         },
         {

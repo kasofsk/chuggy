@@ -28,7 +28,7 @@ import {
 import type { SetupAsked } from "./setupArguments.ts";
 import type { SetupPorts } from "./setupPorts.ts";
 import type { SetupProjectEnded, SetupReport } from "./setupReport.ts";
-import { setupWritePorts } from "./setupRunner.ts";
+import { setupRunnerAtNamed, setupWritePorts } from "./setupRunner.ts";
 import type { SetupRunnerEntered } from "./setupRunner.ts";
 
 export type SetupProjectAsked = Extract<
@@ -110,8 +110,8 @@ export async function setupProject(
   return {
     report: "Project",
     site: entered.session.site,
-    workspace,
-    project: given,
+    login: entered.session.login,
+    ...setupRunnerAtNamed({ workspace, project: given }, entered.session),
     name,
     ended,
   };

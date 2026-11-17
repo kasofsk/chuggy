@@ -4,9 +4,8 @@
  * those three wrote.
  *
  * EVERY MOVE IS ONE SERVER FUNCTION AND THIS FILE DECIDES NOTHING. A session's
- * admission rules — one lead per project, a member's open threads within their
- * limit, an inquiry's parent — are a partial index and a boundary body, so an
- * adapter that checked them first would be a second opinion racing the first.
+ * admission rules — a member's open threads within their limit — are a partial index and a boundary body, so an adapter that checked
+ * them first would be a second opinion racing the first.
  * The account and cluster a session draws are not arguments either: the server
  * takes them from the project's own capacity account, because a caller naming
  * them could name another project's.
@@ -46,7 +45,6 @@ interface AgentSessionStoredRow {
   readonly session: string;
   readonly kind: string;
   readonly principal: string;
-  readonly parent_session: string | null;
   readonly agent_reference: string | null;
   readonly capabilities: string[];
   readonly credential_slot: string;
@@ -104,7 +102,7 @@ async function agentSessionOpen(
   const opened = await pool.query<{ opened: string | null }>(
     sql`SELECT open_agent_session(
       ${opening.partition.tenant},${opening.partition.project},${opening.session},
-      ${opening.kind},${opening.principal},${opening.parent ?? null},
+      ${opening.kind},${opening.principal},NULL,
       ${[...opening.capabilities]}::text[],${opening.credentialSlot},
       ${opening.systemPrompt ?? null})::text AS opened`,
   );
@@ -152,11 +150,11 @@ async function agentSessionRead(
   session: SessionId,
 ): Promise<AgentSession | undefined> {
   const found = await pool.query<AgentSessionStoredRow>(
-    sql`SELECT tenant,project,session,kind,principal,parent_session,agent_reference,
+    sql`SELECT tenant,project,session,kind,principal,agent_reference,
                capabilities,credential_slot,account,cluster,state
           FROM agent_session
          WHERE tenant=${partition.tenant} AND project=${partition.project}
-           AND session=${session}`,
+           AND session=${session} AND kind='Thread'`,
   );
   const row = found.rows[0];
   return row === undefined ? undefined : agentSessionRowOf(row);
@@ -169,13 +167,15 @@ async function agentSessionTurns(
   turnsMax: number,
 ): Promise<readonly SessionTurn[]> {
   const found = await pool.query<SessionTurnStoredRow>(
-    sql`SELECT turn,ordinal::text AS ordinal,input_kind,input,state,attempt,
-               attempts_spent::text AS attempts_spent,result,failure,
-               batch_first::text AS batch_first,batch_last::text AS batch_last
-          FROM session_turn
-         WHERE tenant=${partition.tenant} AND project=${partition.project}
-           AND session=${session}
-         ORDER BY ordinal LIMIT ${turnsMax}`,
+    sql`SELECT t.turn,t.ordinal::text AS ordinal,t.input_kind,t.input,t.state,
+               t.attempt,t.attempts_spent::text AS attempts_spent,t.result,
+               t.failure,t.batch_first::text AS batch_first,
+               t.batch_last::text AS batch_last
+          FROM session_turn t
+          JOIN agent_session s USING (tenant,project,session)
+         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+           AND t.session=${session} AND s.kind='Thread'
+         ORDER BY t.ordinal LIMIT ${turnsMax}`,
   );
   return found.rows.map(sessionTurnRowOf(partition, session));
 }

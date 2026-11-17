@@ -1,11 +1,11 @@
 /**
- * Minting the commit an evaluation of a stacked ticket runs over, and taking
- * it down again.
+ * Folding the commit an evaluation of a stacked ticket runs over, publishing
+ * it, and taking it down again.
  *
  * A STACK COMMIT IS A FUNCTION OF ITS INPUTS. It is the tip with each accepted
  * commit beneath, then the candidate, folded in by a merge, and every merge
  * commit is written under one fixed identity and date with a message of its own
- * parents, so minting the same stack again, here or anywhere, writes the same
+ * parents, so folding the same stack again, here or anywhere, writes the same
  * commit and pushing it again moves nothing.
  *
  * A COMMIT THE RUNNING STACK ALREADY REACHES ADDS NOTHING, and a stack the
@@ -18,6 +18,8 @@ import type {
   GitRefName,
   RepositoryCredential,
   RepositoryId,
+  StackFolded,
+  StackFolding,
   StackMinted,
   StackMinting,
   StackRemoved,
@@ -70,7 +72,7 @@ async function stackHolds(
 /** The running stack with one more commit folded in, or why it could not be. */
 async function stackFolded(
   scratch: GitScratch,
-  minting: StackMinting,
+  folding: StackFolding,
   running: GitObjectId,
   commit: GitObjectId,
 ): Promise<
@@ -78,7 +80,7 @@ async function stackFolded(
   | { readonly folded: "Conflicted" }
   | { readonly folded: "Failed" }
 > {
-  const repository = minting.repository.repository;
+  const repository = folding.repository.repository;
   const behind = await scratchIsAncestor(scratch, repository, commit, running);
   if (behind === undefined) return { folded: "Failed" };
   if (behind) return { folded: "Commit", commit: running };
@@ -115,62 +117,87 @@ function stackPushEvidence(pushed: ScratchPushed): GitEvidence | undefined {
   }
 }
 
-/** Merges the stack and publishes it at its ref. */
-export async function stackMint(
+/** Merges the stack in the scratch repository, publishing nothing. */
+export async function stackFold(
   scratch: GitScratch,
   credential: RepositoryCredential,
-  minting: StackMinting,
-): Promise<StackMinted> {
-  const repository = minting.repository.repository;
-  const base = minting.tip.baseRef ?? minting.tip.ref;
+  folding: StackFolding,
+): Promise<StackFolded> {
+  const repository = folding.repository.repository;
+  const base = folding.tip.baseRef ?? folding.tip.ref;
   if (
-    !(await scratchHasCommit(scratch, repository, minting.tip.commit)) &&
+    !(await scratchHasCommit(scratch, repository, folding.tip.commit)) &&
     !(await scratchFetchRef(scratch, repository, credential, base))
   ) {
-    return { minted: "Failed", evidence: "RemoteUnreachable" };
+    return { folded: "Failed", evidence: "RemoteUnreachable" };
   }
-  const commits = [...minting.beneath, minting.candidate];
-  for (const commit of [minting.tip.commit, ...commits]) {
+  const commits = [...folding.beneath, folding.candidate];
+  for (const commit of [folding.tip.commit, ...commits]) {
     if (!(await stackHolds(scratch, credential, repository, commit)))
-      return { minted: "Failed", evidence: "ObjectMissing" };
+      return { folded: "Failed", evidence: "ObjectMissing" };
   }
-  let running = minting.tip.commit;
+  let running = folding.tip.commit;
   for (const commit of commits) {
-    const folded = await stackFolded(scratch, minting, running, commit);
-    if (folded.folded === "Conflicted") return { minted: "Conflicted" };
+    const folded = await stackFolded(scratch, folding, running, commit);
+    if (folded.folded === "Conflicted") return { folded: "Conflicted" };
     if (folded.folded === "Failed")
-      return { minted: "Failed", evidence: "IntegrationFailed" };
+      return { folded: "Failed", evidence: "IntegrationFailed" };
     running = folded.commit;
   }
   const shape = await scratchCommitShape(scratch, repository, running);
-  if (
-    shape === undefined ||
-    !(await scratchKeepCommit(scratch, repository, running))
-  )
-    return { minted: "Failed", evidence: "IntegrationFailed" };
+  return shape === undefined
+    ? { folded: "Failed", evidence: "IntegrationFailed" }
+    : { folded: "Stack", commit: running, tree: shape.tree };
+}
+
+/** Publishes a folded stack commit at the minting's ref, moving nothing where the ref already holds it. */
+async function stackPublish(
+  scratch: GitScratch,
+  credential: RepositoryCredential,
+  minting: StackMinting,
+  commit: GitObjectId,
+): Promise<GitEvidence | undefined> {
+  const repository = minting.repository.repository;
+  if (!(await scratchKeepCommit(scratch, repository, commit)))
+    return "IntegrationFailed";
   const held = await scratchReadRef(
     scratch,
     repository,
     credential,
     minting.ref,
   );
-  if (held.read === "Unreachable")
-    return { minted: "Failed", evidence: "RemoteUnreachable" };
-  const evidence =
-    held.read === "Value" && held.value === running
-      ? undefined
-      : stackPushEvidence(
-          await scratchPush(
-            scratch,
-            repository,
-            credential,
-            running,
-            minting.ref,
-            held.read === "Value" ? held.value : "Absent",
-          ),
-        );
+  if (held.read === "Unreachable") return "RemoteUnreachable";
+  if (held.read === "Value" && held.value === commit) return undefined;
+  return stackPushEvidence(
+    await scratchPush(
+      scratch,
+      repository,
+      credential,
+      commit,
+      minting.ref,
+      held.read === "Value" ? held.value : "Absent",
+    ),
+  );
+}
+
+/** Merges the stack and publishes it at its ref. */
+export async function stackMint(
+  scratch: GitScratch,
+  credential: RepositoryCredential,
+  minting: StackMinting,
+): Promise<StackMinted> {
+  const folded = await stackFold(scratch, credential, minting);
+  if (folded.folded === "Conflicted") return { minted: "Conflicted" };
+  if (folded.folded === "Failed")
+    return { minted: "Failed", evidence: folded.evidence };
+  const evidence = await stackPublish(
+    scratch,
+    credential,
+    minting,
+    folded.commit,
+  );
   return evidence === undefined
-    ? { minted: "Stack", commit: running, tree: shape.tree }
+    ? { minted: "Stack", commit: folded.commit, tree: folded.tree }
     : { minted: "Failed", evidence };
 }
 

@@ -1,8 +1,7 @@
-import { apiRole, selectorReviewRole } from "../adapters/postgres/schema.ts";
+import { apiRole } from "../adapters/postgres/schema.ts";
 import { postgresApiReady } from "../adapters/postgres/apiReadiness.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresInstallationAuthority } from "../adapters/postgres/installationAuthority.ts";
-import { postgresDispatchViews } from "../adapters/postgres/dispatchViews.ts";
 import {
   ketoProjectAccess,
   ketoReadiness,
@@ -16,7 +15,6 @@ import {
   type PrincipalAuthentication,
   type UnrunDeletions,
 } from "../adapters/http/server.ts";
-import type { TicketTakes } from "../interpreter/ticketTake.ts";
 import {
   projectResourceReader,
   threadLiveFramed,
@@ -60,24 +58,19 @@ import {
   composeProjectOwnerFallback,
   composeProjectAppearance,
   composeTicketTakes,
+  composeTicketProposalMerges,
   composeThreadLimits,
   composeMemberChat,
   composeProjectCreation,
   composeUnrunDeletions,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
-  composeSelectorProposalReviews,
   composeSessionPlacement,
   type RepositoryCredentialMinting,
 } from "../compose.ts";
 import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
-import { postgresLeadReads } from "../adapters/postgres/leadReads.ts";
-import { postgresAgenticRefusalReads } from "../adapters/postgres/agenticRefusal.ts";
-import type {
-  NativeLeadPorts,
-  NativeThreadPorts,
-} from "../interpreter/nativeWeb.ts";
+import type { NativeThreadPorts } from "../interpreter/nativeWeb.ts";
 import { threadSessionMint } from "../adapters/crypto/threadSessionMint.ts";
 import {
   postgresThreadSeeding,
@@ -100,13 +93,6 @@ import {
   projectAccessTimeoutMsDefault,
   type ProjectAccessSettings,
 } from "../interpreter/projectAccess.ts";
-import { postgresExecutionContextRead } from "../adapters/postgres/schedulerContext.ts";
-import {
-  postgresSelectorProposalReviews,
-  postgresSelectorResolvedSettings,
-} from "../adapters/postgres/selector.ts";
-import { selectorOperationalContextRead } from "../interpreter/selectorOperationalContext.ts";
-import { postgresSelectorContextReady } from "../adapters/postgres/selectorContextReadiness.ts";
 import { pathToFileURL } from "node:url";
 import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
 import {
@@ -143,6 +129,7 @@ import {
 } from "../interpreter/bootstrapConfiguration.ts";
 import type { ForgeCredentialMinting } from "../interpreter/forgeCredentials.ts";
 import type { RepositoryCredentialPort } from "../interpreter/finalizer.ts";
+import type { TicketProposalMerges } from "../interpreter/ticketProposalMerge.ts";
 import {
   forgeAppKeyOf,
   githubForgeId,
@@ -156,7 +143,6 @@ import type {
 } from "../interpreter/repositoryConfiguration.ts";
 import type { ProjectAccess } from "../interpreter/projectAccess.ts";
 import type { ProjectInbox } from "../interpreter/projectInbox.ts";
-import { oidcPrincipal, type Principal } from "../interpreter/principal.ts";
 import { randomBytes, createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { hydraWorkerPoolClients } from "../adapters/hydra/oauthClients.ts";
@@ -269,18 +255,10 @@ const poolPlaneMemoryVariable = "CHUG_POOL_PLANE_MEMORY_MIB";
 /**
  * The named credential mount a member's thread speaks through. It is REQUIRED
  * rather than defaulted: the slot is what a per-user Anthropic credential
- * arrives as, and a default would open every member's thread on whatever the
- * lead happens to use while reading as though somebody had chosen it.
+ * arrives as, and a default would open every member's thread on whatever slot
+ * the default named while reading as though somebody had chosen it.
  */
 const threadCredentialSlotVariable = "CHUG_API_THREAD_CREDENTIAL_SLOT";
-const selectorReviewDatabaseUrlVariable =
-  "CHUG_API_SELECTOR_REVIEW_DATABASE_URL";
-/**
- * The subject the site's selector authenticates as under this API's issuer.
- * Naming one grants the selector each project created here; naming none leaves
- * granting it to an operator.
- */
-const selectorSubjectVariable = "CHUG_API_SELECTOR_SUBJECT";
 const gitScratchRootVariable = "CHUG_API_GIT_SCRATCH_ROOT";
 const repositoryCredentialSourcesVariable =
   "CHUG_API_REPOSITORY_CREDENTIAL_SOURCES";
@@ -487,28 +465,13 @@ export function nativeActionReports(
   });
 }
 
-/** The site's selector as the authority knows it, or nothing where this deployment names none. */
-function nativeSelectorPrincipal(issuer: string): Principal | undefined {
-  const subject = process.env[selectorSubjectVariable];
-  if (subject === undefined || subject.length === 0) return undefined;
-  return oidcPrincipal(issuer, subject);
-}
-
-/** The project inbox, knowing the site's selector under this API's issuer as the agent no person's approval is asked of. */
+/** The project inbox over the API pool. */
 function nativeProjectInbox(
   pools: NativePools,
   access: ProjectAccess,
   usageResume: TicketUsageResumeBounds | undefined,
-  issuer: string,
 ): ProjectInbox {
-  const selector = nativeSelectorPrincipal(issuer);
-  return composeProjectInbox(
-    pools.pool,
-    pools.selectorReviewPool,
-    access,
-    usageResume,
-    selector === undefined ? {} : { selector },
-  );
+  return composeProjectInbox(pools.pool, access, usageResume);
 }
 
 /** The server's default limits, but for the largest project artifact upload, which `nativeArtifacts` reads. */
@@ -517,15 +480,6 @@ function nativeHttpLimitsUploading(uploadBytesMax: number): NativeHttpLimits {
     ...nativeHttpLimitsDefault,
     projectArtifactUploadBytesMax: uploadBytesMax,
   };
-}
-
-/** A ticket's takes and returns, refusing the site's selector under this API's issuer. */
-function nativeTicketTakes(
-  pool: pg.Pool,
-  access: ProjectAccess,
-  issuer: string,
-): TicketTakes {
-  return composeTicketTakes(pool, access, nativeSelectorPrincipal(issuer));
 }
 
 /** What writes the authority's tuples, or nothing where this deployment names no write port. */
@@ -662,55 +616,6 @@ function apiDatabaseReady(
   );
 }
 
-function selectorReviewDatabaseReady(
-  selectorReviewPool: ReturnType<typeof postgresPool>,
-): Promise<RuntimePreconditionVerdict> {
-  return nativeDatabaseVerdict(
-    postgresSelectorContextReady(selectorReviewPool),
-    `must connect as ${selectorReviewRole}`,
-  );
-}
-
-function selectorContextSource(
-  pool: ReturnType<typeof postgresPool>,
-  selectorReviewPool: ReturnType<typeof postgresPool>,
-) {
-  return selectorOperationalContextRead(
-    postgresExecutionContextRead(pool),
-    postgresSelectorProposalReviews(selectorReviewPool),
-    {
-      now: () => {
-        const instant = new Date();
-        return {
-          instant: instant.toISOString(),
-          epochMilliseconds: instant.getTime(),
-        };
-      },
-    },
-    {
-      reviewFeedbackMax: positiveEnvironment(
-        "CHUG_API_SELECTOR_FEEDBACK_MAX",
-        100,
-      ),
-      projectBacklogMax: positiveEnvironment(
-        "CHUG_SCHEDULER_PROJECT_BACKLOG_MAX",
-        200,
-      ),
-      installationBacklogMax: positiveEnvironment(
-        "CHUG_SCHEDULER_INSTALLATION_BACKLOG_MAX",
-        5_000,
-      ),
-    },
-  );
-}
-
-function closePools(
-  pool: ReturnType<typeof postgresPool>,
-  selectorReviewPool: ReturnType<typeof postgresPool>,
-): Promise<unknown[]> {
-  return Promise.all([pool.end(), selectorReviewPool.end()]);
-}
-
 /**
  * What this server must reach to answer at all. The project authority is one of
  * them, and it is a readiness rather than a start-up precondition: an authority
@@ -718,13 +623,11 @@ function closePools(
  */
 function nativeReadiness(
   pool: ReturnType<typeof postgresPool>,
-  selectorReviewPool: ReturnType<typeof postgresPool>,
   access: ProjectAccessSettings,
 ) {
   return {
     ready: async () =>
       (await apiDatabaseReady(pool)).met === "Met" &&
-      (await selectorReviewDatabaseReady(selectorReviewPool)).met === "Met" &&
       (await ketoReadiness(access).ready()),
   };
 }
@@ -750,19 +653,13 @@ function nativeArtifacts(): {
   };
 }
 
-/** The two pools this process owns, each proved to connect as a different role. */
+/** The one pool this process owns, proved to connect as the API role. */
 export interface NativePools {
   readonly pool: ReturnType<typeof postgresPool>;
-  readonly selectorReviewPool: ReturnType<typeof postgresPool>;
 }
 
 function nativePools(): NativePools {
-  return {
-    pool: postgresPool(requiredEnvironment(databaseUrlVariable)),
-    selectorReviewPool: postgresPool(
-      requiredEnvironment(selectorReviewDatabaseUrlVariable),
-    ),
-  };
+  return { pool: postgresPool(requiredEnvironment(databaseUrlVariable)) };
 }
 
 /**
@@ -996,7 +893,7 @@ async function forgeKeysReady(
 ): Promise<void> {
   const unusable = await forgeKeysUnusable(pairs);
   if (unusable === undefined) return;
-  await closePools(pools.pool, pools.selectorReviewPool);
+  await pools.pool.end();
   throw new Error(unusable);
 }
 
@@ -1059,6 +956,7 @@ export interface NativeForge {
   readonly credentials: RepositoryCredentialPort;
   readonly minting: ForgeCredentialMinting | undefined;
   readonly onboarding: RepositoryOnboarding;
+  readonly proposalMerges: TicketProposalMerges;
   readonly repositories:
     | (RepositoryConfigurationSnapshotPort & RepositoryDefaultBranchPort)
     | undefined;
@@ -1099,6 +997,11 @@ async function nativeForge(
       minting === undefined
         ? undefined
         : composeForgeCredentialMinting(pools.pool, access, minting.tokens),
+    proposalMerges: composeTicketProposalMerges(
+      pools.pool,
+      access,
+      minting?.tokens,
+    ),
     repositories,
     onboarding: composeRepositoryOnboarding({
       apiPool: pools.pool,
@@ -1118,7 +1021,7 @@ async function nativeForgeRefused(
   pools: NativePools,
   why: string,
 ): Promise<never> {
-  await closePools(pools.pool, pools.selectorReviewPool);
+  await pools.pool.end();
   throw new Error(why);
 }
 
@@ -1458,7 +1361,7 @@ export function nativeStopping(
   };
   app.addHook("onClose", async () => {
     await streamsClosed();
-    await closePools(pools.pool, pools.selectorReviewPool);
+    await pools.pool.end();
   });
   nativeShutdownSignals(
     nativeShutdown(
@@ -1471,12 +1374,8 @@ export function nativeStopping(
 
 /**
  * The two bearer kinds this API accepts: the issuer's, and the session bearers
- * the API pool is the authority on — the one pool holding `EXECUTE` on
- * `authenticate_session_bearer`, where the review pool would raise permission
- * denied and every session bearer would read on the wire as this server's
- * outage rather than as a deployment that bound the wrong credential. It takes
- * both pools and chooses, rather than being handed one, so a case can observe
- * which was reached.
+ * the API pool is the authority on, through its `EXECUTE` on
+ * `authenticate_session_bearer`.
  */
 export function nativeAuthentication(
   oidc: PrincipalAuthentication,
@@ -1488,14 +1387,14 @@ export function nativeAuthentication(
   );
 }
 
-/** The bearers this API accepts, leaving neither pool open where the issuer cannot be reached at start. */
+/** The bearers this API accepts, leaving no pool open where the issuer cannot be reached at start. */
 async function nativeAuthenticationStarted(
   config: OidcAuthenticationConfig,
   pools: NativePools,
 ): Promise<PrincipalAuthentication> {
   const oidc = await oidcAuthentication(config).catch(
     async (failure: unknown) => {
-      await closePools(pools.pool, pools.selectorReviewPool);
+      await pools.pool.end();
       throw failure;
     },
   );
@@ -1520,58 +1419,24 @@ function nativeDatabaseRefusal(
 }
 
 /**
- * Refuses to start on either pool this process must have, naming which one and
- * whether its database answered, and leaves neither open behind the refusal.
+ * Refuses to start on the pool this process must have, saying whether its
+ * database answered, and leaves it closed behind the refusal.
  */
 export async function nativeDatabasesReady(
   pool: ReturnType<typeof postgresPool>,
-  selectorReviewPool: ReturnType<typeof postgresPool>,
 ): Promise<void> {
-  const refusal =
-    nativeDatabaseRefusal(
-      "the native HTTP database",
-      await apiDatabaseReady(pool),
-    ) ??
-    nativeDatabaseRefusal(
-      "the selector review database",
-      await selectorReviewDatabaseReady(selectorReviewPool),
-    );
+  const refusal = nativeDatabaseRefusal(
+    "the native HTTP database",
+    await apiDatabaseReady(pool),
+  );
   if (refusal === undefined) return;
-  await closePools(pool, selectorReviewPool);
+  await pool.end();
   throw new Error(refusal);
 }
 
 /**
- * The lead's read side over the API pool and the artifact volume, taking both
- * pools and choosing for the reason `nativeAuthentication` does: only the API
- * role holds `EXECUTE` on the read doors, and choosing here is what lets a case
- * observe which pool was reached. The site's selector is named under `issuer`
- * where this deployment names one, so a read can say it may not read a project.
- */
-export function nativeLeadPorts(
-  pools: NativePools,
-  artifacts: SessionStoreReadPort,
-  issuer: string,
-): NativeLeadPorts {
-  const leads = postgresLeadReads(pools.pool);
-  const selector = nativeSelectorPrincipal(issuer);
-  return {
-    leads,
-    store: artifacts,
-    context: postgresSessionContext(pools.pool),
-    refusals: postgresAgenticRefusalReads(pools.pool),
-    history: leads,
-    settings: postgresSelectorResolvedSettings(pools.pool),
-    candidates: postgresDispatchViews(pools.pool),
-    ...(selector === undefined ? {} : { selector }),
-  };
-}
-
-/**
- * The four ports one project's threads are reached through, beside the store
- * the lead's transcript is already read from. The rows read and the context
- * read are the session-keyed ones, so a thread's transcript and the lead's are
- * one walk over one function, and their readings one read.
+ * The ports one project's threads are reached through, over the API pool and
+ * the artifact volume.
  */
 export function nativeThreadPorts(
   pools: NativePools,
@@ -1598,7 +1463,6 @@ function nativeComposedWeb(
   artifacts: ReturnType<typeof artifactStore>,
   ports: {
     readonly repositories: NativeForge["repositories"];
-    readonly leads: NativeLeadPorts;
     readonly threads: NativeThreadPorts;
     readonly usageResume: TicketUsageResumeBounds;
   },
@@ -1612,9 +1476,7 @@ function nativeComposedWeb(
     undefined,
     undefined,
     artifacts,
-    selectorContextSource(pools.pool, pools.selectorReviewPool),
     ports.repositories,
-    ports.leads,
     ports.threads,
     ports.usageResume,
     nativePoolPlaneMemoryMibDefault(),
@@ -1651,8 +1513,8 @@ async function main(): Promise<void> {
   const authenticationConfig = oidcConfig();
   const reporters = nativeActionReporters();
   const pools = nativePools();
-  const { pool, selectorReviewPool } = pools;
-  await nativeDatabasesReady(pool, selectorReviewPool);
+  const { pool } = pools;
+  await nativeDatabasesReady(pool);
   const authentication = await nativeAuthenticationStarted(
     authenticationConfig,
     pools,
@@ -1667,7 +1529,6 @@ async function main(): Promise<void> {
   const usageResume = nativeUsageResumeBounds();
   const web = nativeComposedWeb(pools, keying, access, artifacts, {
     repositories: forge.repositories,
-    leads: nativeLeadPorts(pools, artifacts, authenticationConfig.issuer),
     threads,
     usageResume,
   });
@@ -1676,7 +1537,7 @@ async function main(): Promise<void> {
   const app = createNativeHttpApp(
     web,
     authentication,
-    nativeReadiness(pool, selectorReviewPool, accessSettings),
+    nativeReadiness(pool, accessSettings),
     postgresInstallationAuthority(pool),
     nativeHttpLimitsUploading(uploadBytesMax),
     hub,
@@ -1691,11 +1552,9 @@ async function main(): Promise<void> {
       grants === undefined || erasure === undefined
         ? undefined
         : { grants, erasure },
-      nativeSelectorPrincipal(authenticationConfig.issuer),
     ),
     composeExecutionPlacement(pool, access),
     composeSessionPlacement(pool, access),
-    composeSelectorProposalReviews(selectorReviewPool, access),
     threadLive,
     nativeActionReports(pools, reporters),
     nativeActionReach(pools, access, forge.credentials),
@@ -1704,12 +1563,13 @@ async function main(): Promise<void> {
     composeProjectOwnerFallback(pool, access),
     composeThreadLimits(pool, access, authenticationConfig.issuer),
     composeMemberChat(pool, access, threads),
-    nativeProjectInbox(pools, access, usageResume, authenticationConfig.issuer),
+    nativeProjectInbox(pools, access, usageResume),
     postgresAgentAccounts(pool),
     runnerReleasesPinned(),
     nativeLandingQueues(pools, access),
     nativeUnrunDeletions(pool, access, erasure),
-    nativeTicketTakes(pool, access, authenticationConfig.issuer),
+    composeTicketTakes(pool, access),
+    forge.proposalMerges,
     appearanceService(postgresAppearance(pool)),
     composeProjectAppearance(pool, access, artifacts),
   );

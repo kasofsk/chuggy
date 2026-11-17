@@ -39,7 +39,6 @@ import {
   inboxBody,
   inboxEntry,
 } from "./inboxFixture.ts";
-import { leadRefusals } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import {
   abilitiesEvery,
@@ -109,24 +108,6 @@ function served(
       url,
       tickets.map((ticket) => inboxEntry(ticket)),
     ) ?? answer({ partition: atlas, sequence: 9, tickets: [] })
-  );
-}
-
-/** A ticket the lead is refusing to dispatch, which keeps its phase. */
-const refused: ProjectTicket = {
-  ticket: 42,
-  phase: "Pending",
-  sequence: 8,
-  ...ticketInstants,
-};
-
-/** The same project with the refused ticket in the inbox beside the escalated one. */
-function servedWithRefusal(url: string): Response {
-  return (
-    inboxAnswered(url, [
-      inboxEntry(escalated),
-      inboxEntry(refused, { refusals: leadRefusals(false).refusals }),
-    ]) ?? served(url)
   );
 }
 
@@ -260,32 +241,11 @@ test("the inbox names itself only for a reader who does not see the bar", async 
   expect(heading.nextElementSibling?.textContent).not.toBe("1");
 });
 
-/**
- * A refused ticket keeps its phase and has no open question behind it, so the
- * reason the refusal names is what the reader came for, and it is in the item
- * rather than behind a hover.
- */
-test("a ticket the lead refused is an item of its own, marked, its reason in the item", async () => {
-  drawInbox(servedWithRefusal);
-  await settled();
-  const item = screen
-    .getByRole("heading", { name: "Lead will not dispatch this ticket" })
-    .closest("li");
-  if (item === null) throw new Error("no item for the refusal");
-  expect(within(item).getByText("#42")).toBeDefined();
-  expect(within(item).getByText("Standing")).toBeDefined();
-  expect(
-    within(item)
-      .getByText("the brief names no reference")
-      .closest("[tabindex]"),
-  ).toBeNull();
-});
-
 /** The served policy refuses `style-src` but `'self'`, so nothing this screen
  * draws — the Revoke dialog open included — may append a runtime style
  * element. */
 test("nothing the inbox screen draws is a runtime style element", async () => {
-  drawInbox(servedWithRefusal);
+  drawInbox(served);
   await settled();
   expect(document.querySelectorAll("style").length).toBe(0);
   await turned(() => {
@@ -475,15 +435,6 @@ const inboxFrames: readonly (readonly [string, string, number])[] = [
       version: 1,
       resource: "9",
       representation: { actions: [] },
-    }),
-    1,
-  ],
-  [
-    "a refusal",
-    frame("AgenticRefusal", "20", {
-      version: 1,
-      resource: "9",
-      representation: null,
     }),
     1,
   ],

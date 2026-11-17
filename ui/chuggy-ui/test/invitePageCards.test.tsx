@@ -1,6 +1,6 @@
 /**
  * The invite page as it is drawn, with a session and without one: each card,
- * what its one action does, when the cookie is written and when it is ended,
+ * what a link's summary draws before sign-in, what its one action does, when the cookie is written and when it is ended,
  * and a redemption sent once however often the page mounts.
  */
 
@@ -15,8 +15,10 @@ import { inviteConfiguration } from "./inviteDouble.ts";
 import {
   inviteButtonsDrawn as drawnButtons,
   inviteGranted as granted,
+  inviteJoinSummary as joinSummary,
   inviteOpened as opened,
   inviteRedemptionsSent as redemptions,
+  inviteSummariesSent as summaries,
 } from "./invitePageDrawn.tsx";
 import { centeredPageSaid } from "./centeredPageDrawn.ts";
 import { answer, heldAnswer, press, settled } from "./screenHarness.tsx";
@@ -53,14 +55,14 @@ test.each(["SignedOut", "SignedIn"] as const)(
   },
 );
 
-test("a browser with no session and no link is drawn the ordinary signed-out card", async () => {
-  const { browser, signIns } = await opened("SignedOut", {});
+test("a browser with no session and no link is drawn the ordinary signed-out card, and summarizes nothing", async () => {
+  const { browser, signIns, sent } = await opened("SignedOut", {});
   expect(centeredPageSaid()).toStrictEqual({
     title: "Sign in to chuggy",
     actions: ["Sign in"],
   });
   expect(drawnButtons()).toStrictEqual(["Sign in"]);
-  expect(screen.queryByText("Sign in to accept.")).toBeNull();
+  expect(summaries(sent)).toStrictEqual([]);
   await press("Sign in");
   expect(signIns.length).toBe(1);
   expect(browser.written).toStrictEqual([]);
@@ -75,23 +77,24 @@ test("a reader with no link is sent to the landing page, and nothing is redeemed
   expect(browser.written).toStrictEqual([]);
 });
 
-test("a link opened with no session is drawn Invited and goes nowhere without a press", async () => {
+test("a tenant's link opened with no session is titled Join and its workspace, names its inviter and role, and goes nowhere without a press", async () => {
   const { browser, signIns, sent } = await opened(
     "SignedOut",
     { anchor: "t0ken" },
     { configuration: inviteConfiguration("example.com") },
   );
-  expect(centeredPageSaid()).toStrictEqual({
-    title: "You are invited to chuggy",
-    actions: ["Sign in"],
-  });
-  expect(screen.getByText("Sign in to accept.")).toBeTruthy();
+  expect(screen.getByRole("heading").textContent).toBe("Join Acme Co");
+  expect(
+    screen.getByText("octo-maker invites you to join as a member."),
+  ).toBeTruthy();
+  expect(drawnButtons()).toStrictEqual(["Sign in with GitHub"]);
+  expect(new Set(summaries(sent))).toStrictEqual(new Set([{ token: "t0ken" }]));
   expect(browser.replaced).toStrictEqual(["/invite"]);
   expect(browser.written).toStrictEqual([]);
   expect(signIns).toStrictEqual([]);
   expect(browser.left).toStrictEqual([]);
   expect(redemptions(sent)).toStrictEqual([]);
-  await press("Sign in");
+  await press("Sign in with GitHub");
   expect(browser.written).toStrictEqual([
     inviteCookieWritten("t0ken", "example.com"),
   ]);
@@ -99,9 +102,115 @@ test("a link opened with no session is drawn Invited and goes nowhere without a 
   styleless();
 });
 
+test.each([
+  [
+    "a workspace link from its maker",
+    { state: "Open", kind: "Workspace", mintedBy: "octo-maker" },
+    "Your own chuggy workspace",
+    "octo-maker invites you to make a workspace of your own, as its admin.",
+  ],
+  [
+    "a workspace link whose maker the plane does not name",
+    { state: "Open", kind: "Workspace" },
+    "Your own chuggy workspace",
+    "This link makes you a workspace of your own, as its admin.",
+  ],
+  [
+    "a tenant's link making an admin from its maker",
+    { ...joinSummary, role: "Admin" },
+    "Join Acme Co",
+    "octo-maker invites you to join as an admin.",
+  ],
+  [
+    "a tenant's link whose maker the plane does not name",
+    { state: "Open", kind: "Tenant", displayName: "Acme Co", role: "Member" },
+    "Join Acme Co",
+    "This link makes you a member of Acme Co.",
+  ],
+])(
+  "%s is drawn with no session as what it gives, and Sign in with GitHub",
+  async (_named, summary, title, line) => {
+    const { signIns } = await opened(
+      "SignedOut",
+      { anchor: "t0ken" },
+      { summarized: () => answer(summary) },
+    );
+    expect(screen.getByRole("heading").textContent).toBe(title);
+    expect(screen.getByText(line)).toBeTruthy();
+    expect(drawnButtons()).toStrictEqual(["Sign in with GitHub"]);
+    await press("Sign in with GitHub");
+    expect(signIns).toStrictEqual(["/invite"]);
+    styleless();
+  },
+);
+
+test.each([
+  ["the plane summarizes as ended", () => answer({ state: "Ended" })],
+  ["the plane does not know", () => answer({}, 404)],
+])(
+  "a link %s is titled as no longer usable before sign-in, with nothing to press",
+  async (_named, summarized) => {
+    const { browser, signIns, sent } = await opened(
+      "SignedOut",
+      { anchor: "t0ken" },
+      { summarized },
+    );
+    expect(screen.getByRole("heading").textContent).toBe(
+      "This link can no longer be used",
+    );
+    expect(
+      screen.getByText(
+        "This link has been used or revoked, has expired, or was never made. Ask whoever sent it for a new one.",
+      ),
+    ).toBeTruthy();
+    expect(drawnButtons()).toStrictEqual([]);
+    expect(browser.written).toStrictEqual([]);
+    expect(signIns).toStrictEqual([]);
+    expect(redemptions(sent)).toStrictEqual([]);
+    styleless();
+  },
+);
+
+test("a summary unanswered is drawn as reading the link, with nothing to press", async () => {
+  const held = heldAnswer();
+  await opened(
+    "SignedOut",
+    { anchor: "t0ken" },
+    { summarized: () => held.answered },
+  );
+  expect(screen.getByText("Reading the link…")).toBeTruthy();
+  expect(drawnButtons()).toStrictEqual([]);
+  held.release(answer(joinSummary));
+  await settled();
+  expect(screen.getByRole("heading").textContent).toBe("Join Acme Co");
+});
+
+test("a summary that failed says the fault, and Retry reads it again", async () => {
+  let fails = true;
+  const { sent } = await opened(
+    "SignedOut",
+    { anchor: "t0ken" },
+    {
+      summarized: () =>
+        fails
+          ? answer({ error: { code: "InternalError", message: "no" } }, 500)
+          : answer(joinSummary),
+    },
+  );
+  expect(screen.getByText("Failed")).toBeTruthy();
+  expect(drawnButtons()).toStrictEqual(["Retry"]);
+  const read = summaries(sent).length;
+  fails = false;
+  await press("Retry");
+  expect(summaries(sent).length).toBe(read + 1);
+  expect(screen.getByRole("heading").textContent).toBe("Join Acme Co");
+  expect(drawnButtons()).toStrictEqual(["Sign in with GitHub"]);
+  expect(redemptions(sent)).toStrictEqual([]);
+});
+
 test("a deployment that names no domain writes the cookie as the console host's own", async () => {
   const { browser } = await opened("SignedOut", { anchor: "t0ken" });
-  await press("Sign in");
+  await press("Sign in with GitHub");
   expect(browser.written).toStrictEqual([
     inviteCookieWritten("t0ken", undefined),
   ]);

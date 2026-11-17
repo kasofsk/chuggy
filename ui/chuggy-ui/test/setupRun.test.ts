@@ -105,12 +105,18 @@ test("the bare command, signed in, reads where the person stands and reports it 
     site: machineSite,
     found: [],
     steps: [
+      {
+        step: "plugin",
+        state: "done",
+        detail: { id: "setup-step-plugin-on" },
+      },
       { step: "workspace", state: "done", detail: "acme" },
       {
         step: "project",
         state: "todo",
         detail: { id: "setup-step-projectless", args: { workspace: "acme" } },
       },
+      { step: "north-star", state: "todo", detail: undefined },
       { step: "mcp", state: "todo", detail: undefined },
       { step: "github", state: "todo", detail: undefined },
       { step: "repository", state: "todo", detail: undefined },
@@ -511,7 +517,7 @@ test("a lock whose holder is gone is taken, and the command runs", async () => {
 
 test("a command asked wrongly says which part, and reads nothing", async () => {
   const machine = setupMachine();
-  expect(await machine.command(["sign-out"])).toEqual({
+  expect(await machine.command(["log-out"])).toEqual({
     report: "AskedWrongly",
     fault: "Command",
   });

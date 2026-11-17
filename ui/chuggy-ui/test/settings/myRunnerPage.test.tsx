@@ -1,10 +1,12 @@
 /**
  * The personal runners page, mounted: a member the workspace has not let register one
- * is told why and offered nothing; one it has is handed the personal command;
+ * is told why and offered nothing; one it has is handed the line to paste into
+ * their coding agent, and the personal command by hand under it;
  * and a member with runners sees a row for each, registers another while under
  * the bound, gives them projects they read, takes them away, and takes one
- * runner off at a time; and their chat host is drawn, registered on the
- * machine they choose by the steps it is handed over in, and taken off.
+ * runner off at a time; and their chat host is drawn, registered by its line
+ * or on the machine they choose by the steps it is handed over in, and taken
+ * off.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -39,7 +41,7 @@ import {
   settled,
 } from "../screenHarness.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
-import { leadPartition } from "../leadFixture.ts";
+import { projectPartition } from "../projectFixture.ts";
 import { resizeObserverStubbed } from "../resizeObserver.ts";
 import { sheetDeclared, sheetNarrowCondition, sheetRules } from "../sheet.ts";
 import myRunnerSheet from "../../app/browser/settings/MyRunnerPage.css?raw";
@@ -58,11 +60,11 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  useParams: () => ({ tenant: leadPartition.tenant }),
+  useParams: () => ({ tenant: projectPartition.tenant }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
-const tenantPath = `${nativeHttpBasePath}/tenants/${leadPartition.tenant}`;
+const tenantPath = `${nativeHttpBasePath}/tenants/${projectPartition.tenant}`;
 
 /** A runner of the reader's whose id ends in `tail`, polling where `live`, holding `held`. */
 function runnerListed(
@@ -207,6 +209,7 @@ test("a member the workspace has not let register a runner is told why and offer
 test("a member the workspace lets register one asks what it is for, and is handed the personal command for their token", async () => {
   const sent = await drawMyRunner();
   await press("Register runner");
+  await press("Register by hand");
   expect(sent.filter((one) => one.method === "POST")).toHaveLength(0);
   await press("Create token");
   expect(
@@ -224,6 +227,11 @@ test("a member the workspace lets register one asks what it is for, and is hande
   );
 });
 
+/** The panel a runner is registered in, a group by its name. */
+function runnerPanel(): HTMLElement {
+  return screen.getByRole("group", { name: "Register runner" });
+}
+
 /** The steps a runner's mint is handed over in, a list by its name. */
 function runnerSteps(): HTMLElement {
   return screen.getByRole("list", { name: "Register runner" });
@@ -238,15 +246,16 @@ function runnerStep(title: string): HTMLElement {
   return found;
 }
 
-test("a minted token is handed over in three steps, a list: install, register, and the guide for what is left", async () => {
+test("a minted token is handed over in two steps, a list: install and register, and nothing after them but Done", async () => {
   await drawMyRunner();
   await press("Register runner");
+  await press("Register by hand");
   await press("Create token");
   expect(
     within(runnerSteps())
       .getAllByRole("listitem")
       .map((item) => item.firstElementChild?.firstElementChild?.textContent),
-  ).toStrictEqual(["Install", "Register", "Finish"]);
+  ).toStrictEqual(["Install", "Register"]);
   expect(runnerStep("Install").textContent).toContain(
     "Linux · Node 24 · Docker or Podman",
   );
@@ -254,20 +263,95 @@ test("a minted token is handed over in three steps, a list: install, register, a
     runnerPackages.linux.installCommand,
   );
   expect(runnerStep("Register").textContent).toContain("Expires");
-  expect(runnerStep("Finish").querySelector("code")).toBeNull();
-  const guide = within(runnerStep("Finish")).getByRole("link", {
-    name: "Setup guide",
-  });
-  expect(guide.getAttribute("href")).toBe(
-    "https://github.com/kasofsk/chuggy-linux#configure",
+  expect(within(runnerPanel()).queryByRole("link")).toBeNull();
+  expect(within(runnerPanel()).queryByText("Finish")).toBeNull();
+});
+
+/** The line a register panel leads with, by the command it runs. */
+function lineOf(command: RegExp): HTMLElement {
+  return screen.getByText(command);
+}
+
+/** Whether `later` is drawn after `earlier`. */
+function drawnAfter(earlier: Node, later: Node): boolean {
+  return (
+    (earlier.compareDocumentPosition(later) &
+      Node.DOCUMENT_POSITION_FOLLOWING) !==
+    0
   );
-  expect(guide.getAttribute("target")).toBe("_blank");
-  expect(guide.getAttribute("rel")).toBe("noopener noreferrer");
+}
+
+/** The panel named `name`, opened, led by the line whose command matches
+ * `command` above Register by hand, folded, with nothing written yet. */
+function panelLedByLine(
+  name: string,
+  command: RegExp,
+): { readonly panel: HTMLElement; readonly line: HTMLElement } {
+  const panel = screen.getByRole("group", { name });
+  const line = lineOf(command);
+  expect(
+    within(panel).getByText(
+      "Paste this into your coding agent on the machine you want to use.",
+    ),
+  ).toBeTruthy();
+  const byHand = within(panel).getByRole("button", {
+    name: "Register by hand",
+  });
+  expect(byHand.getAttribute("aria-expanded")).toBe("false");
+  expect(drawnAfter(line, byHand)).toBe(true);
+  return { panel, line };
+}
+
+test("the runner panel leads with the line to paste into a coding agent, for the workspace's first project and the chat host too where the reader holds none, and folds registering by hand under it", async () => {
+  const sent = await drawMyRunner();
+  await press("Register runner");
+  const { panel, line } = panelLedByLine("Register runner", / runner --site/u);
+  expect(line.textContent).toBe(
+    `Make this machine my chuggy runner and chat host: run "curl -fsS https://chuggy.test/chuggy-setup.mjs -o ~/.chuggy-setup.mjs && node ~/.chuggy-setup.mjs runner --site https://chuggy.test --workspace ${projectPartition.tenant} --project atlas --chat-host yes" and do what its output says.`,
+  );
+  expect(within(panel).queryByRole("form", { name: "Runner" })).toBeNull();
+  expect(
+    within(panel).queryByRole("button", { name: "Create token" }),
+  ).toBeNull();
+  expect(written(sent)).toStrictEqual([]);
+  await press("Register by hand");
+  expect(
+    within(panel)
+      .getByRole("button", { name: "Register by hand" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  expect(drawnAfter(line, screen.getByRole("form", { name: "Runner" }))).toBe(
+    true,
+  );
+});
+
+test("the runner panel's line is made for the project the reader chooses, and leaves the chat host alone where the reader holds one", async () => {
+  drawing = { granted: true, runner: undefined, host: hostListed("5be0d7aa") };
+  await drawMyRunner();
+  await press("Register runner");
+  const picker = screen.getByRole("button", { name: /^Project/u });
+  expect(picker.textContent).toContain("Atlas Web");
+  fireEvent.pointerDown(picker, { button: 0, ctrlKey: false });
+  await settled();
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Borealis" }));
+  await settled();
+  expect(lineOf(/ runner --site/u).textContent).toBe(
+    `Make this machine my chuggy runner: run "curl -fsS https://chuggy.test/chuggy-setup.mjs -o ~/.chuggy-setup.mjs && node ~/.chuggy-setup.mjs runner --site https://chuggy.test --workspace ${projectPartition.tenant} --project borealis" and do what its output says.`,
+  );
+});
+
+test("Done puts the runner panel away, line and all", async () => {
+  await drawMyRunner();
+  await press("Register runner");
+  await press("Done");
+  expect(screen.queryByRole("group", { name: "Register runner" })).toBeNull();
+  expect(screen.queryByText(/ runner --site/u)).toBeNull();
 });
 
 test("the steps leave the focus with whatever holds it as they are drawn", async () => {
   await drawMyRunner();
   await press("Register runner");
+  await press("Register by hand");
   const elsewhere = document.body.appendChild(document.createElement("input"));
   elsewhere.focus();
   await press("Create token");
@@ -276,22 +360,25 @@ test("the steps leave the focus with whatever holds it as they are drawn", async
   elsewhere.remove();
 });
 
-test("a mint the API refuses says so, draws no step and returns to the ask, which Cancel puts away", async () => {
+test("a mint the API refuses says so, draws no step and returns to the ask, which Done puts away with the panel", async () => {
   drawing = { granted: true, runner: undefined, mintRefused: 403 };
   await drawMyRunner();
   await press("Register runner");
+  await press("Register by hand");
   await press("Create token");
   expect(screen.getByText("Refused")).toBeTruthy();
   expect(screen.getByText(/· Forbidden/u)).toBeTruthy();
   expect(screen.queryByRole("list", { name: "Register runner" })).toBeNull();
   expect(screen.getByRole("form", { name: "Runner" })).toBeTruthy();
-  await press("Cancel");
+  await press("Done");
   expect(screen.queryByRole("form", { name: "Runner" })).toBeNull();
+  expect(screen.queryByRole("group", { name: "Register runner" })).toBeNull();
 });
 
 test("a Mac asked to run work on itself and to declare capabilities mints a token that names none, and its steps install and register it so", async () => {
   const sent = await drawMyRunner();
   await press("Register runner");
+  await press("Register by hand");
   fireEvent.click(screen.getByRole("radio", { name: "Mac" }));
   await press("Advanced");
   fireEvent.click(
@@ -317,6 +404,7 @@ test("a Mac asked to run work on itself and to declare capabilities mints a toke
 test("a refusal of what was typed under a folded Advanced opens it, and it stays open while the reader fixes it", async () => {
   const sent = await drawMyRunner();
   await press("Register runner");
+  await press("Register by hand");
   await press("Advanced");
   const capabilities = (): HTMLElement =>
     screen.getByRole("textbox", { name: "Capabilities" });
@@ -334,6 +422,7 @@ test("a refusal of what was typed under a folded Advanced opens it, and it stays
 test("capabilities typed that are not ones are refused before anything is minted", async () => {
   const sent = await drawMyRunner();
   await press("Register runner");
+  await press("Register by hand");
   await press("Advanced");
   fireEvent.change(screen.getByRole("textbox", { name: "Capabilities" }), {
     target: { value: "Platform:Linux:Amd64" },
@@ -373,6 +462,7 @@ test("the ask and the steps a member was handed stand through a read of their ru
   vi.useFakeTimers({ shouldAdvanceTime: true });
   const sent = await drawMyRunner();
   await press("Register runner");
+  await press("Register by hand");
   await press("Advanced");
   fireEvent.change(screen.getByRole("textbox", { name: "Capabilities" }), {
     target: { value: "Tool:Bazel" },
@@ -626,6 +716,7 @@ test("taking the last runner off says the projects go with it, and leaves none l
 /** Register chat host pressed, `machine` chosen and its token minted. */
 async function chatHostRegistered(machine: string): Promise<void> {
   await press("Register chat host");
+  await press("Register by hand");
   await turnedMachine(machine);
   await press("Create token");
 }
@@ -652,6 +743,7 @@ test("a member with no chat host chooses the machine before a token is minted, a
   const sent = await drawMyRunner();
   expect(screen.getByText("No chat host yet")).toBeTruthy();
   await press("Register chat host");
+  await press("Register by hand");
   expect(written(sent)).toStrictEqual([]);
   expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
   await press("Create token");
@@ -662,15 +754,11 @@ test("a member with no chat host chooses the machine before a token is minted, a
   expect(screen.queryByText(/replaces chat host/u)).toBeNull();
 });
 
-test("a chat host is handed over on each machine as its package's install, a register command carrying --chat and the minted token, and its package's chat host guide", async () => {
-  for (const [machine, name, guide] of [
-    ["Linux", "linux", "https://github.com/kasofsk/chuggy-linux#a-chat-host"],
-    ["Mac", "darwin", "https://github.com/kasofsk/chuggy-darwin#chat-host"],
-  ] as const satisfies readonly (readonly [
-    string,
-    RunnerPackageName,
-    string,
-  ])[]) {
+test("a chat host is handed over on each machine as its package's install and a register command carrying --chat and the minted token, and no guide", async () => {
+  for (const [machine, name] of [
+    ["Linux", "linux"],
+    ["Mac", "darwin"],
+  ] as const satisfies readonly (readonly [string, RunnerPackageName])[]) {
     await drawMyRunner();
     await chatHostRegistered(machine);
     const offered = runnerPackages[name];
@@ -679,36 +767,36 @@ test("a chat host is handed over on each machine as its package's install, a reg
       `${offered.program} register --api https://chuggy.test --token=tok_host-1 --chat`,
     ]);
     expect(
-      within(screen.getByRole("list", { name: "Register chat host" }))
-        .getByRole("link", { name: "Setup guide" })
-        .getAttribute("href"),
-    ).toBe(guide);
+      within(
+        screen.getByRole("group", { name: "Register chat host" }),
+      ).queryByRole("link"),
+    ).toBeNull();
     cleanup();
   }
 });
 
-test("on Linux the line to paste into Claude Code, naming chat-host and the workspace and no token, comes before the steps, and on a Mac only the steps are handed over", async () => {
-  await drawMyRunner();
-  await chatHostRegistered("Linux");
-  const line = screen.getByText(/chat-host --site/u);
+test("the chat host panel leads with the line to paste into a coding agent, naming chat-host and the workspace and no token, and folds registering by hand under it", async () => {
+  const sent = await drawMyRunner();
+  await press("Register chat host");
+  const { panel, line } = panelLedByLine(
+    "Register chat host",
+    /chat-host --site/u,
+  );
   expect(line.textContent).toBe(
-    `Make this machine my chuggy chat host: run "curl -fsS https://chuggy.test/chuggy-setup.mjs -o ~/.chuggy-setup.mjs && node ~/.chuggy-setup.mjs chat-host --site https://chuggy.test --workspace ${leadPartition.tenant}" and do what its output says.`,
+    `Make this machine my chuggy chat host: run "curl -fsS https://chuggy.test/chuggy-setup.mjs -o ~/.chuggy-setup.mjs && node ~/.chuggy-setup.mjs chat-host --site https://chuggy.test --workspace ${projectPartition.tenant}" and do what its output says.`,
   );
   expect(
-    screen.getByText(
-      "Paste into Claude Code on the machine that will be your chat host",
-    ),
-  ).toBeTruthy();
+    within(panel).queryByRole("radiogroup", { name: "Machine" }),
+  ).toBeNull();
+  expect(written(sent)).toStrictEqual([]);
+  await press("Register by hand");
   expect(
-    line.compareDocumentPosition(
-      screen.getByRole("list", { name: "Register chat host" }),
-    ) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  cleanup();
-  await drawMyRunner();
-  await chatHostRegistered("Mac");
+    drawnAfter(line, screen.getByRole("radiogroup", { name: "Machine" })),
+  ).toBe(true);
+  await turnedMachine("Mac");
+  await press("Create token");
   expect(screen.getByRole("list", { name: "Register chat host" })).toBeTruthy();
-  expect(screen.queryByText(/chat-host --site/u)).toBeNull();
+  expect(lineOf(/chat-host --site/u)).toBe(line);
 });
 
 test("a member's chat host is drawn with whether it has polled, and registering another hands over a token said to replace it and end its sessions", async () => {
@@ -773,7 +861,7 @@ test("a chat host is drawn though its owner may no longer register one, and taki
     screen.getByRole("group", { name: "Remove chat host 5be0d7aa?" })
       .textContent,
   ).toContain(
-    "Chat host 5be0d7aa stops taking your chats and questions in this workspace, and the sessions it is running now end.",
+    "Chat host 5be0d7aa stops taking your chats in this workspace, and the sessions it is running now end.",
   );
   drawing.host = undefined;
   await press("Remove");

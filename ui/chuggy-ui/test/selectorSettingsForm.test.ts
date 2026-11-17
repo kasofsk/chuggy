@@ -1,7 +1,6 @@
 /**
- * The selector settings draft's own decisions, with no renderer: what a strip
- * press writes, what a limit box parses to, and what a refused write's
- * conflict carries through to the section.
+ * The thread settings draft's own decisions, with no renderer: what a write
+ * carries, and what a refused write's conflict carries through to the section.
  */
 
 import { expect, test } from "vitest";
@@ -9,144 +8,73 @@ import { expect, test } from "vitest";
 import type { SelectorProjectSettingsResponse } from "../../../src/contract/responses.ts";
 import {
   selectorSettingsConflictOf,
-  selectorSettingsDispatchCell,
-  selectorSettingsModeCell,
+  selectorSettingsDraft,
+  selectorSettingsModelTyped,
+  selectorSettingsTextTyped,
   selectorSettingsRefusal,
   selectorSettingsTextOverriddenAtRead,
   selectorSettingsWrite,
 } from "../app/core/selectorSettingsForm.ts";
 import type {
+  SelectorProjectOverrides,
   SelectorSettingsDraft,
   SelectorSettingsDrawn,
 } from "../app/core/selectorSettingsForm.ts";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 
 const readDrawn: SelectorSettingsDrawn = {
   northStar: "ship the console",
   threadStandingRules: "",
-  basePrompt: "",
-  mode: "",
-  dispatchMode: "",
-  limits: {
-    tokensPerDecision: "200000",
-    millisecondsPerDecision: "",
-    toolCallsPerDecision: "",
-    dispatchesPerDecision: "",
-    inputBytesPerDecision: "",
-    candidatePagesPerDecision: "",
-    autoCompactWindow: "",
-  },
-  models: { leadModel: "", leadEffort: "", threadModel: "", threadEffort: "" },
+  models: { threadModel: "", threadEffort: "" },
 };
 
 function draftOf(
   drawn: Partial<SelectorSettingsDrawn> = {},
 ): SelectorSettingsDraft {
-  return {
-    ...readDrawn,
-    ...drawn,
-    revision: 12,
-    carried: { toolAllowlist: ["Read"] },
-    read: readDrawn,
-  };
+  return { ...readDrawn, ...drawn, revision: 12, read: readDrawn };
 }
 
 const settings: SelectorProjectSettingsResponse = {
-  partition: leadPartition,
+  partition: projectPartition,
   revision: 12,
   overrides: { northStar: "ship the console" },
   effective: {
-    revision: 12,
-    projectRevision: 12,
-    mode: "Running",
-    installationMode: "Running",
-    dispatchMode: "Automatic",
-    basePrompt: "choose the next ticket",
     northStar: "ship the console",
     threadStandingRules: "- You act through your owner's own commands.",
-    modelAllowlist: [],
-    toolAllowlist: [],
-    limits: {
-      tokensPerDecision: 200_000,
-      millisecondsPerDecision: 900_000,
-      toolCallsPerDecision: 40,
-      dispatchesPerDecision: 3,
-      inputBytesPerDecision: 1_048_576,
-      candidatePagesPerDecision: 4,
-      autoCompactWindow: 200_000,
-      concurrentDecisions: 2,
-      selectionsPerMinute: 6,
-    },
-    installationLimits: {
-      tokensPerDecision: 200_000,
-      millisecondsPerDecision: 900_000,
-      toolCallsPerDecision: 40,
-      dispatchesPerDecision: 3,
-      inputBytesPerDecision: 1_048_576,
-      candidatePagesPerDecision: 4,
-      autoCompactWindow: 200_000,
-      concurrentDecisions: 2,
-      selectionsPerMinute: 6,
-    },
-    operationalContextMaxAgeMs: 60_000,
-    leadOffering: "Own",
   },
 };
 
-/** A press must carry the SAVED override set plus the one field it moves,
- * never an open section's unsaved text — the draft holds both, so a cell that
- * spread the live draft instead of the read would leak whatever another
- * section is mid-edit on. */
-test("a mode press is built from the read, not an open section's unsaved text", () => {
-  const draft = draftOf({ northStar: "SECRET UNSAVED DRAFT" });
-  const cell = selectorSettingsModeCell(draft, settings);
-  expect(cell.pressed.northStar).toBe("ship the console");
-  expect(cell.pressed.mode).toBe("Paused");
-});
-
-test("a dispatch press is built from the read, not an open section's unsaved text", () => {
-  const draft = draftOf({ basePrompt: "SECRET UNSAVED DRAFT" });
-  const cell = selectorSettingsDispatchCell(draft, settings);
-  expect(cell.pressed.basePrompt).toBe("");
-  expect(cell.pressed.dispatchMode).toBe("ApprovalRequired");
-});
-
-/** A limit typed with grouped digits is the same value as its bare digits. */
-test("a limit accepts grouped digits and refuses anything else", () => {
-  const grouped = selectorSettingsWrite(
-    draftOf({
-      limits: { ...readDrawn.limits, tokensPerDecision: "12,000" },
-    }),
+/** The route replaces the whole set, so a box the edit never touched goes back
+ * on the wire as read. */
+test("an edit to one box writes every other override the read returned, as read", () => {
+  const overrides: SelectorProjectOverrides = {
+    northStar: "ship the console",
+    threadStandingRules: "- Ask before deleting.",
+    threadModel: "opus",
+    threadEffort: "high",
+  };
+  const read = selectorSettingsDraft({ ...settings, overrides });
+  const edited = selectorSettingsModelTyped(
+    selectorSettingsTextTyped(read, "northStar", "ship the settings"),
+    "threadEffort",
+    "max",
   );
-  expect(grouped.overrides?.limits?.tokensPerDecision).toBe(12_000);
-
-  for (const written of ["12,00x", "12,00", "1,2345"]) {
-    const malformed = selectorSettingsWrite(
-      draftOf({
-        limits: { ...readDrawn.limits, tokensPerDecision: written },
-      }),
-    );
-    expect(malformed.overrides).toBeUndefined();
-    const fault = malformed.faults["limits.tokensPerDecision"];
-    expect(fault === undefined ? undefined : copyTextEn(fault)).toBe("Invalid");
-  }
+  expect(selectorSettingsWrite(edited)).toStrictEqual({
+    overrides: {
+      ...overrides,
+      northStar: "ship the settings",
+      threadEffort: "max",
+    },
+    faults: {},
+  });
 });
 
 test("a model and an effort are written as the overrides they name, and an empty row as none", () => {
   const written = selectorSettingsWrite(
-    draftOf({
-      models: {
-        leadModel: "sonnet",
-        leadEffort: "medium",
-        threadModel: "claude-opus-5-5",
-        threadEffort: "",
-      },
-    }),
+    draftOf({ models: { threadModel: "claude-opus-5-5", threadEffort: "" } }),
   );
   expect(written.faults).toEqual({});
-  expect(written.overrides?.leadModel).toBe("sonnet");
-  expect(written.overrides?.leadEffort).toBe("medium");
   expect(written.overrides?.threadModel).toBe("claude-opus-5-5");
   expect(
     written.overrides !== undefined && "threadEffort" in written.overrides,
@@ -162,10 +90,10 @@ test("a model the wire refuses is marked with why", () => {
   ];
   for (const [model, why] of cases) {
     const refused = selectorSettingsWrite(
-      draftOf({ models: { ...readDrawn.models, leadModel: model } }),
+      draftOf({ models: { ...readDrawn.models, threadModel: model } }),
     );
     expect(refused.overrides).toBeUndefined();
-    const fault = refused.faults["leadModel"];
+    const fault = refused.faults["threadModel"];
     expect(fault === undefined ? undefined : copyTextEn(fault)).toBe(why);
   }
 });
@@ -184,7 +112,9 @@ test("an effort outside the five is refused", () => {
 test("overridden-at-read reads the read side, not a live edit", () => {
   const draft = draftOf({ northStar: "typed but not saved" });
   expect(selectorSettingsTextOverriddenAtRead(draft, "northStar")).toBe(true);
-  expect(selectorSettingsTextOverriddenAtRead(draft, "basePrompt")).toBe(false);
+  expect(
+    selectorSettingsTextOverriddenAtRead(draft, "threadStandingRules"),
+  ).toBe(false);
 });
 
 /** The route's own nit: `movedBy` reaches the section only through the

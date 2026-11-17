@@ -67,7 +67,6 @@ ticket-tab-usage = Usage
 ticket-tabs-nav-label = { -ticket(case: "upper") }
 ticket-state-announced = { -ticket(case: "upper") } is now { $state }
 ticket-header-merged-into = Merged into { $base }
-ticket-header-waiting-lead = Waiting for the { -lead }
 ticket-header-waiting-dispatch = Waiting for { -dispatch }
 ticket-header-unfinished = { $count ->
     [one] { $count } unfinished { -dependency }
@@ -94,7 +93,6 @@ ticket-page-no-configuration = No { -configuration }
 
 ticket-dispatch-confirm-title = { -dispatch(case: "upper") } { -ticket } #{ $number }?
 ticket-cancel-refused = Cancel refused · { $reason }
-ticket-no-lead-dispatched-by-hand = No { -lead } · { -dispatch(case: "upper", form: "ed") } by hand
 ticket-header-menu-label = More actions
 ticket-revoke-menu-item = { -revoke(case: "upper") }…
 ticket-draft-delete = Delete { -draft }

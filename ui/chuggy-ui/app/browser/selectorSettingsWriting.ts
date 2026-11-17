@@ -3,9 +3,8 @@
  * draws it: a draft seeded from the read and rebased when the read moves under
  * an open form, and a write fenced on the revision the draft was seeded at.
  *
- * EVERY WRITE THROUGH THIS DOOR IS THE WHOLE OVERRIDE SET, which is what makes
- * it one door rather than two: the settings page's sections and revisions, and
- * the Lead page's strip, each hold their own draft and their own call into it,
+ * EVERY WRITE THROUGH THIS DOOR IS THE WHOLE OVERRIDE SET: the settings page's
+ * sections and revisions each hold their own draft and their own call into it,
  * but the fencing, the rebase and the conflict handling are the same for all of
  * them. `TWriter` is each page's own roster of what on it can write, carried in
  * the write itself, so a page with several — a section, the history — can tell
@@ -74,11 +73,6 @@ export interface SelectorSettingsPressed<TWriter extends string> {
   readonly overrides: SelectorProjectOverrides;
 }
 
-/** The page a write was pressed on, each writing under a key of its own so a
- * page that mounts takes up only its own write, and a refusal of the other's
- * is the shell's to show. */
-export type SelectorSettingsPage = "Lead" | "Settings";
-
 /** The line a landed write's toast says, for a page whose writes say one. */
 export type SelectorSettingsLandedSaid<TWriter extends string> = (
   settings: SelectorProjectSettingsResponse,
@@ -93,7 +87,6 @@ export type SelectorSettingsLandedSaid<TWriter extends string> = (
  * and be told by itself that somebody else wrote.
  */
 function selectorSettingsSaveWrite<TWriter extends string>(
-  page: SelectorSettingsPage,
   partition: PartitionIdentity,
   text: CopyText,
   said: SelectorSettingsLandedSaid<TWriter> | undefined,
@@ -104,7 +97,6 @@ function selectorSettingsSaveWrite<TWriter extends string>(
   return {
     mutationKey: consoleWriteKey(
       "selector-settings",
-      page,
       partition.tenant,
       partition.project,
     ),
@@ -155,7 +147,6 @@ export interface SelectorSettingsWriting<TWriter extends string> {
  * only refuse.
  */
 export function useSelectorSettingsWriting<TWriter extends string>(
-  page: SelectorSettingsPage,
   partition: PartitionIdentity,
   held: SelectorSettingsHeld,
   said?: SelectorSettingsLandedSaid<TWriter>,
@@ -163,7 +154,7 @@ export function useSelectorSettingsWriting<TWriter extends string>(
   const client = useQueryClient();
   const text = useCopyText();
   const saving = useConsoleWrite(
-    selectorSettingsSaveWrite<TWriter>(page, partition, text, said),
+    selectorSettingsSaveWrite<TWriter>(partition, text, said),
     { drawn: true },
   );
   return {

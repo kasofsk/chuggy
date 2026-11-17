@@ -11,7 +11,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { phaseRoster } from "../../../src/contract/rosters.ts";
 import { EpicGraphSideMark } from "../app/browser/epic/EpicGraphSide.tsx";
 import { EpicStatusChip } from "../app/browser/epic/EpicProgress.tsx";
-import { SelectorEditedMark } from "../app/browser/settings/lead/SelectorRowsSection.tsx";
+import { SelectorEditedMark } from "../app/browser/settings/threads/SelectorRowsSection.tsx";
 import { TicketDependencyChip } from "../app/browser/ticket/TicketStateChip.tsx";
 import { TicketStateLabel } from "../app/browser/ticket/TicketStateLabel.tsx";
 import { TabNav, TabNavLink } from "../app/browser/ui/TabNav.tsx";

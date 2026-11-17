@@ -1,17 +1,15 @@
 /**
  * The inbox's one read as a suite answers it: an entry is a ticket's row and
- * whatever of an open action, a refusal and a held decision the case names on
- * it, and a page is those entries with the count the server says it holds;
- * and the item a drawn inbox holds for one ticket.
+ * whatever open actions the case names on it, and a page is those entries with
+ * the count the server says it holds; and the item a drawn inbox holds for one
+ * ticket.
  */
 
 import type {
-  AgenticRefusalResponse,
   InboxEntryResponse,
   InboxResponse,
   ProjectNativeActionResponse,
   ProjectTicket,
-  SelectorProposalResponse,
 } from "../../../src/contract/responses.ts";
 import { screen } from "@testing-library/react";
 
@@ -20,8 +18,6 @@ import { answer } from "./screenHarness.tsx";
 /** What a case puts on one ticket besides its row. */
 export interface InboxEntryNamed {
   readonly actions?: readonly ProjectNativeActionResponse[];
-  readonly refusals?: readonly AgenticRefusalResponse[];
-  readonly proposals?: readonly SelectorProposalResponse[];
 }
 
 export function inboxEntry(
@@ -31,8 +27,6 @@ export function inboxEntry(
   return {
     ticket,
     actions: [...(named.actions ?? [])],
-    refusals: [...(named.refusals ?? [])],
-    proposals: [...(named.proposals ?? [])],
   };
 }
 

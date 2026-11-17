@@ -37,6 +37,7 @@ export const schedulerRootService: Omit<
   | "priorEvaluationReports"
   | "failedLanding"
   | "readOnlyRepositories"
+  | "northStar"
   | "dependencyDeliveries"
   | "ticketBriefs"
   | "bindings"
@@ -122,4 +123,9 @@ export const schedulerRootSessionLaunch: Pick<
 export const schedulerRootAccess: ProjectAccessSettings = {
   readUrl: "http://127.0.0.1:1/",
   requestTimeoutMs: 1_000,
+};
+
+/** The wake pass's bound the root is handed, which a deployment names rather than the root. */
+export const schedulerRootWakes: { readonly wakesPerPassMax: number } = {
+  wakesPerPassMax: 1,
 };

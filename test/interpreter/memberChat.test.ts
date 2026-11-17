@@ -201,7 +201,6 @@ function portsOf(kept: readonly Kept[], calls: string[]): NativeThreadPorts {
     seeding: {
       projectTexts: refused("projectTexts"),
       drafts: refused("drafts"),
-      refusals: refused("refusals"),
     },
     rows: { batches: refused("rows") },
     store: { readBatch: refused("bytes") },

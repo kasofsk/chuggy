@@ -18,13 +18,10 @@
  * answering one they do not 404. A person's own agent's tool presents no
  * session bearer: it reaches the API as that person, authorized as the
  * console's own call is, and an agent-account tool's route is that person's
- * own, at no tenant and no project, which every session bearer is refused. A
- * decision tool writes nothing at all: it accumulates in the pod and becomes
- * the turn's answer, which the selector runtime still reads and acts on under
- * its own fence, so the runtime remains the single writer of a lead's dispatch
- * and of the refusal ledger. An offer tool writes nothing and reaches no route
- * either: its call stands in the thread's transcript like any other, and what
- * it offers is done by the member, as the member, or not at all.
+ * own, at no tenant and no project, which every session bearer is refused. An
+ * offer tool writes nothing and reaches no route: its call stands in the
+ * thread's transcript like any other, and what it offers is done by the
+ * member, as the member, or not at all.
  *
  * A ROSTER IS A CONTROL AS FAR AS THE API HOLDS IT, WHICH IS BY ROUTE AND
  * METHOD. The agent runtime enforces a roster inside the pod, and the pod is
@@ -33,16 +30,13 @@
  * routes some tool of its session row's capabilities calls, so a call to a
  * route none of them calls is refused. A route two capabilities' tools share
  * admits either one's whole body: `release_draft` posts an operation, so a
- * session holding `DraftAuthor` without `DraftOriginate` or `TicketDispatch`,
- * a lead among them, may still post any operation, `ManualDispatch`,
+ * session holding `DraftAuthor` without `DraftOriginate` or `TicketDispatch`
+ * may still post any operation, `ManualDispatch`,
  * `RevokeTicket` and `UpdateTicket` among them, and a draft no parent bears,
  * though no tool its roster holds does. The runtime's own tools reach no
- * route, and what a roster grants them is the pod's alone. Beside it stand the
- * membership, enforced by the database when it authorizes a project access,
- * and the decision controls the selector applies to a finished turn — and the
- * last is post-hoc: the tool has already run and its command has already
- * landed, and what the selector refuses is the decision that used it. A control described as stronger than it is, is worse
- * than none.
+ * route, and what a roster grants them is the pod's alone. Beside it stands
+ * the membership, enforced by the database when it authorizes a project
+ * access. A control described as stronger than it is, is worse than none.
  *
  * DERIVED WORK IS A FACT ABOUT THE MAP. `DraftAuthor` carries no bare create: a
  * dependent is filed against a parent that already exists, and a roster holding
@@ -57,24 +51,21 @@
 import { actionReportLinkCharsMax } from "./actionReport.ts";
 import {
   configurationCanonicalCharsMax,
+  dispatchCandidateCharsMax,
   jsonStringChars,
   jsonTextBytes,
+  landingQueueHolderSinceDigits,
   landingQueueTicketsAnsweredMax,
-  leadObservedCandidateCharsMax,
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
-  nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
+  proposalForgeFailureCharsMax,
+  proposalForgeMessageCharsMax,
   proposalMergeStateCharsMax,
   proposalQueueWordCharsMax,
-  runModelCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptPageBatchesMax,
-  selectorAllowlistNameCharsMax,
-  selectorAllowlistNamesMax,
-  selectorSettingsTextCharsMax,
-  sessionEfforts,
   textUtf8Bytes,
   ticketLandingConflictBytesMax,
   ticketLandingRefCharsMax,
@@ -85,26 +76,14 @@ import {
 } from "./http.ts";
 import { briefBranchCharsMax, briefRepositoryCharsMax } from "./brief.ts";
 import { epicContentBytesMax, epicTicketsMax } from "./epics.ts";
-import {
-  epicStatusRoster,
-  type SelectorProjectSettingsResponse,
-} from "./responses.ts";
-import {
-  leadOfferings,
-  phaseRoster,
-  selectorDispatchModes,
-  selectorModes,
-  type ToolCapability,
-} from "./rosters.ts";
+import { epicStatusRoster } from "./responses.ts";
+import { phaseRoster, type ToolCapability } from "./rosters.ts";
 
 /** The public API's own values a tool builds its request with or bounds an argument by. */
 export {
-  agenticRefusalsAnsweredMax,
-  leadRefusalsPerDecisionMax,
   nativeHttpBasePath,
   nativeHttpMediaType,
   nativeHttpPageItemsMax,
-  selectorHistoryLimitMax,
   sessionStorePageBatchesMax,
   threadTurnsAnsweredMax,
 } from "./http.ts";
@@ -170,7 +149,7 @@ export {
   epicTitleCharsMax,
 } from "./epics.ts";
 
-/** What the lead-settings and placement tools publish as their arguments' shapes, and the bound a settings text is held to. */
+/** What the settings and placement tools publish as their arguments' shapes, and the bound a settings text is held to. */
 export { selectorProjectOverridesSchema } from "./requests.ts";
 export { selectorSettingsTextCharsMax } from "./http.ts";
 export { leadOfferings, placementRoutes } from "./rosters.ts";
@@ -225,7 +204,8 @@ const chuggyToolTicketLandingFieldsBytesMax = 1_280;
  * What one landing `read_ticket_landings`'s route answers may weigh: its
  * target's, head's and base's reference names and the base its re-check was
  * read against, its merge state and the reason
- * and login of a removal from a merge queue, each escaping every character;
+ * and login of a removal from a merge queue, and the message and failure
+ * the forge answered its newest merge with, each escaping every character;
  * its link, visible ASCII that JSON escapes to at most two bytes a character;
  * its conflict's paths, and the commas between them, fewer than the lightest
  * paths its bound holds; and the rest of it.
@@ -235,6 +215,8 @@ export const chuggyToolTicketLandingBytesMax =
   2 * (actionReportLinkCharsMax + 1) +
   jsonStringChars(proposalMergeStateCharsMax) +
   2 * jsonStringChars(proposalQueueWordCharsMax) +
+  jsonStringChars(proposalForgeMessageCharsMax) +
+  jsonStringChars(proposalForgeFailureCharsMax) +
   ticketLandingConflictBytesMax +
   Math.floor(ticketLandingConflictBytesMax / jsonTextBytes("x")) +
   chuggyToolTicketLandingFieldsBytesMax;
@@ -286,13 +268,18 @@ export const chuggyToolTicketLandingsResponseBytesMax =
 /**
  * What one queue `read_landing_queues`'s route answers weighs beside its
  * repository, its target and its waiters: the names and brackets around them,
- * and its holder at the largest number a ticket's may be.
+ * its holder at the largest number a ticket's may be, the instant it holds
+ * from at the one length its schema takes, and its longest phase.
  */
 const chuggyToolLandingQueueFieldsBytesMax = textUtf8Bytes(
   `${JSON.stringify({
     repository: "",
     target: "",
     holder: Number.MAX_SAFE_INTEGER,
+    holderSince: `0000-00-00T00:00:00.${"0".repeat(landingQueueHolderSinceDigits)}Z`,
+    holderPhase: phaseRoster.reduce((longest, phase) =>
+      phase.length > longest.length ? phase : longest,
+    ),
     waiting: [],
   })},`,
 );
@@ -329,7 +316,7 @@ const chuggyToolCharBytesMax = 4;
  * at its heaviest, and an ordinary answer's bound for the page around it.
  */
 export const chuggyToolDispatchViewResponseBytesMax =
-  leadObservedCandidateCharsMax +
+  dispatchCandidateCharsMax +
   jsonStringChars(0) +
   configurationCanonicalCharsMax * chuggyToolCharBytesMax +
   nativeHttpBodyBytesMax;
@@ -372,105 +359,6 @@ const chuggyToolEpicViewFieldsBytesMax = textUtf8Bytes(
 export const chuggyToolEpicViewResponseBytesMax =
   epicContentBytesMax +
   chuggyToolEpicViewFieldsBytesMax +
-  nativeHttpBodyBytesMax;
-
-/** The longest member of a roster, which is the most it writes into a body. */
-function chuggyToolLeadSettingsLongest<Member extends string>(
-  roster: readonly Member[],
-): Member {
-  return roster.reduce((longest, member) =>
-    member.length > longest.length ? member : longest,
-  );
-}
-
-/** Every limit a project's settings name, each at the largest a count may be. */
-const chuggyToolLeadSettingsLimits = {
-  tokensPerDecision: Number.MAX_SAFE_INTEGER,
-  millisecondsPerDecision: Number.MAX_SAFE_INTEGER,
-  toolCallsPerDecision: Number.MAX_SAFE_INTEGER,
-  dispatchesPerDecision: Number.MAX_SAFE_INTEGER,
-  inputBytesPerDecision: Number.MAX_SAFE_INTEGER,
-  candidatePagesPerDecision: Number.MAX_SAFE_INTEGER,
-  autoCompactWindow: Number.MAX_SAFE_INTEGER,
-};
-
-/** The limits the selector runs a project under, which add the shared pool's to a project's own. */
-const chuggyToolLeadSettingsEffectiveLimits = {
-  ...chuggyToolLeadSettingsLimits,
-  concurrentDecisions: Number.MAX_SAFE_INTEGER,
-  selectionsPerMinute: Number.MAX_SAFE_INTEGER,
-};
-
-/**
- * The lead settings' body with every field present, every string empty and
- * every allowlist naming nothing, and each other field at its heaviest: every
- * count the largest a count may be and every word its roster's longest.
- */
-const chuggyToolLeadSettingsFieldsBytesMax = textUtf8Bytes(
-  JSON.stringify({
-    partition: { tenant: "", project: "" },
-    revision: Number.MAX_SAFE_INTEGER,
-    overrides: {
-      northStar: "",
-      threadStandingRules: "",
-      mode: chuggyToolLeadSettingsLongest(selectorModes),
-      dispatchMode: chuggyToolLeadSettingsLongest(selectorDispatchModes),
-      basePrompt: "",
-      modelAllowlist: [],
-      toolAllowlist: [],
-      limits: chuggyToolLeadSettingsLimits,
-      operationalContextMaxAgeMs: Number.MAX_SAFE_INTEGER,
-      leadModel: "",
-      leadEffort: chuggyToolLeadSettingsLongest(sessionEfforts),
-      threadModel: "",
-      threadEffort: chuggyToolLeadSettingsLongest(sessionEfforts),
-    },
-    effective: {
-      revision: Number.MAX_SAFE_INTEGER,
-      projectRevision: Number.MAX_SAFE_INTEGER,
-      mode: chuggyToolLeadSettingsLongest(selectorModes),
-      installationMode: chuggyToolLeadSettingsLongest(selectorModes),
-      dispatchMode: chuggyToolLeadSettingsLongest(selectorDispatchModes),
-      basePrompt: "",
-      northStar: "",
-      threadStandingRules: "",
-      modelAllowlist: [],
-      toolAllowlist: [],
-      limits: chuggyToolLeadSettingsEffectiveLimits,
-      installationLimits: chuggyToolLeadSettingsEffectiveLimits,
-      operationalContextMaxAgeMs: Number.MAX_SAFE_INTEGER,
-      leadModel: "",
-      leadEffort: chuggyToolLeadSettingsLongest(sessionEfforts),
-      leadOffering: chuggyToolLeadSettingsLongest(leadOfferings),
-    },
-  } satisfies SelectorProjectSettingsResponse),
-);
-
-/** What a string of at most `chars` characters adds to that body over the empty one, every character escaped. */
-function chuggyToolLeadSettingsStringBytesMax(chars: number): number {
-  return jsonStringChars(chars) - jsonStringChars(0);
-}
-
-/** What an allowlist at its most names adds to that body over the empty one: each name at its heaviest, and the commas between them. */
-const chuggyToolLeadSettingsAllowlistBytesMax =
-  selectorAllowlistNamesMax *
-    (jsonStringChars(selectorAllowlistNameCharsMax) + 1) -
-  1;
-
-/**
- * What the lead settings' route may answer, which a write answers on success
- * and inside its conflict alike: the body's fields at their heaviest; the
- * three texts of its overrides and the three of its effective settings, each
- * at the longest a settings text may be; the two allowlists of each; its
- * partition's two identities; the three models it names; and an ordinary
- * answer's bound for the answer around them.
- */
-export const chuggyToolLeadSettingsResponseBytesMax =
-  chuggyToolLeadSettingsFieldsBytesMax +
-  6 * chuggyToolLeadSettingsStringBytesMax(selectorSettingsTextCharsMax) +
-  4 * chuggyToolLeadSettingsAllowlistBytesMax +
-  2 * chuggyToolLeadSettingsStringBytesMax(nativeHttpPathSegmentCharsMax) +
-  3 * chuggyToolLeadSettingsStringBytesMax(runModelCharsMax) +
   nativeHttpBodyBytesMax;
 
 /**
@@ -528,13 +416,8 @@ const chuggyToolRoster = {
     "list_drafts",
     "list_configurations",
     "read_configuration",
-    "read_decision_log",
-    "read_refusals",
-    "read_ticket_refusals",
     "read_ticket_landings",
     "read_landing_queues",
-    "read_lead",
-    "read_lead_transcript",
     "list_executions",
     "read_execution",
     "read_run_transcript",
@@ -560,8 +443,7 @@ const chuggyToolRoster = {
     "release_draft",
   ],
   /**
-   * What a thread does on its member's own word, which no lead roster carries:
-   * it files the draft its owner asked for, against no parent, because the
+   * What a thread does on its member's own word: it files the draft its owner asked for, against no parent, because the
    * member asking is where the work came from; it revokes the ticket its owner
    * said to end; it takes the ticket its owner said to take onto their own
    * runner and account, and returns the one they said to give back to its
@@ -569,8 +451,7 @@ const chuggyToolRoster = {
    * owner said to apply. None is in `DraftAuthor`, for the reason `DraftAuthor`
    * exists, and `revoke_ticket`, `take_ticket`, `return_ticket`,
    * `update_ticket` and the epic writes, which the API authorizes as the
-   * member's `Mutate`, are here because a thread holds this capability and a
-   * lead does not.
+   * member's `Mutate`, are here rather than there for the same reason.
    */
   DraftOriginate: [
     "create_draft",
@@ -589,18 +470,9 @@ const chuggyToolRoster = {
    * session holding this may dispatch exactly what its owner may.
    */
   TicketDispatch: ["dispatch_ticket"],
-  LeadDecision: [
-    "dispatch",
-    "refuse",
-    "lift",
-    "set_attention",
-    "set_handoff_note",
-    "set_planning_intent",
-  ],
   MemberRead: [...chuggyToolMemberReads, "read_docs"],
   /**
-   * What a thread offers its member rather than doing, which no lead roster
-   * carries: `navigate` names a console page, `offer_release` one draft at the
+   * What a thread offers its member rather than doing: `navigate` names a console page, `offer_release` one draft at the
    * exact authoring version to release, and `offer_revoke` one ticket at its
    * version. None writes or reaches a route, so the direct tools in
    * `DraftOriginate` and `TicketDispatch` stay what a thread does on its
@@ -608,11 +480,11 @@ const chuggyToolRoster = {
    */
   ThreadOffer: ["navigate", "offer_release", "offer_revoke"],
   /**
-   * What a person's own agent does to a project's lead settings and to where
-   * its lead runs, which the API authorizes as it does the console's own read
-   * or write of them. Only that person's agent holds it and no session can,
-   * because a lead must not rewrite the settings it runs under and a thread
-   * must not make an administrator's write on the strength of a chat message.
+   * What a person's own agent does to a project's thread settings and to
+   * where its threads run, which the API authorizes as it does the console's
+   * own read or write of them. Only that person's agent holds it and no
+   * session can, because a thread must not rewrite the settings it runs under
+   * or make an administrator's write on the strength of a chat message.
    */
   ProjectSettings: [
     "read_lead_settings",
@@ -634,25 +506,32 @@ const chuggyToolRoster = {
     "retry_paused_agent",
     "retire_credential",
   ],
+  /**
+   * What a person's own agent does to the pull request a ticket opened, which
+   * the API authorizes as that person's `MergeProposals`. Only that person's
+   * agent holds it and no session can, because a session must not merge on the
+   * strength of a chat message the work it merges may have written.
+   */
+  ProposalMerge: ["merge_pull_request"],
 } as const satisfies Readonly<Record<ToolCapability, readonly string[]>>;
 
 /**
  * Every tool the chuggy server offers, in the order a roster is read in: what a
- * session may see of the project, what it may author, what it may decide, what
- * a member's own session reads of them, what a thread may offer its member,
- * and what a person's own agent may do to a project's settings and to their
- * own agent accounts, each named once.
+ * session may see of the project, what it may author, what a member's own
+ * session reads of them, what a thread may offer its member,
+ * and what a person's own agent may do to a project's settings, to their own
+ * agent accounts and to a ticket's pull request, each named once.
  */
 export const allChuggyTools = [
   ...chuggyToolRoster.ProjectRead,
   ...chuggyToolRoster.DraftAuthor,
   ...chuggyToolRoster.DraftOriginate,
   ...chuggyToolRoster.TicketDispatch,
-  ...chuggyToolRoster.LeadDecision,
   ...chuggyToolMemberReads,
   ...chuggyToolRoster.ThreadOffer,
   ...chuggyToolRoster.ProjectSettings,
   ...chuggyToolRoster.AgentAccounts,
+  ...chuggyToolRoster.ProposalMerge,
 ] as const;
 export type ChuggyTool = (typeof allChuggyTools)[number];
 
@@ -690,11 +569,11 @@ export const builtInToolCapabilities: Readonly<
   DraftAuthor: [],
   DraftOriginate: [],
   TicketDispatch: [],
-  LeadDecision: [],
   MemberRead: [],
   ThreadOffer: [],
   ProjectSettings: [],
   AgentAccounts: [],
+  ProposalMerge: [],
 };
 
 /**
@@ -717,9 +596,6 @@ export const chuggyToolRoutes = {
   dispatchView: nativeHttpRoutes.dispatchView,
   configurations: nativeHttpRoutes.configurations,
   configuration: nativeHttpRoutes.configuration,
-  selectorHistory: nativeHttpRoutes.selectorHistory,
-  agenticRefusals: nativeHttpRoutes.agenticRefusals,
-  ticketAgenticRefusals: nativeHttpRoutes.ticketAgenticRefusals,
   /**
    * What `read_ticket_landings` answers of a Stacked ticket beside its
    * landings: under `stacks`, each of its newest work cycles the finalizer
@@ -738,17 +614,25 @@ export const chuggyToolRoutes = {
   ticketTake: nativeHttpRoutes.ticketTake,
   ticketReturn: nativeHttpRoutes.ticketReturn,
   /**
+   * What `merge_pull_request` posts, taking nothing: the pull request the
+   * ticket's newest successful landing opened is merged at the head that
+   * landing evaluated, or the refusal is named.
+   */
+  ticketProposalMerge: nativeHttpRoutes.ticketProposalMerge,
+  /**
    * What `read_landing_queues` answers, taking nothing: the project's landing
    * queues, one for each reference a Serialized or Stacked ticket lands on, by
    * its repository and its target, a queue naming none being the repository's
    * default branch's. A queue's holder is the one ticket that may land on that
    * reference now, and its waiters are the tickets ranked behind it, none of
    * which lands there before the holder stops holding it; a ticket alone in a
-   * queue is its holder and waits on nobody.
+   * queue is its holder and waits on nobody; `holderPhase` is the holder's
+   * phase, and `holderSince` when it became the holder, the later of when it
+   * took its rank and when the ticket holding the queue before it stopped,
+   * which a re-check, a re-stack, a re-evaluation and an invalidation leave
+   * as it was.
    */
   landingQueues: nativeHttpRoutes.landingQueues,
-  lead: nativeHttpRoutes.lead,
-  leadTranscript: nativeHttpRoutes.leadTranscript,
   executions: nativeHttpRoutes.executions,
   execution: nativeHttpRoutes.execution,
   runTranscript: nativeHttpRoutes.runTranscript,

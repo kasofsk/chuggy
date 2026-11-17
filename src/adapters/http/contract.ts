@@ -30,7 +30,6 @@ import {
 } from "../../actor/command.ts";
 import type { ReleaseAuthoring } from "../../interpreter/authoring.ts";
 import {
-  identitySchema,
   nativeHttpCursorCharsMax,
   nativeHttpVersion,
   textCodePointsCount,
@@ -40,7 +39,6 @@ import {
   accountAgents,
   type AccountAgent,
   type PersonalRunnerPriority,
-  type SelectorReviewOutcome,
 } from "../../contract/rosters.ts";
 import type { AgentAccountSettings } from "../../interpreter/agentAccount.ts";
 import type { TicketBriefBody } from "../../contract/brief.ts";
@@ -67,9 +65,7 @@ import {
   type PublicMutation,
 } from "../../contract/requests.ts";
 import {
-  asSessionId,
   asSessionTurnId,
-  type SessionId,
   type SessionTurnId,
 } from "../../interpreter/agentSession.ts";
 import type { ExecutionRoutes } from "../../interpreter/executionScheduler.ts";
@@ -79,10 +75,7 @@ import {
   asThreadOpenKey,
   type ThreadOpenKey,
 } from "../../interpreter/threadRead.ts";
-import type {
-  SelectorProjectLimitOverrides,
-  SelectorProjectOverrides,
-} from "../../interpreter/selector.ts";
+import type { SelectorProjectOverrides } from "../../interpreter/selectorProjectSettings.ts";
 import { asTaskId, asTicketId, type TicketId } from "../../domain/ids.ts";
 import {
   asConfigurationRevisionId,
@@ -93,10 +86,10 @@ import {
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import type {
   NativeActionPosition,
+  NativeSubmittedCommand,
   TicketActivityPosition,
   TicketNumberPosition,
 } from "../../interpreter/nativeWeb.ts";
-import { checkedSelectorDecisionReference } from "../../interpreter/dispatchView.ts";
 import type { ForgeCredentialRequest } from "../../interpreter/forgeCredentials.ts";
 import {
   asForgeId,
@@ -115,7 +108,6 @@ import {
   asOperationTicketCommand,
   type IdempotencyKey,
   type OperationId,
-  type ProjectCommand,
 } from "../../interpreter/operationInbox.ts";
 import {
   asProjectId,
@@ -340,16 +332,9 @@ export function parsePersonalRunnerProject(
     : personalRunnerProjectSchema.parse(body).priority;
 }
 
-/** One session placement as the wire carries it, keyed by the session kind each route is for, and the lead's offering where it names one. */
+/** One session placement as the wire carries it, keeping only the thread's route: the lead and its offering an older client names are ignored. */
 export function parseSessionPlacement(body: unknown): SessionPlacementChoice {
-  const parsed = sessionPlacementSchema.parse(body);
-  return {
-    Thread: parsed.thread,
-    Lead: parsed.lead,
-    ...(parsed.leadOffering === undefined
-      ? {}
-      : { leadOffering: parsed.leadOffering }),
-  };
+  return { Thread: sessionPlacementSchema.parse(body).thread };
 }
 
 /** One retirement as the wire carries it, which is the binding and nothing else. */
@@ -428,13 +413,9 @@ export function parseSelectorProjectSettings(body: unknown): {
   readonly overrides: SelectorProjectOverrides;
 } {
   const value = selectorProjectSettingsSchema.parse(body);
-  const limits: SelectorProjectLimitOverrides | undefined =
-    value.overrides.limits === undefined
-      ? undefined
-      : withoutAbsentFields(value.overrides.limits);
   return {
     expectedRevision: value.expectedRevision,
-    overrides: withoutAbsentFields({ ...value.overrides, limits }),
+    overrides: withoutAbsentFields(value.overrides),
   };
 }
 
@@ -478,7 +459,7 @@ export function parseDraftRevision(body: unknown): ParsedDraftRevision {
 export interface ParsedSubmission {
   readonly operation: OperationId;
   readonly key: IdempotencyKey;
-  readonly command: ProjectCommand;
+  readonly command: NativeSubmittedCommand;
 }
 
 /** Encodes only the fields selected by a cursor's payload projection. */
@@ -668,7 +649,7 @@ export function parsePartition(tenant: string, project: string): Partition {
 /** An escalated ticket's overrides change, fenced as an answer to its escalation is. */
 function publicMutationOverridesCommand(
   mutation: Extract<PublicMutation, { mutation: "ChangeTicketOverrides" }>,
-): ProjectCommand {
+): NativeSubmittedCommand {
   return {
     version: 1,
     command: "ChangeTicketOverrides",
@@ -682,7 +663,7 @@ function publicMutationOverridesCommand(
 /** An answer to an open native action, with what the person said of the work where they said anything. */
 function publicMutationAnswerCommand(
   mutation: Extract<PublicMutation, { mutation: "ResolveNativeAction" }>,
-): ProjectCommand {
+): NativeSubmittedCommand {
   return {
     version: 1,
     command: "ResolveNativeAction",
@@ -693,7 +674,9 @@ function publicMutationAnswerCommand(
   };
 }
 
-function publicMutationCommand(mutation: PublicMutation): ProjectCommand {
+function publicMutationCommand(
+  mutation: PublicMutation,
+): NativeSubmittedCommand {
   switch (mutation.mutation) {
     case "RevokeTicket":
       return {
@@ -741,17 +724,6 @@ function publicMutationCommand(mutation: PublicMutation): ProjectCommand {
         command: "ManualDispatch",
         ticket: asTicketId(mutation.ticket),
         expectedTicketVersion: mutation.expectedTicketVersion,
-      };
-    case "ProposeDispatch":
-      return {
-        version: 1,
-        command: "ProposeDispatch",
-        ticket: asTicketId(mutation.ticket),
-        expectedTicketVersion: mutation.expectedTicketVersion,
-        observedViewToken: mutation.observedViewToken,
-        selectorDecisionReference: checkedSelectorDecisionReference(
-          mutation.selectorDecisionReference,
-        ),
       };
   }
 }
@@ -846,45 +818,9 @@ export function parseThreadRename(body: unknown): { readonly title: string } {
   return { title: nativeHttpEndpoints.renameThread.body.parse(body).title };
 }
 
-/** The decision a review names, and the answer and note its body carries. */
-export function parseSelectorProposalReview(
-  decision: string,
-  body: unknown,
-): {
-  readonly decision: string;
-  readonly outcome: SelectorReviewOutcome;
-  readonly feedback: string | undefined;
-} {
-  const value = nativeHttpEndpoints.reviewSelectorProposal.body.parse(body);
-  return {
-    decision: identitySchema.parse(decision),
-    outcome: value.outcome,
-    feedback: value.feedback,
-  };
-}
-
 /** Which side of its owner's rail this thread is on, strictly as `hidden`. */
 export function parseThreadHide(body: unknown): { readonly hidden: boolean } {
   return { hidden: nativeHttpEndpoints.hideThread.body.parse(body).hidden };
-}
-
-/**
- * What a member asked the lead aside: the two identities they minted and the
- * question they typed. BOTH are the idempotency, because opening a fork and
- * enqueuing its one turn are one write — so a retried post is answered the
- * ordinal it already has rather than forking the lead a second time.
- */
-export function parseLeadInquiry(body: unknown): {
-  readonly session: SessionId;
-  readonly turn: SessionTurnId;
-  readonly question: string;
-} {
-  const value = nativeHttpEndpoints.askLead.body.parse(body);
-  return {
-    session: asSessionId(value.session),
-    turn: asSessionTurnId(value.turn),
-    question: value.question,
-  };
 }
 
 /** A write's body: a create or a revision, whole. */

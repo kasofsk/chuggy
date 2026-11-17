@@ -340,16 +340,6 @@ test("the door admits the caller's own open thread and refuses every other sessi
   };
   const theirTurn = await said(theirs, "admits-theirs");
   const sibling = await threadRigSiblingProject(rig, at.partition, "admits");
-  const lead = await sessionRigSession(rig.sessions, at.partition, "admits", {
-    kind: "Lead",
-    principal: at.member.principal,
-  });
-  const leadTurn = await sessionRigTurn(
-    rig.sessions,
-    at.partition,
-    lead,
-    "admits-lead",
-  );
 
   for (const named of [turn, absent]) {
     assert.equal(await stop(at, named, other.principal), "NotYourThread");
@@ -366,18 +356,13 @@ test("the door admits the caller's own open thread and refuses every other sessi
       "NoThread",
     );
   }
-  assert.equal(
-    await stop({ ...at, session: lead }, leadTurn),
-    "NoThread",
-    "the door stops a thread's turn and no other session's",
-  );
   assert.equal(await stop(at, absent), "NoTurn");
   assert.equal(
     await stop(at, theirTurn),
     "NoTurn",
     "a turn is stopped through the thread that holds it",
   );
-  for (const untouched of [turn, theirTurn, leadTurn])
+  for (const untouched of [turn, theirTurn])
     assert.equal((await stored(untouched))["state"], "Queued");
 
   await rig.threads.close({ partition: at.partition, session: at.session });
@@ -765,26 +750,31 @@ test("a turn an attempt held and gave back is stopped as one a runner held, and 
  */
 test("a late settlement of a turn that ended any other way is still refused", async () => {
   const partition = await threadRigProject(rig, "late-other");
-  const lead = await sessionRigSession(rig.sessions, partition, "late-other");
+  const thread = await sessionRigSession(rig.sessions, partition, "late-other");
   const withdrawn = await sessionRigTurn(
     rig.sessions,
     partition,
-    lead,
+    thread,
     "late-other-withdrawn",
   );
   const held = await sessionRigAttempt(
     rig.sessions,
     partition,
-    lead,
+    thread,
     "late-other",
   );
   assert.equal(await claimed(held), withdrawn);
-  assert.deepEqual(
-    await rig.sessions.harness.query(
-      `SELECT withdraw_lead_turn($1)::text AS withdrawn`,
-      [withdrawn],
-    ),
-    [{ withdrawn: "Withdrawn" }],
+  assert.equal(
+    (
+      await rig.sessions.harness.query(
+        `UPDATE session_turn
+            SET state='Abandoned',failure='TurnWithdrawn',ended_at=now(),
+                attempt=NULL,claim_generation=NULL,claimed_at=NULL
+          WHERE turn=$1 AND state='Claimed' RETURNING turn`,
+        [withdrawn],
+      )
+    ).length,
+    1,
   );
   const abandoned = await stored(withdrawn);
   assert.deepEqual(
@@ -809,7 +799,7 @@ test("a late settlement of a turn that ended any other way is still refused", as
   const failed = await sessionRigTurn(
     rig.sessions,
     partition,
-    lead,
+    thread,
     "late-other-failed",
   );
   assert.equal(await claimed(held), failed);

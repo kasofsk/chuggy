@@ -3,15 +3,14 @@
  * when the item a reader was in leaves.
  *
  * AN ENTRY IS ONE ITEM IN ONE GROUP, so its answers stay together: an
- * evaluation approval it holds puts it with the approvals, else a held decision
- * naming it with the proposals, else it is a question — its phase's, an open
- * escalation's or a refusal's. Each group keeps the read's order, and a group
- * with no entry is not drawn.
+ * evaluation approval it holds puts it with the approvals, else it is a
+ * question — its phase's or an open escalation's. Each group keeps the read's
+ * order, and a group with no entry is not drawn.
  */
 
 import type { InboxEntryResponse } from "../../../../src/contract/responses.ts";
 
-export const inboxGroupKinds = ["Approvals", "Proposals", "Questions"] as const;
+export const inboxGroupKinds = ["Approvals", "Questions"] as const;
 
 export type InboxGroupKind = (typeof inboxGroupKinds)[number];
 
@@ -29,7 +28,6 @@ export interface InboxItem {
 export function inboxEntryGroupKind(entry: InboxEntryResponse): InboxGroupKind {
   if (entry.actions.some((action) => action.kind === "EvaluationApproval"))
     return "Approvals";
-  if (entry.proposals.length > 0) return "Proposals";
   return "Questions";
 }
 

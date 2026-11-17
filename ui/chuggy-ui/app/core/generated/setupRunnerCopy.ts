@@ -4,7 +4,6 @@
 /** Each message's variables, by name. */
 export interface SetupRunnerCopy {
   readonly "setup-runner-unchanged": Record<never, never>;
-  readonly "setup-runner-mac-none": Record<never, never>;
   readonly "setup-runner-picked-up": Record<never, never>;
   readonly "setup-runner-unknown": Record<never, never>;
   readonly "setup-runner-when-try-again": Record<never, never>;
@@ -20,6 +19,14 @@ export interface SetupRunnerCopy {
   readonly "setup-runner-rule": {
     readonly command: unknown;
     readonly when: unknown;
+  };
+  readonly "setup-runner-rule-elsewhere": {
+    readonly line: unknown;
+  };
+  readonly "setup-runner-rule-chat-host": {
+    readonly flag: unknown;
+    readonly no: unknown;
+    readonly yes: unknown;
   };
   readonly "setup-runner-claude-subscription": Record<never, never>;
   readonly "setup-runner-claude-subscription-made": Record<never, never>;
@@ -74,22 +81,36 @@ export interface SetupRunnerCopy {
     readonly path: unknown;
     readonly engine: unknown;
   };
+  readonly "setup-runner-note-chat-settings-written": {
+    readonly path: unknown;
+    readonly sessions: unknown;
+    readonly each: unknown;
+    readonly total: unknown;
+  };
   readonly "setup-runner-note-login": {
     readonly credential: unknown;
     readonly path: unknown;
   };
-  readonly "setup-runner-note-pool": {
-    readonly project: unknown;
+  readonly "setup-runner-note-personal": {
     readonly path: unknown;
   };
-  readonly "setup-runner-note-pool-gone": {
+  readonly "setup-runner-note-personal-gone": {
     readonly path: unknown;
-    readonly pool: unknown;
+  };
+  readonly "setup-runner-note-personal-registered": {
+    readonly path: unknown;
+  };
+  readonly "setup-runner-note-given": {
     readonly project: unknown;
   };
-  readonly "setup-runner-note-registered": {
+  readonly "setup-runner-note-given-now": {
     readonly project: unknown;
-    readonly path: unknown;
+  };
+  readonly "setup-runner-note-allowed": {
+    readonly project: unknown;
+  };
+  readonly "setup-runner-note-allowed-now": {
+    readonly project: unknown;
   };
   readonly "setup-runner-note-checked": Record<never, never>;
   readonly "setup-runner-note-checked-warned": {
@@ -108,6 +129,9 @@ export interface SetupRunnerCopy {
   readonly "setup-runner-note-server-added": {
     readonly project: unknown;
     readonly path: unknown;
+  };
+  readonly "setup-runner-note-colima": {
+    readonly start: unknown;
   };
   readonly "setup-runner-note-linger": Record<never, never>;
   readonly "setup-runner-note-linger-on": Record<never, never>;
@@ -188,6 +212,9 @@ export interface SetupRunnerCopy {
   readonly "setup-runner-engineless-tell": {
     readonly none: unknown;
   };
+  readonly "setup-runner-engineless-colima-tell": {
+    readonly start: unknown;
+  };
   readonly "setup-runner-engineless-when": Record<never, never>;
   readonly "setup-runner-docker-why": {
     readonly job: unknown;
@@ -228,8 +255,8 @@ export interface SetupRunnerCopy {
   };
   readonly "setup-runner-read-work": Record<never, never>;
   readonly "setup-runner-read-threads": Record<never, never>;
-  readonly "setup-runner-read-placement": Record<never, never>;
-  readonly "setup-runner-read-pools": Record<never, never>;
+  readonly "setup-runner-read-fallback": Record<never, never>;
+  readonly "setup-runner-read-personal": Record<never, never>;
   readonly "setup-runner-read-permit": Record<never, never>;
   readonly "setup-runner-read-chat": Record<never, never>;
   readonly "setup-runner-unread-refused-found": {
@@ -257,15 +284,6 @@ export interface SetupRunnerCopy {
   };
   readonly "setup-runner-not-admin-tell": {
     readonly project: unknown;
-  };
-  readonly "setup-runner-mac-found": Record<never, never>;
-  readonly "setup-runner-mac-tell": {
-    readonly program: unknown;
-  };
-  readonly "setup-runner-mac-when": Record<never, never>;
-  readonly "setup-runner-mac-chat-found": Record<never, never>;
-  readonly "setup-runner-mac-chat-tell": {
-    readonly byHand: unknown;
   };
   readonly "setup-runner-serviceless-found": {
     readonly command: unknown;
@@ -319,6 +337,21 @@ export interface SetupRunnerCopy {
     readonly case: unknown;
   };
   readonly "setup-runner-act-server-added": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-act-plugin-marketplace-add": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-act-plugin-marketplace-update": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-act-plugin-install": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-act-plugin-update": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-act-plugin-enable": {
     readonly case: unknown;
   };
   readonly "setup-runner-act-register": {
@@ -432,17 +465,21 @@ export interface SetupRunnerCopy {
   readonly "setup-runner-lasting-hostname-tell": Record<never, never>;
   readonly "setup-runner-lasting-hostname-when": Record<never, never>;
   readonly "setup-runner-mint-found": {
+    readonly outcome: unknown;
+  };
+  readonly "setup-runner-mint-absent-tell": Record<never, never>;
+  readonly "setup-runner-mint-absent-when": Record<never, never>;
+  readonly "setup-runner-mint-conflict-tell": {
+    readonly mins: unknown;
+  };
+  readonly "setup-runner-mint-tell": Record<never, never>;
+  readonly "setup-runner-serve-refused-found": {
+    readonly write: unknown;
     readonly project: unknown;
     readonly outcome: unknown;
   };
-  readonly "setup-runner-mint-absent-tell": {
-    readonly project: unknown;
-  };
-  readonly "setup-runner-mint-conflict-tell": {
-    readonly project: unknown;
-    readonly mins: unknown;
-  };
-  readonly "setup-runner-mint-tell": {
+  readonly "setup-runner-serve-refused-tell": {
+    readonly write: unknown;
     readonly project: unknown;
   };
   readonly "setup-runner-chat-mint-found": {
@@ -492,7 +529,9 @@ export interface SetupRunnerCopy {
     readonly command: unknown;
   };
   readonly "setup-runner-linger-when": Record<never, never>;
-  readonly "setup-runner-inactive-started": Record<never, never>;
+  readonly "setup-runner-inactive-started": {
+    readonly secs: unknown;
+  };
   readonly "setup-runner-inactive-waited": {
     readonly secs: unknown;
   };
@@ -507,14 +546,33 @@ export interface SetupRunnerCopy {
     readonly state: unknown;
   };
   readonly "setup-runner-inactive-not-running": Record<never, never>;
-  readonly "setup-runner-inactive-tell": Record<never, never>;
+  readonly "setup-runner-inactive-tell": {
+    readonly state: unknown;
+    readonly exited: unknown;
+  };
+  readonly "setup-runner-inactive-unexited": Record<never, never>;
+  readonly "setup-runner-inactive-exit-unrestarted": {
+    readonly status: unknown;
+  };
+  readonly "setup-runner-inactive-exit-updated": {
+    readonly status: unknown;
+  };
+  readonly "setup-runner-inactive-exit-other": {
+    readonly status: unknown;
+    readonly secs: unknown;
+  };
+  readonly "setup-runner-not-live-running": Record<never, never>;
+  readonly "setup-runner-not-live-running-pid": {
+    readonly pid: unknown;
+  };
   readonly "setup-runner-not-live-found": {
+    readonly running: unknown;
     readonly secs: unknown;
     readonly project: unknown;
   };
   readonly "setup-runner-not-live-unregistered-found": {
+    readonly running: unknown;
     readonly secs: unknown;
-    readonly project: unknown;
   };
   readonly "setup-runner-not-live-tell": Record<never, never>;
   readonly "setup-runner-permit-found": Record<never, never>;
@@ -529,6 +587,11 @@ export interface SetupRunnerCopy {
     readonly people: unknown;
   };
   readonly "setup-runner-permit-workspace-tell": {
+    readonly people: unknown;
+  };
+  readonly "setup-runner-withheld-found": Record<never, never>;
+  readonly "setup-runner-withheld-tell": {
+    readonly project: unknown;
     readonly people: unknown;
   };
   readonly "setup-runner-permit-when": Record<never, never>;
@@ -602,4 +665,48 @@ export interface SetupRunnerCopy {
     readonly secs: unknown;
   };
   readonly "setup-runner-chat-not-live-tell": Record<never, never>;
+  readonly "setup-runner-act-colima-stop": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-act-colima-start": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-note-colima-ran": {
+    readonly command: unknown;
+  };
+  readonly "setup-runner-note-colima-vm": {
+    readonly has: unknown;
+  };
+  readonly "setup-runner-colima-has": {
+    readonly memory: unknown;
+    readonly has: unknown;
+    readonly amd64: unknown;
+  };
+  readonly "setup-runner-colima-short-found": {
+    readonly has: unknown;
+  };
+  readonly "setup-runner-colima-short-tell": Record<never, never>;
+  readonly "setup-runner-fit-tell": {
+    readonly told: unknown;
+  };
+  readonly "setup-runner-fit-unchanged": {
+    readonly unchanged: unknown;
+  };
+  readonly "setup-runner-amd64-runs": Record<never, never>;
+  readonly "setup-runner-rosettaless-found": Record<never, never>;
+  readonly "setup-runner-rosettaless-told": {
+    readonly unchanged: unknown;
+    readonly install: unknown;
+  };
+  readonly "setup-runner-rosettaless-when": Record<never, never>;
+  readonly "setup-runner-rebuild-found": {
+    readonly why: unknown;
+  };
+  readonly "setup-runner-rebuild-told": {
+    readonly why: unknown;
+    readonly unchanged: unknown;
+    readonly remove: unknown;
+    readonly make: unknown;
+  };
+  readonly "setup-runner-rebuild-when": Record<never, never>;
 }

@@ -4,8 +4,8 @@
  * when a pointer or the keyboard previews one and when touch does not, the
  * lines and the ports they light, when the cards are measured and which are
  * written, the longest chain and its toggle, the ticket selected and how it is
- * cleared, the side panel with a ticket and without one, its dispatch, the
- * sheet in its place on a phone with its pills, the room it leaves and the
+ * cleared, the side panel with a ticket and without one, its dispatch and the
+ * question it asks, the sheet in its place on a phone with its pills, the room it leaves and the
  * scroll a pill makes, the key, the toggle for the tickets outside the epic,
  * the way to the same tickets as a list, the states before and without a
  * graph, and the reads that draw it again.
@@ -36,9 +36,10 @@ import {
   epicServingReset,
   epicView,
 } from "./epicPageFixture.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
 import { settled } from "./screenHarness.tsx";
+import { dispatchAskTitle } from "./ticketDispatchPressed.ts";
 
 vi.mock(
   "@tanstack/react-router",
@@ -781,7 +782,7 @@ test("the selected ticket's panel says its layer and step, and how many it depen
     within(panel)
       .getByRole("link", { name: "Open ticket" })
       .getAttribute("href"),
-  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/5`);
+  ).toBe(`/${projectPartition.tenant}/${projectPartition.project}/tickets/5`);
   fireEvent.click(cardButton(8));
   expect(side().querySelector(".epic-graph-side-place")?.textContent).toBe(
     "Layer 3 of 4",
@@ -846,6 +847,37 @@ test("dispatch is offered for a Ready ticket to a reader who may dispatch, says 
   expect(within(side()).queryByRole("button", { name: "Dispatch" })).toBeNull();
 });
 
+test("the side panel's dispatch asks first, an escape keeps the ticket selected and sends nothing, and a confirm sends it once", async () => {
+  epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
+  const { sent } = await epicPageDrawn(abilitiesEvery, {
+    tab: <EpicGraphTabAddressed ticket={5} />,
+  });
+  await graphic();
+  const dispatch = await within(side()).findByRole("button", {
+    name: "Dispatch",
+  });
+  const writes = () => sent.filter((request) => request.method !== "GET");
+  fireEvent.click(dispatch);
+  fireEvent.keyDown(screen.getByRole("dialog", { name: dispatchAskTitle(5) }), {
+    key: "Escape",
+  });
+  await settled();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(side().dataset["ticket"]).toBe("5");
+  expect(writes()).toEqual([]);
+  fireEvent.click(dispatch);
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: dispatchAskTitle(5) })).getByRole(
+      "button",
+      { name: "Dispatch" },
+    ),
+  );
+  await settled();
+  expect(writes().map((request) => request.body)).toMatchObject([
+    { mutation: { mutation: "ManualDispatch", ticket: 5 } },
+  ]);
+});
+
 /** A phone's viewport, narrower than the console's narrow breakpoint. */
 const phoneEm = 24;
 
@@ -904,7 +936,7 @@ test("on a phone the graph takes the screen at rest, and a tapped card rises in 
     within(sheet())
       .getByRole("link", { name: "Open ticket" })
       .getAttribute("href"),
-  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/5`);
+  ).toBe(`/${projectPartition.tenant}/${projectPartition.project}/tickets/5`);
   expect(sheet().hasAttribute("style")).toBe(false);
   expect(sheet().querySelectorAll("[style]")).toHaveLength(0);
 });
@@ -1135,6 +1167,8 @@ test("a queued member's card draws its place in the landing queue", async () => 
       {
         repository: "https://forge.test/acme/billing",
         holder: 9,
+        holderSince: "2026-11-16T09:30:00.000000Z",
+        holderPhase: "Finalization",
         waiting: [5],
       },
     ],
@@ -1158,7 +1192,8 @@ test("a queue read that fails draws no chip and leaves every card drawn", async 
   });
   await vi.waitFor(() => {
     expect(
-      client.getQueryState(landingQueuesQuery(leadPartition).queryKey)?.status,
+      client.getQueryState(landingQueuesQuery(projectPartition).queryKey)
+        ?.status,
     ).toBe("error");
   });
   await settled();
@@ -1171,7 +1206,13 @@ test("the rendered graph carries no style attribute", async () => {
   chainServed();
   epicServing.queues = {
     queues: [
-      { repository: "https://forge.test/acme/billing", holder: 5, waiting: [] },
+      {
+        repository: "https://forge.test/acme/billing",
+        holder: 5,
+        holderSince: "2026-11-16T09:30:00.000000Z",
+        holderPhase: "Finalization",
+        waiting: [],
+      },
     ],
     truncated: false,
   };
@@ -1199,7 +1240,7 @@ test("a drawn graph offers its tickets as a list on the Tickets tab, which the s
   });
   expect(link.closest(".epic-graph-as-list")).not.toBeNull();
   expect(link.getAttribute("href")).toBe(
-    `/${leadPartition.tenant}/${leadPartition.project}/epics/7/tickets`,
+    `/${projectPartition.tenant}/${projectPartition.project}/epics/7/tickets`,
   );
   expect(
     document.querySelector(".epic-graph-pan > .epic-graph-drawing"),
@@ -1224,7 +1265,7 @@ test("a graph that cannot be read says so where the graph would be", async () =>
 
 /** Every read but the graph's made again, as another's write would leave them. */
 async function refetchedButGraph(client: QueryClient): Promise<void> {
-  const graphKey = JSON.stringify(epicGraphQuery(leadPartition, 7).queryKey);
+  const graphKey = JSON.stringify(epicGraphQuery(projectPartition, 7).queryKey);
   await client.refetchQueries({
     predicate: (query) => JSON.stringify(query.queryKey) !== graphKey,
   });

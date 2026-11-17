@@ -24,8 +24,6 @@ import {
   threadOpenSchema,
   threadRenameRequestSchema,
   threadHideRequestSchema,
-  leadInquirySchema,
-  selectorProposalReviewSchema,
   projectThemeSchema,
   projectImageSchema,
 } from "./requests.ts";
@@ -39,8 +37,6 @@ import {
   executionResponseSchema,
   hostedRunsResponseSchema,
   projectAbilitiesResponseSchema,
-  leadReadResponseSchema,
-  leadTranscriptResponseSchema,
   runContextResponseSchema,
   runTurnsResponseSchema,
   runTranscriptResponseSchema,
@@ -58,11 +54,6 @@ import {
   threadTurnStopResponseSchema,
   threadRenameResponseSchema,
   threadHideResponseSchema,
-  leadInquiriesResponseSchema,
-  leadInquiryResponseSchema,
-  leadInquiryAcceptedSchema,
-  selectorProposalsResponseSchema,
-  selectorProposalReviewResponseSchema,
   inboxResponseSchema,
   ticketLandingsResponseSchema,
   ticketNativeActionHistoryResponseSchema,
@@ -75,6 +66,7 @@ import {
   projectThemeResponseSchema,
   projectAppearanceResponseSchema,
   projectImagesResponseSchema,
+  ticketProposalMergeResponseSchema,
 } from "./responses.ts";
 
 function endpointInteger(name: string, fallback?: number) {
@@ -139,23 +131,6 @@ export const nativeHttpEndpoints = {
     method: "GET",
     path: nativeHttpRoutes.abilities,
     response: projectAbilitiesResponseSchema,
-  },
-  lead: {
-    method: "GET",
-    path: nativeHttpRoutes.lead,
-    response: leadReadResponseSchema,
-  },
-  leadTranscript: {
-    method: "GET",
-    path: nativeHttpRoutes.leadTranscript,
-    query: transcriptQuery,
-    response: leadTranscriptResponseSchema,
-  },
-  leadContext: {
-    method: "GET",
-    path: nativeHttpRoutes.leadContext,
-    query: contextQuery,
-    response: sessionContextResponseSchema,
   },
   runTurns: {
     method: "GET",
@@ -360,22 +335,6 @@ export const nativeHttpEndpoints = {
     body: threadHideRequestSchema,
     response: threadHideResponseSchema,
   },
-  leadInquiries: {
-    method: "GET",
-    path: nativeHttpRoutes.leadInquiries,
-    response: leadInquiriesResponseSchema,
-  },
-  leadInquiry: {
-    method: "GET",
-    path: nativeHttpRoutes.leadInquiry,
-    response: leadInquiryResponseSchema,
-  },
-  askLead: {
-    method: "POST",
-    path: nativeHttpRoutes.leadInquiries,
-    body: leadInquirySchema,
-    response: leadInquiryAcceptedSchema,
-  },
   inbox: {
     method: "GET",
     path: nativeHttpRoutes.inbox,
@@ -387,17 +346,6 @@ export const nativeHttpEndpoints = {
       limit: endpointInteger("limit", nativeHttpPageItemsDefault),
     }),
     response: inboxResponseSchema,
-  },
-  selectorProposals: {
-    method: "GET",
-    path: nativeHttpRoutes.selectorProposals,
-    response: selectorProposalsResponseSchema,
-  },
-  reviewSelectorProposal: {
-    method: "POST",
-    path: nativeHttpRoutes.selectorProposalReview,
-    body: selectorProposalReviewSchema,
-    response: selectorProposalReviewResponseSchema,
   },
   ticketNativeActionHistory: {
     method: "GET",
@@ -522,6 +470,12 @@ export const nativeHttpEndpoints = {
     method: "DELETE",
     path: nativeHttpRoutes.projectImage,
     response: projectImagesResponseSchema,
+  },
+  ticketProposalMerge: {
+    method: "POST",
+    path: nativeHttpRoutes.ticketProposalMerge,
+    body: emptyBody,
+    response: ticketProposalMergeResponseSchema,
   },
 } as const;
 

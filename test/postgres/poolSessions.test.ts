@@ -1,10 +1,9 @@
 /**
  * A runner's claim of a session, against a real PostgreSQL and under the roles a
- * deployment runs: a project's pool claims its lead and a member's chat host
- * their threads and inquiries, each through the pool plane's role, while their
- * personal runner claims none and holds only what it opened before; the worker plane
- * serves the attempt a claim opened, and the scheduler's sweeps reach it. Each
- * case holds a project of its own, and the last restores the epoch away.
+ * deployment runs: a member's chat host claims their threads through the pool
+ * plane's role, while a project's pool and their personal runner claim none;
+ * the worker plane serves the attempt a claim opened, and the scheduler's
+ * sweeps reach it. Each case holds a project of its own.
  */
 
 import assert from "node:assert/strict";
@@ -62,7 +61,6 @@ import {
   memberScopePartition,
   type SessionId,
   type SessionCapability,
-  type SessionKind,
   type SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
 import {
@@ -88,6 +86,7 @@ import {
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
+import { asPlacementId } from "../../src/interpreter/schedulerIdentity.ts";
 import {
   workerPoolClientPass,
   type WorkerPoolBackend,
@@ -111,7 +110,6 @@ import {
   agentAccountHarnessCredentialsOver,
 } from "./agentAccountHarness.ts";
 import {
-  postgresHarnessNewEpoch,
   postgresHarnessProject,
   postgresHarnessRolePool,
   postgresHarnessStalled,
@@ -119,6 +117,7 @@ import {
 } from "./harness.ts";
 import {
   sessionRigAttempt,
+  sessionRigAttemptState,
   sessionRigBoundless,
   sessionRigLaunch,
   sessionRigLaunchMet,
@@ -246,7 +245,7 @@ async function routedProject(label: string): Promise<{
   readonly pool: DedicatedPoolIdentity;
 }> {
   const partition = await sessionRigProject(rig, label);
-  await sessionRigRouted(rig, partition, "Pool", "Pool");
+  await sessionRigRouted(rig, partition, "Pool");
   const member = principal(`member-${label}`);
   return { partition, member, pool: await runner(partition, member) };
 }
@@ -324,22 +323,18 @@ async function besideOf(
     tenant: partition.tenant,
     project: asProjectId(`project-${label}-${randomUUID()}`),
   });
-  await sessionRigRouted(rig, beside, "Pool", "Pool");
+  await sessionRigRouted(rig, beside, "Pool");
   return beside;
 }
 
-/** A session of `kind` held by `holder` with one turn queued. */
+/** A thread held by `holder` with one turn queued. */
 async function waiting(
   partition: Partition,
   label: string,
-  kind: SessionKind,
   holder: Principal,
-  parent?: SessionId,
 ): Promise<{ readonly session: SessionId; readonly turn: SessionTurnId }> {
   const session = await sessionRigSession(rig, partition, label, {
-    kind,
     principal: holder,
-    ...(parent === undefined ? {} : { parent }),
   });
   return {
     session,
@@ -438,6 +433,7 @@ async function backdated(
   assignment: string,
   column: "ended_at" | "idle_since" | "lease_expires_at",
   secs: number,
+  by: "assignment" | "attempt" = "assignment",
 ): Promise<void> {
   const backdating = await rig.harness.begin();
   const fence = "TRIGGER session_attempt_is_fenced";
@@ -445,7 +441,7 @@ async function backdated(
     await backdating.query(`ALTER TABLE session_attempt DISABLE ${fence}`);
     await backdating.query(
       `UPDATE session_attempt SET ${column}=now()-make_interval(secs=>$2)
-        WHERE assignment=$1`,
+        WHERE ${by}=$1`,
       [assignment, secs],
     );
     await backdating.query(`ALTER TABLE session_attempt ENABLE ${fence}`);
@@ -481,17 +477,11 @@ test("a runner is handed a session whose oldest queued turn was admitted for run
   const member = principal("member-pool-claim");
   const pool = await runner(partition, member);
   const host = await chatHost(partition, member);
-  const inCluster = await waiting(partition, "claim-cluster", "Lead", member);
+  const inCluster = await waiting(partition, "claim-cluster", member);
   assert.deepEqual((await polled(pool, 4)).sessions, []);
-  await sessionRigRouted(rig, partition, "Pool", "Pool");
+  await sessionRigRouted(rig, partition, "Pool");
   await sessionRigTurn(rig, partition, inCluster.session, "claim-behind");
-  const offered = await waiting(
-    partition,
-    "claim-pool",
-    "Inquiry",
-    member,
-    inCluster.session,
-  );
+  const offered = await waiting(partition, "claim-pool", member);
   assert.deepEqual((await polled(pool, 4)).sessions, []);
 
   const claimed = await claimedOne(host);
@@ -538,15 +528,14 @@ test("a runner is handed a session whose oldest queued turn was admitted for run
   assert.deepEqual((await polled(host, 4, [claimed.assignment])).sessions, []);
 });
 
-test("every attempt a runner opens names its holder's kind, its holder and the principal that claimed, a personal runner opens none, and an attempt in the cluster names none", async () => {
+test("every attempt a chat host opens names its holder's kind, its holder and the principal that claimed, a pool and a personal runner open none, and an attempt in the cluster names none", async () => {
   const partition = await sessionRigProject(rig, "pool-holders");
-  await sessionRigRouted(rig, partition, "Pool", "Pool");
+  await sessionRigRouted(rig, partition, "Pool");
   const runs = principal("member-holders-runs");
   const hosts = principal("member-holders-hosts");
-  const lead = await waiting(partition, "holders-lead", "Lead", runs);
-  await waiting(partition, "holders-runs", "Thread", runs);
-  await waiting(partition, "holders-hosts", "Thread", hosts);
-  await waiting(partition, "holders-asks", "Inquiry", hosts, lead.session);
+  await waiting(partition, "holders-runs", runs);
+  await waiting(partition, "holders-hosts", hosts);
+  await waiting(partition, "holders-hosts-second", hosts);
   const pool = await runner(partition, undefined);
   const personalRunner = await personal(partition, runs);
   const host = await chatHost(partition, hosts);
@@ -564,9 +553,7 @@ test("every attempt a runner opens names its holder's kind, its holder and the p
         ];
       }),
     );
-  assert.deepEqual(await holders(pool), [
-    ["Pool", pool.pool, pool.principal, pool.pool],
-  ]);
+  assert.deepEqual(await holders(pool), []);
   assert.deepEqual(await holders(personalRunner), []);
   assert.deepEqual(await holders(host), [
     ["ChatHost", hosts, host.principal, hosts],
@@ -587,27 +574,14 @@ test("every attempt a runner opens names its holder's kind, its holder and the p
   );
 });
 
-test("a lead is handed to any pool of its project and a thread and an inquiry to their member's chat host alone, never to their personal runner, and nothing to another project's", async () => {
+test("a thread is handed to its member's chat host alone, never to a pool of the project, even one their member registered, or to their personal runner, and nothing to another project's", async () => {
   const partition = await sessionRigProject(rig, "pool-whose");
-  await sessionRigRouted(rig, partition, "Pool", "Pool");
+  await sessionRigRouted(rig, partition, "Pool");
   const member = principal("member-whose");
   const other = principal("other-whose");
-  const lead = await waiting(
-    partition,
-    "whose-lead",
-    "Lead",
-    principal("lead"),
-  );
-  const thread = await waiting(partition, "whose-thread", "Thread", member);
-  const inquiry = await waiting(
-    partition,
-    "whose-inquiry",
-    "Inquiry",
-    member,
-    lead.session,
-  );
+  const thread = await waiting(partition, "whose-thread", member);
   const elsewhere = await sessionRigProject(rig, "pool-whose-elsewhere");
-  await sessionRigRouted(rig, elsewhere, "Pool", "Pool");
+  await sessionRigRouted(rig, elsewhere, "Pool");
   const handed = async (pool: PoolPlaneIdentity) =>
     new Set(await Promise.all((await polled(pool, 4)).sessions.map(sessionOf)));
 
@@ -623,11 +597,12 @@ test("a lead is handed to any pool of its project and a thread and an inquiry to
     new Set(),
     "a personal runner was handed another member's session",
   );
-  assert.deepEqual(
-    await handed(await runner(partition, member)),
-    new Set([lead.session]),
-    "a pool its member registered was handed their inquiry",
-  );
+  for (const registeredBy of [member, undefined])
+    assert.deepEqual(
+      await handed(await runner(partition, registeredBy)),
+      new Set(),
+      "a pool was handed a session",
+    );
   assert.deepEqual(
     await handed(await personal(partition, member)),
     new Set(),
@@ -635,21 +610,13 @@ test("a lead is handed to any pool of its project and a thread and an inquiry to
   );
   assert.deepEqual(
     await handed(await chatHost(partition, member)),
-    new Set([thread.session, inquiry.session]),
+    new Set([thread.session]),
   );
 });
 
-test("a member's live personal runner is handed none of their threads or inquiries whether their chat host is absent, never polled, live or stopped, and their chat host is handed them in every case", async () => {
+test("a member's live personal runner is handed none of their threads whether their chat host is absent, never polled, live or stopped, and their chat host is handed them in every case", async () => {
   const { partition, member } = await routedProject("pool-precedence");
-  const lead = await waiting(partition, "precedence-lead", "Lead", member);
-  const thread = await waiting(partition, "precedence", "Thread", member);
-  const inquiry = await waiting(
-    partition,
-    "precedence-inquiry",
-    "Inquiry",
-    member,
-    lead.session,
-  );
+  const thread = await waiting(partition, "precedence", member);
   const runs = await personal(partition, member);
   const nothing = async (when: string) => {
     assert.deepEqual((await polled(runs, 4)).sessions, [], when);
@@ -663,43 +630,22 @@ test("a member's live personal runner is handed none of their threads or inquiri
   await nothing("with a stopped chat host");
   assert.deepEqual(
     new Set(await Promise.all((await polled(host, 4)).sessions.map(sessionOf))),
-    new Set([thread.session, inquiry.session]),
+    new Set([thread.session]),
     "a stopped chat host coming back was not handed what waited",
   );
 });
 
-/** A project's lead, and a thread and an inquiry its member holds, each with a turn queued for runners. */
+/** A project with a thread its member holds, with a turn queued for runners. */
 async function confinedProject(label: string): Promise<{
   readonly partition: Partition;
   readonly member: Principal;
-  readonly lead: SessionId;
   readonly thread: SessionId;
-  readonly inquiry: SessionId;
 }> {
   const partition = await sessionRigProject(rig, label);
-  await sessionRigRouted(rig, partition, "Pool", "Pool");
+  await sessionRigRouted(rig, partition, "Pool");
   const member = principal(`member-${label}`);
-  const lead = await waiting(
-    partition,
-    `${label}-lead`,
-    "Lead",
-    principal("lead"),
-  );
-  const thread = await waiting(partition, `${label}-thread`, "Thread", member);
-  const inquiry = await waiting(
-    partition,
-    `${label}-inquiry`,
-    "Inquiry",
-    member,
-    lead.session,
-  );
-  return {
-    partition,
-    member,
-    lead: lead.session,
-    thread: thread.session,
-    inquiry: inquiry.session,
-  };
+  const thread = await waiting(partition, `${label}-thread`, member);
+  return { partition, member, thread: thread.session };
 }
 
 async function awaitingOf(
@@ -740,13 +686,12 @@ async function openedFor(
   });
 }
 
-test("a lead is read as waiting by every pool of the project, and a thread and an inquiry by their member's chat host alone", async () => {
-  const { partition, member, lead, thread, inquiry } =
-    await confinedProject("pool-read");
+test("no pool of the project reads a session as waiting, and a thread is read by its member's chat host alone", async () => {
+  const { partition, member, thread } = await confinedProject("pool-read");
   for (const elsewhere of [member, principal("other-read"), undefined])
     assert.deepEqual(
       await awaitingOf(await runner(partition, elsewhere)),
-      new Set([lead]),
+      new Set(),
     );
   assert.deepEqual(
     await awaitingOf(await chatHost(partition, principal("other-read"))),
@@ -754,7 +699,7 @@ test("a lead is read as waiting by every pool of the project, and a thread and a
   );
   assert.deepEqual(
     await awaitingOf(await chatHost(partition, member)),
-    new Set([thread, inquiry]),
+    new Set([thread]),
   );
 });
 
@@ -788,182 +733,94 @@ async function openedByNone(
     );
 }
 
-test("a session read as waiting by the runner it is for is opened by no pool it is not for", async () => {
-  const { partition, member, lead, thread, inquiry } =
-    await confinedProject("pool-open");
+test("a pool opens no session of its project, not even its member's thread", async () => {
+  const { partition, member, thread } = await confinedProject("pool-open");
   const pool = await runner(partition, member);
-  const candidate = await candidatesRead([
-    pool,
-    await chatHost(partition, member),
-  ]);
+  const unregistered = await runner(partition, undefined);
+  const candidate = await candidatesRead([await chatHost(partition, member)]);
   await openedByNone(candidate, [
     [pool, thread, "a pool opened its member's thread"],
-    [pool, inquiry, "a pool opened its member's inquiry"],
-    [
-      await runner(partition, undefined),
-      inquiry,
-      "a pool no person registered opened an inquiry",
-    ],
+    [unregistered, thread, "a pool no person registered opened a thread"],
   ]);
-  assert.equal(
-    await openedFor(await runner(partition, undefined), candidate(lead)),
-    "Opened",
-  );
 });
 
 test("a session read as waiting by the runner it is for is opened by no chat host it is not for", async () => {
-  const { partition, member, lead, thread, inquiry } =
-    await confinedProject("host-open");
+  const { partition, member, thread } = await confinedProject("host-open");
   const host = await chatHost(partition, member);
-  const candidate = await candidatesRead([
-    await runner(partition, undefined),
-    host,
-  ]);
+  const candidate = await candidatesRead([host]);
   const other = await chatHost(partition, principal("other-open"));
   await hostPolled(host);
   await openedByNone(candidate, [
-    [host, lead, "a chat host opened a lead"],
-    [other, inquiry, "a chat host opened another member's inquiry"],
     [other, thread, "a chat host opened another member's thread"],
   ]);
-  assert.equal(await openedFor(host, candidate(inquiry)), "Opened");
   assert.equal(await openedFor(host, candidate(thread)), "Opened");
 });
 
-test("a runner holds no more sessions than its bound however few it says it holds, and a session is not handed out while an attempt holds it or its backoff runs", async () => {
-  const { partition, member, pool } = await routedProject("pool-bound");
-  const lead = await waiting(partition, "bound-lead", "Lead", member);
-  await waiting(partition, "bound-thread", "Thread", member);
-  await waiting(partition, "bound-inquiry", "Inquiry", member, lead.session);
+test("a chat host holds no more sessions than its bound, and a session is not handed out while an attempt holds it or its backoff runs", async () => {
+  const { partition, member } = await routedProject("pool-bound");
+  const thread = await waiting(partition, "bound-thread", member);
   const host = await chatHost(partition, member);
   const one = { ...settings, sessionsHeldMax: 1 };
-  for (const holder of [pool, host]) {
-    const [first] = (await polled(holder, 1, [], ports, one)).sessions;
-    assert.ok(first !== undefined);
-    assert.deepEqual(
-      (await polled(holder, 1, [], ports, one)).sessions,
-      [],
-      `a ${holder.kind} runner that said it held nothing was handed one past its bound`,
-    );
-  }
-
-  const beside = await runner(partition, member);
+  await waiting(partition, "bound-second", member);
+  const [first] = (await polled(host, 1, [], ports, one)).sessions;
+  assert.ok(first !== undefined);
   assert.deepEqual(
-    (await polled(beside, 4)).sessions,
+    (await polled(host, 1, [first.assignment], ports, one)).sessions,
+    [],
+    "a chat host was handed one past its bound",
+  );
+  const [second] = (await polled(host, 4, [first.assignment])).sessions;
+  assert.ok(second !== undefined);
+  assert.deepEqual(
+    (await polled(host, 4, [first.assignment, second.assignment])).sessions,
     [],
     "a session was handed out while held",
   );
-  const [claimed] = await rig.harness.query(
-    `SELECT assignment FROM session_attempt
-      WHERE tenant=$1 AND project=$2 AND holder_kind='Pool'`,
-    [partition.tenant, partition.project],
-  );
-  const assignment = String(claimed?.["assignment"]);
+  const [assignment, other] =
+    (await sessionOf(first)) === thread.session
+      ? [first.assignment, second.assignment]
+      : [second.assignment, first.assignment];
   assert.equal(
-    await workerPoolSettled(ports, pool, assignment, {
+    await workerPoolSettled(ports, host, assignment, {
       outcome: "Unavailable",
     }),
     true,
   );
   assert.deepEqual(
-    (await polled(beside, 4)).sessions,
+    (await polled(host, 4, [other])).sessions,
     [],
     "a session was handed out inside its backoff",
   );
   await backdated(assignment, "ended_at", launch.placementBackoffSecs + 1);
-  const [again] = (await polled(beside, 4)).sessions;
+  const [again] = (await polled(host, 4, [other])).sessions;
   assert.ok(again !== undefined);
-  assert.equal(await sessionOf(again), lead.session);
-});
-
-/** The ports with `between` run after the candidates are read and before any is opened, as a racing writer would. */
-function racing(between: () => Promise<void>): WorkerPoolPorts {
-  return {
-    ...ports,
-    sessions: {
-      ...ports.sessions,
-      store: {
-        ...store,
-        awaiting: async (identity, backoffSecs, max, memberScope) => {
-          const found = await store.awaiting(
-            identity,
-            backoffSecs,
-            max,
-            memberScope,
-          );
-          await between();
-          return found;
-        },
-      },
-    },
-  };
-}
-
-test("a session read as waiting is not opened once its project stops being active or another pool claims it first", async () => {
-  const { partition, member, pool } = await routedProject("pool-race");
-  await waiting(partition, "race", "Lead", member);
-  const lifecycle = async (to: string): Promise<void> => {
-    await rig.harness.query(
-      `UPDATE project SET lifecycle=$3 WHERE tenant=$1 AND project=$2`,
-      [partition.tenant, partition.project, to],
-    );
-  };
-  assert.deepEqual(
-    (
-      await polled(
-        pool,
-        4,
-        [],
-        racing(() => lifecycle("Suspended")),
-      )
-    ).sessions,
-    [],
-  );
-  await lifecycle("Active");
-  const beside = await runner(partition, member);
-  let taken: readonly WorkerPoolSessionAssignment[] = [];
-  const raced = racing(async () => {
-    taken = (await polled(beside, 4)).sessions;
-  });
-  assert.deepEqual((await polled(pool, 4, [], raced)).sessions, []);
-  assert.equal(taken.length, 1);
+  assert.equal(await sessionOf(again), thread.session);
 });
 
 test("renewal keeps a held session's lease, and one an idle reap ended is to be stopped", async () => {
-  const { partition, member, pool } = await routedProject("pool-renew");
-  await waiting(partition, "renew", "Lead", member);
-  const held = await claimedOne(pool);
-  await backdated(held.assignment, "lease_expires_at", -5);
-  const short = (await attemptOf(held.assignment))["lease"];
-  assert.deepEqual((await polled(pool, 0, [held.assignment])).stop, []);
-  assert.notEqual((await attemptOf(held.assignment))["lease"], short);
+  const { partition, member } = await routedProject("host-renew");
+  await waiting(partition, "renew", member);
+  const host = await chatHost(partition, member);
+  const held = await hostClaimedDeclaring(host, [], 600);
+  await backdated(held, "lease_expires_at", -5);
+  const short = (await attemptOf(held))["lease"];
+  assert.deepEqual((await polled(host, 0, [held])).stop, []);
+  assert.notEqual((await attemptOf(held))["lease"], short);
 
-  await backdated(held.assignment, "idle_since", 3600);
+  await backdated(held, "idle_since", 3600);
   assert.equal(
     await rig.scheduler.reapIdleAttempts(rig.epoch, 1800, sessionRigBoundless),
     1,
   );
-  assert.deepEqual(
-    [(await attemptOf(held.assignment))["evidence"]],
-    ["SessionIdle"],
-  );
-  assert.deepEqual((await polled(pool, 0, [held.assignment])).stop, [
-    held.assignment,
-  ]);
+  assert.deepEqual([(await attemptOf(held))["evidence"]], ["SessionIdle"]);
+  assert.deepEqual((await polled(host, 0, [held])).stop, [held]);
 });
 
 test("a held session that closes, or whose project is suspended, is to be stopped", async () => {
   const { partition, member } = await routedProject("host-closed");
   const host = await chatHost(partition, member);
-  const lead = await waiting(partition, "closed-lead", "Lead", member);
-  await waiting(partition, "closed-thread", "Thread", member);
-  const thread = await waiting(
-    partition,
-    "closed-inquiry",
-    "Inquiry",
-    member,
-    lead.session,
-  );
+  await waiting(partition, "closed-kept", member);
+  const thread = await waiting(partition, "closed-thread", member);
   const claimed = (await polled(host, 2)).sessions;
   const held = claimed.map(({ assignment }) => assignment);
   const threadHeld =
@@ -988,29 +845,45 @@ test("a held session that closes, or whose project is suspended, is to be stoppe
   assert.deepEqual(await stopped(), new Set(held));
 });
 
-test("a runner's heartbeat on a pool-held attempt answers whether the pool's lease holds it and renews nothing, and a lapsed lease is reaped", async () => {
-  const { partition, member, pool } = await routedProject("pool-heartbeat");
-  await waiting(partition, "heartbeat", "Lead", member);
-  const held = await claimedOne(pool);
-  const secret = asSessionBearerSecret(held.bearer);
-  const leased = (await attemptOf(held.assignment))["lease"];
-  assert.equal(await rig.plane.heartbeat(secret, 1, 3600), true);
-  assert.equal((await attemptOf(held.assignment))["lease"], leased);
-  await backdated(held.assignment, "lease_expires_at", 1);
-  assert.equal(await rig.plane.heartbeat(secret, 1, 3600), false);
-  assert.equal(
-    await rig.scheduler.reapLapsedAttempts(rig.epoch, sessionRigBoundless),
-    1,
-  );
+test("a chat host's poll ends Lost, as Vanished, an attempt it holds and does not list, releasing its claimed turn, renews one it lists, and leaves one it opens", async () => {
+  const { partition, member } = await routedProject("host-unlisted");
+  const host = await chatHost(partition, member);
+  const dropped = await waiting(partition, "unlisted-dropped", member);
+  await waiting(partition, "unlisted-listed", member);
+  const [first, second] = (await polled(host, 2)).sessions;
+  assert.ok(first !== undefined && second !== undefined);
+  const [gone, kept] =
+    (await sessionOf(first)) === dropped.session
+      ? [first, second]
+      : [second, first];
+  assert.equal(await runnerClaimed(gone), dropped.turn);
+  await backdated(kept.assignment, "lease_expires_at", -5);
+  const short = (await attemptOf(kept.assignment))["lease"];
+  await waiting(partition, "unlisted-opened", member);
+
+  const answered = await polled(host, 1, [kept.assignment]);
+  const [opened, ...more] = answered.sessions;
+  assert.ok(opened !== undefined, "the poll opened no attempt");
+  assert.deepEqual(more, []);
+  assert.deepEqual(answered.stop, []);
   assert.deepEqual(
-    [(await attemptOf(held.assignment))["evidence"]],
-    ["LeaseExpired"],
+    await endingsOf([gone.assignment, kept.assignment, opened.assignment]),
+    [
+      ["Lost", "Vanished"],
+      ["Running", null],
+      ["Running", null],
+    ],
+  );
+  assert.notEqual((await attemptOf(kept.assignment))["lease"], short);
+  assert.equal(
+    (await turnStanding(partition, dropped.session, dropped.turn))[0],
+    "Queued",
   );
 });
 
 /**
- * Neither reaper filters on the pool, and the cluster observes no pod a pool
- * holds, so on a closed session the reapers are what end its attempt.
+ * Neither reaper filters on the holder, and the cluster observes no pod a chat
+ * host holds, so on a closed session the reapers are what end its attempt.
  */
 test("a held session that closes is ended SessionClosed by whichever reaper reaches it", async () => {
   for (const [column, reaped] of [
@@ -1024,19 +897,20 @@ test("a held session that closes is ended SessionClosed by whichever reaper reac
       () => rig.scheduler.reapLapsedAttempts(rig.epoch, sessionRigBoundless),
     ],
   ] as const) {
-    const label = `pool-reaped-closed-${column}`.replaceAll("_", "-");
-    const { partition, member, pool } = await routedProject(label);
-    const { session } = await waiting(partition, label, "Lead", member);
-    const held = await claimedOne(pool);
+    const label = `host-reaped-closed-${column}`.replaceAll("_", "-");
+    const { partition, member } = await routedProject(label);
+    const { session } = await waiting(partition, label, member);
+    const held = await hostClaimedDeclaring(
+      await chatHost(partition, member),
+      [],
+      600,
+    );
     await rig.sessions.close(partition, session);
-    await backdated(held.assignment, column, 3600);
+    await backdated(held, column, 3600);
     assert.equal(await reaped(), 1, column);
     assert.deepEqual(
-      [
-        (await attemptOf(held.assignment))["state"],
-        (await attemptOf(held.assignment))["evidence"],
-      ],
-      ["Lost", "SessionClosed"],
+      await endingsOf([held]),
+      [["Lost", "SessionClosed"]],
       column,
     );
   }
@@ -1045,10 +919,9 @@ test("a held session that closes is ended SessionClosed by whichever reaper reac
 test("an accepted session writes nothing, an unavailable one is withdrawn with its turn uncharged, and a refused one ends charged with its refusal recorded", async () => {
   const { partition, member } = await routedProject("host-settle");
   const host = await chatHost(partition, member);
-  const lead = await waiting(partition, "settle-lead", "Lead", member);
-  await waiting(partition, "settle-thread", "Thread", member);
-  await waiting(partition, "settle-second", "Inquiry", member, lead.session);
-  await waiting(partition, "settle-inquiry", "Inquiry", member, lead.session);
+  await waiting(partition, "settle-thread", member);
+  await waiting(partition, "settle-second", member);
+  await waiting(partition, "settle-third", member);
   const [accepted, unavailable, refused] = (await polled(host, 3)).sessions;
   assert.ok(
     accepted !== undefined &&
@@ -1099,46 +972,6 @@ test("an accepted session writes nothing, an unavailable one is withdrawn with i
     await workerPoolSettled(ports, host, refused.assignment, refusal),
     false,
   );
-});
-
-test("registering a pool's name again ends the sessions its old registration held", async () => {
-  const { partition, member, pool } = await routedProject("pool-again");
-  const { session, turn } = await waiting(partition, "again", "Lead", member);
-  const held = await claimedOne(pool);
-  assert.equal(await runnerClaimed(held), turn);
-  const again = await runner(partition, member, pool.pool);
-  const fenced = await attemptOf(held.assignment);
-  assert.deepEqual(
-    [fenced["state"], fenced["evidence"]],
-    ["Superseded", "Fenced"],
-  );
-  assert.deepEqual(await turnStanding(partition, session, turn), [
-    "Queued",
-    null,
-    "1",
-  ]);
-  assert.deepEqual((await polled(again, 0, [held.assignment])).stop, [
-    held.assignment,
-  ]);
-});
-
-test("a pool may pull the image of a session it holds and of none it does not", async () => {
-  const { partition, member, pool } = await routedProject("pool-images");
-  await waiting(partition, "images", "Lead", member);
-  const images = (of: DedicatedPoolIdentity) =>
-    workerPoolHeldImages(ports, of, settings);
-  assert.deepEqual(await images(pool), []);
-  const held = await claimedOne(pool);
-  assert.deepEqual(await images(pool), [launch.image]);
-  assert.deepEqual(await images(await runner(partition, member)), []);
-  assert.equal(
-    await workerPoolSettled(ports, pool, held.assignment, {
-      outcome: "Refused",
-      evidence: "no runtime",
-    }),
-    true,
-  );
-  assert.deepEqual(await images(pool), []);
 });
 
 test("only a poll that could take a session marks a runner live, and a member's own runner is their chat host alone, never their personal runner however live it is", async () => {
@@ -1214,8 +1047,8 @@ async function taskOf(
   return { status: answered.statusCode, body: answered.json() };
 }
 
-test("a settlement's kind is read, and a poll recorded, only for the registration the poll is made under", async () => {
-  const { partition, member, pool } = await routedProject("pool-scoped");
+test("a pool's poll is recorded only for the registration it is made under", async () => {
+  const { partition, pool } = await routedProject("pool-scoped");
   const stale = { ...pool, principal: principal("stale") };
   const polledAt = async (): Promise<unknown> =>
     (
@@ -1229,31 +1062,13 @@ test("a settlement's kind is read, and a poll recorded, only for the registratio
   assert.equal(await polledAt(), false);
   await store.polled(pool);
   assert.equal(await polledAt(), true);
-
-  await waiting(partition, "scoped", "Lead", member);
-  const held = await claimedOne(pool);
-  assert.deepEqual(
-    await store.among(pool, [held.assignment]),
-    new Set([held.assignment]),
-  );
-  await runner(partition, member, pool.pool);
-  const moved = await runner(
-    partition,
-    member,
-    `runner-${randomUUID()}`,
-    pool.principal,
-  );
-  for (const elsewhere of [stale, await runner(partition, member), moved])
-    assert.deepEqual(
-      await store.among(elsewhere, [held.assignment]),
-      new Set(),
-    );
 });
 
-test("a pool-held attempt's task names what it is launched with to a release whose runners launch sessions, and an in-cluster attempt's names nothing more", async () => {
-  const { partition, member, pool } = await routedProject("pool-task");
-  await waiting(partition, "task", "Lead", member);
-  const held = await claimedOne(pool);
+test("a chat host's attempt's task names what it is launched with to a release whose runners launch sessions, and an in-cluster attempt's names nothing more", async () => {
+  const { partition, member } = await routedProject("host-task");
+  await waiting(partition, "task", member);
+  const held = await claimedOne(await chatHost(partition, member));
+  const launched = documentOf((await attemptOf(held.assignment))["launch"]);
   const older = await taskOf(held.bearer, "1.2.0");
   assert.equal(older.status, 200);
   for (const launched of ["api", "bounds", "model"])
@@ -1264,7 +1079,7 @@ test("a pool-held attempt's task names what it is launched with to a release who
     body: {
       ...documentOf(older.body),
       api: { url: settings.sessionApiUrl },
-      bounds: launch.bounds,
+      bounds: launched["bounds"],
       model: launch.model,
     },
   });
@@ -1279,13 +1094,9 @@ test("a pool-held attempt's task names what it is launched with to a release who
 });
 
 test("a turn no attempt claims is withdrawn once its dwell has run, however many attempts opened and ended without claiming it", async () => {
-  const { partition, member, pool } = await routedProject("pool-unclaimed");
-  const { session, turn } = await waiting(
-    partition,
-    "unclaimed",
-    "Lead",
-    member,
-  );
+  const { partition, member } = await routedProject("host-unclaimed");
+  const host = await chatHost(partition, member);
+  const { session, turn } = await waiting(partition, "unclaimed", member);
   await sessionRigQueuedFor(rig, turn, 2 * sessionPoolTurnDwellSecs);
   let ended: string | undefined;
   for (const settlement of [
@@ -1296,9 +1107,9 @@ test("a turn no attempt claims is withdrawn once its dwell has run, however many
   ] as const) {
     if (ended !== undefined)
       await backdated(ended, "ended_at", launch.placementBackoffSecs + 1);
-    const held = await claimedOne(pool);
+    const held = await claimedOne(host);
     assert.equal(
-      await workerPoolSettled(ports, pool, held.assignment, settlement),
+      await workerPoolSettled(ports, host, held.assignment, settlement),
       true,
     );
     ended = held.assignment;
@@ -1312,14 +1123,15 @@ test("a turn no attempt claims is withdrawn once its dwell has run, however many
 });
 
 test("a turn left by a lost attempt waits its dwell from the loss, not from when it was sent", async () => {
-  const { partition, member, pool } = await routedProject("pool-dwell");
-  const { session, turn } = await waiting(partition, "dwell", "Lead", member);
+  const { partition, member } = await routedProject("host-dwell");
+  const host = await chatHost(partition, member);
+  const { session, turn } = await waiting(partition, "dwell", member);
   await sessionRigQueuedFor(rig, turn, 2 * sessionPoolTurnDwellSecs);
-  const held = await claimedOne(pool);
+  const held = await claimedOne(host);
   assert.equal(await runnerClaimed(held), turn);
   assert.equal(await withdrawn(), 0, "a turn was withdrawn under its attempt");
   assert.equal(
-    await workerPoolSettled(ports, pool, held.assignment, {
+    await workerPoolSettled(ports, host, held.assignment, {
       outcome: "Refused",
       evidence: "the container did not start",
     }),
@@ -1350,9 +1162,9 @@ test("a turn left by a lost attempt waits its dwell from the loss, not from when
  * it inserts into, which nothing else here writes.
  */
 test("a claim and the withdrawal of the turn it would serve exclude each other, whichever takes the session first", async () => {
-  const { partition, member, pool } = await routedProject("pool-exclusive");
+  const { partition, member } = await routedProject("host-exclusive");
   const host = await chatHost(partition, member);
-  const first = await waiting(partition, "exclusive-first", "Lead", member);
+  const first = await waiting(partition, "exclusive-first", member);
   await sessionRigQueuedFor(rig, first.turn, 2 * sessionPoolTurnDwellSecs);
   const withdrawing = await rig.harness.begin();
   await withdrawing.query(`SELECT withdraw_unserved_pool_turns($1,$2,$3)`, [
@@ -1360,7 +1172,7 @@ test("a claim and the withdrawal of the turn it would serve exclude each other, 
     sessionPoolTurnDwellSecs,
     sessionRigBoundless,
   ]);
-  const lateClaim = polled(pool);
+  const lateClaim = polled(host);
   await committedAfter(withdrawing, () =>
     postgresHarnessStalled(rig.harness.pool, 1),
   );
@@ -1371,13 +1183,7 @@ test("a claim and the withdrawal of the turn it would serve exclude each other, 
     "0",
   ]);
 
-  const second = await waiting(
-    partition,
-    "exclusive-second",
-    "Inquiry",
-    member,
-    first.session,
-  );
+  const second = await waiting(partition, "exclusive-second", member);
   await sessionRigQueuedFor(rig, second.turn, 2 * sessionPoolTurnDwellSecs);
   const inserting = await rig.harness.begin();
   await inserting.query(`LOCK TABLE session_attempt IN SHARE MODE`);
@@ -1471,12 +1277,7 @@ test("a runner polls, runs the session it is handed through its turn, reports it
   const { partition, member } = await routedProject("pool-runner");
   const runs = principal("runner");
   await chatHost(partition, member, runs);
-  const { session, turn } = await waiting(
-    partition,
-    "runner",
-    "Thread",
-    member,
-  );
+  const { session, turn } = await waiting(partition, "runner", member);
   const plane = await poolPlaneServing(runs);
   const runtime = sessionRuntime();
   const client: WorkerPoolClient = {
@@ -1540,7 +1341,7 @@ test("a runner polls, runs the session it is handed through its turn, reports it
 
 test("a personal runner's poll with room for a session asks the authority nothing of one and opens nothing for its owner's waiting thread", async () => {
   const { partition, member } = await routedProject("personal-read");
-  const thread = await waiting(partition, "personal-read", "Thread", member);
+  const thread = await waiting(partition, "personal-read", member);
   const runs = await personal(partition, member);
   const asked: string[] = [];
   const asking: WorkerPoolPorts = {
@@ -1567,15 +1368,15 @@ test("a personal runner's poll with room for a session asks the authority nothin
 test("a chat host's room spans every project of its tenant, and each session's credential is asked in that session's own project", async () => {
   const { partition, member } = await routedProject("host-room");
   const beside = await besideOf(partition, "host-room-beside");
-  const here = await waiting(partition, "host-here", "Thread", member);
-  const there = await waiting(beside, "host-there", "Thread", member);
+  const here = await waiting(partition, "host-here", member);
+  const there = await waiting(beside, "host-there", member);
   const host = await chatHost(partition, member);
   const one = { ...settings, sessionsHeldMax: 1 };
   const [first, ...more] = (await polled(host, 4, [], ports, one)).sessions;
   assert.ok(first !== undefined);
   assert.deepEqual(more, []);
   assert.deepEqual(
-    (await polled(host, 4, [], ports, one)).sessions,
+    (await polled(host, 4, [first.assignment], ports, one)).sessions,
     [],
     "a chat host was handed one past its bound in another project",
   );
@@ -1613,7 +1414,7 @@ test("a chat host's room spans every project of its tenant, and each session's c
 
 test("a personal runner holds no session: one it names is told to stop, settles nothing and pins no image, its poll is still recorded, and its owner's chat host holds it on", async () => {
   const { partition, member } = await routedProject("personal-holds-none");
-  await waiting(partition, "personal-holds-none", "Thread", member);
+  await waiting(partition, "personal-holds-none", member);
   const runs = await personal(partition, member);
   const held = await claimedOne(await chatHost(partition, member));
   const polledAt = async (): Promise<readonly unknown[]> =>
@@ -1653,14 +1454,12 @@ async function endingsOf(
   );
 }
 
-test("registering a member's chat host again ends what the replaced one held, and taking it off ends what it holds, while their pool's sessions run on and taking their personal runner off ends none of the host's", async () => {
-  const { partition, member, pool } = await routedProject("host-fence");
+test("registering a member's chat host again ends what the replaced one held, and taking it off ends what it holds, while taking their personal runner off ends none of the host's", async () => {
+  const { partition, member } = await routedProject("host-fence");
   const key = { tenant: partition.tenant, owner: member };
-  const lead = await waiting(partition, "host-fence-lead", "Lead", member);
-  await waiting(partition, "host-fence-thread", "Thread", member);
-  await waiting(partition, "host-fence-one", "Inquiry", member, lead.session);
+  await waiting(partition, "host-fence-thread", member);
+  await waiting(partition, "host-fence-one", member);
   const runs = await personal(partition, member);
-  const led = await claimedOne(pool);
   const one = { ...settings, sessionsHeldMax: 1 };
   const first = await chatHost(partition, member);
   const [replaced] = (await polled(first, 1, [], ports, one)).sessions;
@@ -1669,10 +1468,7 @@ test("registering a member's chat host again ends what the replaced one held, an
   const fenced = ["Superseded", "Fenced"];
 
   const second = await chatHost(partition, member);
-  assert.deepEqual(await endingsOf([replaced.assignment, led.assignment]), [
-    fenced,
-    running,
-  ]);
+  assert.deepEqual(await endingsOf([replaced.assignment]), [fenced]);
   assert.deepEqual((await polled(second, 0, [replaced.assignment])).stop, [
     replaced.assignment,
   ]);
@@ -1686,37 +1482,18 @@ test("registering a member's chat host again ends what the replaced one held, an
 
   assert.equal(await personalRegistry.deregister(key, runs.clientId), true);
   assert.deepEqual(await endingsOf([hosted.assignment]), [running]);
-  await runner(partition, member, pool.pool);
-  assert.deepEqual(await endingsOf([led.assignment, hosted.assignment]), [
-    fenced,
-    running,
-  ]);
-  await backdated(led.assignment, "ended_at", launch.placementBackoffSecs + 1);
-  const another = await runner(partition, member);
-  const [reled] = (await polled(another, 1)).sessions;
-  assert.ok(reled !== undefined);
 
   assert.equal(await chatHostRegistry.deregister(key, second.clientId), true);
-  assert.deepEqual(await endingsOf([hosted.assignment, reled.assignment]), [
-    fenced,
-    running,
-  ]);
+  assert.deepEqual(await endingsOf([hosted.assignment]), [fenced]);
 });
 
 test("a chat host is handed its member's sessions in every project of the tenant they may read, with no project named to it", async () => {
   const { partition, member } = await routedProject("host-projects");
   const beside = await besideOf(partition, "host-projects-beside");
   const unread = await besideOf(partition, "host-projects-unread");
-  const here = await waiting(partition, "host-projects-here", "Thread", member);
-  const there = await waiting(beside, "host-projects-there", "Thread", member);
-  const lead = await waiting(unread, "host-projects-lead", "Lead", member);
-  const kept = await waiting(
-    unread,
-    "host-projects-kept",
-    "Inquiry",
-    member,
-    lead.session,
-  );
+  const here = await waiting(partition, "host-projects-here", member);
+  const there = await waiting(beside, "host-projects-there", member);
+  const kept = await waiting(unread, "host-projects-kept", member);
   const host = await chatHost(partition, member);
   const asked: string[] = [];
   const reading: WorkerPoolPorts = {
@@ -1755,13 +1532,14 @@ test("a chat host is handed its member's sessions in every project of the tenant
 /** The one session `host` is claimed by a poll declaring `idleSecs`, or declaring none. */
 async function hostClaimedDeclaring(
   host: PoolPlaneIdentity,
+  held: readonly string[],
   idleSecs?: number,
 ): Promise<string> {
   const answered = await workerPoolPoll(
     ports,
     host,
     {
-      held: [],
+      held,
       wanted: 0,
       wantedSessions: 1,
       ...(idleSecs === undefined ? {} : { idleSecs }),
@@ -1788,24 +1566,16 @@ async function idleBoundOf(assignment: string): Promise<readonly unknown[]> {
   ];
 }
 
-test("a chat host's declared idle bound is recorded on its claim as named, above the scheduler's window too, and launched as its idle limit, one naming none is launched with none and never idle-reaped, and a pool's attempt is reaped at the scheduler's window", async () => {
-  const { partition, member, pool } = await routedProject("host-idle");
-  const lead = await waiting(partition, "host-idle-lead", "Lead", member);
-  await waiting(partition, "host-idle-thread", "Thread", member);
-  await waiting(partition, "host-idle-unbounded", "Thread", member);
-  await waiting(
-    partition,
-    "host-idle-inquiry",
-    "Inquiry",
-    member,
-    lead.session,
-  );
+test("a chat host's declared idle bound is recorded on its claim as named, above the scheduler's window too, and launched as its idle limit, one naming none is launched with none and never idle-reaped", async () => {
+  const { partition, member } = await routedProject("host-idle");
+  await waiting(partition, "host-idle-short", member);
+  await waiting(partition, "host-idle-long", member);
+  await waiting(partition, "host-idle-unbounded", member);
   const host = await chatHost(partition, member);
   const windowSecs = 300;
-  const short = await hostClaimedDeclaring(host, 600);
-  const long = await hostClaimedDeclaring(host, 7200);
-  const unbounded = await hostClaimedDeclaring(host);
-  const pooled = (await claimedOne(pool)).assignment;
+  const short = await hostClaimedDeclaring(host, [], 600);
+  const long = await hostClaimedDeclaring(host, [short], 7200);
+  const unbounded = await hostClaimedDeclaring(host, [short, long]);
   assert.deepEqual(await idleBoundOf(short), ["600", false, true, 600_000]);
   assert.deepEqual(await idleBoundOf(long), ["7200", false, true, 7_200_000]);
   assert.deepEqual(await idleBoundOf(unbounded), [
@@ -1814,26 +1584,19 @@ test("a chat host's declared idle bound is recorded on its claim as named, above
     false,
     undefined,
   ]);
-  assert.deepEqual(await idleBoundOf(pooled), [
-    null,
-    false,
-    true,
-    launch.bounds.idleMs,
-  ]);
 
   const reaped = (): Promise<number> =>
     rig.scheduler.reapIdleAttempts(rig.epoch, windowSecs, sessionRigBoundless);
-  for (const assignment of [short, long, unbounded, pooled])
+  for (const assignment of [short, long, unbounded])
     await backdated(assignment, "idle_since", windowSecs - 60);
   assert.equal(await reaped(), 0);
-  for (const assignment of [short, long, unbounded, pooled])
+  for (const assignment of [short, long, unbounded])
     await backdated(assignment, "idle_since", 700);
-  assert.equal(await reaped(), 2);
-  assert.deepEqual(await endingsOf([short, long, unbounded, pooled]), [
+  assert.equal(await reaped(), 1);
+  assert.deepEqual(await endingsOf([short, long, unbounded]), [
     ["Lost", "SessionIdle"],
     ["Running", null],
     ["Running", null],
-    ["Lost", "SessionIdle"],
   ]);
   const yearSecs = 365 * 24 * 3600;
   for (const assignment of [long, unbounded])
@@ -1846,19 +1609,34 @@ test("a chat host's declared idle bound is recorded on its claim as named, above
 });
 
 test("an attempt recorded with the longest idle bound a poll admits does not stop the reaper ending another past the scheduler's window, and an attempt cannot record a longer one", async () => {
-  const { partition, member, pool } = await routedProject("host-idle-max");
-  await waiting(partition, "host-idle-max-lead", "Lead", member);
-  await waiting(partition, "host-idle-max-thread", "Thread", member);
+  const { partition, member } = await routedProject("host-idle-max");
+  await waiting(partition, "host-idle-max-thread", member);
   const host = await chatHost(partition, member);
-  const longest = await hostClaimedDeclaring(host, workerPoolPollIdleSecsMax);
-  const pooled = (await claimedOne(pool)).assignment;
+  const longest = await hostClaimedDeclaring(
+    host,
+    [],
+    workerPoolPollIdleSecsMax,
+  );
   assert.equal(
     (await attemptOf(longest))["idle_secs"],
     String(workerPoolPollIdleSecsMax),
   );
+  const elsewhere = await sessionRigProject(rig, "host-idle-max-cluster");
+  const session = await sessionRigSession(rig, elsewhere, "idle-max-cluster");
+  await sessionRigTurn(rig, elsewhere, session, "idle-max-cluster");
+  const pod = await sessionRigAttempt(rig, elsewhere, session, "idle-max");
+  await rig.scheduler.attemptPlaced(
+    pod.attempt,
+    asPlacementId("placement-idle-max"),
+  );
   const windowSecs = 300;
-  for (const assignment of [longest, pooled])
-    await backdated(assignment, "idle_since", windowSecs + 60);
+  await backdated(longest, "idle_since", windowSecs + 60);
+  await backdated(
+    pod.attempt.attempt,
+    "idle_since",
+    windowSecs + 60,
+    "attempt",
+  );
   assert.equal(
     await rig.scheduler.reapIdleAttempts(
       rig.epoch,
@@ -1867,10 +1645,12 @@ test("an attempt recorded with the longest idle bound a poll admits does not sto
     ),
     1,
   );
-  assert.deepEqual(await endingsOf([longest, pooled]), [
-    ["Running", null],
+  assert.deepEqual(await endingsOf([longest]), [["Running", null]]);
+  const reaped = await sessionRigAttemptState(rig, pod.attempt);
+  assert.deepEqual(
+    [reaped["state"], reaped["evidence"]],
     ["Lost", "SessionIdle"],
-  ]);
+  );
 
   const lengthening = await rig.harness.begin();
   await assert.rejects(
@@ -1898,73 +1678,22 @@ function claudePaused(
   });
 }
 
-test("a pool claims no lead turn while its registrant's Claude is paused, whatever the threads option, and withdraws it once its dwell runs", async () => {
-  const { partition, member, pool } = await routedProject("pool-paused-lead");
-  const { session, turn } = await waiting(
-    partition,
-    "paused-lead",
-    "Lead",
-    member,
-  );
-  const candidate = (await candidatesRead([pool]))(session);
-  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
-    limit: { observedSecs: -60, resetsSecs: 3600 },
-  });
-  assert.deepEqual(
-    await awaitingOf(pool),
-    new Set(),
-    "the lead pauses by default",
-  );
-  assert.equal(
-    await openedFor(pool, candidate),
-    "NotClaimable",
-    "the lock that opens it reads the pause again",
-  );
-  assert.deepEqual(
-    await awaitingOf(await runner(partition, undefined)),
-    new Set([session]),
-    "a pool no member registered spends no account",
-  );
-  await claudePaused(member, { pausesThreads: true });
-  assert.deepEqual(
-    await awaitingOf(pool),
-    new Set(),
-    "the lead pauses whatever the threads option says",
-  );
-  await sessionRigQueuedFor(rig, turn, 2 * sessionPoolTurnDwellSecs);
-  await withdrawn();
-  assert.deepEqual(await turnStanding(partition, session, turn), [
-    "Abandoned",
-    "TurnWithdrawn",
-    "0",
-  ]);
-});
-
-test("a chat host claims its owner's threads and inquiries while their Claude is paused, and none once threads pause", async () => {
+test("a chat host claims its owner's thread while their Claude is paused, and none once threads pause", async () => {
   const partition = await sessionRigProject(rig, "host-paused");
-  await sessionRigRouted(rig, partition, "Pool", "Pool");
+  await sessionRigRouted(rig, partition, "Pool");
   const member = principal("member-host-paused");
   const host = await chatHost(partition, member);
-  const thread = await waiting(partition, "paused-thread", "Thread", member);
-  const lead = await waiting(partition, "paused-host-lead", "Lead", member);
-  const inquiry = await waiting(
-    partition,
-    "paused-inquiry",
-    "Inquiry",
-    member,
-    lead.session,
-  );
+  const thread = await waiting(partition, "paused-thread", member);
   const read = await candidatesRead([host]);
   await claudePaused(member, { pausesThreads: false });
   assert.deepEqual(
     await awaitingOf(host),
-    new Set([thread.session, inquiry.session]),
+    new Set([thread.session]),
     "threads do not pause by default",
   );
   await claudePaused(member, { pausesThreads: true });
   assert.deepEqual(await awaitingOf(host), new Set());
-  for (const session of [thread.session, inquiry.session])
-    assert.equal(await openedFor(host, read(session)), "NotClaimable");
+  assert.equal(await openedFor(host, read(thread.session)), "NotClaimable");
   await agentAccountHarnessCommitted(rig.harness, member, "Codex", {
     limit: { observedSecs: -60, resetsSecs: 3600 },
   });
@@ -1977,7 +1706,7 @@ test("a chat host claims its owner's threads and inquiries while their Claude is
   });
   assert.deepEqual(
     await awaitingOf(host),
-    new Set([thread.session, inquiry.session]),
+    new Set([thread.session]),
     "a session spends Claude, so Codex paused holds none back",
   );
 });
@@ -1992,26 +1721,22 @@ type SessionNamedCase = readonly [
 ];
 
 /**
- * Whether a session of `kind`, its claimant's member's own, is taken once its
- * claimant has named `named` of Claude, `paused` of that member's Claude
- * credentials are each over a threshold and `off` are turned off: both the
- * waiting read and the opening one are asked, and refused where they disagree.
+ * Whether a thread, its chat host's member's own, is taken once the host has
+ * named `named` of Claude, `paused` of that member's Claude credentials are
+ * each over a threshold and `off` are turned off: both the waiting read and
+ * the opening one are asked, and refused where they disagree.
  */
 async function sessionNamedTaken(
-  kind: "Lead" | "Thread",
   [why, named, paused, pausesThreads]: SessionNamedCase,
   off: readonly string[] = [],
 ): Promise<boolean> {
-  const label = `named-${kind}-${randomUUID()}`;
+  const label = `named-thread-${randomUUID()}`;
   const partition = await sessionRigProject(rig, label);
-  await sessionRigRouted(rig, partition, "Pool", "Pool");
+  await sessionRigRouted(rig, partition, "Pool");
   const member = principal(`member-${label}`);
-  const claimant =
-    kind === "Lead"
-      ? await runner(partition, member)
-      : await chatHost(partition, member);
-  if (claimant.kind === "ChatHost") await hostPolled(claimant);
-  const { session } = await waiting(partition, label, kind, member);
+  const claimant = await chatHost(partition, member);
+  await hostPolled(claimant);
+  const { session } = await waiting(partition, label, member);
   const candidate = (await candidatesRead([claimant]))(session);
   await ports.runners.named(
     claimant,
@@ -2037,22 +1762,6 @@ async function sessionNamedTaken(
   return read;
 }
 
-test("a pool takes its lead while any Claude credential it named is free, and none while every one is, or while any is where it named none", async () => {
-  for (const named of [
-    ["one of two named paused", ["work", "home"], ["work"], false, true],
-    [
-      "one of two named paused beside one not named",
-      ["work", "home"],
-      ["work", "spare"],
-      false,
-      true,
-    ],
-    ["both named paused", ["work", "home"], ["work", "home"], false, false],
-    ["none named and one paused", undefined, ["work"], false, false],
-  ] as const satisfies readonly SessionNamedCase[])
-    assert.equal(await sessionNamedTaken("Lead", named), named[4], named[0]);
-});
-
 test("a chat host takes its owner's thread while any Claude credential it named is free where threads pause, and always where they do not", async () => {
   for (const named of [
     ["one of two named paused", ["work", "home"], ["work"], true, true],
@@ -2073,7 +1782,7 @@ test("a chat host takes its owner's thread while any Claude credential it named 
       true,
     ],
   ] as const satisfies readonly SessionNamedCase[])
-    assert.equal(await sessionNamedTaken("Thread", named), named[4], named[0]);
+    assert.equal(await sessionNamedTaken(named), named[4], named[0]);
 });
 
 test("a chat host takes no thread of its owner while every Claude credential it named is off, whatever their setting, and takes it once one is on", async () => {
@@ -2085,11 +1794,7 @@ test("a chat host takes no thread of its owner while every Claude credential it 
       pausesThreads,
       false,
     ] as const satisfies SessionNamedCase;
-    assert.equal(
-      await sessionNamedTaken("Thread", all, ["work", "home"]),
-      false,
-      all[0],
-    );
+    assert.equal(await sessionNamedTaken(all, ["work", "home"]), false, all[0]);
     const one = [
       `one named off, threads pausing ${String(pausesThreads)}`,
       ["work", "home"],
@@ -2097,29 +1802,8 @@ test("a chat host takes no thread of its owner while every Claude credential it 
       pausesThreads,
       true,
     ] as const satisfies SessionNamedCase;
-    assert.equal(
-      await sessionNamedTaken("Thread", one, ["work"]),
-      true,
-      one[0],
-    );
+    assert.equal(await sessionNamedTaken(one, ["work"]), true, one[0]);
   }
-});
-
-test("an attempt a pool claimed under an epoch since restored away is no longer held, renewed or pulled for", async () => {
-  const { partition, member, pool } = await routedProject("pool-epoch");
-  await waiting(partition, "epoch", "Lead", member);
-  const held = await claimedOne(pool);
-  await rig.harness.store.establishRecoveryEpoch(postgresHarnessNewEpoch());
-  assert.deepEqual((await polled(pool, 0, [held.assignment])).stop, [
-    held.assignment,
-  ]);
-  assert.equal(
-    await workerPoolSettled(ports, pool, held.assignment, {
-      outcome: "Accepted",
-    }),
-    false,
-  );
-  assert.deepEqual(await workerPoolHeldImages(ports, pool, settings), []);
 });
 
 const memberThreads = postgresThreads(apiPool, { streamsMax: 4 });
@@ -2280,28 +1964,21 @@ async function hostClaimedNaming(
   return claimed;
 }
 
-test("a chat host naming its threads' capabilities records them, opens its thread under its roster less what it left out, and tells its pod and confines its bearer to the same, and that its shell is handed its credential, while its inquiry keeps its roster and is told nothing of its shell", async () => {
+test("a chat host naming its threads' capabilities records them, opens its thread under its roster less what it left out, and tells its pod and confines its bearer to the same, and that its shell is handed its credential, while a thread it claims naming none keeps its roster and is told nothing of its shell", async () => {
   const { partition, member } = await routedProject("host-capabilities");
   const roster = ["RepositoryRead", "RunCommands", "ProjectRead"] as const;
-  const lead = await sessionRigSession(
-    rig,
-    partition,
-    "host-capabilities-lead",
-  );
-  const opened = async (label: string, kind: SessionKind) => {
+  const opened = async (label: string) => {
     const session = await sessionRigSession(rig, partition, label, {
-      kind,
       principal: member,
       capabilities: [...roster],
-      ...(kind === "Inquiry" ? { parent: lead } : {}),
     });
     await sessionRigTurn(rig, partition, session, label);
     return session;
   };
   const owner = { tenant: partition.tenant, owner: member };
-  const thread = await opened("host-capabilities-thread", "Thread");
+  const thread = await opened("host-capabilities-thread");
   const host = await chatHost(partition, member);
-  const named = ["ProjectRead", "RepositoryRead", "LeadDecision"] as const;
+  const named = ["ProjectRead", "RepositoryRead", "MemberRead"] as const;
   const held = ["RepositoryRead", "ProjectRead"];
   assert.equal(await threadHostCapabilitiesOf(partition, thread), null);
   const claimed = await hostClaimedNaming(host, named);
@@ -2334,10 +2011,10 @@ test("a chat host naming its threads' capabilities records them, opens its threa
     named,
   );
 
-  const inquiry = await opened("host-capabilities-inquiry", "Inquiry");
+  const unnamed = await opened("host-capabilities-unnamed");
   const [asked] = await polledOffering(host, workerContractRelease);
   assert.ok(asked !== undefined);
-  assert.equal(await sessionOf(asked), inquiry);
+  assert.equal(await sessionOf(asked), unnamed);
   assert.deepEqual(await attemptCapabilitiesOf(asked.assignment), [
     null,
     roster,
@@ -2435,12 +2112,7 @@ test("a chat host is handed no member's own thread once its owner may no longer 
 test("a chat host's awaiting read naming no scope, as an earlier pool plane makes it, is answered its member's project sessions and none of their own", async () => {
   const { partition, member } = await routedProject("host-unnamed");
   const host = await chatHost(partition, member);
-  const thread = await waiting(
-    partition,
-    "host-unnamed-thread",
-    "Thread",
-    member,
-  );
+  const thread = await waiting(partition, "host-unnamed-thread", member);
   const own = await ownWaiting(partition, member, "host-unnamed");
   const read = async (scoped: readonly boolean[]) =>
     new Set(

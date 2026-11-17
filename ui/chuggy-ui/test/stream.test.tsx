@@ -42,7 +42,7 @@ import type {
   ProjectList,
   ProjectQueryKey,
 } from "../app/core/projectQueryKeys.ts";
-import { creationContextList } from "../app/core/ticketCreationRun.ts";
+import { creationContextList } from "../app/core/configurationQueries.ts";
 import {
   ticketFilterList,
   ticketListAskDefault,

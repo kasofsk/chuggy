@@ -19,10 +19,10 @@ import type { ChuggyTool } from "./sessionTools.ts";
 /**
  * The standing rules a thread is bound by where its project has set none:
  * which channel its commands go through, and what a wake is. A project tool is
- * a command its owner already has; the lead's decisions are the lead's.
+ * a command its owner already has.
  */
-export const threadStandingRulesDefault = `- You act through the same commands your owner has in the console, recorded as their act; the lead's decisions are the lead's, and you neither make nor amend one, but a dispatch on your owner's word is theirs and not the lead's.
-- A wake is a notice: say what happened, and act on it only as far as an instruction your owner already gave reaches, as when it reports a completion that leaves the next ticket of work they asked you to carry through ready to dispatch. A ticket the lead refused is reported, never dispatched because of a wake. Otherwise originate, revise, release, dispatch or run nothing because of it.`;
+export const threadStandingRulesDefault = `- You act through the same commands your owner has in the console, recorded as their act.
+- A wake is a notice: say what happened, and act on it only as far as an instruction your owner already gave reaches, as when it reports a completion that leaves the next ticket of work they asked you to carry through ready to dispatch. Otherwise originate, revise, release, dispatch or run nothing because of it.`;
 
 /**
  * The standing rules one project's threads run under: its own where it set
@@ -73,7 +73,6 @@ function threadPageFields(
   switch (page.page) {
     case "Tickets":
     case "Inbox":
-    case "Lead":
     case "Catalog":
     case "Repositories":
     case "Runners":
@@ -213,11 +212,14 @@ export function threadStandingSection(standing: string): string {
 }
 
 /**
- * Every heading a turn's input can open with: the seeding block's own four, on
- * a thread's first turn, and `threadPageHeading` and `threadImagesHeading`, on
- * a later turn that names a page or an image. A reader checks the whole list
- * rather than the seeding block's own, which is what lets it split a later
- * turn's sections off correctly without being told the turn carries one.
+ * Every heading a turn's input can open with: the seeding block's own North
+ * Star, drafts and standing headings, on a thread's first turn, and
+ * `threadPageHeading` and `threadImagesHeading`, on a later turn that names a
+ * page or an image, with `threadRefusalsHeading`, no longer written, kept so a
+ * reader still splits turns stored while the seeding carried it. A reader
+ * checks the whole list rather than the seeding block's own, which is what lets
+ * it split a later turn's sections off correctly without being told the turn
+ * carries one.
  */
 export const threadSeedingHeadings = [
   threadNorthStarHeading,

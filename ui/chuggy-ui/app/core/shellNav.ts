@@ -39,7 +39,6 @@ export type NavRoute = (typeof navRoutes)[keyof typeof navRoutes];
 /** Each address a page left for a settings section, and the section's: the
  * old address redirects to the new, with whatever it carried. */
 export const navMoved = {
-  "/$tenant/$project/lead": settingsRoutes.project.leadSession,
   "/$tenant/$project/catalog": settingsRoutes.project.catalog,
   "/$tenant/$project/repositories": settingsRoutes.project.repositories,
   "/$tenant/$project/repositories/$repository":

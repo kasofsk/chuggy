@@ -6,7 +6,7 @@
  * a check, a trigger and a filter are each a claim about what the server
  * refuses, and the only way to hold one is to attempt the thing it refuses as
  * the identity that would attempt it. So the six thread doors are driven
- * through the API's role, the three wake doors through the selector's, the
+ * through the API's role, the three wake doors through the scheduler's, the
  * roster door through the identity that owns the boundary, and every other role
  * is asked for each and refused.
  *
@@ -47,6 +47,10 @@ import {
   threadWakeFunction,
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
+import {
+  postgresSessionStoreRows,
+  sessionStoreStreamRows,
+} from "../../src/adapters/postgres/sessionStoreReads.ts";
 import { sessionChangeResourceSchema } from "../../src/contract/events.ts";
 import {
   threadNorthStarHeading,
@@ -101,8 +105,7 @@ import {
   postgresHarnessConfiguration,
   postgresHarnessDenial,
 } from "./harness.ts";
-import { leadRigDecision } from "./leadHarness.ts";
-import { sessionRigProvision, sessionRigSession } from "./sessionHarness.ts";
+import { sessionRigProvision } from "./sessionHarness.ts";
 import {
   threadRigKey,
   threadRigLimit,
@@ -435,20 +438,8 @@ test("a thread closes through the API's door, its waiting turns abandoned, and s
   assert.notEqual(next.session, thread.session, "a close is not a reopen");
 });
 
-/**
- * The door admits `kind='Thread'` alone, and that is what keeps the API's grant
- * on it from being a grant on `close_agent_session`: a lead named through it is
- * no thread, and so is a session nobody opened.
- */
-test("the close door closes a thread and nothing else the project holds", async () => {
+test("the close door answers a session nobody opened as no thread", async () => {
   const partition = await project("close-kind");
-  const lead = await sessionRigSession(rig.sessions, partition, "close-kind", {
-    kind: "Lead",
-  });
-
-  assert.deepEqual(await rig.threads.close({ partition, session: lead }), {
-    closed: "NoThread",
-  });
   assert.deepEqual(
     await rig.threads.close({
       partition,
@@ -456,49 +447,6 @@ test("the close door closes a thread and nothing else the project holds", async 
     }),
     { closed: "NoThread" },
   );
-  const held = await rig.sessions.harness.query(
-    `SELECT state FROM agent_session WHERE tenant=$1 AND project=$2 AND session=$3`,
-    [partition.tenant, partition.project, lead],
-  );
-  assert.equal(
-    held[0]?.["state"],
-    "Open",
-    "the lead was closed through a thread door",
-  );
-});
-
-/**
- * The door decides the row is a thread in the predicate its lock is taken
- * under, so a close aimed at the lead's session contends with nothing the
- * scheduler or the worker plane holds on the lead's row. The lead's row is held
- * locked by another transaction for the whole of the call, and the door must
- * answer inside a lock timeout rather than wait on it.
- */
-test("the close door waits on no row that is not a thread's", async () => {
-  const partition = await project("close-lock");
-  const lead = await sessionRigSession(rig.sessions, partition, "close-lock", {
-    kind: "Lead",
-  });
-  const held = await rig.sessions.harness.begin();
-  const api = await rig.apiPool.connect();
-  try {
-    await held.query(
-      `SELECT 1 FROM agent_session WHERE tenant=$1 AND project=$2 AND session=$3
-         FOR UPDATE`,
-      [partition.tenant, partition.project, lead],
-    );
-    await api.query("BEGIN");
-    await api.query("SET LOCAL lock_timeout='500ms'");
-    const answered = await api.query<{ closed: string }>(
-      `SELECT close_member_thread($1,$2,$3)::text AS closed`,
-      [partition.tenant, partition.project, lead],
-    );
-    assert.equal(answered.rows[0]?.closed, "NoThread");
-  } finally {
-    await api.query("ROLLBACK").catch(() => undefined);
-    api.release();
-    await held.rollback().catch(() => undefined);
-  }
 });
 
 /**
@@ -766,27 +714,16 @@ test("hiding a thread toggles and is idempotent on the side it is asked for", as
   assert.equal(shown.hidden === "Shown" ? shown.thread.hidden : true, false);
 });
 
-/** Neither door reaches a lead, and neither reaches a session nobody opened. */
-test("neither view door admits a session that is not this project's thread", async () => {
+test("neither view door admits a session nobody opened", async () => {
   const partition = await project("view-no-thread");
-  const lead = await sessionRigSession(rig.sessions, partition, "view", {
-    kind: "Lead",
-  });
+  const nobody = asSessionId("session-nobody-opened");
 
   assert.deepEqual(
-    await rig.threads.rename({ partition, session: lead, title: "x" }),
+    await rig.threads.rename({ partition, session: nobody, title: "x" }),
     { renamed: "NoThread" },
   );
   assert.deepEqual(
-    await rig.threads.hide({ partition, session: lead, hidden: true }),
-    { hidden: "NoThread" },
-  );
-  assert.deepEqual(
-    await rig.threads.hide({
-      partition,
-      session: asSessionId("session-nobody-opened"),
-      hidden: true,
-    }),
+    await rig.threads.hide({ partition, session: nobody, hidden: true }),
     { hidden: "NoThread" },
   );
 });
@@ -991,7 +928,7 @@ test("the two view doors are the API's alone", async () => {
 /**
  * The thread's close door is held beside the door it PERFORMs: a grant on the
  * narrow door that had widened into one on `close_agent_session` would let the
- * API end the project's lead, which is the thing the narrowing is for.
+ * API end a session that is no thread, which is the thing the narrowing is for.
  */
 test("the close door is the API's, and the door it performs is no runtime role's", async () => {
   const partition = await project("close-grants");
@@ -1708,7 +1645,6 @@ test("both reads answer the first member message, seeding shed and bounded", asy
       northStar: "Ship the console.",
       standingRules: "- You draft, and nothing else.",
       drafts: [],
-      refusals: [],
     }),
     route: "InCluster",
   });
@@ -1772,24 +1708,12 @@ test("a first message is found after the older marker and after none", async () 
   assert.equal(named(bareThread.session), said);
 });
 
-test("the standing read admits a thread and refuses every other session", async () => {
+test("the standing read admits this project's thread and no other project's", async () => {
   const partition = await project("kindfilter");
   const member = threadRigMember(rig, partition, "kindfilter");
   const thread = await threadRigThread(rig, partition, member);
-  const lead = await sessionRigSession(rig.sessions, partition, "kindfilter", {
-    kind: "Lead",
-  });
   const elsewhere = await project("kindfilter-other");
 
-  assert.equal(
-    await rig.threads.standing({
-      partition,
-      session: lead,
-      query: { limit: threadTurnsAnsweredMax },
-    }),
-    undefined,
-    "a lead's mailbox is not readable through a thread route",
-  );
   assert.equal(
     await rig.threads.standing({
       partition: elsewhere,
@@ -1813,12 +1737,14 @@ test("the store reads answer the session they were asked about and no sibling", 
   const partition = await project("store");
   const member = threadRigMember(rig, partition, "store");
   const thread = await threadRigThread(rig, partition, member);
-  const lead = await sessionRigSession(rig.sessions, partition, "store", {
-    kind: "Lead",
-  });
+  const sibling = await threadRigThread(
+    rig,
+    partition,
+    threadRigMember(rig, partition, "store-sibling"),
+  );
   for (const [session, stream] of [
     [thread.session, "thread-stream"],
-    [lead, "lead-stream"],
+    [sibling.session, "sibling-stream"],
   ] as const)
     await rig.sessions.harness.query(
       `INSERT INTO session_store_batch
@@ -1828,7 +1754,8 @@ test("the store reads answer the session they were asked about and no sibling", 
     );
 
   assert.deepEqual(
-    await rig.apiLead.streams(
+    await sessionStoreStreamRows(
+      rig.apiPool,
       partition,
       thread.session,
       sessionStoreStreamsAnswered,
@@ -1836,7 +1763,7 @@ test("the store reads answer the session they were asked about and no sibling", 
     [{ stream: "thread-stream", batches: 1 }],
   );
   assert.deepEqual(
-    await rig.apiLead.batches({
+    await postgresSessionStoreRows(rig.apiPool).batches({
       partition,
       session: thread.session,
       stream: asSessionStoreStream("thread-stream"),
@@ -1846,10 +1773,10 @@ test("the store reads answer the session they were asked about and no sibling", 
     [{ batch: 1, digest: "c".repeat(64), bytes: 12 }],
   );
   assert.deepEqual(
-    await rig.apiLead.batches({
+    await postgresSessionStoreRows(rig.apiPool).batches({
       partition,
       session: thread.session,
-      stream: asSessionStoreStream("lead-stream"),
+      stream: asSessionStoreStream("sibling-stream"),
       after: 0,
       limit: sessionStorePageBatchesMax,
     }),
@@ -1869,32 +1796,6 @@ async function changeLogHead(): Promise<number> {
   return Number(rows[0]?.["head"]);
 }
 
-/** One refusal against two tickets, then a lift of one, which is two of the reasons. */
-async function wakeRefusals(
-  partition: Partition,
-  label: string,
-  refused: TicketId,
-  lifted: TicketId,
-): Promise<void> {
-  const decision = await leadRigDecision(rig, partition, `${label}-refused`);
-  await rig.writes.record({
-    partition,
-    decision,
-    refusals: [
-      { ticket: refused, ticketVersion: 1, reason: "not yet" },
-      { ticket: lifted, ticketVersion: 1, reason: "not yet either" },
-    ],
-    lifts: [],
-  });
-  const lifting = await leadRigDecision(rig, partition, `${label}-lifted`);
-  await rig.writes.record({
-    partition,
-    decision: lifting,
-    refusals: [],
-    lifts: [{ ticket: lifted }],
-  });
-}
-
 /** One ticket standing in one phase, with the change that says so. */
 function wakeTicketPhase(
   partition: Partition,
@@ -1904,7 +1805,7 @@ function wakeTicketPhase(
   return threadRigTicketPhase(rig, partition, ticket, phase);
 }
 
-/** One project, one member and a change for every reason the roster names. */
+/** One project, one member and a change for every reason a change still carries. */
 async function wakeFixture(label: string): Promise<{
   readonly partition: Partition;
   readonly member: ThreadRigMember;
@@ -1917,21 +1818,14 @@ async function wakeFixture(label: string): Promise<{
   const after = await changeLogHead();
   const member = threadRigMember(rig, partition, label);
   const thread = await threadRigThread(rig, partition, member);
-  await sessionRigSession(rig.sessions, partition, `wake-${label}`, {
-    kind: "Lead",
-    principal: member.principal,
-  });
   const revision = await threadConfiguration(partition);
 
   const filed = () => threadDraft(partition, revision, member, thread.session);
-  const refused = await filed();
-  const lifted = await filed();
   const deleted = await filed();
   const escalated = await filed();
   const done = await filed();
   const revoked = await filed();
 
-  await wakeRefusals(partition, label, refused, lifted);
   const gone = await rig.sessions.harness.authoring.deleteDraft({
     partition,
     authority: member.authority,
@@ -1953,8 +1847,6 @@ async function wakeFixture(label: string): Promise<{
     thread: thread.session,
     after,
     reasons: [
-      ["TicketRefused", refused],
-      ["RefusalLifted", lifted],
       ["DraftDeleted", deleted],
       ["TicketEscalated", escalated],
       ["TicketCompleted", done],
@@ -1963,7 +1855,13 @@ async function wakeFixture(label: string): Promise<{
   };
 }
 
-test("every reason the roster names is a reason the join derives", async () => {
+/** The reasons a refusal of the lead's carried, which a stored wake turn may still name and no change carries. */
+const wakeReasonsRetired: readonly ThreadWakeReason[] = [
+  "TicketRefused",
+  "RefusalLifted",
+];
+
+test("every reason a change still carries is a reason the join derives", async () => {
   const fixture = await wakeFixture("reasons");
   const candidates = await rig.wakes.candidates(
     fixture.after,
@@ -1975,12 +1873,13 @@ test("every reason the roster names is a reason the join derives", async () => {
 
   assert.deepEqual(
     [...new Set(mine.map((candidate) => candidate.reason))].sort(),
-    [...allThreadTicketWakeReasons].sort(),
+    allThreadTicketWakeReasons
+      .filter((reason) => !wakeReasonsRetired.includes(reason))
+      .sort(),
   );
   assert.deepEqual(
     [...new Set(mine.map((candidate) => candidate.session))],
     [fixture.thread],
-    "a lead in the same project under the same principal is not a thread to wake",
   );
   for (const [reason, ticket] of fixture.reasons)
     assert.ok(
@@ -2053,37 +1952,6 @@ test("a deleted draft's earlier changes are not deletions", async () => {
     mine.map((candidate) => candidate.reason),
     ["DraftDeleted"],
     "the changes that authored the draft read as its deletion",
-  );
-});
-
-test("a lift does not turn the refusal before it into a second lift", async () => {
-  const partition = await project("refusalreasons");
-  const after = await changeLogHead();
-  const member = threadRigMember(rig, partition, "refusalreasons");
-  const thread = await threadRigThread(rig, partition, member);
-  const revision = await threadConfiguration(partition);
-  const ticket = await threadDraft(partition, revision, member, thread.session);
-
-  await rig.writes.record({
-    partition,
-    decision: await leadRigDecision(rig, partition, "refusalreasons-refused"),
-    refusals: [{ ticket, ticketVersion: 1, reason: "not yet" }],
-    lifts: [],
-  });
-  await rig.writes.record({
-    partition,
-    decision: await leadRigDecision(rig, partition, "refusalreasons-lifted"),
-    refusals: [],
-    lifts: [{ ticket }],
-  });
-
-  const mine = (
-    await rig.wakes.candidates(after, threadWakesPerPassMax)
-  ).filter((candidate) => candidate.partition.project === partition.project);
-  assert.deepEqual(
-    mine.map((candidate) => candidate.reason),
-    ["TicketRefused", "RefusalLifted"],
-    "the refusal reads as the lift that came after it",
   );
 });
 
@@ -2390,17 +2258,17 @@ test("each door a thread passes through is the role's it was granted to and no o
     `SELECT ${sessionStoreStreamListFunction}('${partition.tenant}','${partition.project}','session-grants',1)`,
   );
   await onlyTheseRolesMay(
-    [selectorServiceRole],
+    [schedulerRole],
     threadWakeFunction,
     `SELECT ${threadWakeFunction}('${partition.tenant}','${partition.project}','session-grants','turn-wake-grants','{}','InCluster')`,
   );
   await onlyTheseRolesMay(
-    [selectorServiceRole],
+    [schedulerRole],
     threadWakeCandidatesFunction,
     `SELECT ${threadWakeCandidatesFunction}(0,1)`,
   );
   await onlyTheseRolesMay(
-    [selectorServiceRole],
+    [schedulerRole],
     threadWakeCursorAdvanceFunction,
     `SELECT ${threadWakeCursorAdvanceFunction}(0)`,
   );
@@ -2410,7 +2278,7 @@ test("each door a thread passes through is the role's it was granted to and no o
     `SELECT set_session_capabilities('${partition.tenant}','${partition.project}','session-grants',ARRAY['ProjectRead']::text[])`,
   );
   await onlyTheseRolesMay(
-    [selectorServiceRole],
+    [schedulerRole],
     "thread_wake_cursor",
     "SELECT sequence FROM thread_wake_cursor",
   );

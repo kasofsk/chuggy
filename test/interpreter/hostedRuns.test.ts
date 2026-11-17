@@ -1,6 +1,6 @@
 /**
  * The hosted-runs read: whether the project's tenant grants the caller the
- * hosted runs a thread or an inquiry spends, answered by the predicate every
+ * hosted runs a thread spends, answered by the predicate every
  * hosted refusal asks.
  *
  * THE REFUSED CASE IS THE ONE WITH TEETH. A read whose project gate was dropped

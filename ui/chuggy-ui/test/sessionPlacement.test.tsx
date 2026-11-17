@@ -47,7 +47,7 @@ test("a runner that comes back is read as live within one poll", async () => {
     Promise.resolve(answer(sessionPlacementBody({ thread: "Pool", mine }))),
   );
   const { result } = renderHook(
-    () => useSessionRunnerShort(threadPartition, "thread", "mine"),
+    () => useSessionRunnerShort(threadPartition, "mine"),
     { wrapper },
   );
   await settled();

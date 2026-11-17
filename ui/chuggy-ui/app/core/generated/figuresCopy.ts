@@ -51,11 +51,16 @@ export interface FiguresCopy {
   readonly "figures-month-october": Record<never, never>;
   readonly "figures-month-november": Record<never, never>;
   readonly "figures-month-december": Record<never, never>;
+  readonly "figures-quantity": {
+    readonly figure: unknown;
+    readonly unit: unknown;
+  };
   readonly "figures-unit-percent": Record<never, never>;
   readonly "figures-unit-hours": Record<never, never>;
   readonly "figures-unit-minutes": Record<never, never>;
   readonly "figures-unit-seconds": Record<never, never>;
   readonly "figures-unit-milliseconds": Record<never, never>;
+  readonly "figures-unit-gibibytes": Record<never, never>;
   readonly "figures-unit-mebibytes": Record<never, never>;
   readonly "figures-unit-kibibytes": Record<never, never>;
   readonly "figures-unit-bytes": Record<never, never>;

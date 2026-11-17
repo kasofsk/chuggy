@@ -25,7 +25,8 @@
  * does not exist, so nothing here tells the two apart; one answered the list
  * who lacks a change's kind is refused it. The caller's own tenants, in
  * `./accessCallerTenants.ts`, are the one list answered to any caller, because
- * it is about them alone.
+ * it is about them alone, and the caller's own account is answered to them on
+ * the same ground.
  *
  * WHO A SUBJECT IS IS THE DIRECTORY'S, asked once per list about at most
  * `accessDirectorySubjectsMax` subjects. A plane with no directory lists
@@ -784,9 +785,9 @@ function accessTenantGrantChange(
 }
 
 /**
- * Giving and taking a person's hosted runs. The selector's principal is a
- * person here like any other: taking its hosted runs stops hosted dispatch in
- * the tenant, and holding `GrantHostedExecution` is what decides that.
+ * Giving and taking a person's hosted runs: taking them stops that person's
+ * hosted dispatch in the tenant, and holding `GrantHostedExecution` is what
+ * decides that.
  */
 function accessHostedRunsChanges(
   ports: AccessPlanePorts,

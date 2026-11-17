@@ -695,9 +695,10 @@ async function stackEvaluatingOf(
 }
 
 /**
- * The Stacked tickets pending over the cycle of their latest accepted work
- * with no stack recorded for it, whose finalization request is open, unheld
- * and has no attempt, each with the line of its newest `Restack` attempt.
+ * The Stacked tickets pending over the cycle of their latest accepted work,
+ * whose finalization request is open, unheld and has no attempt, each with the
+ * line of its newest `Restack` attempt. A stack recorded for that cycle is
+ * left for `restackLine` to judge standing over the queue.
  */
 async function stackRestackable(
   pool: pg.Pool,
@@ -734,10 +735,6 @@ async function stackRestackable(
            AND d.brief->'finalization'->>'mode' IN ('Push', 'PullRequestMerge')
            AND d.brief->>'repository' IS NOT NULL
            AND p.phase = 'Finalization'
-           AND NOT EXISTS (
-                 SELECT 1 FROM evaluation_stack s
-                  WHERE s.tenant = d.tenant AND s.project = d.project
-                    AND s.ticket = d.ticket AND s.work_cycle = w.cycle)
            AND EXISTS (
                  SELECT 1 FROM finalization_request f
                   WHERE f.tenant = d.tenant AND f.project = d.project

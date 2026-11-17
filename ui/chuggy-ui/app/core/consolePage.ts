@@ -55,7 +55,6 @@ function consolePageTicketNew(match: ConsolePageMatch): unknown {
 const consolePagePlainPaths = {
   Tickets: "",
   Inbox: "inbox",
-  Lead: "settings/lead-session",
   Catalog: "settings/catalog",
   Repositories: "settings/repositories",
   Epics: "epics",
@@ -71,7 +70,7 @@ const consolePageRunnersPath = "runners";
 const consolePageSettingsPaths: Readonly<
   Record<ConsolePageSettingsSection, string>
 > = {
-  ProjectLead: "settings/lead",
+  ProjectLead: "settings/threads",
   ProjectPlacement: "settings/placement",
   ProjectPools: "settings/pools",
   ProjectPermissions: "settings/permissions",
@@ -172,7 +171,6 @@ function consolePagePathOf(page: ConsolePage): string {
   switch (page.page) {
     case "Tickets":
     case "Inbox":
-    case "Lead":
     case "Catalog":
     case "Repositories":
     case "Epics":
@@ -227,7 +225,7 @@ export function consolePageOf(
 const consolePageSectionIds: Readonly<
   Record<ConsolePageSettingsSection, SettingsSectionId>
 > = {
-  ProjectLead: "lead",
+  ProjectLead: "threads",
   ProjectPlacement: "placement",
   ProjectPools: "pools",
   ProjectPermissions: "permissions",
@@ -242,19 +240,12 @@ const consolePageSectionIds: Readonly<
 
 const consolePageListWords: Readonly<
   Record<
-    | "Tickets"
-    | "Inbox"
-    | "Lead"
-    | "Catalog"
-    | "Repositories"
-    | "Runners"
-    | "Epics",
+    "Tickets" | "Inbox" | "Catalog" | "Repositories" | "Runners" | "Epics",
     Copy
   >
 > = {
   Tickets: { id: "pages-tickets" },
   Inbox: { id: "pages-inbox" },
-  Lead: { id: "pages-lead" },
   Catalog: { id: "pages-catalog" },
   Repositories: { id: "pages-repositories" },
   Runners: { id: "pages-runners" },
@@ -272,7 +263,6 @@ export function consolePageLabel(page: ConsolePage): Copy {
   switch (page.page) {
     case "Tickets":
     case "Inbox":
-    case "Lead":
     case "Catalog":
     case "Repositories":
     case "Runners":

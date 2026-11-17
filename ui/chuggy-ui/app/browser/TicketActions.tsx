@@ -739,8 +739,6 @@ export interface TicketHeaderActionsProps {
   readonly withheld: readonly TicketActionName[];
   /** Whether the reader may start a new ticket from this one. */
   readonly duplicates: boolean;
-  /** Whether Dispatch is offered in a project no lead dispatches or will open to. */
-  readonly byHand: boolean;
   /** Whether a Dispatch gave way because the project's work has no runner. */
   readonly noRunner: boolean;
   /** The one of Take and Return the reader is offered, for themselves. */
@@ -892,19 +890,13 @@ export function TicketHeaderNotes(props: TicketHeaderActionsProps): ReactNode {
           failure={props.dispatchState.failure}
         />
       ) : null}
-      {props.byHand ? (
-        <Notice
-          tone="info"
-          inline
-          detail={text({ id: "ticket-no-lead-dispatched-by-hand" })}
-        />
-      ) : null}
       <FollowNotes submitting={props.acting.submitting} />
     </div>
   );
 }
 
-/** The press a ready row's state chip answers, where the row may be dispatched. */
+/** The press a ready row's state chip answers, where the row may be dispatched,
+ * which asks before anything is sent. */
 export interface TicketRowDispatch {
   readonly busy: boolean;
   /** This tab does not reach the network, so a press would not be sent. */
@@ -912,12 +904,35 @@ export interface TicketRowDispatch {
   readonly press: () => void;
 }
 
+/** The notes beside a row's Dispatch: that it waits while this tab is
+ * offline, and what its follow draws. */
+function TicketRowDispatchNotes(props: {
+  readonly online: boolean;
+  readonly submitting: Submitting;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <>
+      {props.online ? null : (
+        <Notice
+          tone="parked"
+          inline
+          role="status"
+          detail={text({ id: "ticket-dispatch-offline" })}
+        />
+      )}
+      <FollowNotes submitting={props.submitting} />
+    </>
+  );
+}
+
 /**
  * The Dispatch a ready row of the ticket list offers, expecting the version the
  * row was drawn at, as the press its state chip answers and the notes beside
- * it: that it waits while this tab is offline, and what its follow draws. The reader's abilities and the project's runner take
- * it away as they take it on the ticket page, and a press is followed by the
- * same submission the ticket page would follow.
+ * it: that it waits while this tab is offline, and what its follow draws. The
+ * reader's abilities and the project's runner take it away as they take it on
+ * the ticket page, a press asks the question the ticket page asks, and only its
+ * confirm sends the same submission the ticket page would follow.
  */
 export function TicketRowDispatchScope(props: {
   readonly partition: PartitionIdentity;
@@ -932,6 +947,7 @@ export function TicketRowDispatchScope(props: {
   const runner = useWorkRunner(props.partition, "Unknown");
   const online = useApiOnline();
   const text = useCopyText();
+  const [asking, setAsking] = useState(false);
   const { offers } = ticketOffersStartable(
     ticketOffersAllowed(
       {
@@ -950,28 +966,38 @@ export function TicketRowDispatchScope(props: {
   if (offered === undefined) return props.children(undefined, null);
   return (
     <TicketActingScope partition={props.partition} ticket={props.ticket} drawn>
-      {(acting) =>
-        props.children(
-          {
-            busy: acting.busy,
-            offline: !online,
-            press: () => {
-              acting.submitting.submit(offered);
+      {(acting) => (
+        <>
+          {props.children(
+            {
+              busy: acting.busy,
+              offline: !online,
+              press: () => {
+                setAsking(true);
+              },
             },
-          },
-          <>
-            {online ? null : (
-              <Notice
-                tone="parked"
-                inline
-                role="status"
-                detail={text({ id: "ticket-dispatch-offline" })}
-              />
-            )}
-            <FollowNotes submitting={acting.submitting} />
-          </>,
-        )
-      }
+            <TicketRowDispatchNotes
+              online={online}
+              submitting={acting.submitting}
+            />,
+          )}
+          <TicketActionConfirm
+            title={text({
+              id: "ticket-dispatch-confirm-title",
+              args: { number: String(props.ticket) },
+            })}
+            confirm={text(ticketActionLabel("Dispatch"))}
+            confirmOffered={!acting.busy && online}
+            open={asking}
+            onOpenChange={setAsking}
+            onConfirm={() => {
+              acting.submitting.submit(offered);
+            }}
+          >
+            {text(ticketActionEffect("Dispatch", { kind: "NoPoint" }).effect)}
+          </TicketActionConfirm>
+        </>
+      )}
     </TicketActingScope>
   );
 }

@@ -21,10 +21,14 @@ import {
 } from "./apiRoutes.ts";
 import { inboxList, inboxPage, inboxRowsRead } from "./inboxList.ts";
 import { landingQueuesList, landingQueuesPolledMs } from "./landingQueues.ts";
-import { inboxProposalsPolledMs } from "./inboxProposals.ts";
 import { consoleListQuery, consoleProjectQuery } from "./consoleQuery.ts";
 import type { ConsoleQueryKept } from "./consoleQuery.ts";
-import { projectListRereadNamed } from "./projectQueryKeys.ts";
+import type { DispatchViewResponse } from "../../../../src/contract/responses.ts";
+import {
+  projectListReread,
+  projectListRereadNamed,
+} from "./projectQueryKeys.ts";
+import type { ProjectList } from "./projectQueryKeys.ts";
 import {
   ticketFilterList,
   ticketFilterPage,
@@ -33,7 +37,6 @@ import {
 import type { TicketListAsk } from "./projectTableFilters.ts";
 import { projectTicketRowsRead } from "./projectTicketPages.ts";
 import type { ProjectTicketRows } from "./projectTicketPages.ts";
-import { ticketDispatchList } from "./ticketActions.ts";
 import {
   ticketDeliveryPolledMs,
   ticketDeliveryResource,
@@ -42,6 +45,24 @@ import {
   ticketLandingsListName,
   ticketLandingsPolledMs,
 } from "./ticketLandings.ts";
+
+/**
+ * Where one ticket's dispatch availability is held, and what makes it stale:
+ * every `Ticket` frame, because candidacy is `isReadyIn` — this ticket's phase
+ * AND every dependency being Done — so the frame that makes a ticket
+ * dispatchable is its last dependency's, and a decision that leaves this
+ * ticket's own row alone never names it.
+ */
+export function ticketDispatchList(
+  partition: PartitionIdentity,
+  ticket: number,
+): ProjectList<DispatchViewResponse> {
+  return projectListReread<DispatchViewResponse>(
+    partition,
+    "Ticket",
+    `dispatch:${String(ticket)}`,
+  );
+}
 
 export function ticketQuery(
   partition: PartitionIdentity,
@@ -165,15 +186,12 @@ export function ticketRowsQuery(
   );
 }
 
-/** The inbox, read under its one key and polled for the held decisions no
- * frame names, gathering as many pages as the entry it replaces had. */
+/** The inbox, read under its one key, gathering as many pages as the entry it
+ * replaces had. */
 export function inboxQuery(partition: PartitionIdentity) {
-  return consoleListQuery(
-    inboxList(partition),
-    (ports, _signal, held) =>
-      inboxRowsRead(held, (cursor) =>
-        apiInbox(ports, partition, inboxPage(cursor)),
-      ),
-    inboxProposalsPolledMs,
+  return consoleListQuery(inboxList(partition), (ports, _signal, held) =>
+    inboxRowsRead(held, (cursor) =>
+      apiInbox(ports, partition, inboxPage(cursor)),
+    ),
   );
 }

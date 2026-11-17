@@ -1,6 +1,6 @@
 /**
  * The wake pass over a real PostgreSQL, driven by the role its three definers
- * are granted to: a refusal against a ticket a member's draft revision
+ * are granted to: an escalation of a ticket a member's draft revision
  * authored, one pass, one `Wake` turn in that member's mailbox, and a second
  * pass that writes nothing.
  *
@@ -23,9 +23,18 @@
  */
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
-import { boundaryOwnerRole } from "../../src/adapters/postgres/schema.ts";
+import type pg from "pg";
+
+import { postgresChatHostRegistry } from "../../src/adapters/postgres/chatHost.ts";
+import {
+  boundaryOwnerRole,
+  poolPlaneRole,
+} from "../../src/adapters/postgres/schema.ts";
+import { postgresWorkerPoolRunners } from "../../src/adapters/postgres/workerPool.ts";
+import type { ThreadTicketWakeSetting } from "../../src/contract/threadWake.ts";
 import {
   threadTurnsAnsweredMax,
   threadWakesPerPassMax,
@@ -54,17 +63,21 @@ import {
   asSessionTurnId,
   type SessionId,
 } from "../../src/interpreter/agentSession.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
+import type { ChatHostIdentity } from "../../src/interpreter/workerPoolIdentity.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import {
   postgresHarnessBrief,
   postgresHarnessConfiguration,
+  postgresHarnessRolePool,
   postgresHarnessStalled,
 } from "./harness.ts";
-import { leadRigDecision } from "./leadHarness.ts";
 import {
   sessionRigPersonalRunner,
+  sessionRigAttempt,
   sessionRigRouted,
   sessionRigRunner,
+  sessionRigTurn,
   sessionRigTurnRoutes,
 } from "./sessionHarness.ts";
 import {
@@ -77,18 +90,22 @@ import {
   threadRigSlot,
   threadRigThread,
   threadRigTicketPhase,
+  threadRigTicketWakes,
   threadRigTurnId,
   type ThreadRig,
   type ThreadRigMember,
 } from "./threadHarness.ts";
 
 let rig: ThreadRig;
+let poolPlane: pg.Pool;
 
 before(async () => {
   rig = await threadRigOpen();
+  poolPlane = postgresHarnessRolePool(poolPlaneRole);
 });
 
 after(async () => {
+  await poolPlane.end();
   await rig.close();
 });
 
@@ -157,29 +174,20 @@ async function draft(
   return created.draft.ticket;
 }
 
-/** Refuses one of the member's tickets, which is the change a `TicketRefused` wake is derived from. */
-async function refuse(
-  partition: Partition,
-  label: string,
-  ticket: TicketId,
-): Promise<void> {
-  const decision = await leadRigDecision(rig, partition, `${label}-refusal`);
-  await rig.writes.record({
-    partition,
-    decision,
-    refusals: [{ ticket, ticketVersion: 1, reason: "not yet" }],
-    lifts: [],
-  });
+/** Escalates one of the member's tickets, which is the change a `TicketEscalated` wake is derived from. */
+function escalate(partition: Partition, ticket: TicketId): Promise<void> {
+  return threadRigTicketPhase(rig, partition, ticket, "Escalated");
 }
 
-test("a refusal against a member's own ticket becomes one Wake turn, once", async () => {
+test("an escalation of a member's own ticket becomes one Wake turn, once", async () => {
   const partition = await threadRigProject(rig, "wakepass");
   const member = threadRigMember(rig, partition, "wakepass");
   const thread = await threadRigThread(rig, partition, member);
+  await threadRigTicketWakes(rig, thread.session, "On");
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member, thread.session);
   const started = await fromTheHead();
-  await refuse(partition, "wakepass", ticket);
+  await escalate(partition, ticket);
 
   const report = await threadWakePass(service(threadWakesPerPassMax));
   assert.deepEqual(report, {
@@ -204,17 +212,18 @@ test("a refusal against a member's own ticket becomes one Wake turn, once", asyn
     threadWakeTurn({
       sequence: report.cursor,
       partition,
-      reason: "TicketRefused",
+      reason: "TicketEscalated",
       resource: String(ticket),
       principal: member.principal,
       session: thread.session,
       route: "InCluster",
       runner: "Unregistered",
+      ticketWakes: { thread: "On" },
     }),
     "the turn the door holds is the identity the pass derives, or a replay is a second turn",
   );
   const document = parseThreadWake(turn.input);
-  assert.equal(document.wake, "TicketRefused");
+  assert.equal(document.wake, "TicketEscalated");
   assert.equal(document.resource, String(ticket));
   assert.equal(document.at, instant);
 
@@ -242,6 +251,7 @@ test("a ticket that moves twice wakes a thread with what each move was", async (
   const partition = await threadRigProject(rig, "wakemoves");
   const member = threadRigMember(rig, partition, "wakemoves");
   const thread = await threadRigThread(rig, partition, member);
+  await threadRigTicketWakes(rig, thread.session, "On");
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member, thread.session);
   await fromTheHead();
@@ -268,10 +278,11 @@ test("a pass whose cursor was not moved re-offers the same turn and is told so",
   const partition = await threadRigProject(rig, "wakereplay");
   const member = threadRigMember(rig, partition, "wakereplay");
   const thread = await threadRigThread(rig, partition, member);
+  await threadRigTicketWakes(rig, thread.session, "On");
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member, thread.session);
   const started = await fromTheHead();
-  await refuse(partition, "wakereplay", ticket);
+  await escalate(partition, ticket);
 
   const raising: ThreadWakeService = {
     ...service(threadWakesPerPassMax),
@@ -314,7 +325,7 @@ test("a change for a closed thread is read by nobody and moves the cursor by its
   const ticket = await draft(partition, revision, member, thread.session);
   await rig.sessions.sessions.close(partition, thread.session);
   const started = await fromTheHead();
-  await refuse(partition, "wakeclosed", ticket);
+  await escalate(partition, ticket);
 
   const report = await threadWakePass(service(threadWakesPerPassMax));
   assert.deepEqual(
@@ -353,21 +364,6 @@ test("the wake door wakes a thread the project no longer admits its owner to", a
   );
 });
 
-/** Lifts the standing refusal on one of the member's tickets, which is a second change on it. */
-async function lift(
-  partition: Partition,
-  label: string,
-  ticket: TicketId,
-): Promise<void> {
-  const decision = await leadRigDecision(rig, partition, `${label}-lift`);
-  await rig.writes.record({
-    partition,
-    decision,
-    refusals: [],
-    lifts: [{ ticket }],
-  });
-}
-
 /**
  * The window holds BOTH changes on one ticket and the cursor is below both, so
  * what separates them is the log's position the thread was opened after — a
@@ -382,8 +378,9 @@ test("a thread is woken by a change after it opened, and by none the log held be
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member, undefined);
   const started = await fromTheHead();
-  await refuse(partition, "wakestart", ticket);
+  await escalate(partition, ticket);
   const thread = await threadRigThread(rig, partition, member);
+  await threadRigTicketWakes(rig, thread.session, "On");
   await rig.sessions.harness.query(
     `UPDATE draft SET origin_session=$4
       WHERE tenant=$1 AND project=$2 AND ticket=$3`,
@@ -407,7 +404,7 @@ test("a thread is woken by a change after it opened, and by none the log held be
     "the thread's mailbox holds a notice about something that happened before it existed",
   );
 
-  await lift(partition, "wakestart", ticket);
+  await threadRigTicketPhase(rig, partition, ticket, "Done");
   const report = await threadWakePass(service(threadWakesPerPassMax));
   assert.equal(report.read, 1, "the window holds both changes and read both");
   assert.equal(report.woken, 1);
@@ -419,7 +416,7 @@ test("a thread is woken by a change after it opened, and by none the log held be
   assert.equal(standing?.turns.length, 1);
   const turn = standing?.turns[0];
   assert.ok(turn !== undefined);
-  assert.equal(parseThreadWake(turn.input).wake, "RefusalLifted");
+  assert.equal(parseThreadWake(turn.input).wake, "TicketCompleted");
 });
 
 /**
@@ -568,12 +565,13 @@ test("a wake is admitted on the thread's own route rather than the lead's, and t
     access: new Set(),
   });
   await sessionRigRunner(rig.sessions, partition, member.principal);
-  await sessionRigRouted(rig.sessions, partition, "Pool", "InCluster");
+  await sessionRigRouted(rig.sessions, partition, "Pool");
   const thread = await threadRigThread(rig, partition, member);
+  await threadRigTicketWakes(rig, thread.session, "On");
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member, thread.session);
   await fromTheHead();
-  await refuse(partition, "wakeroute", ticket);
+  await escalate(partition, ticket);
 
   const report = await threadWakePass(service(threadWakesPerPassMax));
   assert.deepEqual(report, {
@@ -595,12 +593,13 @@ test("a wake on a thread routed to runners is skipped where its member has regis
   const other = threadRigMember(rig, partition, "wakerunnerless-other");
   await sessionRigRunner(rig.sessions, partition, other.principal);
   await sessionRigPersonalRunner(rig.sessions, partition, member.principal);
-  await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+  await sessionRigRouted(rig.sessions, partition, "Pool");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member, thread.session);
   await fromTheHead();
-  await refuse(partition, "wakerunnerless", ticket);
+  await escalate(partition, ticket);
+  await threadRigTicketWakes(rig, thread.session, "On");
 
   const report = await threadWakePass(service(threadWakesPerPassMax));
   assert.deepEqual(report, {
@@ -619,7 +618,7 @@ test("a wake on a thread routed to runners is skipped where its member has regis
 test("the wake door stamps the route it is handed rather than the one the thread resolves to", async () => {
   const partition = await threadRigProject(rig, "wakestamp");
   const member = threadRigMember(rig, partition, "wakestamp");
-  await sessionRigRouted(rig.sessions, partition, "InCluster", "InCluster");
+  await sessionRigRouted(rig.sessions, partition, "InCluster");
   const thread = await threadRigThread(rig, partition, member);
 
   const woken = await rig.wakes.wake({
@@ -648,17 +647,17 @@ test("a project's own standing rules reach the wake through the candidate", asyn
   const partition = await threadRigProject(rig, "wakestanding");
   const member = threadRigMember(rig, partition, "wakestanding");
   const thread = await threadRigThread(rig, partition, member);
+  await threadRigTicketWakes(rig, thread.session, "On");
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member, thread.session);
   const stated = "- You draft, and nothing else.";
   await rig.sessions.harness.query(
-    `SELECT revision FROM update_selector_project_settings(
-       $1,$2,0,NULL,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
-       NULL,NULL,NULL,NULL,NULL,NULL,'User','thread wake suite')`,
+    `SELECT revision FROM update_selector_project_thread_settings(
+       $1,$2,0,NULL,$3,NULL,NULL,'User','thread wake suite')`,
     [partition.tenant, partition.project, stated],
   );
   await fromTheHead();
-  await refuse(partition, "wakestanding", ticket);
+  await escalate(partition, ticket);
 
   await threadWakePass(service(threadWakesPerPassMax));
 
@@ -670,4 +669,182 @@ test("a project's own standing rules reach the wake through the candidate", asyn
   const turn = held?.turns[0];
   assert.ok(turn !== undefined);
   assert.equal(parseThreadWake(turn.input).standing, stated);
+});
+
+/** Registers the member's chat host under a principal the case polls it by. */
+async function chatHost(
+  partition: Partition,
+  member: ThreadRigMember,
+): Promise<ChatHostIdentity> {
+  const host = {
+    tenant: partition.tenant,
+    owner: member.principal,
+    principal: asPrincipal(`https://issuer.invalid#host-${randomUUID()}`),
+  };
+  const registered = await postgresChatHostRegistry(
+    rig.sessions.harness.pool,
+  ).register({ ...host, clientId: `chuggy-host-${randomUUID()}` });
+  assert.equal(registered.written, "Registered");
+  return host;
+}
+
+/** One poll of the member's chat host naming `ticketWakes`, or none, written as the pool plane writes it. */
+function hostPolled(
+  host: ChatHostIdentity,
+  ticketWakes: ThreadTicketWakeSetting | undefined,
+): Promise<void> {
+  return postgresWorkerPoolRunners(poolPlane).named(
+    { ...host, kind: "ChatHost" },
+    undefined,
+    undefined,
+    undefined,
+    false,
+    {},
+    undefined,
+    ticketWakes,
+  );
+}
+
+/** A member's thread with one ticket filed from it, and the cursor at the log's head. */
+async function threadWithTicket(label: string) {
+  const partition = await threadRigProject(rig, label);
+  const member = threadRigMember(rig, partition, label);
+  const thread = await threadRigThread(rig, partition, member);
+  const ticket = await draft(
+    partition,
+    await configuration(partition),
+    member,
+    thread.session,
+  );
+  await fromTheHead();
+  return { partition, member, session: thread.session, ticket };
+}
+
+/** The wake turns a thread's mailbox holds. */
+async function wakesHeld(
+  partition: Partition,
+  session: SessionId,
+): Promise<number> {
+  const standing = await rig.threads.standing({
+    partition,
+    session,
+    query: { limit: threadTurnsAnsweredMax },
+  });
+  return (
+    standing?.turns.filter((turn) => turn.inputKind === "Wake").length ?? 0
+  );
+}
+
+test("with nothing set, a thread's own ticket's change wakes nobody, the cursor moves past it, and turning wakes on delivers none of it", async () => {
+  const { partition, session, ticket } = await threadWithTicket("wakeunset");
+  const started = await rig.wakes.cursor();
+  await escalate(partition, ticket);
+
+  const report = await threadWakePass(service(threadWakesPerPassMax));
+  assert.equal(report.read, 1);
+  assert.equal(report.woken, 0);
+  assert.equal(report.skipped, 1);
+  assert.ok(report.cursor > started, "the cursor held at a row nobody woke");
+  assert.equal(await wakesHeld(partition, session), 0);
+
+  await threadRigTicketWakes(rig, session, "On");
+  const again = await threadWakePass(service(threadWakesPerPassMax));
+  assert.equal(again.read, 0, "a row the pass passed over was read again");
+  assert.equal(await wakesHeld(partition, session), 0);
+});
+
+test("a thread set On is woken and one set Off is not, whatever its chat host last named", async () => {
+  for (const [thread, host] of [
+    ["On", "Off"],
+    ["Off", "On"],
+  ] as const) {
+    const label = `wakechoice${thread}`;
+    const { partition, member, session, ticket } =
+      await threadWithTicket(label);
+    await hostPolled(await chatHost(partition, member), host);
+    await threadRigTicketWakes(rig, session, thread);
+    await escalate(partition, ticket);
+
+    const report = await threadWakePass(service(threadWakesPerPassMax));
+    assert.equal(report.woken, thread === "On" ? 1 : 0, label);
+    assert.equal(
+      await wakesHeld(partition, session),
+      thread === "On" ? 1 : 0,
+      label,
+    );
+  }
+});
+
+test("a thread that made no choice follows its chat host's last poll, and a poll naming none clears the host's setting", async () => {
+  const { partition, member, session, ticket } =
+    await threadWithTicket("wakehost");
+  const host = await chatHost(partition, member);
+  for (const [named, woken] of [
+    ["On", 1],
+    ["Off", 0],
+    ["On", 1],
+    [undefined, 0],
+  ] as const) {
+    await hostPolled(host, named);
+    await escalate(partition, ticket);
+    const report = await threadWakePass(service(threadWakesPerPassMax));
+    assert.equal(report.read, 1, String(named));
+    assert.equal(report.woken, woken, String(named));
+  }
+  assert.equal(await wakesHeld(partition, session), 2);
+  assert.deepEqual(
+    await rig.sessions.harness.query(
+      "SELECT ticket_wakes FROM chat_host WHERE tenant=$1 AND owner=$2",
+      [host.tenant, host.owner],
+    ),
+    [{ ticket_wakes: null }],
+  );
+});
+
+test("a thread's own live attempt alone chooses its ticket wakes, and its facts and the door answer what follows", async () => {
+  const partition = await threadRigProject(rig, "wakedoor");
+  const member = threadRigMember(rig, partition, "wakedoor");
+  const thread = await threadRigThread(rig, partition, member);
+  const sibling = await threadRigThread(rig, partition, member);
+  await hostPolled(await chatHost(partition, member), "Off");
+  await sessionRigTurn(rig.sessions, partition, thread.session, "wakedoor");
+  const pod = await sessionRigAttempt(
+    rig.sessions,
+    partition,
+    thread.session,
+    "wakedoor",
+  );
+  const bearer = { secret: pod.secret, generation: pod.attempt.generation };
+
+  assert.deepEqual(await rig.sessions.plane.readTicketWakes(bearer), {
+    host: "Off",
+  });
+  assert.deepEqual(
+    await rig.sessions.plane.chooseTicketWakes({ ...bearer, thread: "On" }),
+    { chosen: "Recorded", wakes: { thread: "On", host: "Off" } },
+  );
+  assert.deepEqual(await rig.sessions.plane.readTicketWakes(bearer), {
+    thread: "On",
+    host: "Off",
+  });
+  assert.deepEqual(
+    await rig.sessions.harness.query(
+      "SELECT ticket_wakes FROM agent_session WHERE session=$1",
+      [sibling.session],
+    ),
+    [{ ticket_wakes: null }],
+    "one thread's attempt chose for another",
+  );
+  assert.deepEqual(
+    await rig.sessions.plane.chooseTicketWakes({
+      secret: pod.secret,
+      generation: pod.attempt.generation + 1,
+      thread: "Off",
+    }),
+    { chosen: "Fenced" },
+  );
+  assert.deepEqual(await rig.sessions.plane.chooseTicketWakes(bearer), {
+    chosen: "Recorded",
+    wakes: { host: "Off" },
+  });
 });

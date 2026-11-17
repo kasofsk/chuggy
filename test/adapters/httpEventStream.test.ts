@@ -58,13 +58,8 @@ import {
   unreading,
   type Held,
 } from "./heldStream.ts";
-import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { executionSummary } from "../contract/representations.ts";
-import {
-  unservedEpics,
-  unservedLeadInquiries,
-  unservedThreads,
-} from "./threadFixtures.ts";
+import { unservedEpics, unservedThreads } from "./threadFixtures.ts";
 
 const partition = partitionOf("project");
 const streamPath = "/api/v1/tenants/tenant/projects/project/events";
@@ -106,10 +101,8 @@ function servedWeb(
   actions: () => readonly TicketNativeAction[] | undefined,
 ): ServedWeb {
   return {
-    ...unreadableLeadReads(),
     ...unservedThreads,
     ...unservedEpics,
-    ...unservedLeadInquiries,
     cancel: notFound,
     configuration: () => Promise.resolve(undefined),
     configurations: notFound,
@@ -162,7 +155,6 @@ function servedWeb(
     operationalStatus: notFound,
     hostedRuns: notFound,
     abilities: notFound,
-    selectorOperationalContext: notFound,
     outputContent: () => Promise.resolve({ read: "NotFound" }),
     uploadProjectArtifact: notFound,
     projectArtifact: () => Promise.resolve({ fetched: "NotFound" }),
@@ -349,17 +341,15 @@ const kindResources: Readonly<Record<ProjectChangeKind, string>> = {
   Project: "project",
   Execution: "execution-one",
   NativeAction: "3",
-  AgenticRefusal: "3",
   Session: "lead-atlas",
 };
 
 /**
  * The kinds the reader holds no read for. They must read as tombstones rather
  * than raise, because `framesForRow` turns a read that keeps raising into a
- * stream reset and the session turn triggers append one of these on every lead
- * turn.
+ * stream reset and the session turn triggers append one on every turn.
  */
-const kindsWithoutReads = ["AgenticRefusal", "Session"] as const;
+const kindsWithoutReads = ["Session"] as const;
 
 test("a kind whose read the API does not hold is a tombstone, not a raise", async () => {
   const reader = projectResourceReader(servedWeb(true, () => []));

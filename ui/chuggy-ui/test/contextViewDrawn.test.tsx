@@ -272,11 +272,13 @@ test("a session's compact form draws its window per turn, its figures in a line,
   );
   const inputs = section("Inputs");
   expect(within(inputs).getByText("Appended prompt")).toBeDefined();
-  expect(within(inputs).queryByText("You are the project's lead.")).toBeNull();
+  expect(within(inputs).queryByText("You are the member's thread.")).toBeNull();
   fireEvent.click(
     within(inputs).getAllByRole("button", { name: "Show" })[1] as HTMLElement,
   );
-  expect(within(inputs).getByText("You are the project's lead.")).toBeDefined();
+  expect(
+    within(inputs).getByText("You are the member's thread."),
+  ).toBeDefined();
   expect(
     drawn.container
       .querySelector(".context-view")

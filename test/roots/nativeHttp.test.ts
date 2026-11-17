@@ -11,17 +11,9 @@
  * composition that named only the issuer would answer a live session bearer
  * `InvalidToken` and look exactly like a bad token.
  *
- * EVERY DOUBLE RECORDS THAT IT WAS ASKED, and the two pools are told apart, so
- * a case can require both that neither authority is offered the other's token
- * and that the session authority stands on the API pool. Only that pool holds
- * `EXECUTE` on `authenticate_session_bearer`; over the selector review pool
- * every session bearer would be a 503 on a healthy deployment, and a double
- * that answered both pools alike could not see the difference.
- *
- * THE LEAD'S READ SIDE IS HELD TO THE SAME POOL FOR THE SAME REASON. Only the
- * API role holds `EXECUTE` on the lead definer functions, so a lead port wired
- * to the review pool answers all five lead routes 500 on a healthy deployment —
- * which no other gate can see, because nothing may import a root.
+ * EVERY DOUBLE RECORDS THAT IT WAS ASKED, so a case can require that neither
+ * authority is offered the other's token and that the session authority stands
+ * on the API pool, whose role holds `EXECUTE` on `authenticate_session_bearer`.
  */
 
 import assert from "node:assert/strict";
@@ -35,7 +27,7 @@ import { promisify } from "node:util";
 
 import {
   apiRole,
-  selectorReviewRole,
+  ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { fluxSignatureToleranceSecs } from "../../src/adapters/reporters/fluxSignature.ts";
 import { threadLiveLimitsDefault } from "../../src/interpreter/threadLive.ts";
@@ -59,21 +51,18 @@ const issuerToken = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJsZWFkIn0.c2ln";
 function authenticationProgram(token: string): string {
   return `
     const root = await import('./src/roots/nativeHttp.ts');
-    const asked = { pool: [], selectorReviewPool: [], oidc: [] };
+    const asked = { pool: [], oidc: [] };
     const pooled = (named, principal) => ({
       query: async (statement) => {
         asked[named].push(statement.values);
         return { rows: [{
           tenant: 'tenant', project: 'project', session: 'session-' + named,
-          kind: 'Lead', principal, scope: 'Project',
+          kind: 'Thread', principal, scope: 'Project',
           capabilities: ['ProjectRead'],
         }] };
       },
     });
-    const pools = {
-      pool: pooled('pool', ${JSON.stringify(principal)}),
-      selectorReviewPool: pooled('selectorReviewPool', 'a review-pool principal'),
-    };
+    const pools = { pool: pooled('pool', ${JSON.stringify(principal)}) };
     const oidc = {
       authenticateBearer: async (offered) => {
         asked.oidc.push(offered);
@@ -104,146 +93,19 @@ interface Authenticated {
   };
   readonly asked: {
     readonly pool: readonly (readonly string[])[];
-    readonly selectorReviewPool: readonly (readonly string[])[];
     readonly oidc: readonly string[];
   };
 }
 
 /**
- * The root's own lead composition against two pools that answer no rows, each
- * recording the statements it was handed.
- */
-const leadPortsProgram = `
-  const root = await import('./src/roots/nativeHttp.ts');
-  const asked = { pool: [], selectorReviewPool: [] };
-  const pooled = (named) => {
-    const query = async (statement) => {
-      asked[named].push(statement.text ?? String(statement));
-      return { rows: [] };
-    };
-    return {
-      query,
-      connect: async () => ({
-        query,
-        on: () => undefined,
-        removeListener: () => undefined,
-        release: () => undefined,
-      }),
-    };
-  };
-  const pools = {
-    pool: pooled('pool'),
-    selectorReviewPool: pooled('selectorReviewPool'),
-  };
-  const ports = root.nativeLeadPorts(
-    pools,
-    { readBatch: async () => ({ read: 'NotFound' }) },
-    'https://issuer.example',
-  );
-  const partition = { tenant: 'tenant', project: 'project' };
-  await ports.leads.standing(partition, 1);
-  await ports.leads.leadRefusal(partition);
-  await ports.leads.streams(partition, 'session', 1);
-  await ports.leads.batches({
-    partition,
-    session: 'session',
-    stream: 'stream',
-    after: 0,
-    limit: 1,
-  });
-  await ports.history.history(partition, { limit: 1, order: 'oldest' });
-  await ports.refusals.standing(partition, 1);
-  await ports.refusals.ledger(partition, 1, 1);
-  await ports.settings.projectSettings(partition).catch(() => undefined);
-  await ports.candidates.read(partition, { limit: 1 });
-  process.stdout.write(JSON.stringify(asked));
-`;
-
-/** Which pool each of the lead reads was handed, and what it was asked. */
-interface LeadPortsAsked {
-  readonly pool: readonly string[];
-  readonly selectorReviewPool: readonly string[];
-}
-
-async function leadPortsAsked(): Promise<LeadPortsAsked> {
-  const ran = await execute(
-    process.execPath,
-    [
-      "--experimental-strip-types",
-      "--input-type=module",
-      "--eval",
-      leadPortsProgram,
-    ],
-    { cwd: process.cwd() },
-  );
-  return JSON.parse(ran.stdout) as LeadPortsAsked;
-}
-
-test("the lead's reads stand on the API pool and never the review pool", async () => {
-  const asked = await leadPortsAsked();
-  assert.deepEqual(
-    asked.selectorReviewPool,
-    [],
-    "no lead read may reach the pool with no grant on the lead doors",
-  );
-  assert.equal(
-    asked.pool.length,
-    12,
-    "every lead read was handed the API pool, the dispatch view in its own transaction",
-  );
-});
-
-/** Whether a released ticket waits is the dispatch view the selector itself reads, over the API pool. */
-test("the lead's dispatch candidates are read over the API pool from the dispatch view", async () => {
-  const asked = await leadPortsAsked();
-  assert.ok(
-    asked.pool.some((statement) =>
-      statement.includes("LEFT JOIN dispatch_view v USING (tenant,project)"),
-    ),
-    "the dispatch view was not handed the API pool",
-  );
-});
-
-test("each lead read reaches the definer function the plan names for it", async () => {
-  const asked = await leadPortsAsked();
-  for (const named of [
-    "read_lead_standing",
-    "read_lead_refusal",
-    "list_session_store_streams",
-    "read_session_store_batches",
-    "read_selector_interactions",
-    "read_standing_agentic_refusals",
-    "read_agentic_refusals",
-  ])
-    assert.ok(
-      asked.pool.some((statement) => statement.includes(named)),
-      `${named} was reached over the API pool`,
-    );
-});
-
-/** Whether the selector is paused is read from both settings rows the API may
- * read, which is how the selector resolves it, and no definer stands between. */
-test("the lead's selector mode is read over the API pool from the installation's settings and the project's", async () => {
-  const asked = await leadPortsAsked();
-  assert.ok(
-    asked.pool.some(
-      (statement) =>
-        statement.includes("FROM selector_runtime_settings installation") &&
-        statement.includes("LEFT JOIN selector_project_settings overrides"),
-    ),
-    "the settings read was not handed the API pool",
-  );
-});
-
-/**
  * The root's own thread composition, over one pool that answers no rows. The
  * credential slot is read from the environment because it is what a member's
  * thread speaks through, and a default would open every member's thread on
- * whatever the lead happens to use while reading as though somebody chose it.
+ * whatever another session happens to use while reading as though somebody chose it.
  */
 const threadPortsProgram = `
   const root = await import('./src/roots/nativeHttp.ts');
-  const asked = { pool: [], selectorReviewPool: [] };
+  const asked = { pool: [] };
   const pooled = (named) => {
     const query = async (statement) => {
       asked[named].push(statement.text ?? String(statement));
@@ -259,10 +121,7 @@ const threadPortsProgram = `
       }),
     };
   };
-  const pools = {
-    pool: pooled('pool'),
-    selectorReviewPool: pooled('selectorReviewPool'),
-  };
+  const pools = { pool: pooled('pool') };
   const ports = root.nativeThreadPorts(pools, {
     readBatch: async () => ({ read: 'NotFound' }),
   });
@@ -284,10 +143,7 @@ const threadPortsProgram = `
 `;
 
 interface ThreadPortsComposed {
-  readonly asked: {
-    readonly pool: readonly string[];
-    readonly selectorReviewPool: readonly string[];
-  };
+  readonly asked: { readonly pool: readonly string[] };
   readonly slot: string;
   readonly minted: string;
 }
@@ -329,99 +185,8 @@ test("the thread bundle the root composes reaches the thread reads", async () =>
       composed.asked.pool.some((statement) => statement.includes(named)),
       `${named} was reached over the API pool`,
     );
-  assert.deepEqual(
-    composed.asked.selectorReviewPool,
-    [],
-    "no thread read may reach the pool with no grant on the thread doors",
-  );
   assert.equal(composed.slot, "claude-code");
   assert.ok(composed.minted.startsWith("thread-"));
-});
-
-/**
- * The inquiry routes over the composition the root builds, driven against pools
- * that record what they were asked and place the lead in cluster as a
- * subsidized one, asked by a member the tenant grants no hosted runs:
- * `nativeHttp.ts` reaches its three doors, the session route and the lead's
- * offering through `composeNativeWeb` and passes no bundle for them, because
- * there is nothing about an inquiry for a deployment to choose, so what a case
- * can observe is which pool the composition reached and that it reached one at
- * all. The doors' own answers are `test/postgres/inquiryHttpDoors.test.ts`'s.
- */
-const inquiryComposedProgram = `
-  const compose = await import('./src/compose.ts');
-  const asked = { pool: [], selectorReviewPool: [] };
-  const pooled = (named) => ({
-    query: async (statement) => {
-      const text = statement.text ?? String(statement);
-      asked[named].push(text);
-      return {
-        rows: text.includes('session_route')
-          ? [{ route: 'InCluster', source: 'Default' }]
-          : text.includes('session_lead_offering')
-            ? [{ offering: 'Subsidized' }]
-            : [],
-      };
-    },
-  });
-  const pool = pooled('pool');
-  const web = compose.composeNativeWeb(
-    pool,
-    { digest: () => 'digest' },
-    {
-      authorize: async () => ({ kind: 'OidcUser', subject: 'geoff' }),
-      authorizeTenant: async () => undefined,
-    },
-    { admits: async () => ({ admitted: 'Admitted' }) },
-  );
-  const principal = 'principal';
-  const partition = { tenant: 'tenant', project: 'project' };
-  await web.leadInquiries(principal, partition);
-  await web.leadInquiry(principal, partition, 'inq-one');
-  await web
-    .askLead(principal, partition, {
-      session: 'inq-one',
-      turn: 'inq-turn-one',
-      question: 'what stopped ticket 14?',
-    })
-    .catch(() => undefined);
-  process.stdout.write(JSON.stringify(asked));
-`;
-
-/**
- * A boundary composed without an inquiry store answers `500` on three routes in
- * a deployment while every gate stays green. This case is what makes that
- * impossible to reintroduce: the composition is driven rather than described,
- * and each door names its own definer.
- */
-test("the composition the root builds reaches the inquiry doors, over the API pool", async () => {
-  const ran = await execute(
-    process.execPath,
-    [
-      "--experimental-strip-types",
-      "--input-type=module",
-      "--eval",
-      inquiryComposedProgram,
-    ],
-    { cwd: process.cwd() },
-  );
-  const composed = JSON.parse(ran.stdout) as LeadPortsAsked;
-  for (const named of [
-    "read_lead_inquiries",
-    "read_lead_inquiry",
-    "session_route",
-    "session_lead_offering",
-    "open_lead_inquiry",
-  ])
-    assert.ok(
-      composed.pool.some((statement) => statement.includes(named)),
-      `${named} was reached over the API pool`,
-    );
-  assert.deepEqual(
-    composed.selectorReviewPool,
-    [],
-    "an inquiry was read through a pool that holds no grant on it",
-  );
 });
 
 test("a deployment that names no credential slot for a thread is refused", async () => {
@@ -551,9 +316,9 @@ test("each bound of the thread live stream is the one its own variable names, th
 });
 
 /**
- * The root's stopping wired to an app that serves nothing, two hubs and two
- * pools that each record being closed, then stopped as `stop` stops it. What
- * was closed is printed once the last pool has been.
+ * The root's stopping wired to an app that serves nothing, two hubs and a pool
+ * that each record being closed, then stopped as `stop` stops it. What was
+ * closed is printed once the pool has been.
  */
 function stoppingProgram(stop: string): string {
   return `
@@ -569,11 +334,11 @@ function stoppingProgram(stop: string): string {
   const app = fastify();
   root.nativeStopping(
     app,
-    { pool: recording('pool', 'end'), selectorReviewPool: recording('review pool', 'end') },
+    { pool: recording('pool', 'end') },
     [recording('project stream', 'close'), recording('thread live', 'close')],
   );
   const asking = setInterval(() => {
-    if (!closed.includes('review pool')) return;
+    if (!closed.includes('pool')) return;
     clearInterval(asking);
     process.stdout.write(JSON.stringify(closed));
   }, 10);
@@ -582,32 +347,28 @@ function stoppingProgram(stop: string): string {
 `;
 }
 
-test("the app closing closes every hub it was stopped with and then the pools, and a stop signal closes the hubs before the drain begins", async () => {
+test("the app closing closes every hub it was stopped with and then the pool, and a stop signal closes the hubs before the drain begins", async () => {
   const hubs = ["project stream", "thread live"];
-  const pools = ["pool", "review pool"];
   const closed = await rootRead({}, stoppingProgram("await app.close();"));
   assert.equal(closed.code, 0, closed.out);
-  assert.deepEqual(JSON.parse(closed.out), [...hubs, ...pools]);
+  assert.deepEqual(JSON.parse(closed.out), [...hubs, "pool"]);
   const signalled = await rootRead(
     {},
     stoppingProgram("process.kill(process.pid, 'SIGTERM');"),
   );
   assert.equal(signalled.code, 0, signalled.out);
-  assert.deepEqual(JSON.parse(signalled.out), [...hubs, ...hubs, ...pools]);
+  assert.deepEqual(JSON.parse(signalled.out), [...hubs, ...hubs, "pool"]);
 });
 
 /** What a pool answers its readiness check: the role row first and the applied migrations after, or a refused connection. */
 type ReadinessAnswer = Readonly<Record<string, unknown>> | "ConnectionRefused";
 
 /**
- * The root's start-up check over two pools that each answer as one case says
- * and record being closed. What it refused with, if anything, is printed beside
- * the pools it closed.
+ * The root's start-up check over a pool that answers as one case says and
+ * records being closed. What it refused with, if anything, is printed beside
+ * whether it closed the pool.
  */
-function databasesReadyProgram(
-  api: ReadinessAnswer,
-  review: ReadinessAnswer,
-): string {
+function databasesReadyProgram(api: ReadinessAnswer): string {
   return `
   const root = await import('./src/roots/nativeHttp.ts');
   const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
@@ -629,10 +390,7 @@ function databasesReadyProgram(
     };
   };
   const refusal = await root
-    .nativeDatabasesReady(
-      pooled('pool', ${JSON.stringify(api)}),
-      pooled('selectorReviewPool', ${JSON.stringify(review)}),
-    )
+    .nativeDatabasesReady(pooled('pool', ${JSON.stringify(api)}))
     .then(() => null, (failure) => failure.message);
   process.stdout.write(JSON.stringify({ refusal, ended }));
 `;
@@ -640,9 +398,8 @@ function databasesReadyProgram(
 
 async function databasesReady(
   api: ReadinessAnswer,
-  review: ReadinessAnswer,
 ): Promise<{ readonly refusal: string | null; readonly ended: string[] }> {
-  const ran = await rootRead({}, databasesReadyProgram(api, review));
+  const ran = await rootRead({}, databasesReadyProgram(api));
   assert.equal(ran.code, 0, ran.out);
   return JSON.parse(ran.out) as {
     refusal: string | null;
@@ -650,54 +407,29 @@ async function databasesReady(
   };
 }
 
-const apiAnswered = { current_role: apiRole, authorized: true };
-const reviewAnswered = {
-  current_role: selectorReviewRole,
-  review_feedback_readable: true,
-};
-const bothPools = ["pool", "selectorReviewPool"];
-
-test("a start refuses a database it could not reach under the connection's own failure, never as unmigrated, and closes both pools", async () => {
-  const api = await databasesReady("ConnectionRefused", reviewAnswered);
-  assert.equal(
-    api.refusal,
-    "the native HTTP database could not be reached or queried — connect ECONNREFUSED 127.0.0.1:1",
-  );
-  assert.deepEqual(api.ended, bothPools);
-  const review = await databasesReady(apiAnswered, "ConnectionRefused");
-  assert.equal(
-    review.refusal,
-    "the selector review database could not be reached or queried — connect ECONNREFUSED 127.0.0.1:1",
-  );
-  assert.deepEqual(review.ended, bothPools);
+test("a start refuses a database it could not reach under the connection's own failure, never as unmigrated, and closes the pool", async () => {
+  assert.deepEqual(await databasesReady("ConnectionRefused"), {
+    refusal:
+      "the native HTTP database could not be reached or queried — connect ECONNREFUSED 127.0.0.1:1",
+    ended: ["pool"],
+  });
 });
 
-test("a start refuses a database that answered as the wrong role as one to migrate and connect as its own, and closes both pools", async () => {
-  const api = await databasesReady(
-    { current_role: selectorReviewRole, authorized: true },
-    reviewAnswered,
+test("a start refuses a database that answered as the wrong role as one to migrate and connect as its own, and closes the pool", async () => {
+  assert.deepEqual(
+    await databasesReady({ current_role: ticketServiceRole, authorized: true }),
+    {
+      refusal: `the native HTTP database must be migrated and connect as ${apiRole}`,
+      ended: ["pool"],
+    },
   );
-  assert.equal(
-    api.refusal,
-    `the native HTTP database must be migrated and connect as ${apiRole}`,
-  );
-  assert.deepEqual(api.ended, bothPools);
-  const review = await databasesReady(apiAnswered, {
-    current_role: apiRole,
-    review_feedback_readable: true,
-  });
-  assert.equal(
-    review.refusal,
-    `the selector review database must connect as ${selectorReviewRole}`,
-  );
-  assert.deepEqual(review.ended, bothPools);
 });
 
-test("a start whose two databases both answered as their roles refuses nothing and closes neither pool", async () => {
-  assert.deepEqual(await databasesReady(apiAnswered, reviewAnswered), {
-    refusal: null,
-    ended: [],
-  });
+test("a start whose database answered as its role refuses nothing and leaves the pool open", async () => {
+  assert.deepEqual(
+    await databasesReady({ current_role: apiRole, authorized: true }),
+    { refusal: null, ended: [] },
+  );
 });
 
 /**
@@ -1265,9 +997,8 @@ test("a session bearer is answered by this deployment's own session authority", 
   assert.deepEqual(found.asked.oidc, []);
 });
 
-test("the session authority stands on the API pool and never the review pool", async () => {
+test("the session authority stands on the API pool", async () => {
   const found = await authenticating(sessionToken);
-  assert.deepEqual(found.asked.selectorReviewPool, []);
   assert.equal(found.asked.pool.length, 1);
   assert.equal(
     found.authenticated.bearer?.viaSession?.session,
@@ -1291,12 +1022,11 @@ test("a token of the issuer's language never reaches the session authority", asy
   });
   assert.deepEqual(found.asked.oidc, [issuerToken]);
   assert.deepEqual(found.asked.pool, []);
-  assert.deepEqual(found.asked.selectorReviewPool, []);
 });
 
 /**
- * The root's own report service over the reporters its variable names and two
- * pools told apart, answering one report of an action of `vteng/chuggy` that
+ * The root's own report service over the reporters its variable names and the
+ * API pool, answering one report of an action of `vteng/chuggy` that
  * carries the headers and the body `carried` evaluates to.
  */
 function actionReportsProgram(action: string, carried: string): string {
@@ -1311,7 +1041,7 @@ function actionReportsProgram(action: string, carried: string): string {
       },
     });
     const reports = root.nativeActionReports(
-      { pool: pooled('pool'), selectorReviewPool: pooled('selectorReviewPool') },
+      { pool: pooled('pool') },
       root.nativeActionReporters(),
     );
     const reported = await reports.report({
@@ -1640,7 +1370,7 @@ function actionReachProgram(from: ReachRepository): string {
       },
     });
     const reach = root.nativeActionReach(
-      { pool: pooled('pool'), selectorReviewPool: pooled('selectorReviewPool') },
+      { pool: pooled('pool') },
       {
         authorize: async (_principal, _partition, kind) => {
           asked.push('access ' + kind);
@@ -1860,7 +1590,7 @@ const ticketLandingsProgram = `
     conflict: { paths: ['one.ts'], truncated: false },
   });
   const landings = root.nativeTicketLandings(
-    { pool: pooled('pool'), selectorReviewPool: pooled('selectorReviewPool') },
+    { pool: pooled('pool') },
     {
       authorize: async (_principal, _partition, kind) => {
         asked.push('access ' + kind);

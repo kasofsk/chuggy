@@ -124,21 +124,6 @@
 
 ## Who speaks, and what is said.
 
-# The agent that picks a project's next work.
-# rejects: selector, selectors
--lead = { $case ->
-    [upper] { $form ->
-        [plural] Leads
-        [a] A lead
-       *[one] Lead
-    }
-   *[lower] { $form ->
-        [plural] leads
-        [a] a lead
-       *[one] lead
-    }
-}
-
 # A member's conversation with an agent; the code says thread.
 # rejects: thread, threads
 -thread = { $case ->
@@ -154,22 +139,7 @@
     }
 }
 
-# What the lead asks a person, and only that.
-# rejects: inquiry, inquiries
--inquiry = { $case ->
-    [upper] { $form ->
-        [plural] Questions
-        [a] A question
-       *[one] Question
-    }
-   *[lower] { $form ->
-        [plural] questions
-        [a] a question
-       *[one] question
-    }
-}
-
-# The exchanges of a chat or of the lead, as read back.
+# The exchanges of a chat, as read back.
 -conversation = { $case ->
     [upper] { $form ->
         [plural] Conversations
@@ -694,21 +664,7 @@
     }
 }
 
-# The lead's proposal to dispatch, only; a forge's request is a pull request.
--proposal = { $case ->
-    [upper] { $form ->
-        [plural] Proposals
-        [a] A proposal
-       *[one] Proposal
-    }
-   *[lower] { $form ->
-        [plural] proposals
-        [a] a proposal
-       *[one] proposal
-    }
-}
-
-# A person's leave for work to proceed: an approval evaluator's, or a lead dispatch's.
+# A person's leave for work to proceed: an approval evaluator's.
 -approval = { $case ->
     [upper] { $form ->
         [plural] Approvals

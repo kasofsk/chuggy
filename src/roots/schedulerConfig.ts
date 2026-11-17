@@ -27,7 +27,10 @@
 
 import { z } from "zod";
 
-import { textCodePointsCount } from "../contract/http.ts";
+import {
+  textCodePointsCount,
+  threadWakesPerPassMax,
+} from "../contract/http.ts";
 import { claudeCredentialMountKinds } from "../contract/rosters.ts";
 import { workerPoolCapabilitiesSchema } from "../contract/workerPool.ts";
 import type { SessionSiteBounds } from "../interpreter/workerTask.ts";
@@ -88,6 +91,7 @@ import {
 import type { ServiceRuntimeConfig } from "../interpreter/serviceRuntime.ts";
 import type {
   SessionRouteKind,
+  SessionRoutes,
   SessionRouting,
 } from "../interpreter/sessionPlacement.ts";
 import { repositoryConfigurationNameCharsMax } from "../interpreter/repositoryConfigurationIdentity.ts";
@@ -129,6 +133,8 @@ export interface SchedulerCommandConfig {
   readonly sessionPolicy: SessionPolicy;
   readonly sessionRouting: SessionRouting;
   readonly access: ProjectAccessSettings;
+  /** How many threads one wake pass may wake, at most the contract's ceiling. */
+  readonly threadWakesPerPassMax: number;
   /** The memory, in MiB, the pool plane runs an execution naming none with. */
   readonly poolMemoryMib: number;
 }
@@ -209,11 +215,26 @@ const schedulerMirrorsSchema = z.record(
   schedulerRepositorySchema,
 );
 
-/** Where sessions of each kind run, naming only the kinds that run otherwise than in cluster. */
-const schedulerSessionRoutesSchema = z.strictObject({
+const schedulerSessionRoutesShape = {
   Thread: schedulerRouteSchema.exactOptional(),
+} satisfies Record<SessionRouteKind, z.ZodType>;
+
+/**
+ * Where threads run, named only where they run otherwise than in cluster.
+ * `Lead` is accepted and ignored, because there is no lead to route and a
+ * deployed policy may still name one.
+ */
+const schedulerSessionRoutesSchema = z.strictObject({
+  ...schedulerSessionRoutesShape,
   Lead: schedulerRouteSchema.exactOptional(),
-} satisfies Record<SessionRouteKind, z.ZodType>);
+});
+
+/** The routes an override names, without the `Lead` its document may carry. */
+function schedulerSessionPolicyOverride(
+  named: z.infer<typeof schedulerSessionRoutesSchema>,
+): Partial<SessionRoutes> {
+  return named.Thread === undefined ? {} : { Thread: named.Thread };
+}
 
 const schedulerSessionPolicySchema = z.strictObject({
   image: schedulerTextSchema.max(workerImageCharsMax),
@@ -591,21 +612,25 @@ function schedulerPolicyRouting(
       Work: parsed.Work?.route ?? "InCluster",
       Evaluation: parsed.Evaluation?.route ?? "InCluster",
     },
-    projectRoutes: schedulerProjectRoutes(parsed.projectRoutes),
+    projectRoutes: schedulerProjectRoutes(
+      parsed.projectRoutes,
+      (override) => override,
+    ),
   };
 }
 
-/** Per-project overrides as a policy document writes them, keyed by tenant and then project. */
-function schedulerProjectRoutes<Override>(
-  named: Readonly<Record<string, Readonly<Record<string, Override>>>> = {},
+/** Per-project overrides as a policy document writes them, keyed by tenant and then project, each as `override` reads it. */
+function schedulerProjectRoutes<Named, Override>(
+  named: Readonly<Record<string, Readonly<Record<string, Named>>>> | undefined,
+  override: (named: Named) => Override,
 ): ReadonlyMap<TenantId, ReadonlyMap<ProjectId, Override>> {
   return new Map(
-    Object.entries(named).map(([tenant, projects]) => [
+    Object.entries(named ?? {}).map(([tenant, projects]) => [
       asTenantId(tenant),
       new Map(
-        Object.entries(projects).map(([project, override]) => [
+        Object.entries(projects).map(([project, each]) => [
           asProjectId(project),
-          override,
+          override(each),
         ]),
       ),
     ]),
@@ -833,11 +858,11 @@ function schedulerSessionPolicy(
       mirrors: schedulerMirrors(parsed.mirrors),
     },
     sessionRouting: {
-      routes: {
-        Thread: parsed.routes?.Thread ?? "InCluster",
-        Lead: parsed.routes?.Lead ?? "InCluster",
-      },
-      projectRoutes: schedulerProjectRoutes(parsed.projectRoutes),
+      routes: { Thread: parsed.routes?.Thread ?? "InCluster" },
+      projectRoutes: schedulerProjectRoutes(
+        parsed.projectRoutes,
+        schedulerSessionPolicyOverride,
+      ),
     },
   };
 }
@@ -887,6 +912,29 @@ function schedulerAccess(
       projectAccessTimeoutMsDefault,
     ),
   });
+}
+
+/**
+ * The wake pass's bound, which a deployment may lower and may not raise: the
+ * candidate read caps what it is asked for at `threadWakesPerPassMax`, so a
+ * larger number here would be a configured bound that is not the bound that
+ * runs. An unset variable is the contract's own ceiling, and there is no arm in
+ * which the pass is unbounded.
+ */
+function schedulerThreadWakesPerPass(
+  environment: SchedulerEnvironment,
+): number {
+  const name = `${schedulerVariablePrefix}THREAD_WAKES_PER_PASS_MAX`;
+  const value = schedulerOptional(environment, "THREAD_WAKES_PER_PASS_MAX");
+  if (value === undefined) return threadWakesPerPassMax;
+  if (!/^[1-9][0-9]*$/u.test(value))
+    throw new RangeError(`${name} must be a positive integer`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed > threadWakesPerPassMax)
+    throw new RangeError(
+      `${name} must be at most ${String(threadWakesPerPassMax)}`,
+    );
+  return parsed;
 }
 
 /**
@@ -962,6 +1010,7 @@ export function schedulerCommandConfig(
     ),
     ...schedulerSessionPolicy(environment),
     access: schedulerAccess(environment),
+    threadWakesPerPassMax: schedulerThreadWakesPerPass(environment),
     poolMemoryMib: schedulerEnvironmentPositive(
       environment,
       poolPlaneMemoryVariable,

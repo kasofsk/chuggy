@@ -47,7 +47,6 @@ import {
 } from "../../../../src/contract/rosters.ts";
 import type { BriefFinalizationOf } from "../../../../src/contract/brief.ts";
 import type {
-  LeadAbsenceResponse,
   RunnerLoss,
   RunStepFailure,
   TicketEscalation,
@@ -198,30 +197,6 @@ export function finalizationUnavailableKindLabel(
       return { id: "codes-hold-rechecks-exhausted" };
     case "TargetPathsRefused":
       return { id: "codes-hold-target-paths-refused" };
-  }
-}
-
-/** Why a project holds no lead, as the line under its empty lead page says it. */
-export function leadAbsenceLabel(reason: LeadAbsenceResponse["reason"]): Copy {
-  switch (reason) {
-    case "NotNeeded":
-      return { id: "codes-lead-absence-not-needed" };
-    case "Paused":
-      return { id: "codes-lead-absence-paused" };
-    case "SelectorNotGranted":
-      return { id: "codes-lead-absence-not-granted" };
-    case "AwaitingSelector":
-      return { id: "codes-lead-absence-awaiting" };
-    case "SelectorUnnamed":
-      return { id: "codes-lead-absence-unnamed" };
-    case "HostedRunsNotGranted":
-      return { id: "codes-lead-absence-hosted-runs" };
-    case "RunnerOffline":
-      return { id: "codes-lead-absence-runner-offline" };
-    case "UsagePaused":
-      return { id: "codes-lead-absence-usage-paused" };
-    case "SubsidyExhausted":
-      return { id: "codes-lead-absence-subsidy-exhausted" };
   }
 }
 

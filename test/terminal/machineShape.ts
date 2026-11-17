@@ -24,6 +24,8 @@ export interface MachineKnobs {
   readonly pool: string;
   /** Whether each container engine that is installed answers this user. */
   readonly engines: Readonly<Record<string, boolean>>;
+  /** The memory, in bytes, an engine that answers says its machine has. */
+  readonly memoryBytes: number;
   /** Whether the user's service manager answers. */
   readonly services: boolean;
   /** Whether the login manager says how lingering stands, and whether turning it on wants a password. */

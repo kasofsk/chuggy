@@ -15,12 +15,42 @@
  * carries them, so the conversation holds that choice and no file does.
  * `--name` is carried only by `project`, which is what it is read for.
  * `--replace` is the person's yes to `chat-host` registering this machine in
- * place of the chat host of theirs it names. `configuration` writes a starting
+ * place of the chat host of theirs it names. `--chat-host` is the person's
+ * answer to `runner` making this machine their chat host too, which it does
+ * only on `yes`. `configuration` writes a starting
  * configuration into the checkout, its check running the command `--test`
  * gives where it gives one; `check` judges the checkout's configuration as an
  * import would; neither asks the site anything. `import` asks the site to
  * import the repository the checklist means, and reads the checklist again.
+ * `bind` waits, for as long as `--wait-secs` gives it, while the checklist's
+ * next thing waits on GitHub, then asks the site to add the folder's
+ * repository to the project where that is the next thing, and reads the
+ * checklist again. `--opened github` says a `bind` before it already opened
+ * the page that connects GitHub, so this one opens none.
+ * `merge`, on the person's yes, has the site merge the pull request the
+ * checklist offers, then waits as `bind` does for the repository's own
+ * configuration to be imported, and reads the checklist again.
+ * `serve`, for a project named whole, has the person's own runners take its
+ * work, where that is the checklist's next thing, and reads the checklist
+ * again.
+ * `ticket` files the project's first ticket, titled what `--title` says and
+ * asking what `--intent` says, or else the end-to-end check setup announces,
+ * naming the worker image `--image` says for the toolchains `--toolchains`
+ * says, under the configuration `--configuration` names where the project
+ * offers more than one, where that is the checklist's next thing, and reads
+ * the checklist again. None of them is ever printed back. `watch` waits, as
+ * `bind` does, while the checklist's next thing is that ticket on its way to
+ * its landing, and reads the checklist again. `plugin` installs chuggy's
+ * Claude Code plugin, or updates or enables it. `--plugin skip` is the way
+ * past the plugin step without it, and every command the program prints
+ * carries it as it carries the workspace and project. `north-star` writes
+ * the project's North Star, which `--text` says and which is never printed
+ * back, where that is the checklist's next thing, and reads the checklist
+ * again; `--north-star skip` is the way past that step without one, carried
+ * as `--plugin skip` is.
  */
+
+import { selectorSettingsTextCharsMax } from "../../../../src/contract/http.ts";
 
 import { setupLoopbackHost } from "./setupProgram.ts";
 import { setupSayable } from "./setupText.ts";
@@ -33,6 +63,22 @@ export const setupNameFlag = "--name";
 
 /** The flag `configuration` is told the repository's test command in. */
 export const setupTestFlag = "--test";
+
+/** The flags `ticket` is told the ticket's title, what is wanted done, and the configuration chosen in. */
+export const setupTitleFlag = "--title";
+export const setupIntentFlag = "--intent";
+export const setupConfigurationFlag = "--configuration";
+
+/** The flags `ticket` is told the worker image recommended and the toolchains the repository's work needs in. */
+export const setupImageFlag = "--image";
+export const setupToolchainsFlag = "--toolchains";
+
+/** The flag `north-star` is told the project's North Star in. */
+export const setupTextFlag = "--text";
+
+/** The flag a `bind` is told the page connecting GitHub is already open in, and the one value it takes. */
+export const setupOpenedFlag = "--opened";
+export const setupOpenedGithub = "github";
 
 /** How long a sign-in page stays answerable where the command starting it names no other life. */
 export const setupListenSecsDefault = 600;
@@ -47,27 +93,80 @@ export type SetupAskFault =
   | "Project"
   | "Workspace"
   | "Replace"
+  | "ChatHost"
   | "ProjectName"
-  | "Test";
+  | "Test"
+  | "Brief"
+  | "Image"
+  | "Plugin"
+  | "Opened"
+  | "NorthStar"
+  | "NorthStarText";
 
 /** The commands a person or an agent runs, as a report names them. */
 export type SetupCommand =
   | "Status"
   | "SignIn"
+  | "SignOut"
   | "Project"
   | "Mcp"
   | "Runner"
   | "ChatHost"
   | "Configuration"
   | "Check"
-  | "Import";
+  | "Import"
+  | "Bind"
+  | "Merge"
+  | "Serve"
+  | "Ticket"
+  | "Watch"
+  | "Plugin"
+  | "NorthStar";
 
-/** Which workspace and project a run is about, as far as its arguments named them, and what `project` was asked to call the one it makes. */
+/** Which workspace and project a run is about, as far as its arguments named them, what `project` was asked to call the one it makes, and whether the plugin step and the North Star step are passed over. */
 export interface SetupAnswers {
   readonly workspace: string | undefined;
   readonly project: string | undefined;
   readonly name?: string | undefined;
+  readonly plugin?: SetupPluginAnswer;
+  readonly northStar?: SetupNorthStarAnswer;
+  /** What `runner` was told of making this machine the person's chat host too, carried into every `runner` printed again. */
+  readonly chatHost?: SetupChatHostAnswer;
 }
+
+/** The one value `--plugin` takes: the plugin step passed over without the plugin. */
+export const setupPluginSkip = "skip";
+
+export type SetupPluginAnswer = typeof setupPluginSkip;
+
+/** The flag the plugin step is passed over with. */
+export const setupPluginFlag = "--plugin";
+
+/** The one value `--north-star` takes: the North Star step passed over without one. */
+export const setupNorthStarSkip = "skip";
+
+export type SetupNorthStarAnswer = typeof setupNorthStarSkip;
+
+/** The flag the North Star step is passed over with. */
+export const setupNorthStarFlag = "--north-star";
+
+/** The steps passed over, where any was, to be kept in answers made anew. */
+export function setupAnswersSkipped(
+  answers: SetupAnswers,
+): Pick<SetupAnswers, "plugin" | "northStar"> {
+  return {
+    ...(answers.plugin === undefined ? {} : { plugin: answers.plugin }),
+    ...(answers.northStar === undefined
+      ? {}
+      : { northStar: answers.northStar }),
+  };
+}
+
+/** The flag `runner` is told in whether to make this machine the person's chat host too, and the answers it takes. */
+export const setupChatHostFlag = "--chat-host";
+export const setupChatHostAnswers = ["yes", "no"] as const;
+
+export type SetupChatHostAnswer = (typeof setupChatHostAnswers)[number];
 
 export const setupAnswersNone: SetupAnswers = {
   workspace: undefined,
@@ -84,6 +183,11 @@ export type SetupAsked =
       readonly asked: "SignIn";
       readonly site: string | undefined;
       readonly waitSecs: number;
+      readonly answers: SetupAnswers;
+    }
+  | {
+      readonly asked: "SignOut";
+      readonly site: string | undefined;
       readonly answers: SetupAnswers;
     }
   | {
@@ -111,6 +215,8 @@ export type SetupAsked =
       /** The project the runner is for, which the command is not run without. */
       readonly workspace: string;
       readonly project: string;
+      /** Whether this machine is made the person's chat host too, where the person was asked. */
+      readonly chatHost: SetupChatHostAnswer | undefined;
     }
   | {
       readonly asked: "ChatHost";
@@ -140,16 +246,80 @@ export type SetupAsked =
       readonly answers: SetupAnswers;
     }
   | {
+      readonly asked: "Bind";
+      readonly site: string | undefined;
+      readonly waitSecs: number;
+      readonly answers: SetupAnswers;
+      /** Whether a `bind` before this one opened the page connecting GitHub, so this one opens none. */
+      readonly opened: boolean;
+    }
+  | {
+      readonly asked: "Merge";
+      readonly site: string | undefined;
+      readonly waitSecs: number;
+      readonly answers: SetupAnswers;
+    }
+  | {
+      readonly asked: "Serve";
+      readonly site: string | undefined;
+      readonly answers: SetupAnswers;
+      /** The project the person's runners are to take the work of, which the command is not run without. */
+      readonly workspace: string;
+      readonly project: string;
+    }
+  | {
+      readonly asked: "Ticket";
+      readonly site: string | undefined;
+      readonly answers: SetupAnswers;
+      /** What the ticket is called and what the person wants done, where they asked for something of their own. */
+      readonly said: SetupTicketSaid | undefined;
+      /** The worker image recommended and the toolchains it was recommended for, where they were given. */
+      readonly worker: SetupTicketWorker | undefined;
+      /** The configuration the person chose, where they named one. */
+      readonly configuration: string | undefined;
+    }
+  | {
+      readonly asked: "Watch";
+      readonly site: string | undefined;
+      readonly waitSecs: number;
+      readonly answers: SetupAnswers;
+    }
+  | {
+      readonly asked: "Plugin";
+      readonly site: string | undefined;
+      readonly answers: SetupAnswers;
+    }
+  | {
+      readonly asked: "NorthStar";
+      readonly site: string | undefined;
+      readonly answers: SetupAnswers;
+      /** The project's North Star, which the command is not run without. */
+      readonly text: string;
+    }
+  | {
       readonly asked: "Listen";
       readonly site: string;
       readonly lifeSecs: number;
     }
   | { readonly asked: "Wrongly"; readonly fault: SetupAskFault };
 
+/** What a person asked a ticket to do in place of the end-to-end check: what it is called and what they want done. */
+export interface SetupTicketSaid {
+  readonly title: string;
+  readonly intent: string;
+}
+
+/** The worker image the first ticket's configuration is to name, and the toolchains the repository's work needs of it. */
+export interface SetupTicketWorker {
+  readonly image: string;
+  readonly toolchains: string;
+}
+
 type SetupRun = Exclude<SetupAsked["asked"], "Wrongly">;
 
 const setupCommandWords = {
   "sign-in": "SignIn",
+  "sign-out": "SignOut",
   project: "Project",
   mcp: "Mcp",
   runner: "Runner",
@@ -157,6 +327,13 @@ const setupCommandWords = {
   configuration: "Configuration",
   check: "Check",
   import: "Import",
+  bind: "Bind",
+  merge: "Merge",
+  serve: "Serve",
+  ticket: "Ticket",
+  watch: "Watch",
+  plugin: "Plugin",
+  "north-star": "NorthStar",
   listen: "Listen",
 } as const;
 
@@ -170,22 +347,74 @@ const setupFlags = [
   "project",
   "name",
   "replace",
+  "chat-host",
   "test",
+  "title",
+  "intent",
+  "configuration",
+  "image",
+  "toolchains",
+  "plugin",
+  "opened",
+  "north-star",
+  "text",
 ] as const;
 
 type SetupFlag = (typeof setupFlags)[number];
 
 /** The flags each command reads; one it does not read is asked wrongly. */
 const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
-  Status: ["site", "workspace", "project"],
-  SignIn: ["site", "wait-secs", "workspace", "project"],
-  Project: ["site", "workspace", "project", "name"],
-  Mcp: ["site", "workspace", "project"],
-  Runner: ["site", "wait-secs", "workspace", "project"],
-  ChatHost: ["site", "wait-secs", "workspace", "replace"],
-  Configuration: ["workspace", "project", "test"],
-  Check: ["workspace", "project"],
-  Import: ["site", "workspace", "project"],
+  Status: ["site", "workspace", "project", "plugin", "north-star"],
+  SignIn: ["site", "wait-secs", "workspace", "project", "plugin", "north-star"],
+  SignOut: ["site", "workspace", "project", "plugin", "north-star"],
+  Project: ["site", "workspace", "project", "name", "plugin", "north-star"],
+  Mcp: ["site", "workspace", "project", "plugin", "north-star"],
+  Runner: [
+    "site",
+    "wait-secs",
+    "workspace",
+    "project",
+    "chat-host",
+    "plugin",
+    "north-star",
+  ],
+  ChatHost: [
+    "site",
+    "wait-secs",
+    "workspace",
+    "replace",
+    "plugin",
+    "north-star",
+  ],
+  Configuration: ["workspace", "project", "test", "plugin", "north-star"],
+  Check: ["workspace", "project", "plugin", "north-star"],
+  Import: ["site", "workspace", "project", "plugin", "north-star"],
+  Bind: [
+    "site",
+    "wait-secs",
+    "workspace",
+    "project",
+    "plugin",
+    "north-star",
+    "opened",
+  ],
+  Merge: ["site", "wait-secs", "workspace", "project", "plugin", "north-star"],
+  Serve: ["site", "workspace", "project", "plugin", "north-star"],
+  Ticket: [
+    "site",
+    "workspace",
+    "project",
+    "title",
+    "intent",
+    "image",
+    "toolchains",
+    "configuration",
+    "plugin",
+    "north-star",
+  ],
+  Watch: ["site", "wait-secs", "workspace", "project", "plugin", "north-star"],
+  Plugin: ["site", "workspace", "project", "plugin", "north-star"],
+  NorthStar: ["site", "workspace", "project", "text", "plugin", "north-star"],
   Listen: ["site", "life-secs"],
 };
 
@@ -265,9 +494,13 @@ function setupAnswersRead(
   const project = flags.get("project");
   const name = flags.get("name");
   if (!setupNameWhole(workspace) || !setupNameWhole(project)) return undefined;
+  const skipped: Pick<SetupAnswers, "plugin" | "northStar"> = {
+    ...(flags.has("plugin") ? { plugin: setupPluginSkip } : {}),
+    ...(flags.has("north-star") ? { northStar: setupNorthStarSkip } : {}),
+  };
   return name === undefined
-    ? { workspace, project }
-    : { workspace, project, name };
+    ? { workspace, project, ...skipped }
+    : { workspace, project, name, ...skipped };
 }
 
 /** A name is carried back in the command that retries it, so it is one a line prints as it is. */
@@ -301,6 +534,13 @@ function setupChatHostAsked(
   };
 }
 
+function setupChatHostRead(
+  given: string | undefined,
+): SetupChatHostAnswer | "Wrongly" | undefined {
+  if (given === undefined) return undefined;
+  return setupChatHostAnswers.find((answer) => answer === given) ?? "Wrongly";
+}
+
 /** A test command is carried back in the command that writes it, so it is one a line prints as it is. */
 function setupConfigurationAsked(
   answers: SetupAnswers,
@@ -311,6 +551,100 @@ function setupConfigurationAsked(
   return { asked: "Configuration", site: undefined, answers, test };
 }
 
+/** Two flags given together or not at all: their values, nothing, or that only one was given. */
+function setupTicketPair(
+  flags: ReadonlyMap<SetupFlag, string>,
+  first: SetupFlag,
+  second: SetupFlag,
+): readonly [string, string] | "Wrongly" | undefined {
+  const one = flags.get(first);
+  const other = flags.get(second);
+  if (one === undefined && other === undefined) return undefined;
+  return one === undefined || other === undefined ? "Wrongly" : [one, other];
+}
+
+/** A ticket is filed with a title and what is wanted done together, a worker image and its toolchains together, or both; none is printed back, so none is held to a line. */
+function setupTicketAsked(
+  site: string | undefined,
+  answers: SetupAnswers,
+  flags: ReadonlyMap<SetupFlag, string>,
+): SetupAsked {
+  const said = setupTicketPair(flags, "title", "intent");
+  const worker = setupTicketPair(flags, "image", "toolchains");
+  if (said === "Wrongly") return { asked: "Wrongly", fault: "Brief" };
+  if (worker === "Wrongly") return { asked: "Wrongly", fault: "Image" };
+  if (said === undefined && worker === undefined)
+    return { asked: "Wrongly", fault: "Brief" };
+  return {
+    asked: "Ticket",
+    site,
+    answers,
+    said: said === undefined ? undefined : { title: said[0], intent: said[1] },
+    worker:
+      worker === undefined
+        ? undefined
+        : { image: worker[0], toolchains: worker[1] },
+    configuration: flags.get("configuration"),
+  };
+}
+
+/** A North Star is sent whole and never printed back, so it is held only to what the site takes: some text, and no more than its bound. */
+function setupNorthStarAsked(
+  site: string | undefined,
+  answers: SetupAnswers,
+  text: string | undefined,
+): SetupAsked {
+  if (
+    text === undefined ||
+    text.trim() === "" ||
+    text.length > selectorSettingsTextCharsMax
+  )
+    return { asked: "Wrongly", fault: "NorthStarText" };
+  return { asked: "NorthStar", site, answers, text };
+}
+
+function setupBindAsked(
+  site: string | undefined,
+  waitSecs: number,
+  answers: SetupAnswers,
+  opened: string | undefined,
+): SetupAsked {
+  if (opened !== undefined && opened !== setupOpenedGithub)
+    return { asked: "Wrongly", fault: "Opened" };
+  return {
+    asked: "Bind",
+    site,
+    waitSecs,
+    answers,
+    opened: opened !== undefined,
+  };
+}
+
+/** A run of `mcp`, `serve` or `runner`, each of which names its project, and `runner` its chat host where it is given one. */
+function setupAskedOfProjectRun(
+  asked: "Mcp" | "Serve" | "Runner",
+  site: string | undefined,
+  waitSecs: number,
+  answers: SetupAnswers,
+  flags: ReadonlyMap<SetupFlag, string>,
+): SetupAsked {
+  const { workspace, project } = answers;
+  if (workspace === undefined || project === undefined)
+    return { asked: "Wrongly", fault: "Project" };
+  if (asked !== "Runner") return { asked, site, answers, workspace, project };
+  const chatHost = setupChatHostRead(flags.get("chat-host"));
+  if (chatHost === "Wrongly") return { asked: "Wrongly", fault: "ChatHost" };
+  return {
+    asked,
+    site,
+    waitSecs,
+    answers: chatHost === undefined ? answers : { ...answers, chatHost },
+    workspace,
+    project,
+    chatHost,
+  };
+}
+
 function setupAskedOf(
   asked: SetupRun,
   flags: ReadonlyMap<SetupFlag, string>,
@@ -319,6 +653,12 @@ function setupAskedOf(
   const site = given === undefined ? undefined : setupSiteRead(given);
   if (given !== undefined && site === undefined)
     return { asked: "Wrongly", fault: "Site" };
+  const plugin = flags.get("plugin");
+  if (plugin !== undefined && plugin !== setupPluginSkip)
+    return { asked: "Wrongly", fault: "Plugin" };
+  const northStar = flags.get("north-star");
+  if (northStar !== undefined && northStar !== setupNorthStarSkip)
+    return { asked: "Wrongly", fault: "NorthStar" };
   const answers = setupAnswersRead(flags);
   if (answers === undefined) return { asked: "Wrongly", fault: "Name" };
   const wait = setupSecsRead(
@@ -333,28 +673,33 @@ function setupAskedOf(
     return { asked: "Wrongly", fault: "WaitSecs" };
   switch (asked) {
     case "Status":
+    case "SignOut":
       return { asked, site, answers };
     case "SignIn":
+    case "Merge":
+    case "Watch":
       return { asked, site, waitSecs: wait, answers };
     case "Project":
       return setupProjectAsked(site, answers);
     case "Mcp":
-    case "Runner": {
-      const { workspace, project } = answers;
-      if (workspace === undefined || project === undefined)
-        return { asked: "Wrongly", fault: "Project" };
-      return asked === "Mcp"
-        ? { asked, site, answers, workspace, project }
-        : { asked, site, waitSecs: wait, answers, workspace, project };
-    }
+    case "Serve":
+    case "Runner":
+      return setupAskedOfProjectRun(asked, site, wait, answers, flags);
     case "ChatHost":
       return setupChatHostAsked(site, wait, answers, flags.get("replace"));
     case "Configuration":
       return setupConfigurationAsked(answers, flags.get("test"));
     case "Check":
       return { asked, site: undefined, answers };
+    case "Bind":
+      return setupBindAsked(site, wait, answers, flags.get("opened"));
     case "Import":
+    case "Plugin":
       return { asked, site, answers };
+    case "Ticket":
+      return setupTicketAsked(site, answers, flags);
+    case "NorthStar":
+      return setupNorthStarAsked(site, answers, flags.get("text"));
     case "Listen":
       return site === undefined
         ? { asked: "Wrongly", fault: "Site" }
@@ -382,6 +727,8 @@ export function setupCommandArguments(
       return [];
     case "SignIn":
       return ["sign-in"];
+    case "SignOut":
+      return ["sign-out"];
     case "Project":
       return ["project"];
     case "Mcp":
@@ -396,10 +743,24 @@ export function setupCommandArguments(
       return ["check"];
     case "Import":
       return ["import"];
+    case "Bind":
+      return ["bind"];
+    case "Merge":
+      return ["merge"];
+    case "Serve":
+      return ["serve"];
+    case "Ticket":
+      return ["ticket"];
+    case "Watch":
+      return ["watch"];
+    case "Plugin":
+      return ["plugin"];
+    case "NorthStar":
+      return ["north-star"];
   }
 }
 
-/** The flags that name a choice again for `command`, which `setupAsked` reads back as the same choice: the name only for `project`, the one command that reads it. */
+/** The flags that name a choice again for `command`, which `setupAsked` reads back as the same choice: the name only for `project`, the one command that reads it, and the plugin step and the North Star step passed over for every command. */
 export function setupAnswerArguments(
   answers: SetupAnswers,
   command: SetupCommand = "Status",
@@ -412,6 +773,13 @@ export function setupAnswerArguments(
     ...(command !== "Project" || answers.name === undefined
       ? []
       : [setupNameFlag, answers.name]),
+    ...(answers.plugin === undefined ? [] : [setupPluginFlag, answers.plugin]),
+    ...(answers.northStar === undefined
+      ? []
+      : [setupNorthStarFlag, answers.northStar]),
+    ...(command !== "Runner" || answers.chatHost === undefined
+      ? []
+      : [setupChatHostFlag, answers.chatHost]),
   ];
 }
 

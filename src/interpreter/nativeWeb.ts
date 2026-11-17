@@ -48,7 +48,6 @@ import {
   nativeActionCallerOf,
   nativeActionFeedbackRefusal,
   nativeActionsAnswerable,
-  type NativeActionAgents,
   type NativeActionAsked,
 } from "./nativeActionAnswer.ts";
 import { assertNever } from "../domain/assertNever.ts";
@@ -64,17 +63,6 @@ import type {
   Submission,
 } from "./operationInbox.ts";
 import type { OperationInbox } from "./operationInbox.ts";
-import {
-  leadInquiryAsked,
-  leadInquiryEntry,
-  leadInquiryTurnInput,
-  type LeadInquiriesRead,
-  type LeadInquiryAsked,
-  type LeadInquiryEntry,
-  type LeadInquiryRead,
-  type LeadInquiryRecord,
-  type LeadInquiryStore,
-} from "./leadInquiry.ts";
 import type { NamedPartition, Partition } from "./projectStore.ts";
 import type {
   NativeActionKind,
@@ -173,63 +161,29 @@ import type {
 } from "../contract/responses.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { Authority } from "./operationInbox.ts";
-import type {
-  SelectorOperationalContext,
-  SelectorRuntimeSettingsSource,
-} from "./selector.ts";
 import {
   sessionSpendRoute,
   type SessionRouteReads,
 } from "./sessionPlacement.ts";
-import type { SelectorOperationalContextRead } from "./selectorOperationalContext.ts";
 import {
-  agenticRefusals,
-  checkedAgenticRefusalsLimit,
-  type AgenticRefusalRead,
-  type AgenticRefusalsRead,
-  type TicketAgenticRefusalsRead,
-} from "./agenticRefusal.ts";
-import {
-  checkedLeadTranscriptQuery,
-  leadNotNeeded,
-  leadAwaitingSelector,
-  leadPaused,
-  leadSelectorNotGranted,
-  leadSelectorUnnamed,
-  leadTranscriptPage,
+  checkedSessionTranscriptQuery,
   sessionHeldWalk,
   sessionHeldWalkAsks,
-  type LeadAbsence,
-  type LeadHeld,
-  type LeadRead,
-  type LeadReadStore,
-  type LeadRefused,
-  type LeadSubsidy,
-  type LeadTranscriptQuery,
-  type LeadTranscriptRead,
+  sessionTranscriptPage,
   type SessionHeldWalk,
   type SessionStoreRowsRead,
+  type SessionTranscriptQuery,
+  type SessionTranscriptRead,
   type SessionTranscriptSubject,
-} from "./leadRead.ts";
+} from "./sessionTranscriptPage.ts";
 import {
   sessionContextPage,
   type SessionContextPageRead,
   type SessionContextQuery,
   type SessionContextRead,
 } from "./sessionContext.ts";
-import {
-  selectorHistory,
-  type SelectorHistoryQuery,
-  type SelectorHistoryRead,
-  type SelectorHistoryStore,
-} from "./selectorHistory.ts";
 import type { SessionStoreReadPort, SessionStoreRead } from "./sessionStore.ts";
-import {
-  agenticRefusalLedgerAnsweredMax,
-  leadTurnsAnsweredMax,
-  sessionStoreStreamsAnswered,
-  workerErrorPath,
-} from "../contract/http.ts";
+import { workerErrorPath } from "../contract/http.ts";
 import type { RepositoryId } from "./finalizer.ts";
 import type { ProjectRepositoryLandingStore } from "./repositoryBinding.ts";
 import {
@@ -276,7 +230,6 @@ import {
   type ThreadsRead,
 } from "./threadRead.ts";
 import {
-  inquiriesAnsweredMax,
   isBoundedText,
   threadsAnsweredMax,
   ticketSearchCharsMax,
@@ -808,11 +761,17 @@ export interface NativeReadStore {
   ): Promise<NativeActionAsked | undefined>;
 }
 
+/** A command a principal may submit: a stored `ProposeDispatch` still decodes, but nothing submits one. */
+export type NativeSubmittedCommand = Exclude<
+  ProjectCommand,
+  { readonly command: "ProposeDispatch" }
+>;
+
 export interface NativeSubmission {
   readonly partition: Partition;
   readonly operation: OperationId;
   readonly key: IdempotencyKey;
-  readonly command: ProjectCommand;
+  readonly command: NativeSubmittedCommand;
   /** The session a command came through, where a session bearer is what carried it. */
   readonly viaSession?: SessionId;
 }
@@ -901,10 +860,6 @@ export interface NativeWeb extends NativeEpics {
     principal: Principal,
     partition: Partition,
   ): Promise<AuthorizedResult<ProjectOperationalStatus>>;
-  selectorOperationalContext(
-    principal: Principal,
-    partition: Partition,
-  ): Promise<AuthorizedResult<SelectorOperationalContext>>;
   hostedRuns(
     principal: Principal,
     partition: Partition,
@@ -913,32 +868,6 @@ export interface NativeWeb extends NativeEpics {
     principal: Principal,
     partition: Partition,
   ): Promise<AuthorizedResult<ProjectAbilitiesResponse>>;
-  lead(principal: Principal, partition: Partition): Promise<LeadRead>;
-  leadTranscript(
-    principal: Principal,
-    partition: Partition,
-    query: LeadTranscriptQuery,
-  ): Promise<LeadTranscriptRead>;
-  leadContext(
-    principal: Principal,
-    partition: Partition,
-    query: SessionContextQuery,
-  ): Promise<SessionContextPageRead>;
-  agenticRefusals(
-    principal: Principal,
-    partition: Partition,
-    limit: number,
-  ): Promise<AgenticRefusalsRead>;
-  ticketAgenticRefusals(
-    principal: Principal,
-    partition: Partition,
-    ticket: TicketId,
-  ): Promise<TicketAgenticRefusalsRead>;
-  selectorHistory(
-    principal: Principal,
-    partition: Partition,
-    query: SelectorHistoryQuery,
-  ): Promise<SelectorHistoryRead>;
   executions(
     principal: Principal,
     partition: Partition,
@@ -1117,8 +1046,8 @@ export interface NativeWeb extends NativeEpics {
     principal: Principal,
     partition: Partition,
     session: SessionId,
-    query: LeadTranscriptQuery,
-  ): Promise<LeadTranscriptRead>;
+    query: SessionTranscriptQuery,
+  ): Promise<SessionTranscriptRead>;
   threadContext(
     principal: Principal,
     partition: Partition,
@@ -1170,31 +1099,12 @@ export interface NativeWeb extends NativeEpics {
     partition: Partition,
     input: { readonly session: SessionId; readonly hidden: boolean },
   ): Promise<ThreadHiding>;
-  leadInquiries(
-    principal: Principal,
-    partition: Partition,
-  ): Promise<LeadInquiriesRead>;
-  leadInquiry(
-    principal: Principal,
-    partition: Partition,
-    session: SessionId,
-  ): Promise<LeadInquiryRead>;
-  askLead(
-    principal: Principal,
-    partition: Partition,
-    input: {
-      readonly session: SessionId;
-      readonly turn: SessionTurnId;
-      readonly question: string;
-    },
-  ): Promise<LeadInquiryAsked>;
 }
 
-function submissionAccess(command: ProjectCommand): ProjectAccessKind {
+function submissionAccess(command: NativeSubmittedCommand): ProjectAccessKind {
   if (command.command === "ChangeTicketOverrides")
     return overridesAccess(command.overrides);
   if (command.command === "ManualDispatch") return "DispatchTicket";
-  if (command.command === "ProposeDispatch") return "ProposeDispatch";
   return "Mutate";
 }
 
@@ -1641,10 +1551,9 @@ async function nativeSubmitPlanRefusal(
     : undefined;
 }
 
-/** What a resolution's submission reads to decide who may give it: the action it names, and which principals are agents. */
+/** What a resolution's submission reads to decide who may give it: the action it names. */
 interface NativeSubmitAnswers {
   readonly reads: Pick<NativeReadStore, "nativeActionAsked">;
-  readonly agents: NativeActionAgents;
 }
 
 /**
@@ -1675,7 +1584,6 @@ async function nativeSubmitAuthority(
   }
   const answerer = await nativeActionAnswerer(
     access,
-    answers.agents,
     nativeActionCallerOf(principal, submission.viaSession),
     submission.partition,
     asked,
@@ -2001,7 +1909,6 @@ function nativeRunEvidenceMethods(
 function nativeTicketMethods(
   access: ProjectAccess,
   reads: NativeReadStore,
-  agents: NativeActionAgents,
 ): Pick<
   NativeWeb,
   | "ticket"
@@ -2029,7 +1936,6 @@ function nativeTicketMethods(
         ? undefined
         : nativeActionsAnswerable(
             access,
-            agents,
             nativeActionCallerOf(principal, viaSession),
             partition,
             actions,
@@ -2048,7 +1954,6 @@ function nativeTicketMethods(
           ...page,
           actions: await nativeActionsAnswerable(
             access,
-            agents,
             nativeActionCallerOf(principal, viaSession),
             partition,
             page.actions,
@@ -2057,31 +1962,6 @@ function nativeTicketMethods(
       };
     },
   };
-}
-
-/**
- * The ports the lead's read side needs. They arrive together because the lead
- * page needs every one, and a deployment that composed only some would answer a
- * page partly blank without saying which part.
- */
-export interface NativeLeadPorts {
-  readonly leads: LeadReadStore;
-  readonly store: SessionStoreReadPort;
-  readonly context: SessionContextRead;
-  readonly refusals: AgenticRefusalRead;
-  readonly history: SelectorHistoryStore;
-  /** The project's settings as the selector resolves them, which say whether it is paused. */
-  readonly settings: Pick<SelectorRuntimeSettingsSource, "projectSettings">;
-  /** The tickets a dispatch is enabled at, which say whether one waits on a decision. */
-  readonly candidates: DispatchViewStore;
-  /** The site's selector, whose read of a project is what its sweep lists it by, where the deployment names one. */
-  readonly selector?: Principal;
-}
-
-function composedLeadPorts(ports?: NativeLeadPorts): NativeLeadPorts {
-  if (ports === undefined)
-    throw new Error("native web: no lead read ports were composed");
-  return ports;
 }
 
 /** The stream a transcript read defaults to, which is the session's own agent reference. */
@@ -2148,8 +2028,8 @@ async function nativeSessionTranscriptPage(
   store: SessionStoreReadPort,
   partition: Partition,
   subject: SessionTranscriptSubject,
-  query: LeadTranscriptQuery,
-): Promise<LeadTranscriptRead> {
+  query: SessionTranscriptQuery,
+): Promise<SessionTranscriptRead> {
   const stream = query.stream ?? nativeSessionStream(subject);
   if (stream === undefined) return { read: "NotFound" };
   const page = await rows.batches({
@@ -2180,7 +2060,7 @@ async function nativeSessionTranscriptPage(
   const last = page.at(-1)?.batch;
   return {
     read: "Page",
-    page: leadTranscriptPage({
+    page: sessionTranscriptPage({
       stream,
       drawn,
       ...(held === "Undecided" ? {} : { walk: held }),
@@ -2191,182 +2071,12 @@ async function nativeSessionTranscriptPage(
   };
 }
 
-type NativeLeadMethods = Pick<
-  NativeWeb,
-  | "lead"
-  | "leadTranscript"
-  | "leadContext"
-  | "agenticRefusals"
-  | "ticketAgenticRefusals"
-  | "selectorHistory"
->;
-
-/**
- * Why a project holds no lead, where a selector paused, by the installation or
- * the project, or one that may not read the project outranks the refusal it
- * keeps, since neither asks admission and a kept refusal may have stopped being
- * true. With neither and no refusal, a released ticket the selector has not yet
- * taken up is `AwaitingSelector`, or `SelectorUnnamed` where no selector is
- * named whose reach could be read, and only a project where none waits is
- * `NotNeeded`.
- */
-async function nativeLeadSessionAbsence(
-  access: ProjectAccess,
-  ports: NativeLeadPorts,
-  partition: Partition,
-): Promise<LeadAbsence> {
-  const standing = await nativeLeadRefusalStanding(access, ports, partition);
-  if (standing !== undefined) return standing;
-  if (!(await nativeLeadDispatchWaits(ports.candidates, partition)))
-    return leadNotNeeded;
-  return ports.selector === undefined
-    ? leadSelectorUnnamed
-    : leadAwaitingSelector;
-}
-
-/**
- * The selector's pause or its want of a grant, which outrank a kept refusal,
- * or else the refusal it keeps, or nothing where none of the three stands.
- */
-async function nativeLeadRefusalStanding(
-  access: ProjectAccess,
-  ports: NativeLeadPorts,
-  partition: Partition,
-): Promise<LeadHeld | LeadRefused | undefined> {
-  if ((await ports.settings.projectSettings(partition)).mode === "Paused")
-    return leadPaused;
-  if (
-    ports.selector !== undefined &&
-    (await access.authorize(ports.selector, partition, "Read")) === undefined
-  )
-    return leadSelectorNotGranted;
-  return ports.leads.leadRefusal(partition);
-}
-
-/**
- * What a lead holding a session is drawn with from the same standing a project
- * holding none answers its absence from: what holds it, where that project
- * would answer `Paused` or `SelectorNotGranted`, or else the refusal kept.
- */
-async function nativeLeadSessionSelectorStanding(
-  access: ProjectAccess,
-  ports: NativeLeadPorts,
-  partition: Partition,
-): Promise<{ readonly held?: LeadHeld; readonly refusal?: LeadRefused }> {
-  const standing = await nativeLeadRefusalStanding(access, ports, partition);
-  if (standing === undefined) return {};
-  return "since" in standing ? { refusal: standing } : { held: standing };
-}
-
-/** A subsidized lead's tenant's spend this month and its cap, and nothing for a lead run as its own. */
-async function nativeLeadSubsidy(
-  ports: NativeLeadPorts,
-  partition: Partition,
-): Promise<{ readonly subsidy?: LeadSubsidy }> {
-  const spend = await ports.leads.subsidizedLeadSpend(partition);
-  return spend === undefined
-    ? {}
-    : {
-        subsidy: {
-          tenantMicros: spend.tenantMicros,
-          tenantMonthlyMicros: spend.tenantMonthlyMicros,
-        },
-      };
-}
-
-/**
- * Whether a released ticket waits on a dispatch decision. A view being rebuilt
- * answers no candidates, so it says none waits until it stands again.
- */
-async function nativeLeadDispatchWaits(
-  candidates: DispatchViewStore,
-  partition: Partition,
-): Promise<boolean> {
-  const page = await candidates.read(partition, { limit: 1 });
-  return page.result === "Page" && page.candidates.length > 0;
-}
-
-/**
- * The lead's own two reads, each reauthorizing before it reaches a store. A
- * readable project holding no lead is answered `None` by the head, which is
- * how the project stands, with why as the reason; its transcript has nothing to
- * page and is not found.
- */
-function nativeLeadSessionMethods(
-  access: ProjectAccess,
-  leads?: NativeLeadPorts,
-): Pick<NativeWeb, "lead" | "leadTranscript" | "leadContext"> {
-  return {
-    lead: async (principal, partition) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { result: "NotFound" };
-      const ports = composedLeadPorts(leads);
-      const standing = await ports.leads.standing(
-        partition,
-        leadTurnsAnsweredMax,
-      );
-      if (standing === undefined)
-        return {
-          result: "None",
-          absence: await nativeLeadSessionAbsence(access, ports, partition),
-        };
-      return {
-        result: "Found",
-        lead: standing,
-        streams: await ports.leads.streams(
-          partition,
-          standing.session,
-          sessionStoreStreamsAnswered,
-        ),
-        ...(await nativeLeadSessionSelectorStanding(access, ports, partition)),
-        ...(await nativeLeadSubsidy(ports, partition)),
-      };
-    },
-    leadTranscript: async (principal, partition, query) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { read: "NotFound" };
-      const ports = composedLeadPorts(leads);
-      const standing = await ports.leads.standing(
-        partition,
-        leadTurnsAnsweredMax,
-      );
-      if (standing === undefined) return { read: "NotFound" };
-      return nativeSessionTranscriptPage(
-        ports.leads,
-        ports.store,
-        partition,
-        standing,
-        checkedLeadTranscriptQuery(query),
-      );
-    },
-    leadContext: async (principal, partition, query) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { read: "NotFound" };
-      const ports = composedLeadPorts(leads);
-      const standing = await ports.leads.standing(
-        partition,
-        leadTurnsAnsweredMax,
-      );
-      if (standing === undefined) return { read: "NotFound" };
-      return {
-        read: "Page",
-        page: await sessionContextPage(
-          ports.context,
-          partition,
-          standing.session,
-          query,
-        ),
-      };
-    },
-  };
-}
-
 /**
  * The ports one project's threads are read and written through, arriving
  * together because a thread page needs all of them and a deployment that
  * composed some would answer a page that is part blank without saying which
- * part. `rows`, `store` and `context` are the lead's own, session-keyed — a
- * thread's transcript is drawn by the SAME walk over the SAME bytes, so one
+ * part. `rows`, `store` and `context` are session-keyed — a
+ * thread's transcript is drawn by the session transcript's walk, so one
  * transcript has one page type and one wire answer, and its context readings
  * likewise — and `credentialSlot` is the
  * installation's named mount for a member's thread, configuration rather than a
@@ -2456,24 +2166,6 @@ async function nativeThreadEntries(
   );
 }
 
-/** One page of inquiries as the wire names it, asking the authority once per distinct asker. */
-async function nativeInquiryEntries(
-  access: ProjectAccess,
-  partition: Partition,
-  records: readonly LeadInquiryRecord[],
-  reader: Principal,
-): Promise<readonly LeadInquiryEntry[]> {
-  const askers = await memberAuthorities(
-    access,
-    partition,
-    records.map((record) => record.principal),
-    inquiriesAnsweredMax,
-  );
-  return records.map((record) =>
-    leadInquiryEntry(record, reader, askers.get(record.principal)?.subject),
-  );
-}
-
 /**
  * Opening a thread of the caller's own, which is `Mutate` and takes the key its
  * client minted rather than a session: the definer is idempotent on the key,
@@ -2494,7 +2186,6 @@ function nativeOpenThreadMethod(
       composedSessionRoutes(routes),
       principal,
       partition,
-      "Thread",
     );
     if (spend.spend !== "Admitted") return { result: spend.spend };
     const ports = composedThreadPorts(threads);
@@ -2576,7 +2267,6 @@ function nativeSendThreadMessageMethod(
       composedSessionRoutes(routes),
       principal,
       partition,
-      "Thread",
     );
     if (spend.spend !== "Admitted") return { result: spend.spend };
     const ports = composedThreadPorts(threads);
@@ -2651,7 +2341,6 @@ function nativeReplyThreadOfferMethod(
       composedSessionRoutes(routes),
       principal,
       partition,
-      "Thread",
     );
     if (spend.spend !== "Admitted") return { result: spend.spend };
     const ports = composedThreadPorts(threads);
@@ -2699,8 +2388,8 @@ function nativeStopThreadTurnMethod(
  * The close door, which is `Mutate` and reaches any thread the project holds:
  * a thread files drafts and does nothing else, so ending one takes nothing its
  * owner cannot file again from a new one, and the durable side is what refuses
- * a session that is not a thread. The turns it still held are abandoned, the
- * lead is told nothing, and the thread stays readable.
+ * a session that is not a thread. The turns it still held are abandoned and
+ * the thread stays readable.
  */
 function nativeCloseThreadMethod(
   access: ProjectAccess,
@@ -2911,7 +2600,7 @@ function nativeThreadSessionMethods(
         found.ports.store,
         partition,
         found.thread,
-        checkedLeadTranscriptQuery(query),
+        checkedSessionTranscriptQuery(query),
       );
     },
     threadContext: async (principal, partition, session, query) => {
@@ -2932,154 +2621,6 @@ function nativeThreadSessionMethods(
           query,
         ),
       };
-    },
-  };
-}
-
-/**
- * The refusals and the decision log, each reauthorizing before it reaches a
- * store, and each refusal read asking for one past its page so `more` can be
- * true at all.
- */
-function nativeLeadRecordMethods(
-  access: ProjectAccess,
-  leads?: NativeLeadPorts,
-): Pick<
-  NativeWeb,
-  "agenticRefusals" | "ticketAgenticRefusals" | "selectorHistory"
-> {
-  return {
-    agenticRefusals: async (principal, partition, limit) => {
-      const ports = composedLeadPorts(leads);
-      const asked = checkedAgenticRefusalsLimit(limit);
-      const found = await agenticRefusals(access, ports.refusals).standing(
-        principal,
-        partition,
-        asked + 1,
-      );
-      if (found.result === "NotFound") return { result: "NotFound" };
-      const page = found.refusals.slice(0, asked);
-      return {
-        result: "Found",
-        refusals: page,
-        more: found.refusals.length > asked,
-      };
-    },
-    ticketAgenticRefusals: async (principal, partition, ticket) => {
-      const ports = composedLeadPorts(leads);
-      const found = await agenticRefusals(access, ports.refusals).ledger(
-        principal,
-        partition,
-        ticket,
-        agenticRefusalLedgerAnsweredMax + 1,
-      );
-      if (found.result === "NotFound") return { result: "NotFound" };
-      const more = found.entries.length > agenticRefusalLedgerAnsweredMax;
-      return {
-        result: "Found",
-        ticket,
-        entries: found.entries.slice(0, agenticRefusalLedgerAnsweredMax),
-        more,
-        ...(more || found.standing === undefined
-          ? {}
-          : { standing: found.standing }),
-      };
-    },
-    selectorHistory: (principal, partition, query) =>
-      selectorHistory(access, composedLeadPorts(leads).history).read(
-        principal,
-        partition,
-        query,
-      ),
-  };
-}
-
-/** The lead's read side, whose two halves reach the boundary as one. */
-function nativeLeadReadMethods(
-  access: ProjectAccess,
-  leads?: NativeLeadPorts,
-): NativeLeadMethods {
-  return {
-    ...nativeLeadSessionMethods(access, leads),
-    ...nativeLeadRecordMethods(access, leads),
-  };
-}
-
-/**
- * The three ways a member reaches the lead's inquiries: the two reads gated on
- * `Read`, and asking on `Mutate`, because an inquiry is a turn, and on what the
- * inquiry's route needs of the asker too — `./leadInquiry.ts`'s header carries
- * the argument. THE ASKER IS THE AUTHORITY'S OWN SUBJECT and comes from the
- * authorization this door already did, never from the body: a question whose
- * asker the caller chose would name whoever they liked on a document the lead
- * reads.
- */
-function nativeLeadInquiryMethods(
-  access: ProjectAccess,
-  inquiries?: LeadInquiryStore,
-  routes?: SessionRouteReads,
-): Pick<NativeWeb, "leadInquiries" | "leadInquiry" | "askLead"> {
-  const composed = (): LeadInquiryStore => {
-    if (inquiries === undefined)
-      throw new Error("native web: no lead inquiry port was composed");
-    return inquiries;
-  };
-  return {
-    leadInquiries: async (principal, partition) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { result: "NotFound" };
-      const found = await composed().inquiries(partition, inquiriesAnsweredMax);
-      return {
-        result: "Found",
-        inquiries: await nativeInquiryEntries(
-          access,
-          partition,
-          found,
-          principal,
-        ),
-      };
-    },
-    leadInquiry: async (principal, partition, session) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { result: "NotFound" };
-      const found = await composed().inquiry(partition, session);
-      if (found === undefined) return { result: "NotFound" };
-      const [inquiry] = await nativeInquiryEntries(
-        access,
-        partition,
-        [found],
-        principal,
-      );
-      if (inquiry === undefined) return { result: "NotFound" };
-      return { result: "Found", inquiry };
-    },
-    askLead: async (principal, partition, input) => {
-      const authority = await access.authorize(principal, partition, "Mutate");
-      if (authority === undefined) return { result: "NotFound" };
-      const spend = await sessionSpendRoute(
-        access,
-        composedSessionRoutes(routes),
-        principal,
-        partition,
-        "Inquiry",
-      );
-      if (spend.spend !== "Admitted") return { result: spend.spend };
-      return leadInquiryAsked(
-        await composed().open({
-          partition,
-          principal,
-          session: input.session,
-          turn: input.turn,
-          question: leadInquiryTurnInput({
-            question: input.question,
-            asker: authority.subject,
-          }),
-          route: spend.route,
-          subsidized: spend.subsidized,
-        }),
-        input.session,
-        input.turn,
-      );
     },
   };
 }
@@ -3163,7 +2704,6 @@ export async function ticketsWithLatestExecutions(
 function nativeProjectionMethods(
   access: ProjectAccess,
   reads: NativeReadStore,
-  agents: NativeActionAgents,
   operationalReads?: OperationalReadStore,
 ): Pick<
   NativeWeb,
@@ -3200,7 +2740,7 @@ function nativeProjectionMethods(
           }
         : read;
     },
-    ...nativeTicketMethods(access, reads, agents),
+    ...nativeTicketMethods(access, reads),
   };
 }
 
@@ -3226,35 +2766,19 @@ function nativeCancelMethod(
   };
 }
 
-/** The principals no person's approval is asked of, which is the site's selector where the lead ports name one. */
-export function nativeWebAgents(leads?: NativeLeadPorts): NativeActionAgents {
-  return leads?.selector === undefined ? {} : { selector: leads.selector };
-}
-
-/** The submission, the cancellation and the reads of tickets and their actions, each knowing which callers are agents. */
+/** The submission, the cancellation and the reads of tickets and their actions. */
 function nativeDeskMethods(
   access: ProjectAccess,
   reads: NativeReadStore,
   inbox: OperationInbox,
   backlog: ExecutionBacklogGuard,
   authoring: AuthoringStore,
-  desk: {
-    readonly agents: NativeActionAgents;
-    readonly operationalReads: OperationalReadStore | undefined;
-  },
+  desk: { readonly operationalReads: OperationalReadStore | undefined },
 ): Pick<NativeWeb, "submit" | "cancel"> &
   ReturnType<typeof nativeProjectionMethods> {
   return {
-    submit: nativeSubmitMethod(access, inbox, backlog, authoring, {
-      reads,
-      agents: desk.agents,
-    }),
-    ...nativeProjectionMethods(
-      access,
-      reads,
-      desk.agents,
-      desk.operationalReads,
-    ),
+    submit: nativeSubmitMethod(access, inbox, backlog, authoring, { reads }),
+    ...nativeProjectionMethods(access, reads, desk.operationalReads),
     cancel: nativeCancelMethod(access, reads, inbox),
   };
 }
@@ -3271,13 +2795,10 @@ export function nativeWeb(
   inventory?: ProjectInventory,
   operationalReads?: OperationalReadStore,
   outputContents?: OutputContentPort,
-  selectorContexts?: SelectorOperationalContextRead,
   repositoryConfigurationImports?: NativeRepositoryConfigurationImportPorts,
   runEvidenceReads?: RunEvidenceReadStore,
   runEvidenceContents?: RunEvidenceContentPort,
-  leads?: NativeLeadPorts,
   threads?: NativeThreadPorts,
-  inquiries?: LeadInquiryStore,
   sessionRoutes?: SessionRouteReads,
   projectArtifacts?: ProjectArtifactPort,
   projectArtifactMinting?: ProjectArtifactMinting,
@@ -3286,12 +2807,10 @@ export function nativeWeb(
   return {
     ...nativeEpicMethods(access, epics),
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
-    ...nativeLeadReadMethods(access, leads),
     ...nativeThreadMethods(access, threads, sessionRoutes, projectArtifacts),
     hostedRuns: nativeHostedRunsMethod(access),
     abilities: (principal, partition) =>
       projectAbilities(access, principal, partition),
-    ...nativeLeadInquiryMethods(access, inquiries, sessionRoutes),
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
       access,
       repositoryConfigurationImports,
@@ -3309,12 +2828,7 @@ export function nativeWeb(
       projectArtifacts,
       projectArtifactMinting,
     ),
-    selectorOperationalContext: nativeSelectorContextMethod(
-      access,
-      selectorContexts,
-    ),
     ...nativeDeskMethods(access, reads, inbox, backlog, authoring, {
-      agents: nativeWebAgents(leads),
       operationalReads,
     }),
     notifications: authorizedProjectValue(access, (partition, cursor) =>
@@ -3337,16 +2851,5 @@ function nativeDispatchViewMethod(
     if (views === undefined)
       throw new Error("native web: no dispatch-view store was composed");
     return views.read(partition, checkedDispatchViewQuery(query));
-  });
-}
-
-function nativeSelectorContextMethod(
-  access: ProjectAccess,
-  contexts?: SelectorOperationalContextRead,
-): NativeWeb["selectorOperationalContext"] {
-  return authorizedProjectValue(access, (partition) => {
-    if (contexts === undefined)
-      throw new Error("native web: no selector context source was composed");
-    return contexts.context(partition);
   });
 }

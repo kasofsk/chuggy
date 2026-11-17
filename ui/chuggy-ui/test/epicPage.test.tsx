@@ -17,7 +17,7 @@ import {
   epicView,
 } from "./epicPageFixture.tsx";
 import { epicNavigated, epicRouted } from "./epicPageRouter.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
 import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { answer, settled } from "./screenHarness.tsx";
@@ -37,7 +37,7 @@ afterEach(() => {
 });
 
 const overviewPath = (epic: number) =>
-  `/${leadPartition.tenant}/${leadPartition.project}/epics/${String(epic)}`;
+  `/${projectPartition.tenant}/${projectPartition.project}/epics/${String(epic)}`;
 
 async function editDrawn(
   abilities: AbilitiesAnswer,

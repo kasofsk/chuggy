@@ -1,7 +1,7 @@
 /**
- * Where a project's sessions run, against a real server: the one resolution
+ * Where a project's threads run, against a real server: the one resolution
  * over the published routing and the project's own row, the door that writes
- * the row, the runners a session would run on, and which role may reach each.
+ * the row, the runners a thread would run on, and which role may reach each.
  */
 
 import assert from "node:assert/strict";
@@ -29,7 +29,6 @@ import {
   ticketServiceRole,
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
-import type { SessionKind } from "../../src/interpreter/agentSession.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -55,15 +54,13 @@ import {
 let harness: PostgresHarness;
 let apiPool: pg.Pool;
 let schedulerPool: pg.Pool;
-let selectorPool: pg.Pool;
 before(async () => {
   harness = await postgresHarnessOpen();
   apiPool = postgresHarnessRolePool(apiRole);
   schedulerPool = postgresHarnessRolePool(schedulerRole);
-  selectorPool = postgresHarnessRolePool(selectorServiceRole);
 });
 after(async () => {
-  await Promise.all([apiPool.end(), schedulerPool.end(), selectorPool.end()]);
+  await Promise.all([apiPool.end(), schedulerPool.end()]);
   await harness.close();
 });
 
@@ -81,96 +78,61 @@ async function published(routing: SessionRouting): Promise<void> {
   );
 }
 
-/** Each kind's route and its source, as the selector's role reads them. */
-async function routed(
-  partition: Partition,
-): Promise<Readonly<Record<SessionKind, string>>> {
-  const reads = postgresSessionPlacement(selectorPool);
-  const of = async (kind: SessionKind) => {
-    const resolved = await reads.route(partition, kind);
-    return `${resolved.route}/${resolved.source}`;
-  };
-  return {
-    Thread: await of("Thread"),
-    Lead: await of("Lead"),
-    Inquiry: await of("Inquiry"),
-  };
+/** The thread's route and its source, as the scheduler's role reads them. */
+async function routed(partition: Partition): Promise<string> {
+  const resolved = await postgresSessionPlacement(schedulerPool).route(
+    partition,
+    "Thread",
+  );
+  return `${resolved.route}/${resolved.source}`;
 }
 
-test("a project nobody placed runs every session in cluster while no routing is published", async () => {
+test("a project nobody placed runs its threads in cluster while no routing is published", async () => {
   const partition = await postgresHarnessProject(harness.store, "unpublished");
-  assert.deepEqual(await routed(partition), {
-    Thread: "InCluster/Default",
-    Lead: "InCluster/Default",
-    Inquiry: "InCluster/Default",
-  });
+  assert.equal(await routed(partition), "InCluster/Default");
 });
 
-test("a project's own row overrides the published default, and the deployment's override overrides both, kind by kind", async () => {
+test("a project's own row overrides the published default, and the deployment's override overrides both", async () => {
   const placed = await postgresHarnessProject(harness.store, "placed");
   const beside = await postgresHarnessProject(harness.store, "beside");
-  await published({
-    routes: { Thread: "Pool", Lead: "InCluster" },
-    projectRoutes: new Map(),
-  });
-  assert.deepEqual(await routed(placed), {
-    Thread: "Pool/Default",
-    Lead: "InCluster/Default",
-    Inquiry: "InCluster/Default",
-  });
+  await published({ routes: { Thread: "Pool" }, projectRoutes: new Map() });
+  assert.equal(await routed(placed), "Pool/Default");
   assert.equal(
     await postgresSessionPlacement(apiPool).write(
       placed,
-      { Thread: "InCluster", Lead: "Pool", leadOffering: "Own" },
+      { Thread: "InCluster" },
       owner,
     ),
     "Written",
   );
-  assert.deepEqual(await routed(placed), {
-    Thread: "InCluster/Project",
-    Lead: "Pool/Project",
-    Inquiry: "Pool/Project",
-  });
+  assert.equal(await routed(placed), "InCluster/Project");
   await published({
-    routes: { Thread: "Pool", Lead: "InCluster" },
+    routes: { Thread: "InCluster" },
     projectRoutes: new Map([
-      [
-        placed.tenant,
-        new Map([[placed.project, { Lead: "InCluster" as const }]]),
-      ],
+      [placed.tenant, new Map([[placed.project, { Thread: "Pool" as const }]])],
     ]),
   });
-  assert.deepEqual(await routed(placed), {
-    Thread: "InCluster/Project",
-    Lead: "InCluster/Override",
-    Inquiry: "InCluster/Override",
-  });
-  assert.deepEqual(await routed(beside), {
-    Thread: "Pool/Default",
-    Lead: "InCluster/Default",
-    Inquiry: "InCluster/Default",
-  });
+  assert.equal(await routed(placed), "Pool/Override");
+  assert.equal(await routed(beside), "InCluster/Default");
 });
 
-test("a kind the routing does not name is refused rather than placed", async () => {
+test("every kind but a thread is refused rather than placed", async () => {
   const partition = await postgresHarnessProject(harness.store, "unnamed");
-  await assert.rejects(
-    apiPool.query(`SELECT * FROM ${sessionRouteFunction}($1,$2,'Execution')`, [
-      partition.tenant,
-      partition.project,
-    ]),
-    /session kind Execution has no route/u,
-  );
+  for (const kind of ["Lead", "Inquiry", "Execution"])
+    await assert.rejects(
+      apiPool.query(`SELECT * FROM ${sessionRouteFunction}($1,$2,$3)`, [
+        partition.tenant,
+        partition.project,
+        kind,
+      ]),
+      new RegExp(`session kind ${kind} has no route`, "u"),
+    );
 });
 
 test("a write that changes nothing is unchanged, and a project that does not exist is not found", async () => {
   const partition = await postgresHarnessProject(harness.store, "repeat");
   const store = postgresSessionPlacement(apiPool);
-  const placement = {
-    Thread: "Pool",
-    Lead: "Pool",
-    leadOffering: "Own",
-  } as const;
+  const placement = { Thread: "Pool" } as const;
   assert.equal(await store.write(partition, placement, owner), "Written");
   assert.equal(await store.write(partition, placement, owner), "Unchanged");
   assert.equal(
@@ -183,29 +145,15 @@ test("a write that changes nothing is unchanged, and a project that does not exi
   );
 });
 
-test("a write that changes one kind's route is written, and that route reads back changed", async () => {
+test("a write that changes the thread's route is written, and the route reads back changed", async () => {
   const partition = await postgresHarnessProject(harness.store, "one-kind");
   const store = postgresSessionPlacement(apiPool);
-  for (const [placement, reads] of [
-    [{ Thread: "Pool", Lead: "Pool" }, ["Pool", "Pool"]],
-    [{ Thread: "Pool", Lead: "InCluster" }, ["Pool", "InCluster"]],
-    [{ Thread: "Pool", Lead: "Pool" }, ["Pool", "Pool"]],
-    [{ Thread: "InCluster", Lead: "Pool" }, ["InCluster", "Pool"]],
-  ] as const) {
+  for (const thread of ["Pool", "InCluster", "Pool"] as const) {
     assert.equal(
-      await store.write(
-        partition,
-        { ...placement, leadOffering: "Own" },
-        owner,
-      ),
+      await store.write(partition, { Thread: thread }, owner),
       "Written",
     );
-    const [thread, lead] = reads;
-    assert.deepEqual(await routed(partition), {
-      Thread: `${thread}/Project`,
-      Lead: `${lead}/Project`,
-      Inquiry: `${lead}/Project`,
-    });
+    assert.equal(await routed(partition), `${thread}/Project`);
   }
 });
 
@@ -348,14 +296,14 @@ test("a member's personal runner is no runner of theirs or of the project's, how
   assert.deepEqual(await reads.runners(partition, member), hosted("Offline"));
 });
 
-test("only the API writes a placement, the API and the selector resolve one, and only the scheduler publishes a routing", async () => {
+test("only the API writes a placement, the API and the scheduler resolve one, and only the scheduler publishes a routing", async () => {
   const partition = await postgresHarnessProject(harness.store, "privileges");
   const project = `'${partition.tenant}','${partition.project}'`;
   const door = `SELECT ${sessionPlacementSetFunction}(${project},'Pool','Pool','Own','Member','someone')`;
   const reads = [
     [
       sessionRouteFunction,
-      `SELECT * FROM ${sessionRouteFunction}(${project},'Lead')`,
+      `SELECT * FROM ${sessionRouteFunction}(${project},'Thread')`,
     ],
     [
       sessionRunnerStandingFunction,
@@ -378,9 +326,14 @@ test("only the API writes a placement, the API and the selector resolve one, and
     );
   assert.equal(await harness.attemptAs(apiRole, door), undefined);
   for (const [named, read] of reads) {
-    for (const role of [apiRole, selectorServiceRole])
+    for (const role of [apiRole, schedulerRole])
       assert.equal(await harness.attemptAs(role, read), undefined, role);
-    for (const role of [ticketServiceRole, workerPlaneRole, poolPlaneRole])
+    for (const role of [
+      ticketServiceRole,
+      selectorServiceRole,
+      workerPlaneRole,
+      poolPlaneRole,
+    ])
       assert.match(
         (await harness.attemptAs(role, read)) ?? "",
         postgresHarnessDenial(named),

@@ -35,6 +35,26 @@
  * the cluster. It guards an arithmetic rather than an authority; the authority
  * stays the durable allocations, which is why no count is cached anywhere.
  *
+ * ADMISSION AND LAUNCH TAKE A STARTED TICKET FIRST, AS THE CLAIMS DO. Past the
+ * reservation deficit `preferredOver` leads with, which only admission ranks
+ * by, both take `execution_attempt_started`, then the oldest ticket by
+ * `execution_ticket_registered`, then registration, so a freed slot goes to a
+ * ticket's next stage before another ticket's work.
+ *
+ * A SLOT A STARTED TICKET'S COMPLETION FREED WAITS FOR THAT TICKET'S NEXT
+ * STAGE. The ticket service answers a completion and the scheduler registers
+ * its next stage on later passes of separate loops, so until then admission
+ * holds back an unstarted ticket's execution that would take the slot:
+ * counting each completion `execution_between_stages` names as a slot held in
+ * its account, and in its cluster up to the room its account has left, it
+ * admits one only where both still have room past them, and answers
+ * `HeldBetweenStages` where that is all that stopped it. What bounds the hold
+ * is that function's: the ticket service answering, within its deferral
+ * bounds, and the next stage being admitted; a next stage its own account's
+ * `maximum` keeps queued holds back no other account. A started ticket's
+ * execution is never held back, nor one of an account below its reserved
+ * share, which `preferredOver` already ranks first.
+ *
  * AN APPROVAL IS REGISTERED AND NEVER ADMITTED. Its execution is queued as any
  * is, which holds no slot, but names no requirement because a person answers
  * it, and admission passes over every row that names none. `mayAdmit` only
@@ -819,21 +839,41 @@ async function schedulerAdmit(
     tenant: string;
     project: string;
     execution: string;
+    held_back: boolean;
   }>(
-    sql`SELECT e.tenant, e.project, e.execution
+    sql`WITH awaiting AS MATERIALIZED (
+         SELECT s.account FROM execution_between_stages(${cluster}) s),
+     awaiting_usable AS MATERIALIZED (
+         SELECT coalesce(sum(least(b.awaiting, greatest(a.maximum - h.held, 0))), 0) AS slots
+           FROM (SELECT account, count(*) AS awaiting FROM awaiting GROUP BY account) b
+           JOIN capacity_account a ON a.account = b.account
+           CROSS JOIN LATERAL (SELECT count(*) AS held FROM execution x
+                                WHERE x.account = b.account
+                                  AND x.status IN ('Admitted', 'Launching', 'Running')) h)
+     SELECT e.tenant, e.project, e.execution,
+            NOT (execution_attempt_started(e.tenant, e.project, e.execution, NULL::text)
+                 OR h.held < a.reserved
+                 OR (h.held + w.awaiting < a.maximum
+                     AND ${ledger.active}::bigint + (SELECT u.slots FROM awaiting_usable u) < ${ledger.slotsMax}::bigint)) AS held_back
        FROM execution e
        JOIN capacity_account a ON a.account = e.account
        LEFT JOIN LATERAL (SELECT count(*) AS held FROM execution x
                            WHERE x.account = e.account
                              AND x.status IN ('Admitted', 'Launching', 'Running')) h ON true
+       LEFT JOIN LATERAL (SELECT count(*) AS awaiting FROM awaiting b
+                           WHERE b.account = e.account) w ON true
       WHERE e.cluster = ${cluster} AND e.status = 'Queued'
         AND e.requirement_value IS NOT NULL AND h.held < a.maximum
-      ORDER BY (greatest(a.reserved - h.held, 0) > 0) DESC,
+      ORDER BY held_back,
+               (greatest(a.reserved - h.held, 0) > 0) DESC,
+               execution_attempt_started(e.tenant, e.project, e.execution, NULL::text) DESC,
+               execution_ticket_registered(e.tenant, e.project, e.ticket),
                e.registered_at, e.execution LIMIT 1
       FOR UPDATE OF e`,
   );
   const row = candidate.rows[0];
   if (row === undefined) return schedulerNoCandidate(client, cluster);
+  if (row.held_back) return { admitted: "HeldBetweenStages" };
   const taken = await client.query(
     sql`UPDATE execution SET status = 'Admitted'
       WHERE tenant = ${row.tenant} AND project = ${row.project}
@@ -1422,7 +1462,9 @@ async function schedulerUnlaunched(
                          WHERE a.tenant = e.tenant AND a.project = e.project
                            AND a.execution = e.execution
                            AND a.state IN ('Placing', 'Running'))
-      ORDER BY e.registered_at, e.execution LIMIT ${executionsMax}`,
+      ORDER BY execution_attempt_started(e.tenant, e.project, e.execution, NULL::text) DESC,
+               execution_ticket_registered(e.tenant, e.project, e.ticket),
+               e.registered_at, e.execution LIMIT ${executionsMax}`,
   );
   return waiting.rows.map(executionRowLogical);
 }

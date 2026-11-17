@@ -10,7 +10,7 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 
 /** The epic the address names. */
 export const epicRouted = { epic: "7" };
@@ -82,7 +82,7 @@ function epicCreateLink(
 export const epicRouterDouble = {
   createLink: epicCreateLink,
   Link: EpicLink,
-  useParams: () => ({ ...leadPartition, epic: epicRouted.epic }),
+  useParams: () => ({ ...projectPartition, epic: epicRouted.epic }),
   useBlocker: (options: { readonly shouldBlockFn: () => boolean }) => {
     useEffect(() => {
       epicBlockers.add(options.shouldBlockFn);

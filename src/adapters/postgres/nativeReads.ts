@@ -1583,9 +1583,9 @@ function nativeReadsActions(
 }
 
 /**
- * The inbox's positions: one more than a page of the tickets in `phases`, with
- * an open action or among `named`, last activity first, and how many the union
- * holds before any cursor. Both reads of `native_action` and the projection
+ * The inbox's positions: one more than a page of the tickets in `phases` or
+ * with an open action, last activity first, and how many the union holds
+ * before any cursor. Both reads of `native_action` and the projection
  * bind the partition themselves and neither is correlated on the other, so the
  * union is read once however many rows it holds.
  */
@@ -1598,17 +1598,15 @@ async function readInboxPositions(
   readonly positions: readonly TicketPosition[];
 }> {
   const found = await client.query<TicketPositionsRow>(
-    sql`WITH named AS (
+    sql`WITH acted AS (
           SELECT a.ticket FROM native_action a
            WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
-             AND a.state='Open'
-          UNION
-          SELECT unnest(${query.named.map(String)}::bigint[])),
+             AND a.state='Open'),
         selected AS (
           SELECT t.ticket,t.seq FROM ticket_projection t
            WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
              AND (t.phase = ANY(${[...query.phases]}::text[])
-               OR t.ticket IN (SELECT n.ticket FROM named n))),
+               OR t.ticket IN (SELECT a.ticket FROM acted a))),
         page AS (
           SELECT s.ticket,s.seq FROM selected s
            WHERE ${query.after?.sequence ?? null}::bigint IS NULL

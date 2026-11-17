@@ -68,8 +68,11 @@
  * may name how long a session it claims may sit idle, which is without limit
  * where it names none; no other caller's poll is read for one. Its
  * sessions run in one container it starts before it holds any, so each answer
- * to it names the session image the scheduler publishes, and it may pull that
- * image while it holds nothing. Each answer to one implementing
+ * to it names the image for that container, the plane's chat image or else
+ * the session image the scheduler publishes, and it may pull that image while
+ * it holds nothing. Its poll names every session it holds, so an
+ * attempt its registration holds that the poll does not name is ended at
+ * once, before anything the poll claims. Each answer to one implementing
  * `ChatThreadsClosed` also names the threads it last ran that have since
  * closed, so it may remove what it keeps for them, and each session it hands
  * one implementing `ChatSessionThreads` names the thread that session is an
@@ -113,6 +116,7 @@ import {
 } from "../contract/workerPool.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 export { workerPoolsAnsweredMax } from "../contract/http.ts";
+import type { ThreadTicketWakeSetting } from "../contract/threadWake.ts";
 import type { SessionCapability } from "./agentSession.ts";
 import type { ExecutionRequirement } from "../contract/executionRequirement.ts";
 import type { TaskResources } from "./taskResources.ts";
@@ -169,7 +173,7 @@ export const workerPoolContractAccepted: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has, the credentials it would run each agent's job on, the most memory, in MiB, it takes one job of, the memory it has room for now, the longest it waits for an empty answer, how long a session it claims may sit idle, the capabilities a chat host's threads may hold and the release and features its request offered, where it named each. */
+/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has, the credentials it would run each agent's job on, the most memory, in MiB, it takes one job of, the memory it has room for now, the longest it waits for an empty answer, how long a session it claims may sit idle, the capabilities a chat host's threads may hold, whether they are woken for their tickets and the release and features its request offered, where it named each. */
 export interface WorkerPoolAsked {
   readonly held: readonly string[];
   readonly wanted: number;
@@ -182,13 +186,19 @@ export interface WorkerPoolAsked {
   readonly pollWaitSecs?: number;
   readonly idleSecs?: number;
   readonly sessionCapabilities?: readonly SessionCapability[];
+  readonly ticketWakes?: ThreadTicketWakeSetting;
   readonly contract?: WorkerContractPeer;
 }
 
 /** What of a poll its query names, the rest being its headers. */
 export type WorkerPoolAskedQuery = Pick<
   WorkerPoolAsked,
-  "held" | "wanted" | "wantedSessions" | "idleSecs" | "sessionCapabilities"
+  | "held"
+  | "wanted"
+  | "wantedSessions"
+  | "idleSecs"
+  | "sessionCapabilities"
+  | "ticketWakes"
 >;
 
 /** The memory, in MiB, an execution naming none runs with on a pool, where the plane names no size of its own. */
@@ -202,7 +212,7 @@ export interface WorkerPoolRegistration {
   readonly class: WorkerPoolClass;
   readonly clientId: string;
   readonly principal: Principal;
-  /** The person whose token registered the pool, recorded as who registered it; every pool is handed its project's lead alone. */
+  /** The person whose token registered the pool, recorded as who registered it. */
   readonly registeredBy?: Principal;
 }
 
@@ -483,10 +493,11 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
   ): Promise<boolean>;
   /** The projects a personal runner's current registration allowlists. */
   allowlisted(identity: PersonalRunnerIdentity): Promise<readonly ProjectId[]>;
-  /** Records a pool's or a personal runner's poll as one that could take an execution where `executions` says it could, and a personal runner's whatever it could take, under its current registration alone. */
+  /** Records a pool's or a personal runner's poll as one that could take an execution where `executions` says it could, a personal runner's whatever it could take, and either's memory room it named, under its current registration alone. */
   polled(
     identity: WorkerPoolExecutionPoller,
     executions: boolean,
+    memoryRoomMib: number | undefined,
   ): Promise<void>;
 }
 
@@ -508,6 +519,8 @@ export interface WorkerPoolPollSettings {
   readonly pollsMax: number;
   /** The public host each internal registry host is published as, which an assignment names its image by. */
   readonly imageHosts: WorkerPoolImageHosts;
+  /** The image a chat host starts its sessions' container from, where the site names one apart from its session image. */
+  readonly chatImage?: string;
 }
 
 /**
@@ -519,8 +532,8 @@ export interface WorkerPoolPollSettings {
  * those capabilities name exactly the agents it takes, which every poll writes
  * afresh from its peer, so a runner moved back to an earlier one is read as
  * that one; the credentials it named, which a poll naming none clears; and
- * for a chat host, the capabilities it named for its threads, which a poll
- * naming none clears too.
+ * for a chat host, the capabilities it named for its threads and whether they
+ * are woken for their tickets, each of which a poll naming none clears too.
  */
 export interface WorkerPoolRunners {
   named(
@@ -531,6 +544,7 @@ export interface WorkerPoolRunners {
     agentsAdvertised?: boolean,
     credentials?: WorkerRunnerCredentials,
     sessionCapabilities?: readonly SessionCapability[],
+    ticketWakes?: ThreadTicketWakeSetting,
   ): Promise<void>;
 }
 
@@ -832,7 +846,7 @@ async function workerPoolClaims(
   };
 }
 
-/** The sessions one pass claims, which is none for a personal runner or on a plane that names no API for a session to reach. */
+/** The sessions one pass claims, which is none but a chat host's, and none on a plane that names no API for a session to reach. */
 function workerPoolSessionsClaimed(
   ports: WorkerPoolPorts,
   identity: WorkerPoolSessionClaimant | undefined,
@@ -845,7 +859,11 @@ function workerPoolSessionsClaimed(
   },
 ): Promise<WorkerPoolSessionAssignment[]> {
   const apiUrl = settings.sessionApiUrl;
-  if (identity === undefined || apiUrl === undefined)
+  if (
+    identity === undefined ||
+    identity.kind === "Dedicated" ||
+    apiUrl === undefined
+  )
     return Promise.resolve([]);
   return workerPoolSessionClaims(
     ports.sessions,
@@ -1058,7 +1076,8 @@ async function workerPoolHoldingRead(
  * memory ceiling it takes jobs under where it named them, whether a personal
  * runner's peer implements `RunnerAgentsAdvertised`, the credentials it
  * named, which its claims read, the capabilities a chat host named for its
- * threads, which its owner reads, and the poll as the
+ * threads, which its owner reads, whether a chat host's threads are woken for
+ * their tickets, which the wake pass reads, and the poll as the
  * caller's last of each kind of work it could take: for a pool or a chat host,
  * a session, with room for one or holding one from a plane that names the API
  * a session reaches, and, for a pool or a personal runner, an execution, with
@@ -1067,7 +1086,8 @@ async function workerPoolHoldingRead(
  * runner taking nothing names as 0. That is what a pool's claim reads a
  * personal runner as live by, and what a project's pools are read as live by
  * beside their session polls; every poll of a personal runner is recorded too,
- * as what its owner reads it as live by.
+ * as what its owner reads it as live by, and every poll of either with the
+ * memory room it named, which a run's wait reads it as short of memory by.
  */
 async function workerPoolPollRecorded(
   ports: WorkerPoolPorts,
@@ -1085,6 +1105,7 @@ async function workerPoolPollRecorded(
       workerPoolPeerImplements("RunnerAgentsAdvertised", asked.contract),
     asked.credentials ?? {},
     identity.kind === "ChatHost" ? asked.sessionCapabilities : undefined,
+    identity.kind === "ChatHost" ? asked.ticketWakes : undefined,
   );
   const claimant = workerPoolSessionClaimant(identity);
   if (
@@ -1097,11 +1118,27 @@ async function workerPoolPollRecorded(
     asked.wanted > 0 ||
     holding.jobs.length > 0 ||
     (asked.memoryRoomMib ?? 0) > 0;
-  if (
-    identity.kind === "Personal" ||
-    (identity.kind === "Dedicated" && executions)
-  )
-    await ports.assignments.polled(identity, executions);
+  if (identity.kind !== "ChatHost")
+    await ports.assignments.polled(identity, executions, asked.memoryRoomMib);
+}
+
+/**
+ * Ends what a chat host's registration holds and its poll did not list,
+ * judged against the list the poll arrived with: an attempt this poll opens
+ * is judged by the next, which its host sends once it has placed it.
+ */
+async function workerPoolUnlistedEnded(
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
+  holding: WorkerPoolHolding,
+  settings: WorkerPoolPollSettings,
+): Promise<void> {
+  if (identity.kind !== "ChatHost") return;
+  await ports.sessions.store.unlistedEnded(
+    identity,
+    holding.sessions,
+    settings.sessionsHeldMax,
+  );
 }
 
 /** How many passes a poll makes at most: the plane's own, or no more than the wait its poll named lets follow the first. */
@@ -1153,6 +1190,7 @@ export async function workerPoolPoll(
     holding.sessions.length > settings.sessionsHeldMax
   )
     return { polled: "HeldOverBound" };
+  await workerPoolUnlistedEnded(ports, identity, holding, settings);
   await workerPoolPollRecorded(ports, identity, asked, holding, settings);
   let answer = await workerPoolReconcile(
     ports,
@@ -1256,11 +1294,10 @@ export async function workerPoolSettled(
 }
 
 /**
- * The image a chat host starts its sessions' container from, by the host the
- * cluster names it with: the session image the scheduler publishes, where the
- * plane serves sessions and one is published, and none for any other caller.
- * Every session runs that one image, whatever its kind or route, so there is
- * no other to choose.
+ * The image a chat host starts its sessions' container from, as the cluster
+ * names it: the plane's own chat image where its settings name one, and
+ * otherwise the session image the scheduler publishes. It is named where the
+ * plane serves sessions and a launch is published, and to no other caller.
  */
 async function workerPoolChatImage(
   ports: WorkerPoolPorts,
@@ -1269,7 +1306,10 @@ async function workerPoolChatImage(
 ): Promise<string | undefined> {
   if (identity.kind !== "ChatHost" || settings.sessionApiUrl === undefined)
     return undefined;
-  return (await ports.sessions.store.launch())?.image;
+  const launch = await ports.sessions.store.launch();
+  return launch === undefined
+    ? undefined
+    : (settings.chatImage ?? launch.image);
 }
 
 /** The images pinned by what this registration may still renew of either kind and the runtimes its jobs were opened under, each kind to its own bound, and the image a chat host is named, which it pulls before it holds anything. */
@@ -1292,7 +1332,7 @@ export async function workerPoolHeldImages(
   ];
 }
 
-/** `answer` naming a chat host's image by the host it pulls it from, where it is named one; it is read as the answer is made, so a newer publish reaches the next answer. */
+/** `answer` naming a chat host's image by the host it pulls it from, where it is named one; the launch is read as the answer is made, so a newer publish reaches the next answer. */
 async function workerPoolChatImageNamed(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,

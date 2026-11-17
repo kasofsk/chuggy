@@ -91,7 +91,7 @@ import type {
 } from "../core/ticketListView.ts";
 import { panelReadRestarted, useApiPorts, usePanelState } from "./api.ts";
 import { EpicChips } from "./EpicChips.tsx";
-import { useCreatorEmails } from "./creatorEmails.ts";
+import { useCreatorNames } from "./creatorNames.ts";
 import {
   ListControls,
   ListGlyph,
@@ -273,7 +273,7 @@ export function TicketListDependencies(props: {
 /** The row's owner where it is not its creator, after an arrow from them. */
 function TicketListOwner(props: {
   readonly owner: string | undefined;
-  readonly creatorEmails: ReadonlyMap<string, string>;
+  readonly creatorNames: ReadonlyMap<string, string>;
 }): ReactNode {
   const text = useCopyText();
   if (props.owner === undefined) return null;
@@ -283,7 +283,7 @@ function TicketListOwner(props: {
       <span className="visually-hidden">
         {` ${text({ id: "project-table-owner-label" })} `}
       </span>
-      <Identity label={creatorLabel(props.owner, props.creatorEmails)} />
+      <Identity label={creatorLabel(props.owner, props.creatorNames)} />
     </>
   );
 }
@@ -293,7 +293,7 @@ function TicketListOwner(props: {
  * shows one of the two. */
 function TicketListCreator(props: {
   readonly row: ProjectTableRow;
-  readonly creatorEmails: ReadonlyMap<string, string>;
+  readonly creatorNames: ReadonlyMap<string, string>;
   readonly className: string;
 }): ReactNode {
   const { creator, owner } = props.row;
@@ -301,9 +301,9 @@ function TicketListCreator(props: {
   return (
     <span className={props.className}>
       {creator === undefined ? null : (
-        <Identity label={creatorLabel(creator, props.creatorEmails)} />
+        <Identity label={creatorLabel(creator, props.creatorNames)} />
       )}
-      <TicketListOwner owner={owner} creatorEmails={props.creatorEmails} />
+      <TicketListOwner owner={owner} creatorNames={props.creatorNames} />
     </span>
   );
 }
@@ -334,7 +334,7 @@ function ticketListWaits(props: {
 function TicketListFoot(props: {
   readonly row: ProjectTableRow;
   readonly partition: PartitionIdentity;
-  readonly creatorEmails: ReadonlyMap<string, string>;
+  readonly creatorNames: ReadonlyMap<string, string>;
   readonly queues: LandingQueuesResponse | undefined;
 }): ReactNode {
   const row = props.row;
@@ -345,7 +345,7 @@ function TicketListFoot(props: {
     <>
       <TicketListCreator
         row={row}
-        creatorEmails={props.creatorEmails}
+        creatorNames={props.creatorNames}
         className="ticket-list-foot-creator"
       />
       {ticketListStandingOf(row) === "Ready" ? (
@@ -379,7 +379,7 @@ export function TicketListRow(props: {
   readonly standings: ReadonlyMap<number, TicketListStanding>;
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
-  readonly creatorEmails: ReadonlyMap<string, string>;
+  readonly creatorNames: ReadonlyMap<string, string>;
   /** The project's landing queues, where the page holds them. */
   readonly queues: LandingQueuesResponse | undefined;
 }): ReactNode {
@@ -402,7 +402,7 @@ export function TicketListRow(props: {
           <TicketListRepository row={row} />
           <TicketListCreator
             row={row}
-            creatorEmails={props.creatorEmails}
+            creatorNames={props.creatorNames}
             className="ticket-list-creator"
           />
         </>
@@ -412,7 +412,7 @@ export function TicketListRow(props: {
         <TicketListFoot
           row={row}
           partition={props.partition}
-          creatorEmails={props.creatorEmails}
+          creatorNames={props.creatorNames}
           queues={props.queues}
         />
       }
@@ -461,11 +461,11 @@ function useTicketListMemberText(
 ): (principal: string) => string {
   const text = useCopyText();
   const reader = useProjectAbilities(partition)?.principal;
-  const creatorEmails = useCreatorEmails(partition);
+  const creatorNames = useCreatorNames(partition);
   return (principal) =>
     principal === reader
       ? text({ id: "project-table-creator-me" })
-      : creatorLabel(principal, creatorEmails).text;
+      : creatorLabel(principal, creatorNames).text;
 }
 
 /** Who filed, or who owns, the tickets the list holds: anyone, the reader,
@@ -755,7 +755,7 @@ function TicketListRecords(props: {
   readonly reading: boolean;
 }): ReactNode {
   const text = useCopyText();
-  const creatorEmails = useCreatorEmails(props.partition);
+  const creatorNames = useCreatorNames(props.partition);
   const queues = useLandingQueues(props.partition);
   return (
     <RecordList
@@ -769,7 +769,7 @@ function TicketListRecords(props: {
           standings={props.standings}
           partition={props.partition}
           nowMs={props.nowMs}
-          creatorEmails={creatorEmails}
+          creatorNames={creatorNames}
           queues={queues}
         />
       ))}

@@ -74,7 +74,10 @@ import {
   threadTurnInput,
   threadTurnInputCharsMax,
 } from "../../src/interpreter/thread.ts";
-import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
+import {
+  threadRefusalsHeading,
+  threadStandingRulesDefault,
+} from "../../src/contract/threadSeeding.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
@@ -277,10 +280,6 @@ function ports(doubles: ThreadDoubles): NativeThreadPorts {
         }),
       drafts: () =>
         Promise.resolve([{ ticket: 42, summary: "the footer is wrong" }]),
-      refusals: (_partition, tickets) => {
-        doubles.calls.push(`refusals:${tickets.join(",")}`);
-        return Promise.resolve([{ ticket: 42, reason: "no dependency" }]);
-      },
     },
     rows: {
       batches: ({ session, stream, after, limit }) => {
@@ -376,10 +375,7 @@ function boundary(
     undefined,
     undefined,
     undefined,
-    undefined,
-    undefined,
     ports(held),
-    undefined,
     routes,
     projectArtifacts,
   );
@@ -583,11 +579,11 @@ test("a mailbox page outside its bounds is refused rather than clamped", async (
 });
 
 /**
- * The page is drawn by the lead's own walk over the thread's session: the rows
+ * The page is drawn by the transcript walk over the thread's session: the rows
  * are asked for session-keyed, the bytes are read for that session, and the
  * default stream is the thread's own agent reference.
  */
-test("a transcript page is the lead's walk over the thread's own session", async () => {
+test("a transcript page is the transcript walk over the thread's own session", async () => {
   const { web, held } = boundary();
 
   const read = await web.threadTranscript(dana, partition, mine, {
@@ -1696,16 +1692,11 @@ test("the first turn is seeded and every later turn is the message alone", async
   assert.ok(first?.includes("Ship the console."));
   assert.ok(first?.includes(threadStandingRulesDefault));
   assert.ok(first?.includes("the footer is wrong"));
-  assert.ok(first?.includes("no dependency"));
+  assert.ok(!first?.includes(threadRefusalsHeading));
   assert.ok(first?.endsWith("what is blocking 42?"));
-  assert.ok(seeded.held.calls.includes("refusals:42"));
   assert.deepEqual(
     bound.held.calls.filter((call) => call.startsWith("enqueue:")),
     ["enqueue:thread-turn-1:what is blocking 42?"],
-  );
-  assert.equal(
-    bound.held.calls.filter((call) => call.startsWith("refusals:")).length,
-    0,
   );
 });
 

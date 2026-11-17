@@ -8,12 +8,16 @@ import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { setupAnswersNone } from "../app/core/setupArguments.ts";
 import type { SetupAnswers } from "../app/core/setupArguments.ts";
 import { setupNext } from "../app/core/setupNext.ts";
+import type { SetupMergeSeen } from "../app/core/setupNext.ts";
 import { readSetup } from "../app/core/setupReads.ts";
 import type { SetupReads } from "../app/core/setupReads.ts";
 import { setupRepositoryRead } from "../app/core/setupRemote.ts";
 import type { SetupNext } from "../app/core/setupReport.ts";
 import { setupStanding } from "../app/core/setupStanding.ts";
-import type { SetupStanding } from "../app/core/setupStanding.ts";
+import type {
+  SetupPluginHere,
+  SetupStanding,
+} from "../app/core/setupStanding.ts";
 import { setupSiteAnswered } from "./setupSite.ts";
 import type { SetupSite } from "./setupSite.ts";
 
@@ -29,6 +33,10 @@ export interface Asking {
   readonly through?: (ports: ApiPorts) => ApiPorts;
   /** Whether the agent's configuration here names chuggy's server for the project, which it does unless a case says not. */
   readonly named?: boolean;
+  /** How Claude Code here has chuggy's plugin, which is on unless a case says otherwise. */
+  readonly plugin?: SetupPluginHere;
+  /** What the merge offer turns on beyond the reads, which is a history git could not read unless a case says otherwise. */
+  readonly merge?: SetupMergeSeen;
 }
 
 /** Ports that answer from `site` by path, as the ports a session is opened with are asked, and fail whatever it has no answer for. */
@@ -72,7 +80,12 @@ export async function stood(
   site: SetupSite,
   asking: Asking = {},
 ): Promise<SetupStanding> {
-  return setupStanding(await siteRead(site, asking), asking.named ?? true);
+  return setupStanding(
+    await siteRead(site, asking),
+    asking.named ?? true,
+    asking.plugin ?? "On",
+    asking.answers?.northStar,
+  );
 }
 
 /** The next thing for a site, as a run given `asking` would name it. */
@@ -80,8 +93,16 @@ export async function nextOf(
   site: SetupSite,
   asking: Asking = {},
 ): Promise<SetupNext> {
-  return setupNext(await stood(site, asking), {
-    ...setupAnswersNone,
-    ...asking.answers,
-  });
+  return setupNext(
+    await stood(site, asking),
+    {
+      ...setupAnswersNone,
+      ...asking.answers,
+    },
+    "linux",
+    undefined,
+    undefined,
+    undefined,
+    asking.merge,
+  );
 }

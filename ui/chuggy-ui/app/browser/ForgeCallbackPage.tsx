@@ -4,7 +4,9 @@
  * transaction is taken, and the code posted once and cleared from the address.
  * An answer that leaves an app to be installed sends the person on to that
  * app's install, once for each app, in this address's place so going back
- * does not land here. Any other answer puts them back where they pressed, with
+ * does not land here. The worker app's install opens with what the portal
+ * app's installation on that account was given already chosen, where that can
+ * be read; where it cannot it opens as the forge draws it. Any other answer puts them back where they pressed, with
  * the word it came to. A return this tab did not start has nowhere to go back
  * to, so it stays.
  */
@@ -14,10 +16,18 @@ import type { UseNavigateResult } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import type { ForgeAuthorizationResponse } from "../../../../src/contract/responses.ts";
+import type {
+  ForgeAuthorizationResponse,
+  ForgeRepositoriesResponse,
+} from "../../../../src/contract/responses.ts";
 import type { ForgeAppName } from "../../../../src/contract/rosters.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
-import { apiForgeApps, apiForgeAuthorization } from "../core/apiRoutes.ts";
+import {
+  apiForgeApps,
+  apiForgeAuthorization,
+  apiForgeInstallationRepositories,
+  apiForgeInstallations,
+} from "../core/apiRoutes.ts";
 import { consoleWriteKey } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import {
@@ -25,6 +35,7 @@ import {
   forgeAuthorizationInstall,
   forgeAuthorizationRefusal,
   forgeAuthorizationWord,
+  forgeAuthorizationWorkerless,
   forgeAuthorizeTake,
   forgeCallbackDecision,
   forgeCallbackQueryOf,
@@ -33,9 +44,11 @@ import {
 } from "../core/forgeAuthorization.ts";
 import type { ForgeCallbackDecision } from "../core/forgeAuthorization.ts";
 import {
+  forgeAccountInstallationId,
   forgeInstallBegin,
   forgeInstallOffered,
   forgeInstallState,
+  forgeInstallSuggestedUrl,
   forgeInstallUrl,
 } from "../core/forgeInstallation.ts";
 import { forgePressSentOn } from "../core/forgePress.ts";
@@ -56,23 +69,72 @@ import {
   transientStore,
 } from "./ports.ts";
 
+/** What the portal app's installation on `account` was given, nothing where
+ * the tenant holds no such claim or either read failed. */
+async function forgeCallbackPortalGranted(
+  ports: ApiPorts,
+  tenant: string,
+  account: string | undefined,
+): Promise<ForgeRepositoriesResponse | undefined> {
+  if (account === undefined) return undefined;
+  const claims = await apiForgeInstallations(ports, tenant);
+  if (claims.outcome !== "Ok") return undefined;
+  const installationId = forgeAccountInstallationId(
+    claims.value.installations,
+    account,
+    "portal",
+  );
+  if (installationId === undefined) return undefined;
+  const granted = await apiForgeInstallationRepositories(
+    ports,
+    tenant,
+    installationId,
+  );
+  return granted.outcome === "Ok" ? granted.value : undefined;
+}
+
+/** The install address an app is followed at: the worker app's with the
+ * portal's choice made where it can be read, and otherwise the plain one. */
+async function forgeCallbackInstallUrl(
+  ports: ApiPorts,
+  press: ForgePress,
+  app: ForgeAppName,
+  answered: ForgeAuthorizationResponse,
+  sent: { readonly installUrl: string; readonly state: string },
+): Promise<string> {
+  if (app !== "worker") return forgeInstallUrl(sent.installUrl, sent.state);
+  const granted = await forgeCallbackPortalGranted(
+    ports,
+    press.tenant,
+    forgeAuthorizationWorkerless(answered),
+  );
+  return granted === undefined
+    ? forgeInstallUrl(sent.installUrl, sent.state)
+    : forgeInstallSuggestedUrl(sent.installUrl, sent.state, granted);
+}
+
 /** Whether the person was sent on to the app's install, which they are not
  * where this deployment does not offer it. */
 async function forgeCallbackSentOn(
   ports: ApiPorts,
   press: ForgePress,
   app: ForgeAppName,
+  answered: ForgeAuthorizationResponse,
 ): Promise<boolean> {
   const apps = await apiForgeApps(ports);
   const held =
     apps.outcome === "Ok" ? forgeInstallOffered(apps.value, app) : undefined;
   if (held === undefined) return false;
   const state = forgeInstallState(drawBytes);
+  const url = await forgeCallbackInstallUrl(ports, press, app, answered, {
+    installUrl: held.installUrl,
+    state,
+  });
   forgeInstallBegin(transientStore, {
     ...forgePressSentOn(press, app),
     state,
   });
-  replaceLocation(forgeInstallUrl(held.installUrl, state));
+  replaceLocation(url);
   return true;
 }
 
@@ -92,7 +154,10 @@ async function forgeCallbackRedeemed(
 ): Promise<void> {
   const redeemed = { outcome: "Ok", value: answered } as const;
   const app = forgeAuthorizationInstall(redeemed, transaction.installs);
-  if (app !== undefined && (await forgeCallbackSentOn(ports, transaction, app)))
+  if (
+    app !== undefined &&
+    (await forgeCallbackSentOn(ports, transaction, app, answered))
+  )
     return;
   await forgeReturnNavigate(
     navigate,

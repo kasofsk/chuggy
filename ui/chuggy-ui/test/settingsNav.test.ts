@@ -55,15 +55,7 @@ test("in a project the project's pages lead, then the workspace's, then the read
     [
       "Project",
       "Atlas Billing",
-      [
-        "Lead",
-        "Lead session",
-        "Placement",
-        "Pools",
-        "Permissions",
-        "Repositories",
-        "Catalog",
-      ],
+      ["Chats", "Placement", "Pools", "Permissions", "Repositories", "Catalog"],
     ],
     [
       "Workspace",
@@ -191,8 +183,7 @@ test("the site's sections and the project's appearance alone are shown by an abi
   expect(
     settingsSections.map((section) => [section.id, section.shownBy]),
   ).toStrictEqual([
-    ["lead", "Member"],
-    ["lead-session", "Member"],
+    ["threads", "Member"],
     ["placement", "Member"],
     ["pools", "Member"],
     ["permissions", "Member"],
@@ -290,8 +281,7 @@ test("Appearance closes the project's group for a reader who administers the pro
       }),
     ).find(([level]) => level === "Project")?.[2];
   expect(projectGroup(atlasAdministered)).toStrictEqual([
-    "Lead",
-    "Lead session",
+    "Chats",
     "Placement",
     "Pools",
     "Permissions",

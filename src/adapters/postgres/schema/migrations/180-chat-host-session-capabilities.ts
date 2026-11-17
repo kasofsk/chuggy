@@ -68,7 +68,7 @@ function capabilitySet(column: string): string {
 }
 
 /** `roster` less what `named` leaves out, in `roster`'s order, and `roster` whole where `named` is NULL. */
-function capabilitiesHeld(roster: string, named: string): string {
+export function capabilitiesHeld(roster: string, named: string): string {
   return `CASE WHEN ${named} IS NULL THEN ${roster}
                ELSE ARRAY(SELECT c FROM unnest(${roster}) WITH ORDINALITY r(c,o)
                            WHERE c=ANY(${named}) ORDER BY o) END`;

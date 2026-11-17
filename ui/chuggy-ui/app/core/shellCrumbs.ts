@@ -4,14 +4,19 @@
  * crumb but the last is how back to a level that has a page of its own; the
  * workspace has none, so it is a name and not a link.
  *
- * A CRUMB IS ITS ADDRESS SEGMENT, never copy: the trail spells the address the
- * reader is at, so no vernacular renames it.
+ * THE WORKSPACE AND THE PROJECT ARE CRUMBS BY THEIR NAMES, and every other
+ * crumb is its address segment, never copy. A workspace's segment is an id
+ * that may be generated and a project's is made from its name, so neither is
+ * what its reader calls it; the names are the display names the reader's own
+ * lists give, and the segment wherever they give none. Below the project the
+ * trail spells the address the reader is at, so no vernacular renames it.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { memberChatRoutes } from "./memberChat.ts";
 import { navRoutes } from "./shellNav.ts";
 import type { NavParams, NavRoute } from "./shellNav.ts";
+import type { WorkspaceNamed } from "./workspaceNames.ts";
 
 export interface ShellCrumb {
   readonly label: string;
@@ -24,6 +29,12 @@ const screenRoutes: Readonly<Record<string, NavRoute>> = {
   inbox: navRoutes.inbox,
   settings: navRoutes.settings,
 };
+
+/** What the workspace's and the project's crumbs are called, each its id or address where its reader's list gives no name. */
+export interface ShellCrumbNames {
+  readonly workspace: WorkspaceNamed;
+  readonly project: (partition: PartitionIdentity) => string;
+}
 
 /** The overview's segment, which the overview's own address leaves out. */
 const overviewLabel = "tickets";
@@ -42,6 +53,7 @@ function beneath(partition: PartitionIdentity, pathname: string): string[] {
 export function shellCrumbs(
   partition: PartitionIdentity,
   pathname: string,
+  names: ShellCrumbNames,
 ): readonly ShellCrumb[] {
   const params: NavParams = {
     tenant: partition.tenant,
@@ -49,9 +61,9 @@ export function shellCrumbs(
   };
   const [screen, first, ...rest] = beneath(partition, pathname);
   const crumbs: ShellCrumb[] = [
-    { label: partition.tenant },
+    { label: names.workspace(partition.tenant) },
     {
-      label: partition.project,
+      label: names.project(partition),
       link: { to: navRoutes.overview, params },
     },
   ];
@@ -76,10 +88,13 @@ export function shellCrumbs(
   ];
 }
 
-/** The trail of a workspace's own chat: the workspace, then the chat. */
-export function memberChatCrumbs(tenant: string): readonly ShellCrumb[] {
+/** The trail of a workspace's own chat: the workspace by its name, then the chat. */
+export function memberChatCrumbs(
+  tenant: string,
+  named: WorkspaceNamed,
+): readonly ShellCrumb[] {
   return [
-    { label: tenant },
+    { label: named(tenant) },
     { label: memberChatRoutes.chat.split("/").at(-1) ?? "" },
   ];
 }

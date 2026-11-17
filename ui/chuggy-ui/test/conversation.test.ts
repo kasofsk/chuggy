@@ -1789,25 +1789,25 @@ describe("the mailbox overlay, on a turn with no exchange of its own", () => {
       [
         turnOf({
           turn: "t1",
-          inputKind: "Observation",
+          inputKind: "OfferReply",
           state: "Claimed",
         }),
       ],
     );
     expect(exchanges).toHaveLength(2);
-    expect(exchanges[1]?.ask).toEqual({ ask: "Observation" });
+    expect(exchanges[1]?.ask).toEqual({ ask: "Document", kind: "OfferReply" });
     expect(exchanges[1]?.standing).toEqual({
       standing: "Running",
       state: "Claimed",
     });
   });
 
-  test("a Queued Observation turn with no input draws the Observation ask; a UserMessage with no input draws none", () => {
+  test("a Queued OfferReply turn with no input draws its kind's ask; a UserMessage with no input draws none", () => {
     const observed = conversationExchanges(
       [],
-      [turnOf({ turn: "t1", inputKind: "Observation", state: "Queued" })],
+      [turnOf({ turn: "t1", inputKind: "OfferReply", state: "Queued" })],
     );
-    expect(observed[0]?.ask).toEqual({ ask: "Observation" });
+    expect(observed[0]?.ask).toEqual({ ask: "Document", kind: "OfferReply" });
     expect(observed[0]?.standing).toEqual({
       standing: "Running",
       state: "Queued",
@@ -2150,7 +2150,7 @@ describe("the seeding block a first turn carries", () => {
   });
 
   test("a JSON object is not a member's words", () => {
-    const envelope = `{"version":1,"decision":"selector-decision"}`;
+    const envelope = `{"version":1,"offerReply":{}}`;
 
     expect(conversationAskMessage(envelope)).toEqual({
       ask: "Observation",

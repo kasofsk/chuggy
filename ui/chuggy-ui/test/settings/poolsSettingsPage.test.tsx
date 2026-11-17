@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 import { PoolsSettingsPage } from "../../app/browser/settings/PoolsSettingsPage.tsx";
 import { drawnStrict, answer, sectionOf } from "../screenHarness.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
-import { leadPartition } from "../leadFixture.ts";
+import { projectPartition } from "../projectFixture.ts";
 import { resizeObserverStubbed } from "../resizeObserver.ts";
 
 vi.mock("@tanstack/react-router", () => ({
@@ -21,7 +21,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  useParams: () => ({ ...leadPartition }),
+  useParams: () => ({ ...projectPartition }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 

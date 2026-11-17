@@ -305,3 +305,45 @@ test("the box a finger types into is itself a control's height under a coarse po
     sheetDeclared(sheetRules(inputSheet, buttonCoarse), box, "min-height"),
   ).toBe("var(--height-control)");
 });
+
+const busyRing = '.btn[aria-busy="true"]::before';
+
+function busyRingDeclared(conditions: readonly string[], property: string) {
+  return sheetRules(buttonSheet, conditions)
+    .filter((rule) => rule.selectorText === busyRing)
+    .map((rule) => rule.style.getPropertyValue(property))
+    .filter((value) => value !== "");
+}
+
+test("a busy button keeps its label's colour where a disabled one fades, and turns a ring that holds still under reduced motion", () => {
+  render(
+    <>
+      <Button variant="primary" busy disabled onClick={() => undefined}>
+        Adding
+      </Button>
+      <Button variant="primary" disabled onClick={() => undefined}>
+        Add
+      </Button>
+    </>,
+  );
+  const rules = sheetRules(buttonSheet, []);
+  const [busy, disabled] = screen.getAllByRole("button");
+  if (busy === undefined || disabled === undefined)
+    throw new Error("the buttons were not drawn");
+  const fading = rules.filter(
+    (rule) => rule.style.getPropertyValue("color") === "var(--ink-3)",
+  );
+  const fadedBy = (button: Element): readonly string[] =>
+    fading
+      .filter((rule) => button.matches(rule.selectorText))
+      .map((rule) => rule.selectorText);
+  expect(fadedBy(busy)).toStrictEqual([]);
+  expect(fadedBy(disabled)).not.toStrictEqual([]);
+  expect(sheetDeclared(rules, busy, "cursor")).toBe("progress");
+  expect(busyRingDeclared([], "content")).toStrictEqual(['""']);
+  expect(busyRingDeclared([], "animation")[0]).toMatch(/infinite/u);
+  expect(
+    busyRingDeclared(["(prefers-reduced-motion: reduce)"], "animation").at(-1),
+  ).toBe("none");
+  styleless();
+});

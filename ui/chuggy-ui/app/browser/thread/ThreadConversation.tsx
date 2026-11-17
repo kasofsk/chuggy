@@ -83,12 +83,12 @@ import {
 } from "../../core/conversationLive.ts";
 import type { ConversationLiveHeld } from "../../core/conversationLive.ts";
 import {
-  leadStreamBatches,
-  leadStreamListed,
-  leadStreamReplaced,
-  leadTranscriptReached,
-} from "../../core/leadTranscript.ts";
-import type { LeadTranscriptHeld } from "../../core/leadTranscript.ts";
+  sessionStreamBatches,
+  sessionStreamListed,
+  sessionStreamReplaced,
+  sessionTranscriptReached,
+} from "../../core/sessionTranscript.ts";
+import type { SessionTranscriptHeld } from "../../core/sessionTranscript.ts";
 import {
   sessionConversationItems,
   sessionConversationTurns,
@@ -109,8 +109,8 @@ import type { ProjectAbilities } from "../../core/projectAbilities.ts";
 import { Conversation } from "../conversation/Conversation.tsx";
 import type { ConversationProps } from "../conversation/Conversation.tsx";
 import type { ConversationComposerProps } from "../conversation/ConversationComposer.tsx";
-import { useLeadTranscript } from "../lead/LeadTranscript.tsx";
-import type { LeadTranscriptWalk } from "../lead/LeadTranscript.tsx";
+import { useSessionTranscript } from "./useSessionTranscript.ts";
+import type { SessionTranscriptWalk } from "./useSessionTranscript.ts";
 import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
 import { useThreadImage } from "./threadImage.tsx";
 import { ThreadNavigateFollowed } from "./ThreadNavigate.tsx";
@@ -183,7 +183,7 @@ function useThreadRecord(
     [seen, items, turns, reached],
   );
   if (next !== seen) setSeen(next);
-  const replaced = leadStreamReplaced(thread);
+  const replaced = sessionStreamReplaced(thread);
   return useMemo(() => ({ seen: next, replaced }), [next, replaced]);
 }
 
@@ -205,12 +205,12 @@ const threadJoinedNone: readonly string[] = [];
 function useThreadExchanges(
   home: ThreadHome,
   thread: ThreadResponse,
-  walked: LeadTranscriptWalk,
+  walked: SessionTranscriptWalk,
   stops: Pick<ThreadSendHeld, "stopping" | "takenBack">,
 ): ThreadExchanges {
   const held = walked.held;
   const stream = thread.agentReference;
-  const listed = leadStreamListed(thread);
+  const listed = sessionStreamListed(thread);
   const turned = threadStoreDue(thread);
   const kept = useMemo(
     () => sessionConversationItems({ held, stream, listed, turned }),
@@ -222,7 +222,8 @@ function useThreadExchanges(
   );
   const stored = useMemo(() => conversationStoredBlocks(kept), [kept]);
   const reached =
-    !walked.reading && leadTranscriptReached(held, leadStreamBatches(thread));
+    !walked.reading &&
+    sessionTranscriptReached(held, sessionStreamBatches(thread));
   const heard = useThreadLive({
     home,
     session: thread.session,
@@ -285,7 +286,7 @@ interface ThreadConversationProps {
    * what puts the caret in the composer as it mounts. */
   readonly named?: boolean;
   /** What a page draws beside the conversation from the transcript it walks. */
-  readonly beside?: ((held: LeadTranscriptHeld) => ReactNode) | undefined;
+  readonly beside?: ((held: SessionTranscriptHeld) => ReactNode) | undefined;
   /** The line a page draws in the composer's place where the reader can send
    * the thread nothing, which stands aside for a box still holding text a
    * refusal handed back. */
@@ -387,7 +388,7 @@ function threadFootDrawn(
 function useThreadSent(
   home: ThreadHome,
   thread: ThreadResponse,
-  walked: LeadTranscriptWalk,
+  walked: SessionTranscriptWalk,
   sends: ThreadSendHeld,
 ): {
   readonly exchanges: readonly ConversationExchange[];
@@ -426,10 +427,10 @@ function ThreadConversationAt(
 ): ReactNode {
   const text = useCopyText();
   const { thread, home, sends, door } = props;
-  const walked = useLeadTranscript({
+  const walked = useSessionTranscript({
     of: { thread: thread.session, home },
     stream: thread.agentReference,
-    highWaterBatch: leadStreamBatches(thread),
+    highWaterBatch: sessionStreamBatches(thread),
   });
   const { exchanges, reading } = useThreadSent(home, thread, walked, sends);
   return (

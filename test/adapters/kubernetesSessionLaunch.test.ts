@@ -99,7 +99,7 @@ const placement: SessionPlacement = {
   session: asSessionId("session-one"),
   attempt: asSessionAttemptId("session-attempt-one"),
   generation: 2,
-  kind: "Lead",
+  kind: "Thread",
   capabilities: ["RepositoryRead"],
   credentialSlot: "claude-code",
   profile: { profile: "standard", runtimeVersion: "1" },

@@ -17,8 +17,14 @@
 import { expect, test } from "vitest";
 
 import { repositoryConfigurationRoot as root } from "../../../src/contract/configurationDocument.ts";
+import { proposalMergeRefusals } from "../../../src/contract/rosters.ts";
 import { setupConfigurationPath } from "../app/core/setupConfiguration.ts";
-import { setupAnswersNone, setupAsked } from "../app/core/setupArguments.ts";
+import { setupTicketAgentsPath } from "../app/core/setupTicket.ts";
+import {
+  setupAnswersNone,
+  setupAsked,
+  setupPluginSkip,
+} from "../app/core/setupArguments.ts";
 import type { SetupAnswers } from "../app/core/setupArguments.ts";
 import {
   setupNextStop,
@@ -34,9 +40,16 @@ import { copyCatalogEn, copyTextEn } from "../app/copy/catalog.ts";
 import { copyTextOf } from "../app/copy/copyBundle.ts";
 import { copyPseudoBundleOf } from "../app/copy/copyPseudo.ts";
 import type { Copy } from "../app/core/copy.ts";
+import { memoryMibFigure, quantityFigureCopy } from "../app/core/figures.ts";
 import type {
   SetupFault,
+  SetupPluginEnded,
   SetupProjectEnded,
+  SetupBindAnswered,
+  SetupMergeAnswered,
+  SetupServeAnswered,
+  SetupTicketAnswered,
+  SetupNorthStarAnswered,
   SetupReport,
   SetupSignInEnded,
   SetupStepSaid,
@@ -48,19 +61,25 @@ import type {
   SetupConfigurationEnded,
   SetupImportAnswered,
 } from "../app/core/setupConfigurationEnded.ts";
-import { setupPressed } from "../app/core/setupNext.ts";
 import { setupRunnerStopSaid } from "../app/core/setupRunnerSaid.ts";
-import { setupSeen } from "../app/core/setupStanding.ts";
 import { machineScript } from "./setupMachine.ts";
 import type { SetupRunnerAt } from "../app/core/setupRunnerSaid.ts";
 import {
+  rosterColimaAtLogin,
   rosterChatHostStops,
   rosterRunnerStops,
+  runnerNotes,
   runnerNotesAll,
   runnerStopsAll,
 } from "./setupRunnerRoster.ts";
 
+/** Every note a run can say on any end: the Colima line is said only once a Mac's runner is live. */
+const runNotes = runnerNotesAll.filter((note) => note.note !== "Colima");
+
 const site = "https://chuggy.example";
+
+/** The pull request of the first ticket, which a run of `merge` is asked about. */
+const mergeUrl = "https://github.com/acme-org/widgets/pull/7";
 const next = `next: node ${machineScript}`;
 const stop = `next: ${setupNextStop}`;
 const directory = "~/.chuggy-setup";
@@ -83,14 +102,13 @@ const held = setupSignInEndings.filter(
 
 /** A checklist's steps, one in each state and two with nothing to say. */
 const steps: readonly SetupStepSaid[] = [
+  { step: "plugin", state: "done", detail: { id: "setup-step-plugin-on" } },
   { step: "workspace", state: "done", detail: "acme" },
+  { step: "project", state: "done", detail: "acme/widgets" },
   {
-    step: "project",
-    state: "waiting",
-    detail: {
-      id: "setup-step-north-star",
-      args: { project: "acme/widgets", section: setupSeen.northStar },
-    },
+    step: "north-star",
+    state: "done",
+    detail: { id: "setup-step-north-star-set" },
   },
   {
     step: "mcp",
@@ -109,7 +127,11 @@ const steps: readonly SetupStepSaid[] = [
     },
   },
   { step: "repository", state: "todo", detail: undefined },
-  { step: "runner", state: "todo", detail: undefined },
+  {
+    step: "runner",
+    state: "waiting",
+    detail: { id: "setup-step-runner-offline" },
+  },
   { step: "ticket", state: "todo", detail: undefined },
 ];
 
@@ -148,6 +170,28 @@ function asking(
   };
 }
 
+/** What the ticket step asks, with a choice of configurations or none. */
+function briefAsk(choose: "choose" | "given"): Copy {
+  return {
+    id: "setup-ask-ticket",
+    args: {
+      project: "acme/widgets",
+      choose,
+      names: {
+        id: "setup-listed",
+        args: { names: "development", last: "review" },
+      },
+      create: {
+        id: "setup-mend-ticket-create",
+        args: {
+          page: `${site}/acme/widgets/tickets/new`,
+          create: { id: "ticket-authoring-create-ticket" },
+        },
+      },
+    },
+  };
+}
+
 /** Every next thing a checklist ends on, one of each and both of those that come in two. */
 const things: {
   readonly [Kind in SetupThing["thing"]]: readonly Extract<
@@ -164,8 +208,22 @@ const things: {
           project: "acme/widgets",
           how: "unsaid",
           detail: "",
-          merge: "merged",
-          url: "",
+          configuration: "none",
+          last: "",
+          page: `${site}/acme/widgets/tickets/new`,
+        },
+      },
+    },
+    {
+      thing: "Done",
+      tell: {
+        id: "setup-done",
+        args: {
+          project: "acme/widgets",
+          how: "unsaid",
+          detail: "",
+          configuration: "imported",
+          last: "",
           page: `${site}/acme/widgets/tickets/new`,
         },
       },
@@ -175,18 +233,10 @@ const things: {
     {
       thing: "Hand",
       tell: {
-        id: "setup-mend-north-star-tell",
-        args: {
-          page: "the page",
-          edit: setupPressed.edit,
-          section: setupSeen.northStar,
-          save: setupPressed.save,
-        },
+        id: "setup-mend-admin-tell",
+        args: { workspace: "acme", people: "the page" },
       },
-      when: {
-        id: "setup-mend-north-star-when",
-        args: { section: setupSeen.northStar },
-      },
+      when: { id: "setup-mend-admin-when", args: { workspace: "acme" } },
     },
   ],
   Offer: [
@@ -214,6 +264,124 @@ const things: {
       workspace: "two words",
       project: undefined,
     },
+    {
+      thing: "Offer",
+      command: "Plugin",
+      tell: { id: "setup-mend-plugin-offer" },
+      when: { id: "setup-offer-plugin-when" },
+    },
+    {
+      thing: "Offer",
+      command: "Plugin",
+      tell: { id: "setup-mend-plugin-offer-off" },
+      when: { id: "setup-offer-plugin-when" },
+    },
+    {
+      thing: "Offer",
+      command: "Serve",
+      tell: {
+        id: "setup-mend-serving-offer",
+        args: {
+          project: "acme/widgets",
+          does: "both",
+          admin: "none",
+          setting: { id: "runners-fallback-title" },
+          placement: "https://chuggy.example/acme/widgets/settings/placement",
+        },
+      },
+      when: { id: "setup-offer-serve-when" },
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "Offer",
+      command: "Merge",
+      tell: {
+        id: "setup-mend-merge-offer",
+        args: { ticket: "1", url: mergeUrl, lean: "ask" },
+      },
+      when: { id: "setup-offer-merge-when" },
+      workspace: "acme",
+      project: "widgets",
+    },
+  ],
+  Run: [
+    {
+      thing: "Run",
+      command: "Bind",
+      tell: {
+        id: "setup-mend-reach-tell",
+        args: {
+          installed: { id: "setup-mend-reach-installed-none" },
+          repository: "acme-org/widgets",
+          explained: {
+            id: "setup-mend-apps-explained",
+            args: { repository: "acme-org/widgets" },
+          },
+          portal: {
+            id: "setup-mend-reach-granted-unread",
+            args: { app: "portal", repository: "acme-org/widgets" },
+          },
+          worker: {
+            id: "setup-mend-reach-granted-unread",
+            args: { app: "worker", repository: "acme-org/widgets" },
+          },
+          granted: "both",
+        },
+      },
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "Run",
+      command: "Bind",
+      tell: {
+        id: "setup-mend-portal-tell",
+        args: {
+          page: "the page",
+          connect: { id: "repositories-connect-github" },
+          account: "acme-org",
+        },
+      },
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "Run",
+      command: "Merge",
+      tell: {
+        id: "setup-done",
+        args: {
+          project: "acme/widgets",
+          how: "unsaid",
+          detail: "",
+          configuration: "importing",
+          last: "",
+          page: `${site}/acme/widgets/tickets/new`,
+        },
+      },
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "Run",
+      command: "Watch",
+      tell: {
+        id: "setup-mend-finalization-tell",
+        args: {
+          ticket: "7",
+          phase: { id: "ticket-steps-phase-work" },
+          page: "the page",
+          ends: "finish",
+          bootstrap: "own",
+          wait: "room",
+          free: quantityFigureCopy(memoryMibFigure(1434)),
+          needed: quantityFigureCopy(memoryMibFigure(4096)),
+        },
+      },
+      workspace: "acme",
+      project: "widgets",
+    },
   ],
   Ask: [
     {
@@ -227,6 +395,57 @@ const things: {
       flag: "project",
     },
   ],
+  Brief: [
+    {
+      thing: "Brief",
+      ask: briefAsk("given"),
+      named: "acme/widgets",
+      workspace: "acme",
+      project: "widgets",
+      choose: false,
+      bootstrapOffered: false,
+    },
+    {
+      thing: "Brief",
+      ask: briefAsk("choose"),
+      named: "acme/widgets",
+      workspace: "acme",
+      project: "widgets",
+      choose: true,
+      bootstrapOffered: false,
+    },
+    {
+      thing: "Brief",
+      ask: briefAsk("choose"),
+      named: "acme/widgets",
+      workspace: "acme",
+      project: "widgets",
+      choose: true,
+      bootstrapOffered: true,
+    },
+  ],
+  First: (["pull", "merged"] as const).map((ends) => ({
+    thing: "First",
+    named: "acme/widgets",
+    tell: {
+      id: "setup-tell-first-ticket",
+      args: { agents: setupTicketAgentsPath, ends },
+    },
+    workspace: "acme",
+    project: "widgets",
+  })),
+  NorthStar: (["folder", "question"] as const).map((drawn) => ({
+    thing: "NorthStar",
+    tell: { id: "setup-mend-north-star-tell", args: { drawn } },
+    draft: {
+      id:
+        drawn === "folder"
+          ? "setup-north-star-draft-folder"
+          : "setup-north-star-draft-ask",
+    },
+    workspace: "acme",
+    project: "widgets",
+  })),
   Name: [
     {
       thing: "Name",
@@ -312,6 +531,28 @@ const projectEndings: readonly SetupProjectEnded[] = [
   },
 ];
 
+/** How a run of `plugin` can end: on by each of the ways there to it, and each way short of it. */
+const pluginEndings: readonly SetupPluginEnded[] = [
+  { ended: "On", did: "Installed", folder: "/home/me/.claude/plugins/chuggy" },
+  { ended: "On", did: "Updated", folder: "/home/me/it's here" },
+  { ended: "On", did: "Enabled", folder: "/home/me/.claude/plugins/chuggy" },
+  { ended: "Claudeless" },
+  { ended: "Old", version: "2.1.200", least: "2.1.287" },
+  { ended: "Old", version: undefined, least: "2.1.287" },
+  {
+    ended: "Failed",
+    act: "PluginInstall",
+    failed: { how: "Exit", exit: 1, excerpt: "manifest missing" },
+  },
+  {
+    ended: "Failed",
+    act: "PluginMarketplaceAdd",
+    failed: { how: "Unstarted" },
+  },
+  { ended: "Unlisted" },
+  { ended: "Off" },
+];
+
 const developmentPath = setupConfigurationPath;
 
 /** How a run of `configuration` can end: written with both fields blank or one, declarations kept, and no checkout. */
@@ -373,16 +614,70 @@ const importAnswers: readonly (SetupImportAnswered | undefined)[] = [
   },
 ];
 
+/** What a run of `ticket` can have had answered: nothing asked, filed, and refused. */
+const ticketAnswers: readonly (SetupTicketAnswered | undefined)[] = [
+  undefined,
+  {
+    answered: "Filed",
+    ticket: 3,
+    configuration: "Default configuration",
+    bootstrap: false,
+  },
+  {
+    answered: "Refused",
+    refusal: { id: "setup-ticket-refused", args: { refusal: "It broke." } },
+  },
+];
+
+/** What a run of `north-star` can have had answered: nothing asked, written, and failed. */
+const northStarAnswers: readonly (SetupNorthStarAnswered | undefined)[] = [
+  undefined,
+  { answered: "Written" },
+  { answered: "Failed", failure: { id: "failure-no-connection" } },
+];
+
+/** What a run of `serve` can have had answered: nothing asked, each write written, and each refused. */
+const serveAnswers: readonly (SetupServeAnswered | undefined)[] = [
+  undefined,
+  { given: { written: true }, allowed: { written: true } },
+  { given: { written: true }, allowed: undefined },
+  { given: undefined, allowed: { written: true } },
+  {
+    given: { written: false, failure: { id: "failure-refused" } },
+    allowed: { written: false, failure: { id: "failure-no-connection" } },
+  },
+];
+
+/** What a run of `bind` can have had answered: nothing asked, bound, and refused. */
+const bindAnswers: readonly (SetupBindAnswered | undefined)[] = [
+  undefined,
+  {
+    answered: "Bound",
+    said: {
+      id: "repositories-bound-named",
+      args: {
+        repository: "acme-org/widgets",
+        status: { id: "repositories-configuration-added" },
+      },
+    },
+    project: "widgets",
+  },
+  { answered: "Refused", refusal: { id: "repositories-not-installed" } },
+];
+
+/** What a run of `merge` can have had answered: nothing asked, merged, refused, and a request that failed. */
+const mergeAnswers: readonly (SetupMergeAnswered | undefined)[] = [
+  undefined,
+  { answered: "Merged", mergeCommit: "abc123" },
+  { answered: "Refused", refusal: "Blocked" },
+  { answered: "Failed", failure: { id: "failure-no-connection" } },
+];
+
 /** The stops a run for `at` can end on: every one, but for those only `chat-host` makes where the run is `runner`'s. */
 function stopsOf(at: SetupRunnerAt): typeof runnerStopsAll {
   const others =
     at.project === undefined ? rosterRunnerStops : rosterChatHostStops;
   return runnerStopsAll.filter((one) => !others.includes(one.stop));
-}
-
-/** Whether a stop is said before any site is asked. */
-function siteless(stop: (typeof runnerStopsAll)[number]): boolean {
-  return stop.stop === "Mac" || stop.stop === "MacChatHost";
 }
 
 function checklist(
@@ -435,6 +730,10 @@ const roster: {
     { report: "AskedWrongly", fault: "Replace" },
     { report: "AskedWrongly", fault: "ProjectName" },
     { report: "AskedWrongly", fault: "Test" },
+    { report: "AskedWrongly", fault: "Brief" },
+    { report: "AskedWrongly", fault: "Opened" },
+    { report: "AskedWrongly", fault: "NorthStar" },
+    { report: "AskedWrongly", fault: "NorthStarText" },
   ],
   SiteUnknown: [{ report: "SiteUnknown" }],
   Busy: [
@@ -466,6 +765,10 @@ const roster: {
     directory,
     ended,
   })),
+  SignedOutHere: [
+    { report: "SignedOutHere", site, held: true },
+    { report: "SignedOutHere", site, held: false },
+  ],
   Checklist: Object.values(things)
     .flat()
     .flatMap((thing) => choices.map((carried) => checklist(thing, carried))),
@@ -491,21 +794,18 @@ const roster: {
       site,
       port: 41001,
       opened: "Opened",
-      waitedSecs: 90,
     },
     {
       report: "SignInWaiting",
       site,
       port: 41001,
       opened: "Attached",
-      waitedSecs: 90,
     },
     {
       report: "SignInWaiting",
       site,
       port: 41001,
       opened: "NotOpened",
-      waitedSecs: 0,
     },
   ],
   SignInEnded: setupSignInEndings.map((ended) => ({
@@ -523,11 +823,10 @@ const roster: {
       ...(project === undefined ? [] : [{ ended: "Hosted" as const }]),
     ].map((ended) => ({
       report: "Runner",
-      site:
-        ended.ended === "Stopped" && siteless(ended.stop) ? undefined : site,
+      site,
       workspace,
       project,
-      notes: runnerNotesAll,
+      notes: runNotes,
       ended,
     })),
   ),
@@ -557,10 +856,11 @@ const roster: {
           site,
           workspace,
           project,
-          notes: runnerNotesAll,
+          notes: runNotes,
           ended,
         })),
   ),
+  Plugin: pluginEndings.map((ended) => ({ report: "Plugin", site, ended })),
   Configuration: configurationEndings.map((ended) => ({
     report: "Configuration",
     ended,
@@ -574,12 +874,77 @@ const roster: {
       checklist: checklist(thing),
     })),
   ),
+  Bind: [
+    ...bindAnswers.map((answered) => ({
+      report: "Bind" as const,
+      opened: undefined,
+      openBefore: false,
+      repository: answered === undefined ? undefined : "acme-org/widgets",
+      answered,
+      checklist: checklist(
+        answered === undefined
+          ? (things.Configure[0] as SetupThing)
+          : (things.Run[0] as SetupThing),
+      ),
+    })),
+    {
+      report: "Bind",
+      opened: `${site}/acme/widgets/repositories?connect=github`,
+      openBefore: false,
+      repository: undefined,
+      answered: undefined,
+      checklist: checklist(things.Run[1] as SetupThing),
+    },
+    {
+      report: "Bind",
+      opened: undefined,
+      openBefore: true,
+      repository: undefined,
+      answered: undefined,
+      checklist: checklist(things.Run[1] as SetupThing),
+    },
+  ],
+  Merge: [
+    ...mergeAnswers.map((answered) => ({
+      report: "Merge" as const,
+      url: answered === undefined ? undefined : mergeUrl,
+      answered,
+      checklist: checklist(
+        answered?.answered === "Merged"
+          ? (things.Done[1] as SetupThing)
+          : (things.Done[0] as SetupThing),
+      ),
+    })),
+    {
+      report: "Merge",
+      url: mergeUrl,
+      answered: { answered: "Merged", mergeCommit: undefined },
+      checklist: checklist(things.Run[2] as SetupThing),
+    },
+  ],
+  Serve: serveAnswers.map((answered) => ({
+    report: "Serve",
+    project: answered === undefined ? undefined : "widgets",
+    answered,
+    checklist: checklist(things.Offer.at(-1) as SetupThing),
+  })),
+  Ticket: ticketAnswers.map((answered) => ({
+    report: "Ticket",
+    answered,
+    checklist: checklist(things.Brief[0] as SetupThing),
+  })),
+  NorthStar: northStarAnswers.map((answered) => ({
+    report: "NorthStar",
+    project: answered === undefined ? undefined : "acme/widgets",
+    answered,
+    checklist: checklist(things.Brief[0] as SetupThing),
+  })),
   RunnerOut: pairs.flatMap(({ workspace, project }) =>
     outsOf(project === undefined ? "ChatHost" : "Runner").map((out) => ({
       report: "RunnerOut",
       workspace,
       project,
-      notes: runnerNotesAll,
+      notes: runNotes,
       out,
     })),
   ),
@@ -590,11 +955,16 @@ const every: readonly SetupReport[] = Object.values(roster).flat();
 /** What a stop's rule names where it names no run of the same command again. */
 const setupAskedOfAgain = { Status: "Status", Mcp: "Mcp" } as const;
 
-/** The reports of the repository's own configuration, which are said apart from the rest below. */
+/** The reports of the repository's own configuration, and of adding it, which are said apart from the rest below. */
 const configuring: ReadonlySet<SetupReport["report"]> = new Set([
   "Configuration",
   "Check",
   "Import",
+  "Bind",
+  "Merge",
+  "Serve",
+  "Ticket",
+  "NorthStar",
 ]);
 
 /** Every report but a checklist and a run of `mcp` or `runner`, which is every report a run that is not signed in can make. */
@@ -653,7 +1023,9 @@ test("every line a report prints but next: is one message of the catalog, so a w
     )) {
       if (line.startsWith("next: ")) continue;
       if (line.startsWith("step: "))
-        expect(line).toMatch(/^step: \S+ +\S+(?: +(?:\[.*\]|acme))?$/u);
+        expect(line).toMatch(
+          /^step: \S+ +\S+(?: +(?:\[.*\]|acme(?:\/widgets)?))?$/u,
+        );
       else expect(line).toMatch(/^[a-z]+: \[.*\]$/u);
     }
 });
@@ -681,11 +1053,12 @@ function shellWords(text: string): readonly string[] {
   return word === undefined ? words : [...words, word];
 }
 
-/** A command a line names: the arguments after the program, and the flag left for a value to follow, where the line says one does. */
+/** A command a line names: the arguments after the program, whether a value is left to follow it, where the line says one does, and the flags it says to add each with a value of its own. */
 interface Named {
   readonly argv: readonly string[];
   readonly fetched: boolean;
   readonly open: boolean;
+  readonly fills: readonly string[];
 }
 
 const fetched = `curl -fsS ${site}/chuggy-setup.mjs -o ${machineScript} && `;
@@ -695,7 +1068,7 @@ function commands(lines: readonly string[]): readonly Named[] {
   const named: Named[] = [];
   for (const text of lines) {
     const ruled =
-      /^rule: Run ((?:node|curl) .+?)(?<open> with the .+ after it\b.*| only (?:once|if|when) .+)\.$/u.exec(
+      /^rule: Run ((?:node|curl) .+?)(?<open> with the .+ after it\b.*| with --.+| only (?:once|if|when) .+)\.$/u.exec(
         text,
       );
     const run =
@@ -710,6 +1083,9 @@ function commands(lines: readonly string[]): readonly Named[] {
       argv: words.slice(2),
       fetched: run.startsWith(fetched),
       open: ruled?.groups?.["open"]?.startsWith(" with the ") === true,
+      fills: ruled?.groups?.["open"]?.startsWith(" with --")
+        ? (ruled.groups["open"].match(/--[a-z]+/gu) ?? [])
+        : [],
     });
   }
   return named;
@@ -730,7 +1106,11 @@ test("every line of every report is a word from the closed set and its text, and
 
 /** What the program reads a named command as, with a value put after a flag the line left open for one. */
 function read(named: Named, value: string): ReturnType<typeof setupAsked> {
-  return setupAsked(named.open ? [...named.argv, value] : named.argv);
+  return setupAsked([
+    ...named.argv,
+    ...(named.open ? [value] : []),
+    ...named.fills.flatMap((flag) => [flag, value]),
+  ]);
 }
 
 test("every command any line of any report names, on next: or in a rule:, is one the program reads as it is written", () => {
@@ -762,11 +1142,29 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
     return project(report);
   if (report.report === "RunnerOut") return carried(report.out, answers);
   if (report.report === "Project") return projectCarried(report);
-  if (report.report === "Import") return carried(report.checklist, answers);
+  if (
+    report.report === "Import" ||
+    report.report === "Bind" ||
+    report.report === "Merge" ||
+    report.report === "Serve" ||
+    report.report === "Ticket" ||
+    report.report === "NorthStar"
+  )
+    return carried(report.checklist, answers);
+  if (report.report === "Plugin")
+    return report.ended.ended === "On"
+      ? { workspace: answers.workspace, project: answers.project }
+      : { ...answers, plugin: setupPluginSkip };
   if (report.report === "Checklist") {
     const thing = report.next.thing;
+    if (thing.thing === "Offer" && thing.command === "Plugin")
+      return report.next.carried;
     return thing.thing === "Offer" ||
+      thing.thing === "Run" ||
       thing.thing === "Name" ||
+      thing.thing === "Brief" ||
+      thing.thing === "First" ||
+      thing.thing === "NorthStar" ||
       thing.thing === "Configure"
       ? project(thing)
       : report.next.carried;
@@ -877,19 +1275,25 @@ test("every stop says what was found, tells the person, names one command the pr
   }
 });
 
-test("a report of a run not signed in that does not stop names no command in a rule: line but the one a site is passed to, and only that one and a platform not served end on stop", () => {
+test("a report of a run not signed in that does not stop names no command in a rule: line but the one a site is passed to and the checklist a plugin left on waits to name, and only those and a platform not served end on stop", () => {
   for (const report of sessions.filter((one) => !stopped(one))) {
     const lines = setupReportLines(report, machineScript, copyTextEn);
     const said = JSON.stringify(report);
     const unknown = report.report === "SiteUnknown";
-    expect(ruled(lines), said).toEqual(unknown ? [["--site"]] : []);
+    const reloading = report.report === "Plugin" && report.ended.ended === "On";
+    expect(ruled(lines), said).toEqual(
+      unknown ? [["--site"]] : reloading ? [["--site", site]] : [],
+    );
     expect(lines.at(-1) === stop, said).toBe(
-      unknown || report.report === "Unserved",
+      unknown ||
+        reloading ||
+        report.report === "Unserved" ||
+        report.report === "SignedOutHere",
     );
   }
 });
 
-test("the reports that end on a command are the ones a run moves on from by itself: an argument to mend, a sign-in to open or wait on, and a sign-in the site refused", () => {
+test("the reports that end on a command are the ones a run moves on from by itself: an argument to mend, a sign-in to open or wait on, a sign-in the site refused, and a run of plugin that did not leave it on, which goes on to the checklist past it", () => {
   const running = new Set(
     sessions
       .filter(
@@ -906,6 +1310,7 @@ test("the reports that end on a command are the ones a run moves on from by itse
   );
   expect([...running].toSorted()).toEqual([
     "AskedWrongly",
+    "Plugin",
     "SignInEnded/SignedIn",
     "SignInEnded/SiteChanged",
     "SignInEnded/WorkspacesUnread",
@@ -923,7 +1328,7 @@ test("a run on a Node too old, on a platform not served, one asked wrongly and o
     roster[kind].map((report) => setupReportExit(report));
   expect(exits("NodeOld")).toEqual([2, 2]);
   expect(exits("Unserved")).toEqual([2]);
-  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
+  expect(exits("AskedWrongly")).toEqual(roster.AskedWrongly.map(() => 2));
   expect(exits("SiteUnknown")).toEqual([2]);
 });
 
@@ -936,6 +1341,7 @@ test("a state a person can move on from exits zero, and a failure exits one", ()
   );
   expect(exit).toMatchObject({
     SignedOut: [0],
+    SignedOutHere: [0],
     SignInWaiting: [0],
     Busy: [1],
     Faulted: [1],
@@ -968,7 +1374,9 @@ test("a sign-in that ended on the person's side exits zero, and one the installa
 
 const driven = [
   `rule: Run the command on the next: line exactly as written, and stop where it says ${setupNextStop}. Say each tell: line to the person as it is written. Put each ask: line to the person, and pass their answer in the flag it names.`,
+  "rule: Before anything else, start a subagent that explores this folder's repository and reports which toolchains work on it needs, and which images the repository already defines for its CI or development. Go on with the person through the steps that do not depend on the repository while it works, and use its report where the worker image is chosen.",
   "rule: Never read or print anything under ~/.chuggy-setup: it holds the sign-in.",
+  `rule: To change which GitHub account chuggy setup is signed in as, run node ${machineScript} sign-out and then sign in again.`,
 ];
 
 function signedOut(ended: SetupSignInEnded | undefined): readonly string[] {
@@ -1029,15 +1437,17 @@ test("signed in, the bare command prints what was found, each step in columns, a
   expect(setupReportLines(report, machineScript, copyTextEn)).toEqual([
     `site: ${site}, signed in`,
     "found: this folder's remote github.com/acme-org/widgets is added to no project the site shows you, so it proposes none",
+    "step: plugin      done     Claude Code here has chuggy's plugin, on",
     "step: workspace   done     acme",
-    "step: project     waiting  acme/widgets has no North Star yet",
+    "step: project     done     acme/widgets",
+    "step: north-star  done     the project has a North Star",
     "step: mcp         todo     Claude Code here has no chuggy MCP server for acme/widgets",
     "step: github      unread   its GitHub accounts were not answered (Fault)",
     "step: repository  todo",
-    "step: runner      todo",
+    "step: runner      waiting  registered, not running",
     "step: ticket      todo",
-    "tell: Open the page, press Edit beside North Star, write a paragraph that says what the project is for, and press Save changes. Tell me once it is saved.",
-    `rule: Run node ${machineScript} ${flags} only once the person says the North Star is saved.`,
+    "tell: Setting chuggy up takes an admin of the workspace, and you are not one in acme. Ask an admin of acme to make you one on its People page, the page. Tell me once you are an admin.",
+    `rule: Run node ${machineScript} ${flags} only once the person says they are an admin of acme.`,
     stop,
   ]);
 });
@@ -1061,21 +1471,60 @@ test("every step in every state is laid out in the same columns, and a step with
   expect(Math.max(...setupStepStates.map((state) => state.length))).toBe(7);
 });
 
-test("no checklist ends on a command: whatever comes next waits on the person, and is named under a rule or not at all", () => {
+test("no checklist but bind's, merge's and watch's ends on a command: whatever else comes next waits on the person, and is named under a rule or not at all", () => {
   for (const report of roster.Checklist) {
     const lines = setupReportLines(report, machineScript, copyTextEn);
     const said = JSON.stringify(report.next);
+    const thing = report.next.thing;
+    if (thing.thing === "Run" && thing.command === "Merge") {
+      expect(lines.at(-1), said).toBe(
+        `next: node ${machineScript} merge ${flags}`,
+      );
+      expect(lines.at(-2), said).toMatch(
+        /^rule: Run the command on the next: line again, and go on running it while chuggy imports/u,
+      );
+      continue;
+    }
+    if (thing.thing === "Run" && thing.command === "Watch") {
+      expect(lines.at(-1), said).toBe(
+        `next: node ${machineScript} watch ${flags}`,
+      );
+      expect(lines.at(-2), said).toMatch(
+        /^rule: Run the command on the next: line now, without asking the person, .* It waits while the ticket works/u,
+      );
+      continue;
+    }
+    if (thing.thing === "Run") {
+      expect(lines.at(-1), said).toBe(
+        `next: node ${machineScript} bind ${flags}`,
+      );
+      expect(lines.at(-2), said).toMatch(
+        /^rule: Run the command on the next: line now, without asking the person/u,
+      );
+      continue;
+    }
     expect(lines.at(-1), said).toBe(stop);
     expect(lines[0], said).toBe(`site: ${site}, signed in`);
     expect(lines.filter((text) => text.startsWith("step: "))).toHaveLength(
       setupSteps.length,
     );
     const rules = lines.filter((text) => text.startsWith("rule: "));
+    const imageRecommended =
+      thing.thing === "First" ||
+      (thing.thing === "Brief" && thing.bootstrapOffered);
     expect(rules, said).toHaveLength(
-      report.next.thing.thing === "Done" ? 0 : 1,
+      thing.thing === "Done"
+        ? 0
+        : (thing.thing === "Offer" && thing.command === "Plugin") ||
+            thing.thing === "NorthStar" ||
+            imageRecommended
+          ? 2
+          : 1,
     );
-    expect(commands(lines), said).toHaveLength(rules.length);
-    if (rules.length > 0) expect(lines.at(-2), said).toBe(rules[0]);
+    expect(commands(lines), said).toHaveLength(
+      imageRecommended ? 1 : rules.length,
+    );
+    if (rules.length > 0) expect(lines.at(-2), said).toBe(rules.at(-1));
   }
 });
 
@@ -1087,11 +1536,11 @@ function ended(thing: SetupThing, held = setupAnswersNone): readonly string[] {
   ).slice(1 + steps.length);
 }
 
-test("something runner would do is told once, and runner is named for that project only once the person says yes, whatever names the run was given", () => {
+test("something runner would do is told once, and runner is named for that project to run unless the person objects, whatever names the run was given", () => {
   const [offer, hostile] = things.Offer;
   expect(ended(offer as SetupThing)).toEqual([
     "tell: A runner is registered and is not running. Start it on its machine and tell me once it is running.",
-    `rule: Run node ${machineScript} runner ${flags} only once the person says yes to a runner on this machine.`,
+    `rule: Run node ${machineScript} runner ${flags} only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.`,
     stop,
   ]);
   expect(
@@ -1099,8 +1548,21 @@ test("something runner would do is told once, and runner is named for that proje
       -2,
     ),
   ).toBe(
-    `rule: Run node ${machineScript} runner --workspace 'two words' --project 'it'\\''s --site' only once the person says yes to a runner on this machine.`,
+    `rule: Run node ${machineScript} runner --workspace 'two words' --project 'it'\\''s --site' only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.`,
   );
+});
+
+test("an offer naming a line for another machine gives it as a rule of its own, after the rule naming the command", () => {
+  const [offer] = things.Offer;
+  const line = "Make this machine my chuggy runner: run it";
+  expect(
+    ended({ ...(offer as SetupThing), elsewhere: line } as SetupThing),
+  ).toEqual([
+    "tell: A runner is registered and is not running. Start it on its machine and tell me once it is running.",
+    `rule: Run node ${machineScript} runner ${flags} only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.`,
+    `rule: Where the person wants them on another machine instead, run nothing here, and give them this line to paste into Claude Code on that machine: ${line}`,
+    stop,
+  ]);
 });
 
 test("setup that is done is told, and nothing is named to run", () => {
@@ -1112,10 +1574,19 @@ test("setup that is done is told, and nothing is named to run", () => {
 
 test("a step done by hand is told, and the checklist is named to be read again only once the person says it is done", () => {
   expect(ended(things.Hand[0] as SetupThing)).toEqual([
-    "tell: Open the page, press Edit beside North Star, write a paragraph that says what the project is for, and press Save changes. Tell me once it is saved.",
-    `rule: Run node ${machineScript} only once the person says the North Star is saved.`,
+    "tell: Setting chuggy up takes an admin of the workspace, and you are not one in acme. Ask an admin of acme to make you one on its People page, the page. Tell me once you are an admin.",
+    `rule: Run node ${machineScript} only once the person says they are an admin of acme.`,
     stop,
   ]);
+});
+
+test("a ticket waiting on the person's runners short of memory is told how much they have free and the run needs, each as the ticket page sizes it, and is watched", () => {
+  expect(ended(things.Run[3] as SetupThing).slice(0, 1)).toEqual([
+    "tell: Ticket 7 is in Work. It is waiting on your personal runner, which has 1.4 GiB free; this run needs 4 GiB. Setup is done when it finishes. the page shows where it is. I'll keep watching it and tell you what changes.",
+  ]);
+  expect(ended(things.Run[3] as SetupThing).at(-1)).toBe(
+    `next: node ${machineScript} watch ${flags}`,
+  );
 });
 
 test("a question is put as ask:, and the rule names the flag the answer is passed in, last, after whatever is already chosen", () => {
@@ -1277,11 +1748,13 @@ test("an answer this copy cannot read says the copy may be old, and fetching the
 test("a checklist exits zero whatever is next, and one where a read failed", () => {
   const exits = (kind: SetupThing["thing"]) =>
     things[kind].map((thing) => setupReportExit(checklist(thing)));
-  expect(exits("Done")).toEqual([0]);
+  expect(exits("Done")).toEqual([0, 0]);
   expect(exits("Hand")).toEqual([0]);
   expect(exits("Ask")).toEqual([0, 0]);
   expect(exits("Name")).toEqual([0, 0]);
-  expect(exits("Offer")).toEqual([0, 0, 0]);
+  expect(exits("Offer")).toEqual([0, 0, 0, 0, 0, 0, 0]);
+  expect(exits("Run")).toEqual([0, 0, 0, 0]);
+  expect(exits("First")).toEqual([0, 0]);
   expect(exits("Failed")).toEqual([1, 1]);
 });
 
@@ -1329,24 +1802,39 @@ test("a run of runner that stopped says what it found and did, then the stop as 
   }
 });
 
-test("a run of runner says each thing it found and did in the order it met them, under the site it is signed in to, and a Mac is said with no site asked", () => {
+test("a run of runner says each thing it found and did in the order it met them, under the site it is signed in to", () => {
   for (const report of roster.Runner) {
     const lines = setupReportLines(report, machineScript, copyTextEn);
     const head = report.site === undefined ? [] : [`site: ${site}, signed in`];
     expect(lines.slice(0, head.length), JSON.stringify(report.ended)).toEqual(
       head,
     );
-    expect(
-      lines.slice(head.length, head.length + runnerNotesAll.length),
-    ).toEqual(
+    expect(lines.slice(head.length, head.length + runNotes.length)).toEqual(
       lines
-        .slice(head.length, head.length + runnerNotesAll.length)
+        .slice(head.length, head.length + runNotes.length)
         .filter((text) => /^(?:found|did): /u.test(text)),
     );
   }
-  expect(roster.Runner.filter((one) => one.site === undefined)).toHaveLength(
-    pairs.reduce((count, at) => count + stopsOf(at).filter(siteless).length, 0),
+});
+
+test("a Mac's runner live tells the person that Colima has to run for it, and how it starts at login, before the checklist next", () => {
+  const lines = setupReportLines(
+    {
+      report: "Runner",
+      site,
+      workspace: "acme",
+      project: "widgets",
+      notes: runnerNotes.Colima,
+      ended: { ended: "Live" },
+    },
+    machineScript,
+    copyTextEn,
   );
+  expect(lines.slice(0, 2)).toEqual([
+    `site: ${site}, signed in`,
+    `tell: Docker runs in Colima on this Mac, which has to be running for the runner's services to work, and after a restart is not until it is started again. ${rosterColimaAtLogin} starts it whenever you log in.`,
+  ]);
+  expect(lines[2]).toMatch(/^next: /u);
 });
 
 /** What a report says that only a run that had done nothing can say. */
@@ -1382,7 +1870,7 @@ test("a run of runner that a lost sign-in ends says everything it had found and 
       both,
     );
     expect(lines.slice(0, -ending.length), said).toEqual(
-      went.slice(1, 1 + runnerNotesAll.length),
+      went.slice(1, 1 + runNotes.length),
     );
     expect(setupReportExit(report), said).toBe(setupReportExit(report.out));
   }
@@ -1496,6 +1984,11 @@ function signedOutAs(answers: SetupAnswers): readonly string[] {
   );
 }
 
+const waitingTell =
+  "tell: A sign-in page is open in a browser and is waiting for you. Open http://127.0.0.1:41001/ in the browser where you are signed in to GitHub as the account you want to use. Then allow chuggy setup.";
+const waitingRule =
+  "rule: Run the command on the next: line again, and go on running it while the sign-in page waits: it waits on the same page and opens no other. Nothing has failed, so do not tell the person that it did or give them a deadline. Once the page has closed, that command says what became of it.";
+
 test("a page that is waiting is said with the address the person can open, and sign-in is next", () => {
   const lines = (at: number) =>
     setupReportLines(
@@ -1506,16 +1999,83 @@ test("a page that is waiting is said with the address the person can open, and s
   expect(lines(0)).toEqual([
     `site: ${site}, not signed in`,
     "did: opened http://127.0.0.1:41001/ in a browser",
-    "found: nobody finished signing in within 90 s",
-    "tell: A sign-in page is open in your browser. Sign in with GitHub there and allow chuggy setup. If the page is gone, open http://127.0.0.1:41001/ on this machine.",
+    "found: the sign-in page is open and still waiting for someone to sign in",
+    waitingTell,
+    waitingRule,
+    `${next} sign-in`,
+  ]);
+  expect(lines(1)).toEqual([
+    `site: ${site}, not signed in`,
+    "found: the sign-in page opened earlier is still waiting",
+    waitingTell,
+    waitingRule,
     `${next} sign-in`,
   ]);
   expect(lines(2)).toEqual([
     `site: ${site}, not signed in`,
     "found: no browser could be opened from here",
-    "tell: Open http://127.0.0.1:41001/ in a browser on this machine, sign in with GitHub and allow chuggy setup.",
+    "tell: Open http://127.0.0.1:41001/ in the browser where you are signed in to GitHub as the account you want to use. Then allow chuggy setup.",
     `${next} sign-in`,
   ]);
+});
+
+test("signed in, the site line names the GitHub login the site gave, and says only signed in where it gave none", () => {
+  const thing = things.Done[0] as SetupThing;
+  const first = (report: SetupReport) =>
+    setupReportLines(report, machineScript, copyTextEn)[0];
+  expect(first({ ...checklist(thing), login: "ana-1" })).toBe(
+    `site: ${site}, signed in as ana-1`,
+  );
+  expect(first(checklist(thing))).toBe(`site: ${site}, signed in`);
+  expect(
+    setupReportLines(
+      { report: "SignInEnded", site, ended: "SignedIn", login: "ana-1" },
+      machineScript,
+      copyTextEn,
+    ),
+  ).toEqual([
+    `site: ${site}, signed in as ana-1`,
+    `rule: To change which GitHub account chuggy setup is signed in as, run node ${machineScript} sign-out and then sign in again.`,
+    next,
+  ]);
+});
+
+test("sign-out says the site is not signed in on this machine, that what runs elsewhere keeps running, and runs nothing after it", () => {
+  const lines = (held: boolean) =>
+    setupReportLines(
+      { report: "SignedOutHere", site, held },
+      machineScript,
+      copyTextEn,
+    );
+  const tell =
+    "tell: Signed out of chuggy on this machine. Runners and chat hosts keep running.";
+  expect(lines(true)).toEqual([
+    `site: ${site}, not signed in`,
+    `did: removed this machine's sign-in to ${site}`,
+    tell,
+    stop,
+  ]);
+  expect(lines(false)).toEqual([
+    `site: ${site}, not signed in`,
+    `found: this machine held no sign-in to ${site}`,
+    tell,
+    stop,
+  ]);
+});
+
+test("a page opened or found waiting is said as a wait in progress, with no failure and no figure", () => {
+  for (const report of roster.SignInWaiting.filter(
+    (waiting) => waiting.opened !== "NotOpened",
+  )) {
+    const said = setupReportLines(report, machineScript, copyTextEn)
+      .filter((line) => !line.startsWith("next:") && !line.startsWith("site:"))
+      .join("\n")
+      .replaceAll("http://127.0.0.1:41001/", "");
+    expect(said, report.opened).not.toMatch(/\d/u);
+    expect(said, report.opened).not.toMatch(
+      /nobody|within|gave up|timed? ?out/iu,
+    );
+  }
 });
 
 function endedLines(ended: (typeof setupSignInEndings)[number]) {
@@ -1556,7 +2116,7 @@ test("an ending that was the installation's says so to the person, and sign-in i
   const told: Partial<Record<SetupSignInEnded, readonly [string, string]>> = {
     Refused: [
       "found: the sign-in server refused the request",
-      "tell: The sign-in server refused the sign-in, so chuggy setup is not signed in. Tell me if you want to try signing in again.",
+      "tell: The sign-in server refused the sign-in, so chuggy setup is not signed in. Signing in again opens a new sign-in page, and a sign-in it refused can go through then. Tell me if you want to try signing in again.",
     ],
     Mismatched: [
       "found: the answer that came back did not belong to this sign-in",
@@ -1913,9 +2473,11 @@ function named(name: string): readonly string[] {
         thing: {
           thing: "Hand",
           tell: {
-            id: "setup-mend-chat-live-tell",
+            id: "setup-mend-serving-admin-tell",
             args: {
-              chats: { id: "setup-mend-chats", args: { project: name } },
+              project: name,
+              setting: "Personal runners",
+              placement: `${site}/placement`,
             },
           },
           when: { id: "setup-mend-admin-when", args: { workspace: name } },
@@ -1932,7 +2494,7 @@ function flat(name: string): readonly string[] {
     `site: ${site}, signed in`,
     `found: this folder's remote ${name} is added to no project the site shows you, so it proposes none`,
     `step: workspace   done     ${name}`,
-    `tell: Your chats in ${name} run only on your chat host, one machine of yours, which is registered and not running. Start it on its machine and tell me once it is running.`,
+    `tell: Your runner is registered and given ${name}, and does not take its work yet. Your own runners take its work only once an admin of the project sets Personal runners on its Placement page, ${site}/placement. Tell me once they have.`,
     `rule: Run node ${machineScript} --workspace '${name}' only once the person says they are an admin of ${name}.`,
     stop,
   ];
@@ -2158,4 +2720,321 @@ test("a run of import says what it asked and what the site answered under the si
     expect(lines).toEqual([alone[0], ...said, ...alone.slice(1)]);
     expect(setupReportExit(report)).toBe(setupReportExit(report.checklist));
   }
+});
+
+const bindRule =
+  "rule: Run the command on the next: line now, without asking the person";
+const bindRuleRest =
+  ". It waits until GitHub lets both apps into this folder's repository, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.";
+
+test("bind is named to run at once for the project, asking nothing of the person, beside its tell of GitHub", () => {
+  const [granted, trip] = things.Run;
+  expect(ended(granted as SetupThing)[0]).toMatch(
+    /^tell: Which repository is this project for\? .* 1\. Portal: already granted acme-org\/widgets 2\. Worker: already granted acme-org\/widgets\. Both are granted it, so I add it now\.$/u,
+  );
+  for (const run of [granted, trip])
+    expect(ended(run as SetupThing).slice(1)).toEqual([
+      `${bindRule}, and tell them what the tell: line says${bindRuleRest}`,
+      `next: node ${machineScript} bind ${flags}`,
+    ]);
+  expect(setupReportExit(checklist(trip as SetupThing))).toBe(0);
+});
+
+test("the ticket step asks what the person wants done, names the configurations where they choose, and names ticket only once they have said it", () => {
+  const [given, choose] = things.Brief;
+  if (given === undefined || choose === undefined) throw new Error("no ask");
+  const page = `${site}/acme/widgets/tickets/new`;
+  const said = `What would you like done first in acme/widgets? Say it in a sentence or two, or ask me to suggest something small from this repository. I will make it a ticket and start it.`;
+  const yourself = `If you would rather write it yourself: Open ${page}, say what you want done and press Create ticket.`;
+  const rule = `rule: Run node ${machineScript} ticket ${flags} with --title and a short title for what the person wants done, then --intent and what they want done in their own words`;
+  const once = `, each quoted as one word, only once the person has said what they want done.`;
+  expect(ended(given)).toEqual([
+    `ask: ${said} ${yourself}`,
+    `${rule}${once}`,
+    stop,
+  ]);
+  expect(ended(choose)).toEqual([
+    `ask: ${said} The project offers development or review: which configuration should it use? ${yourself}`,
+    `${rule}, then --configuration and the configuration they chose${once}`,
+    stop,
+  ]);
+});
+
+test("a run of ticket says what it filed or why it did not under the site's line, then the checklist read after it, and exits as that checklist does", () => {
+  const [none, filed, refused] = roster.Ticket;
+  const [, after] = (none && printed(none)) ?? [];
+  expect(after).toBe(
+    "found: nothing to file: the next thing is not the project's first ticket",
+  );
+  for (const [report, said] of [
+    [
+      filed,
+      [
+        "did: asked chuggy to file ticket 3, released and sent to start, under Default configuration",
+      ],
+    ],
+    [refused, ["found: chuggy did not file the ticket: It broke."]],
+  ] as const) {
+    if (report === undefined) throw new Error("no ticket report");
+    const lines = setupReportLines(report, machineScript, copyTextEn);
+    const alone = setupReportLines(report.checklist, machineScript, copyTextEn);
+    expect(lines).toEqual([alone[0], ...said, ...alone.slice(1)]);
+    expect(setupReportExit(report)).toBe(setupReportExit(report.checklist));
+  }
+});
+
+test("a bind whose wait ran out before GitHub was done says so, says the page it opened, and has the next run of bind made again, as having opened it", () => {
+  const waited = roster.Bind[3];
+  if (waited === undefined) throw new Error("no waited bind");
+  const lines = setupReportLines(waited, machineScript, copyTextEn);
+  const alone = setupReportLines(waited.checklist, machineScript, copyTextEn);
+  expect(lines.slice(1, 3)).toEqual([
+    `did: opened ${site}/acme/widgets/repositories?connect=github in a browser`,
+    "found: the wait ended before GitHub let both apps into this folder's repository",
+  ]);
+  expect(lines.slice(3, -2)).toEqual(alone.slice(1, -2));
+  expect(lines.slice(-2)).toEqual([
+    "rule: Run the command on the next: line again, and go on running it while GitHub still lacks what the tell: line says. Nothing has failed, so do not tell the person that it did or give them a deadline.",
+    `next: node ${machineScript} bind ${flags} --opened github`,
+  ]);
+  expect(setupReportExit(waited)).toBe(0);
+});
+
+test("an --opened that is not github is said as the one value it takes, with bind", () => {
+  expect(
+    setupReportLines(
+      { report: "AskedWrongly", fault: "Opened" },
+      machineScript,
+      copyTextEn,
+    )[0],
+  ).toBe("found: --opened takes only github, with bind");
+});
+
+test("a bind run again as having opened the page says no page opened and goes on naming itself so", () => {
+  const rerun = roster.Bind[4];
+  if (rerun === undefined) throw new Error("no rerun bind");
+  const lines = setupReportLines(rerun, machineScript, copyTextEn);
+  expect(lines.some((line) => line.startsWith("did: opened "))).toBe(false);
+  expect(lines.at(-1)).toBe(
+    `next: node ${machineScript} bind ${flags} --opened github`,
+  );
+});
+
+test("a run of bind says what it asked and what the site answered under the site's line, and where it added the repository that both apps reach it in the project, then the checklist read after it, and exits as that checklist does", () => {
+  const [none, bound, refused] = roster.Bind;
+  const [, after] = (none && printed(none)) ?? [];
+  expect(after).toBe(
+    "found: nothing to add: the next thing is not adding this folder's repository",
+  );
+  for (const [report, said] of [
+    [
+      bound,
+      [
+        "did: asked chuggy to add acme-org/widgets, and it answered acme-org/widgets · Default configuration added",
+        "tell: Both apps can reach acme-org/widgets. It is connected to widgets.",
+      ],
+    ],
+    [refused, ["found: chuggy did not add acme-org/widgets: Not installed"]],
+  ] as const) {
+    if (report === undefined) throw new Error("no bind report");
+    const lines = setupReportLines(report, machineScript, copyTextEn);
+    const alone = setupReportLines(report.checklist, machineScript, copyTextEn);
+    expect(lines).toEqual([alone[0], ...said, ...alone.slice(1)]);
+    expect(setupReportExit(report)).toBe(setupReportExit(report.checklist));
+  }
+});
+
+const pluginOffer = things.Offer.find(
+  (thing) => thing.command === "Plugin",
+) as SetupThing;
+
+test("signed in, the plugin is offered under two rules: plugin once the person says yes, and the checklist past it if they say no", () => {
+  expect(ended(pluginOffer)).toEqual([
+    "tell: The first step is chuggy's plugin for Claude Code. It adds two skills to Claude Code: one that sets chuggy up with you, and one that files tickets. It is installed with Claude Code's own commands, for you alone: they write your Claude Code user settings and clone the plugin into the plugins folder of ~/.claude, and the plugin runs nothing. With your yes I will install it. Tell me yes to go ahead, or no to go on without it.",
+    `rule: Run node ${machineScript} plugin only once the person says yes to chuggy's plugin in Claude Code.`,
+    `rule: Run node ${machineScript} --plugin skip only if the person says no to chuggy's plugin in Claude Code.`,
+    stop,
+  ]);
+  expect(ended(pluginOffer, both).slice(1, 3)).toEqual([
+    `rule: Run node ${machineScript} plugin ${flags} only once the person says yes to chuggy's plugin in Claude Code.`,
+    `rule: Run node ${machineScript} ${flags} --plugin skip only if the person says no to chuggy's plugin in Claude Code.`,
+  ]);
+});
+
+test("a run given --plugin skip carries it on every command it prints, whatever is next", () => {
+  const skipped: SetupAnswers = { ...both, plugin: setupPluginSkip };
+  for (const thing of Object.values(things).flat())
+    for (const named of commands(
+      setupReportLines(
+        checklist(thing, skipped),
+        machineScript,
+        copyTextEn,
+        skipped,
+      ),
+    ))
+      expect(named.argv.join(" "), JSON.stringify(thing)).toMatch(
+        / --plugin skip(?: |$)/u,
+      );
+});
+
+test("a run of plugin that left it on says what it did and how to remove it, asks the person to reload, hands the agent the setup skill with its file as the fallback, and names the checklist without the way past only once she has", () => {
+  const did = {
+    Installed: "installed",
+    Updated: "updated",
+    Enabled: "turned on",
+  };
+  const on = pluginEndings.filter((ended) => ended.ended === "On");
+  expect(on.map((ended) => ended.did)).toEqual([
+    "Installed",
+    "Updated",
+    "Enabled",
+  ]);
+  for (const ended of on) {
+    const report: SetupReport = { report: "Plugin", site, ended };
+    expect(
+      setupReportLines(report, machineScript, copyTextEn, {
+        ...both,
+        plugin: setupPluginSkip,
+      }),
+    ).toEqual([
+      `did: ${did[ended.did]} chuggy's plugin in Claude Code for you, and claude plugin uninstall chuggy@chuggy removes it`,
+      "tell: To use it in this session, type /reload-plugins here and tell me once it says Reloaded.",
+      `rule: Once the person says /reload-plugins has run, invoke the chuggy:setup skill (/chuggy:setup) and follow it for the rest of setup. Where your skills do not list chuggy:setup, or the person would rather not reload, read ${ended.folder}/skills/setup/SKILL.md by its path instead. Where it and a rule: line of chuggy setup differ, the rule: line wins.`,
+      `rule: Run node ${machineScript} ${flags} --site ${site} only once the person says /reload-plugins has run, or that they would rather not.`,
+      stop,
+    ]);
+    expect(setupReportExit(report)).toBe(0);
+  }
+});
+
+test("a run of plugin that did not leave it on says why and names the checklist past the plugin's step", () => {
+  const said = pluginEndings
+    .filter((ended) => ended.ended !== "On")
+    .map((ended) => {
+      const report: SetupReport = { report: "Plugin", site, ended };
+      expect(setupReportExit(report)).toBe(0);
+      return setupReportLines(report, machineScript, copyTextEn, both);
+    });
+  const next = `next: node ${machineScript} ${flags} --plugin skip --site ${site}`;
+  for (const lines of said) expect(lines.at(-1)).toBe(next);
+  expect(said.map((lines) => lines.slice(0, -1))).toEqual([
+    [
+      "found: no claude command answered here, so setup goes on without chuggy's plugin",
+    ],
+    [
+      "found: Claude Code here is 2.1.200, and the plugin's commands need 2.1.287 or later, so setup goes on without chuggy's plugin",
+    ],
+    [
+      "found: Claude Code here did not say its version, and the plugin's commands need 2.1.287 or later, so setup goes on without chuggy's plugin",
+    ],
+    [
+      "found: installing chuggy's plugin in Claude Code ended with exit 1, saying: manifest missing, so setup goes on without chuggy's plugin",
+    ],
+    [
+      "found: adding chuggy's plugin marketplace to Claude Code could not be started, so setup goes on without chuggy's plugin",
+    ],
+    [
+      "found: Claude Code's commands ended well and its list of plugins does not show chuggy@chuggy, so setup goes on without chuggy's plugin",
+    ],
+    [
+      "found: chuggy@chuggy is installed and still off after Claude Code was asked to turn it on, so setup goes on without chuggy's plugin",
+    ],
+  ]);
+});
+
+test("a run of merge says what it asked and what the site answered under the site's line, then the checklist read after it, and exits as that checklist does", () => {
+  const [none, merged, refused, failed] = roster.Merge;
+  for (const [report, said] of [
+    [
+      none,
+      [
+        "found: nothing to merge: no pull request of the first ticket stands unmerged",
+      ],
+    ],
+    [merged, [`did: asked chuggy to merge ${mergeUrl}, and it is merged`]],
+    [
+      refused,
+      [
+        `found: chuggy did not merge ${mergeUrl}: the repository's own rules on GitHub block it, such as a branch protection or a required review or check; merge it on GitHub your own way`,
+      ],
+    ],
+    [failed, [`found: chuggy did not merge ${mergeUrl}: No connection`]],
+  ] as const) {
+    if (report === undefined) throw new Error("no merge report");
+    const lines = setupReportLines(report, machineScript, copyTextEn);
+    const alone = setupReportLines(report.checklist, machineScript, copyTextEn);
+    expect(lines).toEqual([alone[0], ...said, ...alone.slice(1)]);
+    expect(setupReportExit(report)).toBe(setupReportExit(report.checklist));
+  }
+});
+
+test("every refusal of a merge is one line in the person's words with the pull request's link, and setup still ends", () => {
+  const refusals = [
+    ["Closed", "it is closed"],
+    ["Conflicting", "it conflicts with its base branch"],
+    [
+      "Blocked",
+      "the repository's own rules on GitHub block it, such as a branch protection or a required review or check",
+    ],
+    [
+      "Behind",
+      "its base branch has moved on since, and the repository wants it brought up to date first",
+    ],
+    ["HeadMoved", "something was pushed to it after chuggy checked it"],
+    ["NotMergeable", "GitHub would not merge it, and did not say why"],
+    ["AppDenied", "GitHub did not let chuggy's portal app merge it"],
+    [
+      "Forbidden",
+      "only the project's admins may have chuggy merge its pull requests, so one of them can",
+    ],
+  ] as const;
+  expect(new Set(refusals.map(([refusal]) => refusal))).toEqual(
+    new Set([...proposalMergeRefusals, "Forbidden"]),
+  );
+  for (const [refusal, words] of refusals) {
+    const report: SetupReport = {
+      report: "Merge",
+      url: mergeUrl,
+      answered: { answered: "Refused", refusal },
+      checklist: checklist(things.Done[0] as SetupThing),
+    };
+    const lines = setupReportLines(report, machineScript, copyTextEn);
+    const found = lines.filter((line) => line.includes(mergeUrl));
+    expect(found).toEqual([
+      `found: chuggy did not merge ${mergeUrl}: ${words}; merge it on GitHub your own way`,
+    ]);
+    expect(lines.at(-1)).toBe(stop);
+    expect(setupReportExit(report)).toBe(0);
+  }
+});
+
+test("a merge whose wait ended before the import says the import is under way and has merge run again under a rule saying it merges nothing again", () => {
+  const waited = roster.Merge[4];
+  if (waited === undefined) throw new Error("no waited merge");
+  const lines = setupReportLines(waited, machineScript, copyTextEn);
+  expect(lines[1]).toBe(
+    `did: asked chuggy to merge ${mergeUrl}, and it is merged`,
+  );
+  expect(lines.at(-3)).toMatch(
+    /^tell: .*chuggy is importing the repository's own configuration, and later tickets run on it once it is in place\. /u,
+  );
+  expect(lines.slice(-2)).toEqual([
+    "rule: Run the command on the next: line again, and go on running it while chuggy imports the repository's own configuration: the pull request is merged already, so it merges nothing again and waits on the same import. Nothing has failed, so do not tell the person that it did or give them a deadline.",
+    `next: node ${machineScript} merge ${flags}`,
+  ]);
+  expect(setupReportExit(waited)).toBe(0);
+});
+
+test("the merge is offered under one rule naming merge, once the person says yes", () => {
+  const offer = things.Offer.find(
+    (thing) => thing.command === "Merge",
+  ) as SetupThing;
+  const lines = ended(offer, both);
+  expect(lines[0]).toBe(
+    `tell: Ticket 1 opened a pull request, ${mergeUrl}, holding its work and this repository's own configuration; once it is merged, later tickets run on that configuration. Do you want me to merge it, or would you rather review it and merge it yourself? If you merge it yourself, setup is done now, and the configuration is in place once it is merged.`,
+  );
+  expect(lines.slice(1)).toEqual([
+    `rule: Run node ${machineScript} merge ${flags} only once the person says yes to chuggy merging that pull request.`,
+    stop,
+  ]);
 });

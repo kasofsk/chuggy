@@ -17,6 +17,7 @@ import {
   memberRunnerRemoved,
   myRunnerAddable,
   myRunnerHeldLabel,
+  myRunnerLineProjects,
   myRunnerRemovalLine,
   myRunnerRoom,
   myRunnersCountLine,
@@ -30,12 +31,12 @@ import {
   runnerWait,
   runnerWaitPause,
   runnerWaitLine,
+  runnerWaitPoolRoom,
+  runnerWaitRoom,
+  runnerWaitRoomLine,
   runnerWaitWord,
 } from "../app/core/myRunner.ts";
-import {
-  sessionRunnerAdded,
-  sessionRunnerNoticeWord,
-} from "../app/core/sessionRunners.ts";
+import { sessionRunnerNoticeWord } from "../app/core/sessionRunners.ts";
 import { ledgerExecution, workIdentity } from "./ticketLedgerFixture.ts";
 
 const held = {
@@ -90,6 +91,22 @@ test("each fallback is chosen by its own value, none included, and said in its o
       ownerFallbackChoices.map((each) => copyTextEn(ownerFallbackAbout(each))),
     ).size,
   ).toBe(ownerFallbackChoices.length);
+});
+
+test("the register line is made for the project the page is framed in, or else for any of the workspace's projects the reader reads, in name order", () => {
+  const readable = [
+    { tenant: "acme", project: "zephyr" },
+    { tenant: "other", project: "borealis" },
+    { tenant: "acme", project: "atlas" },
+  ];
+  expect(myRunnerLineProjects(readable, "acme", "zephyr")).toStrictEqual([
+    "zephyr",
+  ]);
+  expect(myRunnerLineProjects(readable, "acme", undefined)).toStrictEqual([
+    "atlas",
+    "zephyr",
+  ]);
+  expect(myRunnerLineProjects(readable, "none", undefined)).toStrictEqual([]);
 });
 
 test("a runner is offered the workspace's projects the reader reads and it does not yet serve, in name order", () => {
@@ -199,6 +216,52 @@ test("a run of the reader's waiting on their live runners says the pause the ser
   expect(runnerWaitPause(elsewhere, runnerWait(elsewhere))).toBeUndefined();
 });
 
+/** The server sends a room only where every live runner a run waits on is short of memory, and the console says it only there, and not over a pause. */
+test("a run of the reader's waiting on their live runners says the memory they are short of, and one paused, offline, unable or another member's says none", () => {
+  const room = { freeMib: 1_434, neededMib: 4_096 };
+  const short = {
+    ...waiting,
+    personalRunnerWait: "Live" as const,
+    personalRunnerRoom: room,
+  };
+  expect(runnerWaitRoom(short)).toStrictEqual(room);
+  expect(
+    runnerWaitRoom({ ...waiting, personalRunnerWait: "Live" }),
+  ).toBeUndefined();
+  expect(
+    runnerWaitRoom({
+      ...short,
+      paused: { until: "2026-10-01T05:00:00Z", reasons: [], pressed: false },
+    }),
+  ).toBeUndefined();
+  for (const wait of ["Offline", "Unable"] as const)
+    expect(
+      runnerWaitRoom({ ...short, personalRunnerWait: wait }),
+    ).toBeUndefined();
+  expect(runnerWaitRoom({ ...short, mine: false })).toBeUndefined();
+});
+
+/** The server sends a pool room only where every live pool a run waits on is short of memory, to any reader, and the console says it of a run not begun and not queued. */
+test("a run waiting on its project's live pools says the memory they are short of to any reader, and one queued or begun says none", () => {
+  const room = { freeMib: 3_686, neededMib: 4_096 };
+  const short = {
+    ...waiting,
+    mine: false,
+    ownerFallback: undefined,
+    poolRoom: room,
+  };
+  expect(runnerWaitPoolRoom(short)).toStrictEqual(room);
+  expect(runnerWaitPoolRoom({ ...short, mine: true })).toStrictEqual(room);
+  expect(runnerWaitPoolRoom({ ...waiting, mine: false })).toBeUndefined();
+  expect(runnerWaitPoolRoom({ ...short, status: "Queued" })).toBeUndefined();
+  expect(
+    runnerWaitPoolRoom({ ...short, runStartedAt: "2026-10-01T05:00:00Z" }),
+  ).toBeUndefined();
+  expect(copyOrDataText(copyTextEn, runnerWaitRoomLine(room))).toBe(
+    "3.6 GiB free, needs 4 GiB",
+  );
+});
+
 test("taking a member's runners off says whether there were any it could take", () => {
   const removed = (result: Parameters<typeof memberRunnerRemoved>[0]): string =>
     copyOrDataText(copyTextEn, memberRunnerRemoved(result));
@@ -213,27 +276,10 @@ test("taking a member's runners off says whether there were any it could take", 
   );
 });
 
-test("a thread's, an inquiry's and a member's own chat's missing runner is added on the member's own page, and the lead's on the project's Pools page", () => {
-  expect(sessionRunnerAdded("Thread")).toBe("MyRunner");
-  expect(sessionRunnerAdded("Inquiry")).toBe("MyRunner");
-  expect(sessionRunnerAdded("Chat")).toBe("MyRunner");
-  expect(sessionRunnerAdded("Lead")).toBe("Pools");
-});
-
-test("a thread's, an inquiry's and a member's own chat's missing runner is named their chat host, and the lead's a runner", () => {
-  for (const session of ["Thread", "Inquiry", "Chat"] as const) {
-    expect(copyTextEn(sessionRunnerNoticeWord("NoRunner", session))).toBe(
-      "No chat host",
-    );
-    expect(copyTextEn(sessionRunnerNoticeWord("RunnerOffline", session))).toBe(
-      "Chat host offline",
-    );
-  }
-  expect(copyTextEn(sessionRunnerNoticeWord("NoRunner", "Lead"))).toBe(
-    "No runner",
-  );
-  expect(copyTextEn(sessionRunnerNoticeWord("RunnerOffline", "Lead"))).toBe(
-    "Runner offline",
+test("a thread's and a member's own chat's missing runner is named their chat host", () => {
+  expect(copyTextEn(sessionRunnerNoticeWord("NoRunner"))).toBe("No chat host");
+  expect(copyTextEn(sessionRunnerNoticeWord("RunnerOffline"))).toBe(
+    "Chat host offline",
   );
 });
 

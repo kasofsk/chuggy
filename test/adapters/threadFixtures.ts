@@ -3,13 +3,11 @@ import { asInstallationId } from "../../src/domain/ids.ts";
 import type { RepositoryOnboarding } from "../../src/interpreter/repositoryOnboarding.ts";
 import type { ProjectCreation } from "../../src/interpreter/projectCreation.ts";
 import type { SessionPlacementAdministration } from "../../src/interpreter/sessionPlacement.ts";
-import type { SelectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 import type { ProjectInbox } from "../../src/interpreter/projectInbox.ts";
 import {
   asPrincipal,
   type NativeWeb,
 } from "../../src/interpreter/nativeWeb.ts";
-import { unreadableLeadReads } from "./leadReadFixtures.ts";
 
 /**
  * A boundary method a suite does not serve. It raises rather than answering, so
@@ -67,19 +65,6 @@ export const unservedEpics: Pick<
 };
 
 /**
- * The three inquiry methods a suite that never asks the lead still has to
- * supply, for the same reason: the app takes one boundary and not three.
- */
-export const unservedLeadInquiries: Pick<
-  NativeWeb,
-  "leadInquiries" | "leadInquiry" | "askLead"
-> = {
-  leadInquiries: unserved("lead inquiries"),
-  leadInquiry: unserved("lead inquiry"),
-  askLead: unserved("ask lead"),
-};
-
-/**
  * Every method the app takes, none of them served. A suite spreads it and then
  * writes the few methods its own cases are about, so what a case exercises is
  * exactly what it wrote.
@@ -87,8 +72,6 @@ export const unservedLeadInquiries: Pick<
 export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   ...unservedThreads,
   ...unservedEpics,
-  ...unservedLeadInquiries,
-  ...unreadableLeadReads(),
   cancel: unserved("cancel"),
   configuration: unserved("configuration"),
   configurations: unserved("configurations"),
@@ -116,7 +99,6 @@ export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   operationalStatus: unserved("operational status"),
   hostedRuns: unserved("hosted runs"),
   abilities: unserved("abilities"),
-  selectorOperationalContext: unserved("selector operational context"),
   outputContent: unserved("output content"),
   uploadProjectArtifact: unserved("upload project artifact"),
   projectArtifact: unserved("project artifact"),
@@ -137,7 +119,6 @@ export function servedNativeHttpApp(
   onboarding?: RepositoryOnboarding,
   creation?: ProjectCreation,
   sessionPlacement?: SessionPlacementAdministration,
-  proposalReviews?: SelectorProposalReviews,
   inbox?: ProjectInbox,
 ) {
   return createNativeHttpApp(
@@ -169,7 +150,6 @@ export function servedNativeHttpApp(
     creation,
     undefined,
     sessionPlacement,
-    proposalReviews,
     undefined,
     undefined,
     undefined,

@@ -45,6 +45,8 @@ import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { useChatPaneYields } from "./chatPaneHeld.ts";
 import { DetailsToggle } from "./DetailsPane.tsx";
 import { NavIcon } from "./navIcons.tsx";
+import { useProjectNamed } from "../projectNamed.ts";
+import { useWorkspaceNames } from "../workspaceNames.ts";
 import { ProjectSwitcher } from "./ProjectSwitcher.tsx";
 import { AccountMenu } from "./AccountMenu.tsx";
 import { useShellSlotHolder, useShellSlotsFilled } from "./slots.tsx";
@@ -319,7 +321,7 @@ function TopBarPage(): ReactNode {
 }
 
 /** The trail's crumbs, each level that has a page linking to it and the last
- * one named, each marked as the address it is rather than words to translate. */
+ * one named, each marked as a name or an address rather than words to translate. */
 function TopBarTrail(props: {
   readonly crumbs: readonly ShellCrumb[];
 }): ReactNode {
@@ -362,7 +364,17 @@ function TopBarCrumbs(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
-  return <TopBarTrail crumbs={shellCrumbs(props.partition, pathname)} />;
+  const names = {
+    workspace: useWorkspaceNames(),
+    project: useProjectNamed(),
+  };
+  return <TopBarTrail crumbs={shellCrumbs(props.partition, pathname, names)} />;
+}
+
+/** Where the reader is in a workspace's own chat. */
+function TopBarChatCrumbs(props: { readonly tenant: string }): ReactNode {
+  const named = useWorkspaceNames();
+  return <TopBarTrail crumbs={memberChatCrumbs(props.tenant, named)} />;
 }
 
 /** The rows of a project's bar under its first: its screens, then the page's
@@ -391,12 +403,10 @@ export function TopBar(props: {
         <div className="topbar-main">
           {partition !== undefined ? (
             <TopBarCrumbs partition={partition} />
+          ) : props.chat !== undefined ? (
+            <TopBarChatCrumbs tenant={props.chat} />
           ) : (
-            <TopBarTrail
-              crumbs={
-                props.chat === undefined ? [] : memberChatCrumbs(props.chat)
-              }
-            />
+            <TopBarTrail crumbs={[]} />
           )}
           <div className="topbar-actions flex shrink-0 items-center justify-end">
             {partition === undefined ? null : <TopBarDetails />}

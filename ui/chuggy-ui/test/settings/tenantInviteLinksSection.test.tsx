@@ -158,7 +158,7 @@ test("a person is named on one line under their whole name, and a maker who is n
         links: [
           linkListed("l-one"),
           linkListed("l-two", {
-            mintedBy: { subject: "chuggy-selector", account: false },
+            mintedBy: { subject: "chuggy-service", account: false },
           }),
         ],
       }),
@@ -174,10 +174,10 @@ test("a person is named on one line under their whole name, and a maker who is n
   );
   expect(named?.textContent).not.toContain("No account");
   expect(unnamed?.querySelector(".identity")?.textContent).toBe(
-    "chuggy-selector",
+    "chuggy-service",
   );
   expect(unnamed?.textContent).toBe(
-    `Made bychuggy-selectorNo account${when(linkListed("l-two").mintedAtMs)}`,
+    `Made bychuggy-serviceNo account${when(linkListed("l-two").mintedAtMs)}`,
   );
 });
 

@@ -1,6 +1,6 @@
 /**
  * Two settings forms open on a phone, pressed by a finger: an agent's
- * thresholds on the Usage page and the lead's limits. In each, with the
+ * thresholds on the Usage page and the models chats run on. In each, with the
  * section's Edit pressed, nothing scrolls the page sideways, every control in
  * the section is at least the touch height, and every box a reader types into
  * is drawn at `--text-unzoomed` or larger and leaves the page at its own scale
@@ -55,19 +55,19 @@ test("on a phone an agent's thresholds open as a form that fits, each control a 
   expect(served.unanswered).toEqual([]);
 });
 
-test("on a phone the lead's limits open as a form that fits, each control a finger's height, and focusing a box zooms nothing", async ({
+test("on a phone the models chats run on open as a form that fits, each control a finger's height, and focusing a box zooms nothing", async ({
   browser,
   served,
 }) => {
   const rendered = await renderedOpen(browser, served.origin, {
-    route: `${settingsRoot}/lead`,
+    route: `${settingsRoot}/threads`,
     viewport: "phone",
     signedIn: true,
     touch: true,
     ready: (page) =>
-      page.getByRole("heading", { level: 2, name: /^Limits\b/u }),
+      page.getByRole("heading", { level: 2, name: /^Models\b/u }),
   });
-  await settingsFormOpened(rendered.page, "Limits");
+  await settingsFormOpened(rendered.page, "Models");
   renderedNoViolations(rendered, [zodProbeViolation]);
   expect(served.unanswered).toEqual([]);
 });

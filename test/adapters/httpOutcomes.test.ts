@@ -41,6 +41,8 @@ import {
   landingQueueTicketsAnsweredMax,
   nativeHttpError,
   projectArtifactUploadBytesMax,
+  proposalForgeFailureCharsMax,
+  proposalForgeMessageCharsMax,
   proposalMergeStateCharsMax,
   proposalQueueWordCharsMax,
   runTranscriptBatchBytesMax,
@@ -76,6 +78,7 @@ import {
   allChangeProposalCreationsStored,
   allChangeProposalMergeabilities,
   allChangeProposalMergeAnswers,
+  allChangeProposalMerges,
   allChangeProposalMergeWaits,
   allChangeProposalStatuses,
   allChangeProposalUnmergeableSettled,
@@ -983,6 +986,17 @@ const landingQueueWordHeaviest = asProposalQueueWord(
 /** A link a report could carry at its bound, of the visible character JSON escapes. */
 const landingLinkHeaviest = `https://h/${"\\".repeat(actionReportLinkCharsMax - "https://h/".length)}`;
 
+/** The newest merge's answer with every field present and every text escaping each character. */
+const landingMergeAnswerHeaviest = {
+  askedAt: landingInstant,
+  answeredAt: landingInstant,
+  outcome: landingCodeHeaviest(allChangeProposalMerges),
+  status: landingCountHeaviest,
+  failure: "\u0001".repeat(proposalForgeFailureCharsMax),
+  message: "\u0001".repeat(proposalForgeMessageCharsMax),
+  messageCut: true as const,
+};
+
 /** One request's rows as the heaviest of them hold it, in each state that carries a field of its own. */
 function landingRecordsHeaviest(): readonly TicketLandingRecord[] {
   const base = {
@@ -1018,6 +1032,8 @@ function landingRecordsHeaviest(): readonly TicketLandingRecord[] {
       ),
       mergeCommit: landingCommitHeaviest,
       mergedHead: landingCommitHeaviest,
+      mergesAsked: landingCountHeaviest,
+      mergeAnswer: landingMergeAnswerHeaviest,
     },
   };
   return [
@@ -1167,7 +1183,8 @@ test("the heaviest landings a ticket's read answers are answered within what rea
 
 /**
  * As many queues as one read answers tickets, each its own holder at the
- * largest number a ticket's may be, on a repository and a target of control
+ * largest number a ticket's may be, in its longest phase and holding from the
+ * last instant its schema writes, on a repository and a target of control
  * characters at their bounds, the target's last three telling them apart.
  */
 function landingQueuesHeaviest() {
@@ -1186,6 +1203,7 @@ function landingQueuesHeaviest() {
         repository: "\u0001".repeat(briefRepositoryCharsMax),
         target: `${"\u0001".repeat(briefBranchCharsMax - 3)}${String(at).padStart(3, "0")}`,
         rank: at,
+        holderSince: "9999-12-31T23:59:59.999999Z",
       }),
     ),
     truncated: true,

@@ -1,93 +1,31 @@
 /**
- * The console's store and the two cells it holds: a store per call, the box a
- * reader typed at kept through the slice exactly as `core/leadInquiries.ts`
- * keeps it, and an inbox's answer line heard only while an inbox of its
- * project is drawn.
+ * The console's store: a store per call, so what one holds no other sees.
  */
 
 import { expect, test } from "vitest";
 
 import {
-  inquiryBoxAnsweredAt,
-  inquiryBoxAt,
-  inquiryBoxSentAt,
-  inquiryBoxTypedAt,
-} from "../app/browser/lead/inquiryBoxes.ts";
-import {
-  inboxProposalDrawnAt,
-  inboxProposalHeardAt,
-  inboxProposalLastAt,
-  inboxProposalLeftAt,
-} from "../app/browser/inboxProposalHeard.ts";
-import { inquiryBoxEmpty, inquiryDraw } from "../app/core/leadInquiries.ts";
-import type { InboxProposalAnswer } from "../app/core/inboxProposals.ts";
+  ticketAttemptAt,
+  ticketAttemptHeldAt,
+} from "../app/browser/ticketAttempts.ts";
 import { consoleStoreBare } from "./consoleStoreBare.tsx";
 
 const atlas = { tenant: "acme", project: "atlas" };
-const borealis = { tenant: "acme", project: "borealis" };
 
-const approved: InboxProposalAnswer = {
-  proposal: { decision: "dec-one", tickets: [7] },
-  step: { step: "Answered", outcome: "Approved" },
-};
-
-test("each store holds its own boxes, so nothing crosses from one to the next", () => {
+test("each store holds its own state, so nothing crosses from one to the next", () => {
   const first = consoleStoreBare();
-  first.dispatch(inquiryBoxTypedAt({ partition: atlas, typed: "why" }));
-  expect(inquiryBoxAt(first.getState(), atlas).typed).toBe("why");
-  expect(inquiryBoxAt(consoleStoreBare().getState(), atlas)).toBe(
-    inquiryBoxEmpty,
+  const attempt = {
+    action: {
+      action: "Resume",
+      mutation: { mutation: "ResumeTicket", ticket: 11 },
+    },
+    operation: "op-one",
+  } as const;
+  first.dispatch(
+    ticketAttemptHeldAt({ partition: atlas, ticket: 11, attempt }),
   );
-});
-
-test("a box keeps its pair through a refusal and spends it on an accepted send", () => {
-  const store = consoleStoreBare();
-  store.dispatch(inquiryBoxTypedAt({ partition: atlas, typed: "why" }));
-  const draw = inquiryDraw(undefined, "why", atlas, () => "pair-1");
-  store.dispatch(inquiryBoxSentAt(draw));
-  const refusedWord = { id: "lead-inquiry-refusal-unknown" } as const;
-  store.dispatch(
-    inquiryBoxAnsweredAt({
-      draw,
-      answer: { ask: "Refused", word: refusedWord },
-    }),
-  );
-  const refused = inquiryBoxAt(store.getState(), atlas);
-  expect(refused.held).toStrictEqual(draw);
-  expect(refused.ask).toStrictEqual({ ask: "Refused", word: refusedWord });
-  store.dispatch(
-    inquiryBoxAnsweredAt({ draw, answer: { ask: "Asked", session: "inq-1" } }),
-  );
-  const asked = inquiryBoxAt(store.getState(), atlas);
-  expect(asked.held).toBeUndefined();
-  expect(asked.typed).toBe("");
-  expect(asked.ask).toStrictEqual({ ask: "Asked", session: "inq-1" });
-  expect(inquiryBoxAt(store.getState(), borealis)).toBe(inquiryBoxEmpty);
-});
-
-test("an inbox answer is heard only while an inbox of its project is drawn", () => {
-  const store = consoleStoreBare();
-  store.dispatch(inboxProposalHeardAt({ partition: atlas, answer: approved }));
-  store.dispatch(inboxProposalDrawnAt(atlas));
+  expect(ticketAttemptAt(first.getState(), atlas, 11)).toStrictEqual(attempt);
   expect(
-    inboxProposalLastAt(store.getState(), atlas),
-    "an answer given while no inbox was drawn was said by the next one",
+    ticketAttemptAt(consoleStoreBare().getState(), atlas, 11),
   ).toBeUndefined();
-  store.dispatch(inboxProposalHeardAt({ partition: atlas, answer: approved }));
-  expect(inboxProposalLastAt(store.getState(), atlas)).toStrictEqual(approved);
-  expect(inboxProposalLastAt(store.getState(), borealis)).toBeUndefined();
-});
-
-/** A strict double-invoke draws, leaves and draws again, and the line it
- * heard dies only with the last inbox of its project. */
-test("an inbox answer dies with the last inbox of its project", () => {
-  const store = consoleStoreBare();
-  store.dispatch(inboxProposalDrawnAt(atlas));
-  store.dispatch(inboxProposalDrawnAt(atlas));
-  store.dispatch(inboxProposalHeardAt({ partition: atlas, answer: approved }));
-  store.dispatch(inboxProposalLeftAt(atlas));
-  expect(inboxProposalLastAt(store.getState(), atlas)).toStrictEqual(approved);
-  store.dispatch(inboxProposalLeftAt(atlas));
-  expect(inboxProposalLastAt(store.getState(), atlas)).toBeUndefined();
-  expect(store.getState().inboxProposalHeard).toStrictEqual({});
 });

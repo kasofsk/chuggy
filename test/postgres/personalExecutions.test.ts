@@ -33,6 +33,7 @@ import {
   postgresWorkerPoolRegistry,
   postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
+import { sessionRunnerPolledSecsMax } from "../../src/interpreter/sessionPlacement.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import {
@@ -617,6 +618,209 @@ test("a live runner whose named credentials are all off holds its owner's run of
   assert.equal((await listedAs(project, member))?.paused, undefined);
 });
 
+test("a live runner naming a room above nothing and below the run's memory carries what it has free and what the run needs, to the list and the single read alike", async () => {
+  const member = principal("member");
+  const project = await waitingProject("room-short", member, "Strict");
+  await runnerPolledOf(project, member, { live: true, roomMib: 1_434 });
+  const listed = await listedAs(project, member);
+  assert.equal(listed?.personalRunnerWait, "Live");
+  assert.deepEqual(listed.personalRunnerRoom, {
+    freeMib: 1_434,
+    neededMib: memoryMibDefault,
+  });
+  assert.deepEqual(
+    (
+      await operationalReads.execution(
+        project.partition,
+        listed.execution,
+        member,
+      )
+    )?.personalRunnerRoom,
+    { freeMib: 1_434, neededMib: memoryMibDefault },
+  );
+});
+
+test("a live runner naming no room, a room of nothing or one the run fits carries no room", async () => {
+  for (const roomMib of [undefined, 0, 8_192]) {
+    const member = principal("member");
+    const project = await waitingProject(
+      `room-${roomMib ?? "none"}`,
+      member,
+      "Strict",
+    );
+    await runnerPolledOf(project, member, {
+      live: true,
+      ...(roomMib === undefined ? {} : { roomMib }),
+    });
+    const listed = await listedAs(project, member);
+    assert.equal(listed?.personalRunnerWait, "Live");
+    assert.equal(listed.personalRunnerRoom, undefined, `room ${roomMib}`);
+  }
+});
+
+test("a paused runner short of memory carries its pause and no room", async () => {
+  const member = principal("member");
+  const project = await waitingProject("room-paused", member, "Strict");
+  await runnerPolledOf(project, member, { live: true, roomMib: 1_434 });
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    limit: { observedSecs: -60, resetsSecs: 3_600 },
+  });
+  const listed = await listedAs(project, member);
+  assert.equal(pauseMinutes(listed?.paused), 60);
+  assert.equal(listed?.personalRunnerRoom, undefined);
+});
+
+test("two live runners carry the larger room only where both fall short", async () => {
+  const member = principal("member");
+  const project = await waitingProject("room-two", member, "Strict");
+  const first = await runnerPolledOf(project, member, {
+    live: true,
+    roomMib: 1_434,
+  });
+  await runnerPolledOf(project, member, { live: true, roomMib: 2_048 });
+  assert.deepEqual((await listedAs(project, member))?.personalRunnerRoom, {
+    freeMib: 2_048,
+    neededMib: memoryMibDefault,
+  });
+  await personalRunnerHarnessPolled(rig.harness, first.principal, {
+    live: true,
+    roomMib: 8_192,
+  });
+  assert.equal(
+    (await listedAs(project, member))?.personalRunnerRoom,
+    undefined,
+    "a runner the run fits leaves it short of nothing",
+  );
+});
+
+/** A pool of `project`'s declaring the runner platform, whose last poll for executions named `roomMib` where it names one, `live` or long enough ago to be offline. */
+async function poolPolledOf(
+  project: SchedulerProject,
+  name: string,
+  polled: { readonly live: boolean; readonly roomMib?: number },
+): Promise<void> {
+  const pool = {
+    kind: "Dedicated",
+    partition: project.partition,
+    pool: name,
+    principal: principal("pool"),
+  } as const;
+  assert.equal(
+    await postgresWorkerPoolRegistry(apiPool).register({
+      ...pool,
+      capabilities: [platform],
+      class: "Dedicated",
+      clientId: `chuggy-pool-${randomUUID()}`,
+    }),
+    true,
+  );
+  await assignments.polled(pool, true, polled.roomMib);
+  if (!polled.live)
+    await rig.harness.query(
+      `UPDATE worker_pool SET executions_polled_at=now()-make_interval(secs=>$4::double precision)
+        WHERE tenant=$1 AND project=$2 AND pool=$3`,
+      [
+        project.partition.tenant,
+        project.partition.project,
+        name,
+        sessionRunnerPolledSecsMax * 2,
+      ],
+    );
+}
+
+/** A project of `member`'s naming no fallback, its one execution waiting unclaimed on its pools. */
+async function poolWaitingProject(
+  label: string,
+  member: Principal,
+): Promise<SchedulerProject> {
+  const project = await ownedProject(label, member, undefined, 1);
+  await opened(project, spendingClaude);
+  return project;
+}
+
+test("a live pool naming a room above nothing and below the run's memory carries what it has free and what the run needs, to a reader who does not own the run, in the list and the single read alike", async () => {
+  const member = principal("member");
+  const reader = principal("reader");
+  const project = await poolWaitingProject("pool-room-short", member);
+  await poolPolledOf(project, "pool-short", { live: true, roomMib: 3_686 });
+  const listed = await listedAs(project, reader);
+  const room = { freeMib: 3_686, neededMib: memoryMibDefault };
+  assert.deepEqual(listed?.poolRoom, room);
+  assert.equal(listed.personalRunnerWait, undefined);
+  assert.deepEqual(
+    (
+      await operationalReads.execution(
+        project.partition,
+        listed.execution,
+        reader,
+      )
+    )?.poolRoom,
+    room,
+  );
+});
+
+test("a live pool naming no room, a room of nothing or one the run fits carries no room", async () => {
+  for (const roomMib of [undefined, 0, 8_192]) {
+    const project = await poolWaitingProject(
+      `pool-room-${roomMib ?? "none"}`,
+      principal("member"),
+    );
+    await poolPolledOf(project, "pool-polled", {
+      live: true,
+      ...(roomMib === undefined ? {} : { roomMib }),
+    });
+    assert.equal(
+      (await listedAs(project, principal("reader")))?.poolRoom,
+      undefined,
+      `room ${roomMib}`,
+    );
+  }
+});
+
+test("two live pools carry the larger room only where both fall short", async () => {
+  const short = await poolWaitingProject("pool-room-two", principal("member"));
+  await poolPolledOf(short, "pool-small", { live: true, roomMib: 1_434 });
+  await poolPolledOf(short, "pool-larger", { live: true, roomMib: 3_686 });
+  assert.deepEqual((await listedAs(short, principal("reader")))?.poolRoom, {
+    freeMib: 3_686,
+    neededMib: memoryMibDefault,
+  });
+  const fits = await poolWaitingProject("pool-room-fits", principal("member"));
+  await poolPolledOf(fits, "pool-small", { live: true, roomMib: 1_434 });
+  await poolPolledOf(fits, "pool-fits", { live: true, roomMib: 8_192 });
+  assert.equal(
+    (await listedAs(fits, principal("reader")))?.poolRoom,
+    undefined,
+    "a pool the run fits leaves it short of nothing",
+  );
+});
+
+test("an offline pool, or a run whose pools defer to its owner's runner, carries no room", async () => {
+  const offline = await poolWaitingProject(
+    "pool-room-offline",
+    principal("member"),
+  );
+  await poolPolledOf(offline, "pool-offline", { live: false, roomMib: 1_434 });
+  assert.equal(
+    (await listedAs(offline, principal("reader")))?.poolRoom,
+    undefined,
+    "an offline pool",
+  );
+  const member = principal("member");
+  const deferring = await waitingProject(
+    "pool-room-deferring",
+    member,
+    "Strict",
+  );
+  await runnerPolledOf(deferring, member, { live: false });
+  await poolPolledOf(deferring, "pool-short", { live: true, roomMib: 1_434 });
+  assert.equal(
+    (await listedAs(deferring, principal("reader")))?.poolRoom,
+    undefined,
+    "a pool deferring to its owner's runner",
+  );
+});
+
 test("a run waiting on offline runners says so and no pause", async () => {
   const member = principal("member");
   const project = await waitingProject("offline-paused", member, "Strict");
@@ -956,7 +1160,7 @@ test("a pool's claim is held back while any one of the owner's runners could tak
       )) !== undefined;
     await runnerOf(project.partition, member);
     const polling = await runnerOf(project.partition, member, []);
-    await assignments.polled(polling, false);
+    await assignments.polled(polling, false, undefined);
     assert.equal(
       await assignments.waiting(
         pool,
@@ -966,7 +1170,7 @@ test("a pool's claim is held back while any one of the owner's runners could tak
       fallback === "Preferred",
       `${fallback}: a poll with no room for an execution held a pool back`,
     );
-    await assignments.polled(polling, true);
+    await assignments.polled(polling, true, undefined);
     assert.equal(await poolClaimed(), false, fallback);
     assert.equal(
       await personalRegistry.deregister(
@@ -1126,17 +1330,37 @@ test("a runner's poll is stamped under its own registration alone, and as one fo
         ORDER BY principal=$3 DESC`,
       [runner.tenant, runner.owner, runner.principal],
     )) as readonly { polled: boolean; executions: boolean }[];
-  await assignments.polled({ ...runner, principal: principal("stale") }, true);
+  await assignments.polled(
+    { ...runner, principal: principal("stale") },
+    true,
+    undefined,
+  );
   assert.deepEqual(await stamps(), [{ polled: false, executions: false }]);
-  await assignments.polled(runner, false);
+  await assignments.polled(runner, false, undefined);
   assert.deepEqual(await stamps(), [{ polled: true, executions: false }]);
-  await assignments.polled(runner, true);
+  await assignments.polled(runner, true, undefined);
   assert.deepEqual(await stamps(), [{ polled: true, executions: true }]);
   await runnerOf(project.partition, member, []);
   assert.deepEqual(await stamps(), [
     { polled: true, executions: true },
     { polled: false, executions: false },
   ]);
+});
+
+test("a runner's poll keeps the memory room it named, and none where the next names none", async () => {
+  const member = principal("member");
+  const project = await ownedProject("polled-room", member, "Preferred", 1);
+  const runner = await runnerOf(project.partition, member);
+  const room = async () =>
+    (await rig.harness.query(
+      `SELECT memory_room_mib::text AS room FROM personal_runner
+        WHERE principal=$1`,
+      [runner.principal],
+    )) as readonly { room: string | null }[];
+  await assignments.polled(runner, true, 1_434);
+  assert.deepEqual(await room(), [{ room: "1434" }]);
+  await assignments.polled(runner, false, undefined);
+  assert.deepEqual(await room(), [{ room: null }]);
 });
 
 test("a project taken off a runner's allowlist stops what it holds there alone, and what it holds in a project it still serves stands", async () => {

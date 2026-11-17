@@ -24,6 +24,7 @@ import { after, test } from "node:test";
 import { promisify } from "node:util";
 
 import { postgresLimitsDefault } from "../../src/adapters/postgres/pool.ts";
+import { threadWakesPerPassMax } from "../../src/contract/http.ts";
 import {
   kubernetesDeadlineText,
   kubernetesImageFaultTexts,
@@ -271,13 +272,14 @@ const parsed = {
     mirrors: {},
   },
   sessionRouting: {
-    routes: { Thread: "InCluster", Lead: "InCluster" },
+    routes: { Thread: "InCluster" },
     projectRoutes: {},
   },
   access: {
     readUrl: "http://keto-read.invalid:4466/",
     requestTimeoutMs: projectAccessTimeoutMsDefault,
   },
+  threadWakesPerPassMax,
   poolMemoryMib: workerPoolMemoryMibDefault,
 };
 
@@ -585,21 +587,36 @@ test("a key the session policy does not publish is refused rather than ignored",
   }
 });
 
-test("a session kind's route and each project's session routes are parsed as the policy states them", async () => {
+test("the thread's route and each project's thread route are parsed as the policy states them", async () => {
+  const found = (await parsedSessionPolicy({
+    ...sessionPolicy,
+    routes: { Thread: "Pool" },
+    projectRoutes: { tenant: { project: { Thread: "InCluster" } } },
+  })) as {
+    readonly parsed?: { readonly sessionRouting: unknown };
+  };
+  assert.deepEqual(found.parsed?.sessionRouting, {
+    routes: { Thread: "Pool" },
+    projectRoutes: { tenant: { project: { Thread: "InCluster" } } },
+  });
+});
+
+test("a policy a deployment still writes naming the lead's route is accepted, and the lead is routed nowhere", async () => {
   const found = (await parsedSessionPolicy({
     ...sessionPolicy,
     routes: { Lead: "Pool" },
     projectRoutes: {
-      tenant: { project: { Thread: "Pool" }, other: { Lead: "InCluster" } },
+      tenant: {
+        project: { Thread: "Pool", Lead: "Pool" },
+        other: { Lead: "InCluster" },
+      },
     },
   })) as {
     readonly parsed?: { readonly sessionRouting: unknown };
   };
   assert.deepEqual(found.parsed?.sessionRouting, {
-    routes: { Thread: "InCluster", Lead: "Pool" },
-    projectRoutes: {
-      tenant: { project: { Thread: "Pool" }, other: { Lead: "InCluster" } },
-    },
+    routes: { Thread: "InCluster" },
+    projectRoutes: { tenant: { project: { Thread: "Pool" }, other: {} } },
   });
 });
 
@@ -1026,6 +1043,42 @@ test("the pool plane's size for an execution naming none is read under the plane
     );
 });
 
+test("the wake bound is the contract's own where unset, and may be lowered to a positive count but not raised", async () => {
+  const read = async (value: string): Promise<unknown> =>
+    JSON.parse(
+      await schedulerProgram(
+        parseProgram({
+          ...environment,
+          CHUG_SCHEDULER_THREAD_WAKES_PER_PASS_MAX: value,
+        }),
+      ),
+    );
+  const bound = (found: unknown): unknown =>
+    (found as { readonly parsed: { readonly threadWakesPerPassMax: unknown } })
+      .parsed.threadWakesPerPassMax;
+  assert.equal(bound(await read("")), threadWakesPerPassMax);
+  assert.equal(bound(await read("1")), 1);
+  assert.equal(
+    bound(await read(String(threadWakesPerPassMax))),
+    threadWakesPerPassMax,
+  );
+  for (const [value, refused] of [
+    ["0", "must be a positive integer"],
+    ["-1", "must be a positive integer"],
+    ["1.5", "must be a positive integer"],
+    ["one", "must be a positive integer"],
+    [
+      String(threadWakesPerPassMax + 1),
+      `must be at most ${String(threadWakesPerPassMax)}`,
+    ],
+  ] as const)
+    assert.deepEqual(
+      await read(value),
+      { refused: `CHUG_SCHEDULER_THREAD_WAKES_PER_PASS_MAX ${refused}` },
+      value,
+    );
+});
+
 /**
  * The cluster a case answers for, reachable or not, and the site each half
  * stands on. Both halves place against that one site, so what is recorded is
@@ -1158,8 +1211,8 @@ function processSessionFakes(observing: boolean): string {
   return `
     const sessionGrant = { ...${JSON.stringify(grant)}, credentials: ['claude-code'] };
     const agentSession = {
-      partition, session: 'session-one', kind: 'Lead',
-      principal: '21:https://auth.invalid4:lead',
+      partition, session: 'session-one', kind: 'Thread',
+      principal: '21:https://auth.invalid6:member',
       capabilities: ['RepositoryRead', 'RunCommands'],
       credentialSlot: 'claude-code', account: 'project', cluster: 'cluster', state: 'Open',
     };
@@ -1217,9 +1270,48 @@ const landingNone = "{ landing: async () => ({ read: 'Landing' }) }";
 const readOnlyNone =
   "{ repositories: async () => ({ read: 'Repositories', repositories: [] }) }";
 
+/** A port that answers a project whose members wrote no North Star, as the program spells one. */
+const northStarNone = "{ northStar: async () => ({ read: 'NorthStar' }) }";
+
 /** A port that answers no dependency of the ticket, as the program spells one. */
 const deliveriesNone =
   "{ deliveries: async () => ({ read: 'Deliveries', deliveries: [] }) }";
+
+/** The session half of the driven process, over the fakes `processFakes` declares. */
+function processSessionService(
+  mirrors: Readonly<Record<string, string>>,
+): string {
+  return `
+    const sessionService = {
+      store: sessionStore,
+      bindings: sessionBindings,
+      placement: sessionLaunch.kubernetesSessionLaunch(sessionSite, fetcher),
+      bearers: mint.sessionAttemptMint(),
+      policy: {
+        image: ${JSON.stringify(workerImage)},
+        profile: { profile: 'session', runtimeVersion: '1' },
+        grant: sessionGrant,
+        mirrors: ${JSON.stringify(mirrors)},
+      },
+      config: sessions.sessionSchedulerDefaults,
+    };
+  `;
+}
+
+/** A wake pass over a log with nothing in it, counting the cursor reads that say the tick took one. */
+const processWakes = `
+    let wakeCursorReads = 0;
+    const wakes = {
+      store: {
+        cursor: async () => { wakeCursorReads += 1; return 0; },
+        candidates: async () => [],
+        wake: async () => { throw new Error('an empty page offered a wake'); },
+        advance: async () => { throw new Error('an empty page moved the cursor'); },
+      },
+      clock: { nowIso: () => '2026-09-02T00:00:00.000Z' },
+      wakesPerPassMax: 1,
+    };
+`;
 
 /**
  * One scheduler process against fakes for the two authorities it does not own:
@@ -1262,30 +1354,20 @@ function processProgram(
         configuration: async () => ({ read: 'Configuration', configuration }),
       },
       runtimeFacts: supplied.suppliedRuntimeFacts({ workspace: '/workspace' }),
-      priorWorkReports: ${reportsNone}, priorEvaluationReports: ${reportsNone}, failedLanding: ${landingNone}, readOnlyRepositories: ${readOnlyNone}, dependencyDeliveries: ${deliveriesNone},
+      priorWorkReports: ${reportsNone}, priorEvaluationReports: ${reportsNone}, failedLanding: ${landingNone}, readOnlyRepositories: ${readOnlyNone}, northStar: ${northStarNone}, dependencyDeliveries: ${deliveriesNone},
       ticketBriefs: { brief: async () => undefined },
       practices: briefing.blessedPracticeCatalog,
       config: scheduler.executionSchedulerDefaults,
       ticketService: tickets.ticketServiceDefaults, finalizer: finalizer.finalizerDefaults,
       metrics: scheduler.silentSchedulerTelemetry,
     };
-    const sessionService = {
-      store: sessionStore,
-      bindings: sessionBindings,
-      placement: sessionLaunch.kubernetesSessionLaunch(sessionSite, fetcher),
-      bearers: mint.sessionAttemptMint(),
-      policy: {
-        image: ${JSON.stringify(workerImage)},
-        profile: { profile: 'session', runtimeVersion: '1' },
-        grant: sessionGrant,
-        mirrors: ${JSON.stringify(mirrors)},
-      },
-      config: sessions.sessionSchedulerDefaults,
-    };
+    ${processSessionService(mirrors)}
     const pool = { query: async () => ({ rows: schema.currentRuntimeSchemaContract.required }) };
+    ${processWakes}
     const runtime = roots.schedulerProcess(
       service,
       sessionService,
+      wakes,
       { owner: 'scheduler-one', recoveryEpoch: 'epoch-one', cluster: 'cluster' },
       { pool, additional: [launch.kubernetesNamespacePrecondition(cluster, fetcher)] },
       { idleIntervalMilliseconds: 1000, shutdownDrainMilliseconds: 1000 },
@@ -1295,7 +1377,7 @@ function processProgram(
     const health = runtime.health();
     const stopped = await runtime.stop();
     process.stdout.write(JSON.stringify({
-      started, health, stopped, placed, ended, sessionPlaced, sessionEnded, sessionTasks, asked, told,
+      started, health, stopped, placed, ended, sessionPlaced, sessionEnded, sessionTasks, asked, told, wakeCursorReads,
     }));
   `;
 }
@@ -1318,6 +1400,7 @@ interface ProcessRan {
   }[];
   readonly asked: readonly string[];
   readonly told: readonly string[];
+  readonly wakeCursorReads: number;
 }
 
 const namespaceUrl =
@@ -1331,6 +1414,10 @@ test("the scheduler process starts, places one worker, reports health and stops"
   assert.deepEqual(found.health, { live: true, ready: true });
   assert.deepEqual(found.stopped, { stopped: "Stopped" });
   assert.equal(found.placed.length, 1);
+  assert.ok(
+    found.wakeCursorReads > 0,
+    "the scheduler's tick took no thread wake pass",
+  );
   assert.deepEqual(found.asked.slice(0, 3), [
     `GET ${namespaceUrl}`,
     `POST ${namespaceUrl}/pods worker`,

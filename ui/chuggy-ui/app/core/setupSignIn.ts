@@ -56,7 +56,11 @@ import type {
   SetupSignInEnded,
   SetupSignInOpened,
 } from "./setupReport.ts";
-import { setupSessionOpened, setupWorkspacesRead } from "./setupSession.ts";
+import {
+  setupLoginRead,
+  setupSessionOpened,
+  setupWorkspacesRead,
+} from "./setupSession.ts";
 import type { SetupSessionOpened } from "./setupSession.ts";
 import {
   setupLockReleased,
@@ -177,14 +181,12 @@ export function setupOpenerCommand(
   }
 }
 
-async function setupSignInOpened(
+/** Opens `address` in the person's browser, answering whether the opener took it. */
+export async function setupBrowserOpened(
   ports: SetupPorts,
-  port: number,
+  address: string,
 ): Promise<boolean> {
-  const command = setupOpenerCommand(
-    ports.surroundings,
-    setupLoopbackAddress(port),
-  );
+  const command = setupOpenerCommand(ports.surroundings, address);
   if (command === undefined) return false;
   const launched = await ports.process.launch(command, setupOpenerWaitMs);
   switch (launched.launched) {
@@ -197,8 +199,18 @@ async function setupSignInOpened(
   }
 }
 
-function setupEndedReport(site: string, ended: SetupSignInEnded): SetupReport {
-  return { report: "SignInEnded", site, ended };
+function setupSignInOpened(ports: SetupPorts, port: number): Promise<boolean> {
+  return setupBrowserOpened(ports, setupLoopbackAddress(port));
+}
+
+function setupEndedReport(
+  site: string,
+  ended: SetupSignInEnded,
+  login?: string,
+): SetupReport {
+  return login === undefined
+    ? { report: "SignInEnded", site, ended }
+    : { report: "SignInEnded", site, ended, login };
 }
 
 /** A page that could not be started, or never said where it listens; its site is remembered by then. */
@@ -237,7 +249,10 @@ async function setupSignInStarted(
     const note = setupSignInNoteRead(ports.files);
     if (note?.note === "Ended") {
       setupSignInSaid(ports, note);
-      return { begun: "Reported", report: setupEndedReport(site, note.ended) };
+      return {
+        begun: "Reported",
+        report: setupEndedReport(site, note.ended, note.login),
+      };
     }
     if (note?.note === "Waiting")
       return {
@@ -300,6 +315,7 @@ async function setupSignInHeard(
   site: string,
   pid: number,
   ended: SetupSignInEnded,
+  login?: string,
 ): Promise<SetupReport> {
   if (await setupLockTaken(ports, setupLockWaitMs))
     try {
@@ -318,7 +334,7 @@ async function setupSignInHeard(
     } finally {
       setupLockReleased(ports);
     }
-  return setupEndedReport(site, ended);
+  return setupEndedReport(site, ended, login);
 }
 
 /** Waits on a page until `waitSecs` have passed on the clock, looking every `pollMs` for the note its listener leaves when it ends. */
@@ -335,7 +351,7 @@ async function setupSignInWaited(
     const alive = ports.process.alive(waiting.pid);
     const note = setupSignInNoteRead(ports.files);
     if (note?.note === "Ended")
-      return setupSignInHeard(ports, site, waiting.pid, note.ended);
+      return setupSignInHeard(ports, site, waiting.pid, note.ended, note.login);
     if (note?.pid !== waiting.pid || !alive)
       return setupSignInHeard(ports, site, waiting.pid, "Expired");
     if (ports.nowMs() >= endsAtMs)
@@ -344,7 +360,6 @@ async function setupSignInWaited(
         site,
         port: waiting.port,
         opened,
-        waitedSecs: waitSecs,
       };
     await ports.sleepMs(pollMs);
   }
@@ -378,7 +393,6 @@ export async function setupSignInAwaited(
     site,
     port: waiting.port,
     opened: "NotOpened",
-    waitedSecs: 0,
   };
 }
 
@@ -438,7 +452,6 @@ async function setupCallbackExchanged(
 }
 
 const setupPages = {
-  signedIn: { id: "setup-page-signed-in" },
   unfinished: { id: "setup-page-unfinished" },
   answered: { id: "setup-page-answered" },
   nothing: { id: "setup-page-nothing" },
@@ -456,6 +469,8 @@ interface SetupListener {
   readonly state: string | undefined;
   readonly decide: (ended: SetupSignInEnded) => void;
   deciding: boolean;
+  /** The GitHub login the site named the person by once this sign-in went through, where it named one. */
+  login?: string | undefined;
 }
 
 /**
@@ -480,7 +495,7 @@ async function setupStateMatched(
   return differing === 0;
 }
 
-/** One request of the browser's: sent on to the issuer, read as its answer, or told there is nothing here. */
+/** One request of the browser's: sent on to the issuer, read as its answer and sent on to the site once signed in, or told there is nothing here. */
 async function setupListenerAnswered(
   listener: SetupListener,
   heard: SetupHeard,
@@ -502,11 +517,15 @@ async function setupListenerAnswered(
       read === "Code"
         ? await setupCallbackExchanged(listener.ports, listener.opened, heard)
         : read;
+    if (ended === "SignedIn")
+      listener.login = await setupLoginRead(listener.opened).catch(
+        () => undefined,
+      );
   } finally {
     listener.decide(ended);
   }
   return ended === "SignedIn"
-    ? setupPage(200, setupPages.signedIn)
+    ? { status: 303, location: `${listener.opened.site}/` }
     : setupPage(400, setupPages.unfinished);
 }
 
@@ -515,6 +534,7 @@ function setupListenerEnded(
   ports: SetupPorts,
   site: string,
   ended: SetupSignInEnded,
+  login: string | undefined,
 ): void {
   const note = setupSignInNoteRead(ports.files);
   if (note?.note !== "Waiting" || note.pid !== ports.process.pid) return;
@@ -524,6 +544,7 @@ function setupListenerEnded(
     ended,
     endedAtMs: ports.nowMs(),
     told: false,
+    ...(login === undefined ? {} : { login }),
   });
 }
 
@@ -603,8 +624,8 @@ export async function setupListened(
     const ended =
       first ?? (begun.listener.deciding ? await begun.decided : "Expired");
     begun.listener.deciding = true;
-    setupListenerEnded(ports, site, ended);
-    return setupEndedReport(site, ended);
+    setupListenerEnded(ports, site, ended, begun.listener.login);
+    return setupEndedReport(site, ended, begun.listener.login);
   } finally {
     life.abort();
     await listening.close(setupListenCloseWaitMs);

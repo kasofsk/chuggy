@@ -10,30 +10,15 @@ export const apiRole = "chuggy_api";
 export const selectorServiceRole = "chuggy_selector_service";
 export const selectorControlRole = "chuggy_selector_control";
 export const selectorReviewRole = "chuggy_selector_review";
-export const selectorSettingsFunction = "update_selector_runtime_settings";
 export const selectorProjectSettingsFunction =
   "update_selector_project_settings";
-/** The durable resolution of one project's dispatch mode over the installation default. */
-export const selectorProjectDispatchModeFunction =
-  "selector_project_dispatch_mode";
-/** The trigger that stamps a delivery with the state its project resolves to. */
-export const selectorProposalInitialStateFunction =
-  "enforce_selector_proposal_initial_state";
-/** The SQLSTATE the automatic-dispatch readiness trigger refuses under. */
-export const selectorAutomaticReadinessErrorCode = "CHG01";
+/** Writes a project's four thread settings, clearing every other override it held. */
+export const selectorProjectThreadSettingsFunction =
+  "update_selector_project_thread_settings";
 
 export const selectorReviewFunction = "review_selector_proposal";
 /** Ends every held decision of a project naming a ticket moved past the version its command was fenced at. */
 export const selectorProposalRetireFunction = "retire_moved_selector_proposals";
-export const selectorReconcileClaimFunction =
-  "claim_selector_proposal_reconciliation";
-export const selectorClaimFunction = "claim_selector_deliveries";
-export const selectorDeliveryFunction = "advance_selector_delivery";
-export const selectorAttemptAllocateFunction = "allocate_selector_attempt";
-export const selectorAttemptAdvanceFunction = "advance_selector_attempt";
-export const selectorAttemptReconcileFunction =
-  "claim_selector_attempt_reconciliation";
-export const selectorHostReadinessFunction = "set_selector_host_readiness";
 export const cancellationFunction = "cancel_pending_operation";
 export const acceptanceFunction = "accept_operation";
 export const dispatchAcceptanceFunction = "accept_dispatch_operation";
@@ -46,6 +31,8 @@ export const repositoryActionImportFunction = "import_repository_actions";
 export const actionObservationRecordFunction = "record_action_observation";
 export const ticketLandedCommitReadFunction = "read_ticket_landed_commit";
 export const ticketLandingsReadFunction = "read_ticket_landings";
+/** The pull request one ticket's newest successful landing opened, addressed by the number its proved evidence records. */
+export const ticketProposedLandingReadFunction = "read_ticket_proposed_landing";
 export const projectCreateFunction = "create_project";
 export const projectCreationGrantsFunction = "record_project_creation_grants";
 export const repositoryBindingReadFunction = "read_project_repository_binding";
@@ -137,16 +124,20 @@ export const chatHostSessionReleaseFunction =
   "release_chat_host_session_attempt";
 export const chatHostSessionImagesFunction = "chat_host_session_images";
 export const chatHostFenceFunction = "fence_chat_host_attempts";
+export const chatHostSessionUnlistedEndFunction =
+  "end_unlisted_chat_host_session_attempts";
 export const personalExecutionReleaseFunction =
   "release_personal_execution_assignment";
 /** Whether the capabilities a runner declares run an execution's requirement. */
 export const workerPoolInventoryFunction = "worker_pool_inventory_matches";
 /** Whether a runner takes an attempt's agent now, by what it advertises. */
 export const workerPoolAgentFunction = "worker_pool_agent_offered";
-/** Whether an attempt's ticket is started: an execution of it registered before the attempt's own, or an earlier attempt of that execution claimed. */
+/** Whether an execution's ticket is started: an execution of it registered before this one, or an attempt of this one other than the attempt named claimed, any where none is named. */
 export const executionAttemptStartedFunction = "execution_attempt_started";
 /** When a ticket's first execution was registered, which is its age to a claim. */
 export const executionTicketRegisteredFunction = "execution_ticket_registered";
+/** The completions of a cluster whose freed slot waits for their ticket's next stage: unanswered, or answered with a stage of that ticket not yet admitted. */
+export const executionBetweenStagesFunction = "execution_between_stages";
 export const projectOwnerFallbackSetFunction = "set_project_owner_fallback";
 /** When a session's oldest queued turn could first be claimed: its enqueue, the end of the turn before it, or its return to the queue by an attempt that had claimed it. */
 export const sessionClaimableSinceFunction = "session_turn_claimable_since";
@@ -254,26 +245,15 @@ export const sessionReferenceWrittenOnceFunction =
   "agent_session_is_written_once";
 export const sessionSystemPromptSetFunction = "set_session_system_prompt";
 export const projectDraftsReadFunction = "read_project_drafts";
-export const agenticRefusalRecordFunction = "record_agentic_refusals";
-export const agenticRefusalStandingFunction = "standing_agentic_refusals";
-export const agenticRefusalStandingAmongFunction =
-  "standing_agentic_refusals_among";
 export const leadOpenFunction = "open_project_lead";
 export const leadSessionFunction = "lead_session";
 export const leadCloseFunction = "close_project_lead";
 export const leadTurnEnqueueFunction = "enqueue_lead_turn";
 export const leadTurnReadFunction = "read_lead_turn";
 export const leadTurnWithdrawFunction = "withdraw_lead_turn";
-export const agenticRefusalLedgerReadFunction = "read_agentic_refusals";
-export const agenticRefusalStandingReadFunction =
-  "read_standing_agentic_refusals";
 export const agenticRefusalBindingReadFunction =
   "read_binding_agentic_refusals";
 export const agenticRefusalThreadReadFunction = "read_thread_agentic_refusals";
-export const selectorInteractionsReadFunction = "read_selector_interactions";
-export const selectorPlanningIntentReadFunction =
-  "read_selector_planning_intent";
-export const leadStandingReadFunction = "read_lead_standing";
 /** The refusal the selector keeps for a project's lead, as the API reads it. */
 export const leadRefusalReadFunction = "read_lead_refusal";
 export const sessionStoreBatchesReadFunction = "read_session_store_batches";
@@ -310,8 +290,6 @@ export const leadInquiriesReadFunction = "read_lead_inquiries";
 export const leadInquiryReadFunction = "read_lead_inquiry";
 export const inquiryStoreRefusalFunction = "inquiry_writes_no_store_batch";
 export const inquiryCloseFunction = "inquiry_closes_with_its_turn";
-export const agenticRefusalImmutableFunction = "selector_refusal_is_immutable";
-export const projectChangeAgenticRefusalFunction = "selector_refusal_change";
 export const projectChangeSessionTurnFunction = "session_turn_appends_a_change";
 export const projectChangeSessionStoreFunction =
   "session_store_batch_appends_a_change";
@@ -469,3 +447,12 @@ export const projectThemeOverrideReadFunction = "read_project_theme_override";
 export const projectThemeOverrideWriteFunction = "write_project_theme_override";
 /** One project's icon or banner named, or cleared, and who named it. */
 export const projectImageSetFunction = "set_project_image";
+
+/** A thread's own choice of ticket wakes and its member's chat host's setting, read by the scheduler beside each wake candidate. */
+export const threadTicketWakesFunction = "thread_ticket_wakes";
+
+/** The same two, read by the worker plane under a thread attempt's bearer. */
+export const sessionTicketWakesReadFunction = "read_session_ticket_wakes";
+
+/** The door a thread's own live attempt chooses its ticket wakes through. */
+export const sessionTicketWakesChooseFunction = "choose_session_ticket_wakes";

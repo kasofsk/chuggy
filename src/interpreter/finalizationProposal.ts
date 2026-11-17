@@ -105,6 +105,7 @@ import {
   type ChangeProposalPublication,
   type ChangeProposalPublicationBounds,
   type ChangeProposalEnqueued,
+  type ChangeProposalForgeReply,
   type ChangeProposalQueueing,
   type ChangeProposalQueueRead,
   type ChangeProposalQueueStanding,
@@ -212,7 +213,11 @@ export type FinalizationProposalDecision =
     }
   | { readonly decide: "Abort"; readonly dequeue?: ChangeProposalMergeRequest }
   | { readonly decide: "Conclude"; readonly merged?: GitObjectId }
-  | { readonly decide: "Hold"; readonly hold: FinalizationHoldKind };
+  | {
+      readonly decide: "Hold";
+      readonly hold: FinalizationHoldKind;
+      readonly rereadInSecs?: number;
+    };
 
 /** What the finalization itself brings to this step: how its brief lands, and what its project will still admit. */
 export interface FinalizationProposalStanding {
@@ -320,6 +325,16 @@ function finalizationProposalMergeHeld(
     default:
       return assertNever(reason);
   }
+}
+
+/** The hold a held merge is, carrying when its reading falls due wherever it waits on the cadence. */
+function finalizationProposalMergeHold(
+  next: Extract<ReturnType<typeof changeProposalMergeNext>, { next: "Held" }>,
+): FinalizationProposalDecision {
+  const hold = finalizationProposalMergeHeld(next.reason);
+  return next.rereadInSecs === undefined
+    ? { decide: "Hold", hold }
+    : { decide: "Hold", hold, rereadInSecs: next.rereadInSecs };
 }
 
 /** What one concluded merge leaves the finalization to do, a conflict recorded against the base it was refused onto. */
@@ -501,7 +516,7 @@ function finalizationProposalMergeNext(
     case "Held":
       return closing && next.reason === "Queued"
         ? finalizationProposalAborted(request, evidence, merge)
-        : { decide: "Hold", hold: finalizationProposalMergeHeld(next.reason) };
+        : finalizationProposalMergeHold(next);
     default:
       return assertNever(next);
   }
@@ -744,6 +759,23 @@ export type FinalizationProposalUpdateRecording =
 
 /** The writes an answered update makes against the row. */
 export type ChangeProposalUpdateWrite = "Asked" | "Refused" | "Declined";
+
+/**
+ * The acts a row keeps the newest answer to, each stamped asked by the write
+ * that counts it before the forge is asked, so an answer is paired with the
+ * ask it answers.
+ */
+export type ChangeProposalAnsweredAct = "merge" | "updateBranch";
+
+/** Every act a row keeps an answer to, so a suite and a database CHECK iterate. */
+export const allChangeProposalAnsweredActs: readonly ChangeProposalAnsweredAct[] =
+  ["merge", "updateBranch"];
+
+/** What a forge answered one act, as a row keeps it: the arm it mapped to, and the forge's reply where it sent anything. */
+export interface ChangeProposalAnswer {
+  readonly outcome: string;
+  readonly reply?: ChangeProposalForgeReply;
+}
 
 export function finalizationProposalUpdateRecording(
   updated: ChangeProposalUpdated,
@@ -1048,6 +1080,16 @@ export interface FinalizerProposalStore {
   recordChangeProposalUpdate(
     claim: FinalizationClaim,
     write: ChangeProposalUpdateWrite,
+  ): Promise<ChangeProposalWritten>;
+
+  /**
+   * Keeps what the forge answered the newest ask of one act, refused where
+   * that ask is already answered or none was stamped.
+   */
+  recordChangeProposalAnswer(
+    claim: FinalizationClaim,
+    act: ChangeProposalAnsweredAct,
+    answer: ChangeProposalAnswer,
   ): Promise<ChangeProposalWritten>;
 
   /** Pins the head the last reading found as the one merged at, a moved head's answer giving way to it. */

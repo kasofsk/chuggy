@@ -24,7 +24,6 @@ import {
   repositoryIdentityCharsMax,
   selectorSettingsTextCharsMax,
   sessionTurnBacklogMax,
-  sessionTurnInputCharsMax,
   sessionTurnResultCharsMax,
   sessionTurnSeriesMax,
   threadBacklogMax,
@@ -38,6 +37,7 @@ import {
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../../src/contract/http.ts";
+import { leadObservationTokensPerDecisionAt011 } from "../../src/adapters/postgres/schema/migrations/011-evaluator-keys.ts";
 import {
   threadHideRequestSchema,
   threadMessageSchema,
@@ -45,8 +45,7 @@ import {
   threadRenameRequestSchema,
 } from "../../src/contract/requests.ts";
 import {
-  leadTranscriptResponseSchema,
-  leadTurnResponseSchema,
+  sessionTranscriptResponseSchema,
   threadEntryResponseSchema,
   threadMessageAcceptedSchema,
   threadResponseSchema,
@@ -122,14 +121,6 @@ test("every thread route hangs from the project it is scoped to", () => {
 });
 
 /**
- * A later turn is the member's message alone, so it is the message bound the
- * mailbox column has to hold outright.
- */
-test("a message fits the mailbox column as that column stands", () => {
-  assert.ok(threadMessageCharsMax <= sessionTurnInputCharsMax);
-});
-
-/**
  * A first turn carries the project's North Star and its standing rules and
  * sheds neither, so the seeding ceiling is DERIVED from what the settings route
  * already accepts for each rather than named below it — a ceiling under that
@@ -144,29 +135,28 @@ test("the seeding ceiling is derived from the two texts it must carry", () => {
 });
 
 /**
- * The mailbox column's ceiling is derived from the widest lead observation, and
- * a thread's whole first turn is far inside it — so the thread needs no arm of
- * that derivation. This is what says so, and what stops a later thread bound
- * growing past a column nobody re-derived.
+ * A wake document is written to the mailbox through the other door from a
+ * seeded first turn, and it carries the standing rules as JSON escapes them
+ * rather than as they read. The recorded ceiling is what both doors are
+ * measured against, so a reader bounds the row rather than the door it
+ * happened to think of.
  */
-test("a seeded first turn is dominated by the mailbox column it is written to", () => {
-  assert.ok(
-    threadMessageCharsMax + threadSeedingCharsMax <= sessionTurnInputCharsMax,
-  );
-});
-
-/**
- * A wake document is written to the same column through the other door, and it
- * carries the standing rules as JSON escapes them rather than as they read. The
- * recorded ceiling is what both doors are measured against, so a reader bounds
- * the row rather than the door it happened to think of.
- */
-test("the recorded ceiling admits both doors, and the column admits it", () => {
+test("the recorded ceiling admits both doors", () => {
   assert.ok(
     threadMessageCharsMax + threadSeedingCharsMax <= threadTurnRecordedCharsMax,
   );
   assert.ok(threadWakeCharsMax <= threadTurnRecordedCharsMax);
-  assert.ok(threadTurnRecordedCharsMax <= sessionTurnInputCharsMax);
+});
+
+/**
+ * The mailbox column's check still renders the bound migration 011 installed,
+ * until the lead's history is gone and the check can narrow. This is what stops
+ * a later thread bound growing past a column nobody re-rendered.
+ */
+test("the mailbox column admits the recorded ceiling", () => {
+  assert.ok(
+    threadTurnRecordedCharsMax <= leadObservationTokensPerDecisionAt011,
+  );
 });
 
 test("a thread's backlog and its answered tail are inside the mailbox's own", () => {
@@ -359,18 +349,6 @@ test("a turn's measurement carries exactly the fields a pod reports", () => {
   ];
 
   assert.deepEqual(
-    Object.keys(leadTurnResponseSchema.shape).sort(),
-    [
-      ...measured,
-      "decision",
-      "failure",
-      "inputKind",
-      "ordinal",
-      "state",
-      "turn",
-    ].sort(),
-  );
-  assert.deepEqual(
     Object.keys(threadTurnResponseSchema.shape).sort(),
     [
       ...measured,
@@ -462,9 +440,9 @@ test("a mailbox answers the page asked for, however long the conversation is", (
   );
 });
 
-/** The walk is the lead's, over a different session, so the page is the same page. */
-test("a thread's transcript is the lead's schema and not a second copy", () => {
-  assert.equal(threadTranscriptResponseSchema, leadTranscriptResponseSchema);
+/** A thread's walk is a session's walk, so the page is the same page. */
+test("a thread's transcript is the session transcript's schema and not a second copy", () => {
+  assert.equal(threadTranscriptResponseSchema, sessionTranscriptResponseSchema);
 });
 
 test("the message door takes a minted turn and a message inside its bound", () => {

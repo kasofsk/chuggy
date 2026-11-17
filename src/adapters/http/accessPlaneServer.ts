@@ -7,7 +7,8 @@
  * site, a tenant or a project, each for a caller the authority says holds the
  * kind it needs. A tenant's invite links are made, listed and revoked the same
  * way, and so are the site's workspace links, and either is redeemed by any
- * caller signed in, who needs no kind because the link's maker held them. The
+ * caller signed in, who needs no kind because the link's maker held them, and
+ * summarized to whoever sends its token, with or without a bearer. The
  * tenants a caller is written into, and their own account, are answered to any
  * caller signed in, about them alone, and a tenant's administrators change its
  * display name.
@@ -178,6 +179,11 @@ export const accessWorkspaceLinkBodyBytesMax = planeJsonObjectBytesMax(
 
 /** The most a redemption reads: one token. */
 export const accessInviteLinkRedemptionBodyBytesMax = planeJsonObjectBytesMax(
+  accessInviteLinkTokenCharsMax,
+);
+
+/** The most a summary reads: one token. */
+export const accessInviteLinkSummaryBodyBytesMax = planeJsonObjectBytesMax(
   accessInviteLinkTokenCharsMax,
 );
 
@@ -982,6 +988,30 @@ function accessInviteLinkEndingRoutes(
   );
 }
 
+/** A link's summary, served to anyone: a bearer sent with it is not read, because the summary is the same whoever asks. */
+function accessInviteLinkSummaryRoute(
+  app: FastifyInstance,
+  service: AccessPlaneService,
+): void {
+  const route = accessPlaneRoutes.inviteLinkSummary;
+  planeRouteServed(
+    app,
+    {
+      method: route.method,
+      url: route.path,
+      bodyBytesMax: accessInviteLinkSummaryBodyBytesMax,
+    },
+    () => Promise.resolve({}),
+    async (request, reply) => {
+      const { token } = accessInviteLinkRedemptionSchema.parse(request.body);
+      const result = await service.inviteLinks.summarized(token);
+      return result.outcome === "Summarized"
+        ? reply.code(200).type(nativeHttpMediaType).send(result.summary)
+        : accessInviteLinkRefused(reply, result);
+    },
+  );
+}
+
 /** The directory's question before it makes an account, served to no caller and answered `204` or its own refusal. */
 function accessRegistrationGateRoute(
   app: FastifyInstance,
@@ -1072,6 +1102,7 @@ export function createAccessPlaneApp(
   accessInviteLinkMakingRoutes(app, service);
   accessWorkspaceLinkMakingRoutes(app, service);
   accessInviteLinkEndingRoutes(app, service);
+  accessInviteLinkSummaryRoute(app, service);
   accessRegistrationGateRoute(app, service);
   accessAnsweredRoutes(app, service);
   accessHolderRoutes(app, service);

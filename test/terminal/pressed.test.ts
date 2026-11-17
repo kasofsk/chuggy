@@ -1,6 +1,6 @@
 /**
- * The names the setup program tells a person to press, and the section it
- * names beside one, held against the console pages that draw them.
+ * The names the setup program tells a person to press, held against the
+ * console pages that draw them.
  *
  * The program sends her to a page and names what to press there, and the
  * pages write those names in their own markup, where the program's code
@@ -29,28 +29,18 @@ import {
 import { copyTextEn } from "../../ui/chuggy-ui/app/copy/catalog.ts";
 import { ticketActionLabel } from "../../ui/chuggy-ui/app/core/codeLabels.ts";
 import type { CopyId } from "../../ui/chuggy-ui/app/core/copy.ts";
-import { selectorSettingsSection } from "../../ui/chuggy-ui/app/core/selectorSettingsForm.ts";
 import { setupPressed } from "../../ui/chuggy-ui/app/core/setupNext.ts";
-import { setupSeen } from "../../ui/chuggy-ui/app/core/setupStanding.ts";
 
 type SetupPressed = keyof typeof setupPressed;
 
 /** The names a page draws from the catalog. */
 type SetupPressedCatalogued =
-  | "edit"
-  | "save"
-  | "ticket"
-  | "runner"
-  | "runnerProject"
-  | "fallback"
-  | "chatHost"
-  | "connect"
-  | "add";
+  "ticket" | "runner" | "fallback" | "connect" | "add" | "addAccount";
 
-const settingsSection = "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx";
 const connectButton = "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx";
 const addPicker = "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx";
 const myRunnerPage = "ui/chuggy-ui/app/browser/settings/MyRunnerPage.tsx";
+const accountsPage = "ui/chuggy-ui/app/browser/settings/TenantAccountsPage.tsx";
 
 /** The page that draws each name the catalog does not, by its path from the
  * root of this tree. */
@@ -65,30 +55,21 @@ const drawnIn: Readonly<
 const drawnFromCatalog: Readonly<
   Record<SetupPressedCatalogued, { readonly page: string; readonly id: CopyId }>
 > = {
-  edit: { page: settingsSection, id: "ui-edit" },
-  save: { page: settingsSection, id: "ui-save" },
   ticket: {
     page: "ui/chuggy-ui/app/browser/TicketCreation.tsx",
     id: "ticket-authoring-create-ticket",
   },
   runner: { page: myRunnerPage, id: "runners-register" },
-  runnerProject: { page: myRunnerPage, id: "runners-personal-project-add" },
   fallback: {
     page: "ui/chuggy-ui/app/browser/settings/OwnerFallbackSection.tsx",
     id: "runners-fallback-title",
   },
-  chatHost: {
-    page: "ui/chuggy-ui/app/browser/settings/MyChatHost.tsx",
-    id: "runners-chat-host-register",
-  },
   connect: { page: connectButton, id: "repositories-connect-github" },
   add: { page: addPicker, id: "repositories-add" },
+  addAccount: { page: accountsPage, id: "settings-accounts-add" },
 };
 
-const leadTextSection =
-  "ui/chuggy-ui/app/browser/settings/lead/SelectorTextSection.tsx";
 const ticketPage = "ui/chuggy-ui/app/browser/TicketActions.tsx";
-const accountsPage = "ui/chuggy-ui/app/browser/settings/TenantAccountsPage.tsx";
 
 /** Whether a page's source draws `name` as the whole of a text or of a label, and not as part of a longer one. */
 function draws(source: string, name: string): boolean {
@@ -113,15 +94,6 @@ for (const [key, drawn] of Object.entries(drawnFromCatalog))
     assert.deepEqual(setupPressed[key as SetupPressed], { id: drawn.id });
   });
 
-test("the lead's settings page draws, from the catalog, the section the program says Edit is pressed beside", () => {
-  const source = readFileSync(leadTextSection, "utf8");
-  assert.match(source, /const title = text\(section\.title\);/u);
-  assert.deepEqual(
-    selectorSettingsSection("northStar").title,
-    setupSeen.northStar,
-  );
-});
-
 test("a ticket's page draws the action it leads with as a button under the action's label, Dispatch's being the program's word, and has a line of its own for a project with no runner", () => {
   const source = readFileSync(ticketPage, "utf8");
   assert.match(
@@ -145,6 +117,18 @@ test("the workspace's GitHub accounts page, where the program sends a person who
   assert.match(source, /<ConnectGithub tenant=\{tenant\} /u);
 });
 
+test("the workspace's GitHub accounts page, where the program sends a person to install an app on the account that owns her repository, draws Add account as the portal app's install and the worker app's install on the row of an account lacking it", () => {
+  const source = readFileSync(accountsPage, "utf8");
+  assert.match(
+    source,
+    /<InstallLink\s+tenant=\{tenant\}\s+returnPath=\{currentPath\(\)\}\s+app="portal"\s+label=\{\{ id: "settings-accounts-add" \}\}/u,
+  );
+  assert.match(
+    source,
+    /\{row\.worker === "Missing" \? \(\s*<InstallLink\s+tenant=\{props\.tenant\}\s+returnPath=\{currentPath\(\)\}\s+app="worker"\s*\/>/u,
+  );
+});
+
 test("the Add picker draws, under its list, the line and the link the program sends a person to for an app not granted her repository: the portal app's always, the worker app's where a row lacks it", () => {
   assert.deepEqual(
     {
@@ -159,11 +143,11 @@ test("the Add picker draws, under its list, the line and the link the program se
     },
     {
       portal: {
-        status: "Not listed · grant it on GitHub",
+        status: "Repository not listed · add it to the portal app on GitHub",
         label: "Portal app",
       },
       worker: {
-        status: "Worker app missing · grant it on GitHub",
+        status: "A row marked missing · add it to the worker app on GitHub",
         label: "Worker app",
       },
     },

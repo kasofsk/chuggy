@@ -98,6 +98,8 @@ import {
   type GitObjectId,
   type GitPromotionPort,
   type GitRefName,
+  type StackFolded,
+  type StackFolding,
   type StackRemoved,
   type HeadAdoption,
   type HeadAdoptionQuestion,
@@ -133,6 +135,7 @@ import {
   silentFinalizerMetrics,
   silentFinalizerTelemetry,
   type FinalizerHoldReason,
+  type FinalizerHoldRecorded,
   type FinalizerMetrics,
   type FinalizerTelemetry,
 } from "../../src/interpreter/finalizerTelemetry.ts";
@@ -159,7 +162,9 @@ import {
   stackFailuresMax,
   type StackEntry,
   type StackMember,
+  type StackStanding,
 } from "../../src/interpreter/stackChoice.ts";
+import { restackRefusals } from "../../src/interpreter/stackRestack.ts";
 import {
   finalizerLandingBaseRef,
   finalizerRemoteDefaultRef,
@@ -277,6 +282,15 @@ interface FinalizerRecorder
   readonly grants: PermitRequest[];
   readonly readings: ReconciliationRecord[];
   readonly settled: string[];
+  /** Every request whose claim a pass gave back short of settling it, in order. */
+  readonly released: string[];
+  /** Whether every lease renewal is refused, which is what the pass sees of a claim it no longer holds. */
+  extensionsRefused?: boolean;
+  /** Every lease renewal a pass asked for, in order: the request and how many seconds from then it was to run out. */
+  readonly extensions: {
+    readonly request: string;
+    readonly leaseSecs: number;
+  }[];
   /** Every hold this store was asked to record, in order, a cleared one naming no kind. */
   readonly holds: (FinalizationUnavailableKind | undefined)[];
   /** The files each of those records named, beside it. */
@@ -375,6 +389,7 @@ function recordingProposals(
 ): FinalizerProposalStore {
   return {
     changeProposal: () => Promise.resolve(recordedProposalOf(store())),
+    recordChangeProposalAnswer: () => Promise.resolve({ wrote: "Nothing" }),
     markChangeProposalAttempt: (record) => {
       const own = store();
       if (
@@ -991,7 +1006,11 @@ function recordingStore(
     },
     claimRequests: () => Promise.resolve(views.map((view) => view.claim)),
     ...recordingWaiting(views, () => own),
-    extendClaim: () => Promise.resolve(true),
+    extensions: [],
+    extendClaim: (claim, leaseSecs) => {
+      own.extensions.push({ request: claim.request, leaseSecs });
+      return Promise.resolve(own.extensionsRefused !== true);
+    },
     grantPermit: (request): Promise<PermitGranted> => {
       own.grants.push(request);
       return Promise.resolve(
@@ -1023,6 +1042,11 @@ function recordingStore(
       own.settled.push(claim.request);
       return Promise.resolve(true);
     },
+    released: [],
+    releaseClaim: (claim) => {
+      own.released.push(claim.request);
+      return Promise.resolve(true);
+    },
     reclaimLapsed: () => Promise.resolve(0),
     reclaimStaleEpoch: () => Promise.resolve(0),
   };
@@ -1042,9 +1066,15 @@ interface GitRecorder extends GitPromotionPort {
   readonly containedQuestions: CandidateHeldQuestion[];
   readonly differingQuestions: PathsDifferingQuestion[];
   readonly stackRemovals: GitRefName[];
+  /** Every stack a re-stack asked to have folded. */
+  readonly folds: StackFolding[];
+  /** What a fold answers, a clean one unless a case says otherwise. */
+  folded: StackFolded;
   readonly treeReads: GitObjectId[];
   /** The tree every commit is read as recording, absent where none could be read. */
   commitTree: GitObjectId | undefined;
+  /** The trees particular commits are read as recording instead, keyed by commit. */
+  readonly commitTrees: Map<GitObjectId, GitObjectId | undefined>;
   stackRemoved: StackRemoved;
   promoted: CandidatePromoted;
   proved: AncestryProved;
@@ -1099,14 +1129,22 @@ function recordingContainment(
 /** The half of that remote that reads a commit's tree, every commit recording the tree a stack is given until a case says otherwise. */
 function recordingTrees(
   git: () => GitRecorder,
-): Pick<GitRecorder, "treeReads" | "commitTree" | "readCommitTree"> {
+): Pick<
+  GitRecorder,
+  "treeReads" | "commitTree" | "commitTrees" | "readCommitTree"
+> {
   return {
     treeReads: [],
     commitTree: asGitObjectId(commitOf("d")),
+    commitTrees: new Map(),
     readCommitTree: (question) => {
       const own = git();
       own.treeReads.push(question.commit);
-      return Promise.resolve(own.commitTree);
+      return Promise.resolve(
+        own.commitTrees.has(question.commit)
+          ? own.commitTrees.get(question.commit)
+          : own.commitTree,
+      );
     },
   };
 }
@@ -1195,21 +1233,34 @@ function recordingGit(): GitRecorder {
   return own;
 }
 
-/** The stack half of the recorder: removals noted, minting that always conflicts. */
+/** The stack half of the recorder: removals and folds noted, minting that always conflicts. */
 function recordingStacks(
   recorder: () => GitRecorder,
 ): Pick<
   GitRecorder,
   | "stackRemovals"
   | "stackRemoved"
+  | "folds"
+  | "folded"
   | "mintStack"
+  | "foldStack"
   | "removeStack"
   | "removeUnrecordedStack"
 > {
   return {
     stackRemovals: [],
     stackRemoved: { removed: "Removed" },
+    folds: [],
+    folded: {
+      folded: "Stack",
+      commit: asGitObjectId(commitOf("9")),
+      tree: asGitObjectId(commitOf("d")),
+    },
     mintStack: () => Promise.resolve({ minted: "Conflicted" }),
+    foldStack: (folding) => {
+      recorder().folds.push(folding);
+      return Promise.resolve(recorder().folded);
+    },
     removeStack: (removal) => {
       recorder().stackRemovals.push(removal.ref);
       return Promise.resolve(recorder().stackRemoved);
@@ -1551,7 +1602,11 @@ function proposedRequestOf(own: ForgeRecorder): ChangeProposalRequest {
   return request;
 }
 
-/** The service a case drives, over the ceilings it names. */
+/**
+ * The service a case drives, over the ceilings it names. A claim takes one
+ * step per pass unless the case names more, because most views here stand
+ * still whatever the pass writes, and a chain over one would repeat its step.
+ */
 function serviceOf(
   store: FinalizerRecorder,
   git: GitPromotionPort,
@@ -1569,8 +1624,9 @@ function serviceOf(
     pipelinePaths: [".github/workflows/"],
     identities: countingIdentities(),
     digestOf,
-    config: { ...finalizerDefaults, ...bounds },
+    config: { ...finalizerDefaults, claimStepsPerPassMax: 1, ...bounds },
     metrics,
+    restackRefusals: restackRefusals(),
   };
 }
 
@@ -2046,6 +2102,82 @@ test("a brief landing somewhere while naming no branch of its own is built over 
     git.integrations[0]?.target.commit,
     "the target is not the candidate's own parent, so the integration is a merge and not a passthrough",
   );
+});
+
+/** The line every case's ticket is titled with, its brief naming no title of its own. */
+const mergingTitle = "ticket 1: carry the ticket's own branch";
+
+test("a push landing on a branch apart from its work's integrates as a merge commit naming the ticket, and pins that commit", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = gitPerBranch();
+  git.integrated = integratedAs("e");
+
+  await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch, landingBranch),
+  });
+
+  assert.equal(git.integrations.length, 1);
+  assert.deepEqual(git.integrations[0]?.merging, {
+    title: mergingTitle,
+    work: briefBranch,
+  });
+  assert.equal(git.integrations[0]?.candidate, commitOf("c"));
+  assert.equal(
+    store.attempts[0]?.candidate,
+    commitOf("e"),
+    "the merge commit is what is promoted and proved, not the candidate under it",
+  );
+});
+
+test("a push landing on a branch apart from the default its work ran against merges that default by name", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = gitPerBranch();
+
+  await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(undefined, landingBranch),
+  });
+
+  assert.deepEqual(git.integrations[0]?.merging, {
+    title: mergingTitle,
+    work: "refs/heads/main",
+  });
+});
+
+test("a push landing on the branch its work happened on asks for no merge commit", async () => {
+  for (const briefs of [briefsOf(briefBranch), briefsOf()]) {
+    const store = recordingStore([preparableView("request-one")]);
+    const git = gitPerBranch();
+
+    await passOver({ ...serviceOf(store, git), ticketBriefs: briefs });
+
+    assert.equal(git.integrations.length, 1);
+    assert.equal(git.integrations[0]?.merging, undefined);
+  }
+});
+
+test("a pushed source landing elsewhere whose work branch nobody named or read holds rather than fast-forwarding", async () => {
+  const store = sourcedStore();
+  const git = gitPerBranch();
+  const answered = git.observeTarget.bind(git);
+  git.observeTarget = (repository) => {
+    if (repository.targetRef !== undefined) return answered(repository);
+    git.observations.push(repository);
+    return Promise.resolve<TargetObserved>({
+      observed: "Unreadable",
+      evidence: "RemoteUnreachable",
+    });
+  };
+
+  const report = await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(undefined, landingBranch),
+  });
+
+  assert.equal(report.holds, 1);
+  assert.deepEqual(git.integrations, []);
+  assert.deepEqual(store.attempts, []);
 });
 
 /** A remote answering for the branch a case lands on and failing on the one it worked on. */
@@ -4208,6 +4340,19 @@ test("a proposing brief asks its base whether the candidate landed, and never it
   assert.deepEqual(forge.creates, [], "nothing is proposed");
 });
 
+test("a proposing brief's head is integrated with no merge commit, being the work's own branch", async () => {
+  const store = recordingStore([
+    { ...preparableView("request-one"), finalization: proposalMerged },
+  ]);
+  const git = recordingGit();
+  const forge = recordingForge(store);
+
+  await passOver(mergingService(store, forge, {}, git));
+
+  assert.equal(git.integrations.length, 1);
+  assert.equal(git.integrations[0]?.merging, undefined);
+});
+
 test("a candidate holding a real change is still integrated, and an unanswered question holds", async () => {
   const store = recordingStore([preparableView("request-one")]);
   const git = recordingGit();
@@ -4240,6 +4385,29 @@ function landingService(
     ticketBriefs: briefsOf(undefined, undefined, "Push", landing),
   };
 }
+
+test("a serialized landing on a branch apart from its work's lands the merge commit of the accepted commit it holds", async () => {
+  const store = sourcedStore();
+  const git = gitPerBranch();
+  git.contained = "Contained";
+  git.integrated = integratedAs("e");
+
+  await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch, landingBranch, "Push", "Serialized"),
+  });
+
+  assert.equal(git.containedQuestions.length, 1);
+  assert.equal(git.integrations.length, 1);
+  assert.equal(git.integrations[0]?.candidate, commitOf("c"));
+  assert.equal(git.integrations[0]?.target.ref, landingBranch);
+  assert.deepEqual(git.integrations[0]?.merging, {
+    title: mergingTitle,
+    work: briefBranch,
+  });
+  assert.equal(store.attempts[0]?.outcome, "Prepared");
+  assert.equal(store.attempts[0]?.candidate, commitOf("e"));
+});
 
 test("a serialized landing whose accepted commit holds the target's tip lands that commit as it is, merging nothing", async () => {
   const store = sourcedStore();
@@ -4286,7 +4454,11 @@ test("a serialized landing whose target moved past the accepted commit is sent b
   const report = await passOver(landingService(store, git, "Serialized"));
 
   assert.equal(report.holds, 0);
-  assert.deepEqual(git.integrations, [], "no merge candidate is built");
+  assert.deepEqual(
+    git.integrations.map((each) => each.candidate),
+    [commitOf("c")],
+    "the accepted commit is merged with the moved target only to ask whether it conflicts",
+  );
   assert.deepEqual(git.promotions, []);
   recheckRecorded(store, "TargetMoved");
 
@@ -4438,6 +4610,37 @@ test("landsWhenTreeEqual: a stacked landing whose merge result is the stack's tr
   assert.equal(store.attempts[0]?.candidate, merged);
 });
 
+test("a stacked landing on a branch apart from its work's is held to the stack's tree by its merge commit", async () => {
+  const landing = (tree: GitObjectId) => {
+    const store = sourcedStore();
+    const git = gitPerBranch();
+    git.integrated = {
+      integrated: "Candidate",
+      candidate: asGitObjectId(commitOf("e")),
+      tree,
+    };
+    return { store, git };
+  };
+  const stackedElsewhere = (store: FinalizerRecorder, git: GitRecorder) => ({
+    ...stackedService(store, git, stackOf(stackedTree)),
+    ticketBriefs: briefsOf(briefBranch, landingBranch, "Push", "Stacked"),
+  });
+
+  const equal = landing(stackedTree);
+  await passOver(stackedElsewhere(equal.store, equal.git));
+  assert.deepEqual(equal.git.integrations[0]?.merging, {
+    title: mergingTitle,
+    work: briefBranch,
+  });
+  assert.equal(equal.store.attempts[0]?.candidate, commitOf("e"));
+
+  const differing = landing(asGitObjectId(commitOf("8")));
+  await passOver(stackedElsewhere(differing.store, differing.git));
+  assert.equal(differing.store.attempts[0]?.failureKind, "RecheckRequired");
+  assert.equal(differing.store.attempts[0]?.recheckReason, "StackTreeDiffers");
+  assert.deepEqual(differing.git.promotions, []);
+});
+
 test("rechecksWhenTreeDiffers: a stacked landing whose merge result is not the stack's tree is sent back to re-check the accepted commit", async () => {
   const store = sourcedStore();
   const git = recordingGit();
@@ -4471,7 +4674,87 @@ test("aStackedTicketEvaluatedUnstackedLandsAsSerialized: with no stack record it
   await passOver(stackedService(sent, moved, undefined));
   assert.equal(sent.attempts[0]?.failureKind, "RecheckRequired");
   assert.equal(sent.attempts[0]?.recheckReason, "TargetMoved");
-  assert.deepEqual(moved.integrations, []);
+  assert.equal(sent.attempts[0]?.candidate, undefined);
+  assert.equal(moved.integrations.length, 1);
+  assert.deepEqual(moved.promotions, []);
+});
+
+/** A remote whose target moved past the accepted commit, and whose merge of the two answers `integrated`. */
+function movedGit(integrated: CandidateIntegrated): GitRecorder {
+  const git = recordingGit();
+  git.contained = "Uncontained";
+  git.integrated = integrated;
+  return git;
+}
+
+const movedConflict: CandidateIntegrated = {
+  integrated: "Conflicted",
+  conflict: { paths: ["one.txt"], truncated: false },
+  base: asGitObjectId(commitOf("a")),
+};
+
+test("a landing with no stack whose work conflicts with the target that moved is a MergeConflict with its manifest, Serialized and Stacked alike, and no re-check", async () => {
+  const services: readonly (readonly [
+    string,
+    (store: FinalizerRecorder, git: GitRecorder) => FinalizerService,
+  ])[] = [
+    ["Serialized", (store, git) => landingService(store, git, "Serialized")],
+    ["Stacked", (store, git) => stackedService(store, git, undefined)],
+  ];
+  for (const [label, serviceFor] of services) {
+    const store = sourcedStore();
+    const git = movedGit(movedConflict);
+
+    const report = await passOver(serviceFor(store, git));
+
+    assert.equal(report.holds, 0, label);
+    assert.deepEqual(
+      git.integrations.map((each) => [each.candidate, each.target]),
+      [[commitOf("c"), attemptOf("any").target]],
+      label,
+    );
+    assert.deepEqual(git.promotions, [], label);
+    assert.equal(store.attempts.length, 1, label);
+    const recorded = store.attempts[0];
+    assert.equal(recorded?.outcome, "Failed", label);
+    assert.equal(recorded?.failureKind, "MergeConflict", label);
+    assert.equal(recorded?.conflictManifest, "conflict-1", label);
+    assert.equal(recorded?.conflictDigest, digestOf("evidence"), label);
+    assert.equal(recorded?.recheckCommit, undefined, label);
+    assert.equal(recorded?.candidate, undefined, label);
+  }
+});
+
+test("a landing with no stack whose work merges cleanly with the target that moved is re-checked, the merge it was asked for recorded as no candidate", async () => {
+  const store = sourcedStore();
+  const git = movedGit(integratedAs("e"));
+
+  await passOver(stackedService(store, git, undefined));
+
+  assert.equal(git.integrations.length, 1);
+  recheckRecorded(store, "TargetMoved");
+});
+
+test("a landing with no stack whose merge with the target that moved nobody could answer holds and records nothing", async () => {
+  const store = sourcedStore();
+  const git = movedGit({ integrated: "Failed", evidence: "IntegrationFailed" });
+
+  const report = await passOver(landingService(store, git, "Serialized"));
+
+  assert.equal(report.holds, 1);
+  assert.deepEqual(store.attempts, []);
+});
+
+test("a landing with no stack whose job's work conflicts with a moved target that changed paths no job may push holds at TargetPathsRefused", async () => {
+  const store = refusingStore(false);
+  const git = refusingGit({ read: "Paths", differing: refusedFiles });
+  git.contained = "Uncontained";
+
+  await passOver(landingService(store, git, "Serialized"));
+
+  assert.deepEqual(store.attempts, []);
+  assert.deepEqual(store.holds, ["TargetPathsRefused"]);
+  assert.deepEqual(store.refusals, [refusedFiles]);
 });
 
 test("a stacked landing the target already holds is recorded landed before anything is merged", async () => {
@@ -4641,7 +4924,11 @@ test("a serialized pull request into another branch from an unpushed head is sen
   const report = await passOver(proposingSerialized(store, git, landingBranch));
 
   assert.equal(report.holds, 0);
-  assert.deepEqual(git.integrations, []);
+  assert.deepEqual(
+    git.integrations.map((each) => each.target.commit),
+    [commitOf("b")],
+    "the merge is only asked about, against the target the attempt pins",
+  );
   assert.equal(store.attempts.length, 1);
   const sent = store.attempts[0];
   assert.equal(sent?.failureKind, "RecheckRequired");
@@ -4695,17 +4982,19 @@ test("a pull request into another branch from an unpushed head is promoted on th
   );
 });
 
-/** A Stacked ticket's promoted candidate whose brief merges its proposal, over the stack given, driven to the pass after its merge. */
-async function stackedMergeConcluding(
+/** A promoted candidate under the policy given whose brief merges its proposal, over the stack given, driven to the pass after its merge. */
+async function proposalMergeConcluding(
+  policy: BriefGitMergePolicy,
   stack: EvaluationStack | undefined,
   commitTree: GitObjectId | undefined,
+  acceptedTree?: GitObjectId,
 ): Promise<{
   store: FinalizerRecorder;
   git: GitRecorder;
   report: Awaited<ReturnType<typeof passOver>>;
 }> {
   const store = recordingStore([
-    proposedView("request-one", { ...proposalMerged, policy: "Stacked" }),
+    proposedView("request-one", { ...proposalMerged, policy }),
   ]);
   store.gathering = {
     work: [passedWork],
@@ -4716,13 +5005,15 @@ async function stackedMergeConcluding(
   forge.created = "Created";
   const git = recordingGit();
   git.commitTree = commitTree;
+  if (acceptedTree !== undefined)
+    git.commitTrees.set(asGitObjectId(commitOf("c")), acceptedTree);
   const service: FinalizerService = {
     ...mergingService(store, forge, {}, git),
     ticketBriefs: briefsOf(
       briefBranch,
       landingBranch,
       "PullRequestMerge",
-      "Stacked",
+      policy,
     ),
     stacks: { ...stacksDue([]), current: () => Promise.resolve(stack) },
   };
@@ -4730,6 +5021,14 @@ async function stackedMergeConcluding(
   await passOver(service);
   assert.equal(forge.merges.length, 1);
   return { store, git, report: await passOver(service) };
+}
+
+/** A Stacked ticket's promoted candidate whose brief merges its proposal, over the stack given, driven to the pass after its merge. */
+function stackedMergeConcluding(
+  stack: EvaluationStack | undefined,
+  commitTree: GitObjectId | undefined,
+): ReturnType<typeof proposalMergeConcluding> {
+  return proposalMergeConcluding("Stacked", stack, commitTree);
 }
 
 test("a stacked merge whose commit records the stack's tree concludes the landing", async () => {
@@ -4770,10 +5069,58 @@ test("a stacked merge whose tree cannot be read holds, and neither concludes nor
   assert.deepEqual(store.attempts, []);
 });
 
-test("a stacked merge evaluated over no stack concludes as a serialized one does, reading no tree", async () => {
-  const { store, git } = await stackedMergeConcluding(
-    undefined,
+for (const [policy, held] of [
+  ["Serialized", "a serialized merge"],
+  ["Stacked", "a stacked merge evaluated over no stack"],
+] as const) {
+  test(`${held} whose commit records its accepted commit's tree concludes the landing`, async () => {
+    const { store, git } = await proposalMergeConcluding(
+      policy,
+      undefined,
+      asGitObjectId(commitOf("8")),
+    );
+
+    assert.deepEqual(git.treeReads, [commitOf("c"), commitOf("e")]);
+    assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+    assert.deepEqual(store.attempts, []);
+  });
+
+  test(`${held} that left another tree than its accepted commit's is sent back to re-check that commit, and concludes no success`, async () => {
+    const { store, report } = await proposalMergeConcluding(
+      policy,
+      undefined,
+      asGitObjectId(commitOf("8")),
+      asGitObjectId(commitOf("9")),
+    );
+
+    assert.equal(report.holds, 0);
+    assert.deepEqual(store.concluded, []);
+    assert.equal(store.attempts.length, 1);
+    assert.equal(store.attempts[0]?.failureKind, "RecheckRequired");
+    assert.equal(store.attempts[0]?.recheckCommit, commitOf("c"));
+    assert.equal(store.attempts[0]?.recheckReason, "MergedTreeDiffers");
+  });
+
+  test(`${held} whose accepted commit's tree cannot be read holds, and neither concludes nor records anything`, async () => {
+    const { store, git, report } = await proposalMergeConcluding(
+      policy,
+      undefined,
+      undefined,
+    );
+
+    assert.deepEqual(git.treeReads, [commitOf("c")]);
+    assert.equal(report.holds, 1);
+    assert.deepEqual(store.concluded, []);
+    assert.deepEqual(store.attempts, []);
+  });
+}
+
+test("a direct merge concludes whatever tree it left, reading none", async () => {
+  const { store, git } = await proposalMergeConcluding(
+    "Direct",
+    stackOf(stackedTree),
     asGitObjectId(commitOf("8")),
+    asGitObjectId(commitOf("9")),
   );
 
   assert.deepEqual(git.treeReads, []);
@@ -5128,6 +5475,53 @@ test("a hold a resume could clear is recorded every pass and reported once the d
   assert.deepEqual(store.concluded, [
     { outcome: "FinalizationResultUnavailable", kind: "RepositoryUnbound" },
   ]);
+});
+
+test("every hold a pass records reaches the sink with its request, its passes and whether it escalated", async () => {
+  const recorded: FinalizerHoldRecorded[] = [];
+  const metrics = finalizerTelemetry({
+    ...silentFinalizerMetrics,
+    holdRecorded: (hold) => recorded.push(hold),
+  });
+  const store = recordingStore([unboundView("request-one")]);
+  const service = serviceOf(
+    store,
+    recordingGit(),
+    { holdPassesMax: 2 },
+    recordingArtifacts(),
+    metrics,
+  );
+  await passOver(service);
+  await passOver(service);
+  const held = {
+    ticket: 1,
+    request: "request-one",
+    kind: "RepositoryUnbound",
+  } as const;
+  assert.deepEqual(recorded, [
+    { ...held, passes: 1, escalated: false },
+    { ...held, passes: 2, escalated: true },
+  ]);
+  assert.deepEqual(store.submitted, ["request-one"]);
+});
+
+test("a hold no resume could get past reaches the sink as no recorded hold", async () => {
+  const recorded: FinalizerHoldRecorded[] = [];
+  const metrics = finalizerTelemetry({
+    ...silentFinalizerMetrics,
+    holdRecorded: (hold) => recorded.push(hold),
+  });
+  const store = recordingStore([contradictedView("request-one")]);
+  await passOver(
+    serviceOf(
+      store,
+      recordingGit(),
+      { holdPassesMax: 1 },
+      recordingArtifacts(),
+      metrics,
+    ),
+  );
+  assert.deepEqual(recorded, []);
 });
 
 test("a pass that moves the request clears the count rather than adding to it", async () => {
@@ -5829,19 +6223,20 @@ function stacksRestackable(
 function restackCase(stacks: NonNullable<FinalizerService["stacks"]>) {
   const store = recordingStore([]);
   store.waiting = [preparableView("request-waiting")];
+  const git = recordingGit();
   const service: FinalizerService = {
-    ...serviceOf(store, recordingGit()),
+    ...serviceOf(store, git),
     ticketBriefs: stackedBriefs(),
     stacks,
   };
-  return { store, service };
+  return { store, git, service };
 }
 
 const restackHolder = restackEntry(9, "Serialized", "Pending", 1, "a");
 const restackPending = restackEntry(1, "Stacked", "Pending", 2, "c");
 
 test("a Stacked ticket pending unstacked behind a pending holder is sent back to re-stack, naming its accepted commit and the line ahead", async () => {
-  const { store, service } = restackCase(
+  const { store, git, service } = restackCase(
     stacksRestackable([restackHolder, restackPending]),
   );
 
@@ -5866,6 +6261,15 @@ test("a Stacked ticket pending unstacked behind a pending holder is sent back to
   );
   assert.deepEqual(store.holds, [], "a re-stack records no hold");
   assert.equal(report.holds, 0);
+  assert.deepEqual(git.folds, [
+    {
+      repository: binding,
+      tip: attemptOf("any").target,
+      beneath: [commitOf("a")],
+      candidate: commitOf("c"),
+    },
+  ]);
+  assert.deepEqual(git.promotions, [], "the fold publishes nothing");
 });
 
 test("a re-stack's failure concludes as needing work, the one priced send-back the model has", async () => {
@@ -5948,6 +6352,102 @@ test("a re-stack that ended unstacked is not sent back again over the same line,
   assert.equal(moved.store.attempts[0]?.failureKind, "Restack");
 });
 
+/** A re-stack case whose queue, line and accepted commit a test can move between passes. */
+function restackMoving() {
+  let queue: readonly StackEntry[] = [restackHolder, restackPending];
+  const stacks: NonNullable<FinalizerService["stacks"]> = {
+    ...stacksRestackable([]),
+    queue: () => Promise.resolve(queue),
+  };
+  const moving = restackCase(stacks);
+  moving.git.folded = { folded: "Conflicted" };
+  return {
+    ...moving,
+    queueAs: (next: readonly StackEntry[]) => {
+      queue = next;
+    },
+  };
+}
+
+test("a ticket pending unstacked whose stack over the line conflicts is not re-stacked, its request unclaimed and nothing recorded", async () => {
+  const { store, git, service } = restackMoving();
+
+  const report = await passOver(service);
+
+  assert.equal(git.folds.length, 1);
+  assert.deepEqual(store.unattemptedClaims, []);
+  assert.deepEqual(store.attempts, []);
+  assert.deepEqual(store.holds, []);
+  assert.equal(report.holds, 0);
+});
+
+test("a refused fold is not folded again until the tip, the line or the accepted commit differs", async () => {
+  const { store, git, service, queueAs } = restackMoving();
+  await passOver(service);
+  await passOver(service);
+  assert.equal(git.folds.length, 1, "the same inputs are not folded again");
+
+  git.observed = {
+    observed: "Target",
+    target: {
+      ref: asGitRefName("refs/heads/main"),
+      commit: asGitObjectId(commitOf("e")),
+    },
+  };
+  await passOver(service);
+  assert.equal(git.folds.length, 2, "a tip that moved is folded");
+  assert.equal(git.folds[1]?.tip.commit, commitOf("e"));
+  await passOver(service);
+  assert.equal(git.folds.length, 2);
+
+  queueAs([restackEntry(9, "Serialized", "Pending", 1, "b"), restackPending]);
+  await passOver(service);
+  assert.equal(git.folds.length, 3, "a line that changed is folded");
+  assert.deepEqual(git.folds[2]?.beneath, [commitOf("b")]);
+
+  queueAs([
+    restackEntry(9, "Serialized", "Pending", 1, "b"),
+    restackEntry(1, "Stacked", "Pending", 2, "f"),
+  ]);
+  await passOver(service);
+  assert.equal(
+    git.folds.length,
+    4,
+    "an accepted commit that changed is folded",
+  );
+  assert.equal(git.folds[3]?.candidate, commitOf("f"));
+
+  git.folded = integratedFold;
+  await passOver(service);
+  assert.equal(git.folds.length, 4, "the refusal of those inputs still stands");
+  assert.deepEqual(store.attempts, []);
+});
+
+const integratedFold: StackFolded = {
+  folded: "Stack",
+  commit: asGitObjectId(commitOf("9")),
+  tree: asGitObjectId(commitOf("d")),
+};
+
+test("a fold nobody could make, or a tip nobody could read, sends nothing back and is asked again on the next pass", async () => {
+  const { store, git, service } = restackMoving();
+  git.folded = { folded: "Failed", evidence: "RemoteUnreachable" };
+  await passOver(service);
+  git.foldStack = (folding) => {
+    git.folds.push(folding);
+    return Promise.reject(new Error("git could not run"));
+  };
+  await passOver(service);
+  assert.equal(git.folds.length, 2);
+  assert.deepEqual(store.attempts, []);
+
+  git.observed = { observed: "Unreadable", evidence: "RemoteUnreachable" };
+  await passOver(service);
+  assert.equal(git.folds.length, 2, "no tip, no fold");
+  assert.deepEqual(store.unattemptedClaims, []);
+  assert.deepEqual(store.attempts, []);
+});
+
 test("a waiting request someone else claimed first is left for the next pass", async () => {
   const { store, service } = restackCase(
     stacksRestackable([restackHolder, restackPending]),
@@ -5956,4 +6456,380 @@ test("a waiting request someone else claimed first is left for the next pass", a
   await passOver(service);
   assert.deepEqual(store.unattemptedClaims, [asTicketId(1)]);
   assert.deepEqual(store.attempts, []);
+});
+
+/** A stack beneath ticket 7, broken by ticket 6 landing since its tip. */
+const restackDead: StackStanding = {
+  beneath: [{ ticket: asTicketId(7), commit: asGitObjectId(commitOf("e")) }],
+  landings: [{ ticket: asTicketId(6), commit: asGitObjectId(commitOf("f")) }],
+};
+
+/** Tickets 1 and 2 restackable over `queue`, which a test moves between passes, each with a request waiting on the holder. */
+function restackPair(first: readonly StackEntry[]) {
+  let queue = first;
+  const stacks: NonNullable<FinalizerService["stacks"]> = {
+    ...stacksRestackable([]),
+    queue: () => Promise.resolve(queue),
+    restackable: () =>
+      Promise.resolve(
+        [1, 2].map((ticket) => ({
+          partition,
+          ticket: asTicketId(ticket),
+          cycle: 1,
+          repository: "repository-run",
+          target: undefined,
+          restackedOver: undefined,
+        })),
+      ),
+  };
+  const pair = restackCase(stacks);
+  pair.store.waiting = [1, 2].map((ticket) => {
+    const view = preparableView(`request-waiting-${String(ticket)}`);
+    return { ...view, claim: { ...view.claim, ticket: asTicketId(ticket) } };
+  });
+  return {
+    ...pair,
+    queueAs: (next: readonly StackEntry[]) => {
+      queue = next;
+    },
+  };
+}
+
+test("tickets pending over a stack that stopped standing are sent back one at a time from a holder in its re-check", async () => {
+  const holder = restackEntry(9, "Stacked", "Evaluation", 1, "a");
+  const second = {
+    ...restackEntry(1, "Stacked", "Pending", 2, "c"),
+    stack: restackDead,
+  };
+  const third = {
+    ...restackEntry(2, "Stacked", "Pending", 3, "b"),
+    stack: restackDead,
+  };
+  const { store, service, queueAs } = restackPair([holder, second, third]);
+  const restacked = () =>
+    store.attempts.map((attempt) => [
+      Number(attempt.claim.ticket),
+      attempt.restackBeneath?.map((member) => Number(member.ticket)),
+    ]);
+
+  await passOver(service);
+  assert.deepEqual(restacked(), [[1, [9]]], "the second over the holder alone");
+
+  queueAs([
+    holder,
+    { ...second, phase: "Evaluation", stack: undefined },
+    third,
+  ]);
+  await passOver(service);
+  assert.deepEqual(restacked(), [[1, [9]]], "nothing behind one evaluating");
+
+  const overHolder: StackStanding = {
+    beneath: [{ ticket: asTicketId(9), commit: asGitObjectId(commitOf("a")) }],
+    landings: [],
+  };
+  queueAs([holder, { ...second, stack: overHolder }, third]);
+  await passOver(service);
+  assert.deepEqual(
+    restacked(),
+    [
+      [1, [9]],
+      [2, [9, 1]],
+    ],
+    "the third over both once the second is pending over a stack that stands",
+  );
+});
+
+test("a pending ticket whose stack stands is never sent back, and nothing is sent back over a holder whose stack stopped standing", async () => {
+  const standing: StackStanding = {
+    beneath: [{ ticket: asTicketId(9), commit: asGitObjectId(commitOf("a")) }],
+    landings: [],
+  };
+  const holderDead = {
+    ...restackEntry(9, "Stacked", "Pending", 1, "a"),
+    stack: restackDead,
+  };
+  for (const queue of [
+    [restackHolder, { ...restackPending, stack: standing }],
+    [holderDead, restackPending],
+    [holderDead, { ...restackPending, stack: restackDead }],
+  ]) {
+    const { store, service } = restackPair(queue);
+    await passOver(service);
+    assert.deepEqual(store.unattemptedClaims, []);
+    assert.deepEqual(store.attempts, []);
+  }
+});
+
+/**
+ * The view the durable rows of a chaining case hold at each gathering: the
+ * attempt the store recorded, the permit it granted and the reading that
+ * concluded it, so a pass that keeps advancing one claim decides from what its
+ * own last step wrote, as the durable authority's view does.
+ */
+function chainedViewOf(
+  store: FinalizerRecorder,
+  start: FinalizationView,
+): FinalizationView {
+  const request = start.claim.request;
+  const recorded = store.attempts.at(-1);
+  const reading = store.readings.find(
+    (each) => each.reconciliation.verdict !== "Unreadable",
+  );
+  return {
+    ...start,
+    ...(recorded === undefined
+      ? {}
+      : {
+          attempt: {
+            ...attemptOf(request),
+            target: recorded.target,
+            ...(recorded.candidate === undefined
+              ? {}
+              : { candidate: recorded.candidate }),
+          },
+          attemptsMade: store.attempts.length,
+        }),
+    ...(store.grants.length === 0 && start.permit === undefined
+      ? {}
+      : {
+          permit: {
+            ...permitOf(request),
+            state: reading === undefined ? "Granted" : "Concluded",
+          },
+        }),
+    ...(reading === undefined
+      ? {}
+      : { reconciliation: reading.reconciliation }),
+  };
+}
+
+/** A store whose one request's view follows what the pass writes to it. */
+function chainingStore(start: FinalizationView): FinalizerRecorder {
+  const store = recordingStore([start]);
+  store.durableView = () => Promise.resolve(chainedViewOf(store, start));
+  return store;
+}
+
+/** The chain the defaults allow one claim, which a deployment naming no bound runs. */
+const chainedDefaults = {
+  claimStepsPerPassMax: finalizerDefaults.claimStepsPerPassMax,
+};
+
+test("a push with nothing in its way is prepared, promoted, read and concluded in one pass", async () => {
+  const store = chainingStore(preparableView("request-one"));
+  const git = recordingGit();
+  const report = await passOver(serviceOf(store, git, chainedDefaults));
+
+  assert.equal(report.preparations, 1);
+  assert.equal(report.promotions, 1);
+  assert.equal(store.readings.length, 1, "the promotion's reading is its own");
+  assert.equal(report.conclusions, 1);
+  assert.equal(report.holds, 0);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+  assert.equal(git.promotions.length, 1);
+  assert.deepEqual(store.released, [], "a concluded request is not reopened");
+});
+
+test("a pass that stops between any two steps of a push is finished by the next, with one promotion", async () => {
+  for (const steps of [1, 2]) {
+    const store = chainingStore(preparableView("request-one"));
+    const git = recordingGit();
+    const stopped = await passOver(
+      serviceOf(store, git, { claimStepsPerPassMax: steps }),
+    );
+    assert.equal(stopped.conclusions, 0, `stopped after ${String(steps)}`);
+    assert.deepEqual(store.released, ["request-one"]);
+
+    const resumed = await passOver(serviceOf(store, git, chainedDefaults));
+    assert.equal(resumed.conclusions, 1, `resumed after ${String(steps)}`);
+    assert.equal(store.attempts.length, 1);
+    assert.equal(store.grants.length, 1);
+    assert.equal(git.promotions.length, 1, "the permit is promoted once");
+    assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+  }
+});
+
+test("a permit a stopped pass granted and never read is reconciled and concluded in one pass, and promoted no second time", async () => {
+  const store = chainingStore({
+    ...promotableView("request-one"),
+    permit: permitOf("request-one"),
+  });
+  const git = recordingGit();
+  const report = await passOver(serviceOf(store, git, chainedDefaults));
+
+  assert.equal(report.reconciliations, 1);
+  assert.equal(report.conclusions, 1);
+  assert.equal(git.proofs.length, 1);
+  assert.deepEqual(git.promotions, []);
+  assert.deepEqual(store.grants, []);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+});
+
+test("a lease the store will not renew stops the chain, and the claim is neither recorded on nor released", async () => {
+  const store = chainingStore(preparableView("request-one"));
+  store.extensionsRefused = true;
+  const git = recordingGit();
+  const report = await passOver(serviceOf(store, git, chainedDefaults));
+
+  assert.equal(report.preparations, 1);
+  assert.equal(report.promotions, 0);
+  assert.deepEqual(git.promotions, []);
+  assert.deepEqual(store.grants, []);
+  assert.deepEqual(store.holds, []);
+  assert.deepEqual(store.released, []);
+});
+
+test("each step of a chain is priced against the pass's own ceilings, and the request it ran out for is released", async () => {
+  const { store, forge, service, emitted } = blockedCase({
+    ...chainedDefaults,
+    proposalsPerPassMax: 1,
+  });
+  const report = await passOver(service);
+
+  assert.equal(report.proposals, 1);
+  assert.equal(forge.creates.length, 1);
+  assert.deepEqual(forge.merges, [], "the merge is a second proposal act");
+  assert.deepEqual(emitted, ["PassCeilingReached"]);
+  assert.deepEqual(store.released, ["request-one"]);
+});
+
+test("a hold whose dwell is counted in leases keeps its claim and its lease", async () => {
+  const unbound = recordingStore([unboundView("request-one")]);
+  await passOver(serviceOf(unbound, recordingGit(), chainedDefaults));
+  assert.deepEqual(unbound.holds, ["RepositoryUnbound"]);
+  assert.deepEqual(unbound.released, []);
+  assert.deepEqual(unbound.extensions, []);
+});
+
+test("a merge waiting on the forge keeps its claim, its lease cut to run out when its reading falls due", async () => {
+  const { store, service } = blockedCase(chainedDefaults);
+  await passOver(service);
+  assert.equal(proposalMergingOf(store).merging, "Waiting");
+  assert.deepEqual(store.released, []);
+  const lease = finalizerDefaults.requestClaimLeaseSecs;
+  assert.ok(
+    store.extensions.every((extension) => extension.leaseSecs === lease),
+    "a reading due later than the lease leaves the lease as it was renewed",
+  );
+
+  const dueInSecs = 5;
+  assert.ok(dueInSecs < lease);
+  store.proposalMergeHeardAgeSecs = proposalMergeRereadSecs - dueInSecs;
+  store.extensions.length = 0;
+  await passOver(service);
+  assert.deepEqual(store.released, []);
+  assert.deepEqual(store.extensions, [
+    { request: "request-one", leaseSecs: dueInSecs },
+  ]);
+});
+
+test("merges waiting on the forge leave the claims of the next pass to newer requests", async () => {
+  const { store, service } = blockedCase(chainedDefaults);
+  await passOver(service);
+  assert.equal(proposalMergingOf(store).merging, "Waiting");
+
+  const newer = unboundView("request-two");
+  const views = [proposedView("request-one", proposalMerged), newer];
+  const held = new Set<string>();
+  const drawn: string[] = [];
+  store.claimRequests = (_owner, _epoch, requestsMax) => {
+    const open = views
+      .filter((view) => !held.has(view.claim.request))
+      .slice(0, requestsMax);
+    for (const view of open) {
+      held.add(view.claim.request);
+      drawn.push(view.claim.request);
+    }
+    return Promise.resolve(open.map((view) => view.claim));
+  };
+  store.releaseClaim = (claim) => {
+    held.delete(claim.request);
+    return Promise.resolve(true);
+  };
+  store.durableView = (claim) =>
+    Promise.resolve(views.find((view) => view.claim.request === claim.request));
+  const narrow = {
+    ...service,
+    config: { ...service.config, requestsPerPassMax: 1 },
+  };
+  await passOver(narrow);
+  await passOver(narrow);
+
+  assert.deepEqual(drawn, ["request-one", "request-two"]);
+  assert.deepEqual(store.holds, ["RepositoryUnbound"]);
+});
+
+test("a merging brief goes as far as its forge allows in one pass and finishes on the pass that finds the forge's answer changed", async () => {
+  const { store, forge, service, emitted } = blockedCase(chainedDefaults);
+  const blocked = await passOver(service);
+
+  assert.equal(forge.creates.length, 1);
+  assert.equal(forge.merges.length, 1);
+  assert.equal(blocked.conclusions, 0);
+  assert.deepEqual(emitted, ["ProposalMergeBlocked"]);
+
+  const waited = await passOver(service);
+  assert.equal(
+    waited.conclusions,
+    0,
+    "the forge is not asked before its cadence",
+  );
+  assert.equal(forge.merges.length, 1);
+
+  forge.numberEvidence = { mergeability: "Mergeable" };
+  forge.merged = {
+    merged: "Merged",
+    mergeCommit: asGitObjectId(commitOf("e")),
+  };
+  rereadDue(store);
+  const merged = await passOver(service);
+
+  assert.equal(merged.conclusions, 1);
+  assert.equal(forge.creates.length, 1, "the proposal is opened once");
+  assert.equal(forge.merges.length, 2);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+});
+
+test("a pass that stops between any two steps of a merging brief is finished by the next, with one proposal", async () => {
+  for (const steps of [1, 2]) {
+    const store = recordingStore([proposedView("request-one", proposalMerged)]);
+    const forge = recordingForge(store);
+    forge.created = "Created";
+    forge.merged = {
+      merged: "Merged",
+      mergeCommit: asGitObjectId(commitOf("e")),
+    };
+    const stopped = await passOver(
+      mergingService(store, forge, { claimStepsPerPassMax: steps }),
+    );
+    assert.equal(stopped.conclusions, 0, `stopped after ${String(steps)}`);
+
+    const resumed = await passOver(
+      mergingService(store, forge, chainedDefaults),
+    );
+    assert.equal(resumed.conclusions, 1, `resumed after ${String(steps)}`);
+    assert.equal(forge.creates.length, 1, "the proposal is opened once");
+    assert.equal(forge.merges.length, 1, "the proposal is merged once");
+    assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+  }
+});
+
+test("a refused update stops the chain at the re-preparation it authorizes, which the next pass makes", async () => {
+  const store = chainingStore(preparableView("request-one"));
+  const git = recordingGit();
+  git.promoted = {
+    promoted: "Rejected",
+    observed: asGitObjectId(commitOf("f")),
+  };
+  const refused = await passOver(serviceOf(store, git, chainedDefaults));
+
+  assert.equal(refused.preparations, 1);
+  assert.equal(refused.promotions, 1);
+  assert.equal(refused.conclusions, 0);
+  assert.equal(store.readings[0]?.reconciliation.verdict, "NotPromoted");
+  assert.deepEqual(store.released, ["request-one"]);
+
+  const prepared = await passOver(serviceOf(store, git, chainedDefaults));
+  assert.equal(prepared.preparations, 1);
+  assert.equal(git.preparations.length, 2);
 });

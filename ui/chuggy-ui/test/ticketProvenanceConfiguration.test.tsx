@@ -90,6 +90,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** The project's people a case's people read answers with; none leaves it
+ * unanswered. */
+let peopleServed: readonly unknown[] | undefined;
+
+beforeEach(() => {
+  peopleServed = undefined;
+});
+
 const revision = "r-sonnet-1";
 const version = { name: "chuggy-development-sonnet", number: 1 };
 const digest = "d".repeat(64);
@@ -109,6 +117,13 @@ async function drawTicket(
       const ambient = ticketPageAmbientRoute(url);
       if (ambient !== undefined) return ambient;
       if (url.includes("/executions")) return answer({ executions: [] });
+      if (url.endsWith("/people") && peopleServed !== undefined)
+        return answer({
+          ...atlas,
+          people: peopleServed,
+          otherIssuers: 0,
+          truncated: false,
+        });
       if (url.includes("/configurations/"))
         return answer({
           partition: atlas,
@@ -271,6 +286,44 @@ test("the sidebar names the member who filed the ticket, the whole subject on ho
   expect(within(filed as HTMLElement).getByText("alice")).toBeDefined();
   expect(screen.queryByText(creator)).toBeNull();
 });
+
+test.each([
+  [
+    "their GitHub login",
+    { email: "alice@example.com", githubLogin: "alice-gh" },
+    "alice-gh",
+  ],
+  [
+    "their email where no login is held",
+    { email: "alice@example.com" },
+    "alice@example.com",
+  ],
+] as const)(
+  "the sidebar names the member who filed the ticket by %s",
+  async (_by, account, drawn) => {
+    peopleServed = [
+      {
+        subject: "alice",
+        mine: false,
+        tenantAdmin: false,
+        roles: [],
+        account: true,
+        ...account,
+      },
+    ];
+    await drawTicket(
+      canonical,
+      undefined,
+      "23:https://issuer.example/alice",
+      undefined,
+      undefined,
+      undefined,
+      <TicketOverviewTab />,
+    );
+    const filed = screen.getAllByText("Filed by")[0]?.closest("div");
+    expect(await within(filed as HTMLElement).findByText(drawn)).toBeDefined();
+  },
+);
 
 test("a ticket the wire names no creator for draws no filed-by field at all", async () => {
   await drawTicket(

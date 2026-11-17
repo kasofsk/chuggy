@@ -12,7 +12,7 @@
  * The rows are drawn from the read that does not ask the forge, and the reach
  * marks are laid on them when the read that asks it answers; one that has not
  * answered, or failed, leaves the rows drawn and unmarked.
- * Each binding offers Unbind unless the abilities read refuses this reader
+ * Each binding offers Disconnect unless the abilities read refuses this reader
  * `administer`, which is the permit the retirement route asks.
  * The line under Add says why it is withheld, or that a connected account
  * lacks the worker app. The accounts are the tenant's, and where the line
@@ -21,6 +21,11 @@
  * account, and the worker app's install where one it holds lacks that app,
  * each returning to this page. A return from the forge that did not simply
  * connect says so in one line above them, until the person leaves.
+ *
+ * AN ADDRESS ASKING FOR CONNECT GITHUB loses the ask, in the entry it is in,
+ * before anything presses, so neither the return to this page nor Back asks
+ * again; `ui/chuggy-ui/app/core/projectRepositories.ts` names the value and
+ * `ConnectGithub` decides whether the ask is pressed or waits for the person.
  *
  * THE PICKER HAS AN ADDRESS, this page's own at the anchor
  * `ui/chuggy-ui/app/core/projectRepositories.ts` names, and a grant made on
@@ -32,14 +37,15 @@
  *
  * ADD IS THE STEP BEING TAKEN UNDER AN EMPTY ROSTER, where adding is the one
  * thing left to do, and opens the dialog the head's Add opens. The step says
- * how a repository comes to be listed there: made on GitHub and granted to
- * both apps. `ui/chuggy-ui/app/core/projectRepositories.ts` decides when.
+ * the two ways a repository comes to be bound: granted on GitHub to both apps
+ * and added, or added by the setup program itself.
+ * `ui/chuggy-ui/app/core/projectRepositories.ts` decides when.
  * WHILE A STEP IS BEING TAKEN ITS PRESS IS THE PAGE'S ONE PRIMARY, and the
  * head's Add is drawn as a secondary.
  */
 
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -67,6 +73,8 @@ import {
   repositoryStepCurrent,
   repositoryStepLabels,
   repositorySteps,
+  repositoriesConnectAsked,
+  repositoriesConnectDropped,
 } from "../core/projectRepositories.ts";
 import type {
   RepositoryOffersLine,
@@ -236,6 +244,7 @@ function RepositoryStepAction(props: {
   readonly tenant: string;
   readonly step: RepositoryStep;
   readonly onAdd: () => void;
+  readonly connectAsked: boolean;
 }): ReactNode {
   const text = useCopyText();
   switch (props.step) {
@@ -243,8 +252,9 @@ function RepositoryStepAction(props: {
       return (
         <ConnectGithub
           tenant={props.tenant}
-          returnPath={currentPath()}
+          returnPath={repositoriesConnectDropped(currentPath())}
           variant="primary"
+          asked={props.connectAsked}
         />
       );
     case "InstallWorker":
@@ -275,6 +285,7 @@ function RepositoryStepsDrawn(props: {
   readonly current: RepositoryStep;
   readonly line: RepositoryOffersLine | undefined;
   readonly onAdd: () => void;
+  readonly connectAsked: boolean;
 }): ReactNode {
   const text = useCopyText();
   const at = repositorySteps.indexOf(props.current);
@@ -305,6 +316,7 @@ function RepositoryStepsDrawn(props: {
                 tenant={props.tenant}
                 step={step}
                 onAdd={props.onAdd}
+                connectAsked={props.connectAsked}
               />
             ) : null}
           </span>
@@ -321,6 +333,7 @@ function RepositoryOffers(props: {
   readonly line: RepositoryOffersLine | undefined;
   readonly current: RepositoryStep | undefined;
   readonly onAdd: () => void;
+  readonly connectAsked: boolean;
 }): ReactNode {
   const text = useCopyText();
   if (props.current !== undefined)
@@ -330,10 +343,34 @@ function RepositoryOffers(props: {
         current={props.current}
         line={props.line}
         onAdd={props.onAdd}
+        connectAsked={props.connectAsked}
       />
     );
   if (props.line === undefined) return null;
   return <Notice tone="parked" inline detail={text(props.line.status)} />;
+}
+
+/**
+ * Whether the address this page was drawn at asked for Connect GitHub, which
+ * is told only once the address has lost the ask.
+ */
+function useConnectAsked(): boolean {
+  const navigate = useNavigate();
+  const [arrived] = useState(() => repositoriesConnectAsked(currentPath()));
+  const [asked, setAsked] = useState(false);
+  const dropping = useRef(false);
+  useEffect(() => {
+    if (!arrived || dropping.current) return;
+    dropping.current = true;
+    void navigate({
+      href: repositoriesConnectDropped(currentPath()),
+      replace: true,
+      resetScroll: false,
+    }).then(() => {
+      setAsked(true);
+    });
+  }, [arrived, navigate]);
+  return asked;
 }
 
 /**
@@ -382,6 +419,7 @@ function RepositoriesSection(props: {
     (binding) => binding.retiredAt === undefined,
   );
   const picker = usePicker(props.returned);
+  const connectAsked = useConnectAsked();
   const portal = forgePortalInstallations(props.installations);
   const current = repositoryStepCurrent(
     props.line,
@@ -419,6 +457,7 @@ function RepositoriesSection(props: {
       <RepositoryOffers
         tenant={props.partition.tenant}
         line={props.line}
+        connectAsked={connectAsked}
         current={current}
         onAdd={() => {
           picker.opened(true);

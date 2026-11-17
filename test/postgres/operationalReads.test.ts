@@ -8,7 +8,6 @@ import {
   executionRunnerPausedEvery,
   postgresOperationalReads,
 } from "../../src/adapters/postgres/operationalReads.ts";
-import { postgresExecutionContextRead } from "../../src/adapters/postgres/schedulerContext.ts";
 import { projectChangeRepresentationSchemas } from "../../src/contract/events.ts";
 import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
 import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
@@ -1008,7 +1007,7 @@ async function operationalStatusAndList(project: SchedulerProject) {
   };
 }
 
-test("a project's status and its lead's context count a launching execution whose run started as running, as its list does", async () => {
+test("a project's status counts a launching execution whose run started as running, as its list does", async () => {
   const { project, started, unstarted } = await operationalOneStarted(
     "operational-status-started",
   );
@@ -1016,13 +1015,6 @@ test("a project's status and its lead's context count a launching execution whos
   const { status, listed } = await operationalStatusAndList(project);
   assert.deepEqual(
     { launching: status.launching, running: status.running },
-    { launching: 1, running: 1 },
-  );
-  const lead = await postgresExecutionContextRead(ingress).context(
-    project.partition,
-  );
-  assert.deepEqual(
-    { launching: lead.activeWork.launching, running: lead.activeWork.running },
     { launching: 1, running: 1 },
   );
   assert.equal(listed.get(started.execution), "Running");

@@ -55,8 +55,7 @@ test("every control-plane root reports an absent schema as could-not-run", async
       wakesPerPassMax: 1,
     };
     const runtimes = [
-      roots.selectorProcess({}, wakes, requirements, config),
-      roots.schedulerProcess({}, {}, identity, requirements, config),
+      roots.schedulerProcess({}, {}, wakes, identity, requirements, config),
       roots.ticketServiceProcess(
         {},
         { projectsPerPassMax: 1, projectLeaseSeconds: 1 },
@@ -89,7 +88,7 @@ test("every control-plane root reports an absent schema as could-not-run", async
       outcome.precondition,
       outcome.verdict,
     ]),
-    Array.from({ length: 4 }, () => [
+    Array.from({ length: 3 }, () => [
       "CouldNotRun",
       "schema-compatible",
       "Refused",
@@ -110,24 +109,15 @@ const successfulProcessProgram = `
     const requirements = { pool };
     const config = { idleIntervalMilliseconds: 1000, shutdownDrainMilliseconds: 1000 };
     const identity = { owner: 'owner', recoveryEpoch: 'epoch', cluster: 'cluster' };
-    let selectorPasses = 0;
     let sessionPasses = 0;
-    /** Appending after an await is what makes the ORDER observable: a tick that started the two together reads the log before this tick's rows are in it. */
-    let appended = 0;
-    const selectorService = {
-      runOnce: async () => {
-        selectorPasses += 1;
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        appended += 1;
-        return { reached: [], failures: [] };
-      },
-    };
+    let executionPasses = 0;
+    /** Each pass's first call, in the order the scheduler's tick made them. */
+    const order = [];
     let wakePasses = 0;
-    const read = [];
-    const selectorWakes = {
+    const schedulerWakes = {
       store: {
         cursor: async () => 0,
-        candidates: async () => { wakePasses += 1; read.push(appended); return []; },
+        candidates: async () => { wakePasses += 1; order.push('wake'); return []; },
         wake: async () => { throw new Error('an empty page offered a wake'); },
         advance: async () => { throw new Error('an empty page moved the cursor'); },
       },
@@ -136,7 +126,13 @@ const successfulProcessProgram = `
     };
     const schedulerService = {
       store: {
-        fenceOldEpochAttempts: async () => 0,
+        fenceOldEpochAttempts: async () => {
+          executionPasses += 1;
+          /** Settling after a timer is what makes the ORDER observable: a tick that started the passes together would let the others run first. */
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          order.push('execution');
+          return 0;
+        },
         claimRequests: async () => [],
         admit: async () => ({ admitted: 'NoCandidate' }),
         refusedAttempts: async () => [],
@@ -165,7 +161,7 @@ const successfulProcessProgram = `
     };
     const sessionService = {
       store: {
-        fenceOldEpochAttempts: async () => 0,
+        fenceOldEpochAttempts: async () => { order.push('session'); return 0; },
         attemptsAwaitingCleanup: async () => [],
         attemptCleanupCompleted: async () => true,
         attemptsAwaitingObservation: async () => [],
@@ -192,8 +188,7 @@ const successfulProcessProgram = `
       metrics: finalizerTelemetry.silentFinalizerTelemetry,
     };
     const runtimes = [
-      roots.selectorProcess(selectorService, selectorWakes, requirements, config),
-      roots.schedulerProcess(schedulerService, sessionService, identity, requirements, config),
+      roots.schedulerProcess(schedulerService, sessionService, schedulerWakes, identity, requirements, config),
       roots.ticketServiceProcess(
         ticketService,
         { projectsPerPassMax: 1, projectLeaseSeconds: 1 },
@@ -211,8 +206,8 @@ const successfulProcessProgram = `
     const health = runtimes.map((runtime) => runtime.health());
     for (const runtime of runtimes) await runtime.stop();
     process.stdout.write(JSON.stringify({
-      outcomes, health, selectorPasses, sessionPasses, wakePasses,
-      read: read.slice(0, 1),
+      outcomes, health, sessionPasses, executionPasses, wakePasses,
+      order: order.slice(0, 3),
     }));
   `;
 
@@ -230,38 +225,37 @@ test("every control-plane responsibility starts, passes and stops against its po
   const found = JSON.parse(result.stdout) as {
     readonly outcomes: readonly unknown[];
     readonly health: readonly unknown[];
-    readonly selectorPasses: number;
     readonly sessionPasses: number;
+    readonly executionPasses: number;
     readonly wakePasses: number;
-    readonly read: readonly number[];
+    readonly order: readonly string[];
   };
   assert.deepEqual(
     found.outcomes,
-    Array.from({ length: 4 }, () => ({
+    Array.from({ length: 3 }, () => ({
       started: "Started",
     })),
   );
   assert.deepEqual(
     found.health,
-    Array.from({ length: 4 }, () => ({
+    Array.from({ length: 3 }, () => ({
       live: true,
       ready: true,
     })),
   );
-  assert.ok(found.selectorPasses > 0);
   assert.ok(
     found.sessionPasses > 0,
     "the scheduler process took a tick without a session pass in it",
   );
   assert.equal(
     found.wakePasses,
-    found.selectorPasses,
-    "one loop drives both passes, so a tick that ran one ran the other",
+    found.executionPasses,
+    "one loop drives the scheduler's passes and the wake pass, so a tick that ran one ran the other",
   );
   assert.deepEqual(
-    found.read,
-    [1],
-    "the wake pass read the log before this tick's runtime pass had appended to it, so the two are not ordered",
+    found.order,
+    ["execution", "wake", "session"],
+    "the scheduler's tick is not execution, then wakes, then sessions",
   );
 });
 
@@ -372,6 +366,10 @@ const containedFaultProgram = `
 const truncatedWakeProgram = `
     const roots = await import('./src/roots/controlPlane.ts');
     const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
+    const scheduler = await import('./src/interpreter/executionScheduler.ts');
+    const finalizer = await import('./src/interpreter/finalizer.ts');
+    const tickets = await import('./src/interpreter/ticketService.ts');
+    const sessions = await import('./src/interpreter/sessionScheduler.ts');
     const projectAccess = await import('./src/interpreter/projectAccess.ts');
     const rows = schema.currentRuntimeSchemaContract.required;
     const requirements = { pool: { query: async () => ({ rows }) } };
@@ -384,6 +382,7 @@ const truncatedWakeProgram = `
       resource: '11',
       principal: 'oidc:' + session,
       session,
+      ticketWakes: { thread: 'On' },
     });
     let advanced = 0;
     const wakes = {
@@ -400,9 +399,48 @@ const truncatedWakeProgram = `
       clock: { nowIso: () => '2026-09-02T00:00:00.000Z' },
       wakesPerPassMax: 2,
     };
-    const runtime = roots.selectorProcess(
-      { runOnce: async () => ({ reached: [], failures: [] }) },
+    const idleExecution = {
+      store: {
+        fenceOldEpochAttempts: async () => 0,
+        claimRequests: async () => [],
+        admit: async () => ({ admitted: 'NoCandidate' }),
+        refusedAttempts: async () => [],
+        attemptsAwaitingObservation: async () => [],
+        waitingAttempts: async () => [],
+        reapLapsedAttempts: async () => 0,
+        attemptsAwaitingCleanup: async () => [],
+        attemptCleanupCompleted: async () => true,
+        unlaunched: async () => [],
+        runnerLostTickets: async () => [],
+        rateLimitedTickets: async () => [],
+      },
+      config: scheduler.executionSchedulerDefaults,
+      ticketService: tickets.ticketServiceDefaults,
+      finalizer: finalizer.finalizerDefaults,
+      metrics: scheduler.silentSchedulerTelemetry,
+    };
+    const idleSessions = {
+      store: {
+        fenceOldEpochAttempts: async () => 0,
+        attemptsAwaitingCleanup: async () => [],
+        attemptCleanupCompleted: async () => true,
+        attemptsAwaitingObservation: async () => [],
+        attemptTurnFailure: async () => ({ turnFailure: undefined, sessionClosed: false }),
+        reapLapsedAttempts: async () => 0,
+        reapIdleAttempts: async () => 0,
+        withdrawUnservedPoolTurns: async () => 0,
+        awaitingPlacement: async () => [],
+      },
+      placement: {},
+      bearers: { mint: () => { throw new Error('no session waits for a pod'); } },
+      policy: {},
+      config: sessions.sessionSchedulerDefaults,
+    };
+    const runtime = roots.schedulerProcess(
+      idleExecution,
+      idleSessions,
       wakes,
+      { owner: 'owner', recoveryEpoch: 'epoch', cluster: 'cluster' },
       requirements,
       config,
     );
@@ -434,70 +472,6 @@ test("a change wider than one pass reads reaches an operator, and the loop lives
   );
 });
 
-const admissionProgram = `
-    const roots = await import('./src/roots/controlPlane.ts');
-    const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
-    const rows = schema.currentRuntimeSchemaContract.required;
-    const requirements = { pool: { query: async () => ({ rows }) } };
-    const config = { idleIntervalMilliseconds: 1, shutdownDrainMilliseconds: 1000 };
-    const web = { tenant: 'acme', project: 'web' };
-    const refused = { reached: [web], failures: [{ phase: 'HostedRunsNotGranted', partition: web }] };
-    const undecided = { reached: [web], failures: [{ phase: 'AdmissionUndecided', partition: web }] };
-    const offline = { reached: [web], failures: [{ phase: 'RunnerOffline', partition: web }] };
-    const elsewhere = { reached: [], failures: [] };
-    const served = { reached: [web], failures: [] };
-    /** One run per pass: refused on every pass that reaches it, served, refused, undecided twice, then offline. */
-    const passes = [refused, refused, elsewhere, refused, served, refused, undecided, undecided, offline];
-    let pass = 0;
-    let finished;
-    const scripted = new Promise((resolve) => { finished = resolve; });
-    const service = {
-      runOnce: async () => {
-        const run = passes[pass] ?? elsewhere;
-        pass += 1;
-        if (pass === passes.length) finished();
-        return run;
-      },
-    };
-    const wakes = {
-      store: {
-        cursor: async () => 0,
-        candidates: async () => [],
-        wake: async () => { throw new Error('an empty page offered a wake'); },
-        advance: async () => { throw new Error('an empty page moved the cursor'); },
-      },
-      clock: { nowIso: () => '2026-09-02T00:00:00.000Z' },
-      wakesPerPassMax: 1,
-    };
-    const runtime = roots.selectorProcess(service, wakes, requirements, config);
-    await runtime.start();
-    await scripted;
-    await runtime.stop();
-  `;
-
-test("a project passed over because its lead may not run reaches an operator once per change", async () => {
-  const result = await execute(
-    process.execPath,
-    [
-      "--experimental-strip-types",
-      "--input-type=module",
-      "--eval",
-      admissionProgram,
-    ],
-    { cwd: process.cwd() },
-  );
-  const refused =
-    "selector: acme/web HostedRunsNotGranted: its tenant grants this selector no hosted runs, so its lead does not run";
-  const undecided =
-    "selector: acme/web AdmissionUndecided: the project authority or the database could not say whether its lead may run";
-  const offline =
-    "selector: acme/web RunnerOffline: its lead runs on the project's runners and none has polled lately, so its lead does not run";
-  assert.deepEqual(
-    result.stderr.split("\n").filter((line) => line.startsWith("selector:")),
-    [refused, refused, undecided, offline],
-  );
-});
-
 test("a contained fault reaches an operator on stderr and leaves the loop live", async () => {
   const result = await execute(
     process.execPath,
@@ -514,63 +488,6 @@ test("a contained fault reaches an operator on stderr and leaves the loop live",
     result.stderr.includes(
       "ticket service: acme/web ActivationFailed: journal is illegal to replay",
     ),
-  );
-});
-
-/** The composed root is driven against a real database in `test/postgres/leadDoors.test.ts`. */
-test("the selector process refuses to start without every door a decision opens", async () => {
-  const program = `
-    const roots = await import('./src/roots/controlPlane.ts');
-    const answer = (permitted) => ({
-      query: async (query) => {
-        const text = typeof query === 'string' ? query : query.text;
-        if (text.includes('current_user'))
-          return { rows: [{ current_role: 'chuggy_selector_service' }] };
-        return { rows: [
-          { door: 'enqueue_lead_turn(text,text,text,text,text)', permitted },
-          { door: 'read_lead_turn(text)', permitted: true },
-        ] };
-      },
-    });
-    const signal = new AbortController().signal;
-    const read = async (pool) => {
-      const answers = [];
-      for (const precondition of roots.selectorProcessPreconditions(pool))
-        answers.push({
-          name: precondition.name,
-          met: (await precondition.check(signal).catch(() => ({ met: 'Undecided' }))).met,
-        });
-      return answers;
-    };
-    process.stdout.write(JSON.stringify({
-      granted: await read(answer(true)),
-      refused: await read(answer(false)),
-    }));
-  `;
-  const result = await execute(
-    process.execPath,
-    ["--experimental-strip-types", "--input-type=module", "--eval", program],
-    { cwd: process.cwd() },
-  );
-  const found = JSON.parse(result.stdout) as {
-    granted: readonly { name: string; met: string }[];
-    refused: readonly { name: string; met: string }[];
-  };
-  assert.deepEqual(
-    found.granted.map((answer) => [answer.name, answer.met]),
-    [
-      ["database-role", "Met"],
-      ["selector-lead-doors", "Met"],
-    ],
-    "the composed selector process installs the doors check beside the role check",
-  );
-  assert.deepEqual(
-    found.refused.map((answer) => [answer.name, answer.met]),
-    [
-      ["database-role", "Met"],
-      ["selector-lead-doors", "Refused"],
-    ],
-    "a half-granted migration is a selector that refuses to start, not one that runs blind",
   );
 });
 
@@ -600,6 +517,59 @@ test("the composed finalizer writes a held request to stderr, and not on every p
     [
       'finalizer: request "request-held" held at CandidateUnbuilt, 1 advances in a row',
       'finalizer: request "request-held" held at CandidateUnbuilt, 2 advances in a row',
+    ],
+  );
+});
+
+/** The same composition, asked what a forge answered and where a hold was recorded. */
+test("the composed finalizer writes one JSON line to stderr per forge act and per hold", async () => {
+  const program = `
+    const roots = await import('./src/roots/controlPlane.ts');
+    const telemetry = await import('./src/interpreter/finalizerTelemetry.ts');
+    const proposals = await import('./src/interpreter/changeProposal.ts');
+    const pool = { query: async () => { throw new Error('a composition queried the database'); } };
+    const service = roots.finalizerProcessRootService(pool, {
+      service: () => ({ git: {}, forges: {}, artifactRoot: '/nonexistent' }),
+    });
+    telemetry.recordFinalizer(service.metrics, (metrics) => {
+      metrics.forgeAnswered({
+        ticket: 7, request: 'request-merged', act: 'merge', outcome: 'NotMergeable',
+        reply: proposals.changeProposalAnsweredReply(405, 'Repository rule violations found'),
+      });
+      metrics.holdRecorded({
+        ticket: 7, request: 'request-merged', kind: 'ProposalMergesExhausted',
+        passes: 1, escalated: false,
+      });
+    });
+  `;
+  const result = await execute(
+    process.execPath,
+    ["--experimental-strip-types", "--input-type=module", "--eval", program],
+    { cwd: process.cwd() },
+  );
+  assert.deepEqual(
+    result.stderr
+      .split("\n")
+      .filter((line) => line.startsWith('{"finalizer"'))
+      .map((line) => JSON.parse(line) as unknown),
+    [
+      {
+        finalizer: "forgeAct",
+        ticket: 7,
+        request: "request-merged",
+        act: "merge",
+        outcome: "NotMergeable",
+        status: 405,
+        message: "Repository rule violations found",
+      },
+      {
+        finalizer: "hold",
+        ticket: 7,
+        request: "request-merged",
+        hold: "ProposalMergesExhausted",
+        passes: 1,
+        escalated: false,
+      },
     ],
   );
 });

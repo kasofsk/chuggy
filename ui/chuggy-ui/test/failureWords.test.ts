@@ -17,10 +17,6 @@ import {
   failureWords,
   readFailedLine,
 } from "../app/core/failureWords.ts";
-import {
-  inquiryAskRefusalSentence,
-  inquiryAskRefused,
-} from "../app/core/leadInquiries.ts";
 import { memberRunnerRemoved } from "../app/core/myRunner.ts";
 import { repositoryImportRefused } from "../app/core/repositoryImport.ts";
 import { repositoryFinalizationRefusal } from "../app/core/repositoryFinalization.ts";
@@ -140,11 +136,6 @@ const writeLines: readonly (readonly [
   [
     "selector settings saved",
     (failure) => selectorSettingsRefusal(failure, 0, copyTextEn),
-  ],
-  [
-    "an inquiry asked",
-    (failure) =>
-      inquiryAskRefusalSentence(inquiryAskRefused(failure), copyTextEn),
   ],
   ["an import pressed", repositoryImportRefused],
 ];

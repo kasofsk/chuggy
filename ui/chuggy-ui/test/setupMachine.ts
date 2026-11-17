@@ -16,6 +16,7 @@
  * program's own directory and the programs it runs there.
  */
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import type { ApiFetchInit } from "../app/core/apiRequest.ts";
 import type {
   FetchJsonInit,
@@ -35,6 +36,9 @@ import type { SetupReport } from "../app/core/setupReport.ts";
 import { setupRun } from "../app/core/setupRun.ts";
 import {
   boxDisk,
+  boxEngineContainers,
+  boxEngineInfo,
+  boxMacRead,
   boxFolder,
   boxHome,
   boxRan,
@@ -48,7 +52,7 @@ import {
   signInStoreTokenRead,
 } from "../../../src/contract/signInStore.ts";
 import { setupSiteAnswered, setupSiteAt } from "./setupSite.ts";
-import type { SetupSite } from "./setupSite.ts";
+import type { SetupSite, SetupSiteProject } from "./setupSite.ts";
 
 export const machineSite = "https://chuggy.example";
 export const machineIssuer = "https://auth.example";
@@ -119,6 +123,8 @@ export interface SetupMachine {
   remote: string | undefined;
   /** What git prints of the top of the checkout the folder is in, or nothing where it is in none. */
   top: string | undefined;
+  /** What git prints of how many commits the checkout's head has, or nothing where it could say none. */
+  history?: string | undefined;
   browser: string | undefined;
   platform: string;
   /** The number the machine knows its user by, or nothing where it numbers none. */
@@ -428,6 +434,20 @@ function filesOf(machine: SetupMachine): SetupPorts["files"] {
   };
 }
 
+/** The first project the machine's site holds. */
+export function machineProject(machine: SetupMachine): SetupSiteProject {
+  const held = machine.world.projects[0];
+  if (held === undefined) throw new Error("no project");
+  return held;
+}
+
+/** Every write the machine's runs sent, by method and path. */
+export function machineWrites(machine: SetupMachine): readonly string[] {
+  return machine.sent
+    .filter((sent) => !sent.startsWith("GET "))
+    .map((sent) => sent.replace(/https?:\/\/[^/]+/u, ""));
+}
+
 /** The file the shared store keeps a site's sign-in in. */
 export function machineTokenFile(site = machineSite): string {
   return signInStoreFileName(site);
@@ -496,12 +516,21 @@ function lockOf(machine: SetupMachine): SetupPorts["lock"] {
   };
 }
 
-/** What a command run to read its answer prints here: npm's prefix, the checkout's top, or the folder's remote. */
+/** What a command run to read its answer prints here: npm's prefix, Claude Code's plugins, an engine's own account of itself and of its running containers, the checkout's top, its history, or the folder's remote. */
 function machineRead(
   machine: SetupMachine,
   command: readonly string[],
 ): string | undefined {
+  const mac = boxMacRead(machine.box, command);
+  if (mac !== undefined) return mac;
+  if (["arch", "sysctl", "colima"].includes(command[0] ?? "")) return undefined;
+  if (command[1] === "context") return undefined;
   if (command[0] === "npm") return machine.box.prefix;
+  if (command[1] === "info") return boxEngineInfo(machine.box, command);
+  if (["ps", "container", "stats"].includes(command[1] ?? ""))
+    return boxEngineContainers(machine.box, command);
+  if (command[0] === "claude") return machine.box.plugins;
+  if (command[1] === "rev-list") return machine.history;
   return command[1] === "rev-parse" ? machine.top : machine.remote;
 }
 
@@ -520,6 +549,7 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
       return machine.draws(count, inner.drawn);
     },
     digest: (message) => Promise.resolve(machine.digest(message)),
+    text: copyTextEn,
     fetchJson: (url, init) => fetchJson(machine, issuer, url, init),
     apiFetch: (url, init) => apiFetch(machine, issuer, url, init),
     files: filesOf(machine),
@@ -559,12 +589,17 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
         machine.ranWaitMs.push(waitMs);
         return Promise.resolve(machineRead(machine, command));
       },
-      run: (command) =>
+      run: (command, waitMs) =>
         Promise.resolve(
           boxRan(
             machine.box,
-            { site: () => machine.world, origin: machineSite },
+            {
+              site: () => machine.world,
+              origin: machineSite,
+              platform: machine.platform,
+            },
             command,
+            waitMs,
           ),
         ),
     },
@@ -582,6 +617,7 @@ function surroundingsOf(machine: SetupMachine): SetupPorts["surroundings"] {
     home: boxHome,
     configHome: machine.configHome,
     claudeHome: undefined,
+    colimaHome: undefined,
     user: machine.user,
   };
 }

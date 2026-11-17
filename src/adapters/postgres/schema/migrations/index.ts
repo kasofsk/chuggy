@@ -190,9 +190,27 @@ import { migration189 } from "./189-worker-task-inputs.ts";
 import { migration190 } from "./190-run-total-credential.ts";
 import { migration191 } from "./191-agent-account-credential-off.ts";
 import { migration192 } from "./192-target-paths-refused.ts";
-import { migration193 } from "./193-owned-themes.ts";
-import { migration194 } from "./194-project-themes.ts";
-import { migration195 } from "./195-project-images.ts";
+import { migration193 } from "./193-scheduler-wakes-threads.ts";
+import { migration194 } from "./194-selector-review-ledger.ts";
+import { migration195 } from "./195-scheduler-reads-north-star.ts";
+import { migration196 } from "./196-runner-memory-room.ts";
+import { migration197 } from "./197-ticket-proposed-landing.ts";
+import { migration198 } from "./198-agentic-refusal-change-retired.ts";
+import { migration199 } from "./199-thread-ticket-wakes.ts";
+import { migration200 } from "./200-project-thread-settings.ts";
+import { migration201 } from "./201-queued-landings.ts";
+import { migration202 } from "./202-chat-host-unlisted-attempts.ts";
+import { migration203 } from "./203-landing-queue-holder-since.ts";
+import { migration204 } from "./204-pool-memory-room.ts";
+import { migration205 } from "./205-selector-retired.ts";
+import { migration206 } from "./206-forge-answers.ts";
+import { migration207 } from "./207-lead-retired.ts";
+import { migration208 } from "./208-session-history-retired.ts";
+import { migration209 } from "./209-started-first.ts";
+import { migration210 } from "./210-stage-awaited.ts";
+import { migration211 } from "./211-owned-themes.ts";
+import { migration212 } from "./212-project-themes.ts";
+import { migration213 } from "./213-project-images.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -391,4 +409,22 @@ export const migrations: readonly Migration[] = [
   migration193,
   migration194,
   migration195,
+  migration196,
+  migration197,
+  migration198,
+  migration199,
+  migration200,
+  migration201,
+  migration202,
+  migration203,
+  migration204,
+  migration205,
+  migration206,
+  migration207,
+  migration208,
+  migration209,
+  migration210,
+  migration211,
+  migration212,
+  migration213,
 ];

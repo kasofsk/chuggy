@@ -364,6 +364,7 @@
     --size-mark-md: 1.25rem; /* a project's mark standing for its name */
     --height-project-banner: 7.5rem; /* a project's banner, the band above its tickets */
     --width-preview-phone: 22.5rem; /* appearance: a phone's width, which a preview is drawn at */
+    --width-epic-chip-title: 24ch; /* epic: a chip's title, before it is cut */
   }
 
   :root[data-theme="light"] {

@@ -13,7 +13,7 @@ import { TicketSlot } from "../app/browser/ticket/TicketSlot.tsx";
 import { ticketSlot } from "../app/core/ticketSituation.ts";
 import type { TicketEscalation } from "../../../src/contract/responses.ts";
 import { renderCopied } from "./copied.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as RouterModule from "@tanstack/react-router";
 import { copyTextEn } from "../app/copy/catalog.ts";
@@ -67,7 +67,12 @@ function drawParked(
     copyTextEn,
   );
   renderCopied(
-    <TicketSlot partition={leadPartition} ticket={11} slot={slot} nowMs={0} />,
+    <TicketSlot
+      partition={projectPartition}
+      ticket={11}
+      slot={slot}
+      nowMs={0}
+    />,
   );
   return screen.getByRole("status", { name: "Needs you" });
 }
@@ -84,7 +89,7 @@ test("a ticket parked with nowhere to run says so, with the way to Runners after
   expect(
     within(head).getByRole("link", { name: "Runners" }).getAttribute("href"),
   ).toBe(
-    `/${leadPartition.tenant}/${leadPartition.project}/settings/workspace/runner`,
+    `/${projectPartition.tenant}/${projectPartition.project}/settings/workspace/runner`,
   );
   expect(within(card).queryByRole("button")).toBeNull();
 });

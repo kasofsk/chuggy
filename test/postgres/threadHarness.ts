@@ -1,10 +1,10 @@
 /**
- * What every thread case needs of a real PostgreSQL: the lead rig the lead
- * suites already stand on, the two thread stores over the roles their doors
- * are granted to, and a member the project admits for a thread to act under.
+ * What every thread case needs of a real PostgreSQL: the session rig, a pool
+ * under the API's role, the two thread stores over the roles their doors are
+ * granted to, and a member the project admits for a thread to act under.
  *
- * EACH DOOR STANDS ON THE ROLE IT IS GRANTED TO. The five API-side doors run as
- * `chuggy_api` and the three wake-side ones as `chuggy_selector_service`,
+ * EACH DOOR STANDS ON THE ROLE IT IS GRANTED TO. The API-side doors run as
+ * `chuggy_api` and the wake-side ones as `chuggy_scheduler`,
  * because a suite that drove either as the migration owner would be green over
  * a grant that had never been made — which is a defect only the deployed
  * credential meets.
@@ -18,14 +18,11 @@
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import type pg from "pg";
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
-import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
-import { postgresDispatchViews } from "../../src/adapters/postgres/dispatchViews.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
-import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
 import { postgresSessionContext } from "../../src/adapters/postgres/sessionContext.ts";
-import { postgresSelectorResolvedSettings } from "../../src/adapters/postgres/selector.ts";
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { postgresSessionStoreRows } from "../../src/adapters/postgres/sessionStoreReads.ts";
 import { composeNativeWeb, composeThreadLimits } from "../../src/compose.ts";
@@ -61,17 +58,29 @@ import {
 import type { ThreadLimitStore } from "../../src/interpreter/threadLimit.ts";
 import type { ThreadLiveHub } from "../../src/interpreter/threadLive.ts";
 import type { ThreadWakeStore } from "../../src/interpreter/threadWake.ts";
+import type { SessionId } from "../../src/interpreter/agentSession.ts";
 import {
-  asSessionTurnId,
-  type SessionId,
-} from "../../src/interpreter/agentSession.ts";
-import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
-import { sessionRigAttempt } from "./sessionHarness.ts";
-import { postgresHarnessKeying } from "./harness.ts";
+  sessionRigAttempt,
+  sessionRigOpen,
+  type SessionRig,
+} from "./sessionHarness.ts";
+import {
+  postgresHarnessKeying,
+  postgresHarnessProject,
+  postgresHarnessRolePool,
+} from "./harness.ts";
+import { apiRole, schedulerRole } from "../../src/adapters/postgres/schema.ts";
 import type { SessionStoreDouble } from "./storeDouble.ts";
 
-/** One opened subject: the lead rig, and the thread stores. */
-export interface ThreadRig extends LeadRig {
+/**
+ * One opened subject: the session rig, a pool under the API's role, so a door
+ * granted to `chuggy_api` is driven as that role and not as the migration
+ * owner, which would be green over a grant never made, and the thread stores.
+ */
+export interface ThreadRig {
+  readonly sessions: SessionRig;
+  readonly apiPool: pg.Pool;
+  readonly close: () => Promise<void>;
   readonly threads: ThreadStore;
   readonly minting: ThreadSessionMint;
   readonly seeding: ThreadSeedingRead;
@@ -80,16 +89,24 @@ export interface ThreadRig extends LeadRig {
 }
 
 export async function threadRigOpen(): Promise<ThreadRig> {
-  const lead = await leadRigOpen();
+  const sessions = await sessionRigOpen();
+  const apiPool = postgresHarnessRolePool(apiRole);
+  const schedulerPool = postgresHarnessRolePool(schedulerRole);
   return {
-    ...lead,
-    threads: postgresThreads(lead.apiPool, {
+    sessions,
+    apiPool,
+    close: async () => {
+      await schedulerPool.end();
+      await apiPool.end();
+      await sessions.close();
+    },
+    threads: postgresThreads(apiPool, {
       streamsMax: sessionStoreStreamsAnswered,
     }),
     minting: threadSessionMint(),
-    seeding: postgresThreadSeeding(lead.apiPool),
-    wakes: postgresThreadWakes(lead.selectorPool),
-    limits: postgresThreadLimits(lead.apiPool),
+    seeding: postgresThreadSeeding(apiPool),
+    wakes: postgresThreadWakes(schedulerPool),
+    limits: postgresThreadLimits(apiPool),
   };
 }
 
@@ -98,7 +115,7 @@ export function threadRigProject(
   rig: ThreadRig,
   label: string,
 ): Promise<Partition> {
-  return leadRigProject(rig, `thread-${label}`);
+  return postgresHarnessProject(rig.sessions.harness.store, `thread-${label}`);
 }
 
 /** One member: the identity an operation is audited to, and the principal a thread acts as. */
@@ -123,9 +140,7 @@ export function threadRigMember(
   rig: ThreadRig,
   partition: Partition,
   label: string,
-  access: ReadonlySet<
-    "Read" | "Mutate" | "DispatchTicket" | "ProposeDispatch"
-  > = threadRigAccess,
+  access: ReadonlySet<"Read" | "Mutate" | "DispatchTicket"> = threadRigAccess,
 ): ThreadRigMember {
   const principal = oidcPrincipal(
     threadRigIssuer,
@@ -171,9 +186,7 @@ export function threadRigMemberAlso(
   rig: ThreadRig,
   partition: Partition,
   member: ThreadRigMember,
-  access: ReadonlySet<
-    "Read" | "Mutate" | "DispatchTicket" | "ProposeDispatch"
-  > = threadRigAccess,
+  access: ReadonlySet<"Read" | "Mutate" | "DispatchTicket"> = threadRigAccess,
 ): void {
   rig.sessions.harness.access.grant({
     partition,
@@ -227,6 +240,22 @@ export async function threadRigThread(
   return opened.thread;
 }
 
+/**
+ * Sets a thread's own ticket wake choice straight, where a case is about the
+ * wake rather than who chose it; the door a thread's attempt chooses through is
+ * driven in `threadWake.test.ts`.
+ */
+export async function threadRigTicketWakes(
+  rig: ThreadRig,
+  session: SessionId,
+  choice: "On" | "Off" | null,
+): Promise<void> {
+  await rig.sessions.harness.query(
+    "UPDATE agent_session SET ticket_wakes=$2 WHERE session=$1",
+    [session, choice],
+  );
+}
+
 /** Sets how many threads a member may hold open, through the API's door, as an administrator would. */
 export async function threadRigLimit(
   rig: ThreadRig,
@@ -255,24 +284,6 @@ export async function threadRigFacts(
   const facts = await rig.sessions.plane.authenticate(pod.secret);
   assert.ok(facts !== undefined, "the pod's bearer was not recognised");
   return facts;
-}
-
-/** A decision turn on the project's lead, which is what an attempt on it opens to take. */
-export async function threadRigLeadTurn(
-  rig: ThreadRig,
-  partition: Partition,
-): Promise<void> {
-  assert.equal(
-    (
-      await rig.mailbox.offer({
-        partition,
-        turn: asSessionTurnId(`turn-lead-${randomUUID()}`),
-        input: "{}",
-        route: "InCluster",
-      })
-    ).offered,
-    "Enqueued",
-  );
 }
 
 /** A turn identity no other case is using. */
@@ -304,23 +315,6 @@ export async function threadRigTicketPhase(
   );
 }
 
-/** The lead's reads over the API's pool, which a thread's routes are composed beside. */
-function threadRigLeadPorts(
-  pool: ThreadRig["apiPool"],
-  store: SessionStoreDouble,
-) {
-  const leads = postgresLeadReads(pool);
-  return {
-    leads,
-    store,
-    context: postgresSessionContext(pool),
-    refusals: postgresAgenticRefusalReads(pool),
-    history: leads,
-    settings: postgresSelectorResolvedSettings(pool),
-    candidates: postgresDispatchViews(pool),
-  };
-}
-
 /**
  * The app the thread routes are driven through, composed from the bundle the
  * ROOT composes. It is here rather than in either suite because the two that
@@ -345,8 +339,6 @@ export function threadRigApp(input: {
     undefined,
     undefined,
     undefined,
-    undefined,
-    threadRigLeadPorts(pool, input.store),
     {
       threads: postgresThreads(pool, {
         streamsMax: sessionStoreStreamsAnswered,
@@ -370,7 +362,6 @@ export function threadRigApp(input: {
     },
     { ready: () => Promise.resolve(true) },
     postgresInstallationAuthority(pool),
-    undefined,
     undefined,
     undefined,
     undefined,

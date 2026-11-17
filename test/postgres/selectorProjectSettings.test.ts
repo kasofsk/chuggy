@@ -1,12 +1,7 @@
 /**
- * Per-project selector settings against a real server: what a project inherits,
- * what it overrides, the revision fence the write stands on, and the roles that
- * may reach any of it.
- *
- * A CASE ABOUT THE POLICY HOST SETS THE POLICY HOST. Readiness is one row for
- * the whole installation and the cases of a suite share a database, so a case
- * that read it rather than wrote it would be asserting about whatever the case
- * before it left there.
+ * Per-project thread settings against a real server: what a project that set
+ * nothing reads, what it overrides, the revision fence the write stands on,
+ * and the roles that may reach any of it.
  */
 
 import assert from "node:assert/strict";
@@ -16,43 +11,26 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import {
   apiRole,
-  selectorControlRole,
   selectorServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
-import {
-  postgresSelectorProjectSettings,
-  postgresSelectorRuntimeControl,
-  postgresSelectorState,
-} from "../../src/adapters/postgres/selector.ts";
+import { postgresSelectorProjectSettings } from "../../src/adapters/postgres/selectorProjectSettings.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
-import {
-  asProjectId,
-  asTenantId,
-  type Partition,
-} from "../../src/interpreter/projectStore.ts";
-import {
-  leadAutoCompactWindowTokensDefault,
-  leadAutoCompactWindowTokensMax,
-  leadAutoCompactWindowTokensMin,
-} from "../../src/contract/http.ts";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { selectorProjectOverridesSchema } from "../../src/contract/requests.ts";
 import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
-import {
-  dispatchesPerDecisionUnstated,
-  leadDispatchesMax,
-} from "../../src/interpreter/selector.ts";
-import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
-import type { SelectorProjectSettingsRecord } from "../../src/interpreter/selectorProjectSettings.ts";
+import type {
+  SelectorProjectOverrides,
+  SelectorProjectSettingsRecord,
+} from "../../src/interpreter/selectorProjectSettings.ts";
 import {
   postgresHarnessDenial,
   postgresHarnessPartition,
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessRolePool,
-  postgresHarnessSelectorContext,
   postgresHarnessStalled,
   type PostgresHarness,
 } from "./harness.ts";
@@ -82,26 +60,23 @@ function writtenSettings(
   return outcome.settings;
 }
 
-test("a project with no row of its own inherits every installation default", async () => {
+test("a project with no row of its own reads as revision zero under the default standing rules", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "selector-inherits",
   );
   const pool = postgresHarnessRolePool(apiRole);
   try {
-    const installation = await postgresSelectorRuntimeControl(pool).settings();
-    const { settings } =
+    const standing =
       await postgresSelectorProjectSettings(pool).read(partition);
-    assert.equal(settings.revision, 0);
-    assert.deepEqual(settings.overrides, {});
-    assert.equal(settings.effective.basePrompt, installation.basePrompt);
-    assert.equal(settings.effective.revision, installation.revision);
-    assert.equal(settings.effective.northStar, undefined);
-    assert.equal(
-      settings.effective.threadStandingRules,
-      threadStandingRulesDefault,
-    );
-    assert.deepEqual(settings.effective.limits, installation.limits);
+    assert.deepEqual(standing, {
+      settings: {
+        partition,
+        revision: 0,
+        overrides: {},
+        effective: { threadStandingRules: threadStandingRulesDefault },
+      },
+    });
   } finally {
     await pool.end();
   }
@@ -155,47 +130,31 @@ test("a project's thread standing rules survive the write, the history and a cle
   }
 });
 
-test("a project's North Star and overrides survive the whole-value write", async () => {
+test("a project's four thread settings survive the whole-value write", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "selector-north-star",
   );
   const pool = postgresHarnessRolePool(apiRole);
   const store = postgresSelectorProjectSettings(pool);
-  try {
-    const installation = await postgresSelectorRuntimeControl(pool).settings();
-    const written = await store.write(
-      partition,
-      0,
-      {
-        northStar:
-          "Every ticket in this project moves the console to general availability.",
-        basePrompt: "Prefer tickets that unblock the largest closure.",
-        limits: {
-          tokensPerDecision: installation.limits.tokensPerDecision * 2,
-        },
-      },
-      administrator,
-    );
-    const settings = writtenSettings(written);
-    assert.equal(settings.revision, 1);
-    assert.equal(
-      settings.effective.northStar,
+  const overrides = {
+    northStar:
       "Every ticket in this project moves the console to general availability.",
+    threadStandingRules: "- You draft, and nothing else.",
+    threadModel: "opus",
+    threadEffort: "high",
+  } as const;
+  try {
+    const settings = writtenSettings(
+      await store.write(partition, 0, overrides, administrator),
     );
-    assert.equal(
-      settings.effective.basePrompt,
-      "Prefer tickets that unblock the largest closure.",
-    );
-    assert.equal(
-      settings.effective.limits.tokensPerDecision,
-      installation.limits.tokensPerDecision * 2,
-    );
-    assert.equal(
-      settings.effective.limits.concurrentDecisions,
-      installation.limits.concurrentDecisions,
-    );
-    assert.equal(settings.effective.dispatchMode, installation.dispatchMode);
+    assert.equal(settings.revision, 1);
+    assert.deepEqual(settings.overrides, overrides);
+    assert.deepEqual(settings.effective, {
+      northStar: overrides.northStar,
+      threadStandingRules: overrides.threadStandingRules,
+    });
+    assert.deepEqual((await store.read(partition)).settings, settings);
     const cleared = writtenSettings(
       await store.write(
         partition,
@@ -205,8 +164,7 @@ test("a project's North Star and overrides survive the whole-value write", async
       ),
     );
     assert.equal(cleared.revision, 2);
-    assert.equal(cleared.overrides.basePrompt, undefined);
-    assert.equal(cleared.effective.basePrompt, installation.basePrompt);
+    assert.deepEqual(cleared.overrides, { northStar: "Ship the console." });
   } finally {
     await pool.end();
   }
@@ -339,169 +297,28 @@ test("every write is retained with the administrator who made it", async () => {
   }
 });
 
-test("the selector service reads a project's settings and never writes them", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "selector-service-read",
+test("the selector service never writes a project's settings nor reads who wrote them", async () => {
+  assert.match(
+    (await harness.attemptAs(
+      selectorServiceRole,
+      "UPDATE selector_project_settings SET north_star='forged'",
+    )) ?? "",
+    postgresHarnessDenial("selector_project_settings"),
   );
-  const apiPool = postgresHarnessRolePool(apiRole);
-  const servicePool = postgresHarnessRolePool(selectorServiceRole);
-  try {
-    await postgresSelectorProjectSettings(apiPool).write(
-      partition,
-      0,
-      { northStar: "Ship the console." },
-      administrator,
-    );
-    const resolved =
-      await postgresSelectorRuntimeControl(servicePool).projectSettings(
-        partition,
-      );
-    assert.equal(resolved.northStar, "Ship the console.");
-    assert.equal(resolved.projectRevision, 1);
-    assert.match(
-      (await harness.attemptAs(
-        selectorServiceRole,
-        "UPDATE selector_project_settings SET north_star='forged'",
-      )) ?? "",
-      postgresHarnessDenial("selector_project_settings"),
-    );
-    assert.match(
-      (await harness.attemptAs(
-        selectorServiceRole,
-        "SELECT administrator_kind FROM selector_project_settings_history",
-      )) ?? "",
-      postgresHarnessDenial("selector_project_settings_history"),
-    );
-  } finally {
-    await apiPool.end();
-    await servicePool.end();
-  }
-});
-
-test("the API administers a project's settings and not the installation's", async () => {
-  const controlPool = postgresHarnessRolePool(selectorControlRole);
-  try {
-    const installation =
-      await postgresSelectorRuntimeControl(controlPool).settings();
-    assert.match(
-      (await harness.attemptAs(
-        apiRole,
-        `SELECT update_selector_runtime_settings(${String(installation.revision)},'Paused',NULL,NULL,NULL,'User','forged')`,
-      )) ?? "",
-      /permission denied for function update_selector_runtime_settings/u,
-    );
-    assert.match(
-      (await harness.attemptAs(
-        apiRole,
-        "UPDATE selector_runtime_settings SET mode='Paused' WHERE singleton=1",
-      )) ?? "",
-      postgresHarnessDenial("selector_runtime_settings"),
-    );
-  } finally {
-    await controlPool.end();
-  }
-});
-
-/** One project's observation, which is all a running attempt needs to be given. */
-function fenceObservation(partition: Partition) {
-  const token = {
-    ...partition,
-    recoveryEpoch: "epoch",
-    schemaVersion: 1,
-    watermark: 0,
-    digest: "c".repeat(64),
-  } as const;
-  return {
-    token,
-    candidates: [],
-    refusals: [],
-    notificationCursor: 0,
-    changes: [],
-    operationalContext: postgresHarnessSelectorContext,
-    handoffNote: {},
-    nextCandidateScan: { state: "Exhausted", token },
-  } as const;
-}
-
-test("a running attempt records both halves of the fence it started under", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "selector-attempt-fence",
+  assert.match(
+    (await harness.attemptAs(
+      selectorServiceRole,
+      "SELECT administrator_kind FROM selector_project_settings_history",
+    )) ?? "",
+    postgresHarnessDenial("selector_project_settings_history"),
   );
-  const servicePool = postgresHarnessRolePool(selectorServiceRole);
-  const state = postgresSelectorState(servicePool);
-  const attempt = `fence-${crypto.randomUUID()}`;
-  const observation = fenceObservation(partition);
-  try {
-    assert.equal(
-      await state.allocateAttempt(attempt, partition, {
-        concurrentDecisions: 100,
-        selectionsPerMinute: 100_000,
-        millisecondsPerDecision: 60_000,
-      }),
-      true,
-    );
-    await state.runningAttempt(
-      attempt,
-      observation,
-      { settingsRevision: 1, projectSettingsRevision: 4 },
-      0,
-    );
-    assert.deepEqual(
-      await harness.query(
-        `SELECT settings_revision::text AS settings,
-                project_settings_revision::text AS project
-           FROM selector_attempt WHERE attempt=$1`,
-        [attempt],
-      ),
-      [{ settings: "1", project: "4" }],
-    );
-    await assert.rejects(
-      () =>
-        state.runningAttempt(
-          attempt,
-          observation,
-          { settingsRevision: 1, projectSettingsRevision: 5 },
-          0,
-        ),
-      /selector attempt cannot enter Running/u,
-    );
-  } finally {
-    await state
-      .terminateAttempt(attempt, "test cleanup")
-      .catch(() => undefined);
-    await servicePool.end();
-  }
-});
-
-test("automatic dispatch with no production host is a refusal, not a fault", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "selector-automatic-readiness",
+  assert.match(
+    (await harness.attemptAs(
+      selectorServiceRole,
+      "SELECT update_selector_project_thread_settings('t','p',0,NULL,NULL,NULL,NULL,'User','forged')",
+    )) ?? "",
+    /permission denied for function update_selector_project_thread_settings/u,
   );
-  const pool = postgresHarnessRolePool(apiRole);
-  const servicePool = postgresHarnessRolePool(selectorServiceRole);
-  try {
-    await postgresSelectorState(servicePool).setAutomaticReadiness(false);
-    assert.deepEqual(
-      await postgresSelectorProjectSettings(pool).write(
-        partition,
-        0,
-        { dispatchMode: "Automatic" },
-        administrator,
-      ),
-      { written: "Refused", refusal: "AutomaticDispatchUnavailable" },
-    );
-    assert.equal(
-      (await postgresSelectorProjectSettings(pool).read(partition)).settings
-        .revision,
-      0,
-    );
-  } finally {
-    await servicePool.end();
-    await pool.end();
-  }
 });
 
 /**
@@ -566,61 +383,6 @@ test("a write reports the row it wrote and not a racing administrator's", async 
   }
 });
 
-test("an interaction recorded without an attempt keeps both fence revisions", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "selector-reconstructed-fence",
-  );
-  const servicePool = postgresHarnessRolePool(selectorServiceRole);
-  const state = postgresSelectorState(servicePool);
-  const decision = `reconstructed-${crypto.randomUUID()}`;
-  try {
-    assert.equal(
-      await state.recordInteraction(
-        {
-          decision,
-          partition,
-          instructionsVersion: "12.1",
-          instructions: "choose a dispatchable ticket",
-          observedView: [],
-          context: {
-            handoffNote: {},
-            operationalContext: postgresHarnessSelectorContext,
-          },
-          toolActivity: [],
-          result: { waiting: true },
-          implementationRevision: "implementation-1",
-          modelRevision: "model-1",
-          policyRevision: "policy-1",
-          accounting: { tokens: 1, durationMs: 1 },
-          startedAt: "2026-08-30T12:00:00.000Z",
-          completedAt: "2026-08-30T12:00:01.000Z",
-        },
-        {
-          partition,
-          notificationCursor: 0,
-          revision: 0,
-          attention: "Monitoring",
-          handoffNote: {},
-        },
-        { settingsRevision: 12, projectSettingsRevision: 1 },
-      ),
-      true,
-    );
-    assert.deepEqual(
-      await harness.query(
-        `SELECT settings_revision::text AS settings,
-                project_settings_revision::text AS project
-           FROM selector_attempt WHERE attempt=$1`,
-        [decision],
-      ),
-      [{ settings: "12", project: "1" }],
-    );
-  } finally {
-    await servicePool.end();
-  }
-});
-
 /** One held client dressed as a pool, so a case can keep a write uncommitted. */
 function clientPool(client: pg.PoolClient): pg.Pool {
   return {
@@ -638,156 +400,30 @@ function stubbedPool(rows: readonly unknown[]): pg.Pool {
   return { query: () => Promise.resolve({ rows }) } as unknown as pg.Pool;
 }
 
-/** The row a write answers with, read out of the server so no case writes one. */
-async function settingsWriteRow(
-  pool: pg.Pool,
-  partition: Partition,
-): Promise<Record<string, unknown>> {
-  const answered = await pool.query<Record<string, unknown>>(
-    `SELECT p.revision::text, p.north_star, p.mode, p.dispatch_mode,
-            p.base_prompt, p.model_allowlist, p.tool_allowlist,
-            p.tokens_per_decision::text, p.milliseconds_per_decision::text,
-            p.tool_calls_per_decision::text, p.input_bytes_per_decision::text,
-            p.candidate_pages_per_decision::text,
-            p.operational_context_max_age_ms::text,
-            s.revision::text AS installation_revision,
-            s.mode AS installation_mode,
-            s.dispatch_mode AS installation_dispatch_mode,
-            s.base_prompt AS installation_base_prompt,
-            s.controls AS installation_controls
-       FROM selector_project_settings p, selector_runtime_settings s
-      WHERE p.tenant=$1 AND p.project=$2 AND s.singleton=1`,
-    [partition.tenant, partition.project],
-  );
-  const row = answered.rows[0];
-  if (row === undefined)
-    throw new Error("the project has no settings row to answer with");
-  return row;
-}
-
-test("a write answering without its installation half is refused, not resolved", async () => {
+/**
+ * A write whose door answered a row with no revision is a server this code
+ * does not know, and is refused rather than read as revision zero.
+ */
+test("a write answering no revision is refused, not resolved", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "selector-write-half-answer",
   );
-  const pool = postgresHarnessRolePool(apiRole);
-  try {
-    const whole = writtenSettings(
-      await postgresSelectorProjectSettings(pool).write(
-        partition,
-        0,
-        { northStar: "Ship the console." },
-        administrator,
-      ),
-    );
-    assert.equal(whole.revision, 1);
-    const row = await settingsWriteRow(pool, partition);
-    await assert.rejects(
-      () =>
-        postgresSelectorProjectSettings(
-          stubbedPool([{ ...row, installation_base_prompt: null }]),
-        ).write(partition, 1, {}, administrator),
-      /selector settings write answered no installation_base_prompt/u,
-    );
-  } finally {
-    await pool.end();
-  }
-});
-
-test("a fence no attempt row could hold is refused before any of it is written", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "selector-fence-bounds",
+  await assert.rejects(
+    () =>
+      postgresSelectorProjectSettings(
+        stubbedPool([
+          {
+            revision: null,
+            north_star: "Ship the console.",
+            thread_standing_rules: null,
+            thread_model: null,
+            thread_effort: null,
+          },
+        ]),
+      ).write(partition, 0, {}, administrator),
+    /selector settings write answered no revision/u,
   );
-  const servicePool = postgresHarnessRolePool(selectorServiceRole);
-  const state = postgresSelectorState(servicePool);
-  const attempt = `bounded-${crypto.randomUUID()}`;
-  try {
-    assert.equal(
-      await state.allocateAttempt(attempt, partition, {
-        concurrentDecisions: 100,
-        selectionsPerMinute: 100_000,
-        millisecondsPerDecision: 60_000,
-      }),
-      true,
-    );
-    await assert.rejects(
-      () =>
-        state.runningAttempt(
-          attempt,
-          fenceObservation(partition),
-          { settingsRevision: 0, projectSettingsRevision: 0 },
-          0,
-        ),
-      RangeError,
-    );
-    await assert.rejects(
-      () =>
-        state.runningAttempt(
-          attempt,
-          fenceObservation(partition),
-          { settingsRevision: 1, projectSettingsRevision: -1 },
-          0,
-        ),
-      RangeError,
-    );
-    assert.deepEqual(
-      await harness.query(
-        `SELECT settings_revision FROM selector_attempt WHERE attempt=$1`,
-        [attempt],
-      ),
-      [{ settings_revision: null }],
-    );
-  } finally {
-    await state
-      .terminateAttempt(attempt, "test cleanup")
-      .catch(() => undefined);
-    await servicePool.end();
-  }
-});
-
-test("a stale fence is answered as one whatever the policy host is doing", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "selector-stale-fence-refusal",
-  );
-  const pool = postgresHarnessRolePool(apiRole);
-  const servicePool = postgresHarnessRolePool(selectorServiceRole);
-  const store = postgresSelectorProjectSettings(pool);
-  try {
-    await postgresSelectorState(servicePool).setAutomaticReadiness(false);
-    assert.equal(
-      writtenSettings(
-        await store.write(partition, 0, { northStar: "First." }, administrator),
-      ).revision,
-      1,
-    );
-    assert.deepEqual(
-      await store.write(
-        partition,
-        0,
-        { dispatchMode: "Automatic" },
-        administrator,
-      ),
-      { written: "FenceMoved" },
-    );
-    assert.equal(
-      (await store.read(partition)).settings.overrides.northStar,
-      "First.",
-    );
-    assert.deepEqual(
-      await store.write(
-        partition,
-        1,
-        { dispatchMode: "Automatic" },
-        administrator,
-      ),
-      { written: "Refused", refusal: "AutomaticDispatchUnavailable" },
-    );
-  } finally {
-    await servicePool.end();
-    await pool.end();
-  }
 });
 
 test("a fence lost to an uncommitted write is still answered as a fence", async () => {
@@ -814,7 +450,7 @@ test("a fence lost to an uncommitted write is still answered as a fence", async 
     const raced = store.write(
       partition,
       0,
-      { dispatchMode: "Automatic" },
+      { northStar: "Second, behind the uncommitted one." },
       administrator,
     );
     await postgresHarnessStalled(harness.pool, 1);
@@ -823,51 +459,6 @@ test("a fence lost to an uncommitted write is still answered as a fence", async 
   } finally {
     await holder.query("ROLLBACK").catch(() => undefined);
     holder.release();
-    await pool.end();
-  }
-});
-
-test("a ready policy host changes what a write may set and not what a fence says", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "selector-ready-host",
-  );
-  const pool = postgresHarnessRolePool(apiRole);
-  const servicePool = postgresHarnessRolePool(selectorServiceRole);
-  const store = postgresSelectorProjectSettings(pool);
-  try {
-    assert.equal(
-      writtenSettings(
-        await store.write(partition, 0, { northStar: "First." }, administrator),
-      ).revision,
-      1,
-    );
-    await postgresSelectorState(servicePool).setAutomaticReadiness(true);
-    assert.deepEqual(
-      await store.write(
-        partition,
-        0,
-        { dispatchMode: "Automatic" },
-        administrator,
-      ),
-      { written: "FenceMoved" },
-    );
-    assert.equal(
-      writtenSettings(
-        await store.write(
-          partition,
-          1,
-          { dispatchMode: "Automatic" },
-          administrator,
-        ),
-      ).effective.dispatchMode,
-      "Automatic",
-    );
-  } finally {
-    await postgresSelectorState(servicePool)
-      .setAutomaticReadiness(false)
-      .catch(() => undefined);
-    await servicePool.end();
     await pool.end();
   }
 });
@@ -1033,263 +624,42 @@ test("a deadlock between two projects' writes is a contention the caller is told
 /**
  * The override door and the columns behind it, held to each other: a key the
  * door accepts and no column stores is an override a caller was told was
- * written and no decision ever runs under. The roster is read from the schema
+ * written and no thread ever runs under. The roster is read from the schema
  * rather than listed here, so a key added to the door without a column reds
  * this.
  */
-test("every limit the override door accepts is a column that reads back", async () => {
+test("every field the override door accepts is a column that reads back", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
-    "selector-limit-roster",
+    "selector-field-roster",
   );
   const pool = postgresHarnessRolePool(apiRole);
   const store = postgresSelectorProjectSettings(pool);
-  const accepted = Object.keys(
-    (
-      selectorProjectOverridesSchema.shape.limits.unwrap() as never as {
-        readonly shape: Readonly<Record<string, unknown>>;
-      }
-    ).shape,
-  );
+  const values: Readonly<Record<string, string>> = {
+    northStar: "Ship the console.",
+    threadStandingRules: "- You draft, and nothing else.",
+    threadModel: "opus",
+    threadEffort: "high",
+  };
+  const accepted = Object.keys(selectorProjectOverridesSchema.shape);
   try {
-    const installation = await postgresSelectorRuntimeControl(pool).settings();
     let revision = 0;
-    for (const limit of accepted) {
-      /** One limit's only legal value is one until multi-page tools land, and the window has a floor. */
-      const value =
-        limit === "candidatePagesPerDecision"
-          ? 1
-          : limit === "autoCompactWindow"
-            ? leadAutoCompactWindowTokensMin
-            : 7;
+    for (const field of accepted) {
+      const overrides = selectorProjectOverridesSchema.parse({
+        [field]: values[field],
+      }) as SelectorProjectOverrides;
       const written = writtenSettings(
-        await store.write(
-          partition,
-          revision,
-          { limits: { [limit]: value } },
-          administrator,
-        ),
+        await store.write(partition, revision, overrides, administrator),
       );
       revision = written.revision;
-      assert.deepEqual(written.overrides.limits, { [limit]: value }, limit);
+      assert.deepEqual(written.overrides, overrides, field);
       assert.deepEqual(
-        written.effective.installationLimits,
-        installation.limits,
-        limit,
-      );
-      assert.equal(
-        (await store.read(partition)).settings.overrides.limits?.[
-          limit as keyof NonNullable<
-            Awaited<
-              ReturnType<typeof store.read>
-            >["settings"]["overrides"]["limits"]
-          >
-        ],
-        value,
-        limit,
+        (await store.read(partition)).settings.overrides,
+        overrides,
+        field,
       );
     }
-    assert.ok(accepted.length > 0, "the door accepts no limit at all");
-  } finally {
-    await pool.end();
-  }
-});
-
-/**
- * A controls row written before `dispatchesPerDecision` existed — a history
- * revision, or the row an installation held before its migration. It resolves
- * to the number the installation that wrote it could deliver, rather than
- * refusing the row and stopping the selector, and the seeded row states the
- * budget its own migration wrote.
- */
-test("an installation whose controls never stated a dispatch budget reads the unstated one", async () => {
-  const pool = postgresHarnessRolePool(selectorControlRole);
-  const control = postgresSelectorRuntimeControl(pool);
-  const stated = async (value: number) => {
-    await harness.query(
-      `UPDATE selector_runtime_settings SET controls=jsonb_set(
-         controls::jsonb,'{limits,dispatchesPerDecision}',to_jsonb($1::bigint))::text
-       WHERE singleton=1`,
-      [value],
-    );
-  };
-  try {
-    assert.equal(
-      (await control.settings()).limits.dispatchesPerDecision,
-      leadDispatchesPerDecision,
-    );
-    await harness.query(
-      `UPDATE selector_runtime_settings
-          SET controls=(controls::jsonb #- '{limits,dispatchesPerDecision}')::text
-        WHERE singleton=1`,
-    );
-    assert.equal(
-      (await control.settings()).limits.dispatchesPerDecision,
-      dispatchesPerDecisionUnstated,
-    );
-    await stated(dispatchesPerDecisionUnstated + 1);
-    assert.equal(
-      (await control.settings()).limits.dispatchesPerDecision,
-      dispatchesPerDecisionUnstated + 1,
-    );
-  } finally {
-    /** Every other case in this database reads what its migration seeded. */
-    await stated(leadDispatchesPerDecision);
-    await pool.end();
-  }
-});
-
-/**
- * The project's own dispatch budget: a column like every other override, so a
- * value no decision could run under is refused by the column rather than only
- * by the check in front of it, and clearing it puts the project back on the
- * installation default.
- */
-test("a project's dispatch budget is a column, and a budget of none is not one", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "selector-dispatch-budget",
-  );
-  const pool = postgresHarnessRolePool(apiRole);
-  const store = postgresSelectorProjectSettings(pool);
-  const write = (revision: number, dispatches: number | null) =>
-    harness.query(
-      `SELECT revision::text FROM update_selector_project_settings(
-         $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,$4,
-         NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'User','selector-admin')`,
-      [partition.tenant, partition.project, revision, dispatches],
-    );
-  try {
-    await assert.rejects(
-      () => write(0, 0),
-      /selector_project_dispatches_are_bounded/,
-    );
-    assert.deepEqual(await write(0, 5), [{ revision: "1" }]);
-    const held = (await store.read(partition)).settings;
-    assert.equal(held.overrides.limits?.dispatchesPerDecision, 5);
-    assert.equal(held.effective.limits.dispatchesPerDecision, 5);
-    assert.deepEqual(
-      await harness.query(
-        `SELECT dispatches_per_decision::text AS budget
-           FROM selector_project_settings_history
-          WHERE tenant=$1 AND project=$2 ORDER BY revision`,
-        [partition.tenant, partition.project],
-      ),
-      [{ budget: "5" }],
-    );
-    const cleared = writtenSettings(
-      await store.write(partition, 1, {}, administrator),
-    );
-    assert.equal(cleared.overrides.limits, undefined);
-    assert.equal(
-      cleared.effective.limits.dispatchesPerDecision,
-      leadDispatchesPerDecision,
-    );
-  } finally {
-    await pool.end();
-  }
-});
-
-/**
- * The column's ceiling is the one a decision is parsed under, because a
- * project holding more would have every decision that spent it refused before
- * any of the document was read. The definer is driven rather than the door:
- * the wire schema refuses first, and the column is what answers anything that
- * reaches the row another way.
- */
-test("a project's dispatch budget stops at the ceiling its decisions are parsed under", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "selector-dispatch-ceiling",
-  );
-  const write = (revision: number, dispatches: number) =>
-    harness.query(
-      `SELECT revision::text FROM update_selector_project_settings(
-         $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,$4,
-         NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'User','selector-admin')`,
-      [partition.tenant, partition.project, revision, dispatches],
-    );
-  await assert.rejects(
-    () => write(0, leadDispatchesMax + 1),
-    /selector_project_dispatches_are_bounded/,
-  );
-  assert.deepEqual(await write(0, leadDispatchesMax), [{ revision: "1" }]);
-});
-
-/**
- * The installation's window is a key of its controls, and no controls row
- * written so far states one, so it reads as the default until an
- * administrator writes it.
- */
-test("an installation whose controls state no compaction window reads the default", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "selector-window-default",
-  );
-  const pool = postgresHarnessRolePool(apiRole);
-  try {
-    const { settings } =
-      await postgresSelectorProjectSettings(pool).read(partition);
-    assert.equal(
-      settings.effective.installationLimits.autoCompactWindow,
-      leadAutoCompactWindowTokensDefault,
-    );
-    assert.equal(
-      settings.effective.limits.autoCompactWindow,
-      leadAutoCompactWindowTokensDefault,
-    );
-  } finally {
-    await pool.end();
-  }
-});
-
-/**
- * A project's window is a column like the dispatch budget, bounded by the
- * column as the runtime's own setting is, so a value the door would refuse is
- * refused by the row too, and it is retained in the history.
- */
-test("a project's compaction window is a column bounded as the runtime's setting is", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "selector-window-column",
-  );
-  const pool = postgresHarnessRolePool(apiRole);
-  const store = postgresSelectorProjectSettings(pool);
-  const write = (revision: number, window: number) =>
-    harness.query(
-      `SELECT revision::text FROM update_selector_project_settings(
-         $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
-         NULL,NULL,$4,NULL,NULL,NULL,NULL,NULL,'User','selector-admin')`,
-      [partition.tenant, partition.project, revision, window],
-    );
-  try {
-    for (const window of [
-      leadAutoCompactWindowTokensMin - 1,
-      leadAutoCompactWindowTokensMax + 1,
-    ])
-      await assert.rejects(
-        () => write(0, window),
-        /selector_project_auto_compact_window_is_bounded/,
-        String(window),
-      );
-    assert.deepEqual(await write(0, leadAutoCompactWindowTokensMax), [
-      { revision: "1" },
-    ]);
-    const held = (await store.read(partition)).settings;
-    assert.equal(
-      held.overrides.limits?.autoCompactWindow,
-      leadAutoCompactWindowTokensMax,
-    );
-    assert.equal(
-      held.effective.limits.autoCompactWindow,
-      leadAutoCompactWindowTokensMax,
-    );
-    assert.deepEqual(
-      (await store.history(partition, undefined, 10)).map(
-        (revision) => revision.overrides.limits?.autoCompactWindow,
-      ),
-      [leadAutoCompactWindowTokensMax],
-    );
+    assert.ok(accepted.length > 0, "the door accepts no field at all");
   } finally {
     await pool.end();
   }

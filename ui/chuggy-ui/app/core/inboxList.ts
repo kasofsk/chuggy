@@ -3,17 +3,16 @@
  * pages make, which frames read it again, and what the shell's badge counts.
  *
  * The server answers the inbox whole — every ticket in a phase of
- * `inboxPhases`, with an open action, refused by the lead or named by a held
- * decision, one entry each — so the console joins nothing. The phases are the
+ * `inboxPhases` or with an open action, one entry each — so the console joins
+ * nothing. The phases are the
  * contract's, and the project table's "Needs you" section is held to them, so
  * the two screens cannot disagree about whether a ticket needs a human.
  *
  * A FRAME NEVER WRITES AN ENTRY, IT ONLY SAYS WHEN TO READ AGAIN. A
- * `NativeAction` or `AgenticRefusal` frame may move any ticket into or out of
- * the inbox, so each rereads it; a `Ticket` frame does where the inbox holds
+ * `NativeAction` frame may move any ticket into or out of the inbox, so it
+ * rereads it; a `Ticket` frame does where the inbox holds
  * that ticket or its phase is one the inbox holds, and is nothing to the inbox
- * otherwise. No frame names a held decision, so the read is polled while
- * anything draws it.
+ * otherwise.
  *
  * A REREAD IS NOT A FIRST READ: it gathers as many pages as the rows it
  * replaces had, so a reader's "more" is not taken away on a frame, and one that
@@ -192,10 +191,7 @@ export function inboxList(
     (change, previous) => inboxRowsRereads(previous, change),
   );
   return projectListAlongside(
-    projectListAlongsideReread(
-      projectListAlongsideReread(named, "NativeAction"),
-      "AgenticRefusal",
-    ),
+    projectListAlongsideReread(named, "NativeAction"),
     "Execution",
     (previous, change) =>
       inboxRowsExecutionFold(previous, change.representation),

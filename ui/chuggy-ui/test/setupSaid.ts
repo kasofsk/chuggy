@@ -10,9 +10,9 @@
 
 import { copyTextEn } from "../app/copy/catalog.ts";
 import { copyOrDataText } from "../app/core/copy.ts";
-import type { CopyOrData } from "../app/core/copy.ts";
+import type { CopyArgument, CopyOrData } from "../app/core/copy.ts";
 import type {
-  SetupMachineCommand,
+  SetupOfferCommand,
   SetupNext,
   SetupStepSaid,
   SetupStepState,
@@ -47,11 +47,26 @@ export type SaidThing =
   | { readonly thing: "Hand"; readonly tell: string; readonly when: string }
   | {
       readonly thing: "Offer";
-      readonly command: SetupMachineCommand;
+      readonly command: Exclude<SetupOfferCommand, "Plugin">;
       readonly tell: string;
       readonly when: string;
       readonly workspace: string;
       readonly project: string | undefined;
+      readonly chatHost?: boolean;
+      readonly elsewhere?: string;
+    }
+  | {
+      readonly thing: "Offer";
+      readonly command: "Plugin";
+      readonly tell: string;
+      readonly when: string;
+    }
+  | {
+      readonly thing: "Run";
+      readonly command: "Bind" | "Merge" | "Watch";
+      readonly tell: string | undefined;
+      readonly workspace: string;
+      readonly project: string;
     }
   | {
       readonly thing: "Ask";
@@ -63,6 +78,27 @@ export type SaidThing =
       readonly ask: string;
       readonly workspace: string;
       readonly project: string | undefined;
+    }
+  | {
+      readonly thing: "Brief";
+      readonly ask: string;
+      readonly workspace: string;
+      readonly project: string;
+      readonly choose: boolean;
+    }
+  | {
+      readonly thing: "First";
+      readonly named: CopyArgument;
+      readonly tell: string;
+      readonly workspace: string;
+      readonly project: string;
+    }
+  | {
+      readonly thing: "NorthStar";
+      readonly tell: string;
+      readonly draft: string;
+      readonly workspace: string;
+      readonly project: string;
     }
   | {
       readonly thing: "Configure";
@@ -80,6 +116,7 @@ export function saidThing(thing: SetupThing): SaidThing {
   switch (thing.thing) {
     case "Done":
     case "Configure":
+    case "First":
       return { ...thing, tell: copyTextEn(thing.tell) };
     case "Hand":
     case "Offer":
@@ -88,9 +125,21 @@ export function saidThing(thing: SetupThing): SaidThing {
         tell: copyTextEn(thing.tell),
         when: copyTextEn(thing.when),
       };
+    case "Run":
+      return {
+        ...thing,
+        tell: thing.tell === undefined ? undefined : copyTextEn(thing.tell),
+      };
     case "Ask":
     case "Name":
+    case "Brief":
       return { ...thing, ask: copyTextEn(thing.ask) };
+    case "NorthStar":
+      return {
+        ...thing,
+        tell: copyTextEn(thing.tell),
+        draft: copyTextEn(thing.draft),
+      };
     case "Failed":
       return { ...thing, found: copyTextEn(thing.found) };
   }
@@ -106,6 +155,8 @@ export function saidNext(next: SetupNext): {
 export const saidTodo: Said = ["todo", ""];
 export const saidAcme: Said = ["done", "acme"];
 export const saidWidgets: Said = ["done", "acme/widgets"];
+/** The North Star step where the project's settings carry one. */
+export const saidStarred: Said = ["done", "the project has a North Star"];
 export const saidOrg: Said = ["done", "acme-org"];
 /** The MCP step where the agent's configuration here names chuggy's server for the project. */
 export const saidServed: Said = [
@@ -122,15 +173,24 @@ export const saidLive: Said = ["done", "live"];
 export const saidReady = [
   saidAcme,
   saidWidgets,
+  saidStarred,
   saidServed,
   saidGranted,
   saidRepository,
   saidLive,
 ] as const;
 
+/** The plugin step where chuggy's Claude Code plugin here is installed and on. */
+export const saidPluginOn: Said = [
+  "done",
+  "Claude Code here has chuggy's plugin, on",
+];
+
+/** Each stage's steps past the plugin's, in order. */
 export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Nothing: [
     ["todo", "you are in no workspace yet"],
+    saidTodo,
     saidTodo,
     saidTodo,
     saidTodo,
@@ -146,19 +206,12 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
     saidTodo,
     saidTodo,
     saidTodo,
+    saidTodo,
   ],
   Project: [
     saidAcme,
-    ["waiting", "acme/widgets has no North Star yet"],
-    saidServed,
-    saidTodo,
-    saidTodo,
-    saidTodo,
-    saidTodo,
-  ],
-  NorthStar: [
-    saidAcme,
     saidWidgets,
+    saidStarred,
     saidServed,
     saidTodo,
     saidTodo,
@@ -168,6 +221,7 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Portal: [
     saidAcme,
     saidWidgets,
+    saidStarred,
     saidServed,
     ["waiting", "acme-org has the portal app, not the worker app"],
     saidTodo,
@@ -177,6 +231,7 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Apps: [
     saidAcme,
     saidWidgets,
+    saidStarred,
     saidServed,
     saidOrg,
     saidTodo,
@@ -186,6 +241,7 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Added: [
     saidAcme,
     saidWidgets,
+    saidStarred,
     saidServed,
     saidGranted,
     ["waiting", "acme-org/widgets is added, its configuration not read yet"],
@@ -195,6 +251,7 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Configured: [
     saidAcme,
     saidWidgets,
+    saidStarred,
     saidServed,
     saidGranted,
     saidRepository,
@@ -204,6 +261,7 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Offline: [
     saidAcme,
     saidWidgets,
+    saidStarred,
     saidServed,
     saidGranted,
     saidRepository,
@@ -245,32 +303,38 @@ export const saidLanding: readonly Said[] = [
 /** The step each read leaves unread, and what the read is called there. The
  * owner fallback's leaves one unread only where the project has no pool, and
  * the person's personal runners' only where it also names a fallback, so
- * their cases are their own. */
+ * their cases are their own; a ticket's executions leave none unread. */
 export const saidUnread: Readonly<
   Record<
-    Exclude<SetupSiteRead, "workspaces" | "fallback" | "personal">,
+    Exclude<
+      SetupSiteRead,
+      "workspaces" | "fallback" | "personal" | "executions"
+    >,
     readonly [number, string]
   >
 > = {
   inventory: [1, "your projects were"],
-  settings: [1, "acme/widgets: its lead settings were"],
-  installations: [3, "its GitHub accounts were"],
-  portalGrant: [3, "what the portal app is granted on GitHub was"],
-  workerGrant: [3, "what the worker app is granted on GitHub was"],
-  repositories: [4, "its repositories were"],
-  work: [5, "where its work runs was"],
-  placement: [5, "its runners were"],
-  landed: [6, "its tickets were"],
-  moving: [6, "its tickets were"],
-  drafts: [6, "its drafts were"],
-  landings: [6, "a ticket's finalizations were"],
+  settings: [1, "acme/widgets: its chat settings were"],
+  installations: [4, "its GitHub accounts were"],
+  portalGrant: [4, "what the portal app is granted on GitHub was"],
+  workerGrant: [4, "what the worker app is granted on GitHub was"],
+  repositories: [5, "its repositories were"],
+  work: [6, "where its work runs was"],
+  placement: [6, "its runners were"],
+  landed: [7, "its tickets were"],
+  moving: [7, "its tickets were"],
+  drafts: [7, "its drafts were"],
+  landings: [7, "a ticket's finalizations were"],
 };
 
 /** Where the GitHub step is said, which the project's repositories leave unread as they do their own step: it is held to the account that owns one. */
-const saidGithubAt = 3;
+const saidGithubAt = 4;
 
 /** Where the MCP step is said, which is to do wherever no project is read. */
-const saidMcpAt = 2;
+const saidMcpAt = 3;
+
+/** Where the North Star step is said, which the project's settings leave unread as they do the project step. */
+const saidNorthStarAt = 2;
 
 /** How each way a read fails is said. */
 export const saidFates: Readonly<
@@ -300,12 +364,18 @@ export function saidFated(
   const said = [...saidLanding];
   said[at] = ["unread", `${subject} ${saidFates[fate]}`];
   if (read === "repositories") said[saidGithubAt] = said[at] ?? saidTodo;
+  if (read === "settings")
+    said[saidNorthStarAt] = [
+      "unread",
+      `its chat settings were ${saidFates[fate]}`,
+    ];
   if (read === "inventory")
     for (const [after, hung] of [
+      [saidNorthStarAt, "its chat settings were"],
       [saidGithubAt, "its repositories were"],
-      [4, "its repositories were"],
-      [5, "where its work runs was"],
-      [6, "its tickets were"],
+      [5, "its repositories were"],
+      [6, "where its work runs was"],
+      [7, "its tickets were"],
     ] as const)
       said[after] = ["unread", `${hung} not read`];
   if (read === "inventory") said[saidMcpAt] = saidTodo;
@@ -335,13 +405,14 @@ export const saidMember: readonly Said[] = [
   ["waiting", "acme, where you are a member and not an admin"],
   ["todo", "no project of acme is shown to you"],
   saidTodo,
+  saidTodo,
   saidAccountsUnshown,
   saidTodo,
   saidTodo,
   saidTodo,
 ];
 
-/** A site set up to a landed ticket, seen by someone who is in no workspace and is shown its one project and not that project's lead settings. */
+/** A site set up to a landed ticket, seen by someone who is in no workspace and is shown its one project and not that project's thread settings. */
 export function saidViewerSite(): SetupSite {
   const site = setupSiteAt("Landed");
   site.tenants = [];
@@ -351,7 +422,8 @@ export function saidViewerSite(): SetupSite {
 
 export const saidViewer: readonly Said[] = [
   ["waiting", "acme, where you see a project and are not an admin"],
-  ["unread", "acme/widgets: its lead settings were not shown to you"],
+  ["unread", "acme/widgets: its chat settings were not shown to you"],
+  ["unread", "its chat settings were not shown to you"],
   saidServed,
   saidAccountsUnshown,
   saidRepository,

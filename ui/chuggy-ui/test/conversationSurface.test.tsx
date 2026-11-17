@@ -537,7 +537,7 @@ test("the page a message was sent from is a chip over the words, and no Context 
 
 test("an Observation with text draws the line and its collapsed card", () => {
   const observed = exchangeOf({
-    ask: { ask: "Observation", text: '{"version":1,"decision":"lead"}' },
+    ask: { ask: "Observation", text: '{"version":1,"offerReply":{}}' },
     answer: "done",
   });
   renderCopied(<Conversation exchanges={[observed]} empty="No conversation" />);

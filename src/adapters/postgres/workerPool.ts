@@ -368,19 +368,21 @@ async function postgresChatHostNamed(
     readonly version: string | null;
     readonly credentialsNamed: string | null;
     readonly hosted: string[] | null;
+    readonly ticketWakes: string | null;
   },
 ): Promise<void> {
-  const { named, version, credentialsNamed, hosted } = kept;
+  const { named, version, credentialsNamed, hosted, ticketWakes } = kept;
   await pool.query(sql`UPDATE chat_host h
     SET runner_package=${named},runner_version=${version},
         credentials_named=${credentialsNamed}::jsonb,
-        session_capabilities=${hosted}::text[]
+        session_capabilities=${hosted}::text[],
+        ticket_wakes=${ticketWakes}::text
     WHERE h.tenant=${identity.tenant} AND h.owner=${identity.owner}
       AND h.principal=${identity.principal}
       AND (h.runner_package,h.runner_version,h.credentials_named,
-           h.session_capabilities)
+           h.session_capabilities,h.ticket_wakes)
         IS DISTINCT FROM (${named}::text,${version}::text,
-          ${credentialsNamed}::jsonb,${hosted}::text[])`);
+          ${credentialsNamed}::jsonb,${hosted}::text[],${ticketWakes}::text)`);
 }
 
 /**
@@ -390,8 +392,8 @@ async function postgresChatHostNamed(
  * registration, written as one statement and only where it differs from what
  * is kept, so a poll that names what it named before writes nothing;
  * capabilities or a ceiling named as none keep what is recorded, and
- * credentials, or a chat host's session capabilities, named as none clear what
- * is.
+ * credentials, or a chat host's session capabilities or ticket wakes, named as
+ * none clear what is.
  */
 export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
   return {
@@ -403,6 +405,7 @@ export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
       agentsAdvertised = false,
       credentials = {},
       sessionCapabilities,
+      ticketWakes,
     ) => {
       const named = runner?.package ?? null;
       const version = runner?.version ?? null;
@@ -454,6 +457,7 @@ export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
               sessionCapabilities === undefined
                 ? null
                 : [...sessionCapabilities],
+            ticketWakes: ticketWakes ?? null,
           });
           return;
       }
@@ -625,6 +629,8 @@ async function workerPoolClaimed(
  * choice of attempt, with no lock, no order and nothing taken. The predicate
  * is written twice, here and there, its deferral to an owner's runners a third
  * time in `./operationalReads.ts`'s answer of what a run waits on of them, and
+ * the whole of it less its room, slots and pause a fourth time there, in its
+ * answer of the memory a run waiting on its project's pools is short of;
  * `test/postgres/workerPoolClaim.test.ts` holds them to one answer over every
  * case it asks the claim.
  */
@@ -902,20 +908,36 @@ function postgresExecutionHoldsRouted(
   };
 }
 
-/** Stamps a pool's poll as one that could take an execution where `executions` says it could, while this registration is the pool's; any other poll of a pool is its session store's to stamp. */
+/**
+ * Keeps the memory room a pool's poll named or none, and stamps the poll as
+ * one that could take an execution where `executions` says it could, while
+ * this registration is the pool's; any other poll of a pool is its session
+ * store's to stamp. The plane may not read the stamp, so a poll that could
+ * take none leaves it in a statement of its own.
+ */
 async function workerPoolExecutionsPolled(
   pool: pg.Pool,
   identity: WorkerPoolIdentity,
   executions: boolean,
+  memoryRoomMib: number | undefined,
 ): Promise<void> {
-  if (!executions) return;
-  await pool.query(
-    sql`UPDATE worker_pool w SET executions_polled_at=now()
+  const room = memoryRoomMib ?? null;
+  if (executions)
+    await pool.query(
+      sql`UPDATE worker_pool w SET executions_polled_at=now(),memory_room_mib=${room}::bigint
           WHERE w.tenant=${identity.partition.tenant}
             AND w.project=${identity.partition.project}
             AND w.pool=${identity.pool}
             AND w.principal=${identity.principal}`,
-  );
+    );
+  else
+    await pool.query(
+      sql`UPDATE worker_pool w SET memory_room_mib=${room}::bigint
+          WHERE w.tenant=${identity.partition.tenant}
+            AND w.project=${identity.partition.project}
+            AND w.pool=${identity.pool}
+            AND w.principal=${identity.principal}`,
+    );
 }
 
 /**
@@ -1034,10 +1056,10 @@ export function postgresWorkerPoolAssignments(
       personalExecutionCredentialOutcomes(pool, identity, assignments),
     credentialPauses: (identity, credentials) =>
       workerPoolCredentialPauses(pool, identity, credentials),
-    polled: (identity, executions) =>
+    polled: (identity, executions, memoryRoomMib) =>
       identity.kind === "Personal"
-        ? personalExecutionsPolled(pool, identity, executions)
-        : workerPoolExecutionsPolled(pool, identity, executions),
+        ? personalExecutionsPolled(pool, identity, executions, memoryRoomMib)
+        : workerPoolExecutionsPolled(pool, identity, executions, memoryRoomMib),
     ...postgresExecutionHoldsRouted(pool),
   };
 }

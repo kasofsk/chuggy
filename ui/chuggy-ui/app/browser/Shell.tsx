@@ -120,6 +120,7 @@ import { consoleOutdatedOf } from "./consoleOutdated.ts";
 import { useConsolePageNow } from "./consolePageNow.ts";
 import { ConsoleWriteToasts } from "./consoleWrite.tsx";
 import { DraftSaveHeld } from "./editor/draftSaveBeforeSend.tsx";
+import { useProjectNamed } from "./projectNamed.ts";
 import { ChatPane } from "./shell/ChatPane.tsx";
 import { useChatPane } from "./shell/chatPaneHeld.ts";
 import { DetailsPane, detailsPaneMainId } from "./shell/DetailsPane.tsx";
@@ -141,6 +142,7 @@ import {
   useProjectStreamStatus,
 } from "./stream.tsx";
 import { useConsoleSelector } from "./store.ts";
+import { useWorkspaceNames } from "./workspaceNames.ts";
 import { Button } from "./ui/Button.tsx";
 import { CopyProvider } from "./ui/copyHeld.tsx";
 import { MarkdownProvider } from "./ui/markdownHeld.ts";
@@ -617,7 +619,10 @@ function ShellDrawn(props: {
   const laid = chat === undefined ? undefined : chatPaneSlideLaid(chat, slide);
   const page = useConsolePageNow();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
-  const title = shellPageTitle(props.partition, pathname);
+  const title = shellPageTitle(props.partition, pathname, {
+    workspace: useWorkspaceNames(),
+    project: useProjectNamed(),
+  });
   return (
     <ShellFrame>
       <ShellSkip />

@@ -31,6 +31,7 @@ import type {
 import type { ApiResult } from "./apiRequest.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
+import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
 import { executionStarting } from "./ticketLedger.ts";
 
 /** What a member is told where the workspace has not let them register one. */
@@ -175,6 +176,19 @@ export function myRunnerAddable(
     .sort();
 }
 
+/** The projects the register panel's line may be made for: the one the page is framed in where it is, or else the tenant's the reader reads, in name order. */
+export function myRunnerLineProjects(
+  readable: readonly PartitionIdentity[],
+  tenant: string,
+  framed: string | undefined,
+): readonly string[] {
+  if (framed !== undefined) return [framed];
+  return readable
+    .filter((each) => each.tenant === tenant)
+    .map((each) => each.project)
+    .sort();
+}
+
 /** What a run of the reader's waits on of their runners, as the server answers it. */
 export type RunnerWait = PersonalRunnerWait;
 
@@ -202,6 +216,28 @@ export function runnerWaitPause(
   return wait === "Live" ? execution.paused : undefined;
 }
 
+/** The memory the server answered the live runners of the reader's a run
+ * waits on are short of, said only where it waits on live ones no pause holds. */
+export function runnerWaitRoom(
+  execution: ExecutionSummary,
+): ExecutionSummary["personalRunnerRoom"] {
+  const wait = runnerWait(execution);
+  if (wait !== "Live" || runnerWaitPause(execution, wait) !== undefined)
+    return undefined;
+  return execution.personalRunnerRoom;
+}
+
+/** The memory the server answered the live pools of a run's project it waits
+ * on are short of, said to any reader of a run admitted but not begun and not
+ * queued, since a queued run waits on capacity rather than on a pool. */
+export function runnerWaitPoolRoom(
+  execution: ExecutionSummary,
+): ExecutionSummary["poolRoom"] {
+  if (execution.status === "Queued" || !executionStarting(execution))
+    return undefined;
+  return execution.poolRoom;
+}
+
 /**
  * What taking a member's runners off came to, in one line: taken off, none the
  * caller may take, or why it was refused. The server answers a caller it will
@@ -215,6 +251,22 @@ export function memberRunnerRemoved(result: ApiResult<undefined>): CopyOrData {
 
 /** What a run of the reader's waits on: their personal runners. */
 export const runnerWaitLine: Copy = { id: "runners-wait-waiting" };
+
+/** What a run waits on where it waits on none of the reader's: its project's pools. */
+export const runnerWaitPoolsLine: Copy = { id: "runners-wait-pools" };
+
+/** How much memory the runners a run waits on have free and it needs. */
+export function runnerWaitRoomLine(
+  room: NonNullable<ExecutionSummary["poolRoom"]>,
+): Copy {
+  return {
+    id: "runners-wait-room",
+    args: {
+      free: quantityFigureCopy(memoryMibFigure(room.freeMib)),
+      needed: quantityFigureCopy(memoryMibFigure(room.neededMib)),
+    },
+  };
+}
 
 /** The state of the runners a run waits on, where it has one beside waiting. */
 export function runnerWaitWord(wait: RunnerWait): Copy | undefined {

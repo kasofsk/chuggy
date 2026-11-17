@@ -5,7 +5,10 @@
  */
 
 import assert from "node:assert/strict";
+import { chmodSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
+import { setupPluginId } from "../../ui/chuggy-ui/app/core/setupProgram.ts";
 import type { SetupSite } from "../../ui/chuggy-ui/test/setupSite.ts";
 
 import { dialect, making, program, shellWords, signedIn } from "./program.ts";
@@ -14,18 +17,38 @@ import type { StandIn } from "./standIn.ts";
 
 const made = making();
 
+/** Puts a `claude` among the home's programs that prints, for `claude plugin list --json`, a list holding chuggy's plugin installed under the home and on, as `plugin` leaves it, and fails at anything else. */
+function plugged(machine: Home): void {
+  const listed = JSON.stringify([
+    {
+      id: setupPluginId,
+      version: "0.1.0",
+      scope: "user",
+      enabled: true,
+      installPath: join(machine.home, ".claude", "plugins", "cache", "chuggy"),
+    },
+  ]);
+  const claude = join(machine.bin, "claude");
+  writeFileSync(
+    claude,
+    `#!/bin/sh\n[ "$*" = "plugin list --json" ] || exit 1\nprintf '%s\\n' '${listed}'\n`,
+  );
+  chmodSync(claude, 0o755);
+}
+
 interface Signed {
   readonly installation: StandIn;
   readonly machine: Home;
 }
 
-/** A machine signed in to a stand-in installation of its own, whose agent here already has chuggy's MCP server for acme/widgets, with nothing yet kept of what was asked. */
+/** A machine signed in to a stand-in installation of its own, whose agent here already has chuggy's plugin on and chuggy's MCP server for acme/widgets, with nothing yet kept of what was asked. */
 export async function signed(): Promise<Signed> {
   const installation = await made.installation();
   const machine = made.machine();
   const done = await signedIn(installation, machine);
   assert.equal(done.code, 0, done.stdout);
   machine.served(installation.site);
+  plugged(machine);
   installation.asked.length = 0;
   return { installation, machine };
 }
@@ -56,7 +79,7 @@ export function said(done: Ran, word: string): readonly string[] {
 }
 
 const ruleEnd =
-  / with the (?:person's answer|command that tests this repository) after it,| only (?:once|if) the person /u;
+  / with the (?:person's answer|command that tests this repository) after it,| with (?=--(?:title|text) )| only (?:once|if) the person /u;
 
 /**
  * The arguments of the command a run's rule names, as a shell makes words of

@@ -9,7 +9,6 @@ export const setupRunnerFtl = `## Setting up a runner: what a run of the setup p
 ## Shared words.
 
 setup-runner-unchanged = so nothing was changed on this machine
-setup-runner-mac-none = { setup-program } puts { -runner(form: "a") } only on Linux
 setup-runner-picked-up = What was done before it stays done, and running again picks up from there. Tell me if you want me to try again.
 setup-runner-unknown = so I cannot say the { -runner } is set up. What was done before stays done
 setup-runner-when-try-again = if the person asks to try again
@@ -21,6 +20,11 @@ setup-runner-versioned = { $program } { $version }
 # The rule a stop ends on, naming the one command it may be run again as.
 # spells -run: to run is a verb here
 setup-runner-rule = Run { $command } only { $when }.
+# spells -run: to run is a verb here
+setup-runner-rule-elsewhere = Where the person wants them on another machine instead, run nothing here, and give them this line to paste into { -claude-code } on that machine: { $line }
+# spells -run: to run is a verb here
+# spells -thread: the chat image is the image the chat host runs
+setup-runner-rule-chat-host = Run it with { $flag } { $no } in place of { $flag } { $yes } only where the person says they want no { -chat-host }. Before running it with { $flag } { $yes }, tell the person: Downloading the chat image. This takes a few minutes the first time.
 
 ## Each kind of Claude credential: what it is called, and what makes one.
 
@@ -51,10 +55,18 @@ setup-runner-note-installed = installed the { -runner } package, { $versioned },
 setup-runner-note-installed-kept = installed the { -runner } package, { $versioned }, at { $command }, and { $kept } is still at { $where }
 setup-runner-note-settings = the { -runner }'s settings are in { $path }
 setup-runner-note-settings-written = wrote the { -runner }'s settings to { $path }: its guide's own, with { $engine } as the engine
+# spells -run: to run is a verb here
+setup-runner-note-chat-settings-written = wrote the size of your { -chat-host } into { $path }, every other setting kept as it was: the most { -thread(form: "plural") } it runs at once is { $sessions }, at { $each } each, { $total } in all
 setup-runner-note-login = the { -runner }'s { $credential } is in { $path }
-setup-runner-note-pool = this machine is registered as { -runner(form: "a") } of { $project }, in { $path }
-setup-runner-note-pool-gone = { $path } registered this machine as { $pool }, and the { -site } lists no { -runner } of { $project } by that name
-setup-runner-note-registered = registered this machine as { -runner(form: "a") } of { $project }, in { $path }
+setup-runner-note-personal = this machine is registered as your { -runner }, in { $path }
+setup-runner-note-personal-gone = { $path } registered this machine as your { -runner }, and the { -site } no longer knows that registration
+setup-runner-note-personal-registered = registered this machine as your { -runner }, in { $path }
+setup-runner-note-given = your { -runner(form: "plural") } are given { $project }
+setup-runner-note-given-now = gave your { -runner(form: "plural") } { $project }
+# spells -work-stage: the work in general
+setup-runner-note-allowed = { $project } lets your own { -runner(form: "plural") } take your work in it
+# spells -work-stage: the work in general
+setup-runner-note-allowed-now = set { $project } to let your own { -runner(form: "plural") } take your work in it while one is online, and a shared { -runner } while none is
 # spells -brief-check: the runner package's own check is no brief's
 setup-runner-note-checked = the { -runner }'s own check passed
 # spells -brief-check: the runner package's own check is no brief's
@@ -65,6 +77,9 @@ setup-runner-note-unit-written = installed the { -runner }'s service, { $unit }
 setup-runner-note-server-found = { -claude-code } in this folder runs { -brand-name }'s MCP server for { $project }, as { $path } names it
 # spells -configuration: Claude Code's own settings, not a chuggy configuration
 setup-runner-note-server-added = named { -brand-name }'s MCP server for { $project } in { -claude-code }'s configuration for this folder, in { $path }; a { -claude-code } session started here from now on has its tools
+# spells -run: to run is a verb here
+# spells -work-stage: to work is a verb here
+setup-runner-note-colima = Docker runs in Colima on this Mac, which has to be running for the { -runner }'s services to work, and after a restart is not until it is started again. { $start } starts it whenever you log in.
 setup-runner-note-linger = your services keep running after you log out
 setup-runner-note-linger-on = set your services to keep running after you log out
 setup-runner-note-linger-on-unread = set your services to keep running after you log out, not having learned whether they already did
@@ -73,7 +88,8 @@ setup-runner-note-enabled = set { $unit }, which was running, to start when you 
 setup-runner-note-started = started { $unit }, which also starts when you log in
 # spells -run: to run is a verb here
 setup-runner-note-restarted = restarted { $unit }, so it runs as it is now registered and installed
-setup-runner-note-project-live = the { -site } sees { -runner(form: "a") } of { $project } live
+# spells -work-stage: the work in general
+setup-runner-note-project-live = the { -site } sees your { -runner } live, taking your work in { $project }
 # spells -work-stage: the work in general
 setup-runner-note-hosted = { -hosted-runs } take the work of { $project }, so that work needs no { -runner }
 setup-runner-note-chat-host = this machine is registered as your { -chat-host }, in { $path }
@@ -107,6 +123,9 @@ setup-runner-engines-neither = neither { $engines } answered
 setup-runner-engine-needs-password = Installing a container engine, or letting your user reach one, takes a password, and { setup-program } never takes one.
 # spells -work-stage: the work in general
 setup-runner-engineless-tell = { -runner(case: "upper", form: "a") } does its work in containers, and { $none } on this machine without a password, { setup-runner-unchanged }. { setup-runner-engine-needs-password } Tell me once one answers you.
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+setup-runner-engineless-colima-tell = { -runner(case: "upper", form: "a") } does its work in containers, and Docker did not answer on this machine, { setup-runner-unchanged }. On a Mac, Docker runs in Colima, which { $start } starts without a password. Tell me once Docker answers you.
 setup-runner-engineless-when = once the person says a container engine answers them on this machine
 
 ## A user the runner package takes docker from no user but one.
@@ -136,8 +155,9 @@ setup-runner-docker-tell = { $why } { $state }, { setup-runner-unchanged }. { $m
 setup-runner-read-work = where its work runs
 # spells -run: to run is a verb here
 setup-runner-read-threads = where your { -thread(form: "plural") } in it run
-setup-runner-read-placement = how its { -runner(form: "plural") } stand
-setup-runner-read-pools = which { -runner(form: "plural") } it has
+# spells -work-stage: the work in general
+setup-runner-read-fallback = whether it lets your own { -runner(form: "plural") } take its work
+setup-runner-read-personal = which { -runner(form: "plural") } of yours it knows
 setup-runner-read-permit = whether you may register { -chat-host(form: "a") }
 setup-runner-read-chat = whether you have { -chat-host(form: "a") }
 setup-runner-unread-refused-found = the { -site } does not show you { $project } or { $what }
@@ -148,16 +168,11 @@ setup-runner-unread-refused-when = if the person says their access has changed
 setup-runner-unread-found = the { -site } did not say of { $project } { $what } ({ $outcome })
 setup-runner-unread-tell = The { -brand-name } { -site } did not answer everything I asked it, { setup-runner-unknown }. Tell me if you want me to try again.
 setup-runner-not-admin-found = the { -site } says you are not { -role-admin(form: "a") } of { $project }
-setup-runner-not-admin-tell = Putting { -runner(form: "a") } on { -project(form: "a") } takes { -role-admin(form: "a") } of it, and the { -brand-name } { -site } says you are not one of { $project }, { setup-runner-unchanged }. Ask { -role-admin(form: "a") } to make you one. Tell me once you are.
+# spells -work-stage: the work in general
+setup-runner-not-admin-tell = Your { -runner } takes your work in { $project } only once the { -project } lets its { -role-member(form: "plural") }' own { -runner(form: "plural") } take it, which takes { -role-admin(form: "a") } of it to set, and the { -brand-name } { -site } says you are not one, { setup-runner-unchanged }. Ask { -role-admin(form: "a") } of { $project } to set it, or to make you one. Tell me once they have.
 
 ## What this machine lacks.
 
-setup-runner-mac-found = this machine is a Mac, and { setup-runner-mac-none }
-# spells -run: to run is a verb here
-setup-runner-mac-tell = { setup-runner-mac-none } and cannot set one up here, { setup-runner-unchanged }. A Mac runs one with { $program }, added by hand, and a Linux machine runs one too. Tell me once one is running.
-setup-runner-mac-when = once the person says { -runner(form: "a") } is running
-setup-runner-mac-chat-found = this machine is a Mac, and { setup-program } makes a machine your { -chat-host } only on Linux
-setup-runner-mac-chat-tell = { setup-program } makes a machine your { -chat-host } only on Linux and cannot make this one it, { setup-runner-unchanged }. To make it your { -chat-host } by hand, { $byHand }. Tell me once it is running.
 setup-runner-serviceless-found = this machine's user services did not answer { $command }
 # spells -run: to run is a verb here
 setup-runner-serviceless-tell = { setup-program } runs the { -runner } as a service of yours, and this machine's user services did not answer, { setup-runner-unchanged }. The { -runner }'s guide says how it is run by hand: { $guide }. Tell me if you want me to try again.
@@ -192,6 +207,26 @@ setup-runner-act-server-removed = { $case ->
 setup-runner-act-server-added = { $case ->
     [upper] Adding { -brand-name }'s MCP server to { -claude-code }
    *[lower] adding { -brand-name }'s MCP server to { -claude-code }
+}
+setup-runner-act-plugin-marketplace-add = { $case ->
+    [upper] Adding { -brand-name }'s plugin marketplace to { -claude-code }
+   *[lower] adding { -brand-name }'s plugin marketplace to { -claude-code }
+}
+setup-runner-act-plugin-marketplace-update = { $case ->
+    [upper] Updating { -brand-name }'s plugin marketplace in { -claude-code }
+   *[lower] updating { -brand-name }'s plugin marketplace in { -claude-code }
+}
+setup-runner-act-plugin-install = { $case ->
+    [upper] Installing { -brand-name }'s plugin in { -claude-code }
+   *[lower] installing { -brand-name }'s plugin in { -claude-code }
+}
+setup-runner-act-plugin-update = { $case ->
+    [upper] Updating { -brand-name }'s plugin in { -claude-code }
+   *[lower] updating { -brand-name }'s plugin in { -claude-code }
+}
+setup-runner-act-plugin-enable = { $case ->
+    [upper] Turning on { -brand-name }'s plugin in { -claude-code }
+   *[lower] turning on { -brand-name }'s plugin in { -claude-code }
 }
 setup-runner-act-register = { $case ->
     [upper] Registering this machine
@@ -283,10 +318,21 @@ setup-runner-lasting-hostname-when = once the person says this machine's name st
 ## The site's registration token, not made.
 
 # The outcome is the request's own name for how it failed, which is code.
-setup-runner-mint-found = the { -site } made no registration token for { $project } ({ $outcome })
-setup-runner-mint-absent-tell = The { -brand-name } { -site } would not make a registration for { $project }: that takes { -role-admin(form: "a") } of it. The { -runner } package is on this machine and nothing is registered. Tell me once you are { -role-admin(form: "a") } of { $project }.
-setup-runner-mint-conflict-tell = { -brand-name } already holds as many unused registrations for { $project } as it keeps at once, so it made no more. Each lapses by itself within { $mins } minutes of being made. Tell me when you want me to try again.
-setup-runner-mint-tell = The { -brand-name } { -site } did not make a registration for { $project }, so this machine is not registered yet. { setup-runner-picked-up }
+setup-runner-mint-found = the { -site } made no registration token for your { -runner } ({ $outcome })
+setup-runner-mint-absent-tell = The { -brand-name } { -site } would not make a registration for { -runner(form: "a") } of yours: the { -workspace } lets only { -role-member(form: "plural") } it chooses register one. The { -runner } package is on this machine and nothing is registered. Tell me once { -workspace(form: "a") } { -role-admin } has let you.
+setup-runner-mint-absent-when = once the person says { -workspace(form: "a") } { -role-admin } has let them register { -runner(form: "a") }
+setup-runner-mint-conflict-tell = { -brand-name } already holds as many unused registrations of yours as it keeps at once, so it made no more. Each lapses by itself within { $mins } minutes of being made. Tell me when you want me to try again.
+setup-runner-mint-tell = The { -brand-name } { -site } did not make a registration for your { -runner }, so this machine is not registered yet. { setup-runner-picked-up }
+# spells -work-stage: the work in general
+setup-runner-serve-refused-found = the { -site } did not { $write ->
+    [give] give your { -runner(form: "plural") } { $project }
+   *[allow] let your own { -runner(form: "plural") } take your work in { $project }
+} ({ $outcome })
+# spells -work-stage: the work in general
+setup-runner-serve-refused-tell = Your { -runner } is registered and running on this machine, and the { -brand-name } { -site } did not { $write ->
+    [give] give it { $project }
+   *[allow] let your own { -runner(form: "plural") } take your work in { $project }
+}, so it does not take that work yet. { setup-runner-picked-up }
 setup-runner-chat-mint-found = the { -site } made no registration token for your { -chat-host } ({ $outcome })
 setup-runner-chat-mint-absent-tell = The { -brand-name } { -site } would not make a registration for { -chat-host(form: "a") } of yours: the { -workspace } lets only { -role-member(form: "plural") } it chooses register one. Tell me once { -workspace(form: "a") } { -role-admin } has let you.
 setup-runner-chat-mint-absent-when = once the person says { -workspace(form: "a") } { -role-admin } has let them register { -chat-host(form: "a") }
@@ -328,16 +374,26 @@ setup-runner-linger-found-said = your services stop when you log out, and { setu
 setup-runner-linger-tell = The { -runner } is installed and registered on this machine. For it to keep running after you log out, one command is yours to run, because it may ask for your password and { setup-program } never takes one. In a terminal of your own, run { $command } and tell me once you have.
 # spells -run: "have run" is the verb, not the noun
 setup-runner-linger-when = once the person says they have run it
-setup-runner-inactive-started = was started and
+setup-runner-inactive-started = was started and after { $secs } s
 setup-runner-inactive-waited = was running and after { $secs } s
 setup-runner-inactive-silent-found = { $unit } { $was } this machine's user services did not answer whether it is running
 setup-runner-inactive-silent-tell = This machine's user services did not answer when I asked whether the { -runner }'s service is running, so I cannot say the { -runner } is set up. { setup-runner-picked-up }
 # The state is the service manager's own word, which is data.
 setup-runner-inactive-found = { $unit } { $was } is { $state }
 setup-runner-inactive-not-running = not running
-setup-runner-inactive-tell = The { -runner }'s service was started and is not running, so the { -runner } is not set up yet. { setup-runner-picked-up }
-setup-runner-not-live-found = the { -runner }'s service is running, and after { $secs } s the { -site } still sees no { -runner } of { $project } live
-setup-runner-not-live-unregistered-found = the { -runner }'s service is running, and after { $secs } s the { -site } lists no { -runner } of { $project }
+# The state is the service manager's own word, which is data.
+setup-runner-inactive-tell = The { -runner }'s service was started and is { $state }, so the { -runner } is not set up yet. { $exited } { setup-runner-picked-up }
+setup-runner-inactive-unexited = Its service manager gives no status it last exited with.
+# spells -work-stage: the work in general
+setup-runner-inactive-exit-unrestarted = It last exited with status { $status }, which it exits with where { -brand-name } denied its registration or its settings leave it no work, and it is not started again.
+# spells -release: a package's release
+setup-runner-inactive-exit-updated = It last exited with status { $status }, which it exits with once it has installed a new release of itself, and it is started again on that release.
+setup-runner-inactive-exit-other = It last exited with status { $status }, and it is started again { $secs } s after each such exit.
+setup-runner-not-live-running = is running
+setup-runner-not-live-running-pid = is running as process { $pid }
+# spells -work-stage: the work in general
+setup-runner-not-live-found = the { -runner }'s service { $running }, and after { $secs } s the { -site } still does not see your { -runner } live, taking your work in { $project }
+setup-runner-not-live-unregistered-found = the { -runner }'s service { $running }, and after { $secs } s the { -site } lists no { -runner } of yours by its registration
 setup-runner-not-live-tell = The { -runner } is installed, registered and started on this machine, and the { -brand-name } { -site } does not see it live yet. It can take a little longer. Tell me when you want me to look again.
 
 ## The person's chat host.
@@ -354,6 +410,12 @@ setup-runner-permit-tell = { $work } Your { -thread(form: "plural") } there run 
 # A page and a button are named as the console draws them.
 # spells -turn: to turn on is a verb here
 setup-runner-permit-workspace-tell = The { -workspace } does not let you register { -chat-host(form: "a") } yet. { -role-admin(case: "upper", form: "a") } of the { -workspace }, you if you are one, turns on { -personal-runner(case: "upper", form: "plural") } for you on its People page, { $people }, with Edit on your row. Tell me once it is on.
+setup-runner-withheld-found = the { -workspace } does not let you register { -runner(form: "a") } of your own
+# A page and a button are named as the console draws them.
+# spells -work-stage: the work in general
+# spells -turn: to turn on is a verb here
+# spells -run: to run is a verb here
+setup-runner-withheld-tell = Your work in { $project } runs on { -runner(form: "a") } of your own, and the { -workspace } does not let you register one yet. { -role-admin(case: "upper", form: "a") } of the { -workspace }, you if you are one, turns on { -personal-runner(case: "upper", form: "plural") } for you on its People page, { $people }, with Edit on your row. Tell me once it is on.
 setup-runner-permit-when = once the person says { -personal-runner(case: "upper", form: "plural") } is on for them in the { -workspace }
 setup-runner-offline-found = your { -chat-host } is another machine, registered and not running
 # spells -run: to run is a verb here
@@ -379,4 +441,51 @@ setup-runner-chat-login-tell = Your { -chat-host } { $why }, so this machine is 
 setup-runner-chat-login-when = once the person says the { -runner }'s { $credential } is copied alone into a directory of its own and its services have restarted
 setup-runner-chat-not-live-found = your { -chat-host }'s service is running, and after { $secs } s the { -site } still does not see this machine live as your { -chat-host }
 setup-runner-chat-not-live-tell = Your { -chat-host } is installed, registered and started on this machine, and the { -brand-name } { -site } does not see it live yet. It can take a little longer. Tell me when you want me to look again.
+
+## Colima's VM on a Mac, given what { -run(form: "a") } naming no memory or platform needs.
+
+setup-runner-act-colima-stop = { $case ->
+    [upper] Stopping Colima's VM
+   *[lower] stopping Colima's VM
+}
+setup-runner-act-colima-start = { $case ->
+    [upper] Starting Colima's VM
+   *[lower] starting Colima's VM
+}
+setup-runner-note-colima-ran = ran { $command }
+setup-runner-note-colima-vm = { $has }
+# spells -run: to run is a verb here
+setup-runner-colima-has = Colima's VM { $memory ->
+    [said] has { $has }
+   *[unsaid] did not say its memory
+} and { $amd64 ->
+    [yes] runs amd64 images
+    [no] runs no amd64 images
+   *[unsaid] did not say whether it runs amd64 images
+}
+setup-runner-colima-short-found = once started again, { $has }, still short of what { -run(form: "a") } naming no memory or platform needs
+setup-runner-colima-short-tell = Colima's VM was started again and is still short of what { -run(form: "a") } naming no memory or platform needs, so the { -runner } is not set up yet. { setup-runner-picked-up }
+setup-runner-fit-tell = { $told }
+setup-runner-fit-unchanged = { $unchanged ->
+    [yes] , { setup-runner-unchanged }
+   *[no] { "" }
+}
+# spells -run: to run is a verb here
+setup-runner-amd64-runs = { -run(case: "upper", form: "a") } naming no platform runs amd64 images
+# spells -run: to run is a verb here
+setup-runner-rosettaless-found = Colima's VM on this Apple-silicon Mac runs no amd64 images, and macOS has no Rosetta to run them with
+# spells -run: to run is a verb here
+setup-runner-rosettaless-told = { setup-runner-amd64-runs }, which Colima's VM on this Apple-silicon Mac runs only with Rosetta, and macOS has none{ setup-runner-fit-unchanged }. Install it with { $install }, which can ask for your password, and tell me once it is installed.
+setup-runner-rosettaless-when = once the person says Rosetta is installed
+# spells -run: to run is a verb here
+setup-runner-rebuild-found = Colima's VM runs no amd64 images and { $why ->
+    [qemu] is a QEMU one, which cannot use Rosetta
+   *[unrosetta] asks for Rosetta and still runs none
+}
+# spells -run: to run is a verb here
+setup-runner-rebuild-told = { setup-runner-amd64-runs }, and Colima's VM { $why ->
+    [qemu] is a QEMU one, which cannot use Rosetta
+   *[unrosetta] asks for Rosetta and still runs none
+}{ setup-runner-fit-unchanged }. Making it again as a vz VM with Rosetta mends that: { $remove }, which asks you a yes and removes the VM and its settings, then { $make }. Its images, containers and volumes stay on Colima's data disk, except for a VM made before Colima 0.9.0, whose go with it. Tell me once it is made again.
+setup-runner-rebuild-when = once the person says Colima's VM is made again
 `;

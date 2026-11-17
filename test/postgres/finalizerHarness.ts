@@ -80,6 +80,7 @@ import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import type { ChangeProposalForges } from "../../src/interpreter/changeProposal.ts";
 import { postgresEvaluationStack } from "../../src/adapters/postgres/evaluationStack.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
+import { restackRefusals } from "../../src/interpreter/stackRestack.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import { gitPromotion } from "../../src/adapters/git/gitPromotion.ts";
 import {
@@ -103,9 +104,11 @@ import {
   type CandidatePromotion,
   type FinalizationAttemptOutcome,
   type FinalizationClaim,
+  type FinalizerConfig,
   type GitPromotionPort,
   type ObservedTarget,
   type PathsDiffering,
+  type StackFolded,
   type TargetContained,
   type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
@@ -389,9 +392,10 @@ export function finalizerPassOnce(
   git: GitPromotionPort,
   label: string,
   forges?: ChangeProposalForges,
+  bounds: Partial<FinalizerConfig> = {},
 ): Promise<FinalizerPassReport> {
   return finalizerPass(
-    finalizerService(rig, git, silentFinalizerTelemetry, forges),
+    finalizerService(rig, git, silentFinalizerTelemetry, forges, bounds),
     asFinalizerOwnerId(`owner-${label}`),
     asRecoveryEpoch(project.epoch),
   );
@@ -504,6 +508,48 @@ async function finalizerReport(
     throw new Error(`finalizer harness: a queued decision was ${refused}`);
   }
   return drained.memory;
+}
+
+/**
+ * Drives the project's ticket back to finalization after a landing sent it to
+ * work: the rework's work passes and its evaluation passes, and the request
+ * that decision opens is the project's next landing.
+ */
+export async function finalizerReworked(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  memory: ProjectMemory,
+  label: string,
+): Promise<FinalizerProject> {
+  let carried = memory;
+  for (const task of [
+    workTaskIdentity(project.ticket, 2),
+    finalizerEvaluation(2),
+  ])
+    carried = await finalizerReport(
+      rig.harness,
+      project.partition,
+      carried,
+      `${label}-${task.type}`,
+      task,
+    );
+  const [row] = await rig.harness.query(
+    `SELECT request, authorizing_seq::text AS seq, request_generation::text AS generation
+       FROM finalization_request
+      WHERE tenant=$1 AND project=$2 AND state='Open'`,
+    [project.partition.tenant, project.partition.project],
+  );
+  if (row === undefined)
+    throw new Error(
+      "finalizer harness: the second evaluation opened no landing",
+    );
+  return {
+    ...project,
+    request: String(row["request"]),
+    authorizingSeq: Number(row["seq"]),
+    requestGeneration: Number(row["generation"]),
+    memory: carried,
+  };
 }
 
 /**
@@ -1169,6 +1215,8 @@ export interface FinalizerGitFake extends GitPromotionPort {
   held: CandidateHeld;
   contained: TargetContained;
   differing: PathsDiffering;
+  /** What folding a re-stack's stack answers, a clean fold unless a case says otherwise. */
+  fold: StackFolded;
   beforePromotion?: (promotion: CandidatePromotion) => Promise<void>;
 }
 
@@ -1182,6 +1230,7 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
     held: "Unheld",
     contained: "Contained",
     differing: { read: "Paths", differing: { paths: [], truncated: false } },
+    fold: { folded: "Stack", commit: target.commit, tree: target.commit },
     readPathsDiffering: () => {
       fake.acts.push("differing");
       return Promise.resolve(fake.differing);
@@ -1236,6 +1285,7 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
       throw new Error("finalizer harness: the pass asked for a commit's tree");
     },
     mintStack: () => Promise.resolve({ minted: "Conflicted" }),
+    foldStack: () => Promise.resolve(fake.fold),
     removeStack: () => Promise.resolve({ removed: "Removed" }),
     removeUnrecordedStack: () => Promise.resolve({ removed: "Removed" }),
   };
@@ -1261,14 +1311,16 @@ export function finalizerDigestOf(canonical: CanonicalFinalization): string {
 /**
  * The service one case drives: the real durable authority over the finalizer's
  * own role, a real store over the rig's own root, and the remote the case
- * scripts. The composition root wires the same set and nothing may import it, so
- * this states it a second time.
+ * scripts, each claim taking one step per pass unless the case names more. The
+ * composition root wires the same set and nothing may import it, so this states
+ * it a second time.
  */
 export function finalizerService(
   rig: FinalizerRig,
   git: GitPromotionPort,
   metrics: FinalizerTelemetry = silentFinalizerTelemetry,
   forges?: ChangeProposalForges,
+  bounds: Partial<FinalizerConfig> = {},
 ): FinalizerService {
   const artifacts = artifactStore({ root: rig.artifactRoot });
   return {
@@ -1277,12 +1329,17 @@ export function finalizerService(
     forges: forges ?? finalizerNoForges,
     ticketBriefs: postgresTicketBrief(rig.pool),
     stacks: postgresEvaluationStack(rig.pool),
+    restackRefusals: restackRefusals(),
     handoffs: artifacts,
     artifacts,
     pipelinePaths: [".github/workflows/"],
     identities: finalizerIdentities(),
     digestOf: finalizerDigestOf,
-    config: checkedFinalizerConfig(finalizerDefaults),
+    config: checkedFinalizerConfig({
+      ...finalizerDefaults,
+      claimStepsPerPassMax: 1,
+      ...bounds,
+    }),
     metrics,
   };
 }

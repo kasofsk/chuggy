@@ -7,7 +7,7 @@
 import { expect, test } from "vitest";
 
 import { copyTextEn } from "../app/copy/catalog.ts";
-import { runnerPackageOffered } from "../app/core/runners.ts";
+import { runnerPackages } from "../app/core/runners.ts";
 import {
   setupCheckFirst,
   setupRegisterRefusal,
@@ -17,6 +17,7 @@ import {
   setupRunnerStopExit,
   setupRunnerStopSaid as setupRunnerStopCopy,
 } from "../app/core/setupRunnerSaid.ts";
+import { setupRestartAll } from "../app/core/setupRunnerMachine.ts";
 import type {
   SetupRegisterRefusal,
   SetupRunnerAt,
@@ -43,7 +44,7 @@ import {
   rosterChatUnit,
   rosterLingerRefusal,
   rosterMyRunners,
-  rosterPool,
+  rosterPersonal,
   rosterUnit,
   runnerNotes,
   runnerNotesAll,
@@ -86,17 +87,11 @@ function said(kind: Kind): readonly (readonly [string, number, string])[] {
 const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   Unpackaged: [
     ["the runner package, chuggy-linux, is not installed here", 0, "Mcp"],
+    ["the runner package, chuggy-darwin, is not installed here", 0, "Mcp"],
     [
       "the runner package here is chuggy-linux 0.13.0, and chuggy setup needs 0.14.0 or later",
       0,
       "Mcp",
-    ],
-  ],
-  Mac: [
-    [
-      "this machine is a Mac, and chuggy setup puts a runner only on Linux",
-      2,
-      "Status",
     ],
   ],
   Unread: [
@@ -106,22 +101,22 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Again",
     ],
     [
-      "the site did not say of acme/widgets how its runners stand (Fault)",
+      "the site did not say of acme/widgets whether it lets your own runners take its work (Fault)",
       1,
       "Again",
     ],
     [
-      "the site did not say of acme/widgets which runners it has (Cut)",
+      "the site did not say of acme/widgets which runners of yours it knows (Cut)",
       1,
       "Again",
     ],
     [
-      "the site does not show you acme/widgets or how its runners stand",
+      "the site does not show you acme/widgets or whether it lets your own runners take its work",
       0,
       "Again",
     ],
     [
-      "the site does not show you acme/widgets or which runners it has",
+      "the site does not show you acme/widgets or which runners of yours it knows",
       0,
       "Again",
     ],
@@ -137,6 +132,21 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     ],
     [
       "the site did not say of acme/widgets whether you have a chat host (Fault)",
+      1,
+      "Again",
+    ],
+  ],
+  RunnerWithheld: [
+    [
+      "the workspace does not let you register a runner of your own",
+      0,
+      "Again",
+    ],
+  ],
+  ServeRefused: [
+    ["the site did not give your runners acme/widgets (Rejected)", 1, "Again"],
+    [
+      "the site did not let your own runners take your work in acme/widgets (Fault)",
       1,
       "Again",
     ],
@@ -158,6 +168,7 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Again",
     ],
     ["podman did not answer you without a password", 0, "Again"],
+    ["docker did not answer you without a password", 0, "Again"],
   ],
   DockerBarred: [
     [
@@ -254,6 +265,8 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       1,
       "Again",
     ],
+    ["stopping Colima's VM ended with exit 1, saying: it said why", 1, "Again"],
+    ["starting Colima's VM ended with exit 1, saying: it said why", 1, "Again"],
     [
       "removing the other chuggy MCP server from Claude Code's configuration for this folder ended with exit 1, saying: it said why",
       1,
@@ -362,7 +375,7 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   ],
   ServiceRefused: [
     [
-      `installing the runner's service ended with exit 1, saying: ${boxUnits}/${rosterUnit} serves /elsewhere.json, not ${rosterPool}; remove it if it is stale`,
+      `installing the runner's service ended with exit 1, saying: ${boxUnits}/${rosterUnit} serves /elsewhere.json, not ${rosterPersonal}; remove it if it is stale`,
       1,
       "Again",
     ],
@@ -374,20 +387,16 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   ],
   MintRefused: [
     [
-      "the site made no registration token for acme/widgets (Absent)",
+      "the site made no registration token for your runner (Absent)",
       1,
       "Again",
     ],
     [
-      "the site made no registration token for acme/widgets (Conflict)",
+      "the site made no registration token for your runner (Conflict)",
       1,
       "Again",
     ],
-    [
-      "the site made no registration token for acme/widgets (Fault)",
-      1,
-      "Again",
-    ],
+    ["the site made no registration token for your runner (Fault)", 1, "Again"],
   ],
   CheckFailed: [
     [
@@ -424,12 +433,24 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     ],
   ],
   Inactive: [
-    [`${rosterUnit} was started and is failed`, 1, "Again"],
-    [`${rosterUnit} was started and is not running`, 1, "Again"],
+    [`${rosterUnit} was started and after 30 s is failed`, 1, "Again"],
+    [`${rosterUnit} was started and after 30 s is not running`, 1, "Again"],
+    [
+      `${rosterUnit} was started and after 30 s is activating (auto-restart)`,
+      1,
+      "Again",
+    ],
+    [
+      `${rosterUnit} was started and after 30 s is activating (auto-restart)`,
+      1,
+      "Again",
+    ],
+    [`${rosterUnit} was started and after 30 s is not running`, 1, "Again"],
+    [`${rosterUnit} was started and after 30 s is spawn scheduled`, 1, "Again"],
     [`${rosterUnit} was running and after 90 s is activating`, 1, "Again"],
     [`${rosterUnit} was running and after 0 s is not running`, 1, "Again"],
     [
-      `${rosterUnit} was started and this machine's user services did not answer whether it is running`,
+      `${rosterUnit} was started and after 30 s this machine's user services did not answer whether it is running`,
       1,
       "Again",
     ],
@@ -441,12 +462,12 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   ],
   NotLive: [
     [
-      "the runner's service is running, and after 90 s the site still sees no runner of acme/widgets live",
+      "the runner's service is running as process 69807, and after 90 s the site still does not see your runner live, taking your work in acme/widgets",
       1,
       "Again",
     ],
     [
-      "the runner's service is running, and after 5 s the site lists no runner of acme/widgets",
+      "the runner's service is running, and after 5 s the site lists no runner of yours by its registration",
       1,
       "Again",
     ],
@@ -526,16 +547,40 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Again",
     ],
   ],
-  MacChatHost: [
+  Rosettaless: [
     [
-      "this machine is a Mac, and chuggy setup makes a machine your chat host only on Linux",
-      2,
-      "Status",
+      "Colima's VM on this Apple-silicon Mac runs no amd64 images, and macOS has no Rosetta to run them with",
+      0,
+      "Again",
+    ],
+  ],
+  Rebuild: [
+    [
+      "Colima's VM runs no amd64 images and is a QEMU one, which cannot use Rosetta",
+      0,
+      "Again",
+    ],
+    [
+      "Colima's VM runs no amd64 images and asks for Rosetta and still runs none",
+      0,
+      "Again",
+    ],
+  ],
+  ColimaShort: [
+    [
+      "once started again, Colima's VM has 2 GiB and runs no amd64 images, still short of what a run naming no memory or platform needs",
+      1,
+      "Again",
+    ],
+    [
+      "once started again, Colima's VM did not say its memory and did not say whether it runs amd64 images, still short of what a run naming no memory or platform needs",
+      1,
+      "Again",
     ],
   ],
 };
 
-test("every stop is said by what was found, exits zero where it waits on the person and one where something failed, and names runner again but for a machine no runner can be put on", () => {
+test("every stop is said by what was found, exits zero where it waits on the person and one where something failed, and names the command its rule waits on", () => {
   for (const kind of Object.keys(all) as Kind[])
     expect(said(kind), kind).toEqual(all[kind]);
 });
@@ -592,13 +637,14 @@ test("only a stop made before the run's first act says nothing was changed, whic
     "DockerBarred",
     "Engineless",
     "LoginMissing",
-    "Mac",
-    "MacChatHost",
     "NotAdmin",
     "Npmless",
+    "Rebuild",
+    "Rosettaless",
     "Serviceless",
     "SettingsUnread",
     "Unpackaged",
+    "fallback Refused",
     "threads Refused",
     "work Refused",
   ]);
@@ -608,11 +654,10 @@ test("only a stop made before the run's first act says nothing was changed, whic
     ),
   ).toEqual([
     "chat Fault",
+    "fallback Fault",
     "permit Fault",
-    "placement Fault",
-    "placement Refused",
-    "pools Cut",
-    "pools Refused",
+    "personal Cut",
+    "personal Refused",
   ]);
   const unread = runnerStops.Unread.map(
     (stop) => setupRunnerStopSaid(stop, widgets).tell,
@@ -661,21 +706,45 @@ test("a registration the package refused for what running again does not mend is
   ]);
 });
 
+const picksUp =
+  "What was done before it stays done, and running again picks up from there. Tell me if you want me to try again.";
+
 test("a service manager that did not answer is said as that, and never as a service that is not running", () => {
-  const [, stopped, , , unasked, silent] = runnerStops.Inactive.map((stop) =>
+  const said = runnerStops.Inactive.map((stop) =>
     setupRunnerStopSaid(stop, widgets),
   );
-  const picksUp =
-    "What was done before it stays done, and running again picks up from there. Tell me if you want me to try again.";
-  expect(stopped?.tell).toBe(
-    `The runner's service was started and is not running, so the runner is not set up yet. ${picksUp}`,
-  );
-  for (const one of [unasked, silent]) {
+  for (const one of [said[8], said[9]]) {
     expect(one?.tell).toBe(
       `This machine's user services did not answer when I asked whether the runner's service is running, so I cannot say the runner is set up. ${picksUp}`,
     );
     expect(one?.found).not.toContain("not running");
   }
+});
+
+test("a service not running is told by its state and its last exit, with what its own package means by that status: no restart, a restart on a release it installed, or a restart after its interval for any other, and no exit where it never exited", () => {
+  const tells = runnerStops.Inactive.slice(0, 6).map(
+    (stop) => setupRunnerStopSaid(stop, widgets).tell,
+  );
+  const was = (state: string, exited: string) =>
+    `The runner's service was started and is ${state}, so the runner is not set up yet. ${exited} ${picksUp}`;
+  const unrestarted = (status: number) =>
+    `It last exited with status ${String(status)}, which it exits with where chuggy denied its registration or its settings leave it no work, and it is not started again.`;
+  const updated =
+    "It last exited with status 75, which it exits with once it has installed a new release of itself, and it is started again on that release.";
+  expect(tells).toEqual([
+    was(
+      "failed",
+      "It last exited with status 1, and it is started again 10 s after each such exit.",
+    ),
+    was(
+      "not running",
+      "Its service manager gives no status it last exited with.",
+    ),
+    was("activating (auto-restart)", unrestarted(3)),
+    was("activating (auto-restart)", updated),
+    was("not running", unrestarted(0)),
+    was("spawn scheduled", updated),
+  ]);
 });
 
 test("a user the package bars from docker is told the package's reason and who they are, then its own way out: the settings changed where they name docker, and podman answering where there are none", () => {
@@ -737,8 +806,14 @@ test("each thing a run found is said as found and each thing it did as did, in w
   expect(lines("Package")).toEqual([
     `found: the runner package is installed: chuggy-linux ${boxVersion}, at ${rosterCommand}`,
   ]);
-  expect(lines("PoolGone")).toEqual([
-    `found: ${rosterPool} registered this machine as shame, and the site lists no runner of acme/widgets by that name`,
+  expect(lines("PersonalGone")).toEqual([
+    `found: ${rosterPersonal} registered this machine as your runner, and the site no longer knows that registration`,
+  ]);
+  expect([...lines("Given"), ...lines("Allowed")]).toEqual([
+    "found: your runners are given acme/widgets",
+    "did: gave your runners acme/widgets",
+    "found: acme/widgets lets your own runners take your work in it",
+    "did: set acme/widgets to let your own runners take your work in it while one is online, and a shared runner while none is",
   ]);
   expect(lines("Checked")).toEqual([
     "found: the runner's own check passed",
@@ -755,6 +830,9 @@ test("each thing a run found is said as found and each thing it did as did, in w
     `did: set ${rosterUnit}, which was running, to start when you log in`,
     `did: started ${rosterUnit}, which also starts when you log in`,
   ]);
+});
+
+test("each kind of note is said as found, as did or as a tell, by its kind alone", () => {
   const words = Object.fromEntries(
     Object.entries(runnerNotes).map(([kind, notes]) => [
       kind,
@@ -769,9 +847,11 @@ test("each thing a run found is said as found and each thing it did as did, in w
     Settings: ["found"],
     SettingsWritten: ["did"],
     Login: ["found"],
-    Pool: ["found"],
-    PoolGone: ["found"],
-    Registered: ["did"],
+    Personal: ["found"],
+    PersonalGone: ["found"],
+    PersonalRegistered: ["did"],
+    Given: ["found", "did"],
+    Allowed: ["found", "did"],
     Checked: ["found"],
     Unit: ["found"],
     UnitWritten: ["did"],
@@ -781,6 +861,7 @@ test("each thing a run found is said as found and each thing it did as did, in w
     ChatHostGone: ["found"],
     ChatHostRegistered: ["did"],
     ChatHostReplaced: ["did"],
+    ChatSettingsWritten: ["did"],
     ChatChecked: ["found"],
     ChatUnit: ["found"],
     ChatUnitWritten: ["did"],
@@ -794,6 +875,9 @@ test("each thing a run found is said as found and each thing it did as did, in w
     Enabled: ["did"],
     Started: ["did"],
     Restarted: ["did"],
+    Colima: ["tell"],
+    ColimaRan: ["did"],
+    ColimaVm: ["found"],
   });
 });
 
@@ -817,7 +901,8 @@ test("the person's chat host is said as theirs, apart from the project's runner:
     .filter((note) => /^(?:Chat|ProjectLive|Hosted)/u.test(note.note))
     .map((note) => setupRunnerNoteSaid(note, widgets).join(": "));
   expect(lines).toEqual([
-    "found: the site sees a runner of acme/widgets live",
+    `did: wrote the size of your chat host into ${boxSettings}, every other setting kept as it was: the most chats it runs at once is 3, at 2 GiB each, 6 GiB in all`,
+    "found: the site sees your runner live, taking your work in acme/widgets",
     "found: hosted runs take the work of acme/widgets, so that work needs no runner",
     `found: this machine is registered as your chat host, in ${rosterChat}`,
     `found: ${rosterChat} registered this machine as your chat host, and the site no longer knows that registration`,
@@ -863,7 +948,7 @@ test("with no Claude login the person is told what login the runner needs, where
   if (missing === undefined) throw new Error("no LoginMissing in the roster");
   expect(setupRunnerStopSaid(missing, widgets)).toEqual({
     found: `the runner has no Claude login on this machine: nothing is at ${boxLogin}`,
-    tell: `The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackageOffered.guideAddress}. Tell me once one is there.`,
+    tell: `The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackages.linux.guideAddress}. Tell me once one is there.`,
     when: "once the person says the runner's Claude login is on this machine",
     again: "Again",
   });
@@ -980,7 +1065,9 @@ test("the package refusing the Node it was run under is a refusal that lasts, wh
     expect(setupRunnerStopSaid(stop, widgets), stop.stop).toMatchObject(
       lasting,
     );
-  expect(setupRunnerStopSaid(stops[0] ?? { stop: "Mac" }, widgets).found).toBe(
+  expect(
+    setupRunnerStopSaid(stops[0] ?? { stop: "NotAdmin" }, widgets).found,
+  ).toBe(
     "registering this machine ended with exit 1: the runner package needs a newer Node than the node this machine's PATH finds first",
   );
 });
@@ -1127,17 +1214,34 @@ test("--replace naming another chat host than the person's is a stop of its own,
   });
 });
 
-test("chat-host off Linux says so, changes nothing, and gives the by-hand steps from the workspace's personal runners page, naming the checklist next", () => {
-  const [mac] = runnerStops.MacChatHost.map((stop) =>
-    setupRunnerStopSaid(stop, acme),
+test("on a Mac, an engine that did not answer is told to start Colima, the end says Colima has to run and how it starts at login, and the services restart through launchctl", () => {
+  const colima = runnerStops.Engineless.find(
+    (stop) => stop.start !== undefined,
   );
-  expect(mac).toEqual({
-    found:
-      "this machine is a Mac, and chuggy setup makes a machine your chat host only on Linux",
-    tell: `chuggy setup makes a machine your chat host only on Linux and cannot make this one it, so nothing was changed on this machine. To make it your chat host by hand, open ${rosterMyRunners}, press Register chat host, choose the machine and run the commands it shows. Tell me once it is running.`,
-    when: "once the person says their chat host is running",
-    again: "Status",
-  });
+  if (colima === undefined) throw new Error("no Engineless on a Mac");
+  expect(setupRunnerStopSaid(colima, widgets).tell).toContain("colima start");
+  expect(
+    runnerNotes.Colima.map((note) => setupRunnerNoteSaid(note, widgets)),
+  ).toEqual([
+    [
+      "tell",
+      "Docker runs in Colima on this Mac, which has to be running for the runner's services to work, and after a restart is not until it is started again. brew services start colima starts it whenever you log in.",
+    ],
+  ]);
+  expect(
+    setupRestartAll(
+      {
+        settings: boxSettings,
+        login: boxLogin,
+        pools: boxPools,
+        units: "/Users/me/Library/LaunchAgents",
+        own: boxOwn,
+      },
+      { platform: "darwin", domain: "gui/501" },
+    ),
+  ).toBe(
+    `for agent in '/Users/me/Library/LaunchAgents'/chuggy-darwin.*.plist; do launchctl kickstart -k gui/501/"$(basename "$agent" .plist)"; done`,
+  );
 });
 
 test("of a run for a workspace alone, a withheld permit, a read the site hides and the chat host seen live are said of the workspace, and nothing is said of a project's work", () => {

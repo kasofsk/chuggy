@@ -102,7 +102,7 @@ function EpicHistoryRowDrawn(props: {
           {text(epicHistoryRowSaid(row))}
         </span>
         <span className="epic-history-who">
-          <EpicActor label={epicActorLabel(newest.actor, held.creatorEmails)} />
+          <EpicActor label={epicActorLabel(newest.actor, held.creatorNames)} />
           {folded ? (
             <>
               {" · "}

@@ -11,6 +11,7 @@
 import { expect, test } from "vitest";
 
 import { copyTextEn } from "../app/copy/catalog.ts";
+import { setupReportLines } from "../app/core/setupReport.ts";
 import { setupPacing } from "../app/core/setupPacing.ts";
 import { setupFiles, SetupMachineError } from "../app/core/setupPorts.ts";
 import type { SetupAnswered } from "../app/core/setupPorts.ts";
@@ -24,6 +25,7 @@ import {
   folded,
   machineAudience,
   machineRemembered,
+  machineScript,
   machineSite,
   machineTokenFile,
   machineTokenAddress,
@@ -85,6 +87,73 @@ test("a sign-in the person finishes is remembered, and leaves neither a lock nor
   expect(machine.asked).toContain(`${machineSite}/access/v1/workspaces`);
 });
 
+/** The lines a command's report prints. */
+async function said(
+  machine: SetupMachine,
+  argv: readonly string[],
+): Promise<readonly string[]> {
+  return setupReportLines(
+    await machine.command(argv),
+    machineScript,
+    copyTextEn,
+  );
+}
+
+test("a sign-in the person finishes names the account the site says it is, and so does the bare command after it", async () => {
+  const machine = prompt();
+  machine.world.login = "ana-1";
+  expect(await machine.command(signIn)).toEqual({
+    ...ended("SignedIn"),
+    login: "ana-1",
+  });
+  expect((await said(machine, []))[0]).toBe(
+    `site: ${machineSite}, signed in as ana-1`,
+  );
+  expect((await said(machine, ["sign-in"]))[0]).toBe(
+    `site: ${machineSite}, signed in as ana-1`,
+  );
+});
+
+test("sign-out leaves no sign-in on this machine and asks nothing of anyone, and the bare command after it is not signed in", async () => {
+  const machine = prompt();
+  await machine.command(signIn);
+  expect(machine.store.has(machineTokenFile())).toBe(true);
+  const asked = machine.asked.length;
+  expect(await machine.command(["sign-out"])).toEqual({
+    report: "SignedOutHere",
+    site: machineSite,
+    held: true,
+  });
+  expect(machine.store.has(machineTokenFile())).toBe(false);
+  expect(machine.asked).toHaveLength(asked);
+  expect(machine.lock).toBeUndefined();
+  expect((await said(machine, []))[0]).toBe(
+    `site: ${machineSite}, not signed in`,
+  );
+  expect(await machine.command(["sign-out"])).toEqual({
+    report: "SignedOutHere",
+    site: machineSite,
+    held: false,
+  });
+});
+
+test("a page the browser was opened on is still told by its address", async () => {
+  const machine = setupMachine();
+  let opened = "";
+  machine.opened = (address) => {
+    opened = address;
+    return Promise.resolve();
+  };
+  const lines = await said(machine, signIn);
+  expect(opened).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/u);
+  expect(lines).toContain(`did: opened ${opened} in a browser`);
+  expect(lines.filter((line) => line.startsWith("tell: "))).toEqual([
+    expect.stringContaining(
+      `Open ${opened} in the browser where you are signed in to GitHub as the account you want to use.`,
+    ),
+  ]);
+});
+
 test("the issuer is asked as the setup client, to answer on this machine's own address", async () => {
   const machine = setupMachine();
   let first = "";
@@ -137,7 +206,6 @@ test("a person slower than one wait finishes in the same page, and the next sign
     site: machineSite,
     port: machine.listening(),
     opened: "Opened",
-    waitedSecs: 2,
   });
   const attached = machine.command(signIn);
   await machine.person();
@@ -153,7 +221,6 @@ test("a sign-in paced quicker looks for its page as often as its pacing says, an
   const began = machine.nowMs;
   expect(await machine.command(signIn)).toMatchObject({
     report: "SignInWaiting",
-    waitedSecs: 2,
   });
   expect(machine.nowMs - began).toBe(
     pollMs + Math.ceil(2_000 / pollMs) * pollMs,
@@ -170,7 +237,6 @@ test("a page nobody finishes is waited on until the wait asked has passed on the
   };
   expect(await machine.command(signIn)).toMatchObject({
     report: "SignInWaiting",
-    waitedSecs: 2,
   });
   const waitedMs = machine.nowMs - openedAtMs;
   expect(waitedMs).toBeGreaterThanOrEqual(2_000);
@@ -207,7 +273,6 @@ test("where no browser can be opened the address is handed over at once, and the
     site: machineSite,
     port: machine.listening(),
     opened: "NotOpened",
-    waitedSecs: 0,
   });
   const attached = machine.command(signIn);
   await machine.person();
@@ -567,7 +632,7 @@ test("only the address the issuer was given is read as its answer", async () => 
     statuses.push((await machine.browse(back.href)).status);
   };
   expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
-  expect(statuses).toEqual([404, 404, 302, 400, 200]);
+  expect(statuses).toEqual([404, 404, 302, 400, 303]);
 });
 
 test("an answer with a code and no state, or sent as anything but a page load, is not read and the page goes on waiting", async () => {
@@ -586,7 +651,7 @@ test("an answer with a code and no state, or sent as anything but a page load, i
     statuses.push((await machine.browse(back.href)).status);
   };
   expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
-  expect(statuses).toEqual([400, 405, 405, 200]);
+  expect(statuses).toEqual([400, 405, 405, 303]);
 });
 
 test("a page answered once answers nothing a second time", async () => {
@@ -678,7 +743,7 @@ test("an answer being read when the bound passes is read to its end", async () =
   expect(machine.files.get(setupFiles.signIn)).toContain("Waiting");
   machine.lock = undefined;
   await machine.advance(1_000);
-  expect((await answering).status).toBe(200);
+  expect((await answering).status).toBe(303);
   expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
 });
 
@@ -813,23 +878,28 @@ test("a wait that finds its listener gone writes over no page started since", as
   expect(noted(machine)).toMatchObject({ note: "Waiting", site: other });
 });
 
-test("each page the browser is shown is the catalog's words: nothing here for a request that is not the answer, already answered for a second answer, and signed in for the person's own", async () => {
+test("the person's own answer is sent to the site's home with no page, and a forged or second answer is shown the catalog's words", async () => {
   const machine = setupMachine();
-  const pages: string[] = [];
-  const shown = (answered: SetupAnswered): void => {
-    pages.push(answered.page === undefined ? "" : copyTextEn(answered.page));
-  };
+  const answers: SetupAnswered[] = [];
   machine.opened = async (address) => {
     const first = await machine.browse(address);
     const back = machine.authorized(first.location ?? "", true);
-    shown(await machine.browse(answer(machine, "code=code-1&state=forged")));
-    shown(await machine.browse(back));
-    shown(await machine.browse(back));
+    answers.push(
+      await machine.browse(answer(machine, "code=code-1&state=forged")),
+      await machine.browse(back),
+      await machine.browse(back),
+    );
   };
   expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
-  expect(pages).toEqual([
-    "There is nothing here.",
-    "Signed in to chuggy. You can close this tab and go back to your terminal.",
-    "This sign-in page has already been answered.",
+  const [forged, own, second] = answers;
+  expect(own).toEqual({ status: 303, location: `${machineSite}/` });
+  expect([forged, second].map((shown) => shown?.status)).toEqual([400, 409]);
+  expect(
+    [forged, second].map((shown) =>
+      shown?.page === undefined ? "" : copyTextEn(shown.page),
+    ),
+  ).toEqual([
+    "There is nothing here",
+    "This sign-in page has already been answered",
   ]);
 });

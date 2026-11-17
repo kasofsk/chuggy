@@ -198,9 +198,9 @@ export function threadActions(
 /**
  * The word one turn's kind is drawn as, total over the wire's roster so a kind
  * it grows stops compiling here. `UserMessage` is what the mailbox calls a
- * member's own turn and `Message` is what a member calls it; the two the thread
- * door cannot produce are named rather than defaulted, because a default is how
- * a kind nobody drew reaches a reader as the wrong noun.
+ * member's own turn and `Message` is what a member calls it; each is named
+ * rather than defaulted, because a default is how a kind nobody drew reaches a
+ * reader as the wrong noun.
  */
 export function threadTurnKindWord(kind: SessionTurnInputKind): Copy {
   switch (kind) {
@@ -208,10 +208,6 @@ export function threadTurnKindWord(kind: SessionTurnInputKind): Copy {
       return { id: "chat-turn-message" };
     case "Wake":
       return { id: "chat-turn-wake" };
-    case "Observation":
-      return { id: "chat-turn-observation" };
-    case "Inquiry":
-      return { id: "chat-turn-inquiry" };
     case "OfferReply":
       return { id: "chat-turn-offer-reply" };
   }

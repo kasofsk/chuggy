@@ -155,6 +155,7 @@ const idleIntervalVariable = "CHUG_FINALIZER_IDLE_INTERVAL_MS";
 const shutdownDrainVariable = "CHUG_FINALIZER_SHUTDOWN_DRAIN_MS";
 const requestClaimLeaseVariable = "CHUG_FINALIZER_REQUEST_CLAIM_LEASE_SECS";
 const requestsPerPassVariable = "CHUG_FINALIZER_REQUESTS_PER_PASS_MAX";
+const claimStepsPerPassVariable = "CHUG_FINALIZER_CLAIM_STEPS_PER_PASS_MAX";
 const holdPassesVariable = "CHUG_FINALIZER_HOLD_PASSES_MAX";
 const preparationRestartsVariable = "CHUG_FINALIZER_PREPARATION_RESTARTS_MAX";
 const preparationsPerPassVariable = "CHUG_FINALIZER_PREPARATIONS_PER_PASS_MAX";
@@ -457,6 +458,11 @@ function finalizerSettingsFinalizer(
       environment,
       requestsPerPassVariable,
       finalizerDefaults.requestsPerPassMax,
+    ),
+    claimStepsPerPassMax: finalizerSettingsBoundOr(
+      environment,
+      claimStepsPerPassVariable,
+      finalizerDefaults.claimStepsPerPassMax,
     ),
     holdPassesMax: finalizerSettingsBoundOr(
       environment,

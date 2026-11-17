@@ -471,10 +471,6 @@ export type DispatchViewResult = (typeof dispatchViewResults)[number];
 /** What the scheduler is willing to claim about the counts it reports. */
 export const schedulerFreshnesses = ["Unknown"] as const;
 
-/** Whether the selector is running at all, at an installation or for one project. */
-export const selectorModes = ["Running", "Paused"] as const;
-export type SelectorMode = (typeof selectorModes)[number];
-
 /** What a minted forge credential may do to the repository it is scoped to. */
 export const forgeCredentialPermissions = ["read", "write", "propose"] as const;
 export type ForgeCredentialPermission =
@@ -513,6 +509,11 @@ export type ForgeAppClaimName = (typeof forgeAppClaims)[number];
 export const forgeInstallationPermissions = ["Current", "Behind"] as const;
 export type ForgeInstallationPermissionsName =
   (typeof forgeInstallationPermissions)[number];
+
+/** Whether an installation was given every repository on its account or chosen ones. */
+export const forgeRepositorySelections = ["All", "Selected"] as const;
+export type ForgeRepositorySelectionName =
+  (typeof forgeRepositorySelections)[number];
 
 /** Why a bound repository came away from the configuration step with no configurations of its own. */
 export const projectRepositoryConfigurationDeferrals = [
@@ -556,22 +557,6 @@ export const repositoryConfigurationImportAbsences = [
 export type RepositoryConfigurationImportAbsenceName =
   (typeof repositoryConfigurationImportAbsences)[number];
 
-/** Whether a selector proposal is dispatched or held for a reviewer. */
-export const selectorDispatchModes = ["Automatic", "ApprovalRequired"] as const;
-export type SelectorDispatchMode = (typeof selectorDispatchModes)[number];
-
-/** What a reviewer answers a held proposal: send its dispatches, or end them. */
-export const selectorReviewOutcomes = ["Approved", "Rejected"] as const;
-export type SelectorReviewOutcome = (typeof selectorReviewOutcomes)[number];
-
-/** Where one of a decision's dispatches stands, which is what the log says landed. */
-export const selectorDeliveryStates = [
-  "AwaitingApproval",
-  "Pending",
-  "Submitted",
-  "Terminal",
-] as const;
-export type SelectorDeliveryState = (typeof selectorDeliveryStates)[number];
 export type SchedulerFreshness = (typeof schedulerFreshnesses)[number];
 
 export const draftStates = ["Draft", "Released", "Deleted"] as const;
@@ -691,6 +676,16 @@ export const changeProposalMerges = [
   "NotMergeable",
 ] as const;
 
+/** What the forge answered one merge asked of a proposal, restating `allChangeProposalMerges`. */
+export const changeProposalMergeOutcomes = [
+  "Merged",
+  "NotMergeable",
+  "HeadMoved",
+  "Denied",
+  "Unavailable",
+  "Ambiguous",
+] as const;
+
 /** Why a stored change proposal was not mergeable, restating `allChangeProposalUnmergeableSettled`. */
 export const changeProposalMergeReasons = ["Conflict"] as const;
 
@@ -801,28 +796,8 @@ export const nativeActionResolutions = [
 ] as const;
 export type NativeActionResolution = (typeof nativeActionResolutions)[number];
 
-/** How closely the lead says a project needs watching, which one decision may move. */
-export const selectorAttentions = [
-  "Monitoring",
-  "Attention",
-  "Stopped",
-] as const;
-export type SelectorAttention = (typeof selectorAttentions)[number];
-
-/**
- * Which end of the decision log a page is read from. The log is appended to, so
- * a reader following it forward pages from `oldest` with a cursor, and a reader
- * showing what the lead just did asks for `newest` and gets one page.
- */
-export const selectorHistoryOrders = ["oldest", "newest"] as const;
-export type SelectorHistoryOrder = (typeof selectorHistoryOrders)[number];
-
-/** What the lead did about one ticket, in the order it did it. */
-export const agenticRefusalEvents = ["Refused", "Lifted"] as const;
-export type AgenticRefusalEvent = (typeof agenticRefusalEvents)[number];
-
 /** What a session is for, which is what decides whose turns it takes and what it may write. */
-export const sessionKinds = ["Lead", "Thread", "Inquiry"] as const;
+export const sessionKinds = ["Thread"] as const;
 export type SessionKind = (typeof sessionKinds)[number];
 
 /** What a session may do, which the worker image maps to its agent runtime's own tools. */
@@ -834,11 +809,19 @@ export const sessionCapabilities = [
   "DraftAuthor",
   "DraftOriginate",
   "TicketDispatch",
-  "LeadDecision",
   "MemberRead",
   "ThreadOffer",
 ] as const;
 export type SessionCapability = (typeof sessionCapabilities)[number];
+
+/**
+ * Capabilities no session holds any more that a chat host's poll may still
+ * name. A reader accepts each and drops it, so a host whose operator
+ * configured one is served the rest rather than refused.
+ */
+export const sessionCapabilitiesRetired = ["LeadDecision"] as const;
+export type SessionCapabilityRetired =
+  (typeof sessionCapabilitiesRetired)[number];
 
 /**
  * What a person's own agent may do beyond any session, reaching chuggy through
@@ -848,6 +831,7 @@ export type SessionCapability = (typeof sessionCapabilities)[number];
 export const personalAgentCapabilities = [
   "ProjectSettings",
   "AgentAccounts",
+  "ProposalMerge",
 ] as const;
 export type PersonalAgentCapability =
   (typeof personalAgentCapabilities)[number];
@@ -932,9 +916,8 @@ export const placementRouteSources = [
 export type PlacementRouteSource = (typeof placementRouteSources)[number];
 
 /**
- * How a project's lead runs on its route: on the members' own Claude login or
- * the deployment's credential, or subsidized, in cluster on a profile the
- * deployment publishes.
+ * What a placement's `leadOffering` may name. The placement route answers and
+ * accepts it only for older clients, and the core's placement tool reads it.
  */
 export const leadOfferings = ["Own", "Subsidized"] as const;
 export type LeadOffering = (typeof leadOfferings)[number];
@@ -946,49 +929,6 @@ export const sessionRunnerStandings = [
   "Live",
 ] as const;
 export type SessionRunnerStanding = (typeof sessionRunnerStandings)[number];
-
-/**
- * Why a selector cycle that needed a project's lead was refused one: on a
- * hosted route the tenant grants the lead's principal no hosted runs, or a
- * subsidized lead's tenant or the whole deployment has spent its month's
- * subsidy, and on a runner route none of the project's runners is live, or
- * every live one is paused for its owner's Claude account, on every credential
- * it named or, where it named none, on the whole agent.
- */
-export const leadAdmissionRefusals = [
-  "HostedRunsNotGranted",
-  "RunnerOffline",
-  "UsagePaused",
-  "SubsidyExhausted",
-] as const;
-export type LeadAdmissionRefusal = (typeof leadAdmissionRefusals)[number];
-
-/**
- * Why a project holds no lead where no refusal stands to date it: nothing waits
- * on a dispatch decision, its selector is paused, the site's selector may not
- * read it and so never sweeps it, a released ticket waits for a selector pass
- * that has not yet taken it up, or one waits where the API names no selector
- * and so cannot say whether any sweeps it.
- */
-export const leadAbsencesUntimed = [
-  "NotNeeded",
-  "Paused",
-  "SelectorNotGranted",
-  "AwaitingSelector",
-  "SelectorUnnamed",
-] as const;
-export type LeadAbsenceUntimed = (typeof leadAbsencesUntimed)[number];
-
-/**
- * What holds a lead that stands from dispatching where no refusal dates it, the
- * untimed absences that outrank a kept refusal: its selector is paused, or the
- * site's selector may not read the project.
- */
-export const leadHolds = [
-  "Paused",
-  "SelectorNotGranted",
-] as const satisfies readonly LeadAbsenceUntimed[];
-export type LeadHold = (typeof leadHolds)[number];
 
 /**
  * When a pool other than its owner's personal runner may take an owned
@@ -1020,20 +960,6 @@ export type PersonalRunnerPriority = (typeof personalRunnerPriorities)[number];
  * so the code is shared rather than spelled at each end.
  */
 export const hostedRunsNotGrantedCode = "HostedRunsNotGranted";
-
-/**
- * What the inquiry door answers a question of a subsidized lead whose tenant
- * or deployment has spent this month's subsidy, shared as the hosted-runs
- * code is.
- */
-export const subsidyExhaustedCode = "SubsidyExhausted";
-
-/**
- * What the inquiry door answers a question of a lead whose project offers a
- * subsidized lead while the standing one still runs on the footing it was
- * opened on, shared as the hosted-runs code is.
- */
-export const leadNotSubsidizedCode = "LeadNotSubsidized";
 
 /**
  * What a release or an update answers a caller whose draft runs less than its
@@ -1080,6 +1006,35 @@ export const ticketTakeRefusalCodes = [
 export type TicketTakeRefusalCode = (typeof ticketTakeRefusalCodes)[number];
 
 /**
+ * What a caller not holding the project's `merge_proposals` permit is refused
+ * a merge of a ticket's pull request under. A console says which permit it
+ * lacked, so the code is shared.
+ */
+export const proposalMergeForbiddenCode = "ProposalMergeForbidden";
+
+/** The code a merge of a ticket's pull request the forge did not make is answered under, beside the reason it names. */
+export const proposalMergeRefusedCode = "ProposalMergeRefused";
+
+/**
+ * Why chuggy did not merge a ticket's pull request when a person asked: it is
+ * closed unmerged; it conflicts with its base; the forge's own rules block it,
+ * a branch protection, a required review or check, or a draft; its base has
+ * moved past it; its head was pushed after it was evaluated; the forge would
+ * not merge it and said nothing of why; or the forge refused this deployment's
+ * app.
+ */
+export const proposalMergeRefusals = [
+  "Closed",
+  "Conflicting",
+  "Blocked",
+  "Behind",
+  "HeadMoved",
+  "NotMergeable",
+  "AppDenied",
+] as const;
+export type ProposalMergeRefusal = (typeof proposalMergeRefusals)[number];
+
+/**
  * What the project-artifact routes answer while the store cannot, and what the
  * message door answers when it cannot ask the store whether an image it was
  * named is the project's. Shared so a console can say an image was the reason.
@@ -1108,18 +1063,10 @@ export type ProjectImageRefusalCode = (typeof projectImageRefusalCodes)[number];
  */
 export const noRunnerCode = "NoRunner";
 
-/** What a placement naming a lead offering the deployment does not admit on its route is answered with; shared for the same reason. */
-export const leadOfferingNotAdmittedCode = "LeadOfferingNotAdmitted";
-
-/** What a review of a decision no longer held is answered with; shared for the same reason. */
-export const selectorProposalNotHeldCode = "ProposalNotHeld";
-
 /** Who or what put a turn in a session's mailbox. */
 export const sessionTurnInputKinds = [
-  "Observation",
   "UserMessage",
   "Wake",
-  "Inquiry",
   "OfferReply",
 ] as const;
 export type SessionTurnInputKind = (typeof sessionTurnInputKinds)[number];

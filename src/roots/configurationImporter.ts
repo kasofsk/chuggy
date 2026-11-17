@@ -14,12 +14,16 @@
  * is attempted for itself and written on its own line, so what one is refused
  * for leaves the other imported.
  *
- * A SKIP IS NOT A FAILURE AND A FAILURE IS NOT THE RUN'S END. A repository
- * holding no commit, or no configuration directory at its head, is passed over
- * — seeding one belongs to the bind and to the configuration route — and a
- * head holding no action directory declares none, which is imported as that.
+ * A SKIP IS NOT A FAILURE AND A BINDING'S FAILURE IS NOT THE RUN'S. A
+ * repository holding no commit, or no configuration directory at its head, is
+ * passed over — seeding one belongs to the bind and to the configuration route
+ * — and a head holding no action directory declares none, which is imported as
+ * that.
  * Everything else is reported on its own line, every other binding is still
- * attempted, and the run exits non-zero if any failed.
+ * attempted, and a run with any failed says how many on one more line and
+ * still exits zero: a binding to a repository the forge no longer lets it read
+ * would otherwise fail every run for good while every other binding imports,
+ * and a run that failed at its own job would read the same.
  *
  * A REMOTE READ GIT DIED ON IS TRIED ONCE MORE, after a pause, and only while
  * the run's retries together stay inside the bound below, so a forge refusing
@@ -35,7 +39,7 @@
  * A BINDING THIS RUN IMPORTED IS THEN FOLLOWED: each Pending ticket on it that
  * follows its newest revision is moved where the head changes what it runs.
  * The sweep stops short of the job's deadline and says so, and a ticket it
- * failed on leaves the run non-zero as a binding does.
+ * failed on is reported and counted as a binding is, leaving the run zero.
  */
 
 import { githubInstallationTokensSettleMs } from "../adapters/forge/githubInstallationTokens.ts";
@@ -72,9 +76,10 @@ import {
   asAuthoritySubject,
 } from "../interpreter/operationInbox.ts";
 import {
+  boundRepositoryImportFinding,
   boundRepositoryImportLineWhere,
-  boundRepositoryImportRefusal,
   boundRepositoryImportReport,
+  boundRepositoryImportTruncation,
   importBoundRepositories,
   repositoryBindingsPerImportMax,
 } from "../interpreter/repositoryConfiguration.ts";
@@ -238,13 +243,14 @@ async function main(): Promise<void> {
       for (const { line, failed } of boundRepositoryImportReport(bound))
         (failed ? process.stderr : process.stdout).write(`${line}\n`);
     const failed = await configurationImporterFollow(pool, run, startedAtMs);
-    const refused = [
-      boundRepositoryImportRefusal(run, repositoryBindingsPerImportMax),
-      ...(failed === 0
-        ? []
-        : [`following failed on ${String(failed)} tickets or bindings`]),
-    ].filter((refusal) => refusal !== undefined);
-    if (refused.length > 0) throw new Error(refused.join("; "));
+    const finding = boundRepositoryImportFinding(run, failed);
+    if (finding !== undefined)
+      process.stderr.write(`configuration import: ${finding}\n`);
+    const refusal = boundRepositoryImportTruncation(
+      run,
+      repositoryBindingsPerImportMax,
+    );
+    if (refusal !== undefined) throw new Error(refusal);
   } finally {
     await pool.end();
   }

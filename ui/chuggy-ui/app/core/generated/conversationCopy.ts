@@ -35,7 +35,6 @@ export interface ConversationCopy {
   readonly "conversation-context": Record<never, never>;
   readonly "conversation-sent-from": Record<never, never>;
   readonly "conversation-observation": Record<never, never>;
-  readonly "conversation-inquiry": Record<never, never>;
   readonly "conversation-copy-answer": Record<never, never>;
   readonly "conversation-marker-compaction": Record<never, never>;
   readonly "conversation-marker-elided": {

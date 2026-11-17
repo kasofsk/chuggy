@@ -25,11 +25,6 @@ export interface RunnersCopy {
   readonly "runners-standing-live": Record<never, never>;
   readonly "runners-route-hosted": Record<never, never>;
   readonly "runners-route-pool": Record<never, never>;
-  readonly "runners-route-subsidized": Record<never, never>;
-  readonly "runners-subsidized-about": {
-    readonly model: unknown;
-  };
-  readonly "runners-subsidized-about-unnamed": Record<never, never>;
   readonly "runners-source-override": Record<never, never>;
   readonly "runners-source-project": Record<never, never>;
   readonly "runners-source-default": Record<never, never>;
@@ -56,7 +51,6 @@ export interface RunnersCopy {
   };
   readonly "runners-ask-advanced": Record<never, never>;
   readonly "runners-ask-create": Record<never, never>;
-  readonly "runners-ask-cancel": Record<never, never>;
   readonly "runners-package-linux": Record<never, never>;
   readonly "runners-package-darwin": Record<never, never>;
   readonly "runners-package-needs-linux": Record<never, never>;
@@ -76,11 +70,12 @@ export interface RunnersCopy {
   readonly "runners-capability-twice": Record<never, never>;
   readonly "runners-steps-install": Record<never, never>;
   readonly "runners-steps-register": Record<never, never>;
-  readonly "runners-steps-finish": Record<never, never>;
   readonly "runners-steps-copy-install": Record<never, never>;
   readonly "runners-steps-copy-register": Record<never, never>;
   readonly "runners-steps-expires": Record<never, never>;
-  readonly "runners-steps-guide": Record<never, never>;
+  readonly "runners-register-line-about": Record<never, never>;
+  readonly "runners-register-by-hand": Record<never, never>;
+  readonly "runners-register-project": Record<never, never>;
   readonly "runners-personal-title": Record<never, never>;
   readonly "runners-personal-withheld": Record<never, never>;
   readonly "runners-personal-count": {
@@ -147,7 +142,6 @@ export interface RunnersCopy {
   readonly "runners-chat-host-removal": {
     readonly short: unknown;
   };
-  readonly "runners-chat-host-claude-code-about": Record<never, never>;
   readonly "runners-chat-host-replaces": {
     readonly short: unknown;
   };
@@ -167,6 +161,11 @@ export interface RunnersCopy {
   readonly "runners-wait-waiting": Record<never, never>;
   readonly "runners-wait-offline": Record<never, never>;
   readonly "runners-wait-unable": Record<never, never>;
+  readonly "runners-wait-room": {
+    readonly free: unknown;
+    readonly needed: unknown;
+  };
+  readonly "runners-wait-pools": Record<never, never>;
   readonly "runners-fallback-title": Record<never, never>;
   readonly "runners-fallback-about": Record<never, never>;
   readonly "runners-fallback-none": Record<never, never>;
@@ -185,7 +184,6 @@ export interface RunnersCopy {
   readonly "runners-placement-work": Record<never, never>;
   readonly "runners-placement-evaluation": Record<never, never>;
   readonly "runners-placement-chat": Record<never, never>;
-  readonly "runners-placement-lead": Record<never, never>;
   readonly "runners-placement-saved": Record<never, never>;
   readonly "runners-placement-landed": Record<never, never>;
   readonly "runners-placement-unhosted": Record<never, never>;

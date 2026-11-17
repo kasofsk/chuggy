@@ -21,7 +21,6 @@ import type {
 } from "../../../src/contract/responses.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
 import { inboxAnswered, inboxEntry, inboxItemOf } from "./inboxFixture.ts";
-import { leadRefusals } from "./leadFixture.ts";
 import {
   answer,
   apiDouble,
@@ -94,17 +93,14 @@ const approval = inboxEntry(
   { actions: [approvalAsked] },
 );
 
-const proposal = inboxEntry(
-  { ticket: 7, phase: "Pending", sequence: 7, ...ticketInstants },
-  { proposals: [{ decision: "dec-one", tickets: [7] }] },
-);
+const phased = inboxEntry({
+  ticket: 42,
+  phase: "Pending",
+  sequence: 42,
+  ...ticketInstants,
+});
 
-const refusal = inboxEntry(
-  { ticket: 42, phase: "Pending", sequence: 42, ...ticketInstants },
-  { refusals: leadRefusals(false).refusals },
-);
-
-const everyKind = [inboxEntry(escalatedTicket(4)), proposal, refusal, approval];
+const everyKind = [inboxEntry(escalatedTicket(4)), phased, approval];
 
 /** The inbox over the entries `held` answers with as it is read, and the
  * stream its frames are pushed down. */
@@ -143,18 +139,14 @@ function primariesOf(ticket: number): number {
   return inboxItemOf(ticket).querySelectorAll(".btn-primary").length;
 }
 
-test("the items are grouped approvals, proposals, questions, each under a heading with its count", async () => {
+test("the items are grouped approvals, then questions, each under a heading with its count", async () => {
   drawInbox(() => everyKind);
   await settled();
   expect(
     screen
       .getAllByRole("heading", { level: 2 })
       .map((heading) => heading.textContent),
-  ).toStrictEqual([
-    "Approvals11 waiting",
-    "Proposals11 waiting",
-    "Questions22 waiting",
-  ]);
+  ).toStrictEqual(["Approvals11 waiting", "Questions22 waiting"]);
   expect(
     screen.getAllByRole("list").map((list) => ({
       group: list.getAttribute("aria-label"),
@@ -162,7 +154,6 @@ test("the items are grouped approvals, proposals, questions, each under a headin
     })),
   ).toStrictEqual([
     { group: "Approvals", items: 1 },
-    { group: "Proposals", items: 1 },
     { group: "Questions", items: 2 },
   ]);
   expect(
@@ -178,7 +169,6 @@ test("a group no item is in is not drawn, and an empty inbox is one line", async
     screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.id),
   ).toHaveLength(1);
   expect(screen.queryByRole("heading", { name: /^Approvals/u })).toBeNull();
-  expect(screen.queryByRole("heading", { name: /^Proposals/u })).toBeNull();
   entries = [];
   await turned(() => {
     server.push(
@@ -198,18 +188,14 @@ test("every answer the inbox offers is reachable from the item it answers, with 
   drawInbox(() => everyKind);
   await settled();
   expect(buttonsOf(11)).toStrictEqual(["Approve", "Reject"]);
-  expect(buttonsOf(7)).toStrictEqual(["approve", "reject"]);
   expect(buttonsOf(4)).toStrictEqual(["resume", "revoke"]);
   expect(buttonsOf(42)).toStrictEqual([]);
   expect(
     within(inboxItemOf(42)).getByText("no action can be sent from here yet"),
   ).toBeDefined();
-  for (const ticket of [11, 7, 4]) expect(primariesOf(ticket)).toBe(1);
+  for (const ticket of [11, 4]) expect(primariesOf(ticket)).toBe(1);
   expect(
     within(inboxItemOf(4)).getByRole("button", { name: "resume" }).className,
-  ).toContain("btn-primary");
-  expect(
-    within(inboxItemOf(7)).getByRole("button", { name: "approve" }).className,
   ).toContain("btn-primary");
   expect(
     within(inboxItemOf(11)).getByRole("button", { name: "Approve" }).className,
@@ -254,14 +240,6 @@ test("revoke, which cannot be undone, asks in a dialog; a rejection, which can, 
   });
   expect(screen.queryByRole("dialog")).toBeNull();
 
-  await turned(() => {
-    within(inboxItemOf(7)).getByRole("button", { name: "reject" }).click();
-  });
-  expect(
-    within(inboxItemOf(7)).getByRole("group", {
-      name: "Reject this proposal?",
-    }),
-  ).toBeDefined();
   await turned(() => {
     within(inboxItemOf(11)).getByRole("button", { name: "Reject" }).click();
   });

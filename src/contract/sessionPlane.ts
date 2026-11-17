@@ -16,8 +16,6 @@ import {
   countSchema,
   identitySchema,
   isBoundedText,
-  leadAutoCompactWindowTokensMax,
-  leadAutoCompactWindowTokensMin,
   nativeHttpPageItemsMax,
   sessionCapabilitiesMax,
   sessionEfforts,
@@ -41,7 +39,7 @@ import {
   type WorkerPlaneAnswers,
 } from "./planeAnswers.ts";
 import {
-  leadStoreStreamResponseSchema,
+  sessionStoreStreamResponseSchema,
   sessionContextOfferedSchema,
 } from "./responses.ts";
 import {
@@ -52,7 +50,10 @@ import {
   sessionTurnInputKinds,
 } from "./rosters.ts";
 import { sessionLiveEventSchema } from "./sessionLive.ts";
-import { allThreadJobWakeReasons } from "./threadWake.ts";
+import {
+  allThreadJobWakeReasons,
+  threadTicketWakeSettings,
+} from "./threadWake.ts";
 import type { WorkerContractFeature } from "./workerContract.ts";
 import {
   workerCredentialAbsentSchema,
@@ -90,7 +91,11 @@ export {
   sessionContainerEnds,
   sessionContextCauses,
 } from "./rosters.ts";
-export { allThreadJobWakeReasons } from "./threadWake.ts";
+export {
+  allThreadJobWakeReasons,
+  threadTicketWakeSettings,
+  threadTicketWakesEffective,
+} from "./threadWake.ts";
 export {
   isSessionLiveText,
   sessionLiveBlockKinds,
@@ -109,6 +114,7 @@ export const sessionPlaneRoutes = {
   turnStopped: { method: "POST", path: "/v1/session/turn/stopped" },
   held: { method: "POST", path: "/v1/session/held" },
   standing: { method: "PUT", path: "/v1/session/standing" },
+  ticketWakes: { method: "PUT", path: "/v1/session/ticket-wakes" },
   wake: { method: "POST", path: "/v1/session/wake" },
   storeStreams: { method: "GET", path: "/v1/session/store" },
   storeBatch: { method: "PUT", path: "/v1/session/store/*" },
@@ -137,6 +143,7 @@ export const sessionPlaneRouteFeatures: Readonly<
   turnStopped: null,
   held: null,
   standing: null,
+  ticketWakes: "ThreadTicketWakes",
   wake: null,
   storeStreams: null,
   storeBatch: null,
@@ -282,6 +289,25 @@ export const sessionStandingSchema = z.strictObject({
 });
 
 /**
+ * A thread's choice of whether it is woken for its tickets, made by its own
+ * live attempt: `On`, `Off`, or `null` to follow its member's chat host.
+ */
+export const sessionTicketWakesChoiceSchema = z.strictObject({
+  thread: z.enum(threadTicketWakeSettings).nullable(),
+});
+
+/**
+ * Whether a thread is woken for its tickets: its own choice and its member's
+ * chat host's setting, each absent where none was made, and the setting that
+ * follows from them, `threadTicketWakesEffective`.
+ */
+export const sessionTicketWakesSchema = z.object({
+  thread: z.enum(threadTicketWakeSettings).optional(),
+  host: z.enum(threadTicketWakeSettings).optional(),
+  effective: z.enum(threadTicketWakeSettings),
+});
+
+/**
  * One wake a thread's attempt on its member's chat host offers its own thread:
  * why, and the name of the job, watch or timer it is about, which is all the
  * turn carries. `event` is the attempt's own identity for what happened, and
@@ -311,16 +337,13 @@ export const sessionEndedSchema = z.strictObject({
 /**
  * What a pod is told of its own session, each optional fact absent where the
  * session has none, as `model` and `effort` are where it opened under the
- * site's session model and the runtime's own effort. `autoCompactWindow` is a
- * lead's alone: the context, in tokens, at which its runtime compacts the
- * conversation; `systemPromptOwn` is present only where the session runs
- * on its own system prompt and loads nothing of its project's settings; and
- * `shellCredentialHanded` is present only for a thread a chat host whose
- * settings name its threads' capabilities holds, whose session hands its shell
- * the API's origin, its bearer, its tenant and its project, in
- * `sessionApiOriginVariable`, `sessionBearerVariable`, `sessionTenantVariable`
- * and `sessionProjectVariable`, where a session told nothing hands its shell
- * none of them.
+ * site's session model and the runtime's own effort. `shellCredentialHanded`
+ * is present only for a thread a chat host whose settings name its threads'
+ * capabilities holds, whose session hands its shell the API's origin, its
+ * bearer, its tenant and its project, in `sessionApiOriginVariable`,
+ * `sessionBearerVariable`, `sessionTenantVariable` and
+ * `sessionProjectVariable`, where a session told nothing hands its shell none
+ * of them.
  */
 export const sessionFactsAnswerSchema = z.object({
   tenant: identitySchema,
@@ -333,17 +356,10 @@ export const sessionFactsAnswerSchema = z.object({
   credentialSlot: sessionIdentitySchema,
   agentReference: sessionIdentitySchema.optional(),
   systemPrompt: z.string().min(1).max(agentSessionPromptCharsMax).optional(),
-  autoCompactWindow: z
-    .number()
-    .int()
-    .min(leadAutoCompactWindowTokensMin)
-    .max(leadAutoCompactWindowTokensMax)
-    .optional(),
   model: sessionModelSchema.optional(),
   effort: z.enum(sessionEfforts).optional(),
-  forkFrom: sessionIdentitySchema.optional(),
-  systemPromptOwn: z.literal(true).optional(),
   shellCredentialHanded: z.literal(true).optional(),
+  ticketWakes: sessionTicketWakesSchema.optional(),
 });
 
 /** One turn as the mailbox hands it over, its input opaque to the plane. */
@@ -361,7 +377,9 @@ export const sessionTurnStoppedAnswerSchema = z.object({
 
 /** The streams a session's store holds under the prefix asked for, answered whole or refused. */
 export const sessionStoreStreamsAnswerSchema = z.object({
-  streams: z.array(leadStoreStreamResponseSchema).max(nativeHttpPageItemsMax),
+  streams: z
+    .array(sessionStoreStreamResponseSchema)
+    .max(nativeHttpPageItemsMax),
 });
 
 /**
@@ -447,6 +465,12 @@ export const sessionPlaneAnswers = workerPlaneAnswersRefusingVersions({
     400: workerPlaneStopSchema,
     401: workerPlaneStopSchema,
     409: workerPlaneRefusalSchema(["Fenced", "NotChatHostThread"]),
+  },
+  ticketWakes: {
+    200: sessionTicketWakesSchema,
+    400: workerPlaneStopSchema,
+    401: workerPlaneStopSchema,
+    409: workerPlaneRefusalSchema(["Fenced", "NotThread"]),
   },
   wake: {
     200: sessionWokenAnswerSchema,

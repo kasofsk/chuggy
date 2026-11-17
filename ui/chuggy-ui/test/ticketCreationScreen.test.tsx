@@ -285,6 +285,32 @@ test("a submit in flight keeps its outcome through a read of the project that fa
   expect(drafts).toBe(1);
 });
 
+test("Create ticket is busy from its press until the submit is answered", async () => {
+  const drafted = heldAnswer();
+  await drawCreation(
+    () => undefined,
+    (served) =>
+      ((url: string, init?: { readonly method?: string }) =>
+        init?.method === "POST" && url.endsWith("/drafts")
+          ? drafted.answered
+          : served(url, init)) as typeof fetch,
+  );
+  await offeredNames();
+  await turned(() => {
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "development" }));
+  });
+  fireEvent.change(purposeBox(), { target: { value: "ship it" } });
+  const submit = screen.getByRole("button", { name: "Create ticket" });
+  expect(submit.getAttribute("aria-busy")).not.toBe("true");
+  await turned(() => {
+    fireEvent.click(submit);
+  });
+  expect(submit.getAttribute("aria-busy")).toBe("true");
+  drafted.release(answer({ error: { code: "ProjectNotActive" } }, 409));
+  await settled();
+  expect(submit.getAttribute("aria-busy")).not.toBe("true");
+});
+
 /**
  * The form reaches no address bar, so the way to a ticket its submit found is
  * this screen's to draw. The release is declined before it is accepted, which

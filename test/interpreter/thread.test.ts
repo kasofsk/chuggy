@@ -132,15 +132,7 @@ test("the default standing lets a woken thread act only as far as its owner's in
   );
   assert.match(
     threadStandingRulesDefault,
-    /A ticket the lead refused is reported, never dispatched because of a wake\./u,
-  );
-  assert.match(
-    threadStandingRulesDefault,
-    /the lead's decisions are the lead's/u,
-  );
-  assert.match(
-    threadStandingRulesDefault,
-    /a dispatch on your owner's word is theirs and not the lead's/u,
+    /You act through the same commands your owner has in the console, recorded as their act\./u,
   );
 });
 
@@ -357,15 +349,17 @@ test("the purpose lets an instruction to dispatch reach tickets not yet ready, a
 });
 
 /**
- * A paused selector keeps its lead session, so a thread told the lead dispatches
- * what is released waits on a dispatch that never comes; a project whose lead
- * has not opened yet is one a lead will dispatch.
+ * A released ticket waits on whoever may dispatch it, so a thread that says
+ * nothing of that leaves its owner waiting on a run nobody started. No lead
+ * dispatches, so a thread told of one waits on a dispatch that never comes.
  */
-test("the purpose says releasing starts nothing, and which read_lead answers mean no lead will dispatch", () => {
+test("the purpose says releasing starts nothing until someone who may dispatch does, and names no lead", () => {
   assert.match(
     threadPurposeStanding,
-    /Releasing starts nothing: a released ticket runs once it is dispatched, by the project's lead unless read_lead answers a lead standing `paused`, or no lead for a reason other than `NotNeeded` or `AwaitingSelector`, and there only on someone's word, so say so when you release there\./u,
+    /Releasing starts nothing: a released ticket runs only once someone who may dispatch dispatches it, so say so when you release, and dispatch only on your owner's word\./u,
   );
+  assert.doesNotMatch(threadPurposeStanding, /lead/u);
+  assert.doesNotMatch(threadStandingRulesDefault, /lead/u);
 });
 
 /**
@@ -570,12 +564,6 @@ const seededDrafts = (count: number) =>
     summary: `draft ${String(index + 1)}`,
   }));
 
-const seededRefusals = (count: number) =>
-  Array.from({ length: count }, (_unused, index) => ({
-    ticket: index + 1,
-    reason: `refused ${String(index + 1)}`,
-  }));
-
 const seededImages = (count: number): ThreadSeededImage[] =>
   Array.from({ length: count }, (_unused, index) => ({
     artifact: `image/png:token-${String(index + 1)}`,
@@ -613,11 +601,10 @@ test("a turn naming no image is byte for byte what it was", () => {
     threadTurnInput("what is blocking 42?", {
       standingRules: projectStandingRules,
       drafts: [],
-      refusals: [],
     }),
     threadTurnInput(
       "what is blocking 42?",
-      { standingRules: projectStandingRules, drafts: [], refusals: [] },
+      { standingRules: projectStandingRules, drafts: [] },
       [],
     ),
   );
@@ -644,7 +631,6 @@ test("a first turn naming an image carries the seeding block, then the images se
   const seeding = {
     standingRules: projectStandingRules,
     drafts: [],
-    refusals: [],
   };
 
   const input = threadTurnInput("what is blocking 42?", seeding, images);
@@ -660,7 +646,6 @@ test("what a turn's images section names, the contract's reader reads back, with
   const seeding = {
     standingRules: projectStandingRules,
     drafts: [],
-    refusals: [],
   };
   const block = `${threadSeedingText(seeding)}\n\n${threadImagesSection(images)}`;
 
@@ -687,7 +672,6 @@ test("a turn whose images section names a fetch path is read back the same", () 
   const seeding = {
     standingRules: projectStandingRules,
     drafts: [],
-    refusals: [],
   };
   const recorded = `${threadImagesHeading}
 
@@ -716,7 +700,6 @@ test("the images section is never shed", () => {
       northStar: "ship the console",
       standingRules: projectStandingRules,
       drafts: seededDrafts(nativeHttpPageItemsMax),
-      refusals: seededRefusals(32),
     },
     images,
   );
@@ -794,7 +777,6 @@ test("a first turn sent from a page carries the seeding block, the page, the ima
   const seeding = {
     standingRules: projectStandingRules,
     drafts: [],
-    refusals: [],
   };
 
   const input = threadTurnInput("what is blocking it?", seeding, images, page);
@@ -825,7 +807,6 @@ test("the page section is never shed, and one that cannot fit is refused", () =>
       northStar: "ship the console",
       standingRules: projectStandingRules,
       drafts: seededDrafts(nativeHttpPageItemsMax),
-      refusals: seededRefusals(32),
     },
     undefined,
     widestPage,
@@ -847,12 +828,10 @@ test("a first turn puts the seeding block in front of the message", () => {
     northStar: "ship the console",
     standingRules: threadStandingRulesDefault,
     drafts: seededDrafts(2),
-    refusals: seededRefusals(1),
   });
 
   assert.ok(input.endsWith("what is blocking 42?"));
   assert.ok(input.indexOf("ship the console") < input.indexOf("draft 1"));
-  assert.ok(input.indexOf("draft 2") < input.indexOf("refused 1"));
   assert.ok(input.includes(threadStandingRulesDefault));
 });
 
@@ -866,7 +845,6 @@ test("a first turn writes the boundary between the block and the message", () =>
   const input = threadTurnInput("what is blocking 42?", {
     standingRules: projectStandingRules,
     drafts: [],
-    refusals: [],
   });
 
   assert.equal(
@@ -874,13 +852,12 @@ test("a first turn writes the boundary between the block and the message", () =>
     `${threadSeedingText({
       standingRules: projectStandingRules,
       drafts: [],
-      refusals: [],
     })}\n\n${threadTurnBoundaryHeading}\n\nwhat is blocking 42?`,
   );
   assert.equal(input.split(threadTurnBoundaryHeading).length, 2);
 });
 
-test("the drafts shed oldest first, and only then the refusals", () => {
+test("the drafts shed oldest first", () => {
   const filler = "d".repeat(Math.ceil(threadTurnInputCharsMax / 8));
   const drafts = Array.from({ length: 32 }, (_unused, index) => ({
     ticket: index + 1,
@@ -891,32 +868,11 @@ test("the drafts shed oldest first, and only then the refusals", () => {
   const input = threadTurnInput(message, {
     standingRules: threadStandingRulesDefault,
     drafts,
-    refusals: seededRefusals(2),
   });
 
   assert.ok(input.length <= threadTurnInputCharsMax);
   assert.ok(!input.includes(`[1]${filler}`), "the oldest draft survived");
   assert.ok(input.includes(`[32]${filler}`), "the newest draft was shed");
-  assert.ok(input.includes("refused 1"), "a refusal was shed before a draft");
-});
-
-test("the refusals shed oldest first once no draft is left to shed", () => {
-  const filler = "r".repeat(Math.ceil(threadTurnInputCharsMax / 8));
-  const refusals = Array.from({ length: 32 }, (_unused, index) => ({
-    ticket: index + 1,
-    reason: `[${String(index + 1)}]${filler}`,
-  }));
-
-  const input = threadTurnInput("x".repeat(threadMessageCharsMax), {
-    standingRules: threadStandingRulesDefault,
-    drafts: seededDrafts(4),
-    refusals,
-  });
-
-  assert.ok(input.length <= threadTurnInputCharsMax);
-  assert.ok(!input.includes("draft 1"), "a draft survived a shed refusal");
-  assert.ok(!input.includes(`[1]${filler}`), "the oldest refusal survived");
-  assert.ok(input.includes(`[32]${filler}`), "the newest refusal was shed");
 });
 
 test("the North Star and the standing rules are never shed", () => {
@@ -924,7 +880,6 @@ test("the North Star and the standing rules are never shed", () => {
     northStar: "ship the console",
     standingRules: projectStandingRules,
     drafts: seededDrafts(nativeHttpPageItemsMax),
-    refusals: seededRefusals(32),
   });
 
   assert.ok(input.includes("ship the console"));
@@ -937,7 +892,6 @@ test("an input that cannot fit with everything sheddable shed is refused", () =>
       northStar: "n".repeat(selectorSettingsTextCharsMax),
       standingRules: threadStandingRulesDefault,
       drafts: [],
-      refusals: [],
     }),
   );
 });
@@ -958,7 +912,6 @@ test("both settings texts at the bound the route accepts still compose", () => {
       northStar,
       standingRules,
       drafts: seededDrafts(nativeHttpPageItemsMax),
-      refusals: seededRefusals(32),
     },
     undefined,
     widestPage,
@@ -970,7 +923,7 @@ test("both settings texts at the bound the route accepts still compose", () => {
   assert.ok(input.length <= threadTurnInputCharsMax);
   assert.ok(
     input.length <= sessionTurnInputCharsMax,
-    "the widest first turn is a row the mailbox column will not take",
+    "the widest first turn is a turn the session plane will not hand a pod",
   );
 });
 
@@ -980,11 +933,9 @@ test("what the seeding weighs beyond its two texts is inside the named ceiling",
     northStar: "",
     standingRules: "",
     drafts: [{ ticket: 1, summary: "" }],
-    refusals: [{ ticket: 1, reason: "" }],
   })}\n\n${threadPageSection(widestPage)}\n\n${threadTurnBoundaryHeading}\n\n`;
 
   assert.ok(headings.includes("open drafts"));
-  assert.ok(headings.includes("Standing against"));
   assert.ok(headings.length <= threadSeedingFixedCharsMax);
   assert.equal(
     threadSeedingCharsMax,
@@ -996,7 +947,6 @@ test("the seeding block omits the sections it has nothing for", () => {
   const bare = threadSeedingText({
     standingRules: projectStandingRules,
     drafts: [],
-    refusals: [],
   });
 
   assert.ok(!bare.includes("North Star"));
@@ -1015,7 +965,6 @@ test("the composed block is character for character what it was", () => {
     northStar: "Ship the console.",
     standingRules: threadStandingRulesDefault,
     drafts: [{ ticket: 7, summary: "the rail" }],
-    refusals: [{ ticket: 9, reason: "no brief" }],
   });
 
   assert.equal(
@@ -1027,10 +976,6 @@ Ship the console.
 # Your open drafts
 
 - 7 — the rail
-
-# Standing against them
-
-- 9 — no brief
 
 # How you act on this project
 

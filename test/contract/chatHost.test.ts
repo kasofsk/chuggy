@@ -12,6 +12,7 @@ import {
   chatProtocolFrameBytesMax,
   chatProtocolLine,
   chatProtocolSpoken,
+  chatHostSettingsSchema,
   chatProtocolVersion,
   chatSupervisorRefusals,
   parseChatHostFrame,
@@ -539,4 +540,13 @@ test("a pod's envelope still names its deadline", () => {
     true,
   );
   assert.equal(poolEnvelopeSchema.safeParse(envelope).success, false);
+});
+
+test("a host's settings naming a retired session capability are read without it", () => {
+  assert.deepEqual(
+    chatHostSettingsSchema.parse({
+      sessionCapabilities: ["ProjectRead", "LeadDecision"],
+    }),
+    { sessionCapabilities: ["ProjectRead"] },
+  );
 });

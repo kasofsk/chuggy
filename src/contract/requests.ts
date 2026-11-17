@@ -13,20 +13,12 @@ import { themeDocumentSchema } from "./appearance.ts";
 import {
   countSchema,
   digestSchema,
-  dispatchViewSchemaVersion,
   forgeAuthorizationTextCharsMax,
   forgeAuthorizationVerifierCharsMax,
   forgeAuthorizationVerifierCharsMin,
   identitySchema,
-  inquiryQuestionCharsMax,
   approvalFeedbackCharsMax,
   isApprovalFeedback,
-  leadAutoCompactWindowTokensMax,
-  leadAutoCompactWindowTokensMin,
-  leadDispatchesMax,
-  selectorAllowlistNameCharsMax,
-  selectorAllowlistNamesMax,
-  selectorReviewFeedbackCharsMax,
   selectorSettingsTextCharsMax,
   sessionEfforts,
   sessionModelSchema,
@@ -55,9 +47,6 @@ import {
   leadOfferings,
   personalRunnerPriorities,
   placementRoutes,
-  selectorDispatchModes,
-  selectorModes,
-  selectorReviewOutcomes,
 } from "./rosters.ts";
 import {
   workerPoolCapabilitiesSchema,
@@ -125,20 +114,6 @@ export const publicMutationSchema = z.discriminatedUnion("mutation", [
     mutation: z.literal("ManualDispatch"),
     ticket: ticketNumberSchema,
     expectedTicketVersion: countSchema,
-  }),
-  z.strictObject({
-    mutation: z.literal("ProposeDispatch"),
-    ticket: ticketNumberSchema,
-    expectedTicketVersion: countSchema,
-    observedViewToken: z.strictObject({
-      tenant: bodyIdentitySchema,
-      project: bodyIdentitySchema,
-      recoveryEpoch: bodyIdentitySchema,
-      schemaVersion: z.literal(dispatchViewSchemaVersion),
-      watermark: countSchema,
-      digest: digestSchema,
-    }),
-    selectorDecisionReference: z.string(),
   }),
 ]);
 
@@ -312,9 +287,8 @@ export const executionPlacementSchema = z.strictObject({
 });
 
 /**
- * Where a project's threads and its lead run, both written whole, and the
- * lead's offering. One not named is kept while the lead stays `InCluster`, and
- * is `Own` where it moves to `Pool`.
+ * Where a project's threads run, written whole. `lead` and `leadOffering` are
+ * accepted from older clients and ignored: there is no lead.
  */
 export const sessionPlacementSchema = z.strictObject({
   thread: z.enum(placementRoutes),
@@ -352,8 +326,8 @@ const agentAccountPercentSchema = z.number().int().min(1).max(100);
 
 /**
  * How a person's own account pauses one agent, written whole: the share of
- * each window a reading pauses it at, and whether their threads and inquiries
- * pause with it. The lead of a pool they registered always does.
+ * each window a reading pauses it at, and whether their threads pause with
+ * it.
  */
 export const agentAccountSettingsSchema = z.strictObject({
   fiveHourPercent: agentAccountPercentSchema,
@@ -405,49 +379,20 @@ export const submissionSchema = z.strictObject({
   mutation: publicMutationSchema,
 });
 
-const selectorLimitSchema = z.number().int().safe().positive();
 const selectorSettingsTextSchema = z
   .string()
   .min(1)
   .max(selectorSettingsTextCharsMax);
-const selectorAllowlistSchema = z
-  .array(z.string().min(1).max(selectorAllowlistNameCharsMax))
-  .max(selectorAllowlistNamesMax);
 
 /**
- * What one project sets for itself, an absent field meaning the installation
- * default (for a model the site's session model, for an effort the runtime's
- * own choice), so a write clears an override by omitting it.
- * `concurrentDecisions` and `selectionsPerMinute` are not here, because they
- * bound one shared pool rather than one project's behaviour.
+ * What one project sets for its threads, an absent field meaning the default
+ * (for the standing rules the code's own, for the model the site's session
+ * model, for the effort the runtime's own choice), so a write clears an
+ * override by omitting it.
  */
 export const selectorProjectOverridesSchema = z.strictObject({
   northStar: selectorSettingsTextSchema.optional(),
   threadStandingRules: selectorSettingsTextSchema.optional(),
-  mode: z.enum(selectorModes).optional(),
-  dispatchMode: z.enum(selectorDispatchModes).optional(),
-  basePrompt: selectorSettingsTextSchema.optional(),
-  modelAllowlist: selectorAllowlistSchema.optional(),
-  toolAllowlist: selectorAllowlistSchema.optional(),
-  limits: z
-    .strictObject({
-      tokensPerDecision: selectorLimitSchema.optional(),
-      millisecondsPerDecision: selectorLimitSchema.optional(),
-      toolCallsPerDecision: selectorLimitSchema.optional(),
-      dispatchesPerDecision: selectorLimitSchema
-        .max(leadDispatchesMax)
-        .optional(),
-      inputBytesPerDecision: selectorLimitSchema.optional(),
-      candidatePagesPerDecision: selectorLimitSchema.optional(),
-      autoCompactWindow: selectorLimitSchema
-        .min(leadAutoCompactWindowTokensMin)
-        .max(leadAutoCompactWindowTokensMax)
-        .optional(),
-    })
-    .optional(),
-  operationalContextMaxAgeMs: selectorLimitSchema.optional(),
-  leadModel: sessionModelSchema.optional(),
-  leadEffort: z.enum(sessionEfforts).optional(),
   threadModel: sessionModelSchema.optional(),
   threadEffort: z.enum(sessionEfforts).optional(),
 });
@@ -456,12 +401,6 @@ export const selectorProjectOverridesSchema = z.strictObject({
 export const selectorProjectSettingsSchema = z.strictObject({
   expectedRevision: countSchema,
   overrides: selectorProjectOverridesSchema,
-});
-
-/** A reviewer's answer to one held proposal, with the note the lead reads beside it. */
-export const selectorProposalReviewSchema = z.strictObject({
-  outcome: z.enum(selectorReviewOutcomes),
-  feedback: z.string().min(1).max(selectorReviewFeedbackCharsMax).optional(),
 });
 
 /**
@@ -516,19 +455,6 @@ export const threadRenameRequestSchema = z.strictObject({
  * thread stays on the threads page. */
 export const threadHideRequestSchema = z.strictObject({
   hidden: z.boolean(),
-});
-
-/**
- * What a member asks the lead aside: the session and the turn they mint
- * themselves, and the question they typed. Both identities are the body's
- * rather than a header's for the reason `submissionSchema` gives — opening is
- * idempotent on them, so a retried post answers the ordinal it already has
- * instead of forking the lead a second time.
- */
-export const leadInquirySchema = z.strictObject({
-  session: bodyIdentitySchema,
-  turn: bodyIdentitySchema,
-  question: z.string().min(1).max(inquiryQuestionCharsMax),
 });
 
 /**

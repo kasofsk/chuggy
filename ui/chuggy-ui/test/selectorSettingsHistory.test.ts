@@ -41,16 +41,16 @@ test("a revision names the fields it moved and nothing it left alone", () => {
   const diffs = selectorSettingsHistoryDiffs([
     revisionAt(15, {
       northStar: "ship the console",
-      basePrompt: "choose the newest",
-      limits: { tokensPerDecision: 17_523_063 },
+      threadStandingRules: "- Ask first.",
+      threadModel: "opus",
     }),
     revisionAt(14, {
       northStar: "ship the console",
-      basePrompt: "choose the next ticket",
-      limits: { tokensPerDecision: 12_000_000 },
+      threadStandingRules: "- Ask before deleting.",
+      threadModel: "opus",
     }),
   ]);
-  expect(labelsOf(diffs, 0)).toStrictEqual(["Base prompt", "Tokens"]);
+  expect(labelsOf(diffs, 0)).toStrictEqual(["Standing rules"]);
 });
 
 test("a revision that moved nothing has an empty change list", () => {
@@ -66,7 +66,7 @@ test("a revision that moved nothing has an empty change list", () => {
 test("the oldest row of a read has no changes, not a diff against nothing", () => {
   const diffs = selectorSettingsHistoryDiffs([
     revisionAt(12, { northStar: "ship the console" }),
-    revisionAt(11, { northStar: "ship the lead page" }),
+    revisionAt(11, { northStar: "ship the settings page" }),
   ]);
   expect(diffs[1]?.changes).toBeUndefined();
 });
@@ -85,21 +85,10 @@ function sidesOf(
 test("an override cleared is a change, and both sides say what stood", () => {
   const diffs = selectorSettingsHistoryDiffs([
     revisionAt(14, {}),
-    revisionAt(13, { mode: "Paused" }),
+    revisionAt(13, { threadModel: "opus" }),
   ]);
-  expect(labelsOf(diffs, 0)).toStrictEqual(["Mode"]);
-  expect(sidesOf(diffs)).toStrictEqual([["Paused", "Default"]]);
-});
-
-test("a mode is drawn under its label, never its wire code", () => {
-  const diffs = selectorSettingsHistoryDiffs([
-    revisionAt(14, { mode: "Running", dispatchMode: "ApprovalRequired" }),
-    revisionAt(13, { mode: "Paused", dispatchMode: "Automatic" }),
-  ]);
-  expect(sidesOf(diffs)).toStrictEqual([
-    ["Paused", "Running"],
-    ["Automatic", "Dispatch approval"],
-  ]);
+  expect(labelsOf(diffs, 0)).toStrictEqual(["Chat model"]);
+  expect(sidesOf(diffs)).toStrictEqual([["opus", "Default"]]);
 });
 
 /** A text a person typed is data, so one that spells the default's word is
@@ -112,48 +101,8 @@ test("a text override that spells the default's word is a change from the defaul
   expect(labelsOf(diffs, 0)).toStrictEqual(["North Star"]);
   expect(diffs[0]?.changes?.[0]?.after).toBe("Default");
   expect(diffs[0]?.changes?.[0]?.before).toStrictEqual({
-    id: "lead-settings-default",
+    id: "settings-threads-default",
   });
-});
-
-/** The limits are one override on the wire and six rows on the page, so a diff
- * comparing the limit sets whole would name `Limits` rather than the ceiling
- * that moved. */
-test("a limit that moved is named by its own row and not by its wire key", () => {
-  const diffs = selectorSettingsHistoryDiffs([
-    revisionAt(14, {
-      limits: { tokensPerDecision: 100, dispatchesPerDecision: 3 },
-    }),
-    revisionAt(13, {
-      limits: { tokensPerDecision: 100, dispatchesPerDecision: 2 },
-    }),
-  ]);
-  expect(labelsOf(diffs, 0)).toStrictEqual(["Dispatches"]);
-});
-
-/** Every override the wire admits is compared, including the ones no section
- * draws: a change to an allowlist that read as `No change` would be a lie the
- * page tells about its own history. */
-test("an override no section draws is still named when it moves", () => {
-  const diffs = selectorSettingsHistoryDiffs([
-    revisionAt(14, { toolAllowlist: ["Read", "Grep"] }),
-    revisionAt(13, { toolAllowlist: ["Read"] }),
-  ]);
-  expect(labelsOf(diffs, 0)).toStrictEqual(["Tools"]);
-  expect(diffs[0]?.changes?.[0]?.before).toBe("Read");
-});
-
-test("the base prompt is the one field a diff row draws in the mono face", () => {
-  const diffs = selectorSettingsHistoryDiffs([
-    revisionAt(14, { basePrompt: "b", northStar: "y" }),
-    revisionAt(13, { basePrompt: "a", northStar: "x" }),
-  ]);
-  expect(
-    diffs[0]?.changes?.map((change) => [copyTextEn(change.label), change.mono]),
-  ).toStrictEqual([
-    ["North Star", false],
-    ["Base prompt", true],
-  ]);
 });
 
 /** A prompt of many paragraphs whose last sentence moved is unreadable drawn
@@ -173,30 +122,12 @@ test("a text that grew differs at the line the shorter one does not have", () =>
 
 test("a model or effort that moved is named by its row, a model as its name and an effort as its word", () => {
   const diffs = selectorSettingsHistoryDiffs([
-    revisionAt(13, {
-      leadModel: "sonnet",
-      leadEffort: "medium",
-      threadModel: "claude-opus-5-5",
-      threadEffort: "xhigh",
-    }),
+    revisionAt(13, { threadModel: "claude-opus-5-5", threadEffort: "xhigh" }),
     revisionAt(12, {}),
   ]);
-  expect(labelsOf(diffs, 0)).toStrictEqual([
-    "Lead model",
-    "Lead effort",
-    "Chat model",
-    "Chat effort",
-  ]);
-  expect(
-    (diffs[0]?.changes ?? []).map((change) => [
-      copyOrDataText(copyTextEn, change.before),
-      copyOrDataText(copyTextEn, change.after),
-      change.mono,
-    ]),
-  ).toStrictEqual([
-    ["Default", "sonnet", false],
-    ["Default", "Medium", false],
-    ["Default", "claude-opus-5-5", false],
-    ["Default", "Extra high", false],
+  expect(labelsOf(diffs, 0)).toStrictEqual(["Chat model", "Chat effort"]);
+  expect(sidesOf(diffs)).toStrictEqual([
+    ["Default", "claude-opus-5-5"],
+    ["Default", "Extra high"],
   ]);
 });

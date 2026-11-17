@@ -12,8 +12,7 @@
  *
  * A PERSON ANSWERS AN EVALUATION APPROVAL, NEVER AN AGENT. A request a session
  * bearer carried is a session's, whichever principal it is authorized as, and
- * the site's selector is the lead's own identity; neither answers one,
- * whatever permits it holds.
+ * does not answer one, whatever permits it holds.
  *
  * NOT FOUND IS WHAT A CALLER WHO MAY NOT READ IS TOLD. Every other refusal is
  * named, so a member who may write the project but is not an approver is told
@@ -38,11 +37,6 @@ export interface NativeActionCaller {
   readonly viaSession?: SessionId;
 }
 
-/** The principals that are agents rather than people, which is the site's selector where the deployment names one. */
-export interface NativeActionAgents {
-  readonly selector?: Principal;
-}
-
 /** What one action asks, as far as who may answer it: its kind, and an evaluation approval's approvers. */
 export type NativeActionAsked =
   | { readonly kind: "TicketEscalation" }
@@ -63,14 +57,9 @@ export type NativeActionAnswerer =
       >;
     };
 
-/** Whether the caller is an agent or a session, neither of which a person's approval is asked of. */
-function nativeActionAnswererIsAgent(
-  agents: NativeActionAgents,
-  caller: NativeActionCaller,
-): boolean {
-  return (
-    caller.viaSession !== undefined || caller.principal === agents.selector
-  );
+/** Whether a session carried the caller's request, which a person's approval is not asked of. */
+function nativeActionAnswererIsAgent(caller: NativeActionCaller): boolean {
+  return caller.viaSession !== undefined;
 }
 
 /** The authority under which a caller who reads the project is one of the approvers, or none. */
@@ -91,7 +80,6 @@ async function nativeActionAnswererApproves(
 /** Whether `caller` may answer the action `asked` describes, asked of the project's access. */
 export async function nativeActionAnswerer(
   access: ProjectAccess,
-  agents: NativeActionAgents,
   caller: NativeActionCaller,
   partition: Partition,
   asked: NativeActionAsked,
@@ -108,7 +96,7 @@ export async function nativeActionAnswerer(
   }
   const read = await access.authorize(caller.principal, partition, "Read");
   if (read === undefined) return { answerer: "NotFound" };
-  if (nativeActionAnswererIsAgent(agents, caller))
+  if (nativeActionAnswererIsAgent(caller))
     return { answerer: "Refused", code: "ApproverNotAPerson" };
   const authority = await nativeActionAnswererApproves(
     access,
@@ -184,7 +172,6 @@ export async function nativeActionsAnswerable<
   },
 >(
   access: ProjectAccess,
-  agents: NativeActionAgents,
   caller: NativeActionCaller,
   partition: Partition,
   actions: readonly Action[],
@@ -194,7 +181,6 @@ export async function nativeActionsAnswerable<
   for (const action of actions) {
     const answerer = await nativeActionAnswerer(
       once,
-      agents,
       caller,
       partition,
       nativeActionAskedOf(action),

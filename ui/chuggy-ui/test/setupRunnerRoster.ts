@@ -4,7 +4,8 @@
  * the suites that print them check every one.
  */
 
-import { runnerPackageOffered } from "../app/core/runners.ts";
+import { runnerPackages } from "../app/core/runners.ts";
+import { setupRestartAll } from "../app/core/setupRunnerMachine.ts";
 import { setupRegisterRefusals } from "../app/core/setupRunnerSaid.ts";
 import type {
   SetupClaudeCredential,
@@ -20,21 +21,36 @@ import {
   boxChatFile,
   boxChatUnitName,
   boxOwn,
-  boxPoolFile,
-  boxPoolName,
+  boxPersonalFile,
+  boxPersonalUnitName,
   boxPools,
   boxPrefix,
   boxSettings,
-  boxUnitName,
   boxUnits,
   boxVersion,
 } from "./setupRunnerBox.ts";
 import { setupSiteMember } from "./setupSite.ts";
 
-const guide = runnerPackageOffered.guideAddress;
+const guide = runnerPackages.linux.guideAddress;
 export const rosterCommand = `${boxPrefix}/bin/chuggy-linux`;
-export const rosterPool = boxPoolFile("acme", "widgets");
-export const rosterUnit = boxUnitName("acme", "widgets");
+export const rosterPersonal = boxPersonalFile("acme", setupSiteMember);
+export const rosterUnit = boxPersonalUnitName("acme", setupSiteMember);
+
+/** An `Inactive` stop of the roster's unit, on Linux and straight after its start unless `given` says otherwise. */
+function rosterInactive(
+  given: Partial<Extract<SetupRunnerStop, { readonly stop: "Inactive" }>>,
+): Extract<SetupRunnerStop, { readonly stop: "Inactive" }> {
+  return {
+    stop: "Inactive",
+    unit: rosterUnit,
+    platform: "linux",
+    state: "inactive (dead)",
+    exit: undefined,
+    waited: "Started",
+    waitedSecs: 30,
+    ...given,
+  };
+}
 export const rosterChat = boxChatFile("acme", setupSiteMember);
 export const rosterChatUnit = boxChatUnitName("acme", setupSiteMember);
 
@@ -56,6 +72,21 @@ export const rosterPeople =
 export const rosterMyRunners =
   "https://chuggy.example/tenants/acme/settings/runner";
 
+/** What restarts every runner service of a Linux machine's. */
+export const rosterRestart = setupRestartAll(
+  {
+    settings: boxSettings,
+    login: boxLogin,
+    pools: boxPools,
+    units: boxUnits,
+    own: boxOwn,
+  },
+  { platform: "linux" },
+);
+
+/** What starts Colima whenever the person logs in. */
+export const rosterColimaAtLogin = "brew services start colima";
+
 /** What `loginctl` says where turning lingering on wants a password. */
 export const rosterLingerRefusal =
   "Could not enable linger: Interactive authentication required.";
@@ -75,6 +106,8 @@ const acts: readonly SetupRunnerAct[] = [
   "Reload",
   "Start",
   "Restart",
+  "ColimaStop",
+  "ColimaStart",
   "ServerRemoved",
   "ServerAdded",
 ];
@@ -84,21 +117,32 @@ export const runnerStops: {
     readonly stop: Kind;
   })[];
 } = {
-  Mac: [{ stop: "Mac" }],
   Unpackaged: [
-    { stop: "Unpackaged", found: undefined, least: "0.14.0" },
     {
       stop: "Unpackaged",
+      program: "chuggy-linux",
+      found: undefined,
+      least: "0.14.0",
+    },
+    {
+      stop: "Unpackaged",
+      program: "chuggy-darwin",
+      found: undefined,
+      least: "0.23.0",
+    },
+    {
+      stop: "Unpackaged",
+      program: "chuggy-linux",
       found: { command: rosterCommand, version: "0.13.0" },
       least: "0.14.0",
     },
   ],
   Unread: [
     { stop: "Unread", read: "work", outcome: "Refused" },
-    { stop: "Unread", read: "placement", outcome: "Fault" },
-    { stop: "Unread", read: "pools", outcome: "Cut" },
-    { stop: "Unread", read: "placement", outcome: "Refused" },
-    { stop: "Unread", read: "pools", outcome: "Refused" },
+    { stop: "Unread", read: "fallback", outcome: "Fault" },
+    { stop: "Unread", read: "personal", outcome: "Cut" },
+    { stop: "Unread", read: "fallback", outcome: "Refused" },
+    { stop: "Unread", read: "personal", outcome: "Refused" },
     { stop: "Unread", read: "threads", outcome: "Refused" },
     { stop: "Unread", read: "permit", outcome: "Fault" },
     { stop: "Unread", read: "chat", outcome: "Fault" },
@@ -112,8 +156,18 @@ export const runnerStops: {
         { engine: "docker", answered: "No" },
         { engine: "podman", answered: "Absent" },
       ],
+      start: undefined,
     },
-    { stop: "Engineless", asked: [{ engine: "podman", answered: "No" }] },
+    {
+      stop: "Engineless",
+      asked: [{ engine: "podman", answered: "No" }],
+      start: undefined,
+    },
+    {
+      stop: "Engineless",
+      asked: [{ engine: "docker", answered: "No" }],
+      start: "colima start",
+    },
   ],
   DockerBarred: [
     {
@@ -205,7 +259,7 @@ export const runnerStops: {
       failed: {
         how: "Exit",
         exit: 1,
-        excerpt: `${boxUnits}/${rosterUnit} serves /elsewhere.json, not ${rosterPool}; remove it if it is stale`,
+        excerpt: `${boxUnits}/${rosterUnit} serves /elsewhere.json, not ${rosterPersonal}; remove it if it is stale`,
       },
     },
     {
@@ -260,31 +314,30 @@ export const runnerStops: {
     },
   ],
   Inactive: [
-    {
-      stop: "Inactive",
-      unit: rosterUnit,
-      state: "failed",
-      waitedSecs: undefined,
-    },
-    { stop: "Inactive", unit: rosterUnit, state: "", waitedSecs: undefined },
-    { stop: "Inactive", unit: rosterUnit, state: "activating", waitedSecs: 90 },
-    { stop: "Inactive", unit: rosterUnit, state: "", waitedSecs: 0 },
-    {
-      stop: "Inactive",
-      unit: rosterUnit,
-      state: undefined,
-      waitedSecs: undefined,
-    },
-    { stop: "Inactive", unit: rosterUnit, state: undefined, waitedSecs: 3 },
+    rosterInactive({ state: "failed", exit: 1 }),
+    rosterInactive({ state: "" }),
+    rosterInactive({ state: "activating (auto-restart)", exit: 3 }),
+    rosterInactive({ state: "activating (auto-restart)", exit: 75 }),
+    rosterInactive({ platform: "darwin", state: "not running", exit: 0 }),
+    rosterInactive({ platform: "darwin", state: "spawn scheduled", exit: 75 }),
+    rosterInactive({ waited: "Live", waitedSecs: 90, state: "activating" }),
+    rosterInactive({ waited: "Live", waitedSecs: 0, state: "" }),
+    rosterInactive({ state: undefined }),
+    rosterInactive({ waited: "Live", waitedSecs: 3, state: undefined }),
   ],
   NotLive: [
-    { stop: "NotLive", waitedSecs: 90, registered: true },
-    { stop: "NotLive", waitedSecs: 5, registered: false },
+    { stop: "NotLive", waitedSecs: 90, registered: true, pid: 69807 },
+    { stop: "NotLive", waitedSecs: 5, registered: false, pid: undefined },
   ],
   PermitWithheld: [
     { stop: "PermitWithheld", people: rosterPeople, work: "Runner" },
     { stop: "PermitWithheld", people: rosterPeople, work: "Cluster" },
     { stop: "PermitWithheld", people: rosterPeople, work: undefined },
+  ],
+  RunnerWithheld: [{ stop: "RunnerWithheld", people: rosterPeople }],
+  ServeRefused: [
+    { stop: "ServeRefused", write: "Give", outcome: "Rejected" },
+    { stop: "ServeRefused", write: "Allow", outcome: "Fault" },
   ],
   ChatMintRefused: [
     { stop: "ChatMintRefused", outcome: "Absent", lapseMins: 60 },
@@ -299,6 +352,7 @@ export const runnerStops: {
       credential,
       settings: boxSettings,
       login: boxLogin,
+      restart: rosterRestart,
     })),
     {
       stop: "ChatLogin",
@@ -306,6 +360,7 @@ export const runnerStops: {
       credential: { kind: "Subscription", path: boxLogin },
       settings: boxSettings,
       login: boxLogin,
+      restart: rosterRestart,
     },
   ],
   ChatHostNotLive: [{ stop: "ChatHostNotLive", waitedSecs: 90 }],
@@ -317,11 +372,29 @@ export const runnerStops: {
     { stop: "ReplaceMismatched", short: "0f3a9c21", live: true },
     { stop: "ReplaceMismatched", short: "0f3a9c21", live: false },
   ],
-  MacChatHost: [
+  Rosettaless: [
     {
-      stop: "MacChatHost",
-      page: rosterMyRunners,
+      stop: "Rosettaless",
+      install: "softwareupdate --install-rosetta --agree-to-license",
     },
+  ],
+  Rebuild: [
+    {
+      stop: "Rebuild",
+      why: "Qemu",
+      remove: "colima delete",
+      make: "colima start --vm-type vz --vz-rosetta --memory 8",
+    },
+    {
+      stop: "Rebuild",
+      why: "Unrosetta",
+      remove: "colima delete",
+      make: "colima start --vm-type vz --vz-rosetta --memory 8",
+    },
+  ],
+  ColimaShort: [
+    { stop: "ColimaShort", memoryMib: 2_048, amd64: false },
+    { stop: "ColimaShort", memoryMib: undefined, amd64: undefined },
   ],
 };
 
@@ -329,12 +402,14 @@ export const runnerStops: {
 export const rosterChatHostStops: readonly SetupRunnerStop["stop"][] = [
   "ChatHostHeld",
   "ReplaceMismatched",
-  "MacChatHost",
 ];
 
 /** The stops only `runner` makes, which `chat-host` does not since it installs the package itself. */
 export const rosterRunnerStops: readonly SetupRunnerStop["stop"][] = [
   "Unpackaged",
+  "Rosettaless",
+  "Rebuild",
+  "ColimaShort",
 ];
 
 export const runnerNotes: {
@@ -343,6 +418,14 @@ export const runnerNotes: {
   })[];
 } = {
   Engine: [{ note: "Engine", engine: "docker" }],
+  ChatSettingsWritten: [
+    {
+      note: "ChatSettingsWritten",
+      path: boxSettings,
+      sessionsMax: 3,
+      sessionMemoryMib: 2_048,
+    },
+  ],
   Package: [{ note: "Package", command: rosterCommand, version: boxVersion }],
   Outdated: [
     {
@@ -380,11 +463,19 @@ export const runnerNotes: {
     note: "Login" as const,
     credential,
   })),
-  Pool: [{ note: "Pool", path: rosterPool }],
+  Personal: [{ note: "Personal", path: rosterPersonal }],
   ServerFound: [{ note: "ServerFound", path: boxClaudeConfig }],
   ServerAdded: [{ note: "ServerAdded", path: boxClaudeConfig }],
-  PoolGone: [{ note: "PoolGone", path: rosterPool, pool: boxPoolName }],
-  Registered: [{ note: "Registered", path: rosterPool }],
+  PersonalGone: [{ note: "PersonalGone", path: rosterPersonal }],
+  PersonalRegistered: [{ note: "PersonalRegistered", path: rosterPersonal }],
+  Given: [
+    { note: "Given", now: false },
+    { note: "Given", now: true },
+  ],
+  Allowed: [
+    { note: "Allowed", now: false },
+    { note: "Allowed", now: true },
+  ],
   Checked: [
     { note: "Checked", warned: undefined },
     { note: "Checked", warned: "warn  job network: it is slow" },
@@ -416,6 +507,12 @@ export const runnerNotes: {
   Enabled: [{ note: "Enabled", unit: rosterUnit }],
   Started: [{ note: "Started", unit: rosterUnit }],
   Restarted: [{ note: "Restarted", unit: rosterUnit }],
+  Colima: [{ note: "Colima", start: rosterColimaAtLogin }],
+  ColimaRan: [{ note: "ColimaRan", command: "colima stop" }],
+  ColimaVm: [
+    { note: "ColimaVm", memoryMib: 8_192, amd64: true },
+    { note: "ColimaVm", memoryMib: undefined, amd64: undefined },
+  ],
 };
 
 /** Where a machine keeps the things a run names in its lines, and the engine it runs its work in where that is not docker. */
@@ -423,29 +520,34 @@ export interface RosterPlaces {
   readonly command: string;
   readonly settings: string;
   readonly login: string;
-  readonly pool: string;
+  readonly personal: string;
   readonly unit: string;
   readonly chat: string;
   readonly chatUnit: string;
   readonly engine?: SetupEngine;
+  /** The runner package's program, where it is not chuggy-linux. */
+  readonly program?: string;
 }
 
 /** What a run prints of each thing it found as it should be, and of each thing it did, for acme/widgets on a machine whose things are at `places`. */
 export function rosterLines(places: RosterPlaces) {
-  const { command, settings, login, pool, unit, chat, chatUnit } = places;
+  const { command, settings, login, personal, unit, chat, chatUnit } = places;
   const engine = places.engine ?? "docker";
+  const program = places.program ?? "chuggy-linux";
   return {
     found: {
       engine: `found: ${engine} answers you without a password`,
       login: `found: the runner's Claude login is in ${login}`,
       settings: `found: the runner's settings are in ${settings}`,
-      package: `found: the runner package is installed: chuggy-linux ${boxVersion}, at ${command}`,
-      pool: `found: this machine is registered as a runner of acme/widgets, in ${pool}`,
+      package: `found: the runner package is installed: ${program} ${boxVersion}, at ${command}`,
+      personal: `found: this machine is registered as your runner, in ${personal}`,
       check: "found: the runner's own check passed",
       unit: `found: the runner's service is installed: ${unit}`,
       linger: "found: your services keep running after you log out",
       running: `found: ${unit} is enabled and running`,
-      live: "found: the site sees a runner of acme/widgets live",
+      given: "found: your runners are given acme/widgets",
+      allowed: "found: acme/widgets lets your own runners take your work in it",
+      live: "found: the site sees your runner live, taking your work in acme/widgets",
       chat: `found: this machine is registered as your chat host, in ${chat}`,
       chatGone: `found: ${chat} registered this machine as your chat host, and the site no longer knows that registration`,
       chatCheck: "found: the chat host's own check passed",
@@ -457,14 +559,18 @@ export function rosterLines(places: RosterPlaces) {
         "found: the site sees your chat host live on another machine, so your chats in acme/widgets run there",
     },
     did: {
-      package: `did: installed the runner package, chuggy-linux ${boxVersion}, at ${command}`,
+      package: `did: installed the runner package, ${program} ${boxVersion}, at ${command}`,
       settings: `did: wrote the runner's settings to ${settings}: its guide's own, with ${engine} as the engine`,
-      pool: `did: registered this machine as a runner of acme/widgets, in ${pool}`,
+      personal: `did: registered this machine as your runner, in ${personal}`,
       unit: `did: installed the runner's service, ${unit}`,
       linger: "did: set your services to keep running after you log out",
       enabled: `did: set ${unit}, which was running, to start when you log in`,
       started: `did: started ${unit}, which also starts when you log in`,
+      given: "did: gave your runners acme/widgets",
+      allowed:
+        "did: set acme/widgets to let your own runners take your work in it while one is online, and a shared runner while none is",
       restarted: `did: restarted ${unit}, so it runs as it is now registered and installed`,
+      chatSized: `did: wrote the size of your chat host into ${settings}, every other setting kept as it was: the most chats it runs at once is 3, at 2 GiB each, 6 GiB in all`,
       chat: `did: registered this machine as your chat host, in ${chat}`,
       chatUnit: `did: installed your chat host's service, ${chatUnit}`,
       chatStarted: `did: started ${chatUnit}, which also starts when you log in`,

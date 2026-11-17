@@ -59,7 +59,7 @@ async function drawn(
 
 test("a project binding no repository says so and links to Repositories", async () => {
   await drawn({ context: "NoRepository" });
-  expect(screen.getByText("No repository bound")).toBeTruthy();
+  expect(screen.getByText("No repository connected")).toBeTruthy();
   expect(
     screen.getByRole("link", { name: "Repositories" }).getAttribute("href"),
   ).toBe("/acme-co/atlas-web/settings/repositories");

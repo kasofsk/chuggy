@@ -4,8 +4,8 @@
  *
  * A CHAT HOST IS ITS OWNER'S, ONE PER TENANT. It is registered under the
  * tenant and the member whose token it redeemed, under the same permit a
- * personal runner is, and serves its owner's threads and inquiries in every
- * project they may read, so it keeps no allowlist. Registering again replaces
+ * personal runner is, and serves its owner's threads in every project they
+ * may read, so it keeps no allowlist. Registering again replaces
  * the row and, in the same transaction, fences every attempt the replaced
  * host held; the replaced client is removed after the row that replaced it
  * stands, and a removal that fails leaves a client no row names, which no

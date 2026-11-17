@@ -84,13 +84,13 @@ import type {
   TicketCreationForm,
 } from "../core/ticketCreation.ts";
 import {
-  TicketCreationRefused,
   createAndReleaseTicket,
   creationContextSentence,
   creationDraftHeldSentence,
   creationStaleUnreadSentence,
   creationTicketExistsSentence,
 } from "../core/ticketCreationRun.ts";
+import { TicketCreationRefused } from "../core/ticketCreationRefused.ts";
 import type {
   CreationContext,
   CreationDraftHeld,

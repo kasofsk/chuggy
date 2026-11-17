@@ -36,9 +36,11 @@ import {
 } from "./http.ts";
 import {
   sessionCapabilities,
+  sessionCapabilitiesRetired,
   sessionContainerEnds,
   type SessionCapability,
 } from "./rosters.ts";
+import { threadTicketWakeSettings } from "./threadWake.ts";
 import type { WorkerContractFeature } from "./workerContract.ts";
 import { workerImageFaults } from "./workerEnvironment.ts";
 
@@ -133,10 +135,12 @@ export const workerPoolThreadClosedSchema = z.strictObject({
 
 /**
  * An assignment that runs one of a project's agent sessions: the same shape,
- * its image always named, because a session runs its site's session image and
- * never one a pool chooses, no runtime, because that image carries its own,
- * and no project, because a session mounts none of its owner's volumes. Its
- * bearer is the session's own, which the same bound admits.
+ * its image always named, because it is the site's session image and never
+ * one a pool chooses, which a pool runs the session in and a chat host does
+ * not, running it in the container it started from the `chatImage` its poll
+ * was answered, no runtime, because that image carries its own, and no
+ * project, because a session mounts none of its owner's volumes. Its bearer
+ * is the session's own, which the same bound admits.
  */
 export const workerPoolSessionAssignmentSchema = workerPoolAssignmentSchema
   .omit({ runtime: true, project: true })
@@ -145,7 +149,7 @@ export const workerPoolSessionAssignmentSchema = workerPoolAssignmentSchema
     /**
      * The thread the session is an attempt of, so a chat host may keep what
      * it keeps for that thread across its attempts. It is named only to a chat
-     * host whose poll's release reads it, and absent for an inquiry or a lead.
+     * host whose poll's release reads it.
      */
     thread: workerPoolThreadClosedSchema.optional(),
   });
@@ -210,6 +214,7 @@ export const workerPoolPollQuery = {
   wantedSessions: "wantedSessions",
   idleSecs: "idleSecs",
   sessionCapabilities: "sessionCapabilities",
+  ticketWakes: "ticketWakes",
 } as const;
 
 /** A count as a query string carries one: decimal, canonical, and within what a number can hold. */
@@ -219,11 +224,16 @@ const workerPoolQueryCountSchema = z
   .transform(Number)
   .pipe(z.number().int().nonnegative().safe());
 
-/** A set of session capabilities, each named once. */
+/** A set of session capabilities, each named once, read without any `sessionCapabilitiesRetired` names. */
 export const workerPoolSessionCapabilitiesSchema = z
-  .array(z.enum(sessionCapabilities))
-  .max(sessionCapabilities.length)
-  .refine((named) => new Set(named).size === named.length);
+  .array(z.enum([...sessionCapabilities, ...sessionCapabilitiesRetired]))
+  .max(sessionCapabilities.length + sessionCapabilitiesRetired.length)
+  .refine((named) => new Set(named).size === named.length)
+  .transform((named) =>
+    named.filter((capability): capability is SessionCapability =>
+      (sessionCapabilities as readonly string[]).includes(capability),
+    ),
+  );
 
 /** The separator a set of session capabilities is written with in one query value, which no capability's name holds. */
 const workerPoolSessionCapabilitiesSeparator = ",";
@@ -248,7 +258,10 @@ export const workerPoolPollIdleSecsMax = Math.floor((2 ** 31 - 1) / 1_000);
  * `workerPoolPollIdleSecsMax`, and is read from no other caller, and
  * `sessionCapabilities`, the capabilities a chat host's threads may hold, as
  * `workerPoolPollSessionCapabilitiesText` writes them once, which leaves a
- * roster whole where it is absent and is read from no other caller.
+ * roster whole where it is absent and is read from no other caller, and
+ * `ticketWakes`, whether a chat host's threads that made no choice of their own
+ * are woken for their tickets, which a host naming none leaves unset and is
+ * read from no other caller.
  * The held list's length is the plane's own setting rather than a figure
  * written here, and a list longer than that is refused whole rather than cut,
  * because a cut list reads as a pool that let go of work it is still running;
@@ -277,6 +290,9 @@ export function workerPoolPollQuerySchema(heldMax: number) {
         text === "" ? [] : text.split(workerPoolSessionCapabilitiesSeparator),
       )
       .pipe(workerPoolSessionCapabilitiesSchema)
+      .optional(),
+    [workerPoolPollQuery.ticketWakes]: z
+      .enum(threadTicketWakeSettings)
       .optional(),
   });
 }
@@ -560,13 +576,14 @@ export const workerPoolReconciliationSchema = z
     jobsWaiting: z.boolean().optional(),
     /**
      * The image a chat host runs its sessions in, by the host it pulls it from,
-     * which is the session image the site publishes as this answer is made: the
-     * host starts one long-lived container from it, whose chat supervisor runs
-     * those sessions, before it names room for any, may pull it while it holds
-     * nothing, and where an answer names another than it runs, drains what it
-     * holds and restarts on the new one. It is named only to a chat host, and
-     * absent where the plane serves no session or its scheduler has published
-     * no launch yet, where the host starts nothing and polls again.
+     * which is the chat image the site names, or where it names none the
+     * session image it publishes as this answer is made: the host starts one
+     * long-lived container from it, whose chat supervisor runs those sessions,
+     * before it names room for any, may pull it while it holds nothing, and
+     * where an answer names another than it runs, drains what it holds and
+     * restarts on the new one. It is named only to a chat host, and absent
+     * where the plane serves no session or its scheduler has published no
+     * launch yet, where the host starts nothing and polls again.
      */
     chatImage: workerPoolImageSchema.optional(),
     /**

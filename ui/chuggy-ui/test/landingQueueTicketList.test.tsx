@@ -65,7 +65,15 @@ const tickets = [
 ];
 
 const queued = {
-  queues: [{ repository, holder: 11, waiting: [12] }],
+  queues: [
+    {
+      repository,
+      holder: 11,
+      holderSince: "2026-11-16T09:30:00.000000Z",
+      holderPhase: "Finalization",
+      waiting: [12],
+    },
+  ],
   truncated: false,
 };
 

@@ -39,17 +39,43 @@
  * each time it runs, under the permit's own fence rather than under a claim,
  * because the permit is the authority for the act and therefore for reading it.
  *
- * EVERY PASS IS BOUNDED AND HAS NO LOOP OF ITS OWN. Each step takes its ceiling
- * from the configuration it re-checks, advances at most one decision per claimed
- * request, and returns; the loop that calls it again is a deployment's. What it
- * reports is what it moved, and a held count is every finalization it left
- * exactly where it found it — a hold the view decided, a ref it could not read,
- * a permit it was refused, and a request the pass had no budget left for.
+ * EVERY PASS IS BOUNDED, AND A CLAIM IS ADVANCED UNTIL IT STOPS. A claimed
+ * request is gathered, decided and stepped again while its last step moved it,
+ * at most `claimStepsPerPassMax` times, every step priced against the ceilings
+ * the configuration names and each keeping its own durable order, so a crash
+ * between two steps is one pass stopping early. The lease is renewed before
+ * each step after the first, and a renewal refused ends the chain, the claim
+ * being somebody else's. A hold, a conclusion and a re-preparation, which is a
+ * refused update's answer, each end it too; the loop that calls the pass again
+ * is a deployment's. What it reports is what it moved, and a held count is
+ * every finalization it left where its last step found it — a hold the view
+ * decided, a ref it could not read, a permit it was refused, and a request the
+ * pass had no budget left for.
+ *
+ * A CLAIM STOPPED SHORT IS GIVEN BACK UNLESS THE LEASE IS WHAT PACES IT. A
+ * chain that ran out of steps or budget, or re-prepares, reopens its request,
+ * so the next pass draws it. Every other hold keeps its claim until the lease
+ * lapses: the dwell is counted in passes that find the request, a port that
+ * just failed would otherwise be asked again on every pass, and a request
+ * reopened while it can only hold is drawn ahead of every newer one, so enough
+ * of them would take every claim a pass makes. A merge waiting on the forge is
+ * read again on the store's own cadence, so its lease is cut to run out when
+ * that reading falls due, if that is sooner.
  *
  * A REQUEST WAITING ON THE HOLDER IS CLAIMED ONLY TO BE SENT BACK. A Stacked
- * ticket pending unstacked that could now stack over the queue ahead of it has
- * its waiting request claimed and a `Restack` failure recorded on it, and the
- * request's next claim concludes it; nothing else is done under that claim.
+ * ticket pending unstacked or over a stack that stopped standing, as
+ * `model/stacking.qnt`'s `sweep` leaves it, that could now stack over the
+ * queue ahead of it (`canRestack`), and whose stack over it folds without a
+ * conflict, has its waiting request claimed and a `Restack` failure recorded
+ * on it, and the request's next claim concludes it; nothing else is done under
+ * that claim.
+ *
+ * A SEND-BACK THAT KEEPS ITS RANK IS ONE A MERGE WOULD NOT REFUSE. A re-check
+ * and a re-stack bring the target or the line in and evaluate again, so neither
+ * is offered to work that conflicts with it: a landing whose target moved
+ * integrates first and records a conflict as a `MergeConflict`, and a re-stack
+ * whose fold conflicts is not made. A `MergeConflict` ends the chain, so the
+ * ticket reworks it holding no rank and the queue behind it moves on.
  *
  * A PASS FENCES BEFORE IT MOVES ANYTHING ELSE. Claims held under a superseded
  * epoch and claims past their expiry are reopened first, because a lease that
@@ -163,7 +189,7 @@
  * about the proposal, and readings that reached the forge and found nothing
  * spend the create they were taken about, after which another one is what
  * `proposalCreationsMax` authorizes. Every act is bounded by the pass as well: one
- * proposal act per claimed request, and no more of them in a pass than
+ * proposal act per step, and no more of them in a pass than
  * `proposalsPerPassMax`. Escalating or aborting a request whose proposal may be
  * queued adds one dequeue and the read after it beyond that act, counted with
  * the proposals but never refused by their ceiling, because a dequeue skipped
@@ -183,10 +209,10 @@
  * answer and never asks for it.
  *
  * A MERGE WAITING ON THE FORGE IS ASKED AGAIN ON A CADENCE, NEVER EVERY PASS.
- * The request is redrawn whenever its claim lapses, as every held one is, and
- * the store ages the wait by the database's clock, so a pass that finds it read
- * too recently holds without reaching the forge and one that finds it due
- * spends a proposal act like any other reading.
+ * The request keeps its claim until the reading falls due or the lease lapses,
+ * whichever is sooner, and the store ages the wait by the database's clock, so
+ * a pass that finds it read too recently holds without reaching the forge and
+ * one that finds it due spends a proposal act like any other reading.
  *
  * NOTHING HERE READS A CLOCK. Every lease and expiry is a duration handed to the
  * store, and every age is one the store reads, both from the database's clock.
@@ -229,6 +255,7 @@ import {
   changeProposalQueueingNone,
   changeProposalUpdatingNone,
   type ChangeProposalAdoptionGathered,
+  type ChangeProposalForgeReply,
   type ChangeProposalForges,
   type ChangeProposalMergeGathered,
   type ChangeProposalMergeRequest,
@@ -255,6 +282,7 @@ import {
   type FinalizationProposalGathered,
   type FinalizationProposalMergeRecording,
   type FinalizationProposalRecording,
+  type ChangeProposalAnsweredAct,
   type ChangeProposalWritten,
   type FinalizerProposalStore,
   type StoredChangeProposal,
@@ -267,11 +295,13 @@ import {
   type AncestryProved,
   type CandidateFile,
   type CandidateIntegrated,
+  type CandidateIntegration,
   type CommitPermitId,
   type ConflictSummary,
   type FinalizationAttempt,
   type FinalizationClaim,
   type FinalizationConclusion,
+  type FinalizationDecision,
   type FinalizationOffer,
   type FinalizationRecheckReason,
   type FinalizationReconciliation,
@@ -315,6 +345,7 @@ import {
 } from "./finalizerPreparation.ts";
 import {
   recordFinalizer,
+  type FinalizerForgeAct,
   type FinalizerHoldReason,
   type FinalizerTelemetry,
 } from "./finalizerTelemetry.ts";
@@ -324,11 +355,18 @@ import {
   type EvaluatingStack,
   type EvaluationStack,
   type EvaluationStackStore,
+  type RestackableStack,
   type UnpreparedStack,
 } from "./evaluationStack.ts";
-import { stackPrepared } from "./evaluationStacking.ts";
+import { stackPrepared, stackTipObserved } from "./evaluationStacking.ts";
 import { stackInvalidations } from "./stackInvalidation.ts";
-import { restackLine } from "./stackRestack.ts";
+import {
+  restackForget,
+  restackLine,
+  restackRefuse,
+  restackRefused,
+  type RestackRefusals,
+} from "./stackRestack.ts";
 import type { StackMember } from "./stackChoice.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import {
@@ -339,6 +377,7 @@ import {
 } from "./finalizerLanding.ts";
 import {
   briefFinalizationTarget,
+  type DraftBrief,
   type TicketBriefPort,
 } from "./ticketBrief.ts";
 
@@ -366,6 +405,8 @@ export interface FinalizerService {
     | "invalidate"
     | "restackable"
   >;
+  /** The re-stacks whose fold conflicted, kept by this process against the inputs they were folded from. */
+  readonly restackRefusals: RestackRefusals;
   readonly handoffs: HandoffContentPort;
   readonly artifacts: ProjectArtifactPort;
   /** The paths the forge says a job's push may not change where its repository's binding withholds pipelines. */
@@ -406,18 +447,20 @@ interface FinalizerTally {
    * Why the request being advanced right now was left where it was found, or
    * nothing where it moved. A hold is counted inside whatever act reached it
    * and the record of it is written where the advance ends, so the reason
-   * travels back up the path the count came down; `finalizerAdvance` clears it
-   * before each request, so it never answers for the one before.
+   * travels back up the path the count came down; `finalizerAdvanceStep` clears
+   * it before each step, so it never answers for the one before.
    */
   heldReason: FinalizerHoldReason | undefined;
   /** The files a `TargetPathsRefused` hold is over, travelling beside `heldReason` and cleared with it. */
   heldRefused: ConflictSummary | undefined;
+  /** How many seconds from now a hold on the forge's cadence falls due to be read again, travelling beside `heldReason` and cleared with it. */
+  heldRereadInSecs: number | undefined;
 }
 
 /** Every count a pass prices a move against, which is every count it keeps. */
 type FinalizerCeiling = Exclude<
   keyof FinalizerTally,
-  "heldReason" | "heldRefused"
+  "heldReason" | "heldRefused" | "heldRereadInSecs"
 >;
 
 /**
@@ -462,9 +505,48 @@ function finalizerHold(
   tally.holds += 1;
   tally.heldReason = reason;
   tally.heldRefused = undefined;
+  tally.heldRereadInSecs = undefined;
   recordFinalizer(service.metrics, (metrics) => {
     metrics.holding(reason);
   });
+}
+
+/** Tells the sink what one forge act about a claim's proposal came to. */
+function finalizerForgeAnswered(
+  service: FinalizerService,
+  claim: FinalizationClaim,
+  act: FinalizerForgeAct,
+  outcome: string,
+  reply: ChangeProposalForgeReply | undefined,
+): void {
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.forgeAnswered({
+      ticket: claim.ticket,
+      request: claim.request,
+      act,
+      outcome,
+      ...(reply === undefined ? {} : { reply }),
+    });
+  });
+}
+
+/**
+ * Keeps on the row what the forge answered one act it keeps answers to, and
+ * tells the sink. The row is a record of the act rather than a step of it, so
+ * a row that would not take the answer leaves the pass deciding as it would.
+ */
+async function finalizerForgeAnswerKept(
+  service: FinalizerService,
+  claim: FinalizationClaim,
+  act: ChangeProposalAnsweredAct,
+  outcome: string,
+  reply: ChangeProposalForgeReply | undefined,
+): Promise<void> {
+  await service.store.recordChangeProposalAnswer(claim, act, {
+    outcome,
+    ...(reply === undefined ? {} : { reply }),
+  });
+  finalizerForgeAnswered(service, claim, act, outcome, reply);
 }
 
 /**
@@ -1272,6 +1354,60 @@ async function finalizerLandable(
   return landing === undefined ? undefined : { target, landing };
 }
 
+/**
+ * The branch the work happened on where the ticket lands on another one, which
+ * only a push does: a proposal's head is the work's own branch. `undefined` is
+ * a ticket landing where it worked, and `Unobserved` a work branch neither the
+ * brief nor the remote named.
+ */
+function finalizerMergedWork(
+  subject: FinalizerPreparation,
+  brief: DraftBrief,
+  target: ObservedTarget,
+): GitRefName | "Unobserved" | undefined {
+  const { view } = subject;
+  if (briefFinalizationOpensProposal(view.finalization)) return undefined;
+  const work = view.observedWorkBranch?.ref ?? brief.branch;
+  if (work === undefined)
+    return briefFinalizationTarget(brief.finalization) === undefined
+      ? undefined
+      : "Unobserved";
+  return work === target.ref ? undefined : work;
+}
+
+/**
+ * The integration one candidate is merged with, titled as the ticket's proposal
+ * would be where the ticket lands on a branch other than its work's, and
+ * `undefined` where the pass is held because the work's branch is unknown.
+ */
+async function finalizerIntegration(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  target: ObservedTarget,
+  candidate: GitObjectId,
+  tally: FinalizerTally,
+): Promise<CandidateIntegration | undefined> {
+  const integration: CandidateIntegration = {
+    repository: subject.repository,
+    target,
+    candidate,
+    strategy: finalizerStrategy,
+  };
+  const { claim } = subject.view;
+  const brief = await service.ticketBriefs.brief(claim.partition, claim.ticket);
+  if (brief === undefined) return integration;
+  const work = finalizerMergedWork(subject, brief, target);
+  if (work === undefined) return integration;
+  if (work === "Unobserved") {
+    finalizerHold(service, tally, "TargetUnobserved");
+    return undefined;
+  }
+  return {
+    ...integration,
+    merging: { title: finalizationProposalTitle(claim.ticket, brief), work },
+  };
+}
+
 /** Re-observes and integrates one candidate, however that candidate was prepared. */
 async function finalizerIntegratePrepared(
   service: FinalizerService,
@@ -1282,12 +1418,15 @@ async function finalizerIntegratePrepared(
   const landable = await finalizerLandable(service, subject, candidate, tally);
   if (landable === undefined) return;
   const { target } = landable;
-  const integrated = await service.git.integrateCandidate({
-    repository: subject.repository,
+  const integration = await finalizerIntegration(
+    service,
+    subject,
     target,
     candidate,
-    strategy: finalizerStrategy,
-  });
+    tally,
+  );
+  if (integration === undefined) return;
+  const integrated = await service.git.integrateCandidate(integration);
   await finalizerIntegrated(
     service,
     subject,
@@ -1347,9 +1486,102 @@ async function finalizerRecheckRequired(
 }
 
 /**
- * Prepares a serialized landing: the accepted commit lands as it is when it
- * holds the target's tip, so its fast-forward is the tree that was evaluated,
- * and otherwise goes back to be re-checked. It is never merged here.
+ * Records a serialized landing whose accepted commit holds the target's tip:
+ * the commit itself where it lands where it worked, and otherwise its merge
+ * commit, whose tree is the accepted commit's own.
+ */
+async function finalizerContainedIntegrated(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  target: ObservedTarget,
+  accepted: GitObjectId,
+  tally: FinalizerTally,
+): Promise<void> {
+  const integration = await finalizerIntegration(
+    service,
+    subject,
+    target,
+    accepted,
+    tally,
+  );
+  if (integration === undefined) return;
+  const integrated =
+    integration.merging === undefined
+      ? { integrated: "Candidate" as const, candidate: accepted }
+      : await service.git.integrateCandidate(integration);
+  await finalizerIntegrated(
+    service,
+    subject,
+    target,
+    accepted,
+    integrated,
+    tally,
+  );
+}
+
+/**
+ * Sends back a serialized landing whose target moved past its accepted commit:
+ * to be re-checked where the two merge cleanly, and to rework where they
+ * conflict, as a `MergeConflict` with its manifest, which ends the chain and
+ * releases its rank. The merge is only asked about; nothing it writes lands.
+ */
+async function finalizerContainedMoved(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  landable: FinalizerLandableTarget,
+  accepted: GitObjectId,
+  tally: FinalizerTally,
+): Promise<void> {
+  const { target, landing } = landable;
+  const integration = await finalizerIntegration(
+    service,
+    subject,
+    target,
+    accepted,
+    tally,
+  );
+  if (integration === undefined) return;
+  const integrated = await service.git.integrateCandidate(integration);
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.integration(integrated.integrated);
+  });
+  switch (integrated.integrated) {
+    case "Candidate":
+      await finalizerRecheckRequired(
+        service,
+        subject,
+        target,
+        accepted,
+        finalizerRecheckOf("TargetMoved", subject, landing),
+        tally,
+      );
+      return;
+    case "Conflicted":
+      await finalizerConflicted(
+        service,
+        subject,
+        target,
+        accepted,
+        integrated,
+        tally,
+      );
+      return;
+    case "Failed":
+      finalizerHold(service, tally, "IntegrationUnanswered");
+      return;
+    default:
+      return assertNever(integrated);
+  }
+}
+
+/**
+ * Prepares a serialized landing: the accepted commit lands when it holds the
+ * target's tip, so what lands is the tree that was evaluated, and otherwise
+ * goes back, never merged with a target that moved. A send-back over a target
+ * it merges with cleanly is a re-check and keeps the rank; one over a target
+ * it conflicts with is a `MergeConflict`, which `model/stacking.qnt` has no
+ * notion of and `model/refinement.qnt` reduces to `FinalizationNeedsWork`, as
+ * it does the same failure on the stacked path.
  */
 async function finalizerContainedPrepared(
   service: FinalizerService,
@@ -1359,7 +1591,7 @@ async function finalizerContainedPrepared(
 ): Promise<void> {
   const landable = await finalizerLandable(service, subject, accepted, tally);
   if (landable === undefined) return;
-  const { target, landing } = landable;
+  const { target } = landable;
   const contained = await service.git.proveTargetContained({
     repository: subject.repository,
     target,
@@ -1367,22 +1599,20 @@ async function finalizerContainedPrepared(
   });
   switch (contained) {
     case "Contained":
-      await finalizerIntegrated(
+      await finalizerContainedIntegrated(
         service,
         subject,
         target,
         accepted,
-        { integrated: "Candidate", candidate: accepted },
         tally,
       );
       return;
     case "Uncontained":
-      await finalizerRecheckRequired(
+      await finalizerContainedMoved(
         service,
         subject,
-        target,
+        landable,
         accepted,
-        finalizerRecheckOf("TargetMoved", subject, landing),
         tally,
       );
       return;
@@ -1415,12 +1645,15 @@ async function finalizerStackedPrepared(
   const landable = await finalizerLandable(service, subject, accepted, tally);
   if (landable === undefined) return;
   const { target, landing } = landable;
-  const integrated = await service.git.integrateCandidate({
-    repository: subject.repository,
+  const integration = await finalizerIntegration(
+    service,
+    subject,
     target,
-    candidate: accepted,
-    strategy: finalizerStrategy,
-  });
+    accepted,
+    tally,
+  );
+  if (integration === undefined) return;
+  const integrated = await service.git.integrateCandidate(integration);
   if (
     integrated.integrated === "Candidate" &&
     integrated.tree !== stack.stackTree
@@ -1845,6 +2078,13 @@ async function finalizerGatherAdoption(
       headCommit: request.head.commit,
     }),
   );
+  finalizerForgeAnswered(
+    service,
+    view.claim,
+    "readByNumber",
+    read.read,
+    read.reply,
+  );
   return { proposal, read };
 }
 
@@ -1961,6 +2201,13 @@ async function finalizerProposeChange(
   }
   tally.proposals += 1;
   const created = await port.create(request);
+  finalizerForgeAnswered(
+    service,
+    view.claim,
+    "create",
+    created.created,
+    created.reply,
+  );
   await finalizerRecordProposal(
     service,
     view,
@@ -2009,6 +2256,13 @@ async function finalizerReconcileProposal(
   }
   tally.proposals += 1;
   const read = await port.readByMarker(request);
+  finalizerForgeAnswered(
+    service,
+    view.claim,
+    "readByMarker",
+    read.read,
+    read.reply,
+  );
   await finalizerRecordProposal(
     service,
     view,
@@ -2129,6 +2383,13 @@ async function finalizerMergeProposal(
   }
   tally.proposals += 1;
   const merged = await port.merge(decision.merge);
+  await finalizerForgeAnswerKept(
+    service,
+    view.claim,
+    "merge",
+    merged.merged,
+    merged.reply,
+  );
   await finalizerRecordProposalMerge(
     service,
     view,
@@ -2151,6 +2412,13 @@ async function finalizerReconcileProposalMerge(
   }
   tally.proposals += 1;
   const read = await port.readByNumber(decision.merge);
+  finalizerForgeAnswered(
+    service,
+    view.claim,
+    "readByNumber",
+    read.read,
+    read.reply,
+  );
   await finalizerRecordProposalMerge(
     service,
     view,
@@ -2184,9 +2452,15 @@ async function finalizerUpdateProposal(
     return;
   }
   tally.proposals += 1;
-  const recording = finalizationProposalUpdateRecording(
-    await port.updateBranch(decision.merge),
+  const updated = await port.updateBranch(decision.merge);
+  await finalizerForgeAnswerKept(
+    service,
+    view.claim,
+    "updateBranch",
+    updated.updated,
+    updated.reply,
   );
+  const recording = finalizationProposalUpdateRecording(updated);
   const wrote = await service.store.recordChangeProposalUpdate(
     view.claim,
     recording.record,
@@ -2210,9 +2484,15 @@ async function finalizerReadQueue(
     return;
   }
   tally.proposals += 1;
-  const recording = finalizationProposalQueueRecording(
-    await port.readQueue(merge),
+  const read = await port.readQueue(merge);
+  finalizerForgeAnswered(
+    service,
+    view.claim,
+    "readQueue",
+    read.read,
+    read.reply,
   );
+  const recording = finalizationProposalQueueRecording(read);
   if (recording.record === "Nothing") {
     finalizerHold(service, tally, recording.hold);
     return;
@@ -2250,9 +2530,15 @@ async function finalizerEnqueue(
     return;
   }
   tally.proposals += 1;
-  const recording = finalizationProposalEnqueueRecording(
-    await port.enqueue(decision.merge),
+  const enqueued = await port.enqueue(decision.merge);
+  finalizerForgeAnswered(
+    service,
+    view.claim,
+    "enqueue",
+    enqueued.enqueued,
+    enqueued.reply,
   );
+  const recording = finalizationProposalEnqueueRecording(enqueued);
   const wrote = await service.store.recordChangeProposalEnqueue(
     view.claim,
     recording.record,
@@ -2278,9 +2564,17 @@ async function finalizerDequeue(
   const port = service.forges.selector.select(merge.binding.forge);
   if (port === undefined) return;
   tally.proposals += 1;
-  await port.dequeue(merge);
+  const dequeued = await port.dequeue(merge);
+  finalizerForgeAnswered(
+    service,
+    claim,
+    "dequeue",
+    dequeued.dequeued,
+    dequeued.reply,
+  );
   tally.proposals += 1;
   const read = await port.readQueue(merge);
+  finalizerForgeAnswered(service, claim, "readQueue", read.read, read.reply);
   if (read.read === "Standing")
     await service.store.recordChangeProposalQueue(claim, read.standing);
 }
@@ -2491,32 +2785,67 @@ function finalizerProposalMergeReleased(
 }
 
 /**
- * Whether a merge the forge made is the tree its ticket was evaluated on. Only
- * a Stacked ticket evaluated over a stack is asked: its merge lands what was
- * evaluated only where the merge commit's tree is the stack's, as its push
- * does, and anything else lands as it did before.
+ * The tree a Serialized or Stacked ticket's landing was evaluated on: its
+ * stack's where it was evaluated over one, and otherwise its accepted commit's,
+ * which contains the tip it was landed over. Work handed off as artifacts was
+ * evaluated on no commit, and is held to none.
+ */
+async function finalizerProposalEvaluatedTree(
+  service: FinalizerService,
+  view: FinalizationView,
+  repository: RepositoryBinding,
+  policy: "Serialized" | "Stacked",
+): Promise<GitObjectId | "Unread" | "NoTree"> {
+  const { claim } = view;
+  if (policy === "Stacked") {
+    const stack = await service.stacks?.current(claim.partition, claim.ticket);
+    if (stack !== undefined) return stack.stackTree;
+  }
+  const accepted = handoffAccepted(
+    handoffSuperseded(await service.store.handoffGathering(claim)),
+  );
+  if (accepted.accepted !== "Handoff" || accepted.handoff.kind !== "Source")
+    return "NoTree";
+  const tree = await service.git.readCommitTree({
+    repository,
+    commit: accepted.handoff.source.commit,
+  });
+  return tree ?? "Unread";
+}
+
+/**
+ * Whether a merge the forge made is the tree its ticket was evaluated on. A
+ * Serialized or Stacked ticket lands what was evaluated only where the merge
+ * commit's tree is that tree, as its push does, whatever the forge built its
+ * commit onto; a Direct ticket lands as it did before.
  */
 async function finalizerProposalMergeEvaluated(
   service: FinalizerService,
   view: FinalizationView,
   merged: GitObjectId,
 ): Promise<"Evaluated" | "Differs" | "Unread"> {
-  const { finalization, claim, repository } = view;
-  if (finalization?.kind !== "GitMerge" || finalization.policy !== "Stacked")
+  const { finalization, repository } = view;
+  if (finalization?.kind !== "GitMerge" || finalization.policy === "Direct")
     return "Evaluated";
-  const stack = await service.stacks?.current(claim.partition, claim.ticket);
-  if (stack === undefined) return "Evaluated";
   if (repository === undefined)
     throw new Error(
       "finalizer pass: a merge was concluded against no bound repository",
     );
+  const evaluated = await finalizerProposalEvaluatedTree(
+    service,
+    view,
+    repository,
+    finalization.policy,
+  );
+  if (evaluated === "NoTree") return "Evaluated";
+  if (evaluated === "Unread") return "Unread";
   const tree = await service.git.readCommitTree({ repository, commit: merged });
   if (tree === undefined) return "Unread";
-  return tree === stack.stackTree ? "Evaluated" : "Differs";
+  return tree === evaluated ? "Evaluated" : "Differs";
 }
 
 /**
- * Sends a Stacked ticket whose merge left a tree it was not evaluated on back
+ * Sends a ticket whose merge left a tree it was not evaluated on back
  * to re-check the commit it was accepted at, at its rank, as a push that would
  * leave one is. The merge has landed, so the re-check evaluates what it left.
  */
@@ -2530,7 +2859,7 @@ async function finalizerProposalMergeRechecked(
   if (gathered === undefined) return;
   if (gathered.handoff?.kind !== "Source")
     throw new Error(
-      "finalizer pass: a stacked merge was concluded for work with no source commit",
+      "finalizer pass: a merge held to its evaluated tree was concluded for work with no source commit",
     );
   await finalizerRecheckRequired(
     service,
@@ -2583,6 +2912,7 @@ async function finalizerProposalDecided(
   switch (decision.decide) {
     case "Hold":
       finalizerHold(service, tally, decision.hold);
+      tally.heldRereadInSecs = decision.rereadInSecs;
       return;
     case "Conclude":
       await finalizerProposalConcluded(service, view, decision.merged, tally);
@@ -2808,12 +3138,18 @@ async function finalizerRecordHold(
     ...(refused === undefined ? {} : { refused }),
   });
   const config = checkedFinalizerConfig(service.config);
-  if (
-    kind === undefined ||
-    held.held !== "Recorded" ||
-    held.passes < finalizationHoldPassesMax(config, kind)
-  )
-    return;
+  if (kind === undefined || held.held !== "Recorded") return;
+  const escalated = held.passes >= finalizationHoldPassesMax(config, kind);
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.holdRecorded({
+      ticket: claim.ticket,
+      request: claim.request,
+      kind,
+      passes: held.passes,
+      escalated,
+    });
+  });
+  if (!escalated) return;
   if (view !== undefined) await finalizerDequeueEscalated(service, view, tally);
   await finalizerSubmit(
     service,
@@ -2822,48 +3158,161 @@ async function finalizerRecordHold(
   );
 }
 
+/** The one hold that gives its claim back, a ceiling being this pass's budget rather than anything about the request. */
+const finalizerHoldsReleased: readonly FinalizerHoldReason[] = [
+  "PassCeilingReached",
+];
+
+/** The holds a merge waits on the forge at, whose claim runs out when the reading falls due rather than being given back. */
+const finalizerHoldsOnForge: readonly FinalizerHoldReason[] = [
+  "ProposalMergeBlocked",
+  "ProposalHeadMoved",
+  "ProposalQueued",
+];
+
+/** What one step of a claim's chain came to: another step due, or where it stopped and whether that gives the claim back. */
+type FinalizerStepped =
+  | { readonly stepped: "Gone" }
+  | { readonly stepped: "Moved"; readonly view: FinalizationView }
+  | {
+      readonly stepped: "Stopped";
+      readonly view: FinalizationView | undefined;
+      readonly reopened: boolean;
+    };
+
 /**
- * Advances one claimed request by at most one decision, or by none at all, and
- * leaves the request holding what that advance found. A pass that reached a
- * result records nothing: the request is answered, and the columns it carries
- * are the evidence of what answered it, though the sink is told either way
- * which request this was and the hold it was left at, if any.
+ * Decides and performs one step of a claimed request. Only a step that spent
+ * a move and was neither held nor concluded leaves another due, and a
+ * preparation past the chain's first step is a refusal re-preparing, which
+ * waits for the next pass.
+ */
+async function finalizerAdvanceStep(
+  service: FinalizerService,
+  claim: FinalizationClaim,
+  tally: FinalizerTally,
+  first: boolean,
+): Promise<FinalizerStepped> {
+  tally.heldReason = undefined;
+  tally.heldRefused = undefined;
+  tally.heldRereadInSecs = undefined;
+  const gathered = await finalizerGather(service, claim);
+  if (gathered === undefined) return { stepped: "Gone" };
+  if (gathered.gathered === "Held") {
+    finalizerHold(service, tally, gathered.hold);
+    return {
+      stepped: "Stopped",
+      view: undefined,
+      reopened: finalizerHoldsReleased.includes(gathered.hold),
+    };
+  }
+  const view = gathered.view;
+  const decision = finalizationNext(
+    checkedFinalizerConfig(service.config),
+    view,
+  );
+  if (!first && decision.decide === "Prepare")
+    return { stepped: "Stopped", view, reopened: true };
+  const moves = finalizerMovesOf(tally);
+  const concluded = tally.conclusions;
+  await finalizerAdvanceDecided(service, view, decision, tally);
+  const held = tally.heldReason;
+  if (tally.conclusions !== concluded || held !== undefined)
+    return {
+      stepped: "Stopped",
+      view,
+      reopened:
+        tally.conclusions === concluded &&
+        held !== undefined &&
+        finalizerHoldsReleased.includes(held),
+    };
+  return finalizerMovesOf(tally) > moves
+    ? { stepped: "Moved", view }
+    : { stepped: "Stopped", view, reopened: false };
+}
+
+/** Every move a step can spend, which is what says the step did something. */
+function finalizerMovesOf(tally: FinalizerTally): number {
+  return (
+    tally.preparations +
+    tally.promotions +
+    tally.reconciliations +
+    tally.proposals
+  );
+}
+
+/**
+ * Advances one claimed request step by step, renewing the lease before each
+ * step after the first and stopping at a refused renewal, a hold, a
+ * conclusion, a re-preparation or `claimStepsPerPassMax`, and leaves the
+ * request holding what the last step found. A pass that reached a result
+ * records nothing: the request is answered, and the columns it carries are the
+ * evidence of what answered it, though the sink is told either way which
+ * request this was and the hold it was left at, if any.
  */
 async function finalizerAdvance(
   service: FinalizerService,
   claim: FinalizationClaim,
   tally: FinalizerTally,
 ): Promise<void> {
-  tally.heldReason = undefined;
-  tally.heldRefused = undefined;
-  const gathered = await finalizerGather(service, claim);
-  if (gathered === undefined) return;
+  const config = checkedFinalizerConfig(service.config);
   const spent = tally.conclusions;
-  if (gathered.gathered === "Held")
-    finalizerHold(service, tally, gathered.hold);
-  else await finalizerAdvanceDecided(service, gathered.view, tally);
+  let stepped = await finalizerAdvanceStep(service, claim, tally, true);
+  for (
+    let step = 1;
+    step < config.claimStepsPerPassMax && stepped.stepped === "Moved";
+    step += 1
+  ) {
+    if (!(await service.store.extendClaim(claim, config.requestClaimLeaseSecs)))
+      return;
+    stepped = await finalizerAdvanceStep(service, claim, tally, false);
+  }
+  if (stepped.stepped === "Gone") return;
   if (tally.conclusions === spent)
-    await finalizerRecordHold(
-      service,
-      claim,
-      gathered.gathered === "Held" ? undefined : gathered.view,
-      tally,
-    );
+    await finalizerRecordHold(service, claim, stepped.view, tally);
   const held = tally.conclusions === spent ? tally.heldReason : undefined;
+  if (
+    tally.conclusions === spent &&
+    (stepped.stepped === "Moved" || stepped.reopened)
+  )
+    await service.store.releaseClaim(claim);
+  else await finalizerAdvanceDue(service, claim, held, tally);
   recordFinalizer(service.metrics, (metrics) => {
     metrics.advanced(claim.request, held);
   });
+}
+
+/**
+ * Lets the claim on a merge waiting on the forge run out when its reading
+ * falls due, where that is sooner than the lease, so the request is drawn on
+ * the pass its reading is due rather than once the lease lapses after it.
+ */
+async function finalizerAdvanceDue(
+  service: FinalizerService,
+  claim: FinalizationClaim,
+  held: FinalizerHoldReason | undefined,
+  tally: FinalizerTally,
+): Promise<void> {
+  const rereadInSecs = tally.heldRereadInSecs;
+  if (
+    held === undefined ||
+    !finalizerHoldsOnForge.includes(held) ||
+    rereadInSecs === undefined
+  )
+    return;
+  const config = checkedFinalizerConfig(service.config);
+  if (rereadInSecs < config.requestClaimLeaseSecs)
+    await service.store.extendClaim(claim, rereadInSecs);
 }
 
 /** Performs the one move the pure pass named, every arm of it a durable move or a hold. */
 async function finalizerAdvanceDecided(
   service: FinalizerService,
   view: FinalizationView,
+  decision: FinalizationDecision,
   tally: FinalizerTally,
 ): Promise<void> {
   const config = checkedFinalizerConfig(service.config);
   const claim = view.claim;
-  const decision = finalizationNext(config, view);
   const ceilingReached = (spent: FinalizerCeiling, ceiling: number): boolean =>
     finalizerCeilingReached(service, tally, spent, ceiling);
   switch (decision.decide) {
@@ -2917,7 +3366,7 @@ const stackPreparationsPerPassMax = 8;
 /** The most evaluations over a stack one pass looks at. */
 const stackEvaluatingPerPassMax = 16;
 
-/** The most tickets pending unstacked one pass looks at for a re-stack. */
+/** The most pending Stacked tickets one pass looks at for a re-stack. */
 const stackRestacksPerPassMax = 8;
 
 /**
@@ -2957,12 +3406,51 @@ async function finalizerInvalidateStacks(
 }
 
 /**
- * Sends back to Work every Stacked ticket pending unstacked that `restackLine`
- * finds could now stack over the queue ahead of it, by claiming its waiting
- * request and recording a `Restack` failure naming the accepted commit and the
- * line, which the request's next claim concludes as `FinalizationNeedsWork`.
- * A queue that cannot be read and a request someone else holds are left for
- * the next pass.
+ * Whether the stack one ticket would be sent back over folds: the target's tip,
+ * observed as a stack's is, then the line, then the ticket's accepted commit.
+ * A conflict is kept against those inputs and not folded again over them, and
+ * a tip or a fold nobody could read answers no and is asked again next pass.
+ */
+async function finalizerRestackFolds(
+  service: FinalizerService,
+  epoch: RecoveryEpoch,
+  due: RestackableStack,
+  line: readonly StackMember[],
+  accepted: GitObjectId,
+): Promise<boolean> {
+  const repository = {
+    partition: due.partition,
+    repository: asRepositoryId(due.repository),
+    recoveryEpoch: epoch,
+  };
+  const tip = await stackTipObserved(service.git, repository, due.target);
+  if (tip === undefined) return false;
+  const fold = { tip: tip.commit, line, accepted };
+  const refusals = service.restackRefusals;
+  if (restackRefused(refusals, due.partition, due.ticket, fold)) return false;
+  const folded = await service.git
+    .foldStack({
+      repository,
+      tip,
+      beneath: line.map((member) => member.commit),
+      candidate: accepted,
+    })
+    .catch((): undefined => undefined);
+  if (folded?.folded === "Conflicted")
+    restackRefuse(refusals, due.partition, due.ticket, fold);
+  if (folded?.folded !== "Stack") return false;
+  restackForget(refusals, due.partition, due.ticket);
+  return true;
+}
+
+/**
+ * Sends back to Work every Stacked ticket pending unstacked or over a stack
+ * that stopped standing that `restackLine` finds could now stack over the
+ * queue ahead of it and whose stack over that line folds, by claiming its
+ * waiting request and recording a `Restack` failure naming the accepted commit
+ * and the line, which the request's next claim concludes as
+ * `FinalizationNeedsWork`. A queue that cannot be read and a request someone
+ * else holds are left for the next pass.
  */
 async function finalizerRestackStacks(
   service: FinalizerService,
@@ -2989,6 +3477,10 @@ async function finalizerRestackStacks(
     );
     const accepted = queue.find((entry) => entry.ticket === due.ticket);
     if (line === undefined || accepted === undefined) continue;
+    if (
+      !(await finalizerRestackFolds(service, epoch, due, line, accepted.commit))
+    )
+      continue;
     const claim = await service.store.claimUnattempted(
       owner,
       epoch,
@@ -3150,6 +3642,7 @@ export async function finalizerPass(
     holds: 0,
     heldReason: undefined,
     heldRefused: undefined,
+    heldRereadInSecs: undefined,
   };
   await finalizerReadHolds(service, epoch, tally);
   const claims = await service.store.claimRequests(

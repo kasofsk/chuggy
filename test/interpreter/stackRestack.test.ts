@@ -1,7 +1,8 @@
 /**
  * `stackRestack.ts` against the re-stack scenarios of
  * `model/tests/stacking_test.qnt`, each replayed as the queue it reaches and
- * whether the pending ticket is sent back over it.
+ * whether the pending ticket is sent back over it, and its memo of the folds
+ * that conflicted.
  */
 
 import assert from "node:assert/strict";
@@ -16,9 +17,17 @@ import {
 } from "../../src/interpreter/stackChoice.ts";
 import { entry, member } from "./stackQueueFixture.ts";
 import {
+  restackForget,
   restackLine,
+  restackRefuse,
+  restackRefused,
+  restackRefusals,
+  restackRefusalsMax,
   type RestackCandidate,
+  type RestackFold,
 } from "../../src/interpreter/stackRestack.ts";
+import { asGitObjectId } from "../../src/interpreter/finalizer.ts";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 
 /** A Stacked ticket that passed over `beneath` with nothing landed since. */
 function stacked(ticket: number, beneath: readonly number[]): StackEntry {
@@ -192,4 +201,140 @@ test("restackEndingUnstackedWaitsForTheLineToChange: the line last sent back ove
       tickets(restackLine(candidate(3, { restackedOver: changed }), queue)),
       [1, 2],
     );
+});
+
+/** A Stacked ticket pending over `beneath`, its stack broken by ticket 7 landing since its tip, though 7 was not first beneath it. */
+function deadStacked(ticket: number, beneath: readonly number[]): StackEntry {
+  return entry(ticket, "Stacked", "Pending", {
+    stack: { beneath: beneath.map((at) => member(at)), landings: [member(7)] },
+  });
+}
+
+test("a pending Stacked ticket whose stack stopped standing is sent back over the line it could now stack on", () => {
+  const queue = [entry(1, "Stacked", "Evaluation"), deadStacked(2, [6])];
+  assert.deepEqual(tickets(restackLine(candidate(2), queue)), [1]);
+  const holderPending = [
+    entry(1, "Serialized", "Pending"),
+    deadStacked(2, [6]),
+  ];
+  assert.deepEqual(tickets(restackLine(candidate(2), holderPending)), [1]);
+});
+
+test("a pending ticket whose stack stands, the holder, and a line equal to its latest re-stack's are not sent back", () => {
+  const standing = [
+    entry(1, "Stacked", "Pending"),
+    entry(2, "Stacked", "Pending", {
+      stack: { beneath: [member(1)], landings: [] },
+    }),
+  ];
+  assert.equal(restackLine(candidate(2), standing), undefined);
+  assert.equal(
+    restackLine(candidate(1), [
+      deadStacked(1, [6]),
+      entry(2, "Stacked", "Pending"),
+    ]),
+    undefined,
+  );
+  assert.equal(
+    restackLine(candidate(2, { restackedOver: [member(1)] }), [
+      entry(1, "Stacked", "Pending"),
+      deadStacked(2, [6]),
+    ]),
+    undefined,
+  );
+});
+
+test("a holder pending over a stack that stopped standing is no member, so nothing behind it is sent back over it", () => {
+  for (const behind of [entry(2, "Stacked", "Pending"), deadStacked(2, [6])])
+    assert.equal(
+      restackLine(candidate(2), [deadStacked(1, [6]), behind]),
+      undefined,
+    );
+});
+
+test("a ticket behind one whose stack stopped standing waits until that one is pending over a stack that stands", () => {
+  const holder = entry(1, "Stacked", "Evaluation");
+  assert.equal(
+    restackLine(candidate(3), [
+      holder,
+      deadStacked(2, [6]),
+      deadStacked(3, [6]),
+    ]),
+    undefined,
+  );
+  assert.deepEqual(
+    tickets(
+      restackLine(candidate(3), [holder, stacked(2, [1]), deadStacked(3, [6])]),
+    ),
+    [1, 2],
+  );
+});
+
+const partition = {
+  tenant: asTenantId("tenant"),
+  project: asProjectId("project"),
+};
+
+function fold(
+  tip: string,
+  line: readonly number[],
+  accepted: string,
+): RestackFold {
+  return {
+    tip: asGitObjectId(tip.repeat(40)),
+    line: line.map((at) => member(at)),
+    accepted: asGitObjectId(accepted.repeat(40)),
+  };
+}
+
+test("a refused fold is refused over exactly its inputs, and over no tip, line or accepted commit that differs", () => {
+  const refusals = restackRefusals();
+  const refused = fold("a", [1], "c");
+  restackRefuse(refusals, partition, asTicketId(2), refused);
+
+  assert.equal(
+    restackRefused(refusals, partition, asTicketId(2), refused),
+    true,
+  );
+  for (const other of [
+    fold("b", [1], "c"),
+    fold("a", [3], "c"),
+    fold("a", [1, 3], "c"),
+    fold("a", [1], "d"),
+  ])
+    assert.equal(
+      restackRefused(refusals, partition, asTicketId(2), other),
+      false,
+    );
+  assert.equal(
+    restackRefused(refusals, partition, asTicketId(3), refused),
+    false,
+  );
+
+  restackForget(refusals, partition, asTicketId(2));
+  assert.equal(
+    restackRefused(refusals, partition, asTicketId(2), refused),
+    false,
+  );
+});
+
+test("the memo holds no more than its bound, forgetting the oldest refusal first", () => {
+  const refusals = restackRefusals();
+  for (let ticket = 1; ticket <= restackRefusalsMax + 1; ticket++)
+    restackRefuse(refusals, partition, asTicketId(ticket), fold("a", [], "c"));
+
+  assert.equal(refusals.folds.size, restackRefusalsMax);
+  assert.equal(
+    restackRefused(refusals, partition, asTicketId(1), fold("a", [], "c")),
+    false,
+  );
+  assert.equal(
+    restackRefused(
+      refusals,
+      partition,
+      asTicketId(restackRefusalsMax + 1),
+      fold("a", [], "c"),
+    ),
+    true,
+  );
 });

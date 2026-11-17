@@ -26,7 +26,7 @@ import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import { epicMembersQuery } from "../core/epicTickets.ts";
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
 import { usePanelState } from "./api.ts";
-import { useCreatorEmails } from "./creatorEmails.ts";
+import { useCreatorNames } from "./creatorNames.ts";
 import { useLandingQueues } from "./ticket/LandingQueueChip.tsx";
 import { PanelUnready } from "./DataPanel.tsx";
 import { EpicHeader } from "./epic/EpicHeader.tsx";
@@ -95,7 +95,7 @@ function EpicPageOf(props: {
     epicHistoryQuery(partition, epic, undefined),
   );
   const rowsState = usePanelState(epicMembersQuery(partition, epic));
-  const creatorEmails = useCreatorEmails(partition);
+  const creatorNames = useCreatorNames(partition);
   const queues = useLandingQueues(partition);
   const writing = !projectAbilityRefused(
     useProjectAbilities(partition),
@@ -122,7 +122,7 @@ function EpicPageOf(props: {
     graphState,
     historyState,
     rowsState,
-    creatorEmails,
+    creatorNames,
     queues,
     writing,
     nowMs,

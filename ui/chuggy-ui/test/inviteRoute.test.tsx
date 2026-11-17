@@ -82,6 +82,10 @@ test("a person returning from sign-in to the invite page is drawn it, and their 
 });
 
 test("a browser with no session is drawn the invite page at its address, and the signed-out card at any other", async () => {
+  vi.stubGlobal(
+    "fetch",
+    scriptedFetch(() => answer({ state: "Open", kind: "Workspace" })).fetch,
+  );
   const { session } = inviteSession("SignedOut");
   const { holder } = inviteBrowser({ anchor: "t0ken" });
   const tree = (
@@ -98,9 +102,7 @@ test("a browser with no session is drawn the invite page at its address, and the
   history.replaceState(null, "", inviteRoutePath);
   const view = renderCopied(tree);
   await settled();
-  expect(
-    screen.getByRole("heading", { name: "You are invited to chuggy" }),
-  ).toBeTruthy();
+  expect(screen.getByText("Your own chuggy workspace")).toBeTruthy();
   view.unmount();
   history.replaceState(null, "", "/acme/atlas");
   renderCopied(tree);
@@ -108,5 +110,5 @@ test("a browser with no session is drawn the invite page at its address, and the
   expect(
     screen.getByRole("heading", { name: "Sign in to chuggy" }),
   ).toBeTruthy();
-  expect(screen.queryByText("Sign in to accept.")).toBeNull();
+  expect(screen.queryByText("Your own chuggy workspace")).toBeNull();
 });

@@ -223,7 +223,7 @@ const sdkHeldAfterCompaction = [
   "ed0c7b23-28f0-40f2-b7a9-1f9e4c0a88d3",
 ];
 
-test("what the lead holds is what the runtime's own accessor answers", () => {
+test("what a session holds is what the runtime's own accessor answers", () => {
   const entries = storedEntries(streams.compacted);
   const chain = sessionTranscriptChain(entries);
   const held = sessionTranscriptHeld(entries);

@@ -1,11 +1,11 @@
 /**
- * The session half of a pool's poll: which of a project's sessions a pool may
- * claim, what claiming one opens, and what a runner is handed for it.
+ * The session half of a pool plane's poll: which sessions a chat host may
+ * claim, what claiming one opens, and what it is handed for it.
  *
  * A CLAIM OPENS THE ATTEMPT. The scheduler opens no attempt for a session whose
  * oldest queued turn was admitted for runners, so the claim is where its bearer
  * is minted and its invocation recorded, exactly as `sessionPlaceOne` records
- * one, and the durable side opens it already running under the pool's lease:
+ * one, and the durable side opens it already running under the host's lease:
  * no pod is placed and nothing observes one, so the poll's renewal is what
  * keeps it, and it ends by the runner's report, its idleness or its lease.
  *
@@ -17,21 +17,21 @@
  *
  * A CANDIDATE IS READ AND THEN OPENED. The durable side re-checks everything
  * the read found under the session's row lock — that a runner may take it,
- * that this pool may, and that the roster and runtime session the invocation
- * was built from are still the session's — so a session another pool claimed
- * in between is skipped and one this pool has no room for ends the claims.
+ * that this host may, and that the roster and runtime session the invocation
+ * was built from are still the session's — so a session another host claimed
+ * in between is skipped and one this host has no room for ends the claims.
  *
- * A POOL CLAIMS ITS PROJECT'S LEAD AND A CHAT HOST ITS OWNER'S THREADS AND
- * INQUIRIES; A PERSONAL RUNNER CLAIMS AND HOLDS NO SESSION, so nothing here is
- * asked of one. A session whose account has paused its agent is not read as
- * waiting, where that account's options say its kind pauses, and the
- * durable side reads the pause again under the lock that opens it.
+ * A CHAT HOST CLAIMS ITS OWNER'S THREADS; A POOL CLAIMS NONE, and only holds
+ * and settles what it claimed, and A PERSONAL RUNNER CLAIMS AND HOLDS NO
+ * SESSION, so nothing here is asked of one. A session whose account has paused
+ * its agent is not read as waiting, where that account's options say its kind
+ * pauses, and the durable side reads the pause again under the lock that
+ * opens it.
  *
  * A CHAT HOST'S OWNER MUST STILL READ THE PROJECT. Its candidates span every
  * project of its tenant, and the authority answers whether its owner may still
  * read each one, so every project is asked before anything is opened and a
- * project the owner cannot read is skipped. A pool's candidates are all of its
- * own project, which its admission already answered for.
+ * project the owner cannot read is skipped.
  *
  * A MEMBER'S OWN SESSION IS ITS OWNER'S CHAT HOST'S ALONE, and only while the
  * owner may still open unscoped chat and the host implements `UnscopedChat`:
@@ -43,16 +43,13 @@
  * LIMIT WHERE IT NAMED NONE: the claim records the host's bound on the attempt,
  * or that it has none, and the reaper ends it by what it records, and the
  * session is launched with that bound as its own idle limit or with none, so
- * the host and the reaper read one figure. A pool's claim records nothing and
- * launches with the site's bounds, so its attempt is reaped at the
- * scheduler's window as a placed one is.
+ * the host and the reaper read one figure.
  *
  * A CHAT HOST'S THREAD HOLDS ITS ROSTER INTERSECTED WITH WHAT ITS HOST NAMED,
  * and the whole of its roster where the host named nothing: the claim records
  * the host's set on the attempt and builds the invocation from the
  * intersection, and the API confines the attempt's bearer to the same
- * intersection, taken from the session's roster as it reads it then. An
- * inquiry, a lead and any session a pool claims hold their roster.
+ * intersection, taken from the session's roster as it reads it then.
  */
 import type { SessionBounds } from "../contract/workerTask.ts";
 import {
@@ -220,6 +217,12 @@ export interface WorkerPoolSessions extends WorkerPoolSessionRows<WorkerPoolSess
     identity: ChatHostIdentity,
     max: number,
   ): Promise<readonly WorkerPoolThreadClosed[]>;
+  /** Ends `Lost`, as `Vanished`, at most `max` of the attempts `identity` holds that `listed` does not name, releasing their turns, and answers how many it ended. */
+  unlistedEnded(
+    identity: ChatHostIdentity,
+    listed: readonly string[],
+    max: number,
+  ): Promise<number>;
 }
 
 /** Everything a session claim reaches beyond its rows and the authority: each project's binding, and where a bearer is drawn. */
@@ -510,7 +513,7 @@ export async function workerPoolSessionClaims(
   return claimed;
 }
 
-/** The thread a claimed session is an attempt of, named only to a chat host whose poll's peer implements `ChatSessionThreads`, and absent for an inquiry or a lead. */
+/** The thread a claimed session is an attempt of, named only to a chat host whose poll's peer implements `ChatSessionThreads`. */
 function workerPoolSessionThreadNamed(
   identity: WorkerPoolSessionClaimant,
   contract: WorkerContractPeer | undefined,
@@ -518,7 +521,6 @@ function workerPoolSessionThreadNamed(
 ): Pick<WorkerPoolSessionAssignment, "thread"> {
   if (
     identity.kind !== "ChatHost" ||
-    candidate.kind !== "Thread" ||
     !workerPoolPeerImplements("ChatSessionThreads", contract)
   )
     return {};

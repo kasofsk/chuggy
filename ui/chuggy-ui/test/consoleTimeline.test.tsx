@@ -2,7 +2,6 @@
  * The whole console over the site, stepped through what a server does over
  * time, with a reader's text typed into each of the places a reader writes:
  * New ticket's form and the chat pane's composer, an open North Star edit and
- * the same composer, the Inbox's Reject note, drawn on the inbox's read, and
  * the same composer, and a ticket's edit form, drawn on the ticket's own read,
  * and the same composer.
  *
@@ -27,7 +26,6 @@ import {
 } from "../app/core/streamConnection.ts";
 import {
   consoleAdvanced,
-  consoleInboxTicket,
   consoleMounted,
   consolePartition,
   consoleSession,
@@ -35,7 +33,6 @@ import {
   consoleSiteEachCase,
 } from "./consoleSite.tsx";
 import type { ConsoleSession, ConsoleSite } from "./consoleSite.tsx";
-import { inboxItemOf } from "./inboxFixture.ts";
 import { threadMineSession, threadSessionResource } from "./threadFixture.ts";
 import { ticketPageTicket } from "./ticketPageFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -85,11 +82,6 @@ function consoleComposer(): ConsoleBox {
   return screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
 }
 
-/** The Inbox's item for the ticket its fixture holds. */
-function consoleInboxRow(): HTMLElement {
-  return inboxItemOf(consoleInboxTicket);
-}
-
 /** A screen at an address, and the places on it a reader types into. */
 interface ConsoleDesk {
   readonly name: string;
@@ -125,7 +117,7 @@ const consoleDesks: readonly ConsoleDesk[] = [
   },
   {
     name: "an open North Star edit and the composer",
-    path: `${projectAddress}/settings/lead`,
+    path: `${projectAddress}/settings/threads`,
     typed: async () => {
       await act(async () => {
         fireEvent.click(
@@ -143,33 +135,6 @@ const consoleDesks: readonly ConsoleDesk[] = [
               name: "North Star",
             }),
           "a North Star the reader is writing",
-        ),
-        consoleTypedInto(
-          "the composer",
-          consoleComposer,
-          "a message the reader is writing",
-        ),
-      ];
-    },
-  },
-  {
-    name: "the Inbox's Reject note and the composer",
-    path: `${projectAddress}/inbox`,
-    typed: async () => {
-      await act(async () => {
-        fireEvent.click(
-          within(consoleInboxRow()).getByRole("button", { name: "reject" }),
-        );
-        await vi.advanceTimersByTimeAsync(0);
-      });
-      return [
-        consoleTypedInto(
-          "the Inbox's Reject note",
-          () =>
-            within(consoleInboxRow()).getByRole<HTMLInputElement>("textbox", {
-              name: "Note",
-            }),
-          "a note the reader is writing",
         ),
         consoleTypedInto(
           "the composer",

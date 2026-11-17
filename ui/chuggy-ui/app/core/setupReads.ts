@@ -10,12 +10,17 @@
  * forgotten, and a request that is not a read is refused before it is sent.
  * Which project is meant is decided from the same reads: the one there is,
  * the one named, or the one the folder's remote is added to and no other is.
- * What an installation grants is read only for the two apps on the account
- * that owns the project's repository, since each listing costs the site a
- * request to the forge. The landings of a ticket that is done are read only
- * where the repository meant holds nothing but the bootstrap, since only
- * there is its pull request the one that writes the repository's own
- * configuration.
+ * What an installation grants is read only for the apps on the account that
+ * owns the project's repository, or where the project has none, the folder's
+ * remote, since each listing costs the site a request to the forge; the
+ * settings page of each installation there, where it is the folder's remote
+ * the apps are held to; and the deployment's apps, which say where each
+ * is installed from, only where that account holds no claim of one of them.
+ * The landings of a ticket that is done are read only where the repository
+ * meant holds nothing but the bootstrap, since only there is its pull request
+ * the one that writes the repository's own configuration. The executions of
+ * a ticket are read only where it is in its work or its evaluation, since
+ * only there can one wait on the person's runners.
  * The list of projects is read a page at a time for a bounded count of pages,
  * and is whole only where the last page read named no next. A name is taken
  * from it without a question only where it is whole; a project named in full
@@ -27,6 +32,8 @@ import { projectRepositoriesAnsweredMax } from "../../../../src/contract/http.ts
 import type {
   DraftResponse,
   ExecutionPlacementResponse,
+  ExecutionSummary,
+  ForgeAppsResponse,
   ForgeInstallationResponse,
   ForgeRepositoryResponse,
   ProjectOwnerFallbackResponse,
@@ -46,6 +53,9 @@ import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import {
   apiDrafts,
   apiExecutionPlacement,
+  apiExecutions,
+  apiForgeApps,
+  apiForgeInstallationPermissions,
   apiForgeInstallationRepositories,
   apiForgeInstallations,
   apiOwnerFallback,
@@ -181,10 +191,18 @@ export type SetupProposal =
         | { readonly proposal: "Unread" }
       ));
 
-/** What one app's installation on the account that owns the project's repository was read to grant, whole where the listing was all of it. */
+/** What one app's installation on the account the grants are read on was read to grant, whole where the listing was all of it. */
 export interface SetupGrant {
   readonly app: ForgeAppName;
   readonly listed: SetupRead<readonly ForgeRepositoryResponse[]>;
+  /** The installation's settings page on the forge, asked only for the folder's remote, where the listing was got. */
+  readonly settings: SetupRead<string>;
+}
+
+/** The executions of one ticket, as they were read. */
+export interface SetupTicketExecutions {
+  readonly ticket: number;
+  readonly executions: SetupRead<readonly ExecutionSummary[]>;
 }
 
 /** The landings of one ticket, as they were read. */
@@ -192,6 +210,11 @@ export interface SetupTicketLandings {
   readonly ticket: number;
   readonly landings: SetupRead<readonly TicketLandingResponse[]>;
 }
+
+/** The person's own personal runners: none registered, or registered and standing for the project as `workRunnerPersonal` says, unregistered where it is not given them. */
+export type SetupPersonal =
+  | { readonly registered: false }
+  | { readonly registered: true; readonly standing: SessionRunnerStanding };
 
 export interface SetupReads {
   readonly site: string;
@@ -201,8 +224,10 @@ export interface SetupReads {
   readonly proposal: SetupProposal;
   readonly choice: SetupChoice;
   readonly installations: SetupRead<readonly ForgeInstallationResponse[]>;
-  /** One for each app, where the account that owns the repository meant holds both; none otherwise. */
+  /** One for each app, where the account that owns the repository meant holds both; where none is meant, one for each app the account that owns the folder's remote holds; none otherwise. */
   readonly grants: readonly SetupGrant[];
+  /** The deployment's apps, where none is meant and the account that owns the folder's remote holds no claim of one of them; unasked otherwise. */
+  readonly apps: SetupRead<ForgeAppsResponse>;
   readonly settings: SetupRead<SelectorProjectSettingsResponse>;
   readonly repositories: SetupRepositories;
   /** Where the project's work runs, which is what says whether it waits on a runner at all. */
@@ -210,8 +235,8 @@ export interface SetupReads {
   readonly placement: SetupRead<SessionPlacementResponse>;
   /** Whether the project lets a member's own runners take their work, which says whether the person's own can be its runner. */
   readonly fallback: SetupRead<ProjectOwnerFallbackResponse>;
-  /** How the person's own personal runners stand for the project, unregistered where they hold none or none serves it; they take the person's work where the fallback lets them. */
-  readonly personal: SetupRead<SessionRunnerStanding>;
+  /** Whether the person holds personal runners, and how they stand for the project: unregistered where it is not given them; they take the person's work where the fallback lets them. */
+  readonly personal: SetupRead<SetupPersonal>;
   /** A ticket that is done, where the project has one: one is all that is asked for. */
   readonly landed: SetupRead<readonly TicketResponse[]>;
   /** The tickets on their way, most lately moved first. */
@@ -219,6 +244,8 @@ export interface SetupReads {
   readonly drafts: SetupRead<readonly DraftResponse[]>;
   /** The landings of each ticket that was being landed, up to the bound. */
   readonly landings: readonly SetupTicketLandings[];
+  /** The executions of each ticket in its work or its evaluation, up to the bound, which say what one starting waits on of the person's runners. */
+  readonly executions: readonly SetupTicketExecutions[];
   /** The landings of the ticket that is done, where the repository meant holds only the bootstrap; none otherwise. */
   readonly doneLandings: SetupTicketLandings | undefined;
 }
@@ -235,6 +262,12 @@ export const setupMovingPhases = [
 /** The phase in which a ticket has landings to read. */
 export const setupLandingPhase =
   "Finalization" satisfies TicketResponse["phase"];
+
+/** The phases in which a ticket's executions may wait on the person's runners. */
+const setupRunningPhases = [
+  "Work",
+  "Evaluation",
+] as const satisfies readonly TicketResponse["phase"][];
 
 /** How many projects' repositories are read to see which the folder's remote names; past it nothing is proposed. */
 export const setupCandidatesMax = 8;
@@ -567,10 +600,13 @@ async function setupProjectRead(
     fallback: setupGot(fallback, (answered) => answered, all),
     personal:
       personal.outcome === "Absent"
-        ? { read: "Got", value: "Unregistered", whole: true }
+        ? { read: "Got", value: { registered: false }, whole: true }
         : setupGot(
             personal,
-            (answered) => workRunnerPersonal(answered, partition.project),
+            (answered) => ({
+              registered: true,
+              standing: workRunnerPersonal(answered, partition.project),
+            }),
             all,
           ),
     landed: setupGot(landed, (answered) => answered.tickets, all),
@@ -619,6 +655,34 @@ async function setupLandingsRead(
       .map((ticket) =>
         setupTicketLandingsRead(ports, partition, ticket.ticket),
       ),
+  );
+}
+
+/** The tickets whose executions say what they wait on: those in their work or their evaluation, up to the bound. */
+function setupRunning(moving: SetupReads["moving"]): readonly TicketResponse[] {
+  return moving.read === "Got"
+    ? moving.value
+        .filter((ticket) =>
+          setupRunningPhases.some((phase) => phase === ticket.phase),
+        )
+        .slice(0, setupLandingsMax)
+    : [];
+}
+
+async function setupExecutionsRead(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  moving: SetupReads["moving"],
+): Promise<readonly SetupTicketExecutions[]> {
+  return Promise.all(
+    setupRunning(moving).map(async (ticket) => ({
+      ticket: ticket.ticket,
+      executions: setupGot(
+        await apiExecutions(ports, partition, { ticket: ticket.ticket }),
+        (answered) => answered.executions,
+        (answered) => answered.nextCursor === undefined,
+      ),
+    })),
   );
 }
 
@@ -690,41 +754,125 @@ export function setupBootstrapped(read: SetupRepositories): boolean {
 }
 
 /**
- * What each app's installation on the account that owns the repository meant
- * grants. Nothing is asked where no repository is meant, its address names no
- * one owner, or that account is not shown holding both apps: the step is then
- * decided without it, and the forge is spared the request.
+ * The account the grants are read on, and whether both apps must be claimed
+ * there before either is read: the owner of the repository meant, which the
+ * GitHub step reads only where both are; or, where the list of repositories
+ * was got whole and none is meant, the owner of the folder's remote, which
+ * the repository step reads app by app. None where neither is.
+ */
+interface SetupGrantsAccount {
+  readonly owner: string | undefined;
+  readonly both: boolean;
+}
+
+function setupGrantsAccount(
+  repositories: SetupRepositories,
+  remote: SetupRemote | undefined,
+): SetupGrantsAccount | undefined {
+  const binding = setupBindingMeant(repositories);
+  if (binding !== undefined)
+    return { owner: setupRepositoryOwner(binding.repository), both: true };
+  if (remote === undefined || repositories.read !== "Got") return undefined;
+  if (!repositories.whole) return undefined;
+  return { owner: setupRemoteOwner(remote), both: false };
+}
+
+/** The account that owns the repository the folder's remote names. */
+export function setupRemoteOwner(remote: SetupRemote): string | undefined {
+  return setupRepositoryOwner(`https://${remote.said}`);
+}
+
+/** The claims of each app on `owner`, in the roster's order. */
+function setupOwnerClaims(
+  installations: readonly ForgeInstallationResponse[],
+  owner: string | undefined,
+): readonly ForgeInstallationResponse[] {
+  return forgeApps.flatMap((app) => {
+    const claim = installations.find(
+      (held) => held.app === app && held.account === owner,
+    );
+    return claim === undefined ? [] : [claim];
+  });
+}
+
+/** One installation's listing, and its settings page where the listing was got and `remote` is that the apps are held to the folder's remote. */
+async function setupGrantRead(
+  ports: ApiPorts,
+  workspace: string,
+  claim: ForgeInstallationResponse,
+  remote: boolean,
+): Promise<SetupGrant> {
+  const listed = setupGot(
+    await apiForgeInstallationRepositories(
+      ports,
+      workspace,
+      claim.installationId,
+    ),
+    (answered) => answered.repositories,
+    (answered) => !answered.truncated,
+  );
+  const asked = remote && listed.read === "Got";
+  return {
+    app: claim.app,
+    listed,
+    settings: asked
+      ? setupGot(
+          await apiForgeInstallationPermissions(
+            ports,
+            workspace,
+            claim.installationId,
+          ),
+          (answered) => answered.settingsUrl,
+          () => true,
+        )
+      : setupUnasked,
+  };
+}
+
+/**
+ * What each app's installation on the account `setupGrantsAccount` names
+ * grants. Nothing is asked where it names none, or where the GitHub step's
+ * account is not shown holding both apps: the step is then decided without
+ * it, and the forge is spared the request.
  */
 async function setupGrantsRead(
   ports: ApiPorts,
   workspace: string | undefined,
   installations: SetupReads["installations"],
-  repositories: SetupRepositories,
+  account: SetupGrantsAccount | undefined,
+  remote: SetupRemote | undefined,
 ): Promise<readonly SetupGrant[]> {
-  const binding = setupBindingMeant(repositories);
-  if (binding === undefined || workspace === undefined) return [];
+  if (account === undefined || workspace === undefined) return [];
   if (installations.read !== "Got") return [];
-  const owner = setupRepositoryOwner(binding.repository);
-  const claims = forgeApps.flatMap((app) => {
-    const claim = installations.value.find(
-      (held) => held.app === app && held.account === owner,
-    );
-    return claim === undefined ? [] : [claim];
-  });
-  if (claims.length < forgeApps.length) return [];
+  const claims = setupOwnerClaims(installations.value, account.owner);
+  if (account.both && claims.length < forgeApps.length) return [];
   return Promise.all(
-    claims.map(async (claim) => ({
-      app: claim.app,
-      listed: setupGot(
-        await apiForgeInstallationRepositories(
-          ports,
-          workspace,
-          claim.installationId,
-        ),
-        (answered) => answered.repositories,
-        (answered) => !answered.truncated,
+    claims.map((claim) =>
+      setupGrantRead(
+        ports,
+        workspace,
+        claim,
+        !account.both && remote !== undefined,
       ),
-    })),
+    ),
+  );
+}
+
+/** The deployment's apps, asked only where the repository step's account holds no claim of one of them, which is when whether its install is offered decides the tell. */
+async function setupAppsRead(
+  ports: ApiPorts,
+  installations: SetupReads["installations"],
+  account: SetupGrantsAccount | undefined,
+): Promise<SetupReads["apps"]> {
+  if (account === undefined || account.both) return setupUnasked;
+  if (installations.read !== "Got" || account.owner === undefined)
+    return setupUnasked;
+  const claims = setupOwnerClaims(installations.value, account.owner);
+  if (claims.length === forgeApps.length) return setupUnasked;
+  return setupGot(
+    await apiForgeApps(ports),
+    (answered) => answered,
+    () => true,
   );
 }
 
@@ -733,9 +881,18 @@ async function setupChosenRead(
   choice: SetupChoice,
   inventory: SetupReads["inventory"],
   candidates: readonly SetupCandidate[],
+  remote: SetupRemote | undefined,
 ): Promise<
   SetupProjectReads &
-    Pick<SetupReads, "installations" | "grants" | "landings" | "doneLandings">
+    Pick<
+      SetupReads,
+      | "installations"
+      | "grants"
+      | "apps"
+      | "landings"
+      | "executions"
+      | "doneLandings"
+    >
 > {
   const partition = setupPartition(choice, inventory);
   const held = candidates.find(
@@ -757,21 +914,29 @@ async function setupChosenRead(
       ? setupProjectUnasked
       : setupProjectRead(ports, partition, held),
   ]);
-  const [grants, landings, doneLandings] = await Promise.all([
-    setupGrantsRead(
-      ports,
-      partition?.tenant,
-      installations,
-      project.repositories,
-    ),
+  const account = setupGrantsAccount(project.repositories, remote);
+  const [grants, apps, landings, executions, doneLandings] = await Promise.all([
+    setupGrantsRead(ports, partition?.tenant, installations, account, remote),
+    setupAppsRead(ports, installations, account),
     partition === undefined
       ? []
       : setupLandingsRead(ports, partition, project.moving),
     partition === undefined
+      ? []
+      : setupExecutionsRead(ports, partition, project.moving),
+    partition === undefined
       ? undefined
       : setupDoneLandingsRead(ports, partition, project),
   ]);
-  return { ...project, installations, grants, landings, doneLandings };
+  return {
+    ...project,
+    installations,
+    grants,
+    apps,
+    landings,
+    executions,
+    doneLandings,
+  };
 }
 
 /**
@@ -802,7 +967,8 @@ async function setupInventoryRead(
  * Reads where a person stands: their projects, then which of them is meant,
  * then that project's own reads at once, then the landings of whatever was
  * being landed, and of the ticket that is done where the repository holds
- * only the bootstrap. A read that hangs on one that was not got is not asked.
+ * only the bootstrap, and the executions of whatever is in its work or its
+ * evaluation. A read that hangs on one that was not got is not asked.
  */
 export async function readSetup(
   ports: ApiPorts,
@@ -826,6 +992,12 @@ export async function readSetup(
     inventory,
     proposal: sought.proposal,
     choice,
-    ...(await setupChosenRead(ports, choice, inventory, sought.candidates)),
+    ...(await setupChosenRead(
+      ports,
+      choice,
+      inventory,
+      sought.candidates,
+      chosen.remote,
+    )),
   };
 }

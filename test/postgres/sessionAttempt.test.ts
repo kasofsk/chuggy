@@ -307,23 +307,22 @@ test("the read offers only sessions with queued work and no attempt already runn
  */
 test("the cluster offers a session only where its oldest queued turn was admitted in cluster", async () => {
   const partition = await sessionRigProject(rig, "routed");
-  await sessionRigRouted(rig, partition, "Pool", "InCluster");
-  const lead = await sessionRigSession(rig, partition, "routed-lead");
-  await sessionRigTurn(rig, partition, lead, "routed-lead");
+  const cluster = await sessionRigSession(rig, partition, "routed-cluster");
+  await sessionRigTurn(rig, partition, cluster, "routed-cluster");
+  await sessionRigRouted(rig, partition, "Pool");
   const thread = await sessionRigSession(rig, partition, "routed-thread", {
-    kind: "Thread",
     principal: "member-routed",
   });
   await sessionRigTurn(rig, partition, thread, "routed-thread");
   const offered = async () =>
     (await rig.scheduler.awaitingPlacement(rig.epoch, sessionRigBoundless))
       .map((candidate: AgentSession) => candidate.session)
-      .filter((session) => session === lead || session === thread);
-  assert.deepEqual(await offered(), [lead]);
-  await sessionRigRouted(rig, partition, "InCluster", "Pool");
+      .filter((session) => session === cluster || session === thread);
+  assert.deepEqual(await offered(), [cluster]);
+  await sessionRigRouted(rig, partition, "InCluster");
   assert.deepEqual(
     await offered(),
-    [lead],
+    [cluster],
     "a route changed after a turn was queued moved the turn",
   );
   await sessionRigTurn(rig, partition, thread, "routed-thread-later");
@@ -333,23 +332,23 @@ test("the cluster offers a session only where its oldest queued turn was admitte
   ]);
   assert.deepEqual(
     await offered(),
-    [lead],
+    [cluster],
     "a turn admitted in cluster was placed ahead of an older one admitted for a runner",
   );
 });
 
 test("a per-account ceiling binds one account and leaves another project's alone", async () => {
   const first = await sessionRigProject(rig, "account-first");
-  const lead = await sessionRigSession(rig, first, "account-first");
-  await sessionRigTurn(rig, first, lead, "account-first");
-  await sessionRigAttempt(rig, first, lead, "account-first");
+  const holder = await sessionRigSession(rig, first, "account-first");
+  await sessionRigTurn(rig, first, holder, "account-first");
+  await sessionRigAttempt(rig, first, holder, "account-first");
   const second = await sessionRigProject(rig, "account-second");
   const elsewhere = await sessionRigSession(rig, second, "account-second");
   await sessionRigTurn(rig, second, elsewhere, "account-second");
   const accounts = await rig.harness.query(
     `SELECT count(DISTINCT account)::text AS accounts FROM agent_session
       WHERE session = ANY($1::text[])`,
-    [[lead, elsewhere]],
+    [[holder, elsewhere]],
   );
   assert.deepEqual(accounts, [{ accounts: "2" }]);
   await sessionRigAttempt(rig, second, elsewhere, "account-second", {
@@ -359,14 +358,14 @@ test("a per-account ceiling binds one account and leaves another project's alone
 
 test("a per-account ceiling and a cluster ceiling each refuse the launch they bind", async () => {
   const partition = await sessionRigProject(rig, "ceilings");
-  const lead = await sessionRigSession(rig, partition, "ceiling-lead");
-  await sessionRigTurn(rig, partition, lead, "ceiling-lead");
+  const holder = await sessionRigSession(rig, partition, "ceiling-holder");
+  await sessionRigTurn(rig, partition, holder, "ceiling-holder");
   const thread = await sessionRigSession(rig, partition, "ceiling-thread", {
     kind: "Thread",
     principal: "member-ceiling",
   });
   await sessionRigTurn(rig, partition, thread, "ceiling-thread");
-  await sessionRigAttempt(rig, partition, lead, "ceiling-first");
+  await sessionRigAttempt(rig, partition, holder, "ceiling-first");
   await assert.rejects(
     sessionRigAttempt(rig, partition, thread, "ceiling-account", {
       attemptsPerAccountMax: 1,
@@ -541,9 +540,9 @@ async function liveBeside(
 
 test("an attempt a pool holds fills no ceiling of the cluster's, and the cluster neither observes nor cleans it up", async () => {
   const partition = await sessionRigProject(rig, "pool-held");
-  const lead = await sessionRigSession(rig, partition, "pool-held-lead");
-  await sessionRigTurn(rig, partition, lead, "pool-held-lead");
-  const held = await sessionRigAttempt(rig, partition, lead, "pool-held");
+  const holder = await sessionRigSession(rig, partition, "pool-held-holder");
+  await sessionRigTurn(rig, partition, holder, "pool-held-holder");
+  const held = await sessionRigAttempt(rig, partition, holder, "pool-held");
   await rig.scheduler.attemptPlaced(
     held.attempt,
     asPlacementId("placement-pool-held"),
@@ -556,7 +555,7 @@ test("an attempt a pool holds fills no ceiling of the cluster's, and the cluster
       principal: `member-held-${shared}`,
     });
     await sessionRigTurn(rig, partition, thread, `held-${shared}`);
-    const max = await liveBeside(shared, lead);
+    const max = await liveBeside(shared, holder);
     const beside = await sessionRigAttempt(
       rig,
       partition,
@@ -688,17 +687,19 @@ test("an attempt that ended two turns is read as the second, not the first", asy
 });
 
 /**
- * Withdraws one turn by identity, which is what the selector's own door does
- * and what no attempt is party to. `withdraw_lead_turn` is driven directly
- * because the withdrawal is the subject: what a session's other turns do to
- * this attempt's row is a claim about the definer, not about a port.
+ * Abandons one queued turn by identity as `TurnWithdrawn`, written directly:
+ * no attempt is party to it, and what a session's other turns do to this
+ * attempt's row is a claim about the definer, not about a port.
  */
 async function withdrawn(turn: SessionTurnId): Promise<void> {
   const answered = await rig.harness.query(
-    `SELECT withdraw_lead_turn($1) AS withdrawn`,
+    `UPDATE session_turn
+        SET state='Abandoned',failure='TurnWithdrawn',ended_at=now(),
+            attempt=NULL,claim_generation=NULL,claimed_at=NULL
+      WHERE turn=$1 AND state='Queued' RETURNING turn`,
     [turn],
   );
-  assert.equal(answered[0]?.["withdrawn"], "Withdrawn");
+  assert.equal(answered.length, 1);
 }
 
 /**

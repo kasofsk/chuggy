@@ -248,8 +248,8 @@ test("a run's tokens are one series per kind, and its cost is dollars", () => {
   );
 });
 
-/** One ended turn of the lead's session, measured where it names a model. */
-function leadTurn(
+/** One ended turn of a member's thread, measured where it names a model. */
+function threadTurn(
   state: string,
   model: string | undefined,
   ended: number,
@@ -257,8 +257,8 @@ function leadTurn(
   return {
     tenant: "acme",
     project: "web",
-    owner: "selector",
-    session: "Lead",
+    owner: "member",
+    session: "Thread",
     state,
     model,
     buckets: model === undefined ? undefined : bucketsAt(0, ended),
@@ -274,8 +274,8 @@ test("every ended session turn is counted, and only a measured one spends or is 
   const families = metricsPlaneFamilies({
     ...empty,
     turns: [
-      leadTurn("Answered", "model-large", 1),
-      leadTurn("Failed", undefined, 4),
+      threadTurn("Answered", "model-large", 1),
+      threadTurn("Failed", undefined, 4),
     ],
   });
   const turnCost = family(families, "chuggy_session_turn_cost_usd_total");
@@ -286,8 +286,8 @@ test("every ended session turn is counted, and only a measured one spends or is 
         labels: {
           tenant: "acme",
           project: "web",
-          owner: "selector",
-          session: "Lead",
+          owner: "member",
+          session: "Thread",
           model: "model-large",
         },
         value: 0.0005,
@@ -318,8 +318,8 @@ test("each counter and histogram series began at the earliest row it sums, and t
       createdSecs,
     })),
     turns: [
-      leadTurn("Answered", "model-large", 7),
-      leadTurn("Answered", "model-large", 3),
+      threadTurn("Answered", "model-large", 7),
+      threadTurn("Answered", "model-large", 3),
     ],
     tickets: [
       {
@@ -952,7 +952,7 @@ const everyFamilyRows = (): MetricsPlaneRows => ({
       createdSecs: 1,
     },
   ],
-  turns: [leadTurn("Answered", "model-large", 1)],
+  turns: [threadTurn("Answered", "model-large", 1)],
   tickets: [
     { ...owned, phase: "Work", escalation: "NoEscalation", tickets: 1 },
   ],

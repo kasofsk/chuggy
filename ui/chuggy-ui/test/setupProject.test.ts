@@ -35,6 +35,7 @@ function refused(refusal: Copy, again: boolean, project?: string): SetupReport {
     report: "Project",
     site: machineSite,
     workspace: "acme",
+    workspaceName: "acme",
     project,
     name: "Atlas Web",
     ended: { ended: "Refused", refusal, again },
@@ -57,6 +58,7 @@ test("a person with a workspace and no project is asked what to call it, the pro
     report: "Project",
     site: machineSite,
     workspace: "acme",
+    workspaceName: "acme",
     project: undefined,
     name: "Atlas Web",
     ended: { ended: "Made", project: "atlas-web", name: "Atlas Web" },
@@ -70,8 +72,10 @@ test("a person with a workspace and no project is asked what to call it, the pro
   ).toMatchObject({
     report: "Checklist",
     steps: [
+      { step: "plugin", state: "done" },
       { step: "workspace", state: "done" },
-      { step: "project", state: "waiting" },
+      { step: "project", state: "done" },
+      { step: "north-star", state: "todo" },
       ...Array.from({ length: 5 }, () => expect.anything() as unknown),
     ],
   });

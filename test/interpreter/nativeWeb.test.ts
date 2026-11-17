@@ -19,6 +19,7 @@ import {
   type NativeWeb,
   type NativeReadStore,
   type NativeSubmission,
+  type NativeSubmittedCommand,
   type ProjectAccess,
   type TicketResource,
 } from "../../src/interpreter/nativeWeb.ts";
@@ -70,7 +71,6 @@ import {
 import {
   asIdempotencyKey,
   asOperationTicketCommand,
-  type ProjectCommand,
 } from "../../src/interpreter/operationInbox.ts";
 import {
   resumeTicketCommand,
@@ -340,12 +340,9 @@ function boundary(
       undefined,
       undefined,
       undefined,
-      undefined,
       repositoryConfigurationImports,
       runEvidenceReads,
       runEvidenceContents,
-      undefined,
-      undefined,
       undefined,
       undefined,
       projectArtifacts,
@@ -645,7 +642,7 @@ const backloggedGuard: ExecutionBacklogGuard = {
 };
 
 /** One submission carrying the named command, which is all these cases vary. */
-function submissionOf(command: ProjectCommand): NativeSubmission {
+function submissionOf(command: NativeSubmittedCommand): NativeSubmission {
   return { partition, operation, key: asIdempotencyKey("key"), command };
 }
 
@@ -1228,9 +1225,6 @@ test("a principal holding Read alone may read a project artifact and may not upl
     undefined,
     undefined,
     undefined,
-    undefined,
-    undefined,
-    undefined,
     fakeProjectArtifacts(writes),
     fixedMinting(),
   );
@@ -1358,7 +1352,9 @@ test("a revision asks for OverrideTicketConfig only where its overrides differ f
 });
 
 test("submitting a change of a ticket's overrides asks for OverrideTicketConfig where it names any", async () => {
-  const changing = (overrides: ConfigurationOverrides): ProjectCommand => ({
+  const changing = (
+    overrides: ConfigurationOverrides,
+  ): NativeSubmittedCommand => ({
     version: 1,
     command: "ChangeTicketOverrides",
     ticket: id(1),
@@ -1409,7 +1405,7 @@ function programOf(stages: readonly (readonly number[])[]) {
 
 const releaseOf = (
   command: "ReleaseDraft" | "UpdateTicket" = "ReleaseDraft",
-): ProjectCommand =>
+): NativeSubmittedCommand =>
   command === "ReleaseDraft"
     ? {
         version: 1,
@@ -2256,14 +2252,14 @@ test("authoring reads conceal inaccessible resources", async () => {
 });
 
 /** A decision the stub inbox refuses, which is what the case below is about. */
-const refusedDecision: ProjectCommand = {
+const refusedDecision: NativeSubmittedCommand = {
   version: 1,
   command: "Decide",
   ticketCommand: asOperationTicketCommand(resumeTicketCommand(id(1))),
 };
 
 /** Dispatch as it actually arrives, which is what the guard is consulted for. */
-const manualDispatch: ProjectCommand = {
+const manualDispatch: NativeSubmittedCommand = {
   version: 1,
   command: "ManualDispatch",
   ticket: id(1),
@@ -2289,37 +2285,14 @@ test("a command that is not a dispatch is answered the same way backlogged or no
   assert.deepEqual(admitting.calls, backlogged.calls);
 });
 
-test("the guard stops the two ingress spellings dispatch actually arrives as", async () => {
-  const spellings: readonly (readonly [ProjectCommand, string])[] = [
-    [manualDispatch, "authorize:DispatchTicket"],
-    [
-      {
-        version: 1,
-        command: "ProposeDispatch",
-        ticket: id(1),
-        expectedTicketVersion: 1,
-        observedViewToken: {
-          tenant: "tenant",
-          project: "project",
-          recoveryEpoch: "epoch",
-          schemaVersion: 1,
-          watermark: 1,
-          digest: "0".repeat(64),
-        },
-        selectorDecisionReference: "selection-one",
-      },
-      "authorize:ProposeDispatch",
-    ],
-  ];
-  for (const [command, authorized] of spellings) {
-    const { web, calls } = boundary(true, backloggedGuard);
-    assert.deepEqual(await web.submit(principal, submissionOf(command)), {
-      result: "Backlogged",
-      scope: "Project",
-      retryAfterSeconds: 5,
-    });
-    assert.deepEqual(calls, [authorized]);
-  }
+test("the guard stops the ingress spelling dispatch actually arrives as", async () => {
+  const { web, calls } = boundary(true, backloggedGuard);
+  assert.deepEqual(await web.submit(principal, submissionOf(manualDispatch)), {
+    result: "Backlogged",
+    scope: "Project",
+    retryAfterSeconds: 5,
+  });
+  assert.deepEqual(calls, ["authorize:DispatchTicket"]);
 });
 
 test("the execution backlog guard leaves correctness-reducing submission admissible", async () => {

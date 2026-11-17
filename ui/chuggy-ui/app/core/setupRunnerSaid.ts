@@ -15,19 +15,29 @@
 
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyArgument, CopyHanded, CopyId } from "./copy.ts";
-import { runnerPackageOffered, runnerPackages } from "./runners.ts";
+import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
+import { runnerPackages } from "./runners.ts";
+import type { RunnerPackage } from "./runners.ts";
+import type { SetupFit } from "./setupFit.ts";
+import type { SetupPlatform } from "./setupPorts.ts";
+import { setupCommandLine } from "./setupText.ts";
 
-/** Where a run was for, as its lines name it: a project of a workspace for `runner`, and for `chat-host` the workspace alone. */
+/** Where a run was for, as its lines name it: a project of a workspace for `runner`, and for `chat-host` the workspace alone; `workspaceName` is the workspace's display name, where the run read it. */
 export interface SetupRunnerAt {
   readonly workspace: string;
   readonly project: string | undefined;
+  readonly workspaceName?: string;
+}
+
+/** The workspace a run was for, as a sentence names it: by its display name, and by its id where that was not read. */
+export function setupRunnerWorkspaceNamed(at: SetupRunnerAt): string {
+  return at.workspaceName ?? at.workspace;
 }
 
 /** The place a run was for, by its name: the workspace's and the project's, or the workspace's alone. */
 export function setupRunnerNamed(at: SetupRunnerAt): string {
-  return at.project === undefined
-    ? at.workspace
-    : `${at.workspace}/${at.project}`;
+  const workspace = setupRunnerWorkspaceNamed(at);
+  return at.project === undefined ? workspace : `${workspace}/${at.project}`;
 }
 
 /** The container engines the runner package runs its work in, the package's own default first. */
@@ -63,7 +73,7 @@ export type SetupClaudeCredential =
     };
 
 /** Each kind as the person is told it: the credential, and what makes one where its file holds it alone. */
-const setupClaudeWords: Record<
+export const setupClaudeWords: Record<
   SetupClaudeKind,
   { readonly credential: Copy; readonly made: Copy }
 > = {
@@ -90,7 +100,7 @@ const setupClaudeWords: Record<
 };
 
 /** What the credential is and where it is kept, as the person is told it: its secret alone in its file, or an AWS credentials file whose profile holds an access key. */
-function setupClaudeSaved(credential: SetupClaudeCredential): Copy {
+export function setupClaudeSaved(credential: SetupClaudeCredential): Copy {
   const { path } = credential;
   return credential.kind === "Bedrock" && credential.profile !== undefined
     ? {
@@ -117,11 +127,16 @@ export type SetupDockerBarred =
   | { readonly barred: "Named"; readonly settings: string }
   | { readonly barred: "Podmanless"; readonly answered: "No" | "Absent" };
 
-/** The things `runner` and `mcp` run another program to do; `RegisterChat`, `CheckChat` and `ServiceChat` are of the person's chat host, and `ServerRemoved` and `ServerAdded` of the agent's MCP server. */
+/** The things `runner`, `mcp` and `plugin` run another program to do; `RegisterChat`, `CheckChat` and `ServiceChat` are of the person's chat host, `ServerRemoved` and `ServerAdded` of the agent's MCP server, and each `Plugin` act of chuggy's Claude Code plugin and its marketplace. */
 export type SetupRunnerAct =
   | "Install"
   | "ServerRemoved"
   | "ServerAdded"
+  | "PluginMarketplaceAdd"
+  | "PluginMarketplaceUpdate"
+  | "PluginInstall"
+  | "PluginUpdate"
+  | "PluginEnable"
   | "Register"
   | "Check"
   | "Service"
@@ -130,7 +145,9 @@ export type SetupRunnerAct =
   | "ServiceChat"
   | "Reload"
   | "Start"
-  | "Restart";
+  | "Restart"
+  | "ColimaStop"
+  | "ColimaStart";
 
 /**
  * What the runner package's `register` says where it refuses, by the words of
@@ -204,13 +221,24 @@ export type SetupRunnerNote =
       readonly path: string;
       readonly engine: SetupEngine;
     }
+  /** The chat host's size this run wrote into the runner's settings: `sessionsMax` sessions at once, each given `sessionMemoryMib`. */
+  | {
+      readonly note: "ChatSettingsWritten";
+      readonly path: string;
+      readonly sessionsMax: number;
+      readonly sessionMemoryMib: number;
+    }
   | {
       readonly note: "Login";
       readonly credential: SetupClaudeCredential;
     }
-  | { readonly note: "Pool"; readonly path: string }
-  | { readonly note: "PoolGone"; readonly path: string; readonly pool: string }
-  | { readonly note: "Registered"; readonly path: string }
+  /** `PersonalGone` is a registration this machine holds as the person's runner that the site no longer lists. */
+  | {
+      readonly note: "Personal" | "PersonalGone" | "PersonalRegistered";
+      readonly path: string;
+    }
+  /** The project given to the person's runners, and their own runners let take its work: each found so, or `now` where this run wrote it. */
+  | { readonly note: "Given" | "Allowed"; readonly now: boolean }
   /** `warned` is the first line of the check that passed with a warning, where one did. */
   | { readonly note: "Checked"; readonly warned: string | undefined }
   | { readonly note: "ChatChecked"; readonly warned: string | undefined }
@@ -240,7 +268,17 @@ export type SetupRunnerNote =
       readonly unit: string;
     }
   /** The agent's MCP configuration names chuggy's server for the project, as it was found or once this run added it. */
-  | { readonly note: "ServerFound" | "ServerAdded"; readonly path: string };
+  | { readonly note: "ServerFound" | "ServerAdded"; readonly path: string }
+  /** On a Mac, that docker's VM is the person's to keep running: `start` starts it whenever they log in. */
+  | { readonly note: "Colima"; readonly start: string }
+  /** A command this run ran of Colima, as the offer named it. */
+  | { readonly note: "ColimaRan"; readonly command: string }
+  /** What Colima's VM has once this run changed it, each nothing where it was not read. */
+  | {
+      readonly note: "ColimaVm";
+      readonly memoryMib: number | undefined;
+      readonly amd64: boolean | undefined;
+    };
 
 /**
  * What the runner package's own check looks at, by the names it prints them
@@ -289,11 +327,10 @@ export function setupCheckFirst(
 
 /** A read of the site `runner` makes, by what it is of. */
 export type SetupRunnerRead =
-  "work" | "threads" | "placement" | "pools" | "permit" | "chat";
+  "work" | "threads" | "fallback" | "personal" | "permit" | "chat";
 
 /** Why a run stopped short of a runner the site sees live. */
 export type SetupRunnerStop =
-  | { readonly stop: "Mac" }
   | {
       readonly stop: "Unread";
       readonly read: SetupRunnerRead;
@@ -301,7 +338,12 @@ export type SetupRunnerStop =
     }
   | { readonly stop: "NotAdmin" }
   | { readonly stop: "Serviceless"; readonly guide: string }
-  | { readonly stop: "Engineless"; readonly asked: readonly SetupEngineAsked[] }
+  | {
+      readonly stop: "Engineless";
+      readonly asked: readonly SetupEngineAsked[];
+      /** The command that starts the engine's VM, where it runs in one of the person's. */
+      readonly start: string | undefined;
+    }
   | {
       readonly stop: "DockerBarred";
       /** This machine's user the run is, by number, where the machine numbers them. */
@@ -319,9 +361,10 @@ export type SetupRunnerStop =
       readonly guide: string;
     }
   | { readonly stop: "Npmless" }
-  /** `runner` found no runner package it can use, which `mcp` installs: `found` is the one there, older than `least` or of a version that cannot be read. */
+  /** `runner` found no runner package it can use, which `mcp` installs: `program` is the platform's package, and `found` the one there, older than `least` or of a version that cannot be read. */
   | {
       readonly stop: "Unpackaged";
+      readonly program: string;
       readonly found:
         | { readonly command: string; readonly version: string | undefined }
         | undefined;
@@ -373,15 +416,22 @@ export type SetupRunnerStop =
   | {
       readonly stop: "Inactive";
       readonly unit: string;
-      /** The one word the service manager said of the service, empty where what it said is no word, or nothing where it did not answer. */
+      /** The platform whose package's service it is, which says what its exit statuses mean. */
+      readonly platform: SetupPlatform;
+      /** The state the service manager said of the service, empty where what it said is no words, or nothing where it did not answer. */
       readonly state: string | undefined;
-      /** How long the site had been waited on when the service was found stopped, or nothing where it was asked straight after it was started. */
-      readonly waitedSecs: number | undefined;
+      /** The status the service last exited with, or nothing where it has not exited or none was said. */
+      readonly exit: number | undefined;
+      /** What was waited on before the service was found stopped: the service itself, after it was started, or the site, while it ran. */
+      readonly waited: "Started" | "Live";
+      readonly waitedSecs: number;
     }
   | {
       readonly stop: "NotLive";
       readonly waitedSecs: number;
       readonly registered: boolean;
+      /** The process the service runs as, or nothing where the service manager said none. */
+      readonly pid: number | undefined;
     }
   | {
       /** The workspace does not let the person register a chat host; `work` is what the project's work has, said as set up, and nothing where the run was for the workspace alone. */
@@ -394,6 +444,14 @@ export type SetupRunnerStop =
       readonly outcome: ApiFailure["outcome"];
       readonly lapseMins: number;
     }
+  /** The workspace does not let the person register a runner of their own; `people` is its People page. */
+  | { readonly stop: "RunnerWithheld"; readonly people: string }
+  /** The site did not make one of the writes that let the person's runner take the project's work. */
+  | {
+      readonly stop: "ServeRefused";
+      readonly write: "Give" | "Allow";
+      readonly outcome: ApiFailure["outcome"];
+    }
   /** The person's chat host is another machine, registered and not running, which registering this one would replace; `runners` is the page it is removed on. */
   | { readonly stop: "ChatHostOffline"; readonly runners: string }
   | {
@@ -403,6 +461,8 @@ export type SetupRunnerStop =
       readonly credential: SetupClaudeCredential;
       readonly settings: string;
       readonly login: string;
+      /** What restarts every runner service of this machine's. */
+      readonly restart: string;
     }
   | { readonly stop: "ChatHostNotLive"; readonly waitedSecs: number }
   /** The person's chat host is another machine, `short` as the console shows it, which `chat-host` registers this machine in place of only where `--replace` names it. */
@@ -417,10 +477,20 @@ export type SetupRunnerStop =
       readonly short: string;
       readonly live: boolean;
     }
-  /** `chat-host` on a machine that is not the package's platform: the person registers one by hand from `page`, the workspace's personal runners page at the site. */
+  /** On Apple silicon, Colima's VM runs no amd64 and macOS has no Rosetta for it, which `install` installs. */
+  | { readonly stop: "Rosettaless"; readonly install: string }
+  /** Colima's VM runs no amd64 and cannot be given Rosetta as it is: `remove` and `make` make it again, each run by the person. */
   | {
-      readonly stop: "MacChatHost";
-      readonly page: string;
+      readonly stop: "Rebuild";
+      readonly why: "Qemu" | "Unrosetta";
+      readonly remove: string;
+      readonly make: string;
+    }
+  /** Colima's VM, changed by this run, is still short of what a job needs: what it has, nothing where it was not read. */
+  | {
+      readonly stop: "ColimaShort";
+      readonly memoryMib: number | undefined;
+      readonly amd64: boolean | undefined;
     };
 
 /** How a run of `mcp` ended: the agent's configuration names the server, or it stopped. */
@@ -444,7 +514,7 @@ export interface SetupRunnerStopSaid {
 }
 
 /** A note as its word and its text. */
-export type SetupRunnerNoteSaid = readonly ["found" | "did", Copy];
+export type SetupRunnerNoteSaid = readonly ["found" | "did" | "tell", Copy];
 
 /** A program by its name, and by its version where it said one. */
 function setupVersioned(
@@ -477,7 +547,8 @@ type SetupServiceNote = Extract<
       | "Running"
       | "Enabled"
       | "Started"
-      | "Restarted";
+      | "Restarted"
+      | "Colima";
   }
 >;
 
@@ -524,7 +595,28 @@ function setupServiceNoteSaid(note: SetupServiceNote): SetupRunnerNoteSaid {
         "did",
         { id: "setup-runner-note-restarted", args: { unit: note.unit } },
       ];
+    case "Colima":
+      return [
+        "tell",
+        { id: "setup-runner-note-colima", args: { start: note.start } },
+      ];
   }
+}
+
+/** What a chat host of `sessions` sessions at once holds, as a line says it: how many, what each takes, and what all of them take together. */
+export function setupChatCost(
+  sessions: number,
+  sessionMib: number,
+): {
+  readonly sessions: string;
+  readonly each: Copy;
+  readonly total: Copy;
+} {
+  return {
+    sessions: String(sessions),
+    each: quantityFigureCopy(memoryMibFigure(sessionMib)),
+    total: quantityFigureCopy(memoryMibFigure(sessions * sessionMib)),
+  };
 }
 
 type SetupChatNote = Extract<
@@ -633,7 +725,7 @@ function setupChatNoteSaid(
         at.project === undefined
           ? {
               id: "setup-runner-note-chat-host-live-workspace",
-              args: { workspace: at.workspace },
+              args: { workspace: setupRunnerWorkspaceNamed(at) },
             }
           : { id: "setup-runner-note-chat-host-live", args: { project } },
       ];
@@ -645,37 +737,50 @@ function setupChatNoteSaid(
   }
 }
 
-type SetupPoolNote = Extract<
+type SetupPersonalNote = Extract<
   SetupRunnerNote,
-  { readonly note: "Pool" | "PoolGone" | "Registered" | "Checked" }
+  {
+    readonly note:
+      | "Personal"
+      | "PersonalGone"
+      | "PersonalRegistered"
+      | "Given"
+      | "Allowed"
+      | "Checked";
+  }
 >;
 
-function setupPoolNoteSaid(
-  note: SetupPoolNote,
+function setupPersonalNoteSaid(
+  note: SetupPersonalNote,
   project: string,
 ): SetupRunnerNoteSaid {
   switch (note.note) {
-    case "Pool":
+    case "Personal":
       return [
         "found",
-        { id: "setup-runner-note-pool", args: { project, path: note.path } },
+        { id: "setup-runner-note-personal", args: { path: note.path } },
       ];
-    case "PoolGone":
+    case "PersonalGone":
       return [
         "found",
-        {
-          id: "setup-runner-note-pool-gone",
-          args: { path: note.path, pool: note.pool, project },
-        },
+        { id: "setup-runner-note-personal-gone", args: { path: note.path } },
       ];
-    case "Registered":
+    case "PersonalRegistered":
       return [
         "did",
         {
-          id: "setup-runner-note-registered",
-          args: { project, path: note.path },
+          id: "setup-runner-note-personal-registered",
+          args: { path: note.path },
         },
       ];
+    case "Given":
+      return note.now
+        ? ["did", { id: "setup-runner-note-given-now", args: { project } }]
+        : ["found", { id: "setup-runner-note-given", args: { project } }];
+    case "Allowed":
+      return note.now
+        ? ["did", { id: "setup-runner-note-allowed-now", args: { project } }]
+        : ["found", { id: "setup-runner-note-allowed", args: { project } }];
     case "Checked":
       return [
         "found",
@@ -736,7 +841,6 @@ export function setupRunnerNoteSaid(
   note: SetupRunnerNote,
   at: SetupRunnerAt,
 ): SetupRunnerNoteSaid {
-  const project = setupRunnerNamed(at);
   switch (note.note) {
     case "Engine":
       return [
@@ -748,18 +852,9 @@ export function setupRunnerNoteSaid(
     case "Installed":
       return setupPackageNoteSaid(note);
     case "Settings":
-      return [
-        "found",
-        { id: "setup-runner-note-settings", args: { path: note.path } },
-      ];
     case "SettingsWritten":
-      return [
-        "did",
-        {
-          id: "setup-runner-note-settings-written",
-          args: { path: note.path, engine: note.engine },
-        },
-      ];
+    case "ChatSettingsWritten":
+      return setupSettingsNoteSaid(note);
     case "Login":
       return [
         "found",
@@ -771,11 +866,13 @@ export function setupRunnerNoteSaid(
           },
         },
       ];
-    case "Pool":
-    case "PoolGone":
-    case "Registered":
+    case "Personal":
+    case "PersonalGone":
+    case "PersonalRegistered":
+    case "Given":
+    case "Allowed":
     case "Checked":
-      return setupPoolNoteSaid(note, project);
+      return setupPersonalNoteSaid(note, setupRunnerNamed(at));
     case "Unit":
     case "UnitWritten":
     case "Linger":
@@ -784,6 +881,7 @@ export function setupRunnerNoteSaid(
     case "Enabled":
     case "Started":
     case "Restarted":
+    case "Colima":
       return setupServiceNoteSaid(note);
     case "ProjectLive":
     case "Hosted":
@@ -799,7 +897,162 @@ export function setupRunnerNoteSaid(
       return setupChatNoteSaid(note, at);
     case "ServerFound":
     case "ServerAdded":
-      return setupServerNoteSaid(note, project);
+      return setupServerNoteSaid(note, setupRunnerNamed(at));
+    case "ColimaRan":
+    case "ColimaVm":
+      return setupColimaNoteSaid(note);
+  }
+}
+
+/** What Colima's VM has, as a line says it. */
+function setupColimaHas(
+  memoryMib: number | undefined,
+  amd64: boolean | undefined,
+): Copy {
+  return {
+    id: "setup-runner-colima-has",
+    args: {
+      memory: memoryMib === undefined ? "unsaid" : "said",
+      has:
+        memoryMib === undefined
+          ? ""
+          : quantityFigureCopy(memoryMibFigure(memoryMib)),
+      amd64: amd64 === undefined ? "unsaid" : amd64 ? "yes" : "no",
+    },
+  };
+}
+
+function setupColimaNoteSaid(
+  note: Extract<SetupRunnerNote, { readonly note: "ColimaRan" | "ColimaVm" }>,
+): SetupRunnerNoteSaid {
+  return note.note === "ColimaRan"
+    ? [
+        "did",
+        { id: "setup-runner-note-colima-ran", args: { command: note.command } },
+      ]
+    : [
+        "found",
+        {
+          id: "setup-runner-note-colima-vm",
+          args: { has: setupColimaHas(note.memoryMib, note.amd64) },
+        },
+      ];
+}
+
+/** The stop a fit is where only the person can mend it, with each command they run as its line, or nothing where it is no such fit. */
+export function setupFitStopOf(
+  fit: SetupFit,
+):
+  | Extract<SetupRunnerStop, { readonly stop: "Rosettaless" | "Rebuild" }>
+  | undefined {
+  switch (fit.fit) {
+    case "Rosettaless":
+      return { stop: "Rosettaless", install: setupCommandLine(fit.install) };
+    case "Rebuild":
+      return {
+        stop: "Rebuild",
+        why: fit.why,
+        remove: setupCommandLine(fit.commands[0] ?? []),
+        make: setupCommandLine(fit.commands[1] ?? []),
+      };
+    case "Room":
+    case "Small":
+    case "Colima":
+      return undefined;
+  }
+}
+
+/** What the person is told to do of a stop only they can mend, and what that waits on. */
+export function setupFitToldSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "Rosettaless" | "Rebuild" }>,
+  unchanged: boolean,
+): { readonly told: Copy; readonly when: Copy } {
+  const was = unchanged ? "yes" : "no";
+  return stop.stop === "Rosettaless"
+    ? {
+        told: {
+          id: "setup-runner-rosettaless-told",
+          args: { install: stop.install, unchanged: was },
+        },
+        when: { id: "setup-runner-rosettaless-when" },
+      }
+    : {
+        told: {
+          id: "setup-runner-rebuild-told",
+          args: {
+            why: stop.why === "Qemu" ? "qemu" : "unrosetta",
+            remove: stop.remove,
+            make: stop.make,
+            unchanged: was,
+          },
+        },
+        when: { id: "setup-runner-rebuild-when" },
+      };
+}
+
+/** A stop of Colima's VM, as it is said. */
+function setupColimaStopSaid(
+  stop: Extract<
+    SetupRunnerStop,
+    { readonly stop: "Rosettaless" | "Rebuild" | "ColimaShort" }
+  >,
+): SetupRunnerStopSaid {
+  if (stop.stop === "ColimaShort")
+    return {
+      found: {
+        id: "setup-runner-colima-short-found",
+        args: { has: setupColimaHas(stop.memoryMib, stop.amd64) },
+      },
+      tell: { id: "setup-runner-colima-short-tell" },
+      when: { id: "setup-runner-when-try-again" },
+      again: "Again",
+    };
+  const { told, when } = setupFitToldSaid(stop, true);
+  return {
+    found:
+      stop.stop === "Rosettaless"
+        ? { id: "setup-runner-rosettaless-found" }
+        : {
+            id: "setup-runner-rebuild-found",
+            args: { why: stop.why === "Qemu" ? "qemu" : "unrosetta" },
+          },
+    tell: { id: "setup-runner-fit-tell", args: { told } },
+    when,
+    again: "Again",
+  };
+}
+
+function setupSettingsNoteSaid(
+  note: Extract<
+    SetupRunnerNote,
+    { readonly note: "Settings" | "SettingsWritten" | "ChatSettingsWritten" }
+  >,
+): SetupRunnerNoteSaid {
+  switch (note.note) {
+    case "Settings":
+      return [
+        "found",
+        { id: "setup-runner-note-settings", args: { path: note.path } },
+      ];
+    case "SettingsWritten":
+      return [
+        "did",
+        {
+          id: "setup-runner-note-settings-written",
+          args: { path: note.path, engine: note.engine },
+        },
+      ];
+    case "ChatSettingsWritten":
+      return [
+        "did",
+        {
+          id: "setup-runner-note-chat-settings-written",
+          args: {
+            path: note.path,
+            ...setupChatCost(note.sessionsMax, note.sessionMemoryMib),
+          },
+        },
+      ];
   }
 }
 
@@ -858,14 +1111,16 @@ function setupEngineNone({ engine, answered }: SetupEngineAsked): Copy {
 }
 
 function setupEnginelessSaid(
-  asked: readonly SetupEngineAsked[],
+  stop: Extract<SetupRunnerStop, { readonly stop: "Engineless" }>,
 ): SetupRunnerStopSaid {
+  const { asked, start } = stop;
+  const none = setupEnginesNone(asked);
   return {
     found: setupJoined("setup-runner-engine-each", asked.map(setupEngineNone)),
-    tell: {
-      id: "setup-runner-engineless-tell",
-      args: { none: setupEnginesNone(asked) },
-    },
+    tell:
+      start === undefined
+        ? { id: "setup-runner-engineless-tell", args: { none } }
+        : { id: "setup-runner-engineless-colima-tell", args: { start } },
     when: { id: "setup-runner-engineless-when" },
     again: "Again",
   };
@@ -950,14 +1205,18 @@ function setupDockerBarredSaid(
 const setupReadsSaid: Readonly<Record<SetupRunnerRead, Copy>> = {
   work: { id: "setup-runner-read-work" },
   threads: { id: "setup-runner-read-threads" },
-  placement: { id: "setup-runner-read-placement" },
-  pools: { id: "setup-runner-read-pools" },
+  fallback: { id: "setup-runner-read-fallback" },
+  personal: { id: "setup-runner-read-personal" },
   permit: { id: "setup-runner-read-permit" },
   chat: { id: "setup-runner-read-chat" },
 };
 
 /** The reads a run makes before it looks at the machine, which makes them the ones a stop at can say nothing was changed. */
-const setupReadsFirst: readonly SetupRunnerRead[] = ["work", "threads"];
+const setupReadsFirst: readonly SetupRunnerRead[] = [
+  "work",
+  "fallback",
+  "threads",
+];
 
 /** What a read the site did not give leaves of a run: a runner not known to be set up, which is not one known not to be. */
 const setupUnknown: Copy = { id: "setup-runner-unknown" };
@@ -981,7 +1240,7 @@ function setupUnreadSaid(
         at.project === undefined
           ? {
               id: "setup-runner-unread-refused-workspace-tell",
-              args: { workspace: at.workspace, what, left },
+              args: { workspace: setupRunnerWorkspaceNamed(at), what, left },
             }
           : {
               id: "setup-runner-unread-refused-tell",
@@ -1005,6 +1264,11 @@ const setupActs: Readonly<Record<SetupRunnerAct, CopyId>> = {
   Install: "setup-runner-act-install",
   ServerRemoved: "setup-runner-act-server-removed",
   ServerAdded: "setup-runner-act-server-added",
+  PluginMarketplaceAdd: "setup-runner-act-plugin-marketplace-add",
+  PluginMarketplaceUpdate: "setup-runner-act-plugin-marketplace-update",
+  PluginInstall: "setup-runner-act-plugin-install",
+  PluginUpdate: "setup-runner-act-plugin-update",
+  PluginEnable: "setup-runner-act-plugin-enable",
   Register: "setup-runner-act-register",
   Check: "setup-runner-act-check",
   Service: "setup-runner-act-service",
@@ -1014,6 +1278,8 @@ const setupActs: Readonly<Record<SetupRunnerAct, CopyId>> = {
   Reload: "setup-runner-act-reload",
   Start: "setup-runner-act-start",
   Restart: "setup-runner-act-restart",
+  ColimaStop: "setup-runner-act-colima-stop",
+  ColimaStart: "setup-runner-act-colima-start",
 };
 
 /** An act as a sentence names it, `upper` where the act begins the sentence. */
@@ -1056,6 +1322,17 @@ function setupFailedSaid(failed: SetupChildFailed): Copy {
   }
 }
 
+/** A program run for `act` that did not do it, as a `found:` line says it. */
+export function setupActFound(
+  act: SetupRunnerAct,
+  failed: SetupChildFailed,
+): Copy {
+  return {
+    id: "setup-runner-act-found",
+    args: { act: setupActOf(act), failed: setupFailedSaid(failed) },
+  };
+}
+
 function setupActSaid(act: SetupRunnerAct, failed: Copy): SetupRunnerStopSaid {
   return {
     found: {
@@ -1080,9 +1357,7 @@ function setupUnpackagedSaid(
   project: string,
 ): SetupRunnerStopSaid {
   const { found, least } = stop;
-  const program = setupProgramOf(
-    found?.command ?? runnerPackageOffered.program,
-  );
+  const program = setupProgramOf(found?.command ?? stop.program);
   return {
     found:
       found === undefined
@@ -1192,19 +1467,38 @@ function setupServiceRefusedSaid(
   };
 }
 
+/** A write that lets the person's runner take the project's work, which the site did not make. */
+function setupServeRefusedSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "ServeRefused" }>,
+  project: string,
+): SetupRunnerStopSaid {
+  const write = stop.write === "Give" ? "give" : "allow";
+  return {
+    found: {
+      id: "setup-runner-serve-refused-found",
+      args: { write, project, outcome: stop.outcome },
+    },
+    tell: {
+      id: "setup-runner-serve-refused-tell",
+      args: { write, project },
+    },
+    when: setupTryAgain,
+    again: "Again",
+  };
+}
+
 function setupMintSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "MintRefused" }>,
-  project: string,
 ): SetupRunnerStopSaid {
   const found: Copy = {
     id: "setup-runner-mint-found",
-    args: { project, outcome: stop.outcome },
+    args: { outcome: stop.outcome },
   };
   if (stop.outcome === "Absent")
     return {
       found,
-      tell: { id: "setup-runner-mint-absent-tell", args: { project } },
-      when: { id: "setup-runner-when-admin", args: { project } },
+      tell: { id: "setup-runner-mint-absent-tell" },
+      when: { id: "setup-runner-mint-absent-when" },
       again: "Again",
     };
   if (stop.outcome === "Conflict")
@@ -1212,14 +1506,14 @@ function setupMintSaid(
       found,
       tell: {
         id: "setup-runner-mint-conflict-tell",
-        args: { project, mins: String(stop.lapseMins) },
+        args: { mins: String(stop.lapseMins) },
       },
       when: setupTryAgain,
       again: "Again",
     };
   return {
     found,
-    tell: { id: "setup-runner-mint-tell", args: { project } },
+    tell: { id: "setup-runner-mint-tell" },
     when: setupTryAgain,
     again: "Again",
   };
@@ -1276,7 +1570,6 @@ function setupMachineSaid(
     SetupRunnerStop,
     {
       readonly stop:
-        | "Mac"
         | "Serviceless"
         | "SettingsUnread"
         | "LoginMissing"
@@ -1286,16 +1579,6 @@ function setupMachineSaid(
   >,
 ): SetupRunnerStopSaid {
   switch (stop.stop) {
-    case "Mac":
-      return {
-        found: { id: "setup-runner-mac-found" },
-        tell: {
-          id: "setup-runner-mac-tell",
-          args: { program: runnerPackages.darwin.program },
-        },
-        when: { id: "setup-runner-mac-when" },
-        again: "Status",
-      };
     case "Serviceless":
       return {
         found: {
@@ -1333,17 +1616,17 @@ function setupMachineSaid(
   }
 }
 
-/** A service not read as running: the state the service manager gave it, or that the service manager did not answer, which is not a service that stopped. */
+/** A service not read as running: the state the service manager gave it, and its last exit with what that means, or that the service manager did not answer, which is not a service that stopped. */
 function setupInactiveSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "Inactive" }>,
 ): SetupRunnerStopSaid {
-  const was: Copy =
-    stop.waitedSecs === undefined
-      ? { id: "setup-runner-inactive-started" }
-      : {
-          id: "setup-runner-inactive-waited",
-          args: { secs: String(stop.waitedSecs) },
-        };
+  const was: Copy = {
+    id:
+      stop.waited === "Started"
+        ? "setup-runner-inactive-started"
+        : "setup-runner-inactive-waited",
+    args: { secs: String(stop.waitedSecs) },
+  };
   const { unit } = stop;
   if (stop.state === undefined)
     return {
@@ -1352,22 +1635,40 @@ function setupInactiveSaid(
       when: setupTryAgain,
       again: "Again",
     };
+  const state =
+    stop.state === ""
+      ? ({ id: "setup-runner-inactive-not-running" } as const)
+      : stop.state;
   return {
-    found: {
-      id: "setup-runner-inactive-found",
-      args: {
-        unit,
-        was,
-        state:
-          stop.state === ""
-            ? { id: "setup-runner-inactive-not-running" }
-            : stop.state,
-      },
+    found: { id: "setup-runner-inactive-found", args: { unit, was, state } },
+    tell: {
+      id: "setup-runner-inactive-tell",
+      args: { state, exited: setupInactiveExited(stop) },
     },
-    tell: { id: "setup-runner-inactive-tell" },
     when: setupTryAgain,
     again: "Again",
   };
+}
+
+/** What a stopped service's last exit was and what follows it, by what its package means by the status, or that it has not exited. */
+function setupInactiveExited(
+  stop: Extract<SetupRunnerStop, { readonly stop: "Inactive" }>,
+): Copy {
+  if (stop.exit === undefined) return { id: "setup-runner-inactive-unexited" };
+  const offered: RunnerPackage = runnerPackages[stop.platform];
+  const status = String(stop.exit);
+  const meant = offered.exitsMeant[stop.exit];
+  if (meant === undefined)
+    return {
+      id: "setup-runner-inactive-exit-other",
+      args: { status, secs: String(offered.restartIntervalSecs) },
+    };
+  switch (meant) {
+    case "Unrestarted":
+      return { id: "setup-runner-inactive-exit-unrestarted", args: { status } };
+    case "Updated":
+      return { id: "setup-runner-inactive-exit-updated", args: { status } };
+  }
 }
 
 function setupCheckFailedSaid(
@@ -1430,18 +1731,30 @@ function setupServiceSaid(
       };
     case "Inactive":
       return setupInactiveSaid(stop);
-    case "NotLive":
+    case "NotLive": {
+      const secs = String(stop.waitedSecs);
+      const running: Copy =
+        stop.pid === undefined
+          ? { id: "setup-runner-not-live-running" }
+          : {
+              id: "setup-runner-not-live-running-pid",
+              args: { pid: String(stop.pid) },
+            };
       return {
-        found: {
-          id: stop.registered
-            ? "setup-runner-not-live-found"
-            : "setup-runner-not-live-unregistered-found",
-          args: { secs: String(stop.waitedSecs), project },
-        },
+        found: stop.registered
+          ? {
+              id: "setup-runner-not-live-found",
+              args: { secs, project, running },
+            }
+          : {
+              id: "setup-runner-not-live-unregistered-found",
+              args: { secs, running },
+            },
         tell: { id: "setup-runner-not-live-tell" },
         when: setupLookAgain,
         again: "Again",
       };
+    }
   }
 }
 
@@ -1477,9 +1790,6 @@ function setupChatMintSaid(
     again: "Again",
   };
 }
-
-/** Restarts every runner service of this machine's, each of which reads the runner's settings only as it starts. */
-const setupRestartAll = `systemctl --user restart '${runnerPackages.linux.program}-*.service'`;
 
 /**
  * A credential a chat host cannot be handed, and how a copy is put where it
@@ -1523,7 +1833,7 @@ function setupChatLoginSaid(
                   settings,
                 },
               },
-        restart: setupRestartAll,
+        restart: stop.restart,
       },
     },
     when: { id: "setup-runner-chat-login-when", args: { credential } },
@@ -1643,16 +1953,19 @@ function setupHeldSaid(
   };
 }
 
-/** What the console's personal runners page draws the button that mints a chat host's registration token as. */
-export const setupChatHostPressed = {
-  id: "runners-chat-host-register",
-} as const;
-
-/** How a chat host is registered on a machine the setup program does not set one up on: by the commands `page` shows for the machine chosen there. */
-export function setupChatByHand(page: string): Copy {
+/** A workspace that does not let the person register a runner of their own, said with where an admin turns it on. */
+function setupWithheldSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "RunnerWithheld" }>,
+  project: string,
+): SetupRunnerStopSaid {
   return {
-    id: "setup-mend-chat-by-hand",
-    args: { page, register: setupChatHostPressed },
+    found: { id: "setup-runner-withheld-found" },
+    tell: {
+      id: "setup-runner-withheld-tell",
+      args: { project, people: stop.people },
+    },
+    when: { id: "setup-runner-permit-when" },
+    again: "Again",
   };
 }
 
@@ -1663,7 +1976,6 @@ export function setupRunnerStopSaid(
 ): SetupRunnerStopSaid {
   const project = setupRunnerNamed(at);
   switch (stop.stop) {
-    case "Mac":
     case "Serviceless":
     case "SettingsUnread":
     case "LoginMissing":
@@ -1680,7 +1992,7 @@ export function setupRunnerStopSaid(
         again: "Again",
       };
     case "Engineless":
-      return setupEnginelessSaid(stop.asked);
+      return setupEnginelessSaid(stop);
     case "DockerBarred":
       return setupDockerBarredSaid(stop);
     case "Act":
@@ -1697,7 +2009,11 @@ export function setupRunnerStopSaid(
     case "ServiceRefused":
       return setupServiceRefusedSaid(stop);
     case "MintRefused":
-      return setupMintSaid(stop, project);
+      return setupMintSaid(stop);
+    case "RunnerWithheld":
+      return setupWithheldSaid(stop, project);
+    case "ServeRefused":
+      return setupServeRefusedSaid(stop, project);
     case "CheckFailed":
     case "LingerAsks":
     case "Inactive":
@@ -1712,25 +2028,16 @@ export function setupRunnerStopSaid(
     case "ChatHostHeld":
     case "ReplaceMismatched":
       return setupHeldSaid(stop);
-    case "MacChatHost":
-      return {
-        found: { id: "setup-runner-mac-chat-found" },
-        tell: {
-          id: "setup-runner-mac-chat-tell",
-          args: { byHand: setupChatByHand(stop.page) },
-        },
-        when: { id: "setup-mend-chat-host-when" },
-        again: "Status",
-      };
+    case "Rosettaless":
+    case "Rebuild":
+    case "ColimaShort":
+      return setupColimaStopSaid(stop);
   }
 }
 
-/** Zero where a stop waits on the person, one where something failed, two where the program cannot do this here. */
-export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
+/** Zero where a stop waits on the person, and one where something failed. */
+export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 {
   switch (stop.stop) {
-    case "Mac":
-    case "MacChatHost":
-      return 2;
     case "NotAdmin":
     case "Serviceless":
     case "Engineless":
@@ -1739,11 +2046,14 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
     case "Npmless":
     case "LingerAsks":
     case "PermitWithheld":
+    case "RunnerWithheld":
     case "ChatHostOffline":
     case "ChatLogin":
     case "ChatHostHeld":
     case "ReplaceMismatched":
     case "Unpackaged":
+    case "Rosettaless":
+    case "Rebuild":
       return 0;
     case "Unread":
       return stop.outcome === "Refused" ? 0 : 1;
@@ -1754,11 +2064,13 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
     case "Behind":
     case "ServiceRefused":
     case "MintRefused":
+    case "ServeRefused":
     case "CheckFailed":
     case "Inactive":
     case "NotLive":
     case "ChatMintRefused":
     case "ChatHostNotLive":
+    case "ColimaShort":
       return 1;
   }
 }

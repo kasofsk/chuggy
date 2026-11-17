@@ -34,11 +34,13 @@ shell-page-reload = Reload
 shell-page-absent = Not found
 
 ## The welcome page a reader with no project lands on: who they are signed in
-## as, where they stand, and the setup prompt for their agent.
+## as, where they stand, the setup prompt for their agent, and where to get it.
 
 shell-welcome-title = Welcome to { -brand-name }
 shell-welcome-account = Signed in as { $login } on { -github }
 shell-welcome-next = Paste it into { -claude-code } in the { -repository } you want { -brand-name } on. It walks you through the rest.
+shell-welcome-claude-code-absent = No { -claude-code } yet?
+shell-welcome-claude-code-install = Install it
 shell-welcome-admin = You are { -role-admin(form: "a") } of { $workspace }.
 shell-welcome-member = In { $workspace } as { $roles }
 shell-welcome-member-detail = { -workspace(case: "upper", form: "a") } { -role-admin } adds you to { -project(form: "a") }.

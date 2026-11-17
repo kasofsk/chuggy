@@ -64,9 +64,9 @@
  * `awaitingPlacement` routinely carries several projects of one tenant, and a
  * session handed another project's reference would clone another project's
  * tree and `cwd` its model into it. Two placements carry no checkout: one whose
- * project binds no repository, and one whose ROSTER DOES NOT READ ONE — an
- * inquiry holds the project's reads alone, and cloning a tree it may not open
- * is a cost per question with no consequence. Either way the session reads the
+ * project binds no repository, and one whose ROSTER DOES NOT READ ONE — a
+ * session holding the project's reads alone may not open a tree, and cloning
+ * one is a cost per question with no consequence. Either way the session reads the
  * project through the API and has no tree. What the placement carries is that
  * binding put through the site's mirrors, because a session reads where the
  * finalizer writes and the two want different remotes; the map is the site's
@@ -77,17 +77,14 @@
  * can tell from a working one.
  *
  * NO SESSION'S CHECKOUT FOLLOWS A TICKET, BECAUSE NO SESSION NAMES ONE.
- * `allSessionKinds` is `Lead`, `Thread` and `Inquiry`: a lead decides every
- * ticket of its project, a thread is a member's own and drafts against any of
- * them, an inquiry is a fork of a lead, and the session relation carries
- * neither a ticket nor a repository. So the binding asked for here is the
+ * A thread is a member's own and drafts against any ticket of its project, and
+ * the session relation carries neither a ticket nor a repository. So the binding asked for here is the
  * project's oldest LIVE one — a retired binding names a repository the project
  * has stopped reading, and placing a session against one is how a session
  * comes to hold a tree nothing serves any more. Where a project binds several
  * live repositories that still privileges one, an election 080 left standing,
- * kept until a session can name the tree its next turn is about, because a
- * lead judging a ticket needs a tree and none of the tickets it holds is more
- * its own than another. Work and evaluation are not placed here at all: the
+ * kept until a session can name the tree its next turn is about, because none
+ * of the tickets a thread drafts against is more its own than another. Work and evaluation are not placed here at all: the
  * execution scheduler places them, against the repository their input bundle
  * pins, which is the ticket's own.
  *
@@ -238,7 +235,7 @@ export async function sessionSchedulerIdle(
 
 /**
  * Withdraws a bounded batch of turns offered to runners that none took within
- * the dwell, so an inquiry closes and a thread's later turns can be placed.
+ * the dwell, so a thread's later turns can be placed.
  */
 export async function sessionSchedulerWithdraw(
   service: SessionSchedulerService,

@@ -13,9 +13,9 @@
  * same reason, because a name is a decision. An adapter that checked any of
  * them itself would be a second opinion racing the definer that decides it.
  *
- * THE API, THE SELECTOR AND THE WORKER PLANE REACH DIFFERENT DOORS, so they are
+ * THE API, THE SCHEDULER AND THE WORKER PLANE REACH DIFFERENT DOORS, so they are
  * different factories over different pools. `postgresThreads` is the API's
- * reads and doors; `postgresThreadWakes` is the selector's cursor, candidate
+ * reads and doors; `postgresThreadWakes` is the scheduler's cursor, candidate
  * read and wake door; `postgresThreadJobWakes` is the worker plane's view and
  * wake door under a session bearer. A single factory over one pool would be a shape a deployment
  * cannot supply, because no credential in it holds both roles.
@@ -56,7 +56,6 @@ import {
   allThreadTicketWakeReasons,
   type ThreadProjectTexts,
   type ThreadSeededDraft,
-  type ThreadSeededRefusal,
 } from "../../interpreter/thread.ts";
 import type {
   ThreadJobWakeStore,
@@ -88,6 +87,7 @@ import {
   sessionRowMember,
   sessionRowText,
   sessionTurnStandingOf,
+  threadTicketWakesOf,
   type SessionTurnStandingRow,
 } from "./sessionRows.ts";
 
@@ -227,7 +227,7 @@ async function threadChatHostCapabilities(
 /**
  * One thread's standing, or nothing where the session named is not this
  * project's own thread — which the definer decides by admitting `kind='Thread'`
- * alone, so a lead's mailbox is not readable through a thread route.
+ * alone.
  */
 async function threadStanding(
   pool: pg.Pool,
@@ -707,10 +707,9 @@ async function threadProjectTexts(
 /**
  * What a thread's first turn is seeded from. The project's two texts are read
  * as themselves rather than as the whole resolved settings record, so the
- * composition that uses them cannot hand a thread the lead's prompt or its
- * limits by accident; the drafts and the refusals are filtered to the member
- * the block is for, which is why an authority rather than a principal is what
- * they take.
+ * composition that uses them cannot hand a thread settings it was not given
+ * by accident; the drafts are filtered to the member the block is for,
+ * which is why an authority rather than a principal is what they take.
  */
 export function postgresThreadSeeding(pool: pg.Pool): ThreadSeedingRead {
   return {
@@ -739,25 +738,6 @@ export function postgresThreadSeeding(pool: pg.Pool): ThreadSeedingRead {
           "draft ticket",
         ),
         summary: row.intent ?? draftWithoutABrief,
-      }));
-    },
-
-    refusals: async (partition, tickets, limit) => {
-      const found = await pool.query<{
-        ticket: string | null;
-        reason: string | null;
-      }>(
-        sql`SELECT ticket::text AS ticket,reason
-              FROM read_thread_agentic_refusals(
-                     ${partition.tenant},${partition.project},
-                     ${[...tickets]}::bigint[],${limit})`,
-      );
-      return found.rows.map((row): ThreadSeededRefusal => ({
-        ticket: projectRowCounter(
-          sessionRowText(row.ticket, "refusal ticket"),
-          "refusal ticket",
-        ),
-        reason: sessionRowText(row.reason, "refusal reason"),
       }));
     },
   };
@@ -794,6 +774,8 @@ function threadWakeCandidateOf(row: {
   readonly route: string | null;
   readonly runner: string | null;
   readonly thread_standing_rules: string | null;
+  readonly ticket_wakes_thread: string | null;
+  readonly ticket_wakes_host: string | null;
 }): ThreadWakeCandidate {
   return {
     ...(row.thread_standing_rules === null
@@ -821,11 +803,16 @@ function threadWakeCandidateOf(row: {
       row.runner,
       "runner standing",
     ),
+    ticketWakes: threadTicketWakesOf(
+      row.ticket_wakes_thread,
+      row.ticket_wakes_host,
+    ),
   };
 }
 
 /**
- * One page of candidates, with the thread route, the member's runners and the
+ * One page of candidates, with the thread route, the member's runners, the
+ * thread's ticket wake settings and the
  * standing rules of the project each names hung off it: each is keyed by what
  * the candidate already carries, so none adds one. It restates the definer's
  * order, which a join over a function's rows does not preserve.
@@ -846,12 +833,16 @@ async function threadWakeCandidates(
     route: string | null;
     runner: string | null;
     thread_standing_rules: string | null;
+    ticket_wakes_thread: string | null;
+    ticket_wakes_host: string | null;
   }>(
     sql`SELECT candidate.sequence::text AS sequence,candidate.tenant,
                candidate.project,candidate.resource,candidate.reason,
                candidate.principal,candidate.session,routed.route,
                runners.member_standing AS runner,
-               settings.thread_standing_rules
+               settings.thread_standing_rules,
+               wakes.thread AS ticket_wakes_thread,
+               wakes.host AS ticket_wakes_host
           FROM thread_wake_candidates(${after},${limit}) candidate
           CROSS JOIN LATERAL session_route(candidate.tenant,candidate.project,
                                            'Thread') routed
@@ -861,6 +852,8 @@ async function threadWakeCandidates(
           LEFT JOIN selector_project_settings settings
             ON settings.tenant=candidate.tenant
            AND settings.project=candidate.project
+          LEFT JOIN LATERAL thread_ticket_wakes(candidate.tenant,
+            candidate.project,candidate.session) wakes ON true
          ORDER BY candidate.sequence,candidate.session`,
   );
   return found.rows.map(threadWakeCandidateOf);

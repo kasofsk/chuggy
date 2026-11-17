@@ -245,8 +245,7 @@ const projectGroups = [
   [
     "Project atlas-web",
     [
-      "Lead /acme-co/atlas-web/settings/lead",
-      "Lead session /acme-co/atlas-web/settings/lead-session",
+      "Chats /acme-co/atlas-web/settings/threads",
       "Placement /acme-co/atlas-web/settings/placement",
       "Pools /acme-co/atlas-web/settings/pools",
       "Permissions /acme-co/atlas-web/settings/permissions",
@@ -296,7 +295,7 @@ const workspacePersonGroup = [
 const settingsRoots = [
   {
     bare: "/acme-co/atlas-web/settings",
-    first: "/acme-co/atlas-web/settings/lead",
+    first: "/acme-co/atlas-web/settings/threads",
     project: "atlas-web",
   },
   {
@@ -448,6 +447,7 @@ test.each([
             manageSelector: administer,
             overrideTicketConfig: administer,
             skipPlannedEvaluations: administer,
+            mergeProposals: administer,
             administer,
             writeEpic: true,
           })
@@ -477,7 +477,10 @@ test("outside a project the navigation draws the workspace's group and the reade
 });
 
 test.each([
-  { address: "/acme-co/atlas-web/settings/lead", group: "Project atlas-web" },
+  {
+    address: "/acme-co/atlas-web/settings/threads",
+    group: "Project atlas-web",
+  },
   {
     address: "/acme-co/atlas-web/settings/placement",
     group: "Project atlas-web",

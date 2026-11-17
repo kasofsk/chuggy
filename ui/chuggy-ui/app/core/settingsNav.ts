@@ -31,8 +31,7 @@ export type SettingsRootRoute =
 /** Every settings page's address, in a project and under the workspace alone. */
 export const settingsRoutes = {
   project: {
-    lead: "/$tenant/$project/settings/lead",
-    leadSession: "/$tenant/$project/settings/lead-session",
+    threads: "/$tenant/$project/settings/threads",
     placement: "/$tenant/$project/settings/placement",
     pools: "/$tenant/$project/settings/pools",
     permissions: "/$tenant/$project/settings/permissions",
@@ -75,8 +74,7 @@ export type SettingsSectionShownBy =
   "Member" | "ProjectAdminister" | "SiteWorkspaces" | "SitePermissions";
 
 export type SettingsSectionId =
-  | "lead"
-  | "lead-session"
+  | "threads"
   | "placement"
   | "pools"
   | "permissions"
@@ -107,8 +105,7 @@ export interface SettingsSection {
 
 /** Each section's word, by its id. */
 const settingsSectionLabels = {
-  lead: { id: "settings-nav-lead" },
-  "lead-session": { id: "settings-nav-lead-session" },
+  threads: { id: "settings-nav-threads" },
   placement: { id: "settings-nav-placement" },
   pools: { id: "settings-nav-pools" },
   permissions: { id: "settings-nav-permissions" },
@@ -127,8 +124,7 @@ const settingsSectionLabels = {
 
 /** Each section's line, by its id. */
 const settingsSectionSummaries = {
-  lead: { id: "settings-nav-lead-summary" },
-  "lead-session": { id: "settings-nav-lead-session-summary" },
+  threads: { id: "settings-nav-threads-summary" },
   placement: { id: "settings-nav-placement-summary" },
   pools: { id: "settings-nav-pools-summary" },
   permissions: { id: "settings-nav-permissions-summary" },
@@ -172,8 +168,7 @@ function settingsSectionOf(
 /** Every section, a group at a time in the order the groups are drawn, and in
  * each group in the order its pages are listed. */
 export const settingsSections: readonly SettingsSection[] = [
-  settingsSectionOf("lead", "project", "lead"),
-  settingsSectionOf("lead-session", "project", "leadSession"),
+  settingsSectionOf("threads", "project", "threads"),
   settingsSectionOf("placement", "project", "placement"),
   settingsSectionOf("pools", "project", "pools"),
   settingsSectionOf("permissions", "project", "permissions"),

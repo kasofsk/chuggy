@@ -104,7 +104,7 @@ async function holding(partition: Partition): Promise<void> {
   await rig.sessions.open({
     partition,
     session,
-    kind: "Lead",
+    kind: "Thread",
     principal: asPrincipal("principal-live"),
     capabilities: [],
     credentialSlot: "claude-code",

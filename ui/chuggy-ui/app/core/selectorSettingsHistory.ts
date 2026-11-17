@@ -5,7 +5,7 @@
  * THE DIFF IS NOT ON THE WIRE AND MUST NOT BE STORED. The history gives every
  * revision's whole override set, so what one revision moved is the difference
  * between it and the one before — standing rule 3, and the reason no server
- * change is needed to say `Base prompt, Tokens` beside a row.
+ * change is needed to say `North Star, Chat model` beside a row.
  *
  * THE OLDEST ROW OF A PAGE HAS NO PREDECESSOR HERE. The read is a page and the
  * revision before its last one may simply not have been fetched, so that row's
@@ -18,16 +18,9 @@
  */
 
 import type { SelectorSettingsHistoryResponse } from "../../../../src/contract/responses.ts";
-import type {
-  SelectorDispatchMode,
-  SelectorMode,
-} from "../../../../src/contract/rosters.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
-import { groupedDigits } from "./figures.ts";
 import {
   selectorSettingsEffortLabel,
-  selectorSettingsLimitLabel,
-  selectorSettingsLimitNames,
   selectorSettingsModelLabel,
   selectorSettingsTextNames,
 } from "./selectorSettingsForm.ts";
@@ -38,12 +31,7 @@ export type SelectorSettingsRevisionRead =
 
 /** The word a field that carries no override is drawn as, on both sides. */
 export const selectorSettingsHistoryDefaultWord: Copy = {
-  id: "lead-settings-default",
-};
-
-/** The word an override that clears an allowlist to nothing is drawn as. */
-export const selectorSettingsHistoryEmptyWord: Copy = {
-  id: "lead-history-none",
+  id: "settings-threads-default",
 };
 
 /** One field one revision moved, as the two texts a row draws: a word for a
@@ -52,7 +40,6 @@ export interface SelectorSettingsFieldChange {
   readonly label: Copy;
   readonly before: CopyOrData;
   readonly after: CopyOrData;
-  readonly mono: boolean;
 }
 
 /** One recorded revision beside what it moved, or that this read cannot say. */
@@ -65,27 +52,6 @@ export interface SelectorSettingsRevisionDiff {
 interface SelectorSettingsHistoryField {
   readonly label: Copy;
   readonly text: CopyOrData;
-  readonly mono: boolean;
-}
-
-function selectorSettingsHistoryModeLabel(mode: SelectorMode): Copy {
-  switch (mode) {
-    case "Running":
-      return { id: "lead-mode-running" };
-    case "Paused":
-      return { id: "lead-mode-paused" };
-  }
-}
-
-function selectorSettingsHistoryDispatchLabel(
-  mode: SelectorDispatchMode,
-): Copy {
-  switch (mode) {
-    case "Automatic":
-      return { id: "lead-dispatch-automatic" };
-    case "ApprovalRequired":
-      return { id: "lead-dispatch-approval" };
-  }
 }
 
 /** Whether two sides draw the same: the same word, or the same data. */
@@ -106,7 +72,6 @@ function selectorSettingsHistoryTexts(
     held.push({
       label: selectorSettingsHistoryTextLabel(name),
       text: overrides[name] ?? selectorSettingsHistoryDefaultWord,
-      mono: name === "basePrompt",
     });
   return held;
 }
@@ -116,59 +81,19 @@ function selectorSettingsHistoryTextLabel(
 ): Copy {
   switch (name) {
     case "northStar":
-      return { id: "lead-settings-section-north-star-title" };
+      return { id: "settings-threads-section-north-star-title" };
     case "threadStandingRules":
-      return { id: "lead-settings-section-standing-rules-title" };
-    case "basePrompt":
-      return { id: "lead-settings-section-base-prompt-title" };
+      return { id: "settings-threads-section-standing-rules-title" };
   }
 }
 
-/** Every override field of one revision, flat, so two revisions compare field
+/** Every drawn field of one revision, flat, so two revisions compare field
  * by field rather than by a shape one of them may not have. */
 function selectorSettingsHistoryFields(
   overrides: SelectorProjectOverrides,
 ): readonly SelectorSettingsHistoryField[] {
-  const absent = selectorSettingsHistoryDefaultWord;
-  const limits = selectorSettingsLimitNames.map((name) => ({
-    label: selectorSettingsLimitLabel(name),
-    text: selectorSettingsHistoryNumber(overrides.limits?.[name]),
-    mono: false,
-  }));
   return [
     ...selectorSettingsHistoryTexts(overrides),
-    {
-      label: { id: "lead-history-mode-label" },
-      text:
-        overrides.mode === undefined
-          ? absent
-          : selectorSettingsHistoryModeLabel(overrides.mode),
-      mono: false,
-    },
-    {
-      label: { id: "lead-history-dispatch-label" },
-      text:
-        overrides.dispatchMode === undefined
-          ? absent
-          : selectorSettingsHistoryDispatchLabel(overrides.dispatchMode),
-      mono: false,
-    },
-    ...limits,
-    {
-      label: { id: "lead-history-models-label" },
-      text: selectorSettingsHistoryList(overrides.modelAllowlist),
-      mono: false,
-    },
-    {
-      label: { id: "lead-history-tools-label" },
-      text: selectorSettingsHistoryList(overrides.toolAllowlist),
-      mono: false,
-    },
-    {
-      label: { id: "lead-history-context-age-label" },
-      text: selectorSettingsHistoryNumber(overrides.operationalContextMaxAgeMs),
-      mono: false,
-    },
     ...selectorSettingsHistoryModels(overrides),
   ];
 }
@@ -178,44 +103,18 @@ function selectorSettingsHistoryModels(
   overrides: SelectorProjectOverrides,
 ): readonly SelectorSettingsHistoryField[] {
   const absent = selectorSettingsHistoryDefaultWord;
-  const model = (
-    name: "leadModel" | "threadModel",
-  ): SelectorSettingsHistoryField => ({
+  const model = (name: "threadModel"): SelectorSettingsHistoryField => ({
     label: selectorSettingsModelLabel(name),
     text: overrides[name] ?? absent,
-    mono: false,
   });
-  const effort = (
-    name: "leadEffort" | "threadEffort",
-  ): SelectorSettingsHistoryField => {
+  const effort = (name: "threadEffort"): SelectorSettingsHistoryField => {
     const held = overrides[name];
     return {
       label: selectorSettingsModelLabel(name),
       text: held === undefined ? absent : selectorSettingsEffortLabel(held),
-      mono: false,
     };
   };
-  return [
-    model("leadModel"),
-    effort("leadEffort"),
-    model("threadModel"),
-    effort("threadEffort"),
-  ];
-}
-
-function selectorSettingsHistoryNumber(value: number | undefined): CopyOrData {
-  return value === undefined
-    ? selectorSettingsHistoryDefaultWord
-    : groupedDigits(value);
-}
-
-function selectorSettingsHistoryList(
-  value: readonly string[] | undefined,
-): CopyOrData {
-  if (value === undefined) return selectorSettingsHistoryDefaultWord;
-  return value.length === 0
-    ? selectorSettingsHistoryEmptyWord
-    : value.join(", ");
+  return [model("threadModel"), effort("threadEffort")];
 }
 
 /**
@@ -257,7 +156,6 @@ function selectorSettingsHistoryChanges(
       label: field.label,
       before: lines.before,
       after: lines.after,
-      mono: field.mono,
     });
   });
   return changes;

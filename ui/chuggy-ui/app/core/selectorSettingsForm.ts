@@ -2,14 +2,9 @@
  * The project settings editor's draft: the project's overrides as the strings a
  * form holds, and the override set those strings become.
  *
- * AN EMPTY FIELD IS NO OVERRIDE AND NEVER A ZERO. The wire says a project takes
- * the installation default by omitting the field, so a cleared box is an
- * omission here and the effective value beside it is what the project then
- * runs under.
- *
- * THE WRITE REPLACES THE WHOLE OVERRIDE SET, so the three overrides this form
- * draws no box for — the two allowlists and the context age — are carried
- * through it unchanged rather than deleted by an edit to a box it draws.
+ * AN EMPTY FIELD IS NO OVERRIDE. The wire says a project takes the default by
+ * omitting the field, so a cleared box is an omission here and the effective
+ * value beside it is what the project then runs under.
  *
  * A BOX THE READER HAS TOUCHED IS THEIRS AND EVERY OTHER BOX FOLLOWS THE READ.
  * The draft holds what the read gave beside what is held, so the two can be
@@ -42,54 +37,24 @@ import type {
 
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyOrData, CopyText } from "./copy.ts";
-import {
-  bytesSetFigure,
-  countFigure,
-  groupedDigits,
-  instantFigure,
-  spanSetFigure,
-} from "./figures.ts";
-import type { Figure } from "./figures.ts";
+import { groupedDigits, instantFigure } from "./figures.ts";
 import { failureWords } from "./failureWords.ts";
-import { selectorModeTone } from "./tones.ts";
-import type { Tone } from "./tones.ts";
 
 export type SelectorProjectOverrides = z.infer<
   typeof selectorProjectOverridesSchema
 >;
 
-/** The limits one project may set for itself, which is every one the wire
- * admits in an override. */
-export const selectorSettingsLimitNames = [
-  "tokensPerDecision",
-  "millisecondsPerDecision",
-  "toolCallsPerDecision",
-  "dispatchesPerDecision",
-  "inputBytesPerDecision",
-  "candidatePagesPerDecision",
-  "autoCompactWindow",
-] as const;
-
-export type SelectorSettingsLimitName =
-  (typeof selectorSettingsLimitNames)[number];
-
-export type SelectorSettingsLimitDraft = Readonly<
-  Record<SelectorSettingsLimitName, string>
->;
-
-/** What the lead and a thread run on, each one row of the Models section. */
-export const selectorSettingsModelNames = [
-  "leadModel",
-  "leadEffort",
+/** The model and effort overrides the draft holds, each one row of the Models section. */
+export const selectorSettingsModelRowNames = [
   "threadModel",
   "threadEffort",
 ] as const;
 
-export type SelectorSettingsModelName =
-  (typeof selectorSettingsModelNames)[number];
+export type SelectorSettingsModelRowName =
+  (typeof selectorSettingsModelRowNames)[number];
 
 export type SelectorSettingsModelDraft = Readonly<
-  Record<SelectorSettingsModelName, string>
+  Record<SelectorSettingsModelRowName, string>
 >;
 
 /** The aliases a model row offers; any other name Claude Code takes is typed. */
@@ -101,90 +66,30 @@ export const selectorSettingsModelAliases = [
 
 /** Whether a row names a model, which is typed, or an effort, which is chosen. */
 export function selectorSettingsModelRowIsEffort(
-  name: SelectorSettingsModelName,
+  name: SelectorSettingsModelRowName,
 ): boolean {
   switch (name) {
-    case "leadModel":
     case "threadModel":
       return false;
-    case "leadEffort":
     case "threadEffort":
       return true;
   }
 }
 
-/**
- * The override fields this form draws a box for. What is carried instead is the
- * rest of what the read returned — the two allowlists and the context age.
- */
-export const selectorSettingsEditedNames = [
-  "northStar",
-  "threadStandingRules",
-  "basePrompt",
-  "mode",
-  "dispatchMode",
-  "limits",
-  ...selectorSettingsModelNames,
-] as const;
-
-/** The boxes this form draws, as the strings they hold. */
+/** The override fields the draft holds, as the strings they hold. */
 export interface SelectorSettingsDrawn {
   readonly northStar: string;
   readonly threadStandingRules: string;
-  readonly basePrompt: string;
-  readonly mode: string;
-  readonly dispatchMode: string;
-  readonly limits: SelectorSettingsLimitDraft;
   readonly models: SelectorSettingsModelDraft;
 }
 
 /**
- * What the form holds, under the revision it was read at, beside the overrides
- * it does not draw and must not drop and the values the read gave for the ones
- * it does — which is how an edited box is told from an untouched one.
+ * What the form holds, under the revision it was read at, beside the values
+ * the read gave, which is how an edited box is told from an untouched one.
  */
 export interface SelectorSettingsDraft extends SelectorSettingsDrawn {
   readonly revision: number;
-  readonly carried: SelectorProjectOverrides;
   readonly read: SelectorSettingsDrawn;
-}
-
-function selectorSettingsLimitDraft(
-  limits: SelectorProjectOverrides["limits"],
-): SelectorSettingsLimitDraft {
-  const named = (name: SelectorSettingsLimitName): string => {
-    const value = limits?.[name];
-    return value === undefined ? "" : String(value);
-  };
-  return {
-    tokensPerDecision: named("tokensPerDecision"),
-    millisecondsPerDecision: named("millisecondsPerDecision"),
-    toolCallsPerDecision: named("toolCallsPerDecision"),
-    dispatchesPerDecision: named("dispatchesPerDecision"),
-    inputBytesPerDecision: named("inputBytesPerDecision"),
-    candidatePagesPerDecision: named("candidatePagesPerDecision"),
-    autoCompactWindow: named("autoCompactWindow"),
-  };
-}
-
-function selectorSettingsModelDraft(
-  overrides: SelectorProjectOverrides,
-): SelectorSettingsModelDraft {
-  return {
-    leadModel: overrides.leadModel ?? "",
-    leadEffort: overrides.leadEffort ?? "",
-    threadModel: overrides.threadModel ?? "",
-    threadEffort: overrides.threadEffort ?? "",
-  };
-}
-
-/** Everything the read returned that this form draws no box for. */
-function selectorSettingsCarried(
-  overrides: SelectorProjectOverrides,
-): SelectorProjectOverrides {
-  const carried = { ...overrides };
-  for (const name of selectorSettingsEditedNames) delete carried[name];
-  return carried;
 }
 
 /** The boxes as the read gave them, an absent override being an empty one. */
@@ -194,11 +99,10 @@ function selectorSettingsDrawn(
   return {
     northStar: overrides.northStar ?? "",
     threadStandingRules: overrides.threadStandingRules ?? "",
-    basePrompt: overrides.basePrompt ?? "",
-    mode: overrides.mode ?? "",
-    dispatchMode: overrides.dispatchMode ?? "",
-    limits: selectorSettingsLimitDraft(overrides.limits),
-    models: selectorSettingsModelDraft(overrides),
+    models: {
+      threadModel: overrides.threadModel ?? "",
+      threadEffort: overrides.threadEffort ?? "",
+    },
   };
 }
 
@@ -207,47 +111,7 @@ export function selectorSettingsDraft(
   settings: SelectorProjectSettingsResponse,
 ): SelectorSettingsDraft {
   const drawn = selectorSettingsDrawn(settings.overrides);
-  return {
-    ...drawn,
-    revision: settings.revision,
-    carried: selectorSettingsCarried(settings.overrides),
-    read: drawn,
-  };
-}
-
-function selectorSettingsLimitsRebased(
-  draft: SelectorSettingsDraft,
-  arriving: SelectorSettingsDrawn,
-): SelectorSettingsLimitDraft {
-  const rebased = (name: SelectorSettingsLimitName): string =>
-    draft.limits[name] === draft.read.limits[name]
-      ? arriving.limits[name]
-      : draft.limits[name];
-  return {
-    tokensPerDecision: rebased("tokensPerDecision"),
-    millisecondsPerDecision: rebased("millisecondsPerDecision"),
-    toolCallsPerDecision: rebased("toolCallsPerDecision"),
-    dispatchesPerDecision: rebased("dispatchesPerDecision"),
-    inputBytesPerDecision: rebased("inputBytesPerDecision"),
-    candidatePagesPerDecision: rebased("candidatePagesPerDecision"),
-    autoCompactWindow: rebased("autoCompactWindow"),
-  };
-}
-
-function selectorSettingsModelsRebased(
-  draft: SelectorSettingsDraft,
-  arriving: SelectorSettingsDrawn,
-): SelectorSettingsModelDraft {
-  const rebased = (name: SelectorSettingsModelName): string =>
-    draft.models[name] === draft.read.models[name]
-      ? arriving.models[name]
-      : draft.models[name];
-  return {
-    leadModel: rebased("leadModel"),
-    leadEffort: rebased("leadEffort"),
-    threadModel: rebased("threadModel"),
-    threadEffort: rebased("threadEffort"),
-  };
+  return { ...drawn, revision: settings.revision, read: drawn };
 }
 
 /**
@@ -261,46 +125,22 @@ export function selectorSettingsRebased(
   settings: SelectorProjectSettingsResponse,
 ): SelectorSettingsDraft {
   const arriving = selectorSettingsDrawn(settings.overrides);
-  const kept = (
-    name:
-      | "northStar"
-      | "threadStandingRules"
-      | "basePrompt"
-      | "mode"
-      | "dispatchMode",
-  ) => (draft[name] === draft.read[name] ? arriving[name] : draft[name]);
+  const kept = (name: "northStar" | "threadStandingRules") =>
+    draft[name] === draft.read[name] ? arriving[name] : draft[name];
+  const model = (name: SelectorSettingsModelRowName) =>
+    draft.models[name] === draft.read.models[name]
+      ? arriving.models[name]
+      : draft.models[name];
   return {
     northStar: kept("northStar"),
     threadStandingRules: kept("threadStandingRules"),
-    basePrompt: kept("basePrompt"),
-    mode: kept("mode"),
-    dispatchMode: kept("dispatchMode"),
-    limits: selectorSettingsLimitsRebased(draft, arriving),
-    models: selectorSettingsModelsRebased(draft, arriving),
+    models: {
+      threadModel: model("threadModel"),
+      threadEffort: model("threadEffort"),
+    },
     revision: settings.revision,
-    carried: selectorSettingsCarried(settings.overrides),
     read: arriving,
   };
-}
-
-/** Bare digits, or digits grouped in threes, as the number the wire reads;
- * `NaN` for anything else, so the wire's own schema is what refuses it. */
-function selectorSettingsLimitNumber(written: string): number {
-  return /^\d+$/.test(written) || /^\d{1,3}(,\d{3})+$/.test(written)
-    ? Number(written.replaceAll(",", ""))
-    : NaN;
-}
-
-function selectorSettingsLimits(
-  limits: SelectorSettingsLimitDraft,
-): Record<string, number> | undefined {
-  const held: Record<string, number> = {};
-  for (const name of selectorSettingsLimitNames) {
-    const written = limits[name].trim();
-    if (written === "") continue;
-    held[name] = selectorSettingsLimitNumber(written);
-  }
-  return Object.keys(held).length === 0 ? undefined : held;
 }
 
 /** The draft as the body the route takes, or the fields the wire refused. */
@@ -311,7 +151,7 @@ export interface SelectorSettingsWrite {
 
 /** The word a refused field is marked with, said once so every field says it. */
 export const selectorSettingsFaultWord: Copy = {
-  id: "lead-settings-fault-invalid",
+  id: "settings-threads-fault-invalid",
 };
 
 /** What a refused field is marked with: the bound it crossed where the wire's
@@ -320,24 +160,24 @@ export const selectorSettingsFaultWord: Copy = {
 function selectorSettingsFaultText(issue: z.core.$ZodIssue): Copy {
   if (issue.code === "too_small" && issue.inclusive === true)
     return {
-      id: "lead-settings-fault-at-least",
+      id: "settings-threads-fault-at-least",
       args: { min: groupedDigits(Number(issue.minimum)) },
     };
   if (issue.code === "too_big" && issue.inclusive === true)
     return issue.origin === "string"
       ? {
-          id: "lead-settings-fault-at-most-characters",
+          id: "settings-threads-fault-at-most-characters",
           args: { max: groupedDigits(Number(issue.maximum)) },
         }
       : {
-          id: "lead-settings-fault-at-most",
+          id: "settings-threads-fault-at-most",
           args: { max: groupedDigits(Number(issue.maximum)) },
         };
   if (issue.code === "invalid_format" && issue.format === "regex") {
     if (issue.pattern === sessionModelUnflagged.toString())
-      return { id: "lead-settings-fault-model-flag" };
+      return { id: "settings-threads-fault-model-flag" };
     if (issue.pattern === sessionModelUnspaced.toString())
-      return { id: "lead-settings-fault-model-spaced" };
+      return { id: "settings-threads-fault-model-spaced" };
   }
   return selectorSettingsFaultWord;
 }
@@ -345,9 +185,9 @@ function selectorSettingsFaultText(issue: z.core.$ZodIssue): Copy {
 /** The model and effort rows the draft holds, an empty row being no override. */
 function selectorSettingsModels(
   models: SelectorSettingsModelDraft,
-): Partial<Record<SelectorSettingsModelName, string>> {
-  const held: Partial<Record<SelectorSettingsModelName, string>> = {};
-  for (const name of selectorSettingsModelNames)
+): Partial<Record<SelectorSettingsModelRowName, string>> {
+  const held: Partial<Record<SelectorSettingsModelRowName, string>> = {};
+  for (const name of selectorSettingsModelRowNames)
     if (models[name] !== "") held[name] = models[name];
   return held;
 }
@@ -360,17 +200,11 @@ function selectorSettingsModels(
 export function selectorSettingsWrite(
   draft: SelectorSettingsDraft,
 ): SelectorSettingsWrite {
-  const limits = selectorSettingsLimits(draft.limits);
   const built = {
-    ...draft.carried,
     ...(draft.northStar.trim() === "" ? {} : { northStar: draft.northStar }),
     ...(draft.threadStandingRules.trim() === ""
       ? {}
       : { threadStandingRules: draft.threadStandingRules }),
-    ...(draft.basePrompt.trim() === "" ? {} : { basePrompt: draft.basePrompt }),
-    ...(draft.mode === "" ? {} : { mode: draft.mode }),
-    ...(draft.dispatchMode === "" ? {} : { dispatchMode: draft.dispatchMode }),
-    ...(limits === undefined ? {} : { limits }),
     ...selectorSettingsModels(draft.models),
   };
   const read = selectorProjectOverridesSchema.safeParse(built);
@@ -381,91 +215,15 @@ export function selectorSettingsWrite(
   return { overrides: undefined, faults };
 }
 
-/** The name a limit is drawn under, which is the noun and not the wire's key. */
-export function selectorSettingsLimitLabel(
-  name: SelectorSettingsLimitName,
-): Copy {
-  switch (name) {
-    case "tokensPerDecision":
-      return { id: "lead-settings-limit-tokens" };
-    case "millisecondsPerDecision":
-      return { id: "lead-settings-limit-time" };
-    case "toolCallsPerDecision":
-      return { id: "lead-settings-limit-tool-calls" };
-    case "dispatchesPerDecision":
-      return { id: "lead-settings-limit-dispatches" };
-    case "inputBytesPerDecision":
-      return { id: "lead-settings-limit-input" };
-    case "candidatePagesPerDecision":
-      return { id: "lead-settings-limit-candidate-pages" };
-    case "autoCompactWindow":
-      return { id: "lead-settings-limit-compaction-window" };
-  }
-}
-
-/**
- * What a limit reads as at rest, in the unit a person states it in. The box
- * beside it holds the wire's own unit instead, which is why
- * `selectorSettingsLimitUnitWord` is a second answer and not this one rounded.
- */
-export function selectorSettingsLimitFigure(
-  name: SelectorSettingsLimitName,
-  value: number,
-): Figure {
-  switch (name) {
-    case "tokensPerDecision":
-      return countFigure(value, { id: "figures-unit-tokens" });
-    case "millisecondsPerDecision":
-      return spanSetFigure(value);
-    case "toolCallsPerDecision":
-      return countFigure(value, { id: "figures-unit-calls" });
-    case "dispatchesPerDecision":
-      return countFigure(value, { id: "figures-unit-tickets" });
-    case "inputBytesPerDecision":
-      return bytesSetFigure(value);
-    case "candidatePagesPerDecision":
-      return countFigure(value, { id: "figures-unit-pages" });
-    case "autoCompactWindow":
-      return countFigure(value, { id: "figures-unit-tokens" });
-  }
-}
-
-/** The unit the box holds, which is the wire's own: a draft is raw digits, so
- * the suffix beside them has to say what the wire will read them as. */
-export function selectorSettingsLimitUnitWord(
-  name: SelectorSettingsLimitName,
-): Copy {
-  switch (name) {
-    case "tokensPerDecision":
-      return { id: "lead-settings-unit-tokens" };
-    case "millisecondsPerDecision":
-      return { id: "lead-settings-unit-ms" };
-    case "toolCallsPerDecision":
-      return { id: "lead-settings-unit-calls" };
-    case "dispatchesPerDecision":
-      return { id: "lead-settings-unit-tickets" };
-    case "inputBytesPerDecision":
-      return { id: "lead-settings-unit-bytes" };
-    case "candidatePagesPerDecision":
-      return { id: "lead-settings-unit-pages" };
-    case "autoCompactWindow":
-      return { id: "lead-settings-unit-tokens" };
-  }
-}
-
 /** The name a model or effort row is drawn under. */
 export function selectorSettingsModelLabel(
-  name: SelectorSettingsModelName,
+  name: SelectorSettingsModelRowName,
 ): Copy {
   switch (name) {
-    case "leadModel":
-      return { id: "lead-settings-model-lead-model" };
-    case "leadEffort":
-      return { id: "lead-settings-model-lead-effort" };
     case "threadModel":
-      return { id: "lead-settings-model-thread-model" };
+      return { id: "settings-threads-model-thread-model" };
     case "threadEffort":
-      return { id: "lead-settings-model-thread-effort" };
+      return { id: "settings-threads-model-thread-effort" };
   }
 }
 
@@ -473,60 +231,33 @@ export function selectorSettingsModelLabel(
 export function selectorSettingsEffortLabel(effort: SessionEffort): Copy {
   switch (effort) {
     case "low":
-      return { id: "lead-settings-effort-low" };
+      return { id: "settings-threads-effort-low" };
     case "medium":
-      return { id: "lead-settings-effort-medium" };
+      return { id: "settings-threads-effort-medium" };
     case "high":
-      return { id: "lead-settings-effort-high" };
+      return { id: "settings-threads-effort-high" };
     case "xhigh":
-      return { id: "lead-settings-effort-xhigh" };
+      return { id: "settings-threads-effort-xhigh" };
     case "max":
-      return { id: "lead-settings-effort-max" };
+      return { id: "settings-threads-effort-max" };
   }
 }
 
 /** What a row reads as at rest: the name or the effort it holds, or Default. */
 export function selectorSettingsModelValue(
   draft: SelectorSettingsDraft,
-  name: SelectorSettingsModelName,
+  name: SelectorSettingsModelRowName,
 ): CopyOrData {
   const value = draft.read.models[name];
-  if (value === "") return { id: "lead-settings-default" };
+  if (value === "") return { id: "settings-threads-default" };
   const effort = sessionEfforts.find((candidate) => candidate === value);
   return effort === undefined ? value : selectorSettingsEffortLabel(effort);
-}
-
-/** The rows a subsidized lead pins, each read as the profile's own value. */
-export type SelectorSettingsModelPinned = Readonly<
-  Partial<Record<SelectorSettingsModelName, CopyOrData>>
->;
-
-/**
- * What the lead's model and effort read as where its lead is subsidized: the
- * profile's, as the effective settings name them, which no override of the
- * project's moves. None is pinned where the lead is the members' own.
- */
-export function selectorSettingsModelPinned(
-  effective: SelectorProjectSettingsResponse["effective"],
-): SelectorSettingsModelPinned {
-  switch (effective.leadOffering) {
-    case "Own":
-      return {};
-    case "Subsidized":
-      return {
-        leadModel: effective.leadModel ?? { id: "lead-settings-default" },
-        leadEffort:
-          effective.leadEffort === undefined
-            ? { id: "lead-settings-default" }
-            : selectorSettingsEffortLabel(effective.leadEffort),
-      };
-  }
 }
 
 /** One model or effort row under what a reader typed or chose, empty being Default. */
 export function selectorSettingsModelTyped(
   draft: SelectorSettingsDraft,
-  name: SelectorSettingsModelName,
+  name: SelectorSettingsModelRowName,
   value: string,
 ): SelectorSettingsDraft {
   return { ...draft, models: { ...draft.models, [name]: value } };
@@ -535,7 +266,7 @@ export function selectorSettingsModelTyped(
 /** Whether this draft moved this one model or effort row, which is what marks it. */
 export function selectorSettingsModelEdited(
   draft: SelectorSettingsDraft,
-  name: SelectorSettingsModelName,
+  name: SelectorSettingsModelRowName,
 ): boolean {
   return draft.models[name] !== draft.read.models[name];
 }
@@ -544,7 +275,6 @@ export function selectorSettingsModelEdited(
 export const selectorSettingsTextNames = [
   "northStar",
   "threadStandingRules",
-  "basePrompt",
 ] as const;
 
 export type SelectorSettingsTextName =
@@ -553,7 +283,6 @@ export type SelectorSettingsTextName =
 /** A section is what one press of Edit opens, and only one is open at a time. */
 export const selectorSettingsSectionNames = [
   ...selectorSettingsTextNames,
-  "limits",
   "models",
 ] as const;
 
@@ -572,28 +301,18 @@ export function selectorSettingsSection(
   switch (name) {
     case "northStar":
       return {
-        title: { id: "lead-settings-section-north-star-title" },
-        about: { id: "lead-settings-section-north-star-about" },
+        title: { id: "settings-threads-section-north-star-title" },
+        about: { id: "settings-threads-section-north-star-about" },
       };
     case "threadStandingRules":
       return {
-        title: { id: "lead-settings-section-standing-rules-title" },
-        about: { id: "lead-settings-section-standing-rules-about" },
-      };
-    case "basePrompt":
-      return {
-        title: { id: "lead-settings-section-base-prompt-title" },
-        about: { id: "lead-settings-section-base-prompt-about" },
-      };
-    case "limits":
-      return {
-        title: { id: "lead-settings-section-limits-title" },
-        about: { id: "lead-settings-section-limits-about" },
+        title: { id: "settings-threads-section-standing-rules-title" },
+        about: { id: "settings-threads-section-standing-rules-about" },
       };
     case "models":
       return {
-        title: { id: "lead-settings-section-models-title" },
-        about: { id: "lead-settings-section-models-about" },
+        title: { id: "settings-threads-section-models-title" },
+        about: { id: "settings-threads-section-models-about" },
       };
   }
 }
@@ -609,32 +328,17 @@ export function selectorSettingsTextTyped(
       return { ...draft, northStar: text };
     case "threadStandingRules":
       return { ...draft, threadStandingRules: text };
-    case "basePrompt":
-      return { ...draft, basePrompt: text };
   }
 }
 
-/** One limit box under the digits a reader typed into it. */
-export function selectorSettingsLimitTyped(
-  draft: SelectorSettingsDraft,
-  name: SelectorSettingsLimitName,
-  digits: string,
-): SelectorSettingsDraft {
-  return { ...draft, limits: { ...draft.limits, [name]: digits } };
-}
-
-/** Whether the section stands on the installation's value rather than the
+/** Whether the section stands on the default rather than the
  * project's own, read from the draft so that clearing a box says so at once. */
 export function selectorSettingsSectionInherited(
   draft: SelectorSettingsDraft,
   name: SelectorSettingsSectionName,
 ): boolean {
-  if (name === "limits")
-    return selectorSettingsLimitNames.every(
-      (limit) => draft.limits[limit] === "",
-    );
   if (name === "models")
-    return selectorSettingsModelNames.every(
+    return selectorSettingsModelRowNames.every(
       (model) => draft.models[model] === "",
     );
   return draft[name] === "";
@@ -645,10 +349,11 @@ export function selectorSettingsSectionCleared(
   draft: SelectorSettingsDraft,
   name: SelectorSettingsSectionName,
 ): SelectorSettingsDraft {
-  if (name === "limits")
-    return { ...draft, limits: selectorSettingsLimitDraft(undefined) };
   if (name === "models")
-    return { ...draft, models: selectorSettingsModelDraft({}) };
+    return {
+      ...draft,
+      models: { ...draft.models, threadModel: "", threadEffort: "" },
+    };
   return selectorSettingsTextTyped(draft, name, "");
 }
 
@@ -657,7 +362,6 @@ export function selectorSettingsSectionRestored(
   draft: SelectorSettingsDraft,
   name: SelectorSettingsSectionName,
 ): SelectorSettingsDraft {
-  if (name === "limits") return { ...draft, limits: draft.read.limits };
   if (name === "models") return { ...draft, models: draft.read.models };
   return selectorSettingsTextTyped(draft, name, draft.read[name]);
 }
@@ -668,33 +372,11 @@ export function selectorSettingsSectionChangedCount(
   draft: SelectorSettingsDraft,
   name: SelectorSettingsSectionName,
 ): number {
-  if (name === "limits")
-    return selectorSettingsLimitNames.filter(
-      (limit) => draft.limits[limit] !== draft.read.limits[limit],
-    ).length;
   if (name === "models")
-    return selectorSettingsModelNames.filter((model) =>
+    return selectorSettingsModelRowNames.filter((model) =>
       selectorSettingsModelEdited(draft, model),
     ).length;
   return draft[name] === draft.read[name] ? 0 : 1;
-}
-
-/** Whether this draft moved this one limit, which is what marks its row. */
-export function selectorSettingsLimitEdited(
-  draft: SelectorSettingsDraft,
-  name: SelectorSettingsLimitName,
-): boolean {
-  return draft.limits[name] !== draft.read.limits[name];
-}
-
-/** Whether this limit's box currently holds an override: live, so a row
- * cleared by Reset reads as on the default at once rather than waiting for
- * the next read. */
-export function selectorSettingsLimitOverridden(
-  draft: SelectorSettingsDraft,
-  name: SelectorSettingsLimitName,
-): boolean {
-  return draft.limits[name] !== "";
 }
 
 /** Whether this text section held an override as of the last read. */
@@ -703,85 +385,6 @@ export function selectorSettingsTextOverriddenAtRead(
   name: SelectorSettingsTextName,
 ): boolean {
   return draft.read[name] !== "";
-}
-
-/**
- * One operational fact and the single press that changes it: what the project
- * runs under, whether that is its own or the installation's, and the draft the
- * press writes. There is no edit mode here — the press is the write.
- */
-export interface SelectorSettingsStripCell {
-  readonly name: Copy;
-  readonly value: Copy;
-  readonly tone: Tone | undefined;
-  readonly inherited: boolean;
-  readonly action: Copy;
-  readonly pressed: SelectorSettingsDraft;
-}
-
-/** The draft a strip press writes from: the read's own boxes, not whatever an
- * open section's edit currently holds — a press here has nothing to do with
- * the section a reader may be mid-edit on. */
-function selectorSettingsAtRest(
-  draft: SelectorSettingsDraft,
-): SelectorSettingsDraft {
-  return { ...draft, ...draft.read };
-}
-
-/**
- * Whether the selector is deciding for this project. Resume clears the
- * project's override where the installation is running anyway, so a project
- * that was never paused of its own does not acquire an override by being
- * resumed; where the installation is paused it writes Running instead, because
- * clearing there would leave the project paused by inheritance.
- */
-export function selectorSettingsModeCell(
-  draft: SelectorSettingsDraft,
-  settings: SelectorProjectSettingsResponse,
-): SelectorSettingsStripCell {
-  const effective = settings.effective;
-  const running = effective.mode === "Running";
-  const resumed = effective.installationMode === "Running" ? "" : "Running";
-  return {
-    name: { id: "lead-mode-name" },
-    value: {
-      id: running ? "lead-mode-running" : "lead-mode-paused",
-    },
-    tone: selectorModeTone(effective.mode),
-    inherited: draft.mode === "",
-    action: {
-      id: running ? "lead-mode-action-pause" : "lead-mode-action-resume",
-    },
-    pressed: {
-      ...selectorSettingsAtRest(draft),
-      mode: running ? "Paused" : resumed,
-    },
-  };
-}
-
-/** Whether a proposal is dispatched or held for a reviewer. */
-export function selectorSettingsDispatchCell(
-  draft: SelectorSettingsDraft,
-  settings: SelectorProjectSettingsResponse,
-): SelectorSettingsStripCell {
-  const automatic = settings.effective.dispatchMode === "Automatic";
-  return {
-    name: { id: "lead-dispatch-name" },
-    value: {
-      id: automatic ? "lead-dispatch-automatic" : "lead-dispatch-approval",
-    },
-    tone: undefined,
-    inherited: draft.dispatchMode === "",
-    action: {
-      id: automatic
-        ? "lead-dispatch-action-require"
-        : "lead-dispatch-action-automatic",
-    },
-    pressed: {
-      ...selectorSettingsAtRest(draft),
-      dispatchMode: automatic ? "ApprovalRequired" : "Automatic",
-    },
-  };
 }
 
 /** The settings a write lost its fence to, and who moved them where the route
@@ -802,7 +405,7 @@ function selectorSettingsMovedByText(
 ): string {
   const at = instantFigure(movedBy.recordedAt, nowMs);
   return text({
-    id: "lead-settings-conflict-moved-by",
+    id: "settings-threads-conflict-moved-by",
     args: {
       subject: movedBy.administrator.subject,
       time: at.kind === "Instant" ? at.text : "—",
@@ -824,7 +427,7 @@ export function selectorSettingsRefusal(
   if (conflict === undefined) return text(failureWords(failure).word);
   if (conflict.movedBy === undefined)
     return text({
-      id: "lead-settings-conflict-revision",
+      id: "settings-threads-conflict-revision",
       args: { revision: String(conflict.settings.revision) },
     });
   return selectorSettingsMovedByText(conflict.movedBy, nowMs, text);

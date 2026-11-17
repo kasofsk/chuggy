@@ -13,23 +13,34 @@
  * repository, since the portal app's listing is what the console offers a
  * repository from and the worker app is what a ticket's work is given its
  * credential under; and a runner is waited on only where the project's work
- * goes to runners, and the person's chat host only where their chats in it
- * do. Which repositories the worker app lacks and whether work or a chat
- * waits on a runner are the console's own deciders, so this program and the
- * pages do not say different things. Beside its few words each step that is
- * not done carries what it lacks as a member of a closed set, which is what
+ * goes to runners, and never on the person's chat host, which only their
+ * chats in the browser need, so that a chat host lacking is said on the
+ * runner's done line and is never what the step lacks. Before any repository is added, the repository step carries what the
+ * apps on the account that owns the folder's remote grant it, where every
+ * read that says so was got: both granted it, which is the repository the
+ * program may add itself, or each app that is not, with where it is given
+ * it: the forge's settings page of an app installed there, and the console's
+ * own install of one that is not, since only that install is claimed for the
+ * workspace. Which repositories the worker app lacks, whether an app's
+ * install is offered, and whether work or a chat waits on a runner are the
+ * console's own deciders, so this program and the pages do not say different
+ * things. Beside its few words each step that is not done carries what it lacks as a member of a closed set, which is what
  * the next thing is decided from. Nothing is remembered between runs: the
  * server is the record.
  */
 
+import type { AccessCallerTenant } from "../../../../src/contract/accessPlane.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
+  ExecutionSummary,
+  ForgeInstallationResponse,
   ForgeRepositoryResponse,
   ProjectRepositoryListedResponse,
   RepositoryConfigurationImportAttemptResponse,
   TicketLandingResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
+import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type {
   ForgeAppName,
   PlacementRoute,
@@ -38,30 +49,37 @@ import type {
 
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
-import { forgeAccountRows } from "./forgeInstallation.ts";
+import { forgeAccountRows, forgeInstallOffered } from "./forgeInstallation.ts";
+import { runnerWait, runnerWaitPoolRoom, runnerWaitRoom } from "./myRunner.ts";
 import type { ForgeAccountRow } from "./forgeInstallation.ts";
 import {
   repositoriesWorkerless,
   repositoryLabel,
 } from "./projectRepositories.ts";
 import { sessionPlacementShort, sessionRunnerShort } from "./sessionRunners.ts";
+import { setupCommandArguments } from "./setupArguments.ts";
+import type { SetupNorthStarAnswer } from "./setupArguments.ts";
 import {
   setupBindingMeant,
   setupBootstrapped,
   setupLanding,
   setupPartition,
   setupProjectListed,
+  setupRemoteOwner,
 } from "./setupReads.ts";
 import type {
   SetupChoice,
   SetupGrant,
   SetupRead,
   SetupReads,
+  SetupTicketExecutions,
   SetupTicketLandings,
 } from "./setupReads.ts";
 import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
 import type { SetupRemote } from "./setupRemote.ts";
 import { workRunnerStanding } from "./workRunner.ts";
+import { workspaceNamesListed } from "./workspaceNames.ts";
+import type { WorkspaceNamed } from "./workspaceNames.ts";
 import type {
   SetupStepName,
   SetupStepSaid,
@@ -102,7 +120,6 @@ export type SetupLack =
   | { readonly lacks: "Workspace"; readonly workspace: string | undefined }
   | { readonly lacks: "Administration"; readonly workspace: string }
   | { readonly lacks: "Project" }
-  | { readonly lacks: "NorthStar" }
   | { readonly lacks: "Account" }
   | {
       readonly lacks: "App";
@@ -116,7 +133,11 @@ export type SetupLack =
       readonly repository: string;
     }
   | { readonly lacks: "Mcp" }
-  | { readonly lacks: "Binding" }
+  | { readonly lacks: "NorthStar" }
+  /** `off` where the plugin is installed and not enabled. */
+  | { readonly lacks: "Plugin"; readonly off: boolean }
+  /** `reach` is what the apps grant the folder's remote, where every read that says so was got. */
+  | { readonly lacks: "Binding"; readonly reach: SetupReach | undefined }
   /** `bound` is the repository as the binding names it, and `lastImport` the import of it that finished last, where one did. */
   | {
       readonly lacks: "Configuration";
@@ -125,26 +146,92 @@ export type SetupLack =
       readonly lastImport:
         RepositoryConfigurationImportAttemptResponse | undefined;
     }
-  /** `chat` where the person's chat host is lacking too, which `runner` sets up beside the project's runner; `named` where the project names an owner fallback, so a personal runner of the person's serving it would take its work. */
+  /** `chat` where the person's chat host is lacking too, which `runner` sets up beside the project's runner. */
+  | { readonly lacks: "Runner"; readonly chat: boolean }
+  /** A personal runner of the person's registered where the project has no pool, which does not take its work: `given` where the project is given it, `named` where the project names an owner fallback, and `administers` where the person may name one. */
   | {
-      readonly lacks: "Runner";
-      readonly chat: boolean;
+      readonly lacks: "Serving";
+      readonly given: boolean;
       readonly named: boolean;
+      readonly administers: boolean;
     }
   | { readonly lacks: "RunnerLive"; readonly chat: boolean }
-  | { readonly lacks: "ChatHost" }
-  | { readonly lacks: "ChatHostLive" }
-  | { readonly lacks: "Ticket" }
+  /** `pullRequest` where the repository meant lands a ticket in a pull request the person merges. */
+  | { readonly lacks: "Ticket"; readonly pullRequest: boolean }
   | { readonly lacks: "Release"; readonly ticket: number }
   | { readonly lacks: "Dispatch"; readonly ticket: number }
+  /** `pullRequest` where the repository meant lands a ticket in a pull request the person merges, `bootstrapped` where it holds only the bootstrap, and `wait` what its starting execution waits on of the person's runners, where it is read whole and says so. */
   | {
       readonly lacks: "Landing";
       readonly ticket: number;
       readonly phase: TicketPhase;
+      readonly pullRequest: boolean;
+      readonly bootstrapped: boolean;
+      readonly wait: SetupRunnerWait | undefined;
     }
   | { readonly lacks: "Decision"; readonly ticket: number };
 
 type TicketPhase = TicketResponse["phase"];
+
+/** What a ticket's starting execution waits on of the person's runners, beyond waiting: too little memory free on them for the run, their being offline, or none of them able to run it; or else too little memory free on the project's pools. */
+export type SetupRunnerWait =
+  | {
+      readonly wait: "Room" | "PoolRoom";
+      readonly freeMib: number;
+      readonly neededMib: number;
+    }
+  | { readonly wait: "Offline" }
+  | { readonly wait: "Unable" };
+
+/**
+ * One app that is not granted the folder's repository, and where it is given
+ * it: its installation's settings page on the forge, where the app is
+ * installed on `account`; and where it is not, the console's own install of
+ * it, which mints the state the setup landing claims the install by, so the
+ * next read finds it on `account`.
+ */
+export type SetupAppPage =
+  | {
+      readonly app: ForgeAppName;
+      readonly page: "Settings";
+      readonly settings: string;
+    }
+  | {
+      readonly app: ForgeAppName;
+      readonly page: "Install";
+      readonly account: string;
+    };
+
+/** One app as it stands on the folder's repository: granted it, with its installation's settings page where that was read; or not, with the page it is given it on. */
+export type SetupAppReached =
+  | {
+      readonly reached: "Granted";
+      readonly app: ForgeAppName;
+      readonly settings: string | undefined;
+    }
+  | { readonly reached: "Lacking"; readonly page: SetupAppPage };
+
+/**
+ * What both apps grant the folder's repository before any is added, each app
+ * in the roster's order: both granted it, with the address the portal app
+ * lists it by, which is what a bind names; or not both. `installed` is every
+ * other account the workspace holds both apps on, whose repositories the
+ * workspace is shown for that reason.
+ */
+export type SetupReach =
+  | {
+      readonly reach: "Granted";
+      readonly repository: string;
+      readonly url: string;
+      readonly apps: readonly SetupAppReached[];
+      readonly installed: readonly string[];
+    }
+  | {
+      readonly reach: "Ungranted";
+      readonly repository: string;
+      readonly apps: readonly SetupAppReached[];
+      readonly installed: readonly string[];
+    };
 
 export interface SetupStep extends SetupStepSaid {
   /** Present exactly where the step is not done. */
@@ -155,22 +242,29 @@ export interface SetupStanding {
   readonly site: string;
   readonly choice: SetupChoice;
   readonly remote: SetupRemote | undefined;
+  /** The person's own workspaces, whose display names are what a line names each by. */
+  readonly workspaces: readonly AccessCallerTenant[];
   /** What the folder's remote came to, where it was looked for. */
   readonly found: readonly Copy[];
   /** One a step in order, or none where which project is meant is still open. */
   readonly steps: readonly SetupStep[];
-  /** The address of the pull request that writes the repository's own configuration, where the repository meant holds only the bootstrap and the ticket step is done on a ticket whose pull request stands unmerged. */
-  readonly unmerged: string | undefined;
+  /** The pull request that writes the repository's own configuration, where the repository meant holds only the bootstrap and the ticket step is done on a ticket whose pull request stands unmerged. */
+  readonly unmerged: SetupUnmerged | undefined;
+  /** The repository meant, where it holds only the bootstrap, with the import of it that finished last. */
+  readonly bootstrap: SetupBootstrap | undefined;
 }
 
-/**
- * What the program names on the console's pages beside what is pressed there,
- * by the message each page draws it as, so a case holds each against the
- * page.
- */
-export const setupSeen = {
-  northStar: { id: "lead-settings-section-north-star-title" },
-} as const satisfies Readonly<Record<string, Copy>>;
+/** A ticket's pull request that stands unmerged: its address, and the ticket that opened it. */
+export interface SetupUnmerged {
+  readonly url: string;
+  readonly ticket: number;
+}
+
+/** A repository holding only the bootstrap, the import of it that finished last, where one did, and the commit the first ticket's pull request was merged at, where its landings name one. */
+export interface SetupBootstrap {
+  readonly lastImport: RepositoryConfigurationImportAttemptResponse | undefined;
+  readonly mergeCommit: string | undefined;
+}
 
 /** Each forge app, as a sentence names it. */
 export const setupAppNames: Readonly<Record<ForgeAppName, Copy>> = {
@@ -278,6 +372,7 @@ function setupFateOf(
 function setupWorkspaceStep(
   reads: SetupReads,
   workspace: string | undefined,
+  named: WorkspaceNamed,
 ): SetupStep {
   const { tenants, truncated } = reads.workspaces;
   const lacking: SetupLack = { lacks: "Workspace", workspace };
@@ -291,7 +386,8 @@ function setupWorkspaceStep(
           lacking,
         );
   const held = tenants.find((tenant) => tenant.tenant === workspace);
-  if (held?.administer === true) return setupDone("workspace", workspace);
+  if (held?.administer === true)
+    return setupDone("workspace", named(workspace));
   const seen =
     reads.inventory.read === "Got" &&
     reads.inventory.value.some((partition) => partition.tenant === workspace);
@@ -304,7 +400,7 @@ function setupWorkspaceStep(
           held === undefined
             ? "setup-step-workspace-seen"
             : "setup-step-workspace-member",
-        args: { workspace },
+        args: { workspace: named(workspace) },
       },
       { lacks: "Administration", workspace },
     );
@@ -323,19 +419,20 @@ function setupProjectless(
   workspace: string,
   project: string | undefined,
   administers: boolean,
+  named: WorkspaceNamed,
 ): Copy {
   if (project === undefined)
     return {
       id: administers
         ? "setup-step-projectless"
         : "setup-step-projectless-unshown",
-      args: { workspace },
+      args: { workspace: named(workspace) },
     };
   return {
     id: administers
       ? "setup-step-projectless-named"
       : "setup-step-projectless-unshown-named",
-    args: { workspace, project },
+    args: { workspace: named(workspace), project },
   };
 }
 
@@ -344,6 +441,7 @@ function setupProjectUnnamed(
   reads: SetupReads,
   workspace: string | undefined,
   administers: boolean,
+  named: WorkspaceNamed,
 ): SetupStep {
   const inventory = reads.inventory;
   if (inventory.read !== "Got")
@@ -357,7 +455,7 @@ function setupProjectUnnamed(
     ? setupUndone(
         "project",
         "todo",
-        setupProjectless(workspace, project, administers),
+        setupProjectless(workspace, project, administers, named),
         lacking,
       )
     : setupUnread("project", "inventory", setupCut);
@@ -375,23 +473,24 @@ function setupProjectAbsent(
   );
 }
 
-/** Done where the project is there and its lead settings carry a North Star of its own. */
+/** Done where the project is there and its settings could be read. */
 function setupProjectStep(
   reads: SetupReads,
   workspace: string | undefined,
   partition: PartitionIdentity | undefined,
   administers: boolean,
+  named: WorkspaceNamed,
 ): SetupStep {
   if (partition === undefined)
-    return setupProjectUnnamed(reads, workspace, administers);
+    return setupProjectUnnamed(reads, workspace, administers, named);
   if (setupProjectAbsent(reads, partition))
     return setupUndone(
       "project",
       "todo",
-      setupProjectless(partition.tenant, partition.project, administers),
+      setupProjectless(partition.tenant, partition.project, administers, named),
       { lacks: "Project" },
     );
-  const name = `${partition.tenant}/${partition.project}`;
+  const name = setupNamed(partition, named);
   const settings = reads.settings;
   if (settings.read !== "Got") {
     const unread = setupUnread("project", "settings", setupFateOf(settings));
@@ -403,17 +502,30 @@ function setupProjectStep(
       },
     };
   }
+  return setupDone("project", name);
+}
+
+/** Done where the project's settings carry a North Star, or the step is passed over; never asked of a project that is not there, and unread where its settings were not got, as the project step is. */
+function setupNorthStarStep(
+  reads: SetupReads,
+  none: boolean,
+  skipped: SetupNorthStarAnswer | undefined,
+): SetupStep {
+  if (skipped !== undefined)
+    return setupDone("north-star", { id: "setup-step-north-star-skipped" });
+  const lacking: SetupLack = { lacks: "NorthStar" };
+  if (none) return setupUndone("north-star", "todo", undefined, lacking);
+  const settings = reads.settings;
+  if (settings.read !== "Got")
+    return setupUnread("north-star", "settings", setupFateOf(settings));
   return settings.value.overrides.northStar === undefined
     ? setupUndone(
-        "project",
-        "waiting",
-        {
-          id: "setup-step-north-star",
-          args: { project: name, section: setupSeen.northStar },
-        },
-        { lacks: "NorthStar" },
+        "north-star",
+        "todo",
+        { id: "setup-step-north-star-none" },
+        lacking,
       )
-    : setupDone("project", name);
+    : setupDone("north-star", { id: "setup-step-north-star-set" });
 }
 
 /**
@@ -612,13 +724,143 @@ function setupGithubStep(
   }
 }
 
-/** Done where the repository meant is configured; waiting where it is added and is not. */
+/** One app as it stands on the remote's owner, with the portal app's entry for the repository where it is granted it; or nothing where a read that would say was not got or was cut short. */
+type SetupAppReach =
+  | {
+      readonly reached: SetupAppReached;
+      readonly entry: ForgeRepositoryResponse | undefined;
+    }
+  | undefined;
+
+/**
+ * The worker app's listing held to the portal app's entry by the console's
+ * own decider, so this program and the Add dialog do not say different
+ * things of it; and where the portal app lists nothing for it, by what two
+ * addresses of one repository have in common.
+ */
+function setupWorkerEntry(
+  owner: string,
+  listed: readonly ForgeRepositoryResponse[],
+  whole: boolean,
+  portal: ForgeRepositoryResponse | undefined,
+  address: string,
+): ForgeRepositoryResponse | "Lacking" | undefined {
+  if (portal === undefined)
+    return setupGrantEntry(listed, address) ?? (whole ? "Lacking" : undefined);
+  const lacked = repositoriesWorkerless(
+    [{ account: owner, repositories: [portal], truncated: false }],
+    [{ account: owner, repositories: listed, truncated: !whole }],
+  );
+  if (lacked.includes(portal.url)) return "Lacking";
+  return listed.find((held) => held.url === portal.url);
+}
+
+/**
+ * Whether the accounts page draws the console's install of `app`: the
+ * worker app's on the row of an account once it holds the portal app, and
+ * the portal app's, as Add account, only once the workspace lists an account.
+ */
+function setupInstallDrawn(
+  installations: readonly ForgeInstallationResponse[],
+  app: ForgeAppName,
+): boolean {
+  return app === "worker" || installations.length > 0;
+}
+
+function setupAppReach(
+  reads: SetupReads,
+  remote: SetupRemote,
+  owner: string,
+  app: ForgeAppName,
+  portal: ForgeRepositoryResponse | undefined,
+): SetupAppReach {
+  const installations = reads.installations;
+  if (installations.read !== "Got") return undefined;
+  const claim = installations.value.find(
+    (held) => held.app === app && held.account === owner,
+  );
+  if (claim === undefined) {
+    const apps = reads.apps;
+    const offered =
+      apps.read === "Got" ? forgeInstallOffered(apps.value, app) : undefined;
+    return installations.whole &&
+      offered !== undefined &&
+      setupInstallDrawn(installations.value, app)
+      ? {
+          reached: {
+            reached: "Lacking",
+            page: { app, page: "Install", account: owner },
+          },
+          entry: undefined,
+        }
+      : undefined;
+  }
+  const grant = reads.grants.find((held) => held.app === app);
+  const listed = grant?.listed;
+  if (listed?.read !== "Got") return undefined;
+  const address = `https://${remote.said}`;
+  const entry =
+    app === "portal"
+      ? (setupGrantEntry(listed.value, address) ??
+        (listed.whole ? "Lacking" : undefined))
+      : setupWorkerEntry(owner, listed.value, listed.whole, portal, address);
+  if (entry === undefined) return undefined;
+  const settings = grant?.settings;
+  const page = settings?.read === "Got" ? settings.value : undefined;
+  if (entry !== "Lacking")
+    return { reached: { reached: "Granted", app, settings: page }, entry };
+  return page === undefined
+    ? undefined
+    : {
+        reached: {
+          reached: "Lacking",
+          page: { app, page: "Settings", settings: page },
+        },
+        entry: undefined,
+      };
+}
+
+/** Every account but `owner` the workspace's claims show holding both apps. */
+function setupReachInstalled(
+  reads: SetupReads,
+  owner: string,
+): readonly string[] {
+  const installations = reads.installations;
+  if (installations.read !== "Got") return [];
+  return forgeAccountRows(installations.value)
+    .filter((row) => row.account !== owner && setupBoth(row))
+    .map((row) => row.account);
+}
+
+/** What both apps grant the folder's remote, where it names a repository of one owner and every read that says so was got. */
+function setupReachOf(reads: SetupReads): SetupReach | undefined {
+  const remote = reads.remote;
+  const owner = remote === undefined ? undefined : setupRemoteOwner(remote);
+  if (remote === undefined || owner === undefined) return undefined;
+  const repository = repositoryLabel(`https://${remote.said}`);
+  const apps: SetupAppReached[] = [];
+  let portal: ForgeRepositoryResponse | undefined;
+  for (const app of forgeApps) {
+    const one = setupAppReach(reads, remote, owner, app, portal);
+    if (one === undefined) return undefined;
+    apps.push(one.reached);
+    portal ??= one.entry;
+  }
+  const installed = setupReachInstalled(reads, owner);
+  if (apps.some((one) => one.reached === "Lacking"))
+    return { reach: "Ungranted", repository, apps, installed };
+  return portal === undefined
+    ? undefined
+    : { reach: "Granted", repository, url: portal.url, apps, installed };
+}
+
+/** Done where the repository meant is configured; waiting where it is added and is not; to do where none is, with what the apps grant the folder's remote. */
 function setupRepositoryStep(reads: SetupReads, none: boolean): SetupStep {
   const mine: Copy | undefined =
     reads.remote === undefined
       ? undefined
       : { id: "setup-step-remote", args: { remote: reads.remote.said } };
-  const lacking: SetupLack = { lacks: "Binding" };
+  const lacking: SetupLack = { lacks: "Binding", reach: undefined };
   const meant = setupMeant(reads.repositories);
   switch (meant.meant) {
     case "Unread":
@@ -626,7 +868,10 @@ function setupRepositoryStep(reads: SetupReads, none: boolean): SetupStep {
         ? setupUndone("repository", "todo", mine, lacking)
         : setupUnread("repository", "repositories", meant.fate);
     case "None":
-      return setupUndone("repository", "todo", mine, lacking);
+      return setupUndone("repository", "todo", mine, {
+        lacks: "Binding",
+        reach: none ? undefined : setupReachOf(reads),
+      });
     case "Repository": {
       const repository = repositoryLabel(meant.binding.repository);
       return meant.binding.configured
@@ -653,44 +898,49 @@ export function setupHosted(route: PlacementRoute): boolean {
 
 /**
  * How the runners the project's work would go to stand, by the console's own
- * decider, and whether the project names an owner fallback; or the step
- * unread, where a read it turns on was not got. The fallback is read only
- * where the project has no pool to say it has a runner, and the person's
- * personal runners only where it also names one.
+ * decider; or the step unread, where a read it turns on was not got; or the
+ * step to do where the project has no pool and the person holds a personal
+ * runner that does not take its work, because the project is not given it or
+ * names no fallback; a live one that takes the work stands for the project
+ * beside a pool that is not, and both are read only where no pool is live.
  */
 function setupWorkStanding(
   reads: SetupReads,
   route: PlacementRoute,
   project: SessionRunnerStanding,
-):
-  | SetupStep
-  | { readonly standing: SessionRunnerStanding; readonly named: boolean } {
-  const pooled = sessionRunnerShort(route, project) !== "NoRunner";
+): SetupStep | SessionRunnerStanding {
+  const short = sessionRunnerShort(route, project);
+  if (short === undefined) return project;
   const fallback = reads.fallback;
   if (fallback.read !== "Got")
-    return pooled
-      ? { standing: project, named: false }
-      : setupUnread("runner", "fallback", setupFateOf(fallback));
+    return setupUnread("runner", "fallback", setupFateOf(fallback));
   const named = fallback.value.fallback !== undefined;
   const personal = reads.personal;
   if (personal.read !== "Got")
-    return pooled || !named
-      ? { standing: project, named }
-      : setupUnread("runner", "personal", setupFateOf(personal));
-  return {
-    standing: workRunnerStanding(project, named, personal.value),
+    return setupUnread("runner", "personal", setupFateOf(personal));
+  if (!personal.value.registered) return project;
+  const given = personal.value.standing !== "Unregistered";
+  if (given && named && short === "RunnerOffline")
+    return personal.value.standing === "Live" ? "Live" : project;
+  if (given && named)
+    return workRunnerStanding(project, named, personal.value.standing);
+  if (short === "RunnerOffline") return project;
+  return setupUndone("runner", "todo", undefined, {
+    lacks: "Serving",
+    given,
     named,
-  };
+    administers: fallback.value.administers,
+  });
 }
 
 /**
- * Done where the project's work has a runner live or the cluster runs it, and
- * the person's chats in it have their chat host live or the cluster runs
- * them; waiting where a runner is registered and is not running, its runner
- * being a pool or, where it has none and names an owner fallback, a personal
- * runner of the person's that serves the project, as the console's own
- * decider counts one, and never their chat host, which takes no work. The
- * project's runner is said first, and the chat host once it is done.
+ * Done where the project's work has a runner live or the cluster runs it;
+ * waiting where a runner is registered and is not running, its runner being a
+ * pool or, where it has none and names an owner fallback, a personal runner
+ * of the person's that serves the project, as the console's own decider
+ * counts one, and never their chat host, which takes no work. Where the
+ * person's chats in it run on their chat host and they have none live, the
+ * done line says so and names `chat-host`, which sets one up.
  */
 function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   const work = reads.work;
@@ -699,7 +949,6 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
       ? setupUndone("runner", "todo", undefined, {
           lacks: "Runner",
           chat: true,
-          named: false,
         })
       : setupUnread("runner", "work", setupFateOf(work));
   const read = reads.placement;
@@ -707,11 +956,10 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
     return setupUnread("runner", "placement", setupFateOf(read));
   const route = work.value.work.route;
   const standing = setupWorkStanding(reads, route, read.value.runners.project);
-  if ("step" in standing) return standing;
-  const { named } = standing;
-  const mine = sessionPlacementShort(read.value, "thread", "mine");
+  if (typeof standing !== "string") return standing;
+  const mine = sessionPlacementShort(read.value, "mine");
   const chat = mine !== undefined;
-  switch (sessionRunnerShort(route, standing.standing)) {
+  switch (sessionRunnerShort(route, standing)) {
     case "RunnerOffline":
       return setupUndone(
         "runner",
@@ -723,7 +971,6 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
       return setupUndone("runner", "todo", undefined, {
         lacks: "Runner",
         chat,
-        named,
       });
     case undefined:
       break;
@@ -731,23 +978,20 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   const said: Copy = !setupHosted(route)
     ? { id: "setup-step-runner-live" }
     : { id: "setup-step-runner-hosted" };
+  const [command = ""] = setupCommandArguments("ChatHost");
   switch (mine) {
     case undefined:
       return setupDone("runner", said);
     case "RunnerOffline":
-      return setupUndone(
-        "runner",
-        "waiting",
-        { id: "setup-step-chat-host-offline", args: { runner: said } },
-        { lacks: "ChatHostLive" },
-      );
+      return setupDone("runner", {
+        id: "setup-step-chat-host-offline",
+        args: { runner: said, command },
+      });
     case "NoRunner":
-      return setupUndone(
-        "runner",
-        "todo",
-        { id: "setup-step-chat-host-none", args: { runner: said } },
-        { lacks: "ChatHost" },
-      );
+      return setupDone("runner", {
+        id: "setup-step-chat-host-none",
+        args: { runner: said, command },
+      });
   }
 }
 
@@ -768,21 +1012,29 @@ function setupProposed(landing: TicketLandingResponse): boolean {
   }
 }
 
-/** The ticket setup is done on, as the ticket step says it, and the address of its pull request where one stands unmerged. */
+/** The ticket setup is done on, as the ticket step says it, its pull request where one stands unmerged, and the commit it was merged at where its landings name one. */
 interface SetupTicketDone {
   readonly detail: Copy;
-  readonly unmerged: string | undefined;
+  readonly unmerged: SetupUnmerged | undefined;
+  readonly mergeCommit: string | undefined;
 }
 
-/** The pull request of a ticket's landings that stands and is not merged, from landings got whole: none where one of them landed, or where the newest that stands says it merged. */
-function setupUnmerged(
+/** A ticket's pull request, from landings got whole, where none of them landed: the one the newest that stands opened, unmerged or merged at the commit it names. */
+function setupProposal(
   held: SetupTicketLandings | undefined,
-): string | undefined {
-  if (held?.landings.read !== "Got" || !held.landings.whole) return undefined;
+): Pick<SetupTicketDone, "unmerged" | "mergeCommit"> {
+  const none = { unmerged: undefined, mergeCommit: undefined };
+  if (held?.landings.read !== "Got" || !held.landings.whole) return none;
   const landings = held.landings.value;
-  if (landings.some((landing) => landing.state === "Landed")) return undefined;
+  if (landings.some((landing) => landing.state === "Landed")) return none;
   const proposal = landings.findLast(setupProposed)?.proposal;
-  return proposal?.merge === "Merged" ? undefined : proposal?.url;
+  if (proposal?.url === undefined) return none;
+  return proposal.merge === "Merged"
+    ? { unmerged: undefined, mergeCommit: proposal.mergeCommit }
+    : {
+        unmerged: { url: proposal.url, ticket: held.ticket },
+        mergeCommit: undefined,
+      };
 }
 
 /** The ticket setup is done on, where a read that was got shows one, said as what was read of it: a ticket that is done, or a landing that landed or whose pull request stands. */
@@ -794,7 +1046,7 @@ function setupTicketDone(reads: SetupReads): SetupTicketDone | undefined {
         id: "setup-step-ticket-done",
         args: { ticket: String(done.ticket) },
       },
-      unmerged: setupUnmerged(reads.doneLandings),
+      ...setupProposal(reads.doneLandings),
     };
   for (const held of reads.landings) {
     if (held.landings.read !== "Got") continue;
@@ -803,17 +1055,18 @@ function setupTicketDone(reads: SetupReads): SetupTicketDone | undefined {
       return {
         detail: { id: "setup-step-ticket-finalized", args },
         unmerged: undefined,
+        mergeCommit: undefined,
       };
     if (held.landings.value.some(setupProposed))
       return {
         detail: { id: "setup-step-ticket-proposed", args },
-        unmerged: setupUnmerged(held),
+        ...setupProposal(held),
       };
   }
   return undefined;
 }
 
-/** The first of the ticket step's reads that was not got, or was got short of what could show a landing. */
+/** The first of the ticket step's reads that was not got, or was got short of what could show a landing. A ticket's executions are not among them: one not read whole leaves only what it waits on unsaid. */
 function setupTicketUnread(reads: SetupReads): SetupStep | undefined {
   const asked: readonly (readonly [SetupReadName, SetupRead<unknown>])[] = [
     ["tickets", reads.landed],
@@ -837,8 +1090,51 @@ function setupTicketUnread(reads: SetupReads): SetupStep | undefined {
 /** The phase a ticket is in between its release and its start, where pressing is what starts one nothing else has. */
 export const setupUnstartedPhase = "Pending" satisfies TicketPhase;
 
-/** A ticket on its way, by what it waits on: a decision where it is escalated, a start where it is released and not started, and its landing otherwise. */
-function setupTicketMoving(ticket: number, phase: TicketPhase): SetupStep {
+/** What the starting execution of a ticket's executions, read whole, waits on of the person's runners, by the console's own decider, or else of the project's pools: none where they were not read whole, none is starting, or the runners it waits on are live and short of nothing said. */
+function setupRunnerWaitOf(
+  held: SetupTicketExecutions | undefined,
+): SetupRunnerWait | undefined {
+  if (held?.executions.read !== "Got" || !held.executions.whole)
+    return undefined;
+  const executions = held.executions.value;
+  const personal = setupRunnerWaitPersonal(executions);
+  if (personal !== undefined) return personal;
+  const room = executions
+    .map(runnerWaitPoolRoom)
+    .find((each) => each !== undefined);
+  return room === undefined
+    ? undefined
+    : { wait: "PoolRoom", freeMib: room.freeMib, neededMib: room.neededMib };
+}
+
+/** What the starting execution of `executions` waits on of the person's runners, by the console's own decider. */
+function setupRunnerWaitPersonal(
+  executions: readonly ExecutionSummary[],
+): SetupRunnerWait | undefined {
+  const starting = executions.find(
+    (execution) => runnerWait(execution) !== undefined,
+  );
+  if (starting === undefined) return undefined;
+  const room = runnerWaitRoom(starting);
+  if (room !== undefined)
+    return { wait: "Room", freeMib: room.freeMib, neededMib: room.neededMib };
+  switch (runnerWait(starting)) {
+    case "Offline":
+      return { wait: "Offline" };
+    case "Unable":
+      return { wait: "Unable" };
+    case "Live":
+    case undefined:
+      return undefined;
+  }
+}
+
+/** A ticket on its way, by what it waits on: a decision where it is escalated, a start where it is released and not started, and its landing otherwise, told by the landing the repository meant defaults to. */
+function setupTicketMoving(
+  reads: SetupReads,
+  ticket: number,
+  phase: TicketPhase,
+): SetupStep {
   const args = { ticket: String(ticket) };
   if (phase === "Escalated")
     return setupUndone(
@@ -861,7 +1157,23 @@ function setupTicketMoving(ticket: number, phase: TicketPhase): SetupStep {
       id: "setup-step-ticket-moving",
       args: { ...args, phase: setupPhaseSaid(phase) },
     },
-    { lacks: "Landing", ticket, phase },
+    {
+      lacks: "Landing",
+      ticket,
+      phase,
+      pullRequest: setupLandsInPullRequest(reads),
+      bootstrapped: setupBootstrapped(reads.repositories),
+      wait: setupRunnerWaitOf(
+        reads.executions.find((held) => held.ticket === ticket),
+      ),
+    },
+  );
+}
+
+/** Whether the repository meant lands a ticket in a pull request the person merges. */
+function setupLandsInPullRequest(reads: SetupReads): boolean {
+  return (
+    setupBindingMeant(reads.repositories)?.finalization.kind === "PullRequest"
   );
 }
 
@@ -873,13 +1185,16 @@ function setupTicketStep(
 ): SetupStep {
   if (done !== undefined) return setupDone("ticket", done.detail);
   if (none)
-    return setupUndone("ticket", "todo", undefined, { lacks: "Ticket" });
+    return setupUndone("ticket", "todo", undefined, {
+      lacks: "Ticket",
+      pullRequest: setupLandsInPullRequest(reads),
+    });
   const unread = setupTicketUnread(reads);
   if (unread !== undefined) return unread;
   const [moving] = reads.moving.read === "Got" ? reads.moving.value : [];
   const [draft] = reads.drafts.read === "Got" ? reads.drafts.value : [];
   if (moving !== undefined)
-    return setupTicketMoving(moving.ticket, moving.phase);
+    return setupTicketMoving(reads, moving.ticket, moving.phase);
   if (draft !== undefined)
     return setupUndone(
       "ticket",
@@ -890,15 +1205,25 @@ function setupTicketStep(
       },
       { lacks: "Release", ticket: draft.ticket },
     );
-  return setupUndone("ticket", "todo", undefined, { lacks: "Ticket" });
+  return setupUndone("ticket", "todo", undefined, {
+    lacks: "Ticket",
+    pullRequest: setupLandsInPullRequest(reads),
+  });
 }
 
-function setupNamed(partition: PartitionIdentity): string {
-  return `${partition.tenant}/${partition.project}`;
+/** A project as a line names it: by its workspace's display name, and its own address. */
+function setupNamed(
+  partition: PartitionIdentity,
+  named: WorkspaceNamed,
+): string {
+  return `${named(partition.tenant)}/${partition.project}`;
 }
 
 /** What the folder's remote came to among the projects it was looked for in, said of those and of no others, whether or not it proposed one. */
-function setupRemoteFound(reads: SetupReads): readonly Copy[] {
+function setupRemoteFound(
+  reads: SetupReads,
+  named: WorkspaceNamed,
+): readonly Copy[] {
   const proposal = reads.proposal;
   if (reads.remote === undefined || proposal.proposal === "Unsought") return [];
   const remote = reads.remote.said;
@@ -907,7 +1232,7 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
       ? { id: "setup-remote-among" }
       : {
           id: "setup-remote-among-within",
-          args: { workspace: proposal.within },
+          args: { workspace: named(proposal.within) },
         };
   switch (proposal.proposal) {
     case "Unbound":
@@ -919,7 +1244,7 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
           args: {
             remote,
             among,
-            project: setupNamed(proposal.partition),
+            project: setupNamed(proposal.partition, named),
             workspaceFlag: "--workspace",
             projectFlag: "--project",
           },
@@ -932,7 +1257,9 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
           args: {
             remote,
             among,
-            projects: proposal.partitions.map(setupNamed).join(", "),
+            projects: proposal.partitions
+              .map((partition) => setupNamed(partition, named))
+              .join(", "),
           },
         },
       ];
@@ -941,16 +1268,48 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
   }
 }
 
+/**
+ * chuggy's Claude Code plugin as this machine has it: installed and enabled,
+ * installed and off, not installed, or passed over by the person's no, which
+ * the commands printed carry.
+ */
+export type SetupPluginHere = "On" | "Off" | "None" | "Skipped";
+
+/** Done where the plugin is on or passed over; to do while it is off or not installed. */
+function setupPluginStep(plugin: SetupPluginHere): SetupStep {
+  switch (plugin) {
+    case "On":
+      return setupDone("plugin", { id: "setup-step-plugin-on" });
+    case "Skipped":
+      return setupDone("plugin", { id: "setup-step-plugin-skipped" });
+    case "Off":
+      return setupUndone(
+        "plugin",
+        "todo",
+        { id: "setup-step-plugin-off" },
+        { lacks: "Plugin", off: true },
+      );
+    case "None":
+      return setupUndone(
+        "plugin",
+        "todo",
+        { id: "setup-step-plugin-none" },
+        { lacks: "Plugin", off: false },
+      );
+  }
+}
+
 /** Done where the agent's configuration for this folder names chuggy's server for the project; it is to do while the project is, since no server can serve one that is not there. */
 function setupMcpStep(
   partition: PartitionIdentity | undefined,
   none: boolean,
-  named: boolean,
+  served: boolean,
+  named: WorkspaceNamed,
 ): SetupStep {
   if (partition === undefined || none)
     return setupUndone("mcp", "todo", undefined, { lacks: "Mcp" });
-  const project = setupNamed(partition);
-  return named
+  const project = setupNamed(partition, named);
+  return served
     ? setupDone("mcp", { id: "setup-step-mcp-named", args: { project } })
     : setupUndone(
         "mcp",
@@ -965,33 +1324,55 @@ function setupMcpStep(
  * never asked is to do where the workspace or the project it belongs to is
  * itself to do, since a read that was got is what said so. `named`, whether
  * the agent's configuration here names chuggy's server for the project
- * chosen, is the machine's to say and no read's.
+ * chosen, and `plugin`, how this machine has chuggy's Claude Code plugin, are
+ * the machine's to say and no read's; `northStar` is the North Star step
+ * passed over, where the run's arguments said so.
  */
-export function setupStanding(reads: SetupReads, named = false): SetupStanding {
+export function setupStanding(
+  reads: SetupReads,
+  named: boolean,
+  plugin: SetupPluginHere,
+  northStar?: SetupNorthStarAnswer,
+): SetupStanding {
+  const workspaces = reads.workspaces.tenants;
+  const workspaceNamed = workspaceNamesListed(workspaces);
   const standing = {
     site: reads.site,
     choice: reads.choice,
     remote: reads.remote,
-    found: setupRemoteFound(reads),
+    workspaces,
+    found: setupRemoteFound(reads, workspaceNamed),
   };
   if (reads.choice.choice === "Open")
-    return { ...standing, steps: [], unmerged: undefined };
-  const workspace = setupWorkspaceStep(reads, reads.choice.workspace);
+    return {
+      ...standing,
+      steps: [],
+      unmerged: undefined,
+      bootstrap: undefined,
+    };
+  const workspace = setupWorkspaceStep(
+    reads,
+    reads.choice.workspace,
+    workspaceNamed,
+  );
   const partition = setupPartition(reads.choice, reads.inventory);
   const project = setupProjectStep(
     reads,
     reads.choice.workspace,
     partition,
     workspace.state === "done",
+    workspaceNamed,
   );
   const none = workspace.state === "todo" || project.state === "todo";
   const done = setupTicketDone(reads);
   return {
     ...standing,
     steps: [
+      setupPluginStep(plugin),
       workspace,
       project,
-      setupMcpStep(partition, none, named),
+      setupNorthStarStep(reads, none, northStar),
+      setupMcpStep(partition, none, named, workspaceNamed),
       setupGithubStep(reads, workspace.state === "todo", none),
       setupRepositoryStep(reads, none),
       setupRunnerStep(reads, none),
@@ -999,6 +1380,12 @@ export function setupStanding(reads: SetupReads, named = false): SetupStanding {
     ],
     unmerged: setupBootstrapped(reads.repositories)
       ? done?.unmerged
+      : undefined,
+    bootstrap: setupBootstrapped(reads.repositories)
+      ? {
+          lastImport: setupBindingMeant(reads.repositories)?.lastImport,
+          mergeCommit: done?.mergeCommit,
+        }
       : undefined,
   };
 }

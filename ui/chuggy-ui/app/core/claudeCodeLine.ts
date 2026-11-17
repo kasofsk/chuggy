@@ -1,14 +1,15 @@
 /**
  * The lines a person pastes into Claude Code to have the setup program run
  * for them, and what their cards say of them: one that sets up chuggy for the
- * repository in the folder it is open in, and one that makes the machine it is
- * open on the person's chat host in a workspace.
+ * repository in the folder it is open in, one that makes the machine it is
+ * open on the person's chat host in a workspace, and one that makes it their
+ * own runner for a project, and their chat host too.
  *
  * The first line is the same text for every reader of a site. It carries the
  * site's own address and the path the site serves the setup program at, and
  * nothing of who is reading: no workspace and no project, which the program
- * reads and asks for where it cannot tell. The second names its workspace
- * too, and neither carries a token, since the program signs in and mints its
+ * reads and asks for where it cannot tell. The others name their workspace
+ * too, and none carries a token, since the program signs in and mints its
  * own.
  */
 
@@ -35,13 +36,26 @@ export function claudeCodeChatHostLine(origin: string, tenant: string): string {
   return `Make this machine my chuggy chat host: run "${claudeCodeLineFetched(origin)} && ${run}" and do what its output says.`;
 }
 
+/** The line that has the program fetched as `claudeCodeLine` has it make this machine the person's own runner for `project` in `tenant`, and their chat host too where `chat` says so. */
+export function claudeCodeRunnerLine(
+  origin: string,
+  tenant: string,
+  project: string,
+  chat: boolean,
+): string {
+  const host = chat ? " --chat-host yes" : "";
+  const run = `node ${claudeCodeLineScript} runner --site ${origin} --workspace ${tenant} --project ${project}${host}`;
+  const things = chat ? "runner and chat host" : "runner";
+  return `Make this machine my chuggy ${things}: run "${claudeCodeLineFetched(origin)} && ${run}" and do what its output says.`;
+}
+
 /** What the card says of the line: where it is pasted, and where the reader is when it is. */
 export const claudeCodeLineAbout: Copy = { id: "chat-claude-code-about" };
 
-/** What the card says of the chat host's line: that it is pasted on the machine that will be the chat host. */
-export const claudeCodeChatHostLineAbout: Copy = {
-  id: "runners-chat-host-claude-code-about",
+/** What a register panel says of the chat host's line or the runner's: that it is pasted on the machine to be registered. */
+export const claudeCodeRegisterLineAbout: Copy = {
+  id: "runners-register-line-about",
 };
 
-/** What the control that copies either line is called. */
+/** What the control that copies any of the lines is called. */
 export const claudeCodeLineCopy: Copy = { id: "chat-claude-code-copy" };

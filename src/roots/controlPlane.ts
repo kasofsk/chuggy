@@ -8,7 +8,7 @@ import type {
   SchedulerPassNotice,
 } from "../interpreter/executionSchedulerRun.ts";
 import type { FinalizerOwnerId } from "../interpreter/finalizer.ts";
-import { finalizerHoldLog } from "../interpreter/finalizerTelemetry.ts";
+import { finalizerProcessLog } from "../interpreter/finalizerTelemetry.ts";
 import {
   finalizerPass,
   type FinalizerService,
@@ -34,14 +34,10 @@ import {
   type TicketServiceRuntimeConfig,
   type TicketServiceRuntimeService,
 } from "../interpreter/ticketServiceRun.ts";
-import type {
-  SelectorLeadRuntime,
-  SelectorRuntimeService,
-} from "../compose.ts";
 import {
   composeFinalizerService,
   composeForgeRepositoryMinting,
-  composeSelectorRuntime,
+  composeSchedulerBriefingReads,
   composeTicketServiceCredentials,
   type FinalizerServiceRuntime,
 } from "../compose.ts";
@@ -57,12 +53,10 @@ import {
   postgresPool,
   type PostgresLimits,
 } from "../adapters/postgres/pool.ts";
-import { postgresLeadDoorsRefused } from "../adapters/postgres/leadMailbox.ts";
 import { postgresProjectDecision } from "../adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "../adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../adapters/postgres/projectStore.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
-import { postgresReadOnlyRepositories } from "../adapters/postgres/repositoryBinding.ts";
 import { postgresExecutionSourceHistory } from "../adapters/postgres/executionSourceHistory.ts";
 import { executionSourceObservation } from "../interpreter/executionSourceObservation.ts";
 import {
@@ -79,33 +73,19 @@ import {
 } from "../adapters/git/gitPrerequisites.ts";
 import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
 import { postgresSessionScheduler } from "../adapters/postgres/sessionScheduler.ts";
-import { postgresSubsidizedLeadPrecondition } from "../adapters/postgres/sessionPlacement.ts";
 import { postgresThreadWakes } from "../adapters/postgres/thread.ts";
-import {
-  postgresFailedLanding,
-  postgresPriorEvaluationReports,
-  postgresPriorWorkReports,
-} from "../adapters/postgres/evaluationReports.ts";
 import { postgresEvaluationStack } from "../adapters/postgres/evaluationStack.ts";
 import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
 import { evaluationStackSpawn } from "../interpreter/evaluationStackSpawn.ts";
 import { postgresTicketLandings } from "../adapters/postgres/ticketLandings.ts";
-import {
-  postgresDependencyPins,
-  postgresDependencyResults,
-} from "../adapters/postgres/dependencyDeliveries.ts";
+import { postgresDependencyResults } from "../adapters/postgres/dependencyDeliveries.ts";
 import { gitCommitAncestry } from "../adapters/git/gitCommitAncestry.ts";
-import {
-  dependencyDeliveriesRead,
-  dependencyPinning,
-} from "../interpreter/dependencyDelivery.ts";
+import { dependencyPinning } from "../interpreter/dependencyDelivery.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
-import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
 import { postgresWorkerPoolRoster } from "../adapters/postgres/workerPool.ts";
 import {
   finalizerRole,
   schedulerRole,
-  selectorServiceRole,
   ticketServiceRole,
 } from "../adapters/postgres/schema.ts";
 import { postgresDomainConfigurationPrecondition } from "../adapters/postgres/domainConfiguration.ts";
@@ -129,15 +109,6 @@ import { postgresJournalLegality } from "../adapters/postgres/journal.ts";
 import type { Config } from "../domain/config.ts";
 import { checkedReworkCap, type ReworkCap } from "../interpreter/reworkCap.ts";
 import { asOwnerId } from "../interpreter/projectStore.ts";
-import {
-  selectorAdmissionChanges,
-  type SelectorAdmissionPhase,
-  type SelectorAdmissionReported,
-  type SelectorAdmissionSkip,
-  type SelectorIdentityFactory,
-  type SelectorRuntimeConfig,
-  type SelectorRuntimeSource,
-} from "../interpreter/selectorRuntime.ts";
 import type { TicketServiceConfig } from "../interpreter/ticketService.ts";
 import type { FinalizerConfig } from "../interpreter/finalizer.ts";
 
@@ -235,65 +206,6 @@ function processPreconditions(
   ];
 }
 
-/** Why a project's lead is not run, as an operator reads it beside the phase. */
-const selectorProcessAdmissionWhy: Readonly<
-  Record<SelectorAdmissionPhase, string>
-> = {
-  HostedRunsNotGranted:
-    "its tenant grants this selector no hosted runs, so its lead does not run",
-  RunnerOffline:
-    "its lead runs on the project's runners and none has polled lately, so its lead does not run",
-  UsagePaused:
-    "its lead runs on the project's runners and every live one is paused for its owner's Claude account, so its lead does not run",
-  SubsidyExhausted:
-    "its lead is subsidized and its tenant or the deployment has spent this month's subsidy, so its lead does not run until the month turns",
-  AdmissionUndecided:
-    "the project authority or the database could not say whether its lead may run",
-};
-
-function selectorProcessAdmissionLine(skip: SelectorAdmissionSkip): string {
-  return `selector: ${skip.partition.tenant}/${skip.partition.project} ${skip.phase}: ${selectorProcessAdmissionWhy[skip.phase]}\n`;
-}
-
-/**
- * Drives the selector's own pass and the thread wake pass in ONE tick of ONE
- * pacing loop, the runtime STRICTLY FIRST: the runtime pass ends by appending
- * the change rows the wake pass exists to read, so a tick that started them
- * together would read the log before this tick's refusals were in it, and one
- * loop is the whole of the pacing because a second loop over the same cursor
- * would be a second writer to it. A change whose fan-out one pass cannot read
- * is the one arm in which a notice is dropped for good, and a project newly
- * passed over because its lead may not run is a lead that stops, so each
- * reaches stderr the way a contained ticket service fault does.
- */
-export function selectorProcess(
-  service: SelectorRuntimeService,
-  wakes: ThreadWakeService,
-  requirements: ControlPlaneRequirements,
-  config: ServiceRuntimeConfig,
-): ServiceRuntime {
-  let admissions: SelectorAdmissionReported = new Map();
-  return serviceRuntime(
-    {
-      run: async () => {
-        const result = await service.runOnce();
-        const admitted = selectorAdmissionChanges(admissions, result);
-        admissions = admitted.reported;
-        for (const skip of admitted.changed)
-          process.stderr.write(selectorProcessAdmissionLine(skip));
-        const report = await threadWakePass(wakes);
-        if (report.truncatedAt !== undefined)
-          process.stderr.write(
-            `thread wakes: change ${String(report.truncatedAt)} wakes more threads than one pass reads, and the pass moved past it\n`,
-          );
-      },
-    },
-    systemPacing,
-    processPreconditions(requirements),
-    config,
-  );
-}
-
 /** The line an operator reads for one thing a scheduler pass could not mend, naming the attempt it was about. */
 function schedulerProcessNoticeLine(notice: SchedulerPassNotice): string {
   const { partition, attempt } = notice.attempt;
@@ -307,17 +219,21 @@ function schedulerProcessNoticeLine(notice: SchedulerPassNotice): string {
 }
 
 /**
- * Drives both schedulers in one tick of one pacing loop, execution first: either
- * cleanup raises on a cluster answering `Unavailable` to a cancel and
- * `../interpreter/serviceRuntime.ts` ends the loop on a raise out of `run`, so
- * the order decides only which half has finished its pass when the other stops
- * the tick, and this slice's newest infrastructure does not get to deny the
- * proved execution machine a dispatch on its way out. What the execution pass
- * could not mend reaches stderr, since an operator is who mends it.
+ * Drives both schedulers and the thread wake pass in one tick of one pacing
+ * loop, execution first and sessions last: either cleanup raises on a cluster
+ * answering `Unavailable` to a cancel and `../interpreter/serviceRuntime.ts`
+ * ends the loop on a raise out of `run`, so the proved execution machine is not
+ * denied a dispatch on its way out, a turn the wake pass wakes is placed in the
+ * same tick, and one loop is the whole of the pacing because a second over the
+ * wake cursor would be a second writer to it. What the execution pass could
+ * not mend, and a change whose fan-out one wake pass cannot read, which is the
+ * one arm in which a notice is dropped for good, reach stderr, since an
+ * operator is who mends them.
  */
 export function schedulerProcess(
   service: ExecutionSchedulerService,
   sessions: SessionSchedulerService,
+  wakes: ThreadWakeService,
   identity: {
     readonly owner: SchedulerOwnerId;
     readonly recoveryEpoch: RecoveryEpoch;
@@ -337,6 +253,11 @@ export function schedulerProcess(
         );
         for (const notice of report.notices)
           process.stderr.write(schedulerProcessNoticeLine(notice));
+        const woken = await threadWakePass(wakes);
+        if (woken.truncatedAt !== undefined)
+          process.stderr.write(
+            `thread wakes: change ${String(woken.truncatedAt)} wakes more threads than one pass reads, and the pass moved past it\n`,
+          );
         await sessionSchedulerPass(sessions, identity.recoveryEpoch);
       },
     },
@@ -402,105 +323,6 @@ export function finalizerProcess(
     processPreconditions(requirements),
     config,
   );
-}
-
-export interface SelectorProcessRootConfig {
-  readonly database: ProcessDatabaseConfig;
-  readonly runtime: ServiceRuntimeConfig;
-  readonly selector?: SelectorRuntimeConfig;
-  /**
-   * The wake pass's bound. It is required rather than defaulted here, because a
-   * root that supplied its own default would be a second place the default
-   * lives and an arm in which a deployment's bound is not the bound that runs.
-   */
-  readonly wakes: { readonly wakesPerPassMax: number };
-  /**
-   * Where the project authority is. The wake pass asks it whether a thread's
-   * principal may still read the project, and the runtime whether a project's
-   * tenant grants a lead run in cluster hosted runs, which no row in this
-   * database says.
-   */
-  readonly access: ProjectAccessSettings;
-}
-
-/**
- * Owns the selector-role pool and composes the independently deployable
- * selector process, the lead host included: every door a decision opens is on
- * this pool, so the host is built where the pool is.
- */
-export function selectorProcessRoot(
-  config: SelectorProcessRootConfig,
-  source: SelectorRuntimeSource,
-  lead: SelectorLeadRuntime,
-  identities: SelectorIdentityFactory,
-  additional: readonly RuntimePrecondition[] = [],
-): ServiceRuntime {
-  const pool = processPool(config.database);
-  const access = ketoProjectAccess(config.access);
-  const service = composeSelectorRuntime(
-    pool,
-    source,
-    lead,
-    access,
-    identities,
-    config.selector,
-  );
-  return ownedProcess(
-    pool,
-    selectorProcess(
-      service,
-      {
-        store: postgresThreadWakes(pool),
-        access,
-        clock: { nowIso: () => new Date().toISOString() },
-        wakesPerPassMax: config.wakes.wakesPerPassMax,
-      },
-      {
-        pool,
-        additional: selectorProcessPreconditions(pool, [
-          ...additional,
-          postgresSubsidizedLeadPrecondition(pool, lead.policy.subsidizedLead),
-        ]),
-      },
-      config.runtime,
-    ),
-  );
-}
-
-/**
- * What the selector process must be able to do before it takes a decision: it
- * must be the role it claims, and it must hold every door a decision opens.
- */
-export function selectorProcessPreconditions(
-  pool: pg.Pool,
-  additional: readonly RuntimePrecondition[] = [],
-): readonly RuntimePrecondition[] {
-  return [
-    postgresRolePrecondition(pool, selectorServiceRole),
-    leadMailboxPrivilegePrecondition(pool),
-    ...additional,
-  ];
-}
-
-/**
- * Whether this process may open the doors a decision needs. A readiness check
- * asked a host whether it felt able to answer; a privilege check asks the
- * database whether this role is allowed to ask at all, which is the thing that
- * silently fails on a migration that granted one door and not the next.
- */
-function leadMailboxPrivilegePrecondition(pool: pg.Pool): RuntimePrecondition {
-  return {
-    name: "selector-lead-doors",
-    check: async (signal) => {
-      signal.throwIfAborted();
-      const refused = await postgresLeadDoorsRefused(pool);
-      signal.throwIfAborted();
-      return runtimePreconditionAnswer(
-        refused.length === 0,
-        `this role may not execute ${refused.join(", ")}`,
-      );
-    },
-  };
 }
 
 export interface TicketServiceProcessRootConfig {
@@ -623,6 +445,7 @@ export interface SchedulerProcessRootConfig {
     | "priorEvaluationReports"
     | "failedLanding"
     | "readOnlyRepositories"
+    | "northStar"
     | "dependencyDeliveries"
     | "ticketBriefs"
     | "bindings"
@@ -631,9 +454,16 @@ export interface SchedulerProcessRootConfig {
   >;
   /**
    * Where the project authority is. A pass asks it whether a registered pool
-   * may still run its project's work, which no row in this database says.
+   * may still run its project's work, and the wake pass whether a thread's
+   * principal may still read the project, which no row in this database says.
    */
   readonly access: ProjectAccessSettings;
+  /**
+   * The wake pass's bound. It is required rather than defaulted here, because a
+   * root that supplied its own default would be a second place the default
+   * lives and an arm in which a deployment's bound is not the bound that runs.
+   */
+  readonly wakes: { readonly wakesPerPassMax: number };
   /**
    * The session half of the same process; its own store and its binding read
    * come from the same pool, so a deployment names neither.
@@ -660,18 +490,7 @@ export function schedulerProcessRootService(
     ...service,
     access: ketoProjectAccess(access),
     store: postgresExecutionScheduler(pool),
-    configurations: postgresPinnedConfigurations(pool),
-    priorWorkReports: postgresPriorWorkReports(pool),
-    priorEvaluationReports: postgresPriorEvaluationReports(pool),
-    failedLanding: postgresFailedLanding(pool),
-    readOnlyRepositories: postgresReadOnlyRepositories(pool),
-    dependencyDeliveries: dependencyDeliveriesRead({
-      pinned: postgresDependencyPins(pool),
-      landings: postgresTicketLandings(pool),
-      briefs: postgresTicketBrief(pool),
-    }),
-    ticketBriefs: postgresTicketBrief(pool),
-    bindings: postgresProjectRepositoryBinding(pool),
+    ...composeSchedulerBriefingReads(pool),
     workerPools: postgresWorkerPoolRoster(pool),
   };
 }
@@ -709,6 +528,12 @@ export function schedulerProcessRoot(
     schedulerProcess(
       service,
       schedulerProcessRootSessions(pool, config.sessions),
+      {
+        store: postgresThreadWakes(pool),
+        access: ketoProjectAccess(config.access),
+        clock: { nowIso: () => new Date().toISOString() },
+        wakesPerPassMax: config.wakes.wakesPerPassMax,
+      },
       config.identity,
       {
         pool,
@@ -754,9 +579,11 @@ export interface FinalizerProcessRootConfig {
 }
 
 /**
- * Composes the finalizer service over the pool its process owns, its holds
- * written to stderr: a request held where it was found writes nothing anywhere
- * else, so this is the only place an operator learns which one is.
+ * Composes the finalizer service over the pool its process owns, its holds and
+ * every forge act it makes written to stderr: a request held where it was found
+ * writes nothing anywhere else, and neither does what a forge answered beyond
+ * the newest of each act its row keeps, so this is where an operator learns
+ * both.
  */
 export function finalizerProcessRootService(
   pool: pg.Pool,
@@ -766,7 +593,7 @@ export function finalizerProcessRootService(
     pool,
     config.service(pool),
     config.finalizer,
-    finalizerHoldLog((line) => {
+    finalizerProcessLog((line) => {
       process.stderr.write(line);
     }),
   );

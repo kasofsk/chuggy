@@ -50,7 +50,7 @@ async function granted(
   return principal;
 }
 
-/** A project holding an administrator, a developer, a viewer and the site's selector as a developer. */
+/** A project holding an administrator, a developer and a viewer. */
 async function staffed(label: string) {
   const partition = ketoHarnessPartition(label);
   return {
@@ -58,7 +58,6 @@ async function staffed(label: string) {
     admin: await granted(partition, `${label}-admin`, "admins"),
     developer: await granted(partition, `${label}-developer`, "developers"),
     viewer: await granted(partition, `${label}-viewer`, "viewers"),
-    selector: await granted(partition, `${label}-selector`, "developers"),
     stranger: ketoHarnessSomeone(`${label}-stranger`),
   };
 }
@@ -76,7 +75,6 @@ async function answersTo(
   for (const [principal, viaSession] of callers) {
     const answer = await nativeActionAnswerer(
       access,
-      { selector: project.selector },
       viaSession === undefined ? { principal } : { principal, viaSession },
       project.partition,
       asked,
@@ -86,7 +84,7 @@ async function answersTo(
   return answers;
 }
 
-test("a Developer approval admits whoever holds develop, and refuses a viewer, an agent and a session by name", async () => {
+test("a Developer approval admits whoever holds develop, and refuses a viewer and a session by name", async () => {
   const project = await staffed("approval-developer");
   assert.deepEqual(
     await answersTo(
@@ -96,19 +94,11 @@ test("a Developer approval admits whoever holds develop, and refuses a viewer, a
         [project.developer],
         [project.admin],
         [project.viewer],
-        [project.selector],
         [project.developer, session],
         [project.stranger],
       ],
     ),
-    [
-      "Answerer",
-      "Answerer",
-      "NotAnApprover",
-      "ApproverNotAPerson",
-      "ApproverNotAPerson",
-      "NotFound",
-    ],
+    ["Answerer", "Answerer", "NotAnApprover", "ApproverNotAPerson", "NotFound"],
   );
 });
 
@@ -136,23 +126,16 @@ test("a principal list admits exactly the readers it names, and no developer or 
       project,
       {
         kind: "EvaluationApproval",
-        approvers: [project.viewer, project.stranger, project.selector],
+        approvers: [project.viewer, project.stranger],
       },
       [
         [project.viewer],
         [project.stranger],
-        [project.selector],
         [project.developer],
         [project.admin],
       ],
     ),
-    [
-      "Answerer",
-      "NotFound",
-      "ApproverNotAPerson",
-      "NotAnApprover",
-      "NotAnApprover",
-    ],
+    ["Answerer", "NotFound", "NotAnApprover", "NotAnApprover"],
   );
 });
 
@@ -161,10 +144,9 @@ test("an escalation is answered by whoever holds develop, as before", async () =
   assert.deepEqual(
     await answersTo(project, { kind: "TicketEscalation" }, [
       [project.developer],
-      [project.selector],
       [project.developer, session],
       [project.viewer],
     ]),
-    ["Answerer", "Answerer", "Answerer", "NotFound"],
+    ["Answerer", "Answerer", "NotFound"],
   );
 });

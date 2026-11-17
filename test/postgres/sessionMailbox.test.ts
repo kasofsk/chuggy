@@ -281,7 +281,7 @@ test("a pod reads its own session's facts, renews its lease, and loses its attem
   const { partition, session, held } = await mailbox("plane");
   const authority = await rig.plane.authenticate(held.secret);
   assert.equal(authority?.session, session);
-  assert.equal(authority?.kind, "Lead");
+  assert.equal(authority?.kind, "Thread");
   assert.equal(authority?.live, true);
   assert.deepEqual(authority?.capabilities, ["RepositoryRead"]);
   assert.equal(authority?.credentialSlot, "claude-code");
@@ -456,7 +456,7 @@ test("the bearer resolves to the partition, session and principal it was minted 
   });
   assert.deepEqual(bound?.partition, partition);
   assert.equal(bound?.session, session);
-  assert.equal(bound?.kind, "Lead");
+  assert.equal(bound?.kind, "Thread");
   assert.equal(bound?.principal, "principal-binding");
   assert.equal(
     await rig.plane.binding({ secret: held.secret, generation: 99 }),

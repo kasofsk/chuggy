@@ -41,6 +41,7 @@ const appearanceReads = [
     manageSelector: true,
     overrideTicketConfig: true,
     skipPlannedEvaluations: true,
+    mergeProposals: true,
     administer: true,
     writeEpic: true,
   }),

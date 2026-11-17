@@ -1,8 +1,8 @@
 /**
  * Where a session bearer may act: in its own session's partition, under its
  * own session's capabilities, and nowhere else. Its principal may be
- * authorized far more widely than the session is — a lead's is the site's one
- * selector identity, a developer on every project with a lead — and whoever
+ * authorized far more widely than the session is — a member's reaches every
+ * project they belong to — and whoever
  * holds the bearer holds that principal, so the bearer is confined to the
  * partition its session row names and to what that row's capabilities admit.
  *
@@ -29,9 +29,8 @@
  * mint, because enrolling a machine is provisioning rather than work, as
  * deleting the project is; every write of a personal runner, its allowlist
  * among them;
- * the answer to a lead's held proposal and a reply to a thread's offer, each a
- * person's word on what a session put to them; and every write of a thread or
- * a member's own chat, which is its owner's. The confinement is by route and
+ * a reply to a thread's offer, a person's word on what a session put to them;
+ * and every write of a thread or a member's own chat, which is its owner's. The confinement is by route and
  * method, so a route two capabilities' tools write admits either's whole body:
  * a session holding `DraftAuthor` alone may still post a draft no parent bears.
  *
@@ -141,28 +140,18 @@ export const sessionBearerRouteClasses = {
   ticket: partitionRead,
   ticketNativeActions: partitionRead,
   ticketNativeActionHistory: partitionRead,
-  ticketAgenticRefusals: partitionRead,
   ticketActionReach: partitionRead,
   configurationHead: partitionRead,
   ticketLandings: partitionRead,
   ticketTake: { POST: sessionBearerPartition("DraftOriginate") },
   ticketReturn: { POST: sessionBearerPartition("DraftOriginate") },
+  ticketProposalMerge: refusedWrite,
   landingQueues: partitionRead,
   nativeActions: partitionRead,
-  agenticRefusals: partitionRead,
   inbox: partitionRead,
   operationalStatus: partitionRead,
-  selectorContext: partitionRead,
   selectorSettings: readRefusedReplace,
   selectorSettingsHistory: partitionRead,
-  selectorHistory: partitionRead,
-  selectorProposals: partitionRead,
-  selectorProposalReview: refusedWrite,
-  lead: partitionRead,
-  leadTranscript: partitionRead,
-  leadContext: partitionRead,
-  leadInquiries: readRefusedWrite,
-  leadInquiry: partitionRead,
   executions: partitionRead,
   execution: partitionRead,
   outputContent: partitionRead,

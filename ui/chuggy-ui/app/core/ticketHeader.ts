@@ -117,8 +117,6 @@ export type TicketHeaderFragment =
 export interface TicketHeaderFragmentReads {
   readonly ticket: TicketResponse;
   readonly standing: TicketListStanding;
-  /** Whether the project's lead dispatches, absent while its read is. */
-  readonly leadDispatches: boolean | undefined;
   readonly slot: TicketSlot;
   readonly landings: readonly TicketLanding[];
 }
@@ -200,14 +198,7 @@ export function ticketHeaderFragment(
   const ticket = reads.ticket;
   switch (reads.standing) {
     case "Ready":
-      if (reads.leadDispatches === undefined) return ticketHeaderNone;
-      return ticketHeaderWords(
-        text(
-          reads.leadDispatches
-            ? { id: "ticket-header-waiting-lead" }
-            : { id: "ticket-header-waiting-dispatch" },
-        ),
-      );
+      return ticketHeaderWords(text({ id: "ticket-header-waiting-dispatch" }));
     case "Blocked":
       return ticketHeaderWords(
         ticketUnfinishedLine(

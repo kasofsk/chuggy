@@ -1,7 +1,9 @@
 /**
  * The page an invite link is opened at, drawn the same with a session and
  * without one: a title for the state the link is in, one line, what to do next
- * where a send was refused, and at most one action.
+ * where a send was refused, and at most one action. Without one, the card is
+ * what the plane's summary of the link says it gives and from whom, read as
+ * the card is drawn and again at a retry.
  *
  * It reads no router, because the tree's root draws it for a browser that
  * holds no session and has no router, and the route draws it for a reader.
@@ -15,11 +17,16 @@
  * round again.
  */
 
-import { createContext, useContext, useEffect } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
+import type { AccessInviteLinkSummary } from "../../../../src/contract/accessPlane.ts";
+
 import { useCopyText } from "../copy/CopyProvider.tsx";
-import { apiRedeemInviteLink } from "../core/accessRoutes.ts";
+import {
+  apiInviteLinkSummary,
+  apiRedeemInviteLink,
+} from "../core/accessRoutes.ts";
 import type { ApiResult } from "../core/apiRequest.ts";
 import { ConsoleWriteRefused, consoleWriteKey } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
@@ -27,9 +34,14 @@ import { copyOrDataText } from "../core/copy.ts";
 import type { Copy, CopyOrData, CopyText } from "../core/copy.ts";
 import type { InviteHolder } from "../core/inviteHolder.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
-import { inviteElsewherePath, invitePageWords } from "../core/invitePage.ts";
+import {
+  inviteElsewherePath,
+  invitePageWords,
+  inviteSummaryCard,
+} from "../core/invitePage.ts";
 import type { InviteRedemption } from "../core/invitePage.ts";
 import { accessFailureLabel } from "../core/tenantPeople.ts";
+import { useApiPorts } from "./api.ts";
 import { useConsoleWrite } from "./consoleWrite.tsx";
 import { SessionCard, SignedOutCard } from "./SessionCard.tsx";
 import { useSessionHolder, useSessionSnapshot } from "./session.tsx";
@@ -39,7 +51,6 @@ import { Locomotive } from "./ui/Locomotive.tsx";
 /** What each state of the page is for, said as its title. */
 const invitePageTitles = {
   needed: { id: "settings-invite-needed-title" },
-  invited: { id: "settings-invite-invited-title" },
   redeeming: { id: "settings-invite-joining-title" },
   notValid: { id: "settings-invite-not-valid-title" },
   failed: { id: "settings-invite-failed-title" },
@@ -210,6 +221,85 @@ function useInviteRedemption(
   };
 }
 
+/** The plane's summary of `token`, undefined while the latest read of it is
+ * unanswered, and the retry that reads it again. */
+function useInviteSummary(token: string): {
+  readonly summary: ApiResult<AccessInviteLinkSummary> | undefined;
+  readonly retry: () => void;
+} {
+  const ports = useApiPorts();
+  const [attempt, setAttempt] = useState(0);
+  const [answered, setAnswered] = useState<{
+    readonly token: string;
+    readonly attempt: number;
+    readonly result: ApiResult<AccessInviteLinkSummary>;
+  }>();
+  useEffect(() => {
+    let current = true;
+    void apiInviteLinkSummary(ports, token).then((result) => {
+      if (current) setAnswered({ token, attempt, result });
+    });
+    return () => {
+      current = false;
+    };
+  }, [ports, token, attempt]);
+  return {
+    summary:
+      answered?.token === token && answered.attempt === attempt
+        ? answered.result
+        : undefined,
+    retry: () => {
+      setAttempt((last) => last + 1);
+    },
+  };
+}
+
+/** A link opened with no session: what it gives and from whom, and the
+ * sign-in that carries its token across in the cookie. */
+function InviteInvited(props: {
+  readonly token: string;
+  readonly domain: string | undefined;
+}): ReactNode {
+  const invite = useInviteHolder();
+  const session = useSessionHolder();
+  const { token, domain } = props;
+  const { summary, retry } = useInviteSummary(token);
+  const drawn = inviteSummaryCard(summary);
+  switch (drawn.card) {
+    case "Reading":
+      return (
+        <InviteCard
+          title={drawn.title}
+          line={drawn.line}
+          media={<Locomotive />}
+        />
+      );
+    case "Open":
+      return (
+        <InviteCard
+          title={drawn.title}
+          line={drawn.line}
+          action={invitePageWords.signInGithub}
+          onAction={() => {
+            invite.leave(token, domain);
+            void session.signIn(inviteRoutePath);
+          }}
+        />
+      );
+    case "Ended":
+      return <InviteCard title={drawn.title} line={drawn.line} />;
+    case "Failed":
+      return (
+        <InviteCard
+          title={drawn.title}
+          line={drawn.line}
+          action={invitePageWords.retry}
+          onAction={retry}
+        />
+      );
+  }
+}
+
 function InviteRedeeming(props: {
   readonly token: string;
   readonly domain: string | undefined;
@@ -244,7 +334,6 @@ function InviteRedeeming(props: {
 
 export function InvitePage(): ReactNode {
   const invite = useInviteHolder();
-  const session = useSessionHolder();
   const snapshot = useSessionSnapshot();
   const domain = snapshot.configuration?.inviteCookieDomain;
   const opened = invite.opened(snapshot.phase === "SignedIn");
@@ -256,17 +345,7 @@ export function InvitePage(): ReactNode {
     case "SignedOut":
       return <SignedOutCard />;
     case "Invited":
-      return (
-        <InviteCard
-          title={invitePageTitles.invited}
-          line={invitePageWords.invited}
-          action={invitePageWords.signIn}
-          onAction={() => {
-            invite.leave(opened.token, domain);
-            void session.signIn(inviteRoutePath);
-          }}
-        />
-      );
+      return <InviteInvited token={opened.token} domain={domain} />;
     case "Redeeming":
       return <InviteRedeeming token={opened.token} domain={domain} />;
   }

@@ -17,6 +17,7 @@ import type {
   ForgeAppResponse,
   ForgeAppsResponse,
   ForgeInstallationResponse,
+  ForgeRepositoriesResponse,
 } from "../../../../src/contract/responses.ts";
 
 import { base64urlFromBytes } from "./base64url.ts";
@@ -97,6 +98,34 @@ export function forgeInstallOffered(
  */
 export function forgeInstallUrl(installUrl: string, state: string): string {
   return `${installUrl}?state=${encodeURIComponent(state)}`;
+}
+
+/** The most repositories the forge will take pre-selected on one install. */
+export const forgeInstallSuggestedMax = 100;
+
+/**
+ * The address to follow to install an app with what another installation on
+ * the same account was given already chosen: that account, and each of its
+ * repositories. The forge reads no ids as every repository, which is already
+ * its default, so a listing given every repository, cut short, past what the
+ * forge takes, or naming no account is followed at the plain address.
+ */
+export function forgeInstallSuggestedUrl(
+  installUrl: string,
+  state: string,
+  granted: ForgeRepositoriesResponse,
+): string {
+  if (
+    granted.selection !== "Selected" ||
+    granted.truncated ||
+    granted.accountId === undefined ||
+    granted.repositories.length > forgeInstallSuggestedMax
+  )
+    return forgeInstallUrl(installUrl, state);
+  const ids = granted.repositories.map(
+    (repository) => `&repository_ids[]=${encodeURIComponent(repository.id)}`,
+  );
+  return `${installUrl}/permissions?suggested_target_id=${encodeURIComponent(granted.accountId)}${ids.join("")}&state=${encodeURIComponent(state)}`;
 }
 
 /** The action that installs one of the two apps, as a person reads it. */

@@ -34,12 +34,10 @@ import {
 import type { ParkedOverridesTyped } from "../core/parkedOverrides.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import type { ProjectAbilities } from "../core/projectAbilities.ts";
-import { projectLeadDispatches } from "../core/projectLead.ts";
 import { manualDispatchActionOf } from "../core/ticketActions.ts";
 import { ticketHeaderFragment } from "../core/ticketHeader.ts";
 import { ticketListStandingOf } from "../core/ticketListView.ts";
 import {
-  offersDispatchByHand,
   ticketOffers,
   ticketOffersAllowed,
   ticketOffersStartable,
@@ -62,7 +60,6 @@ import type { TicketSlot as Slot } from "../core/ticketSituation.ts";
 import { usePanelState } from "./api.ts";
 import { EpicChips } from "./EpicChips.tsx";
 import { FreshnessInstants, useNowMs } from "./Freshness.tsx";
-import { useLead } from "./LeadPage.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import {
   TicketActingScope,
@@ -256,10 +253,6 @@ function useTicketStanding(
     resume: props.facts.resume,
     withheld: parked.withheld ? ["Resume"] : [],
     duplicates: !projectAbilityRefused(abilities, "mutate"),
-    byHand: offersDispatchByHand(
-      offers,
-      projectLeadDispatches(props.reads.leadState),
-    ),
     noRunner,
     take: ticket === undefined ? "None" : ticketTakeOffer(ticket, abilities),
   };
@@ -291,7 +284,6 @@ function TicketStandingHeader(props: {
         {
           ticket,
           standing,
-          leadDispatches: projectLeadDispatches(held.reads.leadState),
           slot: held.slot,
           landings: ticketLandingsHeld(held.reads.landingsState),
         },
@@ -470,7 +462,6 @@ function TicketPageOf(props: {
   const openState = usePanelState(ticketNativeActionsQuery(partition, ticket));
   const dispatchState = usePanelState(ticketDispatchQuery(partition, ticket));
   const pageState = useTicketExecutions(partition, ticket);
-  const leadState = useLead(partition);
   const deliveryState = useTicketDelivery(partition, ticket);
   const { landingsState, landingStacks } = useTicketLandings(partition, ticket);
   const queues = useLandingQueues(partition);
@@ -483,7 +474,6 @@ function TicketPageOf(props: {
     openState,
     dispatchState,
     pageState,
-    leadState,
     deliveryState,
     landingsState,
     landingStacks,

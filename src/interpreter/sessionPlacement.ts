@@ -1,16 +1,12 @@
-/** Where one project's sessions run, as its administrator reads and chooses it and as every door that spends a session asks. */
+/** Where one project's threads run, as its administrator reads and chooses it and as every door that spends a thread's turn asks. */
 
 import {
-  leadAdmissionRefusals,
-  leadOfferings,
-  type LeadAdmissionRefusal,
   type LeadOffering,
   type PlacementRoute,
   type PlacementRouteSource,
   type SessionRunnerStanding,
 } from "../contract/rosters.ts";
-import type { SessionEffort } from "../contract/http.ts";
-import { memberScopeReserved, type SessionKind } from "./agentSession.ts";
+import { memberScopeReserved } from "./agentSession.ts";
 import type { Authority } from "./operationInbox.ts";
 import {
   placementChoices,
@@ -19,17 +15,16 @@ import {
   placementRouteHosted,
   placementWritten,
   type PlacementAdministration,
-  type PlacementHeld,
   type PlacementRead,
   type PlacementWrite,
   type PlacementWritten,
 } from "./placementRoute.ts";
 import type { Principal } from "./principal.ts";
-import { hostedRunsGranted, type ProjectAccess } from "./projectAccess.ts";
+import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition, ProjectId, TenantId } from "./projectStore.ts";
 
-/** The kinds a project routes; an inquiry runs where its lead does. */
-export const allSessionRouteKinds = ["Thread", "Lead"] as const;
+/** The kinds a project routes. */
+export const allSessionRouteKinds = ["Thread"] as const;
 export type SessionRouteKind = (typeof allSessionRouteKinds)[number];
 
 export type SessionRoutes = Readonly<Record<SessionRouteKind, PlacementRoute>>;
@@ -56,21 +51,22 @@ export interface SessionRouteResolved {
  * How long after its last poll a runner still counts as live, for a session and
  * for a pool deferring to it under `Preferred`. A runner polls again as soon as
  * its held poll answers, so this spans several polls and a restart; erring long
- * only delays the lead's skip, or a pool's claim, by as much.
+ * only delays a pool's claim by as much.
  */
 export const sessionRunnerPolledSecsMax = 120;
 
 /**
  * How long a turn offered to runners waits for one to take it before it is
- * withdrawn, since until then it holds its session: an inquiry its asker's
- * slot, a thread every turn behind it. It spans a machine waking from sleep,
- * and not a member left waiting on one that will not.
+ * withdrawn, since until then it holds every turn of its thread behind it. It
+ * spans a machine waking from sleep, and not a member left waiting on one that
+ * will not.
  */
 export const sessionPoolTurnDwellSecs = 30 * 60;
 
 /**
- * The runners a session would run on: the member's chat host for their thread
- * and for their inquiry, and any of the project's pools for the lead.
+ * The runners a member's thread would run on: `mine` their chat host for a
+ * project's thread, `inquiry` their chat host for their own chat's, and
+ * `project` whether any of the project's pools is live.
  */
 export interface SessionRunners {
   readonly mine: SessionRunnerStanding;
@@ -78,39 +74,20 @@ export interface SessionRunners {
   readonly project: SessionRunnerStanding;
 }
 
-/** The standing of the runners a member's session of `kind` would run on. */
+/** The standing of the runners a member's thread in `partition` would run on. */
 export function sessionRunnersServing(
   runners: SessionRunners,
-  kind: SessionKind,
+  partition: Partition,
 ): SessionRunnerStanding {
-  switch (kind) {
-    case "Thread":
-      return runners.mine;
-    case "Inquiry":
-      return runners.inquiry;
-    case "Lead":
-      return runners.project;
-  }
+  return memberScopeReserved(partition) ? runners.inquiry : runners.mine;
 }
-
-/**
- * Whether a live runner of the project could take its lead now: `Paused`
- * where every live one is paused for its owner's Claude account, on every
- * credential it named or, where it named none, on the whole agent, and
- * `Offline` where none is live.
- */
-export const leadRunnerStandings = ["Live", "Paused", "Offline"] as const;
-export type LeadRunnerStanding = (typeof leadRunnerStandings)[number];
 
 /** The reads every door that spends a session asks of where it runs. */
 export interface SessionRouteReads {
-  route(partition: Partition, kind: SessionKind): Promise<SessionRouteResolved>;
-  /** The offering the project's lead resolves to, which is `Own` wherever its stored choice does not hold. */
-  leadOffering(partition: Partition): Promise<LeadOffering>;
-  /** What the project's tenant and the deployment spent of the subsidy this month, absent where its lead does not resolve `Subsidized`. */
-  subsidizedLeadSpend(
+  route(
     partition: Partition,
-  ): Promise<SubsidizedLeadSpend | undefined>;
+    kind: SessionRouteKind,
+  ): Promise<SessionRouteResolved>;
   /** `mine` and `inquiry` are `Unregistered` where no member is named. */
   runners(
     partition: Partition,
@@ -118,113 +95,46 @@ export interface SessionRouteReads {
   ): Promise<SessionRunners>;
 }
 
-/** The reads a lead's admission asks: where it runs, as which offering, and whether a runner there could take it. */
-export interface LeadRouteReads extends Pick<
-  SessionRouteReads,
-  "route" | "leadOffering" | "subsidizedLeadSpend"
-> {
-  leadRunners(partition: Partition): Promise<LeadRunnerStanding>;
-}
-
-/**
- * What a deployment's subsidized lead runs on: a credential slot of its own, a
- * pinned model and effort, and the bounds one of its decisions is held to.
- */
-export interface SubsidizedLeadProfile {
-  readonly credentialSlot: string;
-  readonly model: string;
-  readonly effort: SessionEffort;
-  readonly autoCompactWindow: number;
-  readonly inputBytesPerDecision: number;
-  readonly turnTokensMax: number;
-}
-
-/**
- * What a deployment's subsidized lead may spend in one calendar month in UTC:
- * each tenant's cap, the cap on every tenant's together, and what a turn on
- * its slot is charged where it failed or an ended attempt left it in flight,
- * since neither is measured.
- */
-export interface SubsidizedLeadAllowance {
-  readonly tenantMonthlyMicros: number;
-  readonly deploymentMonthlyMicros: number;
-  readonly unmeasuredTurnMicros: number;
-}
-
-/** The subsidized lead a deployment publishes: what it runs on, and what it may spend. */
-export type SubsidizedLeadOffer = SubsidizedLeadProfile &
-  SubsidizedLeadAllowance;
-
-/** What one tenant's subsidized sessions and every tenant's spent this month, each beside its cap. */
-export interface SubsidizedLeadSpend {
-  readonly tenantMicros: number;
-  readonly tenantMonthlyMicros: number;
-  readonly deploymentMicros: number;
-  readonly deploymentMonthlyMicros: number;
-}
-
-/** Whether the tenant or the deployment has reached its cap, past which no subsidized turn is admitted this month. */
-export function subsidizedLeadSpendExhausted(
-  spend: SubsidizedLeadSpend,
-): boolean {
-  return (
-    spend.tenantMicros >= spend.tenantMonthlyMicros ||
-    spend.deploymentMicros >= spend.deploymentMonthlyMicros
-  );
-}
-
-/** A session placement as an administrator writes it: each kind's route, and the lead's offering where it names one. */
-export interface SessionPlacementChoice extends SessionRoutes {
-  readonly leadOffering?: LeadOffering;
-}
-
-/** A session placement as the store writes it: each kind's route, and the lead's offering the hosted grant was decided on. */
-export interface SessionPlacementStored extends SessionRoutes {
-  readonly leadOffering: LeadOffering;
-}
+/** A session placement as an administrator writes it and the store keeps it: each kind's route. */
+export type SessionPlacementChoice = SessionRoutes;
 
 export interface SessionPlacementStore extends SessionRouteReads {
-  /** The offering the project's own row keeps, however it resolves: the one a write naming none keeps while its lead stays in cluster. */
-  storedLeadOffering(partition: Partition): Promise<LeadOffering>;
-  /** Whether the deployment publishes a subsidized lead. */
-  subsidizedLeadOffered(): Promise<boolean>;
   write(
     partition: Partition,
-    placement: SessionPlacementStored,
+    placement: SessionPlacementChoice,
     authority: Authority,
   ): Promise<PlacementWrite>;
 }
 
-/** Each kind's route and where it came from, the lead's offering and the ones the deployment admits, the routes this caller may choose, and the runners each would run on. */
+/** Each kind's route and where it came from, the routes this caller may choose, and the runners a thread would run on. */
 export interface SessionPlacementView {
   readonly routes: Readonly<Record<SessionRouteKind, SessionRouteResolved>>;
-  readonly leadOffering: LeadOffering;
-  readonly leadOfferings: readonly LeadOffering[];
   readonly choices: readonly PlacementRoute[];
   readonly runners: SessionRunners;
 }
 
-/** What a write naming an offering its lead's route does not admit on this deployment is refused with. */
-export type SessionPlacementRefusal = "LeadOfferingNotAdmitted";
+/**
+ * What a placement read answers of the lead for clients that still parse one:
+ * there is no lead, so its route and offering are fixed and never stored.
+ */
+export const sessionPlacementLeadCompatibility = {
+  lead: { route: "InCluster", source: "Default" },
+  leadOffering: "Own",
+  leadOfferings: ["Own"],
+} as const satisfies {
+  readonly lead: SessionRouteResolved;
+  readonly leadOffering: LeadOffering;
+  readonly leadOfferings: readonly LeadOffering[];
+};
 
 export type SessionPlacementRead = PlacementRead<SessionPlacementView>;
-export type SessionPlacementWritten = PlacementWritten<
-  SessionPlacementView,
-  SessionPlacementRefusal
->;
+export type SessionPlacementWritten = PlacementWritten<SessionPlacementView>;
 
 export type SessionPlacementAdministration = PlacementAdministration<
   SessionPlacementChoice,
   SessionPlacementView,
   SessionPlacementWritten
 >;
-
-/** The offerings the deployment admits a lead: `Subsidized` only while it publishes the profile. */
-export function sessionPlacementLeadOfferings(
-  offered: boolean,
-): readonly LeadOffering[] {
-  return leadOfferings.filter((each) => offered || each !== "Subsidized");
-}
 
 async function sessionPlacementView(
   store: SessionPlacementStore,
@@ -233,48 +143,10 @@ async function sessionPlacementView(
   choices: readonly PlacementRoute[],
 ): Promise<SessionPlacementView> {
   return {
-    routes: {
-      Thread: await store.route(partition, "Thread"),
-      Lead: await store.route(partition, "Lead"),
-    },
-    leadOffering: await store.leadOffering(partition),
-    leadOfferings: sessionPlacementLeadOfferings(
-      await store.subsidizedLeadOffered(),
-    ),
+    routes: { Thread: await store.route(partition, "Thread") },
     choices,
     runners: await store.runners(partition, principal),
   };
-}
-
-/**
- * The placement a write stores and the routes it is held to the hosted grant
- * for, or its refusal: a subsidized lead needs no grant, and is admitted only
- * in cluster while the profile is published. An offering not named is the
- * row's stored one while the lead stays in cluster, and `Own` otherwise.
- */
-async function sessionPlacementHeld(
-  store: SessionPlacementStore,
-  partition: Partition,
-  choice: SessionPlacementChoice,
-): Promise<PlacementHeld<SessionPlacementStored> | SessionPlacementRefusal> {
-  const placement: SessionPlacementStored = {
-    Thread: choice.Thread,
-    Lead: choice.Lead,
-    leadOffering:
-      choice.leadOffering ??
-      (choice.Lead === "InCluster"
-        ? await store.storedLeadOffering(partition)
-        : "Own"),
-  };
-  switch (placement.leadOffering) {
-    case "Own":
-      return { placement, routes: [placement.Thread, placement.Lead] };
-    case "Subsidized":
-      return placement.Lead === "InCluster" &&
-        (await store.subsidizedLeadOffered())
-        ? { placement, routes: [placement.Thread] }
-        : "LeadOfferingNotAdmitted";
-  }
 }
 
 export function sessionPlacementAdministration(
@@ -296,15 +168,15 @@ export function sessionPlacementAdministration(
       };
     },
     write: (principal, partition, placement) =>
-      placementWritten<
-        SessionPlacementStored,
-        SessionPlacementView,
-        SessionPlacementRefusal
-      >(
+      placementWritten<SessionPlacementChoice, SessionPlacementView>(
         access,
         principal,
         partition,
-        () => sessionPlacementHeld(store, partition, placement),
+        () =>
+          Promise.resolve({
+            placement: { Thread: placement.Thread },
+            routes: [placement.Thread],
+          }),
         (authority, held) => store.write(partition, held, authority),
         (hosted) =>
           sessionPlacementView(
@@ -329,186 +201,37 @@ export function sessionRunnerServes(
   return placementRouteHosted[route] || mine !== "Unregistered";
 }
 
-/**
- * A member's turn admitted on the route it is stamped with, and whether on the
- * lead's subsidy rather than their grant, or the reason it is not. Only an
- * inquiry is refused `SubsidyExhausted`.
- */
-export type SessionSpend =
-  SessionSpendThread | { readonly spend: "SubsidyExhausted" };
-
-/** What a turn of a member's thread is answered, which no subsidy pays for. */
+/** A member's turn of their thread admitted on the route it is stamped with, or the reason it is not. */
 export type SessionSpendThread =
-  | {
-      readonly spend: "Admitted";
-      readonly route: PlacementRoute;
-      readonly subsidized: boolean;
-    }
+  | { readonly spend: "Admitted"; readonly route: PlacementRoute }
   | { readonly spend: "HostedRunsNotGranted" | "NoRunner" };
 
 /**
- * Whether an inquiry on this route forks a lead its tenant or the deployment
- * may no longer spend the subsidy on. It forks the lead's own slot whoever
- * asks, so a member holding the hosted grant is refused it too.
+ * The route a member may spend a turn of their thread on now: a hosted one
+ * under the tenant's grant, and a runner one where a runner that would take it
+ * is registered, the turn stamped with this route and so both asked of the
+ * resolution it keeps. A turn of a member's own session is never in cluster,
+ * whatever the site's routing says, and only their chat host takes it.
  */
-async function sessionSpendSubsidyExhausted(
-  routes: SessionRouteReads,
-  partition: Partition,
-  route: PlacementRoute,
-): Promise<boolean> {
-  if (!placementRouteHosted[route]) return false;
-  const spend = await routes.subsidizedLeadSpend(partition);
-  return spend !== undefined && subsidizedLeadSpendExhausted(spend);
-}
-
-/**
- * Whether a member's turn of this kind on this route may be spent without
- * their hosted grant: an inquiry of a subsidized lead, which the offering pays
- * for. The inquiry door forks it only from a lead on the profile's slot, since
- * one opened before the project chose the subsidy stands on the hosted one, so
- * it is asked only of a member the grant does not already admit.
- */
-async function sessionSpendSubsidized(
-  routes: SessionRouteReads,
-  partition: Partition,
-  kind: SessionKind,
-  route: PlacementRoute,
-): Promise<boolean> {
-  return (
-    kind === "Inquiry" &&
-    placementRouteHosted[route] &&
-    (await routes.leadOffering(partition)) === "Subsidized"
-  );
-}
-
-/**
- * The route a member may spend a turn of this kind on now: a hosted one under
- * the tenant's grant, or under the lead's subsidy for an inquiry, and a runner
- * one where a runner that would take it is registered, the turn stamped with
- * this route and so both asked of the resolution it keeps. A turn of a
- * member's own session is never in cluster, whatever the site's routing says,
- * and only their chat host takes it, and an inquiry of a subsidized lead whose
- * tenant or deployment has reached its cap is refused before anything else.
- */
-export function sessionSpendRoute(
-  access: ProjectAccess,
-  routes: SessionRouteReads,
-  principal: Principal,
-  partition: Partition,
-  kind: "Inquiry",
-): Promise<SessionSpend>;
-export function sessionSpendRoute(
-  access: ProjectAccess,
-  routes: SessionRouteReads,
-  principal: Principal,
-  partition: Partition,
-  kind: "Thread",
-): Promise<SessionSpendThread>;
-export function sessionSpendRoute(
-  access: ProjectAccess,
-  routes: SessionRouteReads,
-  principal: Principal,
-  partition: Partition,
-  kind: Exclude<SessionKind, "Lead">,
-): Promise<SessionSpend>;
 export async function sessionSpendRoute(
   access: ProjectAccess,
   routes: SessionRouteReads,
   principal: Principal,
   partition: Partition,
-  kind: Exclude<SessionKind, "Lead">,
-): Promise<SessionSpend> {
-  if (memberScopeReserved(partition))
-    return sessionRunnerServes(
-      "Pool",
-      (await routes.runners(partition, principal)).inquiry,
-    )
-      ? { spend: "Admitted", route: "Pool", subsidized: false }
-      : { spend: "NoRunner" };
-  const { route } = await routes.route(partition, kind);
-  if (
-    kind === "Inquiry" &&
-    (await sessionSpendSubsidyExhausted(routes, partition, route))
-  )
-    return { spend: "SubsidyExhausted" };
-  const granted = await placementRouteGranted(
-    access,
-    principal,
-    partition,
-    route,
-  );
-  const subsidized =
-    !granted && (await sessionSpendSubsidized(routes, partition, kind, route));
-  if (!granted && !subsidized) return { spend: "HostedRunsNotGranted" };
-  if (placementRouteHosted[route])
-    return { spend: "Admitted", route, subsidized };
+): Promise<SessionSpendThread> {
+  const route: PlacementRoute = memberScopeReserved(partition)
+    ? "Pool"
+    : (await routes.route(partition, "Thread")).route;
+  if (!(await placementRouteGranted(access, principal, partition, route)))
+    return { spend: "HostedRunsNotGranted" };
+  if (placementRouteHosted[route]) return { spend: "Admitted", route };
   return sessionRunnerServes(
     route,
-    sessionRunnersServing(await routes.runners(partition, principal), kind),
+    sessionRunnersServing(
+      await routes.runners(partition, principal),
+      partition,
+    ),
   )
-    ? { spend: "Admitted", route, subsidized }
+    ? { spend: "Admitted", route }
     : { spend: "NoRunner" };
-}
-
-/** A subsidized lead admitted while its tenant and the deployment are under their caps. */
-async function leadAdmissionSubsidized(
-  routes: LeadRouteReads,
-  partition: Partition,
-  route: PlacementRoute,
-): Promise<LeadRouteAdmission> {
-  const spend = await routes.subsidizedLeadSpend(partition);
-  if (spend === undefined)
-    throw new Error(
-      "the lead resolved Subsidized and its spend read answered no subsidy",
-    );
-  return subsidizedLeadSpendExhausted(spend)
-    ? { admission: "SubsidyExhausted" }
-    : { admission: "Admitted", route, offering: "Subsidized" };
-}
-
-export const allLeadAdmissions = [
-  "Admitted",
-  ...leadAdmissionRefusals,
-] as const;
-export type LeadAdmission = (typeof allLeadAdmissions)[number];
-
-/** A lead's admission, carrying the route an admitted turn is stamped with and the offering it was admitted as. */
-export type LeadRouteAdmission =
-  | {
-      readonly admission: "Admitted";
-      readonly route: PlacementRoute;
-      readonly offering: LeadOffering;
-    }
-  | { readonly admission: LeadAdmissionRefusal };
-
-/**
- * Whether a project's lead may take a turn now: on a hosted route a subsidized
- * lead is admitted as one and asks no grant, unless its tenant or the
- * deployment has reached its month's cap, and otherwise the tenant must
- * grant the lead's principal; on a runner route one of the project's must be
- * live with its owner's account not paused, since a turn offered to none that
- * may take it would hold its decision until the decision's deadline.
- */
-export async function leadAdmission(
-  access: ProjectAccess,
-  routes: LeadRouteReads,
-  principal: Principal,
-  partition: Partition,
-): Promise<LeadRouteAdmission> {
-  const { route } = await routes.route(partition, "Lead");
-  if (placementRouteHosted[route]) {
-    if ((await routes.leadOffering(partition)) === "Subsidized")
-      return leadAdmissionSubsidized(routes, partition, route);
-    return (await hostedRunsGranted(access, principal, partition.tenant))
-      ? { admission: "Admitted", route, offering: "Own" }
-      : { admission: "HostedRunsNotGranted" };
-  }
-  switch (await routes.leadRunners(partition)) {
-    case "Live":
-      return { admission: "Admitted", route, offering: "Own" };
-    case "Paused":
-      return { admission: "UsagePaused" };
-    case "Offline":
-      return { admission: "RunnerOffline" };
-  }
 }

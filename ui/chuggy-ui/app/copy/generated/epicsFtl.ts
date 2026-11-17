@@ -14,7 +14,10 @@ epics-search = Search { -epic(form: "plural") }
 epics-search-placeholder = Search titles and summaries…
 epics-show-more = Show more
 epics-reload = Reload the { -epic }
-epics-chip-archived = { $title } (archived)
+epics-chip-number = #{ $epic }
+epics-chip-archived = (archived)
+epics-chip-name = #{ $epic } { $title }
+epics-chip-name-archived = #{ $epic } { $title } (archived)
 
 ## A status, and how far an epic's tickets have come.
 

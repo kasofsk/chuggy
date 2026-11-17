@@ -88,7 +88,7 @@ const goldenPlacement: SessionPlacement = {
   session: asSessionId("golden-session"),
   attempt: asSessionAttemptId("golden-attempt"),
   generation: 4,
-  kind: "Lead",
+  kind: "Thread",
   capabilities: ["RepositoryRead", "RunCommands"],
   credentialSlot: "claude-code",
   profile: { profile: "standard", runtimeVersion: "1" },

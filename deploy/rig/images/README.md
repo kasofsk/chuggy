@@ -101,15 +101,13 @@ to start without the required ones.
 
 | Variable | | |
 |---|---|---|
-| `CHUG_API_DATABASE_URL` | required | see below |
-| `CHUG_API_SELECTOR_REVIEW_DATABASE_URL` | required | see below |
+| `CHUG_API_DATABASE_URL` | required | the PostgreSQL the API serves, connecting as `chuggy_api_login` with the group named as `?options=-c%20role%3Dchuggy_api`, which the login role holds by grant rather than by default; the API refuses to start unless `current_user` is `chuggy_api` |
 | `CHUG_API_IDEMPOTENCY_KEYING` | required | JSON: a `current` version and the `versions` that may still be verified |
 | `CHUG_API_OIDC_ISSUER` | required | an HTTPS URL with no credentials, query or fragment |
 | `CHUG_API_OIDC_AUDIENCE` | required | |
 | `CHUG_API_OIDC_ALGORITHMS` | required | comma-separated, surrounding spaces trimmed; every entry must be one `oidcVerifiableAlgorithms` in `src/adapters/http/oidc.ts` admits, and anything else — a shared-secret algorithm, `none`, an empty entry, a name with a typo — refuses to start, naming what it refused |
 | `CHUG_API_KETO_READ_URL` | required | the read API of the authority that answers project access, HTTP or HTTPS and carrying no credentials |
 | `CHUG_API_KETO_WRITE_URL` | optional | the write API of that authority, where a created project's grants and a registered pool's tuple are written; without it, creating a project answers `ProjectCreationNotConfigured` and no pool registers |
-| `CHUG_API_SELECTOR_SUBJECT` | optional | the subject the site's selector authenticates as under the issuer above; a project created here grants it `developers`, and without it an operator grants the selector each project |
 | `CHUG_API_HYDRA_ADMIN_URL` | optional | the issuer's admin API, where a registered runner's OAuth2 client, a pool's or a member's personal one, is minted; without it no runner registers, and naming it without the write URL refuses the start |
 | `CHUG_API_POOL_TOKEN_URL` | with the admin URL | the token endpoint a registered runner's client asks for its bearer, written into the file a redemption answers; https, or http on the loopback, with no credentials in it, or the API refuses to start |
 | `CHUG_API_POOL_PLANE_URL` | with the admin URL | the pool plane's address, written into that file; https, or http on the loopback, with no credentials in it, or the API refuses to start |
@@ -155,9 +153,6 @@ to start without the required ones.
 | `CHUG_API_THREAD_LIVE_SESSION_IDLE_MS` | | how long a session may report nothing before what is held of its message is dropped |
 | `CHUG_API_THREAD_LIVE_WINDOW_MS` | | the span the live events arriving from every session are counted over |
 | `CHUG_API_THREAD_LIVE_WINDOW_EVENTS_MAX` | | how many of them are read in one such span, past which the rest are left unread and everything held is dropped |
-| `CHUG_API_SELECTOR_FEEDBACK_MAX` | | how much review feedback one operational context carries |
-| `CHUG_SCHEDULER_PROJECT_BACKLOG_MAX` | | how much of a project's backlog it carries |
-| `CHUG_SCHEDULER_INSTALLATION_BACKLOG_MAX` | | how much of the installation's it carries |
 | `CHUG_SCHEDULER_PASS_BOUNDS` | | the scheduler's own pass bounds, of which `attemptRetriesMax` and `attemptRateLimitsMax` are read, so that an escalation the API says the scheduler resumes once its usage pauses end is one the scheduler does; set it to what the scheduler is given |
 
 **The app id and the key file are named together or not at all.** A deployment
@@ -167,22 +162,6 @@ answers nothing. A deployment naming one of the two meant to mint and cannot, so
 it refuses to start rather than reporting an outage at every mint for as long as
 it runs. Where both are named, repositories on the forge the app is installed on
 are minted for and every other repository is still read from the files.
-
-**Both database URLs must become a group role, and they become different ones.**
-The API authenticates as `chuggy_api_login` for each and refuses to start unless
-`current_user` is `chuggy_api` on the first and `chuggy_selector_review` on the
-second, which the login role holds by grant rather than by default. Each
-connection string carries its own switch:
-
-```
-postgres://chuggy_api_login:<password>@postgres.chuggy.svc.cluster.local:5432/chuggy_rehearsal?options=-c%20role%3Dchuggy_api
-postgres://chuggy_api_login:<password>@postgres.chuggy.svc.cluster.local:5432/chuggy_rehearsal?options=-c%20role%3Dchuggy_selector_review
-```
-
-The second carries the selector's proposal reviews both ways — the operational
-context the API serves reads them, and a reviewer's approval or rejection is
-recorded through them — over a surface `chuggy_api` is granted nothing on: the
-split is the privilege, not a second credential.
 
 **The artifact root is data, not image content.** It is a filesystem path the
 API reads artifacts from and writes a member's uploads under — the web
@@ -262,21 +241,37 @@ answers 503 to a scrape it cannot answer whole.
 | `CHUG_METRICS_PLANE_HOST` | | the default is loopback |
 | `CHUG_METRICS_PLANE_PORT` | 3004 | |
 
-## Configuring the worker plane's minting
+## Configuring the worker plane
 
-`src/roots/workerPlane.ts` reads the variables below beside the plane's own
-database, artifact-root and session variables.
+Every variable here is read by `src/roots/workerPlane.ts`, and the process
+refuses to start without the required ones, or with a bound that is not a
+positive whole number.
 
 | Variable | | |
 |---|---|---|
+| `CHUG_WORKER_PLANE_DATABASE_URL` | required | the PostgreSQL the plane serves, connecting as a login of `chuggy_worker_plane`; the plane is ready only when `current_user` is that role |
+| `CHUG_WORKER_PLANE_ARTIFACT_ROOT` | required | the artifact store's root, which every upload is written under |
+| `CHUG_WORKER_PLANE_UPLOAD_BYTES_MAX` | `workerPlaneUploadBytesMax` in `src/contract/http.ts` | the largest body one upload carries, which the artifact store's own write ceiling is set to as well |
+| `CHUG_WORKER_PLANE_HEARTBEAT_LEASE_SECS` | 300 | how long one work attempt's heartbeat holds its lease |
+| `CHUG_WORKER_PLANE_KETO_READ_URL` | optional | the read API of the authority that answers project access, HTTP or HTTPS and carrying no credentials, or the plane refuses to start; without it, every wake a chat host offers for one of its threads — a job exited, a watch matched, a timer due, an attempt ended — is answered 404 `NotConfigured` and becomes no turn |
+| `CHUG_WORKER_PLANE_KETO_TIMEOUT_MS` | `projectAccessTimeoutMsDefault` in `src/interpreter/projectAccess.ts` | how long one project access question a wake asks may take before it is undecided, which the wake is answered 503 to retry; read only where the read URL is named |
+| `CHUG_WORKER_PLANE_SESSION_HEARTBEAT_LEASE_SECS` | `sessionSchedulerDefaults.attemptLeaseSecs` in `src/interpreter/sessionScheduler.ts` | how long one session's heartbeat holds its lease; the default is what the scheduler opens a session attempt's lease under, so a deployment that moves one moves both |
+| `CHUG_WORKER_PLANE_SESSION_TURN_POLL_INTERVAL_MS` | 1000 | how often a waiting mailbox or a watch on a turn asks again |
+| `CHUG_WORKER_PLANE_SESSION_TURN_POLL_SECS_MAX` | 25 | how long one such request waits |
+| `CHUG_WORKER_PLANE_SESSION_POLLS_MAX` | 64 | how many of those waits are held at once, above which a caller is answered empty |
+| `CHUG_WORKER_PLANE_SESSION_LIVE_EVENTS_PER_SEC_MAX` | `sessionLiveAllowanceLimitsDefault` in `src/interpreter/sessionLiveAllowance.ts`, as are the two below | the live events a session's allowance regains each second |
+| `CHUG_WORKER_PLANE_SESSION_LIVE_EVENTS_BURST_MAX` | | the live events a session that has said nothing for a while may publish at once; one smaller than the events of one post refuses the start |
+| `CHUG_WORKER_PLANE_SESSION_LIVE_SESSIONS_TRACKED_MAX` | | the sessions whose allowances are remembered, the least recently seen forgotten first |
 | `CHUG_WORKER_PLANE_FORGE_APP_ID` | with the key file, or neither | the id of the worker App, which is the one a pod's git credential and its workflow runs credential are minted under |
 | `CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding the worker App's RSA private key, in either PEM encoding; the plane refuses to start unless it can be read and used |
 | `CHUG_WORKER_PLANE_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
 | `CHUG_WORKER_PLANE_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
 | `CHUG_WORKER_PLANE_HELD_CREDENTIALS` | none held | a JSON list of `{credential, tenant, project, variable, file}`, the credentials this deployment holds as files; the plane refuses to start unless the list is well formed, names no credential starting `chuggy.`, and each file can be read |
+| `CHUG_WORKER_PLANE_HOST` | | the default is loopback |
+| `CHUG_WORKER_PLANE_PORT` | 3001 | |
 
-**A plane naming neither mints nothing, and no pod stops working.** Both
-credential routes answer not found, and a pod resolves `CHUG_WORKER_REPOSITORIES`
+**A plane naming neither the app id nor the key file mints nothing, and no
+pod stops working.** Both credential routes answer not found, and a pod resolves `CHUG_WORKER_REPOSITORIES`
 and `CHUG_WORKER_CREDENTIAL_FILES` exactly as it did before the plane minted
 anything. The same not-found is what a pod gets for a repository whose owner this
 pod's own tenant has not claimed — a claim by some other tenant is a not-found
@@ -354,10 +349,12 @@ no longer carries `repository`, `commit` or `partitions`: the run reads every
 binding in the database and imports each at its own default-branch head. A
 repository holding no commit, or none at its head's configuration directory, is
 skipped; one binding's failure does not stop the others, a port that raised
-included, and the run exits non-zero if any failed. One run reads a bounded
-listing, oldest binding first: a run whose listing came back at that bound
-imported a prefix of the estate and exits non-zero naming the bound, so only a
-run that exits zero imported every binding there is.
+included. A failed binding is reported, and the run adds a line counting them
+but still exits zero, so a binding to a repository the App lost cannot fail
+every run. One run reads a bounded listing, oldest binding first: a run whose
+listing came back at that bound imported a prefix of the estate and exits
+non-zero naming the bound, so only a run that exits zero attempted every binding
+there is.
 
 **A worker or session pod needs no roster.** `CHUG_WORKER_REPOSITORIES` is
 optional for both pods: on the minted arm a repository the map does not name is

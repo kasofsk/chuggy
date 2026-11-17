@@ -19,7 +19,7 @@ import { transientStore } from "../../app/browser/ports.ts";
 import { forgeInstallationsFixture } from "../forgeInstallationsFixture.ts";
 import { answer, drawnStrict, settled } from "../screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
-import { leadPartition } from "../leadFixture.ts";
+import { projectPartition } from "../projectFixture.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { readFailedLines } from "../readFailedLines.ts";
 import { tableCards, tableText } from "../tableText.ts";
@@ -47,11 +47,11 @@ vi.mock("@tanstack/react-router", () => ({
     <a href={props.to}>{props.children}</a>
   ),
   useNavigate: () => (to: unknown) => Promise.resolve(to),
-  useParams: () => ({ tenant: leadPartition.tenant }),
+  useParams: () => ({ tenant: projectPartition.tenant }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
-const tenant = leadPartition.tenant;
+const tenant = projectPartition.tenant;
 const accountsPath = `/tenants/${tenant}/settings/accounts`;
 
 const installations = forgeInstallationsFixture;

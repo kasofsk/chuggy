@@ -28,13 +28,12 @@ import { catalogQueryOf } from "../../core/catalogConfigurations.ts";
 import type { CatalogQuery } from "../../core/catalogConfigurations.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import { CatalogPage } from "../catalog/CatalogPage.tsx";
-import { LeadPage } from "../LeadPage.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { ProjectlessFrame } from "../ProjectCreation.tsx";
 import { RepositoriesPage } from "../RepositoriesPage.tsx";
 import { RepositoryPage } from "../repositories/RepositoryPage.tsx";
 import { AppearanceSettingsPage } from "./AppearanceSettingsPage.tsx";
-import { LeadSettingsPage } from "./LeadSettingsPage.tsx";
+import { ThreadSettingsPage } from "./ThreadSettingsPage.tsx";
 import { MyRunnerPage } from "./MyRunnerPage.tsx";
 import { PlacementSettingsPage } from "./PlacementSettingsPage.tsx";
 import { PoolsSettingsPage } from "./PoolsSettingsPage.tsx";
@@ -57,8 +56,11 @@ function SettingsCatalog(): ReactNode {
 function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
   const getParentRoute = (): TParent => parent;
   return [
-    createRoute({ getParentRoute, path: "/lead", component: LeadSettingsPage }),
-    createRoute({ getParentRoute, path: "/lead-session", component: LeadPage }),
+    createRoute({
+      getParentRoute,
+      path: "/threads",
+      component: ThreadSettingsPage,
+    }),
     createRoute({
       getParentRoute,
       path: "/placement",

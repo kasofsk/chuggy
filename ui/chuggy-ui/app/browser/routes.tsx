@@ -281,19 +281,6 @@ const epicEditRoute = createRoute({
   component: EpicEditPage,
 });
 
-const leadMovedRoute = createRoute({
-  getParentRoute: () => partitionRoute,
-  path: "/lead",
-  beforeLoad: ({ params }) => {
-    redirect({
-      to: navMoved["/$tenant/$project/lead"],
-      params,
-      replace: true,
-      throw: true,
-    });
-  },
-});
-
 const catalogMovedRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/catalog",
@@ -543,7 +530,6 @@ const routeTree = rootRoute.addChildren([
       epicHistoryRoute,
       epicEditRoute,
     ]),
-    leadMovedRoute,
     catalogMovedRoute,
     projectSettingsRoutes(partitionRoute),
     repositoriesMovedRoute,

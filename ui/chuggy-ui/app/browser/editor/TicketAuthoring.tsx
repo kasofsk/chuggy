@@ -159,6 +159,8 @@ function FormSubmit(props: {
   readonly effect: string | undefined;
   readonly step: ReactNode;
   readonly busy: boolean;
+  /** The submit was pressed and is unanswered. */
+  readonly sending: boolean;
   readonly onSubmit: () => void;
 }): ReactNode {
   const effect = useId();
@@ -167,6 +169,7 @@ function FormSubmit(props: {
       <Button
         variant="primary"
         disabled={props.busy}
+        busy={props.sending}
         {...(props.effect === undefined ? {} : { describedBy: effect })}
         onClick={props.onSubmit}
       >
@@ -248,6 +251,7 @@ export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
           submitEffect={props.submitEffect}
           submitStep={props.submitStep}
           busy={busy}
+          sending={props.busy}
           onSubmit={props.onSubmit}
         />
       ) : (
@@ -258,6 +262,7 @@ export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
             effect={props.submitEffect}
             step={props.submitStep}
             busy={busy}
+            sending={props.busy}
             onSubmit={() => {
               props.onSubmit(sent);
             }}

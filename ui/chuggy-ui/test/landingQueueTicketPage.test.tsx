@@ -105,7 +105,15 @@ test("a queued ticket's header draws its place after its state label's fragment"
   const state = await pageDrawn(
     () =>
       answer({
-        queues: [{ repository, holder: 8, waiting: [21] }],
+        queues: [
+          {
+            repository,
+            holder: 8,
+            holderSince: "2026-11-16T09:30:00.000000Z",
+            holderPhase: "Finalization",
+            waiting: [21],
+          },
+        ],
         truncated: false,
       }),
     "success",
@@ -122,7 +130,15 @@ test("a ticket in no queue draws no chip in its header", async () => {
   const state = await pageDrawn(
     () =>
       answer({
-        queues: [{ repository, holder: 8, waiting: [9] }],
+        queues: [
+          {
+            repository,
+            holder: 8,
+            holderSince: "2026-11-16T09:30:00.000000Z",
+            holderPhase: "Finalization",
+            waiting: [9],
+          },
+        ],
         truncated: false,
       }),
     "success",

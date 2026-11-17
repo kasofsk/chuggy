@@ -42,6 +42,10 @@
  * is redeemed at, is made the administrator of a workspace the plane draws the
  * id of and names after them.
  *
+ * A LINK IS SUMMARIZED TO WHOEVER HOLDS ITS TOKEN, signed in or not, so the
+ * page it is opened at says what it gives before the sign-in it asks for. The
+ * summary spends nothing, and says nothing of a link that is not open.
+ *
  * WHAT A CALLER MAY DO IS ANSWERED ABOUT THEM ALONE, at the site, a tenant or
  * a project: each ability is whether they hold the kind it needs there, so a
  * console offers the controls the plane would not refuse.
@@ -251,6 +255,10 @@ export const accessPlaneRoutes = {
   inviteLinkRedemption: {
     method: "POST",
     path: `${accessPlaneBasePath}/invite-links/redemptions`,
+  },
+  inviteLinkSummary: {
+    method: "POST",
+    path: `${accessPlaneBasePath}/invite-links/summaries`,
   },
   tenantAbilities: { method: "GET", path: `${accessTenantPath}/abilities` },
   tenantDisplayNameChange: {
@@ -867,6 +875,30 @@ export const accessWorkspaceLinksSchema = z.strictObject({
   links: z.array(accessWorkspaceLinkSchema),
 });
 
+/**
+ * What a link's holder is told of it before signing in: its kind, for a
+ * tenant's link the tenant's display name and the role it grants, and the
+ * GitHub login of whoever made it where the directory records one. A link
+ * that is not open is answered `Ended` and nothing else, whatever ended it and
+ * whether any link was ever made with the token, so the answer tells an
+ * unknown token from a spent one no more than a redemption does.
+ */
+export const accessInviteLinkSummarySchema = z.union([
+  z.strictObject({
+    state: z.literal("Open"),
+    kind: z.literal("Workspace"),
+    mintedBy: accessGithubLoginSchema.optional(),
+  }),
+  z.strictObject({
+    state: z.literal("Open"),
+    kind: z.literal("Tenant"),
+    displayName: accessTenantDisplayNameSchema,
+    role: accessTenantRoleSchema,
+    mintedBy: accessGithubLoginSchema.optional(),
+  }),
+  z.strictObject({ state: z.literal("Ended") }),
+]);
+
 /** What a redemption is sent: the token, and nothing a workspace link's new workspace is to be called. */
 export const accessInviteLinkRedemptionSchema = z.strictObject({
   token: z.string().min(1).max(accessInviteLinkTokenCharsMax),
@@ -942,6 +974,9 @@ export type AccessInviteLinks = z.infer<typeof accessInviteLinksSchema>;
 export type AccessInviteLinkRedeemed = z.infer<
   typeof accessInviteLinkRedeemedSchema
 >;
+export type AccessInviteLinkSummary = z.infer<
+  typeof accessInviteLinkSummarySchema
+>;
 export type AccessWorkspaceLinkCreation = z.infer<
   typeof accessWorkspaceLinkCreationSchema
 >;
@@ -963,10 +998,10 @@ export type AccessSiteTenant = z.infer<typeof accessSiteTenantSchema>;
 export type AccessSiteTenants = z.infer<typeof accessSiteTenantsSchema>;
 export type AccessCallerTenant = z.infer<typeof accessCallerTenantSchema>;
 export type AccessCallerTenants = z.infer<typeof accessCallerTenantsSchema>;
+export type AccessCallerAccount = z.infer<typeof accessCallerAccountSchema>;
 export type AccessTenantDisplayNameChange = z.infer<
   typeof accessTenantDisplayNameChangeSchema
 >;
-export type AccessCallerAccount = z.infer<typeof accessCallerAccountSchema>;
 export type AccessSiteAuthorities = z.infer<typeof accessSiteAuthoritiesSchema>;
 export type AccessTenantAuthorities = z.infer<
   typeof accessTenantAuthoritiesSchema

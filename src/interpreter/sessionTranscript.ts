@@ -35,7 +35,15 @@
  */
 
 import type { RunCompactionTrigger } from "../contract/rosters.ts";
-import type { JsonValue } from "./selector.ts";
+
+/** A value JSON can carry, which is what a store entry's free-form fields hold. */
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue };
 
 /** One entry of the raw store, parsed no further than a reader draws it. */
 export interface SessionStoreEntry {

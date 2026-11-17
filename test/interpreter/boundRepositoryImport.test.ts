@@ -48,8 +48,9 @@ import {
 import {
   boundRepositoryActionImportLine,
   boundRepositoryImportLine,
-  boundRepositoryImportRefusal,
+  boundRepositoryImportFinding,
   boundRepositoryImportReport,
+  boundRepositoryImportTruncation,
   importBoundRepositories,
   repositoryBindingsPerImportMax,
   type BoundRepositoryActionImportResult,
@@ -509,7 +510,7 @@ const importedAtHead = reported({
 
 test("a run that filled its listing's bound leaves non-zero naming the bound", () => {
   assert.equal(
-    boundRepositoryImportRefusal(
+    boundRepositoryImportTruncation(
       { imports: [importedAtHead], truncated: false },
       1000,
     ),
@@ -518,7 +519,7 @@ test("a run that filled its listing's bound leaves non-zero naming the bound", (
   );
   assert.match(
     String(
-      boundRepositoryImportRefusal(
+      boundRepositoryImportTruncation(
         { imports: [importedAtHead], truncated: true },
         1000,
       ),
@@ -527,23 +528,42 @@ test("a run that filled its listing's bound leaves non-zero naming the bound", (
   );
 });
 
-test("a binding that failed leaves non-zero beside a bound that filled", () => {
+test("a binding that failed is counted and refuses nothing, while a bound that filled refuses beside it", () => {
   const failed = reported({ result: "Failed", failure: { failure: "Raised" } });
+  const run = { imports: [failed, importedAtHead], truncated: false };
+  assert.equal(boundRepositoryImportTruncation(run, 1000), undefined);
+  assert.equal(boundRepositoryImportFinding(run, 0), "1 of 2 bindings failed");
   assert.equal(
-    boundRepositoryImportRefusal(
-      { imports: [failed, importedAtHead], truncated: false },
+    boundRepositoryImportTruncation(
+      { imports: [failed], truncated: true },
       1000,
     ),
-    "1 of 2 bindings",
+    "the listing filled its bound of 1000 bindings and the rest of the estate is unimported",
   );
-  assert.match(
-    String(
-      boundRepositoryImportRefusal(
-        { imports: [failed], truncated: true },
-        1000,
-      ),
+});
+
+test("a run with nothing failed has no finding, and following's failures share the binding count's line", () => {
+  assert.equal(
+    boundRepositoryImportFinding(
+      { imports: [importedAtHead], truncated: false },
+      0,
     ),
-    /^1 of 1 bindings; the listing filled/u,
+    undefined,
+  );
+  const failed = reported({ result: "Failed", failure: { failure: "Raised" } });
+  assert.equal(
+    boundRepositoryImportFinding(
+      { imports: [importedAtHead], truncated: false },
+      2,
+    ),
+    "following failed on 2 tickets or bindings",
+  );
+  assert.equal(
+    boundRepositoryImportFinding(
+      { imports: [failed, importedAtHead], truncated: true },
+      2,
+    ),
+    "1 of 2 bindings failed; following failed on 2 tickets or bindings",
   );
 });
 
@@ -851,10 +871,10 @@ const actionsRefused: BoundRepositoryActionImportResult = {
   },
 };
 
-test("a binding whose actions alone failed leaves non-zero, and one failing twice is one binding", () => {
+test("a binding whose actions alone failed is counted, and one failing twice is one binding", () => {
   const raised = { result: "Failed", failure: { failure: "Raised" } } as const;
   assert.equal(
-    boundRepositoryImportRefusal(
+    boundRepositoryImportFinding(
       {
         imports: [
           reported(importedAtHead.result, actionsRefused),
@@ -862,16 +882,16 @@ test("a binding whose actions alone failed leaves non-zero, and one failing twic
         ],
         truncated: false,
       },
-      1000,
+      0,
     ),
-    "1 of 2 bindings",
+    "1 of 2 bindings failed",
   );
   assert.equal(
-    boundRepositoryImportRefusal(
+    boundRepositoryImportFinding(
       { imports: [reported(raised, raised), importedAtHead], truncated: false },
-      1000,
+      0,
     ),
-    "1 of 2 bindings",
+    "1 of 2 bindings failed",
   );
 });
 

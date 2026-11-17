@@ -142,34 +142,25 @@ test("no project takes a reserved identity, and a session holds to its scope how
     `UPDATE agent_session SET scope='Project' WHERE session='${own}'`,
     /would change what it was opened as|agent_session_/u,
   );
-  const inserted = (
-    project: string,
-    kind: string,
-    scope: string,
-    drawn: string,
-  ) =>
+  const inserted = (project: string, scope: string, drawn: string) =>
     `INSERT INTO agent_session
        (tenant,project,session,kind,principal,capabilities,credential_slot,
-        account,cluster,scope,parent_session)
+        account,cluster,scope)
      SELECT '${partition.tenant}','${project}','session-${randomUUID()}',
-            '${kind}','${member.principal}','{}','${threadRigSlot}',
-            ${drawn},'${scope}',NULL
+            'Thread','${member.principal}','{}','${threadRigSlot}',
+            ${drawn},'${scope}'
        FROM agent_session s WHERE s.session='${projects}'`;
   const reserved = ownOf(partition, member).project;
   await refused(
-    inserted(reserved, "Thread", "Member", "s.account,s.cluster"),
+    inserted(reserved, "Member", "s.account,s.cluster"),
     /agent_session_member_scope_draws_nothing/u,
   );
   await refused(
-    inserted(reserved, "Lead", "Member", "NULL,NULL"),
-    /agent_session_member_scope_is_a_thread/u,
-  );
-  await refused(
-    inserted("@member-someone-else", "Thread", "Member", "NULL,NULL"),
+    inserted("@member-someone-else", "Member", "NULL,NULL"),
     /agent_session_member_scope_is_its_owners/u,
   );
   await refused(
-    inserted(reserved, "Thread", "Project", "s.account,s.cluster"),
+    inserted(reserved, "Project", "s.account,s.cluster"),
     /agent_session_member_scope_is_its_owners|agent_session_belongs_to_project/u,
   );
 });
@@ -182,8 +173,8 @@ test("a member's own turn is routed to runners whatever the installation routes,
   const routing = await rig.sessions.harness.begin();
   try {
     await routing.query(
-      `INSERT INTO session_routing(singleton,thread_route,lead_route,project_routes)
-       VALUES(1,'InCluster','InCluster',jsonb_build_object($1::text,
+      `INSERT INTO session_routing(singleton,thread_route,project_routes)
+       VALUES(1,'InCluster',jsonb_build_object($1::text,
          jsonb_build_object($2::text,jsonb_build_object('Thread','InCluster'))))
        ON CONFLICT (singleton) DO UPDATE
          SET thread_route=excluded.thread_route,

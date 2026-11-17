@@ -17,12 +17,12 @@ import { chuggyToolRoutes } from "../../src/contract/sessionTools.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   landingQueueReads,
+  type LandingQueueCandidate,
   type LandingQueueCandidates,
 } from "../../src/interpreter/landingQueues.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { ProjectAccessKind } from "../../src/interpreter/projectAccess.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import type { SerializedCandidate } from "../../src/interpreter/serializedHolder.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
 import { callerApp } from "./callerAppFixture.ts";
 
@@ -31,27 +31,36 @@ const caller = asPrincipal("issuer geoff");
 const url = "/api/v1/tenants/acme/projects/atlas/landing-queues";
 const authorized = { authorization: "Bearer valid" };
 
+/** The instant a candidate ranked at `rank` holds from, to the microsecond as the store writes one. */
+function heldAt(rank: number): string {
+  return new Date(Date.UTC(2026, 0, 1, 0, 0, rank))
+    .toISOString()
+    .replace(/Z$/u, "000Z");
+}
+
 function candidate(
   ticket: number,
   rank: number,
   target: string | undefined,
-): SerializedCandidate {
+  phase: LandingQueueCandidate["phase"] = "Finalization",
+): LandingQueueCandidate {
   return {
     partition,
     ticket: asTicketId(ticket),
-    phase: "Finalization",
+    phase,
     finalization: { kind: "GitMerge", mode: "Push", policy: "Serialized" },
     repository: "acme/atlas",
     target,
     rank,
+    holderSince: heldAt(rank),
   };
 }
 
-/** Two references: one named, held by 3 with 1 behind it, and the default, held by 2. */
+/** Two references: one named, held by 3 with 1 behind it, and the default, held by 2 in Work. */
 const twoReferences: LandingQueueCandidates = {
   candidates: [
     candidate(3, 10, "refs/heads/main"),
-    candidate(2, 15, undefined),
+    candidate(2, 15, undefined, "Work"),
     candidate(1, 20, "refs/heads/main"),
   ],
   truncated: false,
@@ -94,7 +103,7 @@ test("the route is the one the route table names", () => {
   );
 });
 
-test("a reader is answered each queue with its holder and its waiters by number, a target named by none left out", async () => {
+test("a reader is answered each queue with its holder, since when and in what phase it holds, and its waiters by number, a target named by none left out", async () => {
   const read: string[] = [];
   await using app = appOver(["Read"], twoReferences, read);
   const found = await app.inject({ url, headers: authorized });
@@ -106,11 +115,19 @@ test("a reader is answered each queue with its holder and its waiters by number,
   );
   assert.deepEqual(body, {
     queues: [
-      { repository: "acme/atlas", holder: 2, waiting: [] },
+      {
+        repository: "acme/atlas",
+        holder: 2,
+        holderSince: heldAt(15),
+        holderPhase: "Work",
+        waiting: [],
+      },
       {
         repository: "acme/atlas",
         target: "refs/heads/main",
         holder: 3,
+        holderSince: heldAt(10),
+        holderPhase: "Finalization",
         waiting: [1],
       },
     ],

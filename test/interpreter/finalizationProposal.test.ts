@@ -527,7 +527,11 @@ test("what the merge answered is what the finalization does next", () => {
     ],
     [
       { merging: "Moved", reading: undefined, heardAgeSecs: 0 },
-      { decide: "Hold", hold: "ProposalHeadMoved" },
+      {
+        decide: "Hold",
+        hold: "ProposalHeadMoved",
+        rereadInSecs: proposalMergeRereadSecs,
+      },
     ],
     [
       {
@@ -585,7 +589,11 @@ test("a merge read as closed is read again on the cadence, waiting or moved, sin
   mergesDecided([
     [
       waitingOn(0, { status: "Closed" }, "Closed"),
-      { decide: "Hold", hold: "ProposalAbsent" },
+      {
+        decide: "Hold",
+        hold: "ProposalAbsent",
+        rereadInSecs: proposalMergeRereadSecs,
+      },
     ],
     [
       waitingOn(proposalMergeRereadSecs, { status: "Closed" }, "Closed"),
@@ -593,7 +601,11 @@ test("a merge read as closed is read again on the cadence, waiting or moved, sin
     ],
     [
       { merging: "Moved", reading: closed, heardAgeSecs: 0 },
-      { decide: "Hold", hold: "ProposalAbsent" },
+      {
+        decide: "Hold",
+        hold: "ProposalAbsent",
+        rereadInSecs: proposalMergeRereadSecs,
+      },
     ],
     [
       {
@@ -633,7 +645,11 @@ test("a merge anybody made concludes the landing at whatever head it was made, a
     ],
     [
       waitingOn(0, { ...edited, mergeability: "Blocked" }),
-      { decide: "Hold", hold: "ProposalMergeBlocked" },
+      {
+        decide: "Hold",
+        hold: "ProposalMergeBlocked",
+        rereadInSecs: proposalMergeRereadSecs,
+      },
     ],
     [
       waitingOn(0, { ...edited, status: "Merged", mergeCommit }),
@@ -646,7 +662,11 @@ test("a merge waiting on the forge holds until it is due, is read then, and land
   mergesDecided([
     [
       waitingOn(0, { mergeability: "Blocked" }),
-      { decide: "Hold", hold: "ProposalMergeBlocked" },
+      {
+        decide: "Hold",
+        hold: "ProposalMergeBlocked",
+        rereadInSecs: proposalMergeRereadSecs,
+      },
     ],
     [
       waitingOn(proposalMergeRereadSecs, { mergeability: "Blocked" }),
@@ -658,7 +678,11 @@ test("a merge waiting on the forge holds until it is due, is read then, and land
     ],
     [
       waitingOn(0, { status: "Closed" }, "Closed"),
-      { decide: "Hold", hold: "ProposalAbsent" },
+      {
+        decide: "Hold",
+        hold: "ProposalAbsent",
+        rereadInSecs: proposalMergeRereadSecs,
+      },
     ],
     [
       waitingOn(0, { status: "Merged", mergeCommit }),
@@ -681,11 +705,9 @@ test("every reason a merge is held reaches a hold this tree declares", () => {
     [waitingOn(0, { status: "Closed" }, "Closed"), "ProposalAbsent"],
   ];
   for (const [merged, hold] of populated(held, "the merge holds")) {
-    assert.deepEqual(
-      finalizationProposalNext(merging, proved(merged), bounds),
-      { decide: "Hold", hold },
-      hold,
-    );
+    const decided = finalizationProposalNext(merging, proved(merged), bounds);
+    assert.equal(decided.decide, "Hold", hold);
+    assert.equal(decided.decide === "Hold" ? decided.hold : undefined, hold);
     assert.ok(holds.has(hold), `${hold} is not a declared hold`);
   }
 });
@@ -1143,7 +1165,11 @@ test("a queued proposal waits off the escalation roster, and the removals only a
       provedInQueue(queueStanding({ queued: true })),
       bounds,
     ),
-    { decide: "Hold", hold: "ProposalQueued" },
+    {
+      decide: "Hold",
+      hold: "ProposalQueued",
+      rereadInSecs: proposalMergeRereadSecs,
+    },
   );
   const escalated: readonly string[] = finalizationUnavailableKinds;
   assert.ok(

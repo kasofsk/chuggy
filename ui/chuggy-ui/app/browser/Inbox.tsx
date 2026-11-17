@@ -14,9 +14,8 @@
  * it came from and writes into no entry; the item leaves when the inbox, read
  * again on a frame or a poll, no longer holds it, and focus that went with it
  * moves to where `inboxFocusAfter` says. That is the only account of where a
- * ticket is that a reader can trust. `ui/chuggy-ui/test/inbox.test.tsx`,
- * `ui/chuggy-ui/test/inboxEscalation.test.tsx` and
- * `ui/chuggy-ui/test/inboxProposals.test.tsx` hold that.
+ * ticket is that a reader can trust. `ui/chuggy-ui/test/inbox.test.tsx` and
+ * `ui/chuggy-ui/test/inboxEscalation.test.tsx` hold that.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -86,10 +85,6 @@ import {
 } from "../core/inboxList.ts";
 import type { InboxRows } from "../core/inboxList.ts";
 import {
-  agenticRefusalStandingLabel,
-  type AgenticRefusalStanding,
-} from "../core/leadTranscript.ts";
-import {
   approvalApproversOf,
   evaluationApprovalsAsked,
 } from "../core/evaluationApprovals.ts";
@@ -111,18 +106,10 @@ import { projectTableRow } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
 import type { TicketAction, TicketAttempt } from "../core/ticketActions.ts";
-import { agenticRefusalStandingTone } from "../core/tones.ts";
 import { panelReadRestarted, useApiPorts, usePanelState } from "./api.ts";
 import { useConsoleWrite, useConsoleWriteProgress } from "./consoleWrite.tsx";
 import { DataSection, ReadFailed } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
-import {
-  InboxProposalActions,
-  InboxProposalNotice,
-  InboxProposalWhy,
-  useInboxProposalAnswers,
-} from "./InboxProposals.tsx";
-import type { InboxProposalAnswers } from "./InboxProposals.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { ScreenTitle } from "./shell/slots.tsx";
 import { useConsoleDispatch } from "./store.ts";
@@ -158,9 +145,9 @@ export interface InboxRowsHeld {
 }
 
 /**
- * The inbox, read under its one key and polled for the held decisions no frame
- * names. The badge and the panel take the same value through this, which is
- * what makes the header's claim above true rather than merely intended.
+ * The inbox, read under its one key. The badge and the panel take the same
+ * value through this, which is what makes the header's claim above true rather
+ * than merely intended.
  */
 export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
   const query = inboxQuery(partition);
@@ -303,9 +290,7 @@ function InboxActions(props: {
   const doesId = useId();
   const doesIdOf = (index: number) => `${doesId}-${String(index)}`;
   if (offered.length === 0)
-    return props.entry.proposals.length > 0 ? null : (
-      <p className="inbox-item-said">{text({ id: "inbox-no-action" })}</p>
-    );
+    return <p className="inbox-item-said">{text({ id: "inbox-no-action" })}</p>;
   return (
     <>
       <TicketApprovals
@@ -494,38 +479,6 @@ function InboxWhy(props: {
   );
 }
 
-const inboxRefusalStanding: AgenticRefusalStanding = "Standing";
-
-/** The mark of a refusal standing against the ticket. */
-function InboxRefusalBadge(): ReactNode {
-  const text = useCopyText();
-  return (
-    <StatusBadge
-      tone={agenticRefusalStandingTone(inboxRefusalStanding)}
-      size="small"
-    >
-      {text(agenticRefusalStandingLabel(inboxRefusalStanding))}
-    </StatusBadge>
-  );
-}
-
-/** The reason the lead declines to dispatch this ticket, in the lead's own
- * words, marked as a refusal where the item's own badge is not already that
- * mark. */
-function InboxRefusal(props: {
-  readonly entry: InboxEntryResponse;
-  readonly marked: boolean;
-}): ReactNode {
-  const refusal = props.entry.refusals[0];
-  if (refusal === undefined) return null;
-  return (
-    <p className="inbox-item-said">
-      {props.marked ? <InboxRefusalBadge /> : null}
-      <span translate="no">{refusal.reason}</span>
-    </p>
-  );
-}
-
 /** One press of an item's answer: the ticket's attempt it follows, the step it
  * starts from, and where its follow reports. */
 interface InboxAnswerPressed {
@@ -610,43 +563,27 @@ function useInboxAnswer(
   };
 }
 
-/** Whether a question is a refusal's alone: no phase of the ticket's holds it
- * here and no action of its own is open. */
-function inboxEntryRefusedOnly(entry: InboxEntryResponse): boolean {
-  return inboxEntryPhased(entry) === undefined && entry.actions.length === 0;
-}
-
 /** What an item asks, and who asks it. */
-function inboxItemAsk(
-  kind: InboxGroupKind,
-  entry: InboxEntryResponse,
-): { readonly ask: Copy; readonly asker: Copy } {
+function inboxItemAsk(kind: InboxGroupKind): {
+  readonly ask: Copy;
+  readonly asker: Copy;
+} {
   switch (kind) {
     case "Approvals":
       return {
         ask: { id: "inbox-ask-approval" },
         asker: { id: "inbox-asker-evaluation" },
       };
-    case "Proposals":
-      return {
-        ask: { id: "inbox-ask-proposal" },
-        asker: { id: "inbox-asker-lead" },
-      };
     case "Questions":
-      return inboxEntryRefusedOnly(entry)
-        ? {
-            ask: { id: "inbox-ask-refusal" },
-            asker: { id: "inbox-asker-lead" },
-          }
-        : {
-            ask: { id: "inbox-ask-escalation" },
-            asker: { id: "inbox-asker-escalation" },
-          };
+      return {
+        ask: { id: "inbox-ask-escalation" },
+        asker: { id: "inbox-asker-escalation" },
+      };
   }
 }
 
-/** The mark of what an item is: an approval, a proposal, or the standing of
- * the ticket a question is about. */
+/** The mark of what an item is: an approval, or the standing of the ticket a
+ * question is about. */
 function InboxItemBadge(props: {
   readonly kind: InboxGroupKind;
   readonly entry: InboxEntryResponse;
@@ -662,14 +599,7 @@ function InboxItemBadge(props: {
           {text({ id: "inbox-kind-approval" })}
         </StatusBadge>
       );
-    case "Proposals":
-      return (
-        <StatusBadge tone="parked" size="small">
-          {text({ id: "inbox-proposal-pill" })}
-        </StatusBadge>
-      );
     case "Questions":
-      if (inboxEntryRefusedOnly(entry)) return <InboxRefusalBadge />;
       return (
         <StatusBadge tone="parked" size="small">
           {inboxEntryPhased(entry) === undefined && open !== undefined
@@ -739,15 +669,13 @@ function InboxItemRow(props: {
   readonly kind: InboxGroupKind;
   readonly entry: InboxEntryResponse;
   readonly partition: PartitionIdentity;
-  readonly proposed: InboxProposalAnswers;
   readonly nowMs: number;
 }): ReactNode {
   const { kind, entry } = props;
   const row = projectTableRow(entry.ticket);
   const text = useCopyText();
   const { answer, onAnswer } = useInboxAnswer(props.partition, row.ticket);
-  const { ask, asker } = inboxItemAsk(kind, entry);
-  const refusedOnly = kind === "Questions" && inboxEntryRefusedOnly(entry);
+  const { ask, asker } = inboxItemAsk(kind);
   return (
     <RecordRow
       title={text(ask)}
@@ -772,19 +700,12 @@ function InboxItemRow(props: {
             entry={entry}
             nowMs={props.nowMs}
           />
-          <InboxProposalWhy ticket={row.ticket} proposals={entry.proposals} />
-          <InboxRefusal entry={entry} marked={!refusedOnly} />
           <InboxActions
             partition={props.partition}
             entry={entry}
             answer={answer}
             onAnswer={onAnswer}
             primary={kind === "Questions"}
-          />
-          <InboxProposalActions
-            proposals={entry.proposals}
-            answers={props.proposed}
-            primary={kind === "Proposals"}
           />
           <InboxAnswerSaid answer={answer} />
         </div>
@@ -795,7 +716,6 @@ function InboxItemRow(props: {
 
 const inboxGroupTitles = {
   Approvals: { id: "inbox-group-approvals" },
-  Proposals: { id: "inbox-group-proposals" },
   Questions: { id: "inbox-group-questions" },
 } as const satisfies Record<InboxGroupKind, Copy>;
 
@@ -809,7 +729,6 @@ function InboxGroupDrawn(props: {
   readonly group: InboxGroup;
   readonly headingId: string;
   readonly partition: PartitionIdentity;
-  readonly proposed: InboxProposalAnswers;
   readonly nowMs: number;
 }): ReactNode {
   const text = useCopyText();
@@ -835,7 +754,6 @@ function InboxGroupDrawn(props: {
             kind={group.kind}
             entry={entry}
             partition={props.partition}
-            proposed={props.proposed}
             nowMs={props.nowMs}
           />
         ))}
@@ -931,7 +849,6 @@ function useInboxFocusKept(
 function InboxGroups(props: {
   readonly entries: readonly InboxEntryResponse[];
   readonly partition: PartitionIdentity;
-  readonly proposed: InboxProposalAnswers;
   readonly nowMs: number;
 }): ReactNode {
   const text = useCopyText();
@@ -955,7 +872,6 @@ function InboxGroups(props: {
             group={group}
             headingId={headingIdOf(group.kind)}
             partition={props.partition}
-            proposed={props.proposed}
             nowMs={props.nowMs}
           />
         ))
@@ -983,20 +899,17 @@ export function InboxScreen(props: {
   const text = useCopyText();
   const partition = props.partition;
   const inbox = useInboxRows(partition);
-  const proposed = useInboxProposalAnswers(partition);
   const nowMs = useNowMs();
   return (
     <div className="inbox-page" data-fills-width>
       <ScreenTitle>{text({ id: "inbox-title" })}</ScreenTitle>
       <RepositoryImportRefusedNotice partition={partition} />
       <InboxPageFailure rows={inbox.rows} />
-      <InboxProposalNotice answers={proposed} />
       <DataSection state={inbox.panel}>
         {(rows) => (
           <InboxGroups
             entries={rows.entries}
             partition={partition}
-            proposed={proposed}
             nowMs={nowMs}
           />
         )}

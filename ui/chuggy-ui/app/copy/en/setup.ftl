@@ -21,6 +21,7 @@ setup-stale = this copy of { setup-program } may be older than the { -site }
 setup-site-unknown = no { -brand-name } { -site } is remembered on this machine yet
 setup-site-named = { $site }
 setup-site-signed-in = { $site }, signed in
+setup-site-signed-in-as = { $site }, signed in as { $login }
 setup-site-signed-out = { $site }, not signed in
 setup-site-unconfirmed = { $site }, sign-in not confirmed
 setup-site-unreachable = { $site }, no answer
@@ -32,27 +33,46 @@ setup-site-issuer = { $site }, its sign-in server is not answering
 # The words before each colon are the lines' own, which the agent reads.
 # spells -run: to run is a verb here
 setup-rule-drive = Run the command on the next: line exactly as written, and stop where it says { $stop }. Say each tell: line to the person as it is written. Put each ask: line to the person, and pass their answer in the flag it names.
+# spells -work-stage: the work in general
+setup-rule-explore = Before anything else, start { -subagent(form: "a") } that explores this folder's { -repository } and reports which toolchains work on it needs, and which images the { -repository } already defines for its CI or development. Go on with the person through the steps that do not depend on the { -repository } while it works, and use its report where the worker image is chosen.
 setup-rule-directory = Never read or print anything under { $directory }: it holds the sign-in.
+# spells -run: to run is a verb here
+setup-rule-sign-out = To change which { -github } account { setup-program } is signed in as, run { $command } and then sign in again.
 # spells -run: to run is a verb here
 setup-rule-site = Run { $command } with the address of the person's { setup-site } after it, such as { $example }. Ask the person for the address if you do not have it.
 # spells -run: to run is a verb here
 setup-rule-ask = Run { $command } with the person's answer after it, only once the person has answered.
 # spells -run: to run is a verb here
 setup-rule-ask-name = Run { $command } with the person's answer after it, quoted as one word, only once the person has answered.
+# spells -run: to run is a verb here
+setup-rule-ticket = Run { $command } with { $title } and a short title for what the person wants done, then { $intent } and what they want done in their own words{ $choose ->
+    [choose] , then { $configuration } and the { -configuration } they chose
+   *[given] { "" }
+}{ $worker ->
+    [worker] , then { $image } and the image recommended, or the one the person wants instead, then { $toolchains } and the toolchains it needs
+   *[none] { "" }
+}, each quoted as one word, only once the person has said what they want done.
 
 ## The arguments, asked wrongly. Each flag and command word is the program's own.
 
 # spells -run: to run is a verb here
-setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check } or as { $imported }
-setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project } and { $wait }, { $name } with { $made }, { $replace } with { $chatHost }, and { $test } with { $configuration }, each once with a value, and no other flag
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $signOut }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $merged }, as { $served }, as { $filed }, as { $watched }, as { $plugged } or as { $starred }
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin }, { $northStar } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag } with { $runner }, { $test } with { $configuration }, { $title }, { $intent }, { $image }, { $toolchains } and { $chosen } with { $filed }, and { $text } with { $starred }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
-setup-asked-project = { $mcp } and { $runner } each take { $workspace } and { $project }, both: the { -project } each is for
+setup-asked-project = { $mcp }, { $runner } and { $served } each take { $workspace } and { $project }, both: the { -project } each is for
 setup-asked-workspace = { $chatHost } takes { $workspace }: the { -workspace } the { -chat-host } is for
 setup-asked-project-name = { $made } takes { $workspace } and { $name }, both: the { -workspace } the { -project } is made in, and what it is called, on one line
+setup-asked-brief = { $filed } takes { $image } and { $toolchains }, { $title } and { $intent }, or all four: the worker image chosen and the toolchains it was chosen for, then what the { -ticket } is called and what the person wants done, each pair together
+setup-asked-image = { $image } and { $toolchains } are given together: the worker image chosen, and the toolchains it was chosen for
 setup-asked-test = { $flag } takes the command that tests this { -repository }, on one line, as { $configuration } writes it
 setup-asked-replace = { $flag } takes the short id of your { -chat-host }, as your { -personal-runner(case: "upper", form: "plural") } page shows it
+setup-asked-chat-host = { $flag } takes only { $yes } or { $no }: whether this machine is made your { -chat-host } too
+setup-asked-plugin = { $flag } takes only { $skip }
+setup-asked-north-star = { $flag } takes only { $skip }
+setup-asked-north-star-text = { $starred } takes { $text }: the North Star, as some words and at most { $chars } characters of them
+setup-asked-opened = { $flag } takes only { $github }, with { $bound }
 
 ## A machine the program is not served on, or a Node too old to run it.
 
@@ -70,13 +90,16 @@ setup-node-when = once node on this machine is { $needs }
 
 ## A sign-in page waiting.
 
-setup-waiting-finish = Sign in with { -github } there and allow { setup-program }. If the page is gone, open { $address } on this machine.
+setup-waiting-address = Open { $address } in the browser where you are signed in to { -github } as the account you want to use.
+setup-waiting-finish = { setup-waiting-address } Then allow { setup-program }.
 setup-waiting-opened = opened { $address } in a browser
-setup-waiting-unfinished = nobody finished signing in within { $secs } s
-setup-waiting-open-tell = A sign-in page is open in your browser. { $finish }
+setup-waiting-open = the sign-in page is open and still waiting for someone to sign in
+setup-waiting-open-tell = A sign-in page is open in a browser and is waiting for you. { $finish }
 setup-waiting-attached = the sign-in page opened earlier is still waiting
 setup-waiting-unopened = no browser could be opened from here
-setup-waiting-unopened-tell = Open { $address } in a browser on this machine, sign in with { -github } and allow { setup-program }.
+setup-waiting-unopened-tell = { setup-waiting-finish }
+# spells -run: to run is a verb here
+setup-waiting-rule = Run the command on the next: line again, and go on running it while the sign-in page waits: it waits on the same page and opens no other. Nothing has failed, so do not tell the person that it did or give them a deadline. Once the page has closed, that command says what became of it.
 
 ## How a sign-in ended, where nothing is run after it until the person asks.
 
@@ -87,7 +110,7 @@ setup-ended-declined-found = the sign-in was declined in the browser
 setup-ended-declined-tell = The sign-in was declined in the browser, so { setup-program } is not signed in and { $left }. Tell me if you want to sign in after all.
 setup-ended-declined-when = if the person asks to sign in after all
 setup-ended-refused-found = the sign-in server refused the request
-setup-ended-refused-tell = The sign-in server refused the sign-in, so { setup-program } is not signed in. Tell me if you want to try signing in again.
+setup-ended-refused-tell = The sign-in server refused the sign-in, so { setup-program } is not signed in. Signing in again opens a new sign-in page, and a sign-in it refused can go through then. Tell me if you want to try signing in again.
 setup-ended-mismatched-found = the answer that came back did not belong to this sign-in
 setup-ended-mismatched-tell = The answer the browser brought back was not this sign-in's, so { setup-program } is not signed in. Tell me if you want to try signing in again.
 setup-ended-exchange-found = the sign-in server did not accept the answer
@@ -103,6 +126,12 @@ setup-ended-busy-found = another { setup-program } command held the sign-in
 setup-ended-busy-tell = The sign-in was answered while another { setup-program } command was running, so it was not kept. Tell me if you want to try signing in again.
 setup-ended-faulted-found = the sign-in page stopped on something it did not expect
 setup-ended-faulted-tell = The sign-in page stopped before the sign-in finished, so { setup-program } is not signed in. Tell me if you want to try signing in again.
+
+## A sign-in removed from this machine.
+
+setup-sign-out-did = removed this machine's sign-in to { $site }
+setup-sign-out-none = this machine held no sign-in to { $site }
+setup-sign-out-tell = Signed out of { -brand-name } on this machine. { -runner(case: "upper", form: "plural") } and { -chat-host(form: "plural") } keep running.
 
 ## How a sign-in ended, where the bare command says how the site stands.
 
@@ -167,7 +196,7 @@ setup-step-unread = { $subject } { $fate }
 setup-step-named = { $name }: { $detail }
 setup-read-workspaces = your { -workspace(form: "plural") } were
 setup-read-inventory = your { -project(form: "plural") } were
-setup-read-settings = its { -lead } settings were
+setup-read-settings = its { -thread } settings were
 setup-read-installations = its { -github } accounts were
 setup-read-portal-grant = what the { -portal-app } is granted on { -github } was
 setup-read-worker-grant = what the { -worker-app } is granted on { -github } was
@@ -195,7 +224,6 @@ setup-step-projectless = { $workspace } has no { -project } yet
 setup-step-projectless-named = { $workspace } has no { -project } named { $project }
 setup-step-projectless-unshown = no { -project } of { $workspace } is shown to you
 setup-step-projectless-unshown-named = no { -project } of { $workspace } named { $project } is shown to you
-setup-step-north-star = { $project } has no { $section } yet
 setup-app-portal = { -portal-app }
 setup-app-worker = { -worker-app }
 setup-step-apps-none = { $account } has neither app
@@ -209,12 +237,19 @@ setup-step-unconfigured = { $repository } is added, its { -configuration } not r
 # spells -run: to run is a verb here
 setup-step-mcp-named = { -claude-code } here runs { -brand-name }'s MCP server for { $project }
 setup-step-mcp-none = { -claude-code } here has no { -brand-name } MCP server for { $project }
+setup-step-plugin-on = { -claude-code } here has { -brand-name }'s plugin, on
+setup-step-plugin-off = { -claude-code } here has { -brand-name }'s plugin, off
+setup-step-plugin-none = { -claude-code } here has no { -brand-name } plugin
+setup-step-plugin-skipped = passed over without { -brand-name }'s plugin
+setup-step-north-star-set = the { -project } has a North Star
+setup-step-north-star-none = the { -project } has no North Star yet
+setup-step-north-star-skipped = passed over without a North Star
 setup-step-runner-offline = registered, not running
 setup-step-runner-live = live
 # spells -work-stage: the work in general
 setup-step-runner-hosted = { -hosted-runs } take its work
-setup-step-chat-host-offline = { $runner }; your { -chat-host } is registered, not running
-setup-step-chat-host-none = { $runner }; you have no { -chat-host } for your { -thread(form: "plural") } in it
+setup-step-chat-host-offline = { $runner }; your { -chat-host }, which only your { -thread(form: "plural") } in the browser need, is registered and not running, and { $command } on its machine starts it
+setup-step-chat-host-none = { $runner }; you have no { -chat-host }, which only your { -thread(form: "plural") } in the browser need, and { $command } sets one up
 setup-step-ticket-done = { -ticket } { $ticket } is done
 setup-step-ticket-finalized = { -ticket } { $ticket } is { -finalization(form: "ed") }
 setup-step-ticket-proposed = { -ticket } { $ticket } opened { -pull-request(form: "a") }
@@ -247,17 +282,46 @@ setup-mend-workspace-none = You are not in a { -brand-name } { -workspace } yet.
 setup-mend-workspace-unnamed = You are not in a { -brand-name } { -workspace } named { $workspace }.
 setup-mend-workspace-tell = { $none } A new { -workspace } is made from { -invite(form: "a") } link: open the one you were sent (it starts { $invites }) and sign in, and the { -workspace } is made for you. Tell me once it is made.
 setup-mend-workspace-when = once the person says their { -workspace } is made
-setup-mend-north-star-tell = Open { $page }, press { $edit } beside { $section }, write a paragraph that says what the { -project } is for, and press { $save }. Tell me once it is saved.
-setup-mend-north-star-when = once the person says the { $section } is saved
 # The status and the label are the picker's own words, which another section holds.
-setup-mend-grant-tell = The { $app } is installed on { $account }, and { -github } does not let it into { $repository }. Open { $page }, press { $add }, and under the list find { $status }. Follow the link beside it, { $label }, and on { -github } add { $repository } to the { -repository(form: "plural") } the app may reach. Tell me once it is granted.
-setup-mend-grant-when = once the person says the { $app } is granted { $repository }
-setup-mend-account-tell = Open { $page } and press { $connect }, then install the { -brand-name } app on the { -github } account that owns your { -repository }. Tell me once { -github } is connected.
-setup-mend-github-when = once the person says { -github } is connected
+setup-mend-grant-tell = The { $app } is installed on { $account }, and { -github } does not let it into { $repository }. Open { $page }, press { $add }, and under the list find { $status }. Follow the link beside it, { $label }, and on { -github } add { $repository } to the { -repository(form: "plural") } the app may reach.
+# spells -repository: GitHub's own label
+setup-mend-account-tell = { $explained } Open { $page }, and press { $connect } if the page does not go on to { -github } by itself. { -github } then asks for two installs, the { -portal-app } and then the { -worker-app }, each on the { -github } account that owns { $repository }. On the first, choose "All repositories", or "Only select repositories" and pick { $repository }. Either is fine: with All, a later { -project } needs no trip to { -github }. The second comes with that choice already made.
 # The install button's label is the accounts page's own, which another section holds.
-setup-mend-worker-tell = Open { $page } and press { $install }, then install it on { $account }. Where { $account } is an organisation you do not own, { -github } asks its owner for you and this waits on them. Tell me once it is installed.
-setup-mend-worker-when = once the person says the { -worker-app } is installed on { $account }
-setup-mend-portal-tell = Open { $page }, the { -workspace }'s { -github } accounts page, and press { $connect }, so { -brand-name } is shown { $account }. Tell me once { -github } is connected.
+setup-mend-worker-tell = Open { $page } and press { $install }, then install it on { $account }. Where { $account } is an organisation you do not own, { -github } asks its owner for you and this waits on them.
+setup-mend-portal-tell = Open { $page }, the { -workspace }'s { -github } accounts page, and press { $connect }, so { -brand-name } is shown { $account }.
+# spells -work-stage: the work a ticket asks for, in general
+setup-mend-apps-explained = { -brand-name } uses two { -github } apps. The { -worker-app } pushes { -ticket } work to branches and opens { -pull-request(form: "plural") }. The { -portal-app } merges finished work into protected branches such as main. Both need access to { $repository }.
+setup-mend-reach-app = { $app ->
+        [portal] Portal
+       *[worker] Worker
+    }
+# The pages are the forge's own.
+setup-mend-reach-granted = { setup-mend-reach-app }: { $page }, already granted { $repository }
+setup-mend-reach-granted-unread = { setup-mend-reach-app }: already granted { $repository }
+setup-mend-reach-settings = { setup-mend-reach-app }: { $page }, not granted { $repository } yet
+# The press is the console's own install, which is the one the workspace claims.
+setup-mend-reach-install-portal = { setup-mend-reach-app }: not installed on { $account } yet; on { $page } press { $press } and install it on { $account }
+setup-mend-reach-install-worker = { setup-mend-reach-app }: not installed on { $account } yet; on { $page } press { $press } on the row of { $account }
+setup-mend-reach-install-worker-after = { setup-mend-reach-app }: not installed there either; once { $account } is listed on that page, press { $press } on its row
+setup-mend-reach-installed-none = {""}
+# A claim takes proof of owning the account, which any workspace's admin may hold.
+setup-mend-reach-installed = { $count ->
+        [one] { $accounts } already has { -brand-name }'s apps installed, so I can see its { -repository(form: "plural") }. Another { -workspace } can only where one of its { -role-admin(form: "plural") } owns { $accounts } on { -github }.{" "}
+       *[other] { $accounts } already have { -brand-name }'s apps installed, so I can see their { -repository(form: "plural") }. Another { -workspace } can only where one of its { -role-admin(form: "plural") } owns the account on { -github }.{" "}
+    }
+# spells -repository: GitHub's own label
+setup-mend-reach-tell = { $installed }Which { -repository } is this { -project } for? This folder's is { $repository }, so that is the one I connect; for another, start me in the folder of its clone. { $explained } 1. { $portal } 2. { $worker }. { $granted ->
+        [both] Both are granted it, so I add it now.
+       *[lacking] I'll wait here. On { -github }, choose "All repositories", or "Only select repositories" and pick { $repository }, and save. Either is fine: with All, a later { -project } needs no trip to { -github }. { -github } may ask you to confirm access first, with a code it emails you.
+    }
+# spells -run: to run is a verb here
+setup-rule-bind = Run the command on the next: line now, without asking the person, and tell them what the tell: line says. It waits until { -github } lets both apps into this folder's { -repository }, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.
+# spells -run: to run is a verb here
+setup-rule-bind-again = Run the command on the next: line again, and go on running it while { -github } still lacks what the tell: line says. Nothing has failed, so do not tell the person that it did or give them a deadline.
+# spells -run: to run is a verb here
+setup-rule-watch = Run the command on the next: line now, without asking the person, and tell them what the tell: line says when it differs from what you last told them. It waits while the { -ticket } works, and ends once it needs the person or is done; go on running it while the next: line names it again. Nothing has failed, so do not tell the person that it did or give them a deadline.
+# spells -run: to run is a verb here
+setup-rule-merge-again = Run the command on the next: line again, and go on running it while { -brand-name } imports the { -repository }'s own { -configuration }: the { -pull-request } is merged already, so it merges nothing again and waits on the same import. Nothing has failed, so do not tell the person that it did or give them a deadline.
 setup-mend-binding-yours = your { -repository }
 setup-mend-binding-mine = { $repository }, this folder's { -repository }
 setup-mend-binding-tell = Open { $page }, press { $add } and choose { $repository }. Tell me once it is added.
@@ -305,6 +369,31 @@ setup-check-absent-found = this checkout declares no { -configuration } under { 
 setup-import-none = nothing to import: the next thing is not the { -configuration } of a { -repository }
 setup-import-did = asked { -brand-name } to import { $repository }
 setup-import-refused = { -brand-name } did not import { $repository }: { $refusal }
+setup-bind-none = nothing to add: the next thing is not adding this folder's { -repository }
+setup-bind-waited = the wait ended before { -github } let both apps into this folder's { -repository }
+# The answer is the Add dialog's own line, which another section holds.
+setup-bind-did = asked { -brand-name } to add { $repository }, and it answered { $said }
+setup-bind-connected = Both apps can reach { $repository }. It is connected to { $project }.
+setup-bind-refused = { -brand-name } did not add { $repository }: { $refusal }
+setup-merge-none = nothing to merge: no { -pull-request } of the first { -ticket } stands unmerged
+setup-merge-did = asked { -brand-name } to merge { $url }, and it is merged
+setup-merge-refused = { -brand-name } did not merge { $url }: { $refusal }; merge it on { -github } your own way
+setup-merge-failed = { -brand-name } did not merge { $url }: { $failure }
+setup-merge-refusal-closed = it is closed
+setup-merge-refusal-conflicting = it conflicts with its base branch
+# spells -brief-check: a required check on GitHub is no brief's
+setup-merge-refusal-blocked = the { -repository }'s own rules on { -github } block it, such as a branch protection or a required review or check
+setup-merge-refusal-behind = its base branch has moved on since, and the { -repository } wants it brought up to date first
+setup-merge-refusal-head-moved = something was pushed to it after { -brand-name } checked it
+setup-merge-refusal-not-mergeable = { -github } would not merge it, and did not say why
+setup-merge-refusal-app-denied = { -github } did not let { -brand-name }'s { -portal-app } merge it
+setup-merge-refusal-forbidden = only the { -project }'s { -role-admin(form: "plural") } may have { -brand-name } merge its { -pull-request(form: "plural") }, so one of them can
+# spells -work-stage: the work in general
+setup-serve-none = nothing to change: the next thing is not your { -runner } taking the { -project }'s work
+setup-serve-given = gave your { -personal-runner(form: "plural") } { $project }
+setup-serve-given-failed = { -brand-name } did not give your { -personal-runner(form: "plural") } { $project }: { $failure }
+setup-serve-allowed = set { -personal-runner(case: "upper", form: "plural") } on { $project } to { $preferred }
+setup-serve-allowed-failed = { -brand-name } did not set { -personal-runner(case: "upper", form: "plural") } on { $project }: { $failure }
 
 ## The MCP step, which the mcp command does on this machine with the
 ## person's yes.
@@ -317,7 +406,71 @@ setup-mend-mcp-serves = { -claude-code } is the agent it is named in, for this f
 setup-mend-mcp-offer = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package here, { $program }, serves them as an MCP server. With your yes I will name that server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
 # spells -agent: the person's own coding agent, not one of chuggy's
 # spells -configuration: Claude Code's own settings, not a chuggy configuration
-setup-mend-mcp-offer-package = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and it is not here at a version { setup-program } uses. With your yes I will install it with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
+setup-mend-mcp-offer-absent = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and it is not installed here. With your yes I will install it with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
+# spells -agent: the person's own coding agent, not one of chuggy's
+# spells -configuration: Claude Code's own settings, not a chuggy configuration
+setup-mend-mcp-offer-behind = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and the one installed here, { $found }, is older than { setup-program } uses. With your yes I will install { $installs } in its place with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
+
+## The plugin step, which the plugin command does in Claude Code with the
+## person's yes, and passes over on their no.
+
+setup-offer-plugin-when = once the person says yes to { -brand-name }'s plugin in { -claude-code }
+# spells -run: to run is a verb here
+setup-rule-plugin-skip = Run { $command } only if the person says no to { -brand-name }'s plugin in { -claude-code }.
+setup-mend-plugin-adds = It adds two skills to { -claude-code }: one that sets { -brand-name } up with you, and one that files { -ticket(form: "plural") }.
+# spells -run: to run is a verb here
+# spells -claude: ~/.claude is a path
+setup-mend-plugin-does = It is installed with { -claude-code }'s own commands, for you alone: they write your { -claude-code } user settings and clone the plugin into the plugins folder of ~/.claude, and the plugin runs nothing.
+setup-mend-plugin-offer = The first step is { -brand-name }'s plugin for { -claude-code }. { setup-mend-plugin-adds } { setup-mend-plugin-does } With your yes I will install it. Tell me yes to go ahead, or no to go on without it.
+# spells -turn: to turn on is a verb here
+setup-mend-plugin-offer-off = The first step is { -brand-name }'s plugin for { -claude-code }, which is installed here and off. { setup-mend-plugin-adds } { setup-mend-plugin-does } With your yes I will update it and turn it on. Tell me yes to go ahead, or no to go on without it.
+
+## The North Star step, which the north-star command writes with the
+## person's yes to the words drafted with them, and passes over on their no.
+
+# spells -run: to run is a verb here
+# spells -draft: to draft is a verb here
+setup-mend-north-star-tell = Every { -agent } { -brand-name } runs for this { -project } reads its North Star: what the { -project } is for and what to favour. { $drawn ->
+    [folder] I can draft one from this folder's code, for you to change or say yes to, or we can skip it.
+   *[question] I can write a short one from your answer to one question, or we can skip it.
+}
+setup-north-star-ask = Ask the person one question: is this a demo for one or a few tries, or software they will keep and maintain? Write a short North Star from the answer: a demo favours working end to end soon over structure and polish, and maintained software favours clear structure, tests and docs that let later changes go in safely.
+# spells -draft: to draft is a verb here
+# spells -work-stage: the work in general
+setup-north-star-draft-folder = Read this folder, its README, code, tests and docs, and draft the North Star as one short paragraph: the strongest reading of what the { -project } is for, who it serves and what its work should favour, steelmanned and not hedged. Where the folder holds too little to read a purpose from, do this instead: { setup-north-star-ask }
+setup-north-star-draft-ask = { setup-north-star-ask }
+# spells -run: to run is a verb here
+setup-rule-north-star = Run { $command } with { $text } and the North Star, quoted as one word, only once the person has said yes to it or to their changes of it. To write it: { $draft } Show it to the person for a yes or their changes before running anything.
+# spells -run: to run is a verb here
+setup-rule-north-star-skip = Run { $command } only if the person would rather go on without a North Star.
+setup-north-star-none = nothing to write: the next thing is not the { -project }'s North Star
+setup-north-star-did = wrote the North Star of { $project }
+setup-north-star-failed = { -brand-name } did not write the North Star of { $project }: { $failure }
+
+## A run of the plugin command: the plugin on and its setup skill handed to
+## the agent, or why it is not, which passes the step over.
+
+setup-plugin-did = { $did ->
+    [Installed] installed
+    [Updated] updated
+   *[Enabled] turned on
+} { -brand-name }'s plugin in { -claude-code } for you, and { $uninstall } removes it
+setup-plugin-reload-tell = To use it in this session, type /reload-plugins here and tell me once it says Reloaded.
+# spells -brand-name: /chuggy:setup is the skill's command
+# spells -run: to run is a verb here
+setup-rule-skill = Once the person says /reload-plugins has run, invoke the chuggy:setup skill (/chuggy:setup) and follow it for the rest of setup. Where your skills do not list chuggy:setup, or the person would rather not reload, read { $skill } by its path instead. Where it and a rule: line of { setup-program } differ, the rule: line wins.
+# spells -run: to run is a verb here
+setup-plugin-reload-when = once the person says /reload-plugins has run, or that they would rather not
+setup-plugin-passed = { $found }, so setup goes on without { -brand-name }'s plugin
+# spells -claude: claude is the command's name
+setup-plugin-claudeless = no claude command answered here
+setup-plugin-old = { $said ->
+    [said] { -claude-code } here is { $version }
+   *[unsaid] { -claude-code } here did not say its version
+}, and the plugin's commands need { $least } or later
+setup-plugin-unlisted = { -claude-code }'s commands ended well and its list of plugins does not show { $plugin }
+# spells -turn: to turn on is a verb here
+setup-plugin-off = { $plugin } is installed and still off after { -claude-code } was asked to turn it on
 
 ## A run of the project command. A refusal is the console form's own word for
 ## it, handed in as the message the form draws.
@@ -326,11 +479,10 @@ setup-project-made = made { $project }, called { $name }
 setup-project-refused-found = the { -project } was not made: { $refusal }
 setup-project-refused-tell = The { -project } was not made: { $refusal }. Tell me what to do instead.
 
-## The runner's step, which the runner command does on this machine with the
-## person's yes.
+## The runner's step, which the runner command does on this machine once it
+## is announced, unless the person objects or asks for another machine.
 
-setup-offer-when = once the person says yes to { -runner(form: "a") } on this machine
-setup-offer-chat-host-when = once the person says yes to this machine as their { -chat-host }
+setup-offer-when = once the person has been told what it does here, has not objected, and has not asked for it on another machine instead
 setup-claude-on-subscription = your { -claude } plan
 setup-claude-on-api-key = your Anthropic API key
 setup-claude-on-bedrock = your Amazon Bedrock account
@@ -344,62 +496,173 @@ setup-next-runner = The next step is { -runner(form: "a") }: the machine that do
 setup-mend-runner-running-when = once the person says the { -runner } is running
 # spells -release: a package's release
 setup-mend-package-newer = If the { -runner } package here, { $program }, is older than { setup-program } needs, I install its latest release first.
-# spells -run: to run is a verb here
-setup-mend-chat-too = Your { -thread(form: "plural") } run only on your { -chat-host }, a machine of yours, so I will also make this machine it, as a second service of yours.
 # spells -brief-check: to check is a verb here
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-live-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds a registration for that { -project }. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the { -site } no longer knows that registration, so work on your { -ticket(form: "plural") } runs on this machine { $runs }.{ $chat ->
-    [with] { " " }{ setup-mend-chat-too }
-   *[without] { "" }
-} Tell me yes to go ahead.
+setup-mend-runner-live-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds the registration of { -runner(form: "a") }. I'll check it and start it here as a background service of yours that starts when you log in, registering this machine again as yours alone first if the { -site } no longer knows that registration, so work on your { -ticket(form: "plural") } runs on this machine { $runs }, { $job } a { -run }.{ $found }{ $fit }{ $chat } Your { -runner } will take work for { $project }. Say if you'd rather it didn't. It can live on another machine instead; say so if you want that.
+# spells -brief-check: to check is a verb here
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+setup-mend-runner-pool-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds the registration of { -runner(form: "a") } of the { -project }'s rather than yours. I'll leave that registration as it is and register this machine again as yours alone, then check your { -runner } and start it here as a background service of yours that starts when you log in, so work on your { -ticket(form: "plural") } runs on this machine { $runs }, { $job } a { -run }.{ $found }{ $fit }{ $chat } Your { -runner } will take work for { $project }. Say if you'd rather it didn't. It can live on another machine instead; say so if you want that.
 setup-mend-runner-live-tell = { -runner(case: "upper", form: "a") } is registered and is not running. Start it on its machine and tell me once it is running.
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-put-chat = That puts here two background services of yours, run by the { -runner } package, { $program }, that start when you log in: one for the work on your { -project }'s { -ticket(form: "plural") }, one your { -chat-host }, which your { -thread(form: "plural") } run on and only on. Both run on this machine { $runs }.
+setup-mend-runner-put = The { -runner } package, { $program }, runs it as a background service of yours that starts when you log in. Work on your { -ticket(form: "plural") } then runs on this machine { $runs }, { $job } a { -run }.
+# spells -run: to run is a verb here
+setup-mend-chat-host-holds = { " " }Your { -chat-host } is a second background service, which holds { $total } whenever it runs: { $each } a { -thread }, for up to { $sessions } at once.
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-put = That puts here a background service of yours, run by the { -runner } package, { $program }, that starts when you log in; work on your { -ticket(form: "plural") } then runs on this machine { $runs }.
+setup-mend-runner-things = { $chat ->
+    [with] { -brand-name } needs two things running on a machine of yours. A **{ -runner }** does the work of { -ticket(form: "plural") }. A **{ -chat-host }** runs your { -thread(form: "plural") } with { -brand-name }.
+   *[without] { -brand-name } needs a **{ -runner }** running on a machine of yours, which does the work of { -ticket(form: "plural") }.
+}
 # spells -run: to run is a verb here
-setup-mend-chat-by-hand = open { $page }, press { $register }, choose the machine and run the commands it shows
-# spells -run: to run is a verb here
-setup-mend-chats = Your { -thread(form: "plural") } in { $project } run only on your { -chat-host }, one machine of yours
-# spells -brief-check: to check is a verb here
-setup-mend-chat-live-offer = { $chats }, which is registered and not running, and this machine holds a registration of one. With your yes I will check it and start it here as a background service of yours that starts when you log in, where the registration it holds is the one the { -site } holds. { setup-mend-package-newer } Tell me yes to go ahead.
-setup-mend-chat-live-tell = { $chats }, which is registered and not running. Start it on its machine and tell me once it is running.
-setup-mend-chat-host-when = once the person says their { -chat-host } is running
-# spells -run: to run is a verb here
-setup-mend-chat-offer = { $chats }, and you have none yet. I can make this machine it: that puts here the { -runner } package, { $program }, where it is not here yet or is older than { setup-program } needs, and a background service of yours that starts when you log in, which your { -thread(form: "plural") } then run on, { $runs }. Tell me yes to go ahead.
-setup-mend-chat-tell = { $chats }, and you have none yet{ $here ->
-    [seen] ; { setup-program } cannot make this machine it
-   *[unseen] { "" }
-}. On the machine that will be it, { $byHand }. Tell me once it is running.
 # spells -work-stage: the work in general
-setup-mend-runner-serves = then press { $choose } and choose { $project }, so the { -runner } takes its work
-# spells -work-stage: the work in general
-setup-mend-runner-serves-unnamed = then press { $choose } and choose { $project }, and on { $placement } set { $setting } to { $strict } or { $preferred }, so the { -runner } takes its work
+setup-mend-runner-found-settings = { " " }This machine already has { -runner } settings, in { $path }, which run its work on the { $credential } at { $login }. I keep them as they are.
+# spells -claude: claude setup-token is the command
+# spells -run: to run is a verb here
+setup-mend-runner-login = { $things } First, { -claude } needs to be logged in for them: run `claude setup-token` and tell me when it's done. { $saved }
+setup-mend-runner-login-named = { $things } First, { -claude } needs to be logged in for them: the { -runner }'s settings name its { $credential } as { $path }, and nothing is there. { $saved } Tell me once it is there.
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-elsewhere = Open { $page }, press { $add } and do what it shows on the machine that will run the work, { $serves }. Tell me once the { -runner } is running.
-setup-mend-runner-instead = For { -runner(form: "a") } on another machine instead, open { $page } there, press { $add } and do what it shows, { $serves }, and tell me once it is running.
-setup-mend-runner-offer = { setup-next-runner }. I can make this machine one. { $put } Tell me yes to go ahead. For { -runner(form: "a") } on another machine instead, that machine's own browser opens { $page }, where you press { $add } and do what it shows, { $serves }.
+setup-mend-runner-elsewhere = Open { $page }, press { $add } and do what it shows on the machine that will run the work. Tell me once the { -runner } is running.
+setup-mend-runner-instead = For { -runner(form: "a") } on another machine instead, open { $page } there, press { $add } and do what it shows, and tell me once it is running.
+# spells -work-stage: the work in general
+setup-mend-runner-offer = { $things } { $chat ->
+    [with] I'll install both on this machine, as yours alone. They can live on another machine instead; say so if you want that.
+   *[without] I'll install it on this machine, as yours alone. It can live on another machine instead; say so if you want that.
+}{ $found } { $put }{ $fit }{ $holds } Your { -runner } will take work for { $project }. Say if you'd rather it didn't.
+# spells -work-stage: the work in general
+setup-mend-serving-offer = Your { -runner } is registered and does not take { $project }'s work yet. With your yes I will { $does ->
+    [both] give it { $project } and let your own { -runner(form: "plural") } take its work
+    [allow] let your own { -runner(form: "plural") } take { $project }'s work
+   *[give] give it { $project }
+}.{ $admin ->
+    [admin] { " " }{ setup-mend-serving-admin }
+   *[none] { "" }
+} Tell me yes to go ahead.
+# spells -work-stage: the work in general
+setup-mend-serving-admin = Your own { -runner(form: "plural") } take its work only once { -role-admin(form: "a") } of the { -project } sets { $setting } on its { -placement(case: "upper") } page, { $placement }.
+# spells -work-stage: the work in general
+setup-mend-serving-admin-tell = Your { -runner } is registered and given { $project }, and does not take its work yet. { setup-mend-serving-admin } Tell me once they have.
+# spells -work-stage: the work in general
+setup-offer-serve-when = once the person says yes to their { -runner } taking the { -project }'s work
 # spells -run: to run is a verb here
-setup-mend-runner-mac = { setup-next-runner }. This machine is a Mac and { setup-runner-mac-none }, but a Mac runs one with { $program }, added by hand: open { $page }, press { $add }, choose Mac and do what it shows there, { $serves }. Tell me once the { -runner } is running.
+# spells -work-stage: the work in general
+# spells -brief-check: a required check on GitHub is no brief's
+setup-mend-merge-offer = { -ticket(case: "upper") } { $ticket } opened { -pull-request(form: "a") }, { $url }, holding its work and this { -repository }'s own { -configuration }; once it is merged, later { -ticket(form: "plural") } run on that { -configuration }. Do you want me to merge it, or would you rather review it and merge it yourself?{ $lean ->
+    [leave] { " " }I would leave it to you: a { -repository } with a history of its own often has rules an app cannot pass, such as a branch protection or a required review or check, and its owners may want to review the change first.
+   *[ask] { "" }
+} If you merge it yourself, setup is done now, and the { -configuration } is in place once it is merged.
+setup-offer-merge-when = once the person says yes to { -brand-name } merging that { -pull-request }
+setup-mend-serving-admin-when = once the person says { -role-admin(form: "a") } of the { -project } set { $setting }
 # spells -run: to run is a verb here
 setup-mend-runner-serviceless = { setup-next-runner }. { setup-program } runs one as a background service of yours, and this machine's user services did not answer, so it cannot set one up here. { $elsewhere }
 setup-mend-runner-engineless = { setup-next-runner }, in containers. This machine cannot be one yet: { $none } here without a password. { setup-runner-engine-needs-password } Tell me once one answers you here. { $instead }
+# spells -run: to run is a verb here
+setup-mend-runner-engineless-colima = { setup-next-runner }, in containers. This machine cannot be one yet: Docker did not answer here. On a Mac, Docker runs in Colima, which { $start } starts without a password. Tell me once Docker answers you here. { $instead }
 setup-mend-runner-docker = { setup-next-runner }, in containers. This machine cannot be one yet. { $why } { $state }. { $mend } { $instead }
 setup-mend-runner-or-running = { $when }, or that { -runner(form: "a") } is running
+setup-mend-runner-fit = { setup-next-runner }, in containers. This machine cannot be one yet. { $told } { $instead }
+setup-mend-fit-job = the { $job } { -run(form: "a") } naming no memory needs, and { $spare } for the container engine beside it
+# spells -run: to run is a verb here
+setup-mend-fit-small = { " " }{ $machine ->
+    [mac] This Mac has { $has }, and Colima's VM is given at most half of it, less than { setup-mend-fit-job }, so this machine has no room for such { -run(form: "a") }: run it on another machine.
+   *[engine] Here { $engine } has { $has }, less than { setup-mend-fit-job }, so this machine has no room for such { -run(form: "a") }: run it on another machine.
+}
+# spells -run: to run is a verb here
+setup-mend-fit-colima = { " " }{ $vm ->
+    [none] Docker runs in Colima on a Mac, and Colima has no VM here yet. I first make one with { $gives ->
+        [both] { $target } and Rosetta for the amd64 images { -run(form: "a") } naming no platform needs
+       *[memory] { $target }
+    }, room for { setup-mend-fit-job }: { $commands }.
+   *[vm] { $short ->
+        [both] Colima's VM here has { $has }, short of { setup-mend-fit-job }, and runs no amd64 images, which { -run(form: "a") } naming no platform needs.
+        [memory] Colima's VM here has { $has }, short of { setup-mend-fit-job }.
+        [amd64] Colima's VM here runs no amd64 images, which { -run(form: "a") } naming no platform needs.
+       *[none] Colima's VM here is stopped.
+    } I first { $vm ->
+        [running] stop it, which stops its containers, and start it again
+       *[stopped] start it
+    }{ $gives ->
+        [both] { " " }with { $target } and Rosetta
+        [memory] { " " }with { $target }
+        [rosetta] { " " }with Rosetta
+       *[none] { "" }
+    }: { $commands }.
+}
+setup-mend-fit-commands = { $first }{ $then ->
+    [then] , then { $second }
+   *[alone] { "" }
+}
 
 ## The ticket's step.
 
 setup-mend-ticket-create = Open { $page }, say what you want done and press { $create }
+setup-ask-ticket = What would you like done first in { $project }? Say it in a sentence or two, or ask me to suggest something small from this { -repository }. I will make it { -ticket(form: "a") } and start it.{ $choose ->
+    [choose] { " " }The { -project } offers { $names }: which { -configuration } should it use?
+   *[given] { "" }
+} If you would rather write it yourself: { $create }.
+# spells -work-stage: the work in general
+setup-rule-image = Once the { -subagent } has reported, tell the person, filled from its report: "{ $project } needs TOOLCHAINS. I recommend IMAGE for its work, because REASON. Say if you want a different one." Recommend, in this order: a stock public image that has those toolchains; else a local build of an image the { -repository } already defines for its CI or development; else a new worker Dockerfile, written in the first { -ticket }. Go on unless the person objects.
+# spells -brief-check: to check is a verb here
+setup-tell-first-ticket = I'll file a first { -ticket } to check everything works end to end. It adds a tiny { $agents } and this { -repository }'s { -brand-name } { -configuration }, and ends in { $ends ->
+    [pull] { -pull-request(form: "a") } for you to merge
+   *[merged] { -brand-name } merging its change itself
+}.
+# spells -run: to run is a verb here
+setup-rule-ticket-first = Run { $command } with { $image } and the image recommended, or the one the person wants instead, then { $toolchains } and the toolchains it needs, and where they ask for something else to be done first, { $title } and a short title for it, then { $intent } and what they want done in their own words, each quoted as one word, once you have said both lines and without waiting for a yes.
+# spells -brief-check: to check is a verb here
+setup-ticket-check-title = Check that { -brand-name } works end to end
+# spells -brief-check: to check is a verb here
+setup-ticket-check-intent = Check that { -brand-name } works on this { -repository } end to end. Change none of the { -repository }'s own code.
+# spells -run: to run is a verb here
+# spells -work-stage: the work in general
+# spells -brief-check: the checks a configuration declares
+# spells -configuration: the folder's name
+setup-ticket-agents = Add { $agents } saying only what that folder is, in these lines and nothing about the code, its layout or how to build it: "This folder holds files for { -brand-name }, the system that runs { -ticket(form: "plural") } against this { -repository }. `configurations/` declares what a { -ticket } runs: the work, the checks and the review. Docs: { $docs }."
+# spells -run: to run is a verb here
+# spells -work-stage: the work in general
+# spells -brief-check: to check is a verb here
+setup-ticket-image = Name this as the image I of the { -configuration } you write, and command checks that run in it: { $image }. This { -repository }'s work needs { $toolchains }.
+# spells -run: to run is a verb here
+# spells -brief-check: to check is a verb here
+setup-ticket-imageless = no worker image was chosen, and a { -ticket } under the bootstrap needs one to write checks it can run
+setup-ticket-none = nothing to file: the next thing is not the { -project }'s first { -ticket }
+setup-ticket-did = asked { -brand-name } to file { -ticket } { $ticket }, { -release(form: "ed") } and sent to start, under { $configuration }{ $bootstrap ->
+    [bootstrap] , so the { -ticket } also writes this { -repository }'s own { -configuration }
+   *[own] { "" }
+}
+setup-ticket-unfiled = { -brand-name } did not file the { -ticket }: { $refusal }
+setup-ticket-unread = the { -configuration(form: "plural") } { -ticket(form: "a") } may use could not be read
+setup-ticket-choose = the { -project } offers { $names }, so the { -configuration } has to be chosen
+setup-ticket-unoffered = the { -configuration } named is not one the { -project } offers, which are { $names }
+setup-ticket-faults = { $faults }
+setup-ticket-refused = { $refusal }
 setup-mend-ticket-tell = { $create }. Tell me once it is created.
 setup-mend-ticket-when = once the person says the { -ticket } is created
 setup-mend-release-tell = { -ticket(case: "upper") } { $ticket } was drafted and never { -release(form: "ed") }, so nothing is working on it, and the console has no page that { -release(form: "s") } it. { $create }, which makes { -ticket(form: "a") } and { -release(form: "s") } it at once. Tell me once it is created.
 setup-mend-dispatch-tell = { -ticket(case: "upper") } { $ticket } is { -release(form: "ed") } and has not started. Open { $page } and press { $dispatch } to start it. Tell me once it has started.
 setup-mend-dispatch-when = once the person says { -ticket } { $ticket } has started
-setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $phase }, and setup is done when it is { -finalization(form: "ed") }. { $page } shows where it is. Tell me when you want me to look again.
+# spells -run: to run is a verb here
+setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $phase }.{ $wait ->
+    [room] { " " }{ setup-mend-wait-room }
+    [pool-room] { " " }{ setup-mend-wait-pool-room }
+    [offline] { " " }{ setup-mend-wait-offline }
+    [unable] { " " }{ setup-mend-wait-unable }
+   *[none] { "" }
+} { $ends ->
+    [pull] It ends in { -pull-request(form: "a") }{ $bootstrap ->
+        [bootstrap] { " " }that I can merge for you once you say yes, and merging it makes later { -ticket(form: "plural") } run on this { -repository }'s own { -configuration }
+       *[own] { " " }for you to merge on { -github }
+    }. Setup is done once that { -pull-request } is open.
+   *[finish] Setup is done when it finishes.
+} { $page } shows where it is. I'll keep watching it and tell you what changes.
+setup-mend-wait-room = It is waiting on your { -personal-runner }, which has { $free } free; this { -run } needs { $needed }.
+setup-mend-wait-pool-room = It is waiting on this { -project }'s { -runner(form: "plural") }, which have { $free } free; this { -run } needs { $needed }.
+setup-mend-wait-offline = It is waiting on your { -personal-runner }, which is offline.
+# spells -run: to run is a verb here
+setup-mend-wait-unable = It is waiting on your { -personal-runner(form: "plural") }, and none of them can run it.
 setup-mend-decision-tell = { -ticket(case: "upper") } { $ticket } is { -escalation }: it waits on a decision of yours at { $page }. Tell me once it is moving again.
 setup-mend-decision-when = once the person says { -ticket } { $ticket } is moving again
 
@@ -435,17 +698,22 @@ setup-ask-unnamed = { $of } is this for?{ $whole ->
 setup-done = { -brand-name } is set up for { $project }{ $how ->
     [said] : { $detail }
    *[unsaid] { "" }
-}.{ $merge ->
-    [unmerged] { " " }Its { -pull-request }, { $url }, holds the { -repository }'s own { -configuration }: merge it on { -github } so later { -ticket(form: "plural") } run on that { -configuration } rather than each writing it again.
-   *[merged] { "" }
+}.{ $configuration ->
+    [imported] { " " }The { -repository }'s own { -configuration } is in place, and later { -ticket(form: "plural") } run on it.
+    [importing] { " " }{ -brand-name } is importing the { -repository }'s own { -configuration }, and later { -ticket(form: "plural") } run on it once it is in place.
+    [refused] { " " }{ -brand-name } did not import the { -repository }'s own { -configuration } ({ $last }), so later { -ticket(form: "plural") } run on the bootstrap until it does.
+   *[none] { "" }
 } The next { -ticket } is made at { $page }.
 
-## The page a sign-in returns to, in the person's browser.
+## The page a sign-in returns to unless it ends signed in, in the person's
+## browser: the program's name, what happened as its heading, and what to do
+## next under it.
 
-setup-page-signed-in = Signed in to { -brand-name }. You can close this tab and go back to your terminal.
-setup-page-unfinished = This sign-in did not finish. Close this tab and go back to your terminal.
-setup-page-answered = This sign-in page has already been answered.
-setup-page-nothing = There is nothing here.
+setup-page-brand = { -brand-name }
+setup-page-unfinished = This sign-in did not finish
+setup-page-answered = This sign-in page has already been answered
+setup-page-nothing = There is nothing here
+setup-page-next = Go back to your { -agent }. You can close this tab.
 
 ## The build's last step, which starts the program it built. A first run is
 ## this program's, not a stage's.

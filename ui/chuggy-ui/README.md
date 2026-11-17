@@ -29,8 +29,7 @@ builds with.
   in `browser/`, which is the rule `chuggy-ui-primitives-reach-no-effect`
   states and is why each mounts in a suite with no provider around it.
 - `ui/chuggy-ui/app/browser/conversation/` — the one conversation surface,
-  shared by the shell's chat pane, a run's transcript and the lead's
-  dispatches.
+  shared by the shell's chat pane, a thread's page and a run's transcript.
   `chuggy-ui-conversation-owns-assistant-ui` makes it the only module that
   names `@assistant-ui`; `chuggy-ui-conversation-reaches-only-primitives`
   bounds it to itself, `browser/ui/`, the decision layer and the contract, so
@@ -234,6 +233,12 @@ renewal token in the person's home directory and never prints the token. The
 issuer hands a new token back for each one it is shown, so before one is shown
 the program keeps room in that directory for the next: a home that will not
 take it is said as that, with its path, and the sign-in is not spent.
+Signed in, the `site:` line names the GitHub login the site records for the
+account, where it records one.
+
+`sign-out` removes this machine's sign-in for the site and asks nobody
+anything, so runners and chat hosts it set up keep running. It is how the
+person changes accounts: `sign-out`, then `sign-in` again.
 
 `project --workspace <w> --name <name>` makes a project in that workspace by
 the request the console's New project form sends, at the address the form
@@ -304,6 +309,72 @@ judgment from `src/contract/`, and says each fault by file and field. Neither
 asks the site anything. Once the commit is pushed, `import` asks the site to
 import the repository at the head of its default branch, its one write, says
 what the site answered, and reads the checklist again.
+
+Where the project holds no repository and the folder's `origin` names one, the
+repository step is held to what the two apps on the account that owns it are
+granted. Every trip to GitHub the checklist sends her on ends on `next:`
+naming `bind`, which the `rule:` has run at once while she goes. `bind` reads the checklist again every few seconds, for as long as
+`--wait-secs` gives it, until both apps are granted the folder's repository or
+the next thing is no longer GitHub's; where connecting GitHub is next, it first
+opens the repositories page that begins Connect GitHub, with `sign-in`'s
+opener. Once both are granted it, `bind` adds it to the project with the
+request the console's Add sends, its one write, says what the site answered,
+and reads the checklist again. A wait that ends first says what GitHub still
+lacks and names `bind` again, with `--opened github` where a page connecting
+GitHub is already open, so the run again opens none.
+Where an app is not granted it, one `tell:` names every such app: the
+installation's settings page on GitHub where it is installed on that account,
+and where it is not, the press on the workspace's accounts page that installs
+it, since only the console's install is claimed for the workspace. Where what
+an app is granted was not read, or the site offers no install it can claim,
+the `tell:` names the console's Add instead.
+
+Where the project has no pool and she holds a personal runner that does not
+take its work, the `rule:` names `serve --workspace <w> --project <p>` for once
+she says yes. `serve` gives her runners the project, as the console's Personal
+runners page does, where they are not given it, and where the project names no
+owner fallback and she administers it, names Preferred, so the project's pools
+still take the work while her runner is off. Those are its only writes; it says
+what each came to, and reads the checklist again. Where she does not
+administer the project, the `tell:` names its Placement page for an admin.
+
+The first run's `rule:` lines have the agent start a subagent that explores
+the repository for the toolchains its work needs while she goes through the
+steps that do not depend on it.
+
+Where the project has no ticket yet, the configurations a ticket may use are
+read as the console's New ticket page reads them. Where the one offered is the
+bootstrap, a `rule:` has the agent recommend a worker image for those
+toolchains, and the `tell:` announces a first ticket that checks everything
+works end to end and says what it writes; the `rule:` names `ticket` with
+`--image` and `--toolchains` to run unless she objects, adding `--title` and
+`--intent` where she asks for something else first. Elsewhere the step asks
+what she wants done, and the `rule:` names `ticket` with `--title` and
+`--intent`, and with `--configuration` where she has to choose among several.
+`ticket` files the ticket through the core the console's Create ticket calls:
+the form that page starts on, filled with her words or the end-to-end check and
+the branch it proposes, then created, released and dispatched. Under the
+bootstrap, what it asks for also names the image and toolchains and asks for a
+`AGENTS.md` in the repository's `.chug` folder saying what that folder is, and it is not filed without the
+image. Its writes are the draft and the two submissions. It says what the site
+answered and reads the checklist again. Where the configurations were not read,
+the `tell:` names the New ticket page instead.
+
+While the first ticket is on its way, `next:` names `watch`, which the `rule:`
+has run at once. `watch` reads the checklist again every few seconds, for as
+long as `--wait-secs` gives it, until the ticket needs her or is done, and
+names itself again where the wait ends first. It writes nothing.
+
+Where the checklist is otherwise done and the first ticket's pull request
+stands unmerged on a repository holding only the bootstrap, the `tell:` asks
+whether chuggy should merge it or she would rather review and merge it herself,
+leaning towards the latter where git counts more history in the folder than a
+new repository holds, and the `rule:` names `merge` for once she says yes.
+Without a yes, setup is done. `merge` asks the site to merge it, its one
+write, and reads the checklist again until the repository's own configuration
+is imported, the import fails, or `--wait-secs` ends; a wait that ends first
+names `merge` again, which merges nothing and waits on the same import. A
+refusal is said in one line with the pull request's link, and setup ends.
 
 ## The session
 

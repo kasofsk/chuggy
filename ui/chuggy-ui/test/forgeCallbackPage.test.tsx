@@ -254,6 +254,95 @@ test("each install gone on to carries a state drawn for it, never the authorizat
   expect(leftFor().state).not.toBe(first);
 });
 
+/** The tenant's claims after the portal app was installed on kasofsk, as
+ * installation 11. */
+const portalClaimed = {
+  truncated: false,
+  installations: [
+    {
+      forge: "github",
+      app: "portal",
+      account: "kasofsk",
+      accountKind: "Organization",
+      installationId: "11",
+      claimedAt: "2026-11-16T05:50:00Z",
+    },
+  ],
+};
+
+/** What the portal installation on kasofsk was given: one chosen repository. */
+const portalGranted = {
+  repositories: [
+    {
+      id: "1296269",
+      name: "chuggy",
+      fullName: "kasofsk/chuggy",
+      url: "https://forge.test/kasofsk/chuggy.git",
+      defaultBranch: "main",
+      private: true,
+    },
+  ],
+  truncated: false,
+  selection: "Selected",
+  accountId: "1342004",
+};
+
+/** Every read the callback makes, the portal's listing answered by `granted`. */
+function readingPortal(
+  granted: () => Response,
+): (request: SentRequest) => Response {
+  return (request) => {
+    if (request.url.endsWith("/forge-installations/11/repositories"))
+      return granted();
+    if (request.url.endsWith("/tenants/vteng/forge-installations"))
+      return answer(portalClaimed);
+    return answer(apps);
+  };
+}
+
+function drawReadingPortal(granted: () => Response): Promise<DrawnStrict> {
+  const read = readingPortal(granted);
+  return drawnStrict(<ForgeCallbackPage />, (request) =>
+    request.method === "POST" ? answer(workerless) : read(request),
+  );
+}
+
+test("the worker's install opens with the portal installation's chosen repositories on that account", async () => {
+  await drawReadingPortal(() => answer(portalGranted));
+  const url = new URL(held.replaced[0] ?? "");
+  expect(held.replaced).toHaveLength(1);
+  expect(`${url.origin}${url.pathname}`).toBe(
+    `${worker.installUrl}/permissions`,
+  );
+  expect(url.searchParams.get("suggested_target_id")).toBe("1342004");
+  expect(url.searchParams.getAll("repository_ids[]")).toStrictEqual([
+    "1296269",
+  ]);
+  expect(heldInstall()).toMatchObject({
+    state: url.searchParams.get("state"),
+    installs: ["worker"],
+  });
+});
+
+test.each<readonly [string, () => Response]>([
+  [
+    "was given every repository",
+    () => answer({ ...portalGranted, selection: "All" }),
+  ],
+  ["could not be read", () => answer({}, 503)],
+])(
+  "a portal installation that %s still sends the person on to the worker's plain install",
+  async (_said, granted) => {
+    await drawReadingPortal(granted);
+    const left = leftFor();
+    expect(left.address).toBe(worker.installUrl);
+    expect(heldInstall()).toMatchObject({
+      state: left.state,
+      installs: ["worker"],
+    });
+  },
+);
+
 test("a press back from the portal's install goes on to the worker's, carrying both", async () => {
   through("portal");
   await drawCallback(() => answer(workerless));

@@ -105,8 +105,8 @@ test("the installation's session routing is one row at most", async () => {
   await migratedDatabase("session_routing", async (subject) => {
     await assert.rejects(
       subject.query(`INSERT INTO session_routing
-        (singleton,thread_route,lead_route,project_routes)
-        VALUES (2,'Pool','Pool','{}')`),
+        (singleton,thread_route,project_routes)
+        VALUES (2,'Pool','{}')`),
       /session_routing_is_one_row/u,
     );
   });
@@ -117,8 +117,8 @@ test("a project's placement names who set it whole, or names nobody", async () =
     await subject.query(`${deletionPartition}
       INSERT INTO project_execution_placement(tenant,project,work_route,evaluation_route)
       VALUES('tenant-5','project-5','InCluster','InCluster');
-      INSERT INTO project_session_placement(tenant,project,thread_route,lead_route)
-      VALUES('tenant-5','project-5','InCluster','InCluster')`);
+      INSERT INTO project_session_placement(tenant,project,thread_route)
+      VALUES('tenant-5','project-5','InCluster')`);
     for (const placement of [
       "project_execution_placement",
       "project_session_placement",
@@ -131,7 +131,7 @@ test("a project's placement names who set it whole, or names nobody", async () =
   });
 });
 
-/** A lead session of project-5, on a cluster account of its own. */
+/** A thread of project-5, on a cluster account of its own. */
 const sessionSeed = `${deletionPartition}
   INSERT INTO execution_cluster(cluster,slots_max,policy_revision)
   VALUES('cluster-5',1,1);
@@ -139,7 +139,7 @@ const sessionSeed = `${deletionPartition}
   VALUES('account-5','cluster-5',0,1,1);
   INSERT INTO agent_session
     (tenant,project,session,kind,principal,capabilities,credential_slot,account,cluster)
-  VALUES('tenant-5','project-5','session-5','Lead','principal-5','{}',
+  VALUES('tenant-5','project-5','session-5','Thread','principal-5','{}',
          'slot-5','account-5','cluster-5')`;
 
 test("a turn is queued on the route a door stamped it with, and no default stamps one", async () => {
@@ -193,7 +193,7 @@ test("a project's session names a project there is", async () => {
       subject.query(
         `INSERT INTO agent_session
            (tenant,project,session,kind,principal,capabilities,credential_slot,account,cluster)
-         VALUES('tenant-5','project-6','session-6','Lead','principal-5','{}',
+         VALUES('tenant-5','project-6','session-6','Thread','principal-5','{}',
                 'slot-5','account-5','cluster-5')`,
       ),
       /agent_session_belongs_to_project/u,
@@ -240,19 +240,6 @@ test("a configuration revision is as long as a configuration may be and no longe
         ),
       ),
       /configuration_revision_content_is_bounded/u,
-    );
-  });
-});
-
-test("a selector attempt is fenced at no negative project revision", async () => {
-  await migratedDatabase("selector_attempt_revision", async (subject) => {
-    await subject.query(deletionPartition);
-    await assert.rejects(
-      subject.query(
-        `INSERT INTO selector_attempt(attempt,tenant,project,state,project_revision)
-         VALUES('attempt-5','tenant-5','project-5','Running',-1)`,
-      ),
-      /selector_attempt_project_revision_check/u,
     );
   });
 });

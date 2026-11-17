@@ -2,8 +2,7 @@
 
 settings-nav = Settings
 settings-nav-project = { -project(case: "upper") }
-settings-nav-lead = { -lead(case: "upper") }
-settings-nav-lead-session = { -lead(case: "upper") } session
+settings-nav-threads = { -thread(case: "upper", form: "plural") }
 settings-nav-placement = { -placement(case: "upper") }
 settings-nav-pools = Pools
 settings-nav-permissions = Permissions
@@ -20,8 +19,7 @@ settings-nav-workspaces = { -workspace(case: "upper", form: "plural") }
 settings-nav-person = You
 settings-nav-preferences = Preferences
 settings-nav-index = All settings
-settings-nav-lead-summary = What the { -lead } aims at, the rules it keeps and its models
-settings-nav-lead-session-summary = What the { -lead } has decided, and why
+settings-nav-threads-summary = The settings this { -project }'s { -thread(form: "plural") } keep
 settings-nav-placement-summary = The image each { -stage } is given, and what it requires
 settings-nav-pools-summary = The shared machines registered for this { -project }
 settings-nav-permissions-summary = Who may do what in this { -project }
@@ -161,6 +159,57 @@ settings-remove = Remove
 settings-none = None
 settings-creating = Creating…
 
+## The settings threads run under, and every revision of them.
+
+settings-threads-title = { -thread(case: "upper", form: "plural") }
+settings-threads-revision = { -revision(case: "upper") } { $revision }
+settings-threads-default = Default
+settings-threads-edited = Edited
+settings-threads-effective-none = None
+
+settings-threads-fault-invalid = Invalid
+settings-threads-fault-at-least = At least { $min }
+settings-threads-fault-at-most = At most { $max }
+settings-threads-fault-at-most-characters = At most { $max } characters
+settings-threads-fault-model-flag = Cannot start with -
+settings-threads-fault-model-spaced = No spaces or control characters
+
+settings-threads-model-thread-model = { -thread(case: "upper") } model
+settings-threads-model-thread-effort = { -thread(case: "upper") } effort
+settings-threads-model-alias = Alias
+
+settings-threads-effort-low = Low
+settings-threads-effort-medium = Medium
+settings-threads-effort-high = High
+settings-threads-effort-xhigh = Extra high
+settings-threads-effort-max = Max
+
+settings-threads-section-north-star-title = North Star
+settings-threads-section-north-star-about = What this { -project } is for. Every new { -thread } is handed it.
+settings-threads-section-standing-rules-title = Standing rules
+settings-threads-section-standing-rules-about = How { -thread(form: "plural") } act on this { -project }.
+settings-threads-section-models-title = Models
+settings-threads-section-models-about = The model and effort of each new { -thread }. Open { -thread(form: "plural") } keep theirs.
+settings-threads-reset-default = Reset to default
+
+settings-threads-writing = Writing
+settings-threads-written = Written · { $revision }
+settings-threads-saved = { $section } saved · { -revision(case: "upper") } { $revision }
+settings-threads-changed-by = Changed by
+settings-threads-changed-at = at
+settings-threads-conflict-moved-by = Changed by { $subject } at { $time }
+settings-threads-conflict-revision = Conflict · { $revision }
+
+settings-threads-history-no-change = No change
+settings-threads-history-diff = Diff
+settings-threads-history-hide-diff = Hide diff
+settings-threads-history-restore = Restore
+settings-threads-history-restored = Restored as { -revision } { $revision }
+settings-threads-history-show-all = Show all { $count }
+settings-threads-history-none-recorded = No { -revision(form: "plural") }
+settings-threads-history-title = { -revision(case: "upper", form: "plural") }
+settings-threads-history-about = Every save, newest first.
+
 ## The roles, and what else a person holds in a workspace.
 
 settings-role-admin = { -role-admin(case: "upper") }
@@ -271,9 +320,25 @@ settings-invite-link-expired = Expired
 settings-invite-brand = { -brand-name }
 settings-invite-needed-title = { -invite(case: "upper", form: "a") } is needed
 settings-invite-needed = This account has no { -invite } to { -brand-name }. Ask for { -invite(form: "a") } link, then sign in again.
-settings-invite-invited-title = You are invited to { -brand-name }
-settings-invite-invited = Sign in to accept.
 settings-invite-joining-title = Joining { -brand-name }
+settings-invite-reading = Reading the link…
+settings-invite-own-title = Your own { -brand-name } { -workspace }
+# spells -invite: to invite is a verb here
+settings-invite-own-from = { $inviter } invites you to make { -workspace(form: "a") } of your own, as its { -role-admin }.
+settings-invite-own = This link makes you { -workspace(form: "a") } of your own, as its { -role-admin }.
+settings-invite-join-title = Join { $workspace }
+# spells -invite: to invite is a verb here
+settings-invite-join-from = { $inviter } invites you to join as { $role ->
+    [Admin] { -role-admin(form: "a") }
+   *[Member] { -role-member(form: "a") }
+}.
+settings-invite-join = This link makes you { $role ->
+    [Admin] { -role-admin(form: "a") }
+   *[Member] { -role-member(form: "a") }
+} of { $workspace }.
+# spells -revoke: a link is revoked, not a ticket
+settings-invite-ended = This link has been used or revoked, has expired, or was never made. Ask whoever sent it for a new one.
+settings-invite-sign-in-github = Sign in with { -github }
 settings-invite-joining = Joining…
 settings-invite-not-valid-title = This link can no longer be used
 settings-invite-not-valid = It may have expired or been used already. Ask whoever sent it for a new one.
@@ -372,7 +437,7 @@ settings-delete-back = Back to the start
 settings-delete-held = It cannot be deleted: { $held }.
 settings-delete-held-released-ticket = { -ticket(form: "a") } was { -release(form: "ed") }
 settings-delete-held-execution = it has { -run(form: "plural") }
-settings-delete-held-session = it has { -thread(form: "plural") } or { -lead(form: "a") }
+settings-delete-held-session = it has { -thread(form: "plural") }
 settings-delete-held-worker-pool = { -runner(form: "a") } is registered for it
 settings-delete-held-action-observation = an action reported what it did
 settings-delete-held-project = it holds { -project(form: "a") }

@@ -44,7 +44,6 @@ import type { OperationId, Authority } from "./operationInbox.ts";
 import { memberAuthority, type ProjectAccess } from "./projectAccess.ts";
 import {
   projectAuthorityDefaults,
-  projectRelationGrant,
   projectTenantGrant,
   tenantMakerGrants,
   type ProjectGrant,
@@ -130,17 +129,12 @@ export interface ProjectCreationAuthority {
   readonly erasure: Pick<AccessErasure, "projectErased">;
 }
 
-/**
- * What creation reaches, with no authority on a deployment that names none to
- * write to, and no selector on one whose selector is granted each project by
- * hand.
- */
+/** What creation reaches, with no authority on a deployment that names none to write to. */
 export interface ProjectCreationPorts {
   readonly access: ProjectAccess;
   readonly claims: TenantClaims;
   readonly store: ProjectCreationStore;
   readonly authority?: ProjectCreationAuthority;
-  readonly selector?: Principal;
 }
 
 export type ProjectCreationResult =
@@ -173,22 +167,17 @@ export function projectCreationNameFault(
 
 /**
  * The grants an accepted creation writes: the tenant's maker's grants only
- * where it made the tenant, the project's link and defaults, and
- * the site's selector as a developer where the site names one.
+ * where it made the tenant, and the project's link and defaults.
  */
 export function projectCreationGrants(
   principal: Principal,
   partition: Partition,
   tenantCreated: boolean,
-  selector?: Principal,
 ): readonly ProjectGrant[] {
   return [
     ...(tenantCreated ? tenantMakerGrants(principal, partition.tenant) : []),
     projectTenantGrant(partition),
     ...projectAuthorityDefaults(partition),
-    ...(selector === undefined
-      ? []
-      : [projectRelationGrant(selector, partition, "developers")]),
   ];
 }
 
@@ -244,12 +233,7 @@ async function projectCreationCreate(
           await ports.store.fillVacancy(partition);
         }
         await authority.grants.writeAll(
-          projectCreationGrants(
-            principal,
-            partition,
-            answer.tenantCreated,
-            ports.selector,
-          ),
+          projectCreationGrants(principal, partition, answer.tenantCreated),
         );
         await ports.store.recordGrants(answer.operation);
       }

@@ -31,7 +31,6 @@ const partitionRouteId = "/$tenant/$project";
 const consolePagesEvery: readonly ConsolePage[] = [
   { page: "Tickets" },
   { page: "Inbox" },
-  { page: "Lead" },
   { page: "Catalog" },
   { page: "Repositories" },
   { page: "Runners" },
@@ -215,7 +214,6 @@ test("a page is named in the console's own words for it", () => {
   ).toEqual([
     "Tickets",
     "Inbox",
-    "Lead",
     "Catalog",
     "Repositories",
     "Runners",
@@ -228,7 +226,7 @@ test("a page is named in the console's own words for it", () => {
     "New ticket from #12",
     "New ticket · draft #7",
     "Repository acme/atlas",
-    "Settings · Project · Lead",
+    "Settings · Project · Chats",
     "Settings · Project · Placement",
     "Settings · Project · Pools",
     "Settings · Project · Permissions",

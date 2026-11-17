@@ -17,6 +17,8 @@ export interface ConfirmDialogProps {
   readonly confirm: string;
   /** It destroys what it acts on, and its button is drawn as danger. */
   readonly danger?: boolean;
+  /** Its button is not offered, as while what it would send cannot be sent. */
+  readonly confirmOffered?: boolean;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onConfirm: () => void;
@@ -44,6 +46,7 @@ export function ConfirmDialog(props: ConfirmDialogProps): ReactNode {
           <Button
             variant={props.danger === true ? "danger" : "primary"}
             size="sm"
+            disabled={props.confirmOffered === false}
             onClick={() => {
               props.onOpenChange(false);
               props.onConfirm();

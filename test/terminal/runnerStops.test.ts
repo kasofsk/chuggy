@@ -13,10 +13,17 @@
  */
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 
-import { runnerPackageOffered } from "../../ui/chuggy-ui/app/core/runners.ts";
+import { runnerPackages } from "../../ui/chuggy-ui/app/core/runners.ts";
 
 import { machineLoginSecret } from "./machine.ts";
 import { platformSaid, program, userSaid } from "./program.ts";
@@ -36,6 +43,7 @@ import {
   redemption,
   rerun,
   runner,
+  serve,
   stood,
   stoodAll,
   stoodSearched,
@@ -53,7 +61,7 @@ test("with no Claude login the run changes nothing and says what the runner need
   await unchanged(on, "found: the runner has no Claude login on this machine");
   const missing = await ran(on);
   assert.deepEqual(missing.lines.slice(-3), [
-    `tell: The runner needs a Claude login of its own on this machine, and there is none at ${on.machine.login}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${on.machine.login} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackageOffered.guideAddress}. Tell me once one is there.`,
+    `tell: The runner needs a Claude login of its own on this machine, and there is none at ${on.machine.login}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${on.machine.login} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackages.linux.guideAddress}. Tell me once one is there.`,
     `${again}once the person says the runner's Claude login is on this machine.`,
     "next: stop",
   ]);
@@ -271,9 +279,9 @@ test("a registration that fails saying its own arguments back, whole and in halv
   cleared(on);
   const done = await ran(on);
   assert.equal(done.code, 0, done.stdout);
-  assert.deepEqual(on.installation.writes, [mint, redemption]);
+  assert.deepEqual(on.installation.writes, [mint, redemption, ...serve]);
   assert.equal(on.installation.world.mints.length, 2);
-  assert.deepEqual(on.installation.world.projects[0]?.tokens, [lost]);
+  assert.deepEqual([...on.installation.world.personalTokens.keys()], [lost]);
   assert.equal(done.lines.at(-1), next);
 });
 
@@ -320,7 +328,7 @@ test("where keeping services running after a logout wants a password, none is ta
   assert.equal(done.code, 0, done.stdout);
   assert.ok(done.lines.includes(lines(on).found.linger), done.stdout);
   assert.deepEqual(done.lines.slice(-2), [lines(on).found.live, next]);
-  assert.deepEqual(on.installation.writes, []);
+  assert.deepEqual(on.installation.writes, serve);
 });
 
 test("a runner that is started and that the site does not see live within the wait is a failure that says how long was waited, having asked the service manager once more whether it still runs, and the run after it is seen ends on the checklist", async () => {
@@ -330,49 +338,62 @@ test("a runner that is started and that the site does not see live within the wa
   assert.equal(waited.code, 1, waited.stdout);
   assert.ok(
     waited.lines.includes(
-      "found: the runner's service is running, and after 1 s the site still sees no runner of acme/widgets live",
+      "found: the runner's service is running as process 4242, and after 1 s the site still does not see your runner live, taking your work in acme/widgets",
     ),
     waited.stdout,
   );
   assert.equal(waited.lines.at(-1), "next: stop");
   assert.ok(waited.lines.at(-2)?.startsWith(again), waited.stdout);
-  assert.deepEqual(acts(on).slice(-3), ["start", "active", "active"]);
+  assert.deepEqual(acts(on).slice(-3), ["start", "shown", "shown"]);
 
   on.machine.tell({ polls: true });
   cleared(on);
   const done = await ran(on);
-  assert.deepEqual(done.lines.slice(-3), [
+  assert.deepEqual(done.lines.slice(-5), [
     lines(on).found.running,
+    lines(on).found.given,
+    lines(on).found.allowed,
     lines(on).found.live,
     next,
   ]);
   assert.deepEqual(on.installation.writes, []);
 });
 
-test("on a Mac runner says it cannot set one up and asks nothing of the machine or the site, and the bare command says the same of the runner's step and offers nothing", async () => {
+test("on a Mac runner takes the Mac's package: with only Linux's installed it stops on the MCP step having changed nothing, and once mcp installs chuggy-darwin the bare command offers a runner it runs", async () => {
   const on = await stood();
   const mac = { [platformSaid]: "darwin" };
-  const done = await ran(on, runner, mac);
-  assert.equal(done.code, 2, done.stdout);
-  assert.equal(
-    done.lines[0],
-    "found: this machine is a Mac, and chuggy setup puts a runner only on Linux",
+  const login = join(
+    on.home.home,
+    "Library",
+    "Application Support",
+    "chuggy-darwin",
+    "claude",
+    "token",
   );
-  assert.deepEqual(done.lines.slice(-2), [
-    `rule: Run node ${program} ${flags} only once the person says a runner is running.`,
-    "next: stop",
-  ]);
-  assert.deepEqual(on.machine.calls(), []);
-  assert.deepEqual(on.installation.asked, []);
+  mkdirSync(dirname(login), { recursive: true });
+  writeFileSync(login, machineLoginSecret, { mode: 0o600 });
+  const done = await ran(on, runner, mac);
+  assert.equal(done.code, 0, done.stdout);
+  assert.ok(
+    done.lines.includes(
+      "found: the runner package, chuggy-darwin, is not installed here",
+    ),
+    done.stdout,
+  );
+  assert.match(
+    done.lines.at(-2) ?? "",
+    / mcp --workspace acme --project widgets only /u,
+  );
+  assert.deepEqual(on.installation.writes, []);
 
+  assert.equal((await ran(on, mcp, mac)).code, 0);
+  on.machine.forget();
   const bare = await ran(on, [], mac);
   assert.equal(bare.code, 0, bare.stdout);
   assert.match(
-    bare.lines.at(-3) ?? "",
-    /^tell: .* This machine is a Mac and chuggy setup puts a runner only on Linux, but a Mac runs one with chuggy-darwin, added by hand: /u,
+    bare.lines.at(-4) ?? "",
+    /^tell: .* The runner package, chuggy-darwin, runs it /u,
   );
-  assert.ok(!bare.stdout.includes(" runner --workspace"), bare.stdout);
-  assert.deepEqual(acts(on), []);
   assert.deepEqual(on.installation.writes, []);
 });
 

@@ -1,7 +1,8 @@
 /**
  * The page an invite link is opened at, decided with no renderer: what a
  * fragment or a cookie holds of a token, the cookie that carries the token
- * across a sign-in, which card the page draws, and what a redemption came to.
+ * across a sign-in, which card the page draws, what a holder signed out is
+ * told of the link, and what a redemption came to.
  *
  * THE FRAGMENT IS ANYONE'S TO WRITE, so nothing read from it is trusted to be
  * a token the plane made: it is bounded where it is read, and percent-encoded
@@ -15,6 +16,7 @@
 import {
   accessInviteLinkTokenCharsMax,
   type AccessInviteLinkRedeemed,
+  type AccessInviteLinkSummary,
 } from "../../../../src/contract/accessPlane.ts";
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
@@ -134,13 +136,94 @@ export function invitePageDecided(arrival: InviteArrival): InvitePage {
 export const invitePageWords = {
   brand: { id: "settings-invite-brand" },
   needed: { id: "settings-invite-needed" },
-  invited: { id: "settings-invite-invited" },
+  reading: { id: "settings-invite-reading" },
+  ended: { id: "settings-invite-ended" },
+  signInGithub: { id: "settings-invite-sign-in-github" },
   redeeming: { id: "settings-invite-joining" },
   notValid: { id: "settings-invite-not-valid" },
   signIn: { id: "settings-invite-sign-in" },
   open: { id: "settings-invite-open" },
   retry: { id: "settings-invite-retry" },
 } as const satisfies Readonly<Record<string, Copy>>;
+
+/** The title of a card whose link no redemption could take. */
+const inviteEndedTitle: Copy = { id: "settings-invite-not-valid-title" };
+
+/** What the card of a holder signed out says of their link: being read, what
+ * an open one gives and from whom, an ended one, or a read that failed. */
+export interface InviteSummaryCard {
+  readonly card: "Reading" | "Open" | "Ended" | "Failed";
+  readonly title: Copy;
+  readonly line: Copy;
+}
+
+function inviteSummaryOpen(
+  summary: Exclude<AccessInviteLinkSummary, { readonly state: "Ended" }>,
+): InviteSummaryCard {
+  const inviter = summary.mintedBy;
+  if (summary.kind === "Workspace")
+    return {
+      card: "Open",
+      title: { id: "settings-invite-own-title" },
+      line:
+        inviter === undefined
+          ? { id: "settings-invite-own" }
+          : { id: "settings-invite-own-from", args: { inviter } },
+    };
+  const { displayName: workspace, role } = summary;
+  return {
+    card: "Open",
+    title: { id: "settings-invite-join-title", args: { workspace } },
+    line:
+      inviter === undefined
+        ? { id: "settings-invite-join", args: { role, workspace } }
+        : { id: "settings-invite-join-from", args: { inviter, role } },
+  };
+}
+
+/**
+ * The card a summary is drawn as, `Reading` while it is unanswered. A token
+ * the plane does not know or will not read is ended as a redemption reads it,
+ * and any other failure is one a retry may mend.
+ */
+export function inviteSummaryCard(
+  result: ApiResult<AccessInviteLinkSummary> | undefined,
+): InviteSummaryCard {
+  if (result === undefined)
+    return {
+      card: "Reading",
+      title: invitePageWords.brand,
+      line: invitePageWords.reading,
+    };
+  switch (result.outcome) {
+    case "Ok":
+      return result.value.state === "Ended"
+        ? {
+            card: "Ended",
+            title: inviteEndedTitle,
+            line: invitePageWords.ended,
+          }
+        : inviteSummaryOpen(result.value);
+    case "Absent":
+    case "Rejected":
+      return {
+        card: "Ended",
+        title: inviteEndedTitle,
+        line: invitePageWords.ended,
+      };
+    case "Conflict":
+    case "Unauthenticated":
+    case "Retryable":
+    case "Fault":
+    case "Unreachable":
+    case "Unreadable":
+      return {
+        card: "Failed",
+        title: invitePageWords.brand,
+        line: accessFailureLabel(result),
+      };
+  }
+}
 
 /** What a send of a token came to, and whether it clears the cookie. */
 export type InviteRedemption =

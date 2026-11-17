@@ -287,7 +287,7 @@ function creatorsDrawn(card: Element | null): readonly (string | null)[] {
   );
 }
 
-test("a row names the member who filed it by subject where no email is read, the whole principal on hover, and a row with none names nobody", async () => {
+test("a row names the member who filed it by subject where no name is read, the whole principal on hover, and a row with none names nobody", async () => {
   await drawTableWith([ticket, escalated], [execution]);
   const card = screen.getByText(title).closest("li");
   expect(creatorsDrawn(card)).toEqual(["alice", "alice"]);
@@ -369,7 +369,7 @@ test("a row names its repository by owner and name, the whole address on hover, 
 });
 
 /** The people read answering, which the case above leaves unanswered. */
-test("a row names its creator by the email the project's people hold for them", async () => {
+test("a row names its creator by the GitHub login the project's people hold for them", async () => {
   await drawTableWith(
     [ticket],
     [execution],
@@ -386,7 +386,9 @@ test("a row names its creator by the email the project's people hold for them", 
                     mine: false,
                     tenantAdmin: false,
                     roles: [],
+                    account: true,
                     email: "alice@example.com",
+                    githubLogin: "alice-gh",
                   },
                 ],
                 otherIssuers: 0,
@@ -395,10 +397,10 @@ test("a row names its creator by the email the project's people hold for them", 
             )
           : served(url, init)) as typeof fetch,
   );
-  await screen.findAllByText("alice@example.com");
+  await screen.findAllByText("alice-gh");
   expect(creatorsDrawn(screen.getByText(title).closest("li"))).toEqual([
-    "alice@example.com",
-    "alice@example.com",
+    "alice-gh",
+    "alice-gh",
   ]);
 });
 

@@ -1,7 +1,7 @@
 /**
  * What a minted registration token is handed over in: the steps that make a
- * machine a runner, each command copied by its own control, for a member's
- * own runner and their chat host alike.
+ * machine a runner, install and register, each command copied by its own
+ * control, for a member's own runner and their chat host alike.
  */
 
 import { useEffect, useRef } from "react";
@@ -11,15 +11,10 @@ import type { WorkerPoolTokenResponse } from "../../../../src/contract/responses
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { instantFigure } from "../core/figures.ts";
 import type { Copy } from "../core/copy.ts";
-import {
-  runnerGuideAddress,
-  runnerPackages,
-  runnerRegisterCommand,
-} from "../core/runners.ts";
+import { runnerPackages, runnerRegisterCommand } from "../core/runners.ts";
 import type { RunnerAsk, RunnerKind } from "../core/runners.ts";
 import { useNowMs } from "./Freshness.tsx";
 import { currentOrigin } from "./ports.ts";
-import { Button } from "./ui/Button.tsx";
 import { CopyBox } from "./ui/CopyBox.tsx";
 import { Figure } from "./ui/Figure.tsx";
 
@@ -76,7 +71,6 @@ export function RunnerSteps(props: {
   /** What the reader asked, which the register command declares. */
   readonly ask: RunnerAsk;
   readonly kind: RunnerStepsKind;
-  readonly onDone: () => void;
 }): ReactNode {
   const text = useCopyText();
   const nowMs = useNowMs();
@@ -84,54 +78,37 @@ export function RunnerSteps(props: {
   const offered = runnerPackages[props.ask.package];
   const expires = new Date(props.minted.expiresAtMs).toISOString();
   return (
-    <div className="runner-mint border-edge grid min-w-0 gap-3 border-b pt-3 pb-4">
-      <ol
-        ref={steps}
-        tabIndex={-1}
-        aria-label={text(runnerStepsLabel(props.kind))}
-        className="grid min-w-0 list-decimal gap-3 pl-6"
-      >
-        <RunnerStep title={text({ id: "runners-steps-install" })}>
-          <CopyBox
-            about={text(offered.needs)}
-            text={offered.installCommand}
-            copyLabel={text({ id: "runners-steps-copy-install" })}
-          />
-        </RunnerStep>
-        <RunnerStep title={text({ id: "runners-steps-register" })}>
-          <CopyBox
-            about={
-              <>
-                {text({ id: "runners-steps-expires" })}{" "}
-                <Figure figure={instantFigure(expires, nowMs)} />
-              </>
-            }
-            text={runnerRegisterCommand(
-              offered,
-              currentOrigin(),
-              props.minted.token,
-              props.kind,
-              props.ask,
-            )}
-            copyLabel={text({ id: "runners-steps-copy-register" })}
-          />
-        </RunnerStep>
-        <RunnerStep title={text({ id: "runners-steps-finish" })}>
-          <a
-            className="justify-self-start"
-            href={runnerGuideAddress(offered, props.kind)}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            {text({ id: "runners-steps-guide" })}
-          </a>
-        </RunnerStep>
-      </ol>
-      <div className="pl-6">
-        <Button size="sm" onClick={props.onDone}>
-          {text({ id: "runners-done" })}
-        </Button>
-      </div>
-    </div>
+    <ol
+      ref={steps}
+      tabIndex={-1}
+      aria-label={text(runnerStepsLabel(props.kind))}
+      className="runner-mint grid min-w-0 list-decimal gap-3 pl-6"
+    >
+      <RunnerStep title={text({ id: "runners-steps-install" })}>
+        <CopyBox
+          about={text(offered.needs)}
+          text={offered.installCommand}
+          copyLabel={text({ id: "runners-steps-copy-install" })}
+        />
+      </RunnerStep>
+      <RunnerStep title={text({ id: "runners-steps-register" })}>
+        <CopyBox
+          about={
+            <>
+              {text({ id: "runners-steps-expires" })}{" "}
+              <Figure figure={instantFigure(expires, nowMs)} />
+            </>
+          }
+          text={runnerRegisterCommand(
+            offered,
+            currentOrigin(),
+            props.minted.token,
+            props.kind,
+            props.ask,
+          )}
+          copyLabel={text({ id: "runners-steps-copy-register" })}
+        />
+      </RunnerStep>
+    </ol>
   );
 }

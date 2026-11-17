@@ -5,8 +5,7 @@
 export interface SettingsCopy {
   readonly "settings-nav": Record<never, never>;
   readonly "settings-nav-project": Record<never, never>;
-  readonly "settings-nav-lead": Record<never, never>;
-  readonly "settings-nav-lead-session": Record<never, never>;
+  readonly "settings-nav-threads": Record<never, never>;
   readonly "settings-nav-placement": Record<never, never>;
   readonly "settings-nav-pools": Record<never, never>;
   readonly "settings-nav-permissions": Record<never, never>;
@@ -23,8 +22,7 @@ export interface SettingsCopy {
   readonly "settings-nav-person": Record<never, never>;
   readonly "settings-nav-preferences": Record<never, never>;
   readonly "settings-nav-index": Record<never, never>;
-  readonly "settings-nav-lead-summary": Record<never, never>;
-  readonly "settings-nav-lead-session-summary": Record<never, never>;
+  readonly "settings-nav-threads-summary": Record<never, never>;
   readonly "settings-nav-placement-summary": Record<never, never>;
   readonly "settings-nav-pools-summary": Record<never, never>;
   readonly "settings-nav-permissions-summary": Record<never, never>;
@@ -143,6 +141,76 @@ export interface SettingsCopy {
   readonly "settings-remove": Record<never, never>;
   readonly "settings-none": Record<never, never>;
   readonly "settings-creating": Record<never, never>;
+  readonly "settings-threads-title": Record<never, never>;
+  readonly "settings-threads-revision": {
+    readonly revision: unknown;
+  };
+  readonly "settings-threads-default": Record<never, never>;
+  readonly "settings-threads-edited": Record<never, never>;
+  readonly "settings-threads-effective-none": Record<never, never>;
+  readonly "settings-threads-fault-invalid": Record<never, never>;
+  readonly "settings-threads-fault-at-least": {
+    readonly min: unknown;
+  };
+  readonly "settings-threads-fault-at-most": {
+    readonly max: unknown;
+  };
+  readonly "settings-threads-fault-at-most-characters": {
+    readonly max: unknown;
+  };
+  readonly "settings-threads-fault-model-flag": Record<never, never>;
+  readonly "settings-threads-fault-model-spaced": Record<never, never>;
+  readonly "settings-threads-model-thread-model": Record<never, never>;
+  readonly "settings-threads-model-thread-effort": Record<never, never>;
+  readonly "settings-threads-model-alias": Record<never, never>;
+  readonly "settings-threads-effort-low": Record<never, never>;
+  readonly "settings-threads-effort-medium": Record<never, never>;
+  readonly "settings-threads-effort-high": Record<never, never>;
+  readonly "settings-threads-effort-xhigh": Record<never, never>;
+  readonly "settings-threads-effort-max": Record<never, never>;
+  readonly "settings-threads-section-north-star-title": Record<never, never>;
+  readonly "settings-threads-section-north-star-about": Record<never, never>;
+  readonly "settings-threads-section-standing-rules-title": Record<
+    never,
+    never
+  >;
+  readonly "settings-threads-section-standing-rules-about": Record<
+    never,
+    never
+  >;
+  readonly "settings-threads-section-models-title": Record<never, never>;
+  readonly "settings-threads-section-models-about": Record<never, never>;
+  readonly "settings-threads-reset-default": Record<never, never>;
+  readonly "settings-threads-writing": Record<never, never>;
+  readonly "settings-threads-written": {
+    readonly revision: unknown;
+  };
+  readonly "settings-threads-saved": {
+    readonly section: unknown;
+    readonly revision: unknown;
+  };
+  readonly "settings-threads-changed-by": Record<never, never>;
+  readonly "settings-threads-changed-at": Record<never, never>;
+  readonly "settings-threads-conflict-moved-by": {
+    readonly subject: unknown;
+    readonly time: unknown;
+  };
+  readonly "settings-threads-conflict-revision": {
+    readonly revision: unknown;
+  };
+  readonly "settings-threads-history-no-change": Record<never, never>;
+  readonly "settings-threads-history-diff": Record<never, never>;
+  readonly "settings-threads-history-hide-diff": Record<never, never>;
+  readonly "settings-threads-history-restore": Record<never, never>;
+  readonly "settings-threads-history-restored": {
+    readonly revision: unknown;
+  };
+  readonly "settings-threads-history-show-all": {
+    readonly count: unknown;
+  };
+  readonly "settings-threads-history-none-recorded": Record<never, never>;
+  readonly "settings-threads-history-title": Record<never, never>;
+  readonly "settings-threads-history-about": Record<never, never>;
   readonly "settings-role-admin": Record<never, never>;
   readonly "settings-role-member": Record<never, never>;
   readonly "settings-role-developer": Record<never, never>;
@@ -241,9 +309,26 @@ export interface SettingsCopy {
   readonly "settings-invite-brand": Record<never, never>;
   readonly "settings-invite-needed-title": Record<never, never>;
   readonly "settings-invite-needed": Record<never, never>;
-  readonly "settings-invite-invited-title": Record<never, never>;
-  readonly "settings-invite-invited": Record<never, never>;
   readonly "settings-invite-joining-title": Record<never, never>;
+  readonly "settings-invite-reading": Record<never, never>;
+  readonly "settings-invite-own-title": Record<never, never>;
+  readonly "settings-invite-own-from": {
+    readonly inviter: unknown;
+  };
+  readonly "settings-invite-own": Record<never, never>;
+  readonly "settings-invite-join-title": {
+    readonly workspace: unknown;
+  };
+  readonly "settings-invite-join-from": {
+    readonly inviter: unknown;
+    readonly role: unknown;
+  };
+  readonly "settings-invite-join": {
+    readonly role: unknown;
+    readonly workspace: unknown;
+  };
+  readonly "settings-invite-ended": Record<never, never>;
+  readonly "settings-invite-sign-in-github": Record<never, never>;
   readonly "settings-invite-joining": Record<never, never>;
   readonly "settings-invite-not-valid-title": Record<never, never>;
   readonly "settings-invite-not-valid": Record<never, never>;

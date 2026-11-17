@@ -19,7 +19,7 @@
 -- revisions and the repository configurations drawn from them, bound
 -- repositories and the operations that bound them, forge installations and
 -- the authority that claimed them, the deployment authoring policy, the
--- selector's project and runtime settings with their histories, worker pools
+-- project settings with their history, worker pools
 -- and their registration tokens, where each project's executions run and the
 -- routing the scheduler published, the execution cluster, the capacity
 -- entitlements drawn on it, the worker catalog and the recovery epochs, and
@@ -31,14 +31,12 @@
 -- their agent accounts' pauses, or their last press: each is theirs. Nor is
 -- the name a deleted project vacated, which is a name and names no ticket.
 --
--- WHY THE SEEDED SINGLETONS ARE NOT IN IT. `thread_wake_cursor`,
--- `selector_inventory_state` and `selector_runtime_readiness` hold one row
--- each, written by the baseline install, and no role holds INSERT on any of
--- them — a truncated one is a row nothing can put back. They carry no ticket,
--- so keeping them is also what they deserve. The cursor is the exception that
--- needs a value rather than a row: it is a position in `project_change`, which
--- the truncate below empties and restarts, so a cursor left where it was would
--- sit past every change the wiped rig is about to produce.
+-- WHY THE SEEDED SINGLETON IS NOT IN IT. `thread_wake_cursor` holds one row,
+-- written by the baseline install, and no role holds INSERT on it — a
+-- truncated one is a row nothing can put back. What it needs is a value
+-- rather than a row: it is a position in `project_change`, which the truncate
+-- below empties and restarts, so a cursor left where it was would sit past
+-- every change the wiped rig is about to produce.
 --
 -- WHY ONE TRUNCATE AND NO CASCADE. Naming every relation in one statement makes
 -- foreign-key order moot, and leaving CASCADE off is what makes the list
@@ -109,17 +107,6 @@ TRUNCATE TABLE
   public.project_notification,
   public.project_readiness,
   public.scheduler_incident,
-  public.selector_agentic_refusal,
-  public.selector_attempt,
-  public.selector_decision_permit,
-  public.selector_interaction,
-  public.selector_interaction_resource,
-  public.selector_lead_refusal,
-  public.selector_observation,
-  public.selector_planning_intent,
-  public.selector_project_state,
-  public.selector_proposal_delivery,
-  public.selector_proposal_review,
   public.session_attempt,
   public.session_store_batch,
   public.session_turn,

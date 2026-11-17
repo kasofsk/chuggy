@@ -12,6 +12,7 @@ import fastify, {
   type FastifyInstance,
   type FastifyReply,
   type FastifyRequest,
+  type RouteOptions,
 } from "fastify";
 
 import type { TicketId } from "../../domain/ids.ts";
@@ -67,7 +68,6 @@ import type {
 } from "../../interpreter/projectStream.ts";
 import type { SelectorProjectSettingsAdministration } from "../../interpreter/selectorProjectSettings.ts";
 import type { ProjectInbox } from "../../interpreter/projectInbox.ts";
-import type { SelectorProposalReviews } from "../../interpreter/selectorReview.ts";
 import type { ForgeCredentialMinting } from "../../interpreter/forgeCredentials.ts";
 import type { RepositoryOnboarding } from "../../interpreter/repositoryOnboarding.ts";
 import type {
@@ -80,14 +80,9 @@ import {
   configurationDocumentSchemaMediaType,
 } from "../../contract/configurationDocument.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
-import {
-  selectorHistoryOrders,
-  type AccountAgent,
-  type SelectorHistoryOrder,
-} from "../../contract/rosters.ts";
+import type { AccountAgent } from "../../contract/rosters.ts";
 import { epicWriteBodyBytesMax } from "../../contract/epics.ts";
 import {
-  agenticRefusalsAnsweredMax,
   imageMediaTypes,
   isBoundedText,
   nativeHttpBodyBytesMax,
@@ -98,8 +93,6 @@ import {
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
   projectImageRoles,
-  selectorHistoryLimitMax,
-  selectorProposalDispatchesAnsweredMax,
   ticketSearchCharsMax,
   workerRunCredentialSchema,
 } from "../../contract/http.ts";
@@ -144,9 +137,7 @@ import {
   parseDraftRevision,
   parsePartition,
   parseSelectorProjectSettings,
-  parseSelectorProposalReview,
   parseSubmission,
-  parseLeadInquiry,
   parseThreadHide,
   parseThreadMessage,
   parseThreadOfferReply,
@@ -199,17 +190,10 @@ import {
   executionsResponse,
   latestExecutionsResponse,
   operationalStatusResponse,
-  agenticRefusalsResponse,
   inboxResponse,
   hostedRunsResponse,
   projectAbilitiesResponse,
-  leadResponse,
-  leadTranscriptResponse,
-  selectorHistoryResponse,
-  selectorProposalReviewResponse,
-  selectorProposalsResponse,
-  ticketAgenticRefusalsResponse,
-  selectorOperationalContextResponse,
+  sessionTranscriptResponse,
   selectorProjectSettingsResponse,
   selectorProjectSettingsWriteResponse,
   selectorSettingsHistoryResponse,
@@ -224,9 +208,6 @@ import {
   sessionContextResponse,
   runTurnsResponse,
   submissionResponse,
-  askLeadResponse,
-  leadInquiriesResponse,
-  leadInquiryResponse,
   closeThreadResponse,
   hideThreadResponse,
   renameThreadResponse,
@@ -272,6 +253,7 @@ import {
   unrunDeletedResponse,
   unrunDeletionStandingResponse,
   ticketTakeResponse,
+  ticketProposalMergeResponse,
   personalRunnerDisallowedResponse,
   personalRunnerPermitResponse,
   personalRunnerRedemptionResponse,
@@ -314,6 +296,7 @@ import type { ExecutionPlacementAdministration } from "../../interpreter/executi
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
 import type { TicketTakes } from "../../interpreter/ticketTake.ts";
+import type { TicketProposalMerges } from "../../interpreter/ticketProposalMerge.ts";
 import type { ThreadLimitAdministration } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
@@ -395,15 +378,8 @@ type InitialNativeWeb = Pick<
   | "executions"
   | "latestExecutions"
   | "operationalStatus"
-  | "selectorOperationalContext"
   | "hostedRuns"
   | "abilities"
-  | "lead"
-  | "leadTranscript"
-  | "leadContext"
-  | "agenticRefusals"
-  | "ticketAgenticRefusals"
-  | "selectorHistory"
   | "outputContent"
   | "uploadProjectArtifact"
   | "projectArtifact"
@@ -428,9 +404,6 @@ type InitialNativeWeb = Pick<
   | "closeThread"
   | "renameThread"
   | "hideThread"
-  | "leadInquiries"
-  | "leadInquiry"
-  | "askLead"
 >;
 
 /** Sends one response the outcome mappers built, headers and all. */
@@ -916,7 +889,6 @@ function registerProject(app: FastifyInstance, web: InitialNativeWeb): void {
     nativeHttpSend(reply, ticketResponse(resource));
   });
   registerNativeActions(app, web, root);
-  registerAgenticRefusals(app, web, root);
   registerOperationalRoutes(app, web, root);
   registerRunEvidenceRoutes(app, web);
 }
@@ -942,123 +914,6 @@ function registerProjectAbilities(
   );
 }
 
-function registerLead(app: FastifyInstance, web: InitialNativeWeb): void {
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.lead,
-    (_request, principal, partition) => web.lead(principal, partition),
-    leadResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.leadTranscript,
-    (request, principal, partition) => {
-      const query = nativeHttpEndpoints.leadTranscript.query.parse(
-        request.query,
-      );
-      return web.leadTranscript(principal, partition, {
-        ...(query.stream === undefined
-          ? {}
-          : { stream: asSessionStoreStream(query.stream) }),
-        after: query.after,
-        limit: query.limit,
-      });
-    },
-    leadTranscriptResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.leadContext,
-    (request, principal, partition) =>
-      web.leadContext(
-        principal,
-        partition,
-        nativeHttpEndpoints.leadContext.query.parse(request.query),
-      ),
-    sessionContextResponse,
-  );
-}
-
-/** The lead's refusals, across a project and under the one ticket each names. */
-function registerAgenticRefusals(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-  root: string,
-): void {
-  app.get(`${root}/agentic-refusals`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["limit"]);
-    nativeHttpSend(
-      reply,
-      agenticRefusalsResponse(
-        await web.agenticRefusals(
-          principalOf(request),
-          partitionOf(request),
-          integerField(query, "limit", agenticRefusalsAnsweredMax),
-        ),
-      ),
-    );
-  });
-  app.get(
-    `${root}/tickets/:ticket/agentic-refusals`,
-    async (request, reply) => {
-      const params = record(request.params);
-      nativeHttpSend(
-        reply,
-        ticketAgenticRefusalsResponse(
-          await web.ticketAgenticRefusals(
-            principalOf(request),
-            partitionOf(request),
-            asTicketIdField(params, "ticket"),
-          ),
-        ),
-      );
-    },
-  );
-}
-
-/** Which end of the decision log a request asked for, defaulting to the oldest. */
-function selectorHistoryOrder(value: unknown): SelectorHistoryOrder {
-  if (value === undefined) return "oldest";
-  const order = selectorHistoryOrders.find((known) => known === value);
-  if (order === undefined)
-    throw new TypeError("selector history order is not a known order");
-  return order;
-}
-
-/** The decision log, beside the settings the decisions were made under. */
-function registerSelectorHistory(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-  root: string,
-): void {
-  app.get(`${root}/selector-history`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["after", "limit", "order"]);
-    nativeHttpSend(
-      reply,
-      selectorHistoryResponse(
-        await web.selectorHistory(principalOf(request), partitionOf(request), {
-          ...(query["after"] === undefined
-            ? {}
-            : { after: integerField(query, "after") }),
-          limit: integerField(query, "limit", selectorHistoryLimitMax),
-          order: selectorHistoryOrder(query["order"]),
-        }),
-      ),
-    );
-  });
-}
-
-/** The lead's held decisions and the inbox that holds them, each where it was composed. */
-function registerReviewsAndInbox(
-  app: FastifyInstance,
-  proposalReviews: SelectorProposalReviews | undefined,
-  inbox: ProjectInbox | undefined,
-): void {
-  if (proposalReviews !== undefined)
-    registerSelectorProposals(app, proposalReviews);
-  if (inbox !== undefined) registerInbox(app, inbox);
-}
-
 /** The inbox, one page at a time under the tickets list's own activity cursor. */
 function registerInbox(app: FastifyInstance, inbox: ProjectInbox): void {
   registerEndpoint(
@@ -1079,51 +934,6 @@ function registerInbox(app: FastifyInstance, inbox: ProjectInbox): void {
       );
     },
     inboxResponse,
-  );
-}
-
-/** The lead's held decisions, read and answered by a principal who may dispatch. */
-function registerSelectorProposals(
-  app: FastifyInstance,
-  reviews: SelectorProposalReviews,
-): void {
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.selectorProposals,
-    (_request, principal, partition) =>
-      reviews.pending(
-        principal,
-        partition,
-        selectorProposalDispatchesAnsweredMax,
-      ),
-    selectorProposalsResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.reviewSelectorProposal,
-    async (request, principal, partition) => {
-      const review = parseSelectorProposalReview(
-        textField(record(request.params), "decision"),
-        request.body,
-      );
-      const result =
-        review.outcome === "Approved"
-          ? await reviews.approve(
-              principal,
-              partition,
-              review.decision,
-              review.feedback,
-            )
-          : await reviews.reject(
-              principal,
-              partition,
-              review.decision,
-              review.feedback,
-            );
-      return { review, result };
-    },
-    ({ review, result }) =>
-      selectorProposalReviewResponse(result, review.decision, review.outcome),
   );
 }
 
@@ -1439,26 +1249,6 @@ function registerProjectArtifacts(
     });
     registered();
   });
-}
-
-function registerSelectorContext(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-): void {
-  app.get(
-    "/api/v1/tenants/:tenant/projects/:project/selector-context",
-    async (request, reply) => {
-      nativeHttpSend(
-        reply,
-        selectorOperationalContextResponse(
-          await web.selectorOperationalContext(
-            principalOf(request),
-            partitionOf(request),
-          ),
-        ),
-      );
-    },
-  );
 }
 
 /**
@@ -2136,21 +1926,20 @@ function registerBodylessRoutes(
 }
 
 /**
- * A project put on or taken off the caller's own allowlist. The put's body,
- * which names the project's priority, may be left out: an empty body is no
- * body under any media type, as a client or a proxy may frame a bodyless
- * write, and one that is not empty is read as the API's media type alone.
+ * Registers routes whose body may be left out in a scope that reads an empty
+ * body as no body under any media type, as a client or a proxy may frame a
+ * bodyless write, and one that is not empty as the API's media type alone.
  */
-function registerPersonalRunnerProjects(
+function registerOptionalBodyRoutes(
   app: FastifyInstance,
-  runners: PersonalRunnerService,
+  routes: (scope: FastifyInstance) => void,
 ): void {
   void app.register((scope, _options, registered) => {
     const json = scope.getDefaultJsonParser("error", "error");
     scope.removeAllContentTypeParsers();
     scope.addContentTypeParser(
       "*",
-      { parseAs: "string", bodyLimit: nativeHttpBodyBytesMax },
+      { parseAs: "string" },
       (request, body, parsed) => {
         const text = body.toString();
         if (text.length === 0) parsed(null, undefined);
@@ -2167,8 +1956,21 @@ function registerPersonalRunnerProjects(
           );
       },
     );
-    registerPersonalRunnerProjectRoutes(scope, runners);
+    routes(scope);
     registered();
+  });
+}
+
+/**
+ * A project put on or taken off the caller's own allowlist. The put's body,
+ * which names the project's priority, may be left out.
+ */
+function registerPersonalRunnerProjects(
+  app: FastifyInstance,
+  runners: PersonalRunnerService,
+): void {
+  registerOptionalBodyRoutes(app, (scope) => {
+    registerPersonalRunnerProjectRoutes(scope, runners);
   });
 }
 
@@ -2936,15 +2738,12 @@ function registerEndpoint<Value>(
   ) => Promise<Value>,
   respond: (value: Value, partition: Partition) => NativeHttpResponse,
 ): void {
-  app.route({
+  registerEndpointRoute(app, endpoint.body, {
     method: endpoint.method,
     url: endpoint.path,
     ...(endpoint.bodyLimit === undefined
       ? {}
       : { bodyLimit: endpoint.bodyLimit }),
-    ...(endpoint.body === undefined
-      ? {}
-      : { preValidation: requireVersionedJson }),
     handler: async (request, reply) => {
       const partition = partitionOf(request);
       nativeHttpSend(
@@ -2956,6 +2755,24 @@ function registerEndpoint<Value>(
       );
     },
   });
+}
+
+/**
+ * Registers an endpoint's route by what its body schema reads: one that reads
+ * an absent body is reached without one, and any other body is the API's media
+ * type alone.
+ */
+function registerEndpointRoute(
+  app: FastifyInstance,
+  body: z.ZodType | undefined,
+  route: RouteOptions,
+): void {
+  if (body === undefined) app.route(route);
+  else if (body.safeParse(undefined).success)
+    registerOptionalBodyRoutes(app, (scope) => {
+      scope.route(route);
+    });
+  else app.route({ ...route, preValidation: requireVersionedJson });
 }
 
 function registerActionReach(
@@ -3012,6 +2829,24 @@ function registerTicketTakes(app: FastifyInstance, takes: TicketTakes): void {
     );
 }
 
+/** A ticket's pull request merged on a person's word. */
+function registerTicketProposalMerges(
+  app: FastifyInstance,
+  merges: TicketProposalMerges,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.ticketProposalMerge,
+    (request, principal, partition) =>
+      merges.merge(
+        principal,
+        partition,
+        asTicketIdField(record(request.params), "ticket"),
+      ),
+    ticketProposalMergeResponse,
+  );
+}
+
 function registerLandingQueues(
   app: FastifyInstance,
   queues: LandingQueueReads,
@@ -3044,16 +2879,19 @@ function registerActions(
   if (reach !== undefined) registerActionReach(app, reach);
 }
 
-/** What a ticket landed and the queues it waits in, and the doors a member takes and returns it through. */
+/** What a ticket landed and the queues it waits in, the doors a member takes and returns it through, and the one its pull request is merged through. */
 function registerTicketDoors(
   app: FastifyInstance,
   landings: TicketLandingReads | undefined,
   landingQueues: LandingQueueReads | undefined,
   takes: TicketTakes | undefined,
+  proposalMerges: TicketProposalMerges | undefined,
 ): void {
   if (landings !== undefined) registerTicketLandings(app, landings);
   if (landingQueues !== undefined) registerLandingQueues(app, landingQueues);
   if (takes !== undefined) registerTicketTakes(app, takes);
+  if (proposalMerges !== undefined)
+    registerTicketProposalMerges(app, proposalMerges);
 }
 
 function registerEndpointSession(request: FastifyRequest): SessionId {
@@ -3154,7 +2992,7 @@ function registerThreadReads(
         },
       );
     },
-    leadTranscriptResponse,
+    sessionTranscriptResponse,
   );
   registerEndpoint(
     app,
@@ -3254,32 +3092,6 @@ function registerThreadWrites(
         ...parseThreadHide(request.body),
       }),
     hideThreadResponse,
-  );
-}
-
-function registerLeadInquiries(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-): void {
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.leadInquiries,
-    (_request, principal, partition) => web.leadInquiries(principal, partition),
-    leadInquiriesResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.leadInquiry,
-    (request, principal, partition) =>
-      web.leadInquiry(principal, partition, registerEndpointSession(request)),
-    leadInquiryResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.askLead,
-    (request, principal, partition) =>
-      web.askLead(principal, partition, parseLeadInquiry(request.body)),
-    (result, partition) => askLeadResponse(partition, result),
   );
 }
 
@@ -3470,12 +3282,9 @@ function registerChatEndpoint<Value>(
   ) => Promise<Value>,
   respond: (value: Value, tenant: TenantId) => NativeHttpResponse,
 ): void {
-  app.route({
+  registerEndpointRoute(app, endpoint.body, {
     method: endpoint.method,
     url: endpoint.path,
-    ...(endpoint.body === undefined
-      ? {}
-      : { preValidation: requireVersionedJson }),
     handler: async (request, reply) => {
       const tenant = tenantOf(request);
       nativeHttpSend(
@@ -3551,7 +3360,7 @@ function registerChatSessionReads(
         },
       );
     },
-    leadTranscriptResponse,
+    sessionTranscriptResponse,
   );
   registerChatEndpoint(
     app,
@@ -3826,7 +3635,6 @@ export function createNativeHttpApp(
   creation?: ProjectCreation,
   placement?: ExecutionPlacementAdministration,
   sessionPlacement?: SessionPlacementAdministration,
-  proposalReviews?: SelectorProposalReviews,
   threadLive?: ThreadLiveHub,
   actionReports?: ActionReports,
   actionReach?: TicketActionReaches,
@@ -3841,6 +3649,7 @@ export function createNativeHttpApp(
   landingQueues?: LandingQueueReads,
   deletions?: UnrunDeletions,
   takes?: TicketTakes,
+  proposalMerges?: TicketProposalMerges,
   appearance?: AppearanceService,
   projectAppearance?: ProjectAppearanceServices,
 ): FastifyInstance {
@@ -3853,12 +3662,9 @@ export function createNativeHttpApp(
   registerProject(app, web);
   registerHostedRuns(app, web);
   registerProjectAbilities(app, web);
-  registerLead(app, web);
-  registerSelectorContext(app, web);
-  registerSelectorHistory(app, web, nativeHttpPartitionRoot);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
-  registerReviewsAndInbox(app, proposalReviews, inbox);
+  if (inbox !== undefined) registerInbox(app, inbox);
   registerForge(app, forgeCredentials, onboarding);
   registerOperations(app, web);
   registerProjectArtifacts(app, web, limits.projectArtifactUploadBytesMax);
@@ -3872,12 +3678,11 @@ export function createNativeHttpApp(
   registerThreadWrites(app, web);
   if (threadLimits !== undefined) registerThreadLimits(app, threadLimits);
   if (chat !== undefined) registerMemberChat(app, chat, threadLive);
-  registerLeadInquiries(app, web);
   registerProjectViews(app, web);
   registerRunners(app, nativeHttpPartitionRoot, workerPools, personalRunners);
   registerPlacements(app, placement, sessionPlacement, ownerFallback);
   registerActions(app, actionReports, actionReach);
-  registerTicketDoors(app, landings, landingQueues, takes);
+  registerTicketDoors(app, landings, landingQueues, takes, proposalMerges);
   registerOwnSettings(app, agentAccounts, appearance, projectAppearance);
   registerFailures(app);
   return app;

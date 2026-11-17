@@ -3,8 +3,8 @@
  * answers carried, and what the session was opened under.
  *
  * THE READ IS KEYED ON THE SESSION AND NOT ON A KIND, as the transcript's rows
- * are: the lead's route and a thread's each resolve their session under their
- * own permission and pass it here, so one page shape answers both.
+ * are: a thread's routes resolve their session under their own permission and
+ * pass it here, so one page shape answers every kind of thread.
  *
  * WHAT THE SESSION WAS OPENED UNDER CROSSES ONCE, on the first page. A prompt
  * may weigh as much as the page's readings, and it is the same text on every
@@ -30,8 +30,6 @@ export interface SessionContextTurn {
 export interface SessionContextOpening {
   /** The text the session appends to the agent runtime's own system prompt. */
   readonly systemPrompt?: string;
-  /** The context, in tokens, at which the session's runtime compacts, which only a lead holds. */
-  readonly autoCompactWindow?: number;
 }
 
 /** Where a session's readings and what it was opened under are read from. */

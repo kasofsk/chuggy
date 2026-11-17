@@ -1,6 +1,6 @@
 /**
  * The project's own reads that no frame names: what the reader may do, where
- * its work and its sessions run, its selector's settings, its bindings and its
+ * its work and its sessions run, its thread settings, its bindings and its
  * people. Each is under the partition and under no kind, so the partition's
  * refetch is what reaches it, and a write that changes one invalidates it by
  * the query's own key.

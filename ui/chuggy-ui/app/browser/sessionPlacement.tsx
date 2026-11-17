@@ -1,5 +1,5 @@
 /**
- * Where the project's threads and lead run and the runners they would run on,
+ * Where the project's threads run and the runners they would run on,
  * as every screen that says so reads it, and the one line that says a runner,
  * or the reader's chat host, cannot take a turn now.
  */
@@ -14,13 +14,9 @@ import type { PanelState } from "../core/freshness.ts";
 import { sessionPlacementQuery } from "../core/projectQueries.ts";
 import {
   sessionPlacementShort,
-  sessionRunnerAdded,
   sessionRunnerNoticeWord,
 } from "../core/sessionRunners.ts";
-import type {
-  SessionRunnerSession,
-  SessionRunnerShort,
-} from "../core/sessionRunners.ts";
+import type { SessionRunnerShort } from "../core/sessionRunners.ts";
 import { settingsRoutes } from "../core/settingsNav.ts";
 import { usePanelAnswers, usePanelState } from "./api.ts";
 import { Notice } from "./ui/Notice.tsx";
@@ -45,13 +41,11 @@ export function useSessionPlacement(
 /** Why no runner can take one session's turn, once the placement is read. */
 export function useSessionRunnerShort(
   partition: PartitionIdentity,
-  session: "thread" | "lead",
   runners: keyof SessionPlacementResponse["runners"],
 ): SessionRunnerShort | undefined {
   const placement = useSessionPlacement(partition);
   return sessionPlacementShort(
     placement.state === "Ready" ? placement.value : undefined,
-    session,
     runners,
   );
 }
@@ -62,32 +56,22 @@ export function useSessionPlacementReads(partition: PartitionIdentity): number {
   return usePanelAnswers(sessionPlacementQuery(partition).queryKey);
 }
 
+/** A thread's missing runner is added on its member's own page. */
 function SessionRunnerAddLink(props: {
   readonly partition: PartitionIdentity;
-  readonly session: SessionRunnerSession;
 }): ReactNode {
   const text = useCopyText();
-  switch (sessionRunnerAdded(props.session)) {
-    case "MyRunner":
-      return (
-        <Link to={settingsRoutes.project.myRunner} params={props.partition}>
-          {text({ id: "runners-personal-link" })}
-        </Link>
-      );
-    case "Pools":
-      return (
-        <Link to={settingsRoutes.project.pools} params={props.partition}>
-          {text({ id: "runners-pools-title" })}
-        </Link>
-      );
-  }
+  return (
+    <Link to={settingsRoutes.project.myRunner} params={props.partition}>
+      {text({ id: "runners-personal-link" })}
+    </Link>
+  );
 }
 
-/** Why no runner can take a turn now, and the link to where one is added
- * where none is. A runner of the reader's own that is offline is replaced on
- * that same page, so a session waiting on one links there either way. */
+/** Why no runner can take a turn now, and the link to the reader's own
+ * runner's page, where one is added where none is and an offline one is
+ * replaced. */
 function SessionRunnerNoticeLine(props: {
-  readonly session: SessionRunnerSession;
   readonly short: SessionRunnerShort;
   readonly add: ReactNode;
 }): ReactNode {
@@ -96,15 +80,12 @@ function SessionRunnerNoticeLine(props: {
     <Notice
       tone="parked"
       inline
-      detail={text(sessionRunnerNoticeWord(props.short, props.session))}
+      detail={text(sessionRunnerNoticeWord(props.short))}
     >
-      {props.short === "NoRunner" ||
-      sessionRunnerAdded(props.session) === "MyRunner" ? (
-        <span className="text-ink-3">
-          {" · "}
-          {props.add}
-        </span>
-      ) : null}
+      <span className="text-ink-3">
+        {" · "}
+        {props.add}
+      </span>
     </Notice>
   );
 }
@@ -112,19 +93,12 @@ function SessionRunnerNoticeLine(props: {
 /** A session's line above, linked to the page its runner is added on. */
 export function SessionRunnerNotice(props: {
   readonly partition: PartitionIdentity;
-  readonly session: SessionRunnerSession;
   readonly short: SessionRunnerShort;
 }): ReactNode {
   return (
     <SessionRunnerNoticeLine
-      session={props.session}
       short={props.short}
-      add={
-        <SessionRunnerAddLink
-          partition={props.partition}
-          session={props.session}
-        />
-      }
+      add={<SessionRunnerAddLink partition={props.partition} />}
     />
   );
 }
@@ -138,7 +112,6 @@ export function ChatHostNotice(props: {
   const text = useCopyText();
   return (
     <SessionRunnerNoticeLine
-      session="Chat"
       short={props.short}
       add={
         <Link

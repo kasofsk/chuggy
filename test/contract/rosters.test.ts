@@ -23,6 +23,7 @@ import {
   changeProposalMergeReasons,
   changeProposalMergeWaits,
   changeProposalStatuses,
+  changeProposalMergeOutcomes,
   changeProposalMerges,
   configurationProvenanceSources,
   configurationReadinesses,
@@ -58,14 +59,11 @@ import {
   resumePoints,
   runCostBases,
   schedulerFreshnesses,
-  selectorAttentions,
-  selectorDispatchModes,
-  selectorModes,
-  agenticRefusalEvents,
   forgeAccountKinds,
   forgeAccountProofs,
   forgeAppClaims,
   forgeInstallationPermissions,
+  forgeRepositorySelections,
   forgeApps,
   forgeCredentialPermissions,
   forgeIds,
@@ -97,29 +95,24 @@ import {
   allForgeAccountProofs,
   allForgeAppClaims,
 } from "../../src/interpreter/forgeAuthorization.ts";
-import { allForgeInstallationPermissions } from "../../src/interpreter/forgeDirectory.ts";
+import {
+  allForgeInstallationPermissions,
+  allForgeRepositorySelections,
+} from "../../src/interpreter/forgeDirectory.ts";
 import { allProjectRepositoryConfigurationsDeferrals } from "../../src/interpreter/repositoryOnboarding.ts";
 import {
   allRepositoryConfigurationImportAbsences,
   allRepositoryConfigurationImportAttemptResults,
 } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
-  agenticRefusalLedgerAnsweredMax,
-  agenticRefusalReasonCharsMax,
-  agenticRefusalsAnsweredMax,
   imageMediaTypes,
-  inquiryObjectivesFixedCharsMax,
-  leadObjectivesFixedCharsMax,
-  nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
   projectArtifactUploadBytesMax,
   repositoryIdentityCharsMax,
   runConfigurationBytesMax,
   sessionCapabilitiesMax,
   sessionKindCharsMax,
-  sessionTurnInputCharsMax,
   sessionTurnModelCharsMax,
-  sessionTurnResultCharsMax,
   ticketLandingStackDepthMax,
   workerPlaneUploadBytesMax,
 } from "../../src/contract/http.ts";
@@ -140,15 +133,12 @@ import {
 import { runTurnsPageLimitMax } from "../../src/contract/runTurns.ts";
 import type { RunTotals } from "../../src/interpreter/runEvidence.ts";
 import { projectChangeKinds } from "../../src/contract/events.ts";
-import { inquiryObjectivesFixedChars } from "../../src/interpreter/inquiry.ts";
-import { leadObjectivesFixedChars } from "../../src/interpreter/leadTools.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import {
   allBoundaryRefusalCodes,
   allRefusalCodes,
   type RefusalCode,
 } from "../../src/interpreter/refusal.ts";
-import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
 import { allThreadStandings } from "../../src/interpreter/thread.ts";
 import { allLifecycles } from "../../src/interpreter/projectStore.ts";
 import { allWorkerPoolOwnerFallbacks } from "../../src/interpreter/projectOwnerFallback.ts";
@@ -165,12 +155,6 @@ import {
   sessionCapabilitiesMax as interpretedSessionCapabilitiesMax,
   sessionIdentityCharsMax,
 } from "../../src/interpreter/agentSession.ts";
-import type { SelectorProjectState } from "../../src/interpreter/selector.ts";
-import {
-  leadDecisionBytesMax,
-  leadObservationBytesMax,
-  leadRefusalsObservedMax,
-} from "../../src/interpreter/selector.ts";
 import {
   escalationTags,
   resumeTags,
@@ -194,6 +178,7 @@ import {
   allChangeProposalCreationsStored,
   allChangeProposalMergeabilities,
   allChangeProposalMergeAnswers,
+  allChangeProposalMerges,
   allChangeProposalMergeWaits,
   allChangeProposalStatuses,
   allChangeProposalUnmergeableSettled,
@@ -261,7 +246,6 @@ import type {
   DraftState,
 } from "../../src/interpreter/authoring.ts";
 import type { RepositoryConfigurationFault } from "../../src/interpreter/repositoryConfiguration.ts";
-import type { SelectorRuntimeSettings } from "../../src/interpreter/selector.ts";
 
 function keysOf(record: Readonly<Record<string, true>>): readonly string[] {
   return Object.keys(record).sort();
@@ -326,6 +310,10 @@ test("the attempt and pull request codes a landing carries are the ones a row ho
   assert.deepEqual(
     [...changeProposalMerges],
     [...allChangeProposalMergeAnswers],
+  );
+  assert.deepEqual(
+    [...changeProposalMergeOutcomes],
+    [...allChangeProposalMerges],
   );
   assert.deepEqual(
     [...changeProposalMergeReasons],
@@ -755,19 +743,6 @@ test("the output content encoding roster is exhaustive over its union", () => {
   assert.deepEqual(sorted(outputContentEncodings), keysOf(encodings));
 });
 
-test("the selector rosters are exhaustive over the settings they name", () => {
-  const modes: Record<SelectorRuntimeSettings["mode"], true> = {
-    Running: true,
-    Paused: true,
-  };
-  const dispatch: Record<SelectorRuntimeSettings["dispatchMode"], true> = {
-    Automatic: true,
-    ApprovalRequired: true,
-  };
-  assert.deepEqual(sorted(selectorModes), keysOf(modes));
-  assert.deepEqual(sorted(selectorDispatchModes), keysOf(dispatch));
-});
-
 test("the authoring rosters are exhaustive over the model unions", () => {
   const states: Record<DraftState, true> = {
     Draft: true,
@@ -811,22 +786,15 @@ test("the authoring rosters are exhaustive over the model unions", () => {
   assert.deepEqual(sorted(repositoryConfigurationFaults), keysOf(faults));
 });
 
-test("the stream carries every polled kind and the four polling omits", () => {
+test("the stream carries every polled kind and the three polling omits", () => {
   assert.deepEqual(
     sorted(projectChangeKinds),
-    sorted([
-      ...notificationKinds,
-      "Execution",
-      "NativeAction",
-      "AgenticRefusal",
-      "Session",
-    ]),
+    sorted([...notificationKinds, "Execution", "NativeAction", "Session"]),
   );
   assert.deepEqual(sorted(projectChangeKinds), sorted(allProjectChangeKinds));
 });
 
-test("every session and refusal roster restates the interpreter's own", () => {
-  assert.deepEqual(agenticRefusalEvents, allAgenticRefusalEvents);
+test("every session roster restates the interpreter's own", () => {
   assert.deepEqual(sessionKinds, allSessionKinds);
   assert.deepEqual(sessionCapabilities, allSessionCapabilities);
   assert.deepEqual(sessionScopes, allSessionScopes);
@@ -854,6 +822,7 @@ test("every session and refusal roster restates the interpreter's own", () => {
     forgeInstallationPermissions,
     allForgeInstallationPermissions,
   );
+  assert.deepEqual(forgeRepositorySelections, allForgeRepositorySelections);
   assert.deepEqual(
     projectRepositoryConfigurationDeferrals,
     allProjectRepositoryConfigurationsDeferrals,
@@ -879,20 +848,6 @@ test("every session and refusal roster restates the interpreter's own", () => {
   assert.deepEqual(artifactFailures, allArtifactFailures);
 });
 
-/**
- * The attention roster has no runtime list behind it, so this record is what
- * the compiler rejects when the union gains or loses a member.
- */
-const attention: Readonly<Record<SelectorProjectState["attention"], true>> = {
-  Monitoring: true,
-  Attention: true,
-  Stopped: true,
-};
-
-test("the attention roster is the union the selector's own state carries", () => {
-  assert.deepEqual(sorted(selectorAttentions), keysOf(attention));
-});
-
 test("every bound the wire restates holds the value its source does", () => {
   assert.equal(sessionCapabilitiesMax, interpretedSessionCapabilitiesMax);
   assert.equal(repositoryIdentityCharsMax, finalizerIdentityCharsMax);
@@ -902,24 +857,6 @@ test("every bound the wire restates holds the value its source does", () => {
   );
   assert.equal(workerInputReferencesMax, inputBundleReferencesMax);
   assert.equal(sessionTurnModelCharsMax, sessionIdentityCharsMax);
-  assert.equal(leadRefusalsObservedMax, dispatchViewPageLimitMax);
-  assert.equal(leadObservationBytesMax, sessionTurnInputCharsMax);
-  assert.equal(leadDecisionBytesMax, sessionTurnResultCharsMax);
-});
-
-/**
- * Each refusal page argues its size as a product with the reason bound, so the
- * arithmetic is what is asserted rather than either number.
- */
-test("a page of refusals fits the body and the observation it is sized against", () => {
-  assert.ok(
-    agenticRefusalLedgerAnsweredMax * agenticRefusalReasonCharsMax <=
-      nativeHttpBodyBytesMax / 2,
-  );
-  assert.ok(
-    agenticRefusalsAnsweredMax * agenticRefusalReasonCharsMax <=
-      leadObservationBytesMax / 2,
-  );
 });
 
 /**
@@ -933,29 +870,4 @@ test("every session kind fits the ceiling the resource bound allows it", () => {
       kind.length <= sessionKindCharsMax,
       `${kind} is longer than a session change's resource makes room for`,
     );
-});
-
-/**
- * The observation bound derives from a ceiling on what the objectives add
- * beyond the two texts a project sets, and the contract may not read the
- * prefix that ceiling is meant to contain.
- */
-test("a lead's own objectives fit the room the observation bound leaves them", () => {
-  assert.ok(
-    leadObjectivesFixedChars <= leadObjectivesFixedCharsMax,
-    "the standing instructions outgrew what a turn's input makes room for",
-  );
-});
-
-/**
- * An inquiry's objectives are the lead's plus what being a fork means, and the
- * two kinds share one column whose bound is generated from
- * `sessionPromptCeilings`. The contract may not read the sentence this ceiling
- * is meant to contain, so the case is here.
- */
-test("what an inquiry adds to a lead's objectives fits the room the column leaves it", () => {
-  assert.ok(
-    inquiryObjectivesFixedChars <= inquiryObjectivesFixedCharsMax,
-    "the fork's own instructions outgrew what the objectives column makes room for",
-  );
 });

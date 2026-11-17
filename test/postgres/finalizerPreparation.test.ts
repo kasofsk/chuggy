@@ -40,6 +40,7 @@ import {
   asProposalQueueWord,
   asProposalNumber,
   asProposalRemoteIdentity,
+  changeProposalAnsweredReply,
   changeProposalRequest,
   proposalEvidenceCharsMax,
   proposalMarkerCharsMax,
@@ -58,6 +59,7 @@ import {
   asGitRefName,
   asInputBundleId,
   asRepositoryId,
+  finalizerDefaults,
   type FinalizationClaim,
 } from "../../src/interpreter/finalizer.ts";
 import type { FinalizerProposalStore } from "../../src/interpreter/finalizationProposal.ts";
@@ -200,6 +202,29 @@ test("a clean preparation writes the candidate over the observed target and reco
   assert.deepEqual(
     (await bundleOf(project)).map((each) => each.reference_kind),
     ["Repository", "ConfigurationRevision", "ResultManifest"],
+  );
+});
+
+test("a push with nothing in its way is prepared, promoted and concluded in one pass under the default chain", async () => {
+  const { project, remote } = await finalizerSubject(rig, "chained", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  const report = await finalizerPassOnce(
+    rig,
+    project,
+    finalizerRemotePort(rig),
+    "chained",
+    undefined,
+    { claimStepsPerPassMax: finalizerDefaults.claimStepsPerPassMax },
+  );
+  assert.equal(report.preparations, 1);
+  assert.equal(report.promotions, 1);
+  assert.equal(report.conclusions, 1);
+  assert.equal(report.holds, 0);
+  const [written] = await attemptsOf(project);
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main"),
+    written?.candidate_commit,
   );
 });
 
@@ -3068,6 +3093,66 @@ test("an update is counted before it is asked, stands unread until a reading see
     { wrote: "Nothing" },
     "nothing unread is nothing to answer for",
   );
+});
+
+test("an update keeps the forge's answer beside when it was asked, once, and only for an update asked", async () => {
+  const { project, claim, store } = await proposalBehind(
+    "proposalupdateanswer",
+  );
+  const answer = {
+    outcome: "Refused",
+    reply: changeProposalAnsweredReply(
+      422,
+      "merge conflict between base and head",
+    ),
+  };
+  const kept = async (): Promise<Record<string, unknown> | null> => {
+    const rows = await rig.as(
+      `SELECT forge_answers->'updateBranch' AS kept
+         FROM finalization_change_proposal
+        WHERE tenant=$1 AND project=$2 AND request=$3`,
+      proposalRowKey(project),
+    );
+    return (rows[0] as { kept: Record<string, unknown> | null }).kept;
+  };
+
+  assert.deepEqual(
+    await store.recordChangeProposalAnswer(claim, "updateBranch", answer),
+    { wrote: "Nothing" },
+    "no update asked is nothing to answer",
+  );
+  assert.equal(await kept(), null);
+
+  await store.markChangeProposalUpdate(claim);
+  const asked = await kept();
+  assert.equal(typeof asked?.["askedAt"], "string");
+  assert.equal(asked?.["answeredAt"], undefined);
+
+  assert.deepEqual(
+    await store.recordChangeProposalAnswer(claim, "updateBranch", answer),
+    { wrote: "Row" },
+  );
+  const answered = await kept();
+  assert.deepEqual(
+    { ...answered, answeredAt: typeof answered?.["answeredAt"] },
+    {
+      askedAt: asked?.["askedAt"],
+      answeredAt: "string",
+      outcome: "Refused",
+      status: 422,
+      message: "merge conflict between base and head",
+    },
+  );
+
+  assert.deepEqual(
+    await store.recordChangeProposalAnswer(claim, "updateBranch", {
+      outcome: "Accepted",
+      reply: changeProposalAnsweredReply(202, "Updating pull request branch."),
+    }),
+    { wrote: "Nothing" },
+    "an ask already answered takes no second answer",
+  );
+  assert.deepEqual(await kept(), answered);
 });
 
 test("a merge not waiting with a reading is updated by nobody", async () => {

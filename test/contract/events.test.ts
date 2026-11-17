@@ -4,8 +4,7 @@
  *
  * A change frame's representation comes from `src/adapters/http/outcomes.ts`,
  * so these cases start there and feed what it emits to the stream's parser.
- * `AgenticRefusal` and `Session` are written out instead: the stream sends both
- * as tombstones, so what is held here is that their schemas admit a body.
+ * `Session` has none: the stream sends it only as a tombstone.
  */
 
 import assert from "node:assert/strict";
@@ -48,54 +47,6 @@ const ticketRepresentation = ticketResponse({
   ...ticketCarried,
 }).body;
 
-/** One ticket's refusal ledger with the standing the latest entry induces. */
-const ticketAgenticRefusalsRepresentation = {
-  ticket: 42,
-  more: false,
-  entries: [
-    {
-      ordinal: 91,
-      event: "Refused",
-      ticketVersion: 2,
-      reason: "the dependency is still failing",
-      decision: "selector-decision-one",
-      recordedAt: "2026-09-02T12:00:00.000Z",
-    },
-  ],
-  standing: {
-    ticketVersion: 2,
-    reason: "the dependency is still failing",
-    recordedAt: "2026-09-02T12:00:00.000Z",
-  },
-};
-
-/** The lead read, which is what a `Session` frame carries under the session id. */
-const leadRepresentation = {
-  session: "lead-atlas",
-  state: "Open",
-  attention: "Monitoring",
-  agentReference: "1a2b",
-  notificationCursor: 1_204,
-  handoffNote: { bytes: 2, preview: "{}", truncated: false },
-  turns: [
-    {
-      turn: "selector-decision-one",
-      ordinal: 7,
-      inputKind: "Observation",
-      state: "Answered",
-      decision: "selector-decision-one",
-      model: "model-one",
-      tokens: 41_234,
-      costMicros: 182_000,
-      durationMs: 74_210,
-      tools: [],
-      batchFirst: 12,
-      batchLast: 14,
-    },
-  ],
-  streams: [{ stream: "1a2b", batches: 14 }],
-};
-
 const nativeActionRepresentation = ticketNativeActionsResponse([
   {
     action: "escalation",
@@ -106,8 +57,11 @@ const nativeActionRepresentation = ticketNativeActionsResponse([
   },
 ]).body;
 
-/** One representation per kind, each from the builder that kind's frame takes. */
-const representations: Readonly<Record<ProjectChangeKind, unknown>> = {
+/** The kinds whose frames carry a body, which is every kind but `Session`. */
+type RepresentedKind = Exclude<ProjectChangeKind, "Session">;
+
+/** One representation per kind that carries one, each from the builder that kind's frame takes. */
+const representations: Readonly<Record<RepresentedKind, unknown>> = {
   Ticket: ticketRepresentation,
   Execution: executionSummaryResponse(executionSummary).body,
   Draft: draftResponse(draftResource).body,
@@ -118,8 +72,6 @@ const representations: Readonly<Record<ProjectChangeKind, unknown>> = {
     project: { partition, sequence: 9, tickets: [] },
   }).body,
   NativeAction: nativeActionRepresentation,
-  AgenticRefusal: ticketAgenticRefusalsRepresentation,
-  Session: leadRepresentation,
 };
 
 test("a change frame carries the GET's own representation under its identity", () => {
@@ -141,7 +93,12 @@ test("a change frame carries the GET's own representation under its identity", (
 });
 
 test("every kind parses the representation its frame carries", () => {
-  for (const kind of populated(projectChangeKinds, "the change kinds")) {
+  for (const kind of populated(
+    projectChangeKinds.filter(
+      (known): known is RepresentedKind => known !== "Session",
+    ),
+    "the represented change kinds",
+  )) {
     const event = parseProjectStreamEvent({
       event: kind,
       id: "7",
@@ -252,6 +209,20 @@ test("a null representation is the tombstone every kind may send", () => {
     assert.equal(event.event, kind);
     assert.equal(event.data.representation, null);
   }
+});
+
+test("a session frame is only ever a tombstone, and one carrying a body is refused", () => {
+  assert.throws(() =>
+    parseProjectStreamEvent({
+      event: "Session",
+      id: "1",
+      data: {
+        version: projectStreamVersion,
+        resource: "one",
+        representation: { session: "one" },
+      },
+    }),
+  );
 });
 
 test("the control frames carry their version and the source its state", () => {

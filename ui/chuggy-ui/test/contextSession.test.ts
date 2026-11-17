@@ -8,9 +8,9 @@
 import { expect, test } from "vitest";
 
 import type {
-  LeadTranscriptCut,
-  LeadTranscriptEntry,
-} from "../app/core/leadTranscript.ts";
+  SessionTranscriptCut,
+  SessionTranscriptEntry,
+} from "../app/core/sessionTranscript.ts";
 import {
   contextSessionInputsOf,
   contextSessionMarkOf,
@@ -25,7 +25,11 @@ function at(time: string): string {
   return `2026-11-01T${time}.000Z`;
 }
 
-function asked(uuid: string, text: string, time: string): LeadTranscriptEntry {
+function asked(
+  uuid: string,
+  text: string,
+  time: string,
+): SessionTranscriptEntry {
   return {
     uuid,
     type: "user",
@@ -38,7 +42,7 @@ function answered(
   uuid: string,
   read: number,
   time: string,
-): LeadTranscriptEntry {
+): SessionTranscriptEntry {
   return {
     uuid,
     type: "assistant",
@@ -138,8 +142,8 @@ test("a cut in a session's first turn is placed where the panel holds that turn"
  * entries only, the summary the compaction wrote a user entry like a prompt,
  * and the boundary named by its time among the page's cuts. */
 const compacted: {
-  readonly entries: readonly LeadTranscriptEntry[];
-  readonly cuts: readonly LeadTranscriptCut[];
+  readonly entries: readonly SessionTranscriptEntry[];
+  readonly cuts: readonly SessionTranscriptCut[];
 } = {
   entries: [
     asked("u1", "first", "10:00:00"),
@@ -164,7 +168,7 @@ const compacted: {
 
 test("with no readings, each turn is the context its last billed entry sent, and a cut the page names stands after the turn before the one whose entries follow it", () => {
   const view = contextSessionOf({
-    context: { turns: [], autoCompactWindow: 200_000 },
+    context: { turns: [] },
     ...compacted,
   });
   expect(
@@ -181,7 +185,7 @@ test("with no readings, each turn is the context its last billed entry sent, and
     view.window.reading,
     view.window.used,
     view.window.window,
-  ]).toStrictEqual([false, 50_002, 200_000]);
+  ]).toStrictEqual([false, 50_002, undefined]);
 });
 
 test("a compaction's summary opens no turn, so a compacted transcript keeps its count of turns", () => {
@@ -244,7 +248,7 @@ test("the first page is read for what the session was opened under, then the new
   }, 300);
   expect(asks.slice(0, 2)).toStrictEqual([0, 236]);
   if (answered.outcome !== "Ok") throw new Error("refused");
-  expect(answered.value.systemPrompt).toBe("You are the project's lead.");
+  expect(answered.value.systemPrompt).toBe("You are the member's thread.");
   expect(answered.value.turns.at(-1)?.ordinal).toBe(304);
 });
 
@@ -255,14 +259,14 @@ test("a thread's inputs are its seeded block, the appended prompt and the window
   expect(seed).toBeUndefined();
   expect(
     contextSessionInputsOf(
-      { turns: [], systemPrompt: "Appended.", autoCompactWindow: 200_000 },
+      { turns: [], systemPrompt: "Appended." },
       undefined,
       {
         unit: "Turn",
         at: undefined,
         reading: false,
         used: 0,
-        window: undefined,
+        window: 200_000,
         threshold: undefined,
         rows: [],
         segments: [],

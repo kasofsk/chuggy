@@ -8,15 +8,24 @@
  * whether a service is there and running. Nothing of that is kept by this
  * program, so every run reads it again. The names are the runner package's
  * own, since it has no command that says them: where it keeps its settings,
- * its Claude login, its registrations and its units, how it names a pool file
- * for a project and the file of the person's chat host in a workspace, and
- * the unit for either. A settings file is read for the engine and the Claude
- * credential it names and for nothing else, the chat host's file for the id
+ * its Claude login, its registrations and its services' files, how it names a
+ * pool file for a project and the file of the person's chat host in a
+ * workspace, and the service of either: a systemd user unit on Linux, a
+ * launchd agent on a Mac. A settings file is read for the engine, the Claude
+ * credential and the chat host's size it names and for nothing else, the
+ * engine for the memory it reports and for what its running containers take
+ * of it, the chat host's file for the id
  * the site holds that host by and for nothing else, and a pool's registration
  * and a Claude credential's file are never read at all, only looked for. The
  * package is
  * installed by the console's own install command, under the person's own
  * prefix where the machine's is not theirs to write.
+ *
+ * What the running containers take is counted as the runner counts it, in
+ * kasofsk/chuggy-common's `memoryBudget.mjs`, which this program cannot
+ * import: one carrying the pool label and a memory cap at that cap, and every
+ * other at what the engine's `stats` says it uses, in docker's binary units
+ * or podman's decimal ones. A count that could not be made is no count.
  */
 
 import { z } from "zod";
@@ -24,11 +33,20 @@ import { z } from "zod";
 import { identitySchema } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 
-import { runnerPackageOffered, runnerRegisterCommand } from "./runners.ts";
-import type { RunnerKind } from "./runners.ts";
-import { SetupMachineError } from "./setupPorts.ts";
+import { runnerPackages, runnerRegisterCommand } from "./runners.ts";
+import type { RunnerKind, RunnerPackage } from "./runners.ts";
+import {
+  setupEngineSpareMib,
+  setupFitEngineMib,
+  setupFitOf,
+  setupJobMemoryMib,
+  setupMacRead,
+} from "./setupFit.ts";
+import type { SetupFit, SetupFitProbes, SetupMac } from "./setupFit.ts";
+import { SetupMachineError, setupPlatformOf } from "./setupPorts.ts";
 import type {
   SetupChildEnded,
+  SetupPlatform,
   SetupPorts,
   SetupSurroundings,
 } from "./setupPorts.ts";
@@ -56,17 +74,13 @@ export const setupChildBytesMax = 65_536;
 /** Past any settings file, package manifest or unit a person would write. */
 const setupTextBytesMax = 65_536;
 
-const setupProgram = runnerPackageOffered.program;
-
-/** The platform `runner` sets a runner up on, which is the one the console's package runs on. */
-export const setupRunnerPlatform = "linux";
-
 /** Where the runner package keeps its things on this machine, each a whole path. */
 export interface SetupRunnerPlaces {
   readonly settings: string;
   /** Where the runner's Claude login is kept unless its settings name another place: alone in a directory of its own, which a chat host is handed whole. */
   readonly login: string;
   readonly pools: string;
+  /** Where the package writes the file of each service it runs: its systemd user units on Linux, its launchd agents on a Mac. */
   readonly units: string;
   /** The prefix of the person's own the package is installed under where the machine's is not theirs to write. */
   readonly own: string;
@@ -76,22 +90,40 @@ function setupPath(...parts: readonly string[]): string {
   return parts.join("/");
 }
 
-/** The package's places under the person's configuration directory, which is the one they set where it is a whole path and the usual one in their home otherwise. */
+/**
+ * The package's places: on Linux under the person's configuration directory,
+ * the one they set where it is a whole path and the usual one in their home
+ * otherwise. On a Mac under their Library, but for the pool files, which
+ * chuggy-darwin keeps in `~/.config` whatever configuration directory is set.
+ */
 export function setupRunnerPlaces(
   surroundings: SetupSurroundings,
 ): SetupRunnerPlaces {
   const { home, configHome } = surroundings;
   if (home === undefined) throw new SetupMachineError({ fault: "Homeless" });
+  const own = setupPath(home, ".local");
+  const platform = setupPlatformOf(surroundings);
+  const program = runnerPackages[platform].program;
+  if (platform === "darwin") {
+    const support = setupPath(home, "Library", "Application Support", program);
+    return {
+      settings: setupPath(support, "runner.json"),
+      login: setupPath(support, "claude", "token"),
+      pools: setupPath(home, ".config", "chuggy", "pools"),
+      units: setupPath(home, "Library", "LaunchAgents"),
+      own,
+    };
+  }
   const config =
     configHome !== undefined && configHome.startsWith("/")
       ? configHome.replace(/\/+$/u, "")
       : setupPath(home, ".config");
   return {
-    settings: setupPath(config, setupProgram, "runner.json"),
-    login: setupPath(config, setupProgram, "claude", "token"),
+    settings: setupPath(config, program, "runner.json"),
+    login: setupPath(config, program, "claude", "token"),
     pools: setupPath(config, "chuggy", "pools"),
     units: setupPath(config, "systemd", "user"),
-    own: setupPath(home, ".local"),
+    own,
   };
 }
 
@@ -154,17 +186,19 @@ const setupEngineProbes: Readonly<Record<SetupEngine, readonly string[]>> = {
 
 /**
  * Where a runner could be put: here, with the engine that answered; or not
- * here, because the machine is not the package's platform, its user services
- * did not answer, no engine did, or the package bars this user from docker
- * and nothing else is theirs to use.
+ * here, because its user services did not answer, no engine did, or the
+ * package bars this user from docker and nothing else is theirs to use. Only
+ * Linux has the first and the last: a Mac's runner has launchd, and docker in
+ * Colima for any user.
  */
 export type SetupRunnerRoom =
   | { readonly room: "Open"; readonly engine: SetupEngine }
-  | { readonly room: "Mac" }
   | { readonly room: "Serviceless" }
   | {
       readonly room: "Engineless";
       readonly asked: readonly SetupEngineAsked[];
+      /** The command that starts the engine without a password where it runs in a VM of the person's, as docker does in Colima on a Mac. */
+      readonly start: string | undefined;
     }
   | {
       readonly room: "DockerBarred";
@@ -218,7 +252,7 @@ async function setupEngineRoom(
     if (answer.answered === "Yes") return { room: "Open", engine };
     asked.push(answer);
   }
-  return { room: "Engineless", asked };
+  return { room: "Engineless", asked, start: undefined };
 }
 
 /** Asks the user's service manager for its own version, which it answers only where it is running for this user. */
@@ -230,13 +264,37 @@ const setupServicesProbe = [
   "Version",
 ];
 
-/** Whether this machine could take a runner, asking the one engine the runner's settings name where there are any, and otherwise each the package would take from this user. */
+/** What starts Colima, the VM docker runs in on a Mac, as it is: the person's to run where `runner` would change nothing of it. */
+export const setupColimaStart = ["colima", "start"] as const;
+
+/** What starts Colima whenever the person logs in, as chuggy-darwin's `install-agent` says it. */
+export const setupColimaAtLogin = [
+  "brew",
+  "services",
+  "start",
+  "colima",
+] as const;
+
+/**
+ * Whether this machine could take a runner: on a Mac whether docker, the one
+ * engine chuggy-darwin runs, answers. On Linux it asks the one engine the
+ * runner's settings name where there are any, and otherwise each the package
+ * would take from this user.
+ */
 export async function setupRunnerRoom(
   ports: SetupPorts,
   named: SetupSettingsNamed | undefined,
 ): Promise<SetupRunnerRoom> {
-  if (ports.surroundings.platform !== setupRunnerPlatform)
-    return { room: "Mac" };
+  if (setupPlatformOf(ports.surroundings) === "darwin") {
+    const asked = await setupEngineAsked(ports, "docker");
+    return asked.answered === "Yes"
+      ? { room: "Open", engine: "docker" }
+      : {
+          room: "Engineless",
+          asked: [asked],
+          start: setupColimaStart.join(" "),
+        };
+  }
   if (!setupWell(await setupProbed(ports, setupServicesProbe)))
     return { room: "Serviceless" };
   return setupEngineRoom(ports, named);
@@ -258,11 +316,22 @@ const setupCredentialSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("Foundry"), apiKeyFile: setupWholePath }),
 ]);
 
+const setupPositive = z.number().int().positive().safe();
+
+/** What the settings name of the chat host's size, which this program goes by; the rest of the chat host's settings it never holds. */
+const setupChatSettingsSchema = z.object({
+  sessionsMax: setupPositive.optional(),
+  sessionMemoryMib: setupPositive.optional(),
+});
+
+export type SetupChatSettings = z.infer<typeof setupChatSettingsSchema>;
+
 /** What a settings file names that this program goes by, the rest of it never held: `environment` there may carry a person's secrets. */
 const setupSettingsSchema = z.object({
   claudeTokenFile: setupWholePath.optional(),
   claudeCredential: setupCredentialSchema.optional(),
   engine: z.enum(setupEngines).optional(),
+  chat: setupChatSettingsSchema.optional(),
 });
 
 /**
@@ -313,7 +382,7 @@ function setupCredentialNamed(
     : undefined;
 }
 
-/** The runner's settings: none yet, there and not read as the package's, or the engine and the Claude credential they name. */
+/** The runner's settings: none yet, there and not read as the package's, or the engine, the Claude credential and the chat host's size they name. */
 export type SetupSettingsRead =
   | { readonly settings: "Absent" }
   | { readonly settings: "Unread" }
@@ -322,6 +391,7 @@ export type SetupSettingsRead =
       readonly path: string;
       readonly engine: SetupEngine;
       readonly credential: SetupClaudeCredential;
+      readonly chat: SetupChatSettings;
     };
 
 function setupJson(text: string | undefined): unknown {
@@ -352,17 +422,330 @@ export function setupSettingsRead(
         path: places.settings,
         engine: parsed.data.engine ?? setupEngines[0],
         credential,
+        chat: parsed.data.chat ?? {},
       }
     : { settings: "Unread" };
+}
+
+/** The settings file as one object, every key of it kept whole and none of them read, or nothing where it is not one. */
+export function setupSettingsHeld(
+  ports: SetupPorts,
+  places: SetupRunnerPlaces,
+): Readonly<Record<string, unknown>> | undefined {
+  const held = setupJson(ports.disk.text(places.settings, setupTextBytesMax));
+  return typeof held === "object" && held !== null && !Array.isArray(held)
+    ? (held as Readonly<Record<string, unknown>>)
+    : undefined;
+}
+
+/** The chat host's size the settings `held` name, or nothing where what they name is not one the package takes. */
+export function setupSettingsChat(
+  held: Readonly<Record<string, unknown>>,
+): SetupChatSettings | undefined {
+  const parsed = setupChatSettingsSchema.safeParse(held["chat"] ?? {});
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** The settings `held` with the chat host's size `size` in their `chat`, every other key of either kept as it was. */
+export function setupSettingsChatText(
+  held: Readonly<Record<string, unknown>>,
+  size: Pick<SetupChatSize, "sessionsMax" | "sessionMemoryMib">,
+): string {
+  const had = held["chat"];
+  const chat = typeof had === "object" && had !== null ? had : {};
+  const settings = {
+    ...held,
+    chat: {
+      ...chat,
+      sessionsMax: size.sessionsMax,
+      sessionMemoryMib: size.sessionMemoryMib,
+    },
+  };
+  return `${JSON.stringify(settings, null, 2)}\n`;
+}
+
+/** The memory, in MiB, the runner package gives the chat host for each session where its settings name none. */
+export const setupChatSessionMemoryMib = 2_048;
+
+/** The most sessions at once setup sizes a chat host to. */
+export const setupChatSessionsMax = 4;
+
+/** What a chat host here would hold, as `runner` leaves the settings naming. */
+export interface SetupChatSize {
+  /** The engine's memory as it reports it, in MiB, or nothing where it did not say. */
+  readonly engineMib: number | undefined;
+  /** What the engine's running containers take of it, in MiB, or nothing where that could not be counted. */
+  readonly inUseMib: number | undefined;
+  /** The sessions at once the engine's memory has room for beside what it runs and a job, none where it has room for none or either was not read. */
+  readonly room: number;
+  /** The sessions at once the settings name: those already named, and otherwise the room, but never none, since the package takes none fewer than one. */
+  readonly sessionsMax: number;
+  /** The memory, in MiB, each takes: the settings' own where they name one. */
+  readonly sessionMemoryMib: number;
+}
+
+/** A chat host sized to the memory the engine reports, which is below its nominal size, less what its running containers take, and to what the settings already name of it. */
+export function setupChatSized(
+  engineMib: number | undefined,
+  inUseMib: number | undefined,
+  chat: SetupChatSettings,
+): SetupChatSize {
+  const sessionMemoryMib = chat.sessionMemoryMib ?? setupChatSessionMemoryMib;
+  const left =
+    engineMib === undefined || inUseMib === undefined
+      ? 0
+      : engineMib - inUseMib - setupJobMemoryMib - setupEngineSpareMib;
+  const room = Math.max(
+    0,
+    Math.min(setupChatSessionsMax, Math.floor(left / sessionMemoryMib)),
+  );
+  return {
+    engineMib,
+    inUseMib,
+    room,
+    sessionsMax: chat.sessionsMax ?? Math.max(1, room),
+    sessionMemoryMib,
+  };
+}
+
+/** What each engine is asked for everything it says of itself, which is where the memory it has is, as the runner's own budget reads it. */
+const setupEngineInfo: Readonly<Record<SetupEngine, readonly string[]>> = {
+  docker: ["docker", "info", "--format", "{{json .}}"],
+  podman: ["podman", "info", "--format", "{{json .}}"],
+};
+
+const setupEngineBytes = z.number().int().positive().safe();
+
+const setupEngineMemorySchemas = {
+  docker: z
+    .object({ MemTotal: setupEngineBytes })
+    .transform((info) => info.MemTotal),
+  podman: z
+    .object({ host: z.object({ memTotal: setupEngineBytes }) })
+    .transform((info) => info.host.memTotal),
+} as const;
+
+/** The name docker's info gives the machine it runs on, which in Colima is the VM's profile ID. */
+const setupEngineMachineSchema = z.object({ Name: z.string() });
+
+const setupBytesPerMib = 2 ** 20;
+
+/** What the engine says of itself that a run goes by: its memory, in whole MiB, which on a Mac is Colima's VM's, and docker's machine name; each nothing where it did not say. */
+export interface SetupEngineInfo {
+  readonly memoryMib: number | undefined;
+  readonly machine: string | undefined;
+}
+
+/** What the engine says of itself, asked once. */
+export async function setupEngineInfoRead(
+  ports: SetupPorts,
+  engine: SetupEngine,
+): Promise<SetupEngineInfo> {
+  const printed = setupJson(
+    await ports.process.read(
+      setupEngineInfo[engine],
+      setupProbeWaitMs,
+      setupChildBytesMax,
+    ),
+  );
+  const memory = setupEngineMemorySchemas[engine].safeParse(printed);
+  const machine = setupEngineMachineSchema.safeParse(printed);
+  return {
+    memoryMib: memory.success
+      ? Math.floor(memory.data / setupBytesPerMib)
+      : undefined,
+    machine:
+      engine === "docker" && machine.success ? machine.data.Name : undefined,
+  };
+}
+
+/** The label a runner's workload carries, which the runner counts at its cap where it has one. */
+const setupPoolLabel = "io.chuggy.pool";
+
+/** What of a running container's inspection is counted: its name, its labels and its memory cap, which is 0 or none where it has none. */
+const setupContainersSchema = z.array(
+  z.object({
+    Name: z.string(),
+    Config: z.object({
+      Labels: z.record(z.string(), z.string()).nullish(),
+    }),
+    HostConfig: z.object({ Memory: z.number().nullish() }).nullish(),
+  }),
+);
+
+/** The bytes each unit an engine's `stats` prints counts, docker's binary and podman's decimal. */
+const setupSizeUnitBytes: ReadonlyMap<string, number> = new Map([
+  ["B", 1],
+  ["kB", 1e3],
+  ["KB", 1e3],
+  ["MB", 1e6],
+  ["GB", 1e9],
+  ["TB", 1e12],
+  ["KiB", 2 ** 10],
+  ["MiB", 2 ** 20],
+  ["GiB", 2 ** 30],
+  ["TiB", 2 ** 40],
+]);
+
+/** The bytes a size an engine printed counts, or nothing for one it did not print as a size. */
+function setupSizeBytes(size: string): number | undefined {
+  const match = /^(\d+(?:\.\d+)?)([A-Za-z]+)$/u.exec(size);
+  if (match === null) return undefined;
+  const unit = setupSizeUnitBytes.get(match[2] ?? "");
+  return unit === undefined ? undefined : Number(match[1]) * unit;
+}
+
+/** What the containers named in `names` use together, in bytes, as the engine's `stats` printed it, a line each; nothing where a use of one of them could not be read. One the lines name no use of has ended since it was listed. */
+function setupStatsUsedBytes(
+  printed: string,
+  names: ReadonlySet<string>,
+): number | undefined {
+  let used = 0;
+  for (const line of printed.split("\n")) {
+    const match = /^(\S+) (\S+) \/ /u.exec(line.trim());
+    if (match === null || !names.has(match[1] ?? "")) continue;
+    const bytes = setupSizeBytes(match[2] ?? "");
+    if (bytes === undefined) return undefined;
+    used += bytes;
+  }
+  return used;
+}
+
+/** Asks the engine `engine` with the arguments `argv`, as every probe of it is asked. */
+function setupEngineAsk(
+  ports: SetupPorts,
+  engine: SetupEngine,
+  argv: readonly string[],
+): Promise<string | undefined> {
+  return ports.process.read(
+    [engine, ...argv],
+    setupProbeWaitMs,
+    setupChildBytesMax,
+  );
+}
+
+/** What the engine's running containers take of its memory together, in whole MiB rounded up, as the runner counts them; nothing where the engine did not say, or said what cannot be read. */
+export async function setupEngineInUseRead(
+  ports: SetupPorts,
+  engine: SetupEngine,
+): Promise<number | undefined> {
+  const listed = await setupEngineAsk(ports, engine, [
+    "ps",
+    "--quiet",
+    "--no-trunc",
+  ]);
+  if (listed === undefined) return undefined;
+  const ids = listed.split("\n").filter((line) => line.trim() !== "");
+  if (ids.length === 0) return 0;
+  const inspected = setupContainersSchema.safeParse(
+    setupJson(
+      await setupEngineAsk(ports, engine, ["container", "inspect", ...ids]),
+    ),
+  );
+  if (!inspected.success) return undefined;
+  const running = inspected.data.map((container) => {
+    const capBytes = container.HostConfig?.Memory ?? 0;
+    const pooled = container.Config.Labels?.[setupPoolLabel] !== undefined;
+    return {
+      name: container.Name.replace(/^\//u, ""),
+      cappedBytes: pooled && capBytes > 0 ? capBytes : undefined,
+    };
+  });
+  const cappedBytes = running.reduce(
+    (sum, { cappedBytes: bytes }) => sum + (bytes ?? 0),
+    0,
+  );
+  const measured = new Set(
+    running.flatMap(({ name, cappedBytes: bytes }) =>
+      bytes === undefined ? [name] : [],
+    ),
+  );
+  const usedBytes =
+    measured.size === 0
+      ? 0
+      : setupEngineUsedBytes(
+          await setupEngineAsk(ports, engine, [
+            "stats",
+            "--no-stream",
+            "--format",
+            "{{.Name}} {{.MemUsage}}",
+          ]),
+          measured,
+        );
+  return usedBytes === undefined
+    ? undefined
+    : Math.ceil((cappedBytes + usedBytes) / setupBytesPerMib);
+}
+
+/** What `stats` printed of the containers `measured`, where it printed anything. */
+function setupEngineUsedBytes(
+  printed: string | undefined,
+  measured: ReadonlySet<string>,
+): number | undefined {
+  return printed === undefined
+    ? undefined
+    : setupStatsUsedBytes(printed, measured);
+}
+
+/** The memory the engine reports, in whole MiB, which on a Mac is Colima's VM's; nothing where it did not say. */
+export async function setupEngineMemoryRead(
+  ports: SetupPorts,
+  engine: SetupEngine,
+): Promise<number | undefined> {
+  return (await setupEngineInfoRead(ports, engine)).memoryMib;
+}
+
+/** The reads of the machine what a job needs of it is read through. */
+export function setupFitProbesOf(ports: SetupPorts): SetupFitProbes {
+  return {
+    read: (command) =>
+      ports.process.read(command, setupProbeWaitMs, setupChildBytesMax),
+    text: (path) => ports.disk.text(path, setupTextBytesMax),
+    home: ports.surroundings.home,
+    colimaHome: ports.surroundings.colimaHome,
+  };
+}
+
+/**
+ * What this machine is short of for a job naming no memory or platform, read
+ * of the engine `engine` where one is to be asked, and on a Mac of Colima too,
+ * with the engine's memory as it reported it.
+ */
+export async function setupFitRead(
+  ports: SetupPorts,
+  engine: SetupEngine | undefined,
+): Promise<{
+  readonly fit: SetupFit;
+  readonly engineMib: number | undefined;
+  readonly mac: SetupMac | undefined;
+}> {
+  const info =
+    engine === undefined
+      ? { memoryMib: undefined, machine: undefined }
+      : await setupEngineInfoRead(ports, engine);
+  const platform = setupPlatformOf(ports.surroundings);
+  const mac =
+    platform === "darwin"
+      ? await setupMacRead(setupFitProbesOf(ports), info.machine)
+      : undefined;
+  return {
+    fit: setupFitOf(platform, mac, info.memoryMib),
+    engineMib: info.memoryMib,
+    mac,
+  };
 }
 
 /** The limits the package's guide writes in the settings it shows, which have no default of the package's own. */
 const setupGuideLimits = { timeoutSecsMax: 7_200, outputBytesMax: 1_048_576 };
 
-/** The settings a machine with none is given: the package's guide's own, with the engine that answered and where the Claude login is. */
-export function setupSettingsText(engine: SetupEngine, login: string): string {
+/** The settings a machine with none is given: the package's guide's own, with where the Claude login is and, on Linux, the engine that answered; chuggy-darwin's settings have no engine to name. */
+export function setupSettingsText(
+  platform: SetupPlatform,
+  engine: SetupEngine,
+  login: string,
+): string {
   const settings = {
-    engine,
+    ...(platform === "darwin" ? {} : { engine }),
     concurrencyMax: 1,
     sessionsMax: 2,
     claudeTokenFile: login,
@@ -402,6 +785,19 @@ export const setupPackageLeast = "0.14.0";
 /** The first version of the runner package that registers a chat host, which a run that sets one up leaves a machine on. */
 export const setupChatPackageLeast = "0.35.0";
 
+/**
+ * The oldest of each platform's runner package a run can use: `runner` for
+ * the person's runner alone, `chat` where their chat host is set up too.
+ * Linux's are the two above; chuggy-darwin's are its first release with every
+ * command a run uses.
+ */
+export const setupPackageLeasts: Readonly<
+  Record<SetupPlatform, { readonly runner: string; readonly chat: string }>
+> = {
+  linux: { runner: setupPackageLeast, chat: setupChatPackageLeast },
+  darwin: { runner: "0.23.0", chat: "0.23.0" },
+};
+
 function setupVersionParts(version: string): readonly number[] {
   return version.split(/[.+-]/u, 3).map(Number);
 }
@@ -418,21 +814,29 @@ export function setupPackageCurrent(
   return at < 0 || (had[at] ?? 0) > (floor[at] ?? 0);
 }
 
-function setupCommandIn(prefix: string): string {
-  return setupPath(prefix, "bin", setupProgram);
+/** The later of two versions, as `setupPackageCurrent` orders them. */
+export function setupVersionLater(one: string, other: string): string {
+  return setupPackageCurrent({ command: "", version: one }, other)
+    ? one
+    : other;
+}
+
+function setupCommandIn(prefix: string, offered: RunnerPackage): string {
+  return setupPath(prefix, "bin", offered.program);
 }
 
 function setupPackageIn(
   ports: SetupPorts,
   prefix: string,
+  offered: RunnerPackage,
 ): SetupPackageFound | undefined {
-  const command = setupCommandIn(prefix);
+  const command = setupCommandIn(prefix, offered);
   if (ports.disk.kind(command) !== "File") return undefined;
   const manifest = setupPath(
     prefix,
     "lib",
     "node_modules",
-    setupProgram,
+    offered.program,
     "package.json",
   );
   const read = setupVersionSchema.safeParse(
@@ -449,11 +853,12 @@ function setupPrefixRead(printed: string | undefined): string | undefined {
     : undefined;
 }
 
-/** Where the runner package is: under the prefix npm installs machine-wide, or under the person's own, and where both hold one, the one a run can use, none older than `least`. */
+/** Where the runner package `offered` is: under the prefix npm installs machine-wide, or under the person's own, and where both hold one, the one a run can use, none older than `least`. */
 export async function setupPackageProbed(
   ports: SetupPorts,
   places: SetupRunnerPlaces,
   least: string,
+  offered: RunnerPackage,
 ): Promise<SetupPackageProbe> {
   const prefix = setupPrefixRead(
     await ports.process.read(
@@ -467,8 +872,8 @@ export async function setupPackageProbed(
     ports.disk.writable(setupPath(prefix, "lib", "node_modules")) &&
     ports.disk.writable(setupPath(prefix, "bin"));
   const held = [
-    prefix === undefined ? undefined : setupPackageIn(ports, prefix),
-    setupPackageIn(ports, places.own),
+    prefix === undefined ? undefined : setupPackageIn(ports, prefix, offered),
+    setupPackageIn(ports, places.own, offered),
   ].filter((there) => there !== undefined);
   const found =
     held.find((there) => setupPackageCurrent(there, least)) ?? held[0];
@@ -487,8 +892,9 @@ function setupInstallPrefix(
 export function setupInstallCommandPath(
   places: SetupRunnerPlaces,
   probe: SetupPackageProbe,
+  offered: RunnerPackage,
 ): string {
-  return setupCommandIn(setupInstallPrefix(places, probe));
+  return setupCommandIn(setupInstallPrefix(places, probe), offered);
 }
 
 /** The package where an install puts one, whatever its version, or nothing where there is none. */
@@ -496,44 +902,54 @@ export function setupPackageInstalled(
   ports: SetupPorts,
   places: SetupRunnerPlaces,
   probe: SetupPackageProbe,
+  offered: RunnerPackage,
 ): SetupPackageFound | undefined {
-  return setupPackageIn(ports, setupInstallPrefix(places, probe));
+  return setupPackageIn(ports, setupInstallPrefix(places, probe), offered);
 }
 
-/** The console's own install command, word for word, with the person's own prefix named where the machine's is not theirs to write. */
+/** The console's own install command for `offered`, word for word, with the person's own prefix named where the machine's is not theirs to write. */
 export function setupInstallCommand(
   places: SetupRunnerPlaces,
   probe: SetupPackageProbe,
+  offered: RunnerPackage,
 ): readonly string[] {
-  const words = runnerPackageOffered.installCommand.split(" ");
+  const words = offered.installCommand.split(" ");
   return probe.mine
     ? words
     : [...words.slice(0, -1), "--prefix", places.own, ...words.slice(-1)];
 }
 
-/** The console's own register command, word for word, as a pool's or as the person's chat host, run as the installed command by its whole path. */
+/** The console's own register command for `offered`, word for word, as `kind` says, run as the installed command by its whole path. */
 export function setupRegisterCommand(
+  offered: RunnerPackage,
   command: string,
   site: string,
   token: string,
-  kind: Exclude<RunnerKind, "Personal">,
+  kind: RunnerKind,
 ): readonly string[] {
-  const [, ...rest] = runnerRegisterCommand(
-    runnerPackageOffered,
-    site,
-    token,
-    kind,
-  ).split(" ");
+  const [, ...rest] = runnerRegisterCommand(offered, site, token, kind).split(
+    " ",
+  );
   return [command, ...rest];
 }
 
-/** What the bare command reads of this machine where the runner's step is the one next: whether a runner could be put here, and whether it holds a registration for the project and one as the person's chat host in its workspace, each a file's name and not yet whether the site knows it. */
+/** What the bare command reads of this machine where the runner's step is the one next: whether a runner could be put here, and whether it holds a registration as the person's runner or the project's and one as the person's chat host in its workspace, each a file's name and not yet whether the site knows it. */
 export interface SetupRunnerHere {
   readonly room: SetupRunnerRoom;
-  readonly held: boolean;
+  readonly held: SetupRunnerHeld | undefined;
   readonly chat: boolean;
   /** The kind of Claude credential work here would run on: the one the settings name, a subscription's where there are none, and nothing where they were not read. */
   readonly claude: SetupClaudeKind | undefined;
+  /** The runner's settings where this machine already has them, and the Claude credential they name, which is whose login its work would run on. */
+  readonly settings:
+    | { readonly path: string; readonly credential: SetupClaudeCredential }
+    | undefined;
+  /** The Claude credential work here would run on, where its file is not there yet: the one the settings name, or a subscription's where there are none. */
+  readonly loginMissing: SetupClaudeCredential | undefined;
+  /** What a chat host here would hold, where a runner could be put here or will be once `runner` changes Colima. */
+  readonly chatSize: SetupChatSize | undefined;
+  /** What this machine is short of for a job naming no memory or platform. */
+  readonly fit: SetupFit;
 }
 
 /** One part of a registration's file name as the package writes it: letters, digits and `-` as themselves, and every other octet by its number. */
@@ -623,11 +1039,37 @@ export function setupChatFiles(
     });
 }
 
-/** What of the chat host's file is read: the id the site holds that host by, which is not its secret. */
+/**
+ * The files this machine has of the person's own runner in a workspace, found
+ * by their names, in the order of those names: the package names one for the
+ * workspace and the member, two whole parts, which no pool's file or chat
+ * host's is.
+ */
+export function setupPersonalFiles(
+  ports: SetupPorts,
+  places: SetupRunnerPlaces,
+  tenant: string,
+): readonly SetupFile[] {
+  const prefix = `${setupPoolNamePart(tenant)}.`;
+  return ports.disk
+    .names(places.pools)
+    .toSorted()
+    .flatMap((name) => {
+      if (!name.startsWith(prefix) || !name.endsWith(setupPoolFileSuffix))
+        return [];
+      const member = name.slice(prefix.length, -setupPoolFileSuffix.length);
+      const path = setupPath(places.pools, name);
+      return setupNamePart.test(member) && ports.disk.kind(path) === "File"
+        ? [{ path }]
+        : [];
+    });
+}
+
+/** What of a member's runner's file or chat host's is read: the id the site holds it by, which is not its secret. */
 const setupChatFileSchema = z.object({ clientId: identitySchema });
 
-/** The id the site holds the chat host of `file` by, or nothing where the file says none this program reads. */
-export function setupChatClient(
+/** The id the site holds the member's runner or chat host of `file` by, or nothing where the file says none this program reads. */
+export function setupFileClient(
   ports: SetupPorts,
   file: SetupFile,
 ): string | undefined {
@@ -651,18 +1093,26 @@ function setupClaudeHere(
   }
 }
 
-/** Looks at the machine as `runner` would before it did anything, and changes nothing; a Mac is asked nothing at all. */
+/** The registration of a runner this machine holds: the person's own, which `runner` checks and starts, or only the project's pool, which it leaves as it is and registers this machine beside as the person's own. */
+export type SetupRunnerHeld = "Personal" | "Pool";
+
+function setupRunnerHeld(
+  ports: SetupPorts,
+  places: SetupRunnerPlaces,
+  partition: PartitionIdentity,
+): SetupRunnerHeld | undefined {
+  if (setupPersonalFiles(ports, places, partition.tenant).length > 0)
+    return "Personal";
+  return setupPoolFiles(ports, places, partition).length > 0
+    ? "Pool"
+    : undefined;
+}
+
+/** Looks at the machine as `runner` would before it did anything, and changes nothing. */
 export async function setupRunnerHere(
   ports: SetupPorts,
   partition: PartitionIdentity,
 ): Promise<SetupRunnerHere> {
-  if (ports.surroundings.platform !== setupRunnerPlatform)
-    return {
-      room: { room: "Mac" },
-      held: false,
-      chat: false,
-      claude: undefined,
-    };
   const places = setupRunnerPlaces(ports.surroundings);
   const settings = setupSettingsRead(ports, places);
   const room = await setupRunnerRoom(
@@ -670,21 +1120,65 @@ export async function setupRunnerHere(
     settings.settings === "Read" ? settings : undefined,
   );
   const open = room.room === "Open";
+  const chat = settings.settings === "Read" ? settings.chat : {};
+  const engine = setupRoomEngine(room);
+  const { fit, engineMib } = await setupFitRead(ports, engine);
+  const sized = open || fit.fit === "Colima";
+  const inUseMib = sized ? await setupInUseHere(ports, engine, fit) : undefined;
+  const credential: SetupClaudeCredential | undefined =
+    settings.settings === "Read"
+      ? settings.credential
+      : settings.settings === "Absent"
+        ? { kind: "Subscription", path: places.login }
+        : undefined;
   return {
     room,
-    held: open && setupPoolFiles(ports, places, partition).length > 0,
+    held: open ? setupRunnerHeld(ports, places, partition) : undefined,
     chat: open && setupChatFiles(ports, places, partition.tenant).length > 0,
     claude: setupClaudeHere(settings),
+    settings:
+      settings.settings === "Read"
+        ? { path: places.settings, credential: settings.credential }
+        : undefined,
+    loginMissing:
+      credential !== undefined && ports.disk.kind(credential.path) !== "File"
+        ? credential
+        : undefined,
+    chatSize: sized
+      ? setupChatSized(setupFitEngineMib(fit, engineMib), inUseMib, chat)
+      : undefined,
+    fit,
   };
 }
 
-/** The service of a registration's file, as the package names it and where it writes it. */
+/** What the engine's running containers take of the memory a chat host here is sized to: none where Colima's VM is not running or there is none yet, since it runs nothing, and otherwise as the engine counts them. */
+async function setupInUseHere(
+  ports: SetupPorts,
+  engine: SetupEngine | undefined,
+  fit: SetupFit,
+): Promise<number | undefined> {
+  if (fit.fit === "Colima" && fit.vm !== "Running") return 0;
+  return engine === undefined
+    ? undefined
+    : await setupEngineInUseRead(ports, engine);
+}
+
+/** The engine a room is read of for what a job needs: the one that answered, or on a Mac docker, which Colima runs, whether or not it answered. */
+function setupRoomEngine(room: SetupRunnerRoom): SetupEngine | undefined {
+  if (room.room === "Open") return room.engine;
+  return room.room === "Engineless" && room.start !== undefined
+    ? "docker"
+    : undefined;
+}
+
+/** The service of a registration's file, as the package names it and where it writes it: a systemd unit by its name, or a launchd agent by its label. */
 export interface SetupUnit {
   readonly name: string;
   readonly path: string;
 }
 
 export function setupUnitOf(
+  platform: SetupPlatform,
   places: SetupRunnerPlaces,
   file: SetupFile,
 ): SetupUnit {
@@ -692,7 +1186,12 @@ export function setupUnitOf(
     file.path.lastIndexOf("/") + 1,
     -setupPoolFileSuffix.length,
   );
-  const name = `${setupProgram}-${base}.service`;
+  const program = runnerPackages[platform].program;
+  if (platform === "darwin") {
+    const name = `${program}.${base}`;
+    return { name, path: setupPath(places.units, `${name}.plist`) };
+  }
+  const name = `${program}-${base}.service`;
   return { name, path: setupPath(places.units, name) };
 }
 
@@ -712,9 +1211,13 @@ export const setupRunnerCommands = {
     "--pool",
     file.path,
   ],
-  service: (command: string, file: SetupFile): readonly string[] => [
+  service: (
+    platform: SetupPlatform,
+    command: string,
+    file: SetupFile,
+  ): readonly string[] => [
     command,
-    "install-service",
+    platform === "darwin" ? "install-agent" : "install-service",
     "--pool",
     file.path,
   ],
@@ -732,7 +1235,161 @@ export const setupRunnerCommands = {
     "restart",
     unit.name,
   ],
+  /** An agent unloaded, whose failure says only that it was not loaded. */
+  unload: (domain: string, unit: SetupUnit): readonly string[] => [
+    "launchctl",
+    "bootout",
+    `${domain}/${unit.name}`,
+  ],
+  load: (domain: string, unit: SetupUnit): readonly string[] => [
+    "launchctl",
+    "bootstrap",
+    domain,
+    unit.path,
+  ],
+  kick: (domain: string, unit: SetupUnit): readonly string[] => [
+    "launchctl",
+    "kickstart",
+    "-k",
+    `${domain}/${unit.name}`,
+  ],
 } as const;
+
+/**
+ * The launchd domain chuggy-darwin loads an agent into: the person's desktop
+ * session's where launchd answers for one, and their background session's
+ * otherwise, as `install-agent` chooses it.
+ */
+export async function setupAgentDomain(ports: SetupPorts): Promise<string> {
+  const user = ports.surroundings.user ?? "";
+  const desktop = await setupProbed(ports, [
+    "launchctl",
+    "print",
+    `gui/${user}`,
+  ]);
+  return `${setupWell(desktop) ? "gui" : "user"}/${user}`;
+}
+
+/** What the service manager says of a service: whether it is running, its state, the process it runs as, and the status it last exited with. */
+export interface SetupServiceIs {
+  readonly is: boolean;
+  /** The state in the service manager's own words, empty where what it said is no words, and nothing where it did not answer. */
+  readonly said: string | undefined;
+  /** The process the service runs as, or nothing where none is said. */
+  readonly pid: number | undefined;
+  /** The status its process last exited with, or nothing where it has not exited or none is said. */
+  readonly exit: number | undefined;
+}
+
+/** A state as a service manager says it: words, kept whole, or empty where it is not words. */
+function setupServiceWords(said: string): string {
+  return /^[a-z-]+( [a-z-]+)*$/u.test(said) ? said : "";
+}
+
+/** A process id or exit status as a service manager prints it, or nothing where it is not one. */
+function setupServiceWhole(said: string | undefined): number | undefined {
+  return said !== undefined && /^(0|[1-9][0-9]{0,9})$/u.test(said)
+    ? Number(said)
+    : undefined;
+}
+
+/**
+ * Whether an agent is loaded in `domain`, and what launchd says of it: its
+ * state, its pid and its last exit code, each read from the agent's own keys,
+ * which `print` indents by one tab, and never from a section nested in it.
+ * The state is empty where it is not loaded or said no words, and nothing
+ * where launchctl could not be run.
+ */
+export async function setupAgentIs(
+  ports: SetupPorts,
+  domain: string,
+  unit: SetupUnit,
+): Promise<SetupServiceIs & { readonly loaded: boolean }> {
+  const ended = await setupProbed(ports, [
+    "launchctl",
+    "print",
+    `${domain}/${unit.name}`,
+  ]);
+  const none = { pid: undefined, exit: undefined };
+  if (ended.ended !== "Exited")
+    return { loaded: false, is: false, said: undefined, ...none };
+  if (!setupWell(ended)) return { loaded: false, is: false, said: "", ...none };
+  const key = (name: string) =>
+    new RegExp(`^\\t${name} = (.*)$`, "mu").exec(ended.out)?.[1];
+  const said = setupServiceWords(key("state") ?? "");
+  return {
+    loaded: true,
+    is: said === "running",
+    said,
+    pid: setupServiceWhole(key("pid")),
+    exit: setupServiceWhole(
+      /^([0-9]+)(: .*)?$/u.exec(key("last exit code") ?? "")?.[1],
+    ),
+  };
+}
+
+/** Where a machine's runner services are: on Linux, or on a Mac in the launchd domain they are loaded in. */
+export type SetupServicesAt =
+  | { readonly platform: "linux" }
+  | { readonly platform: "darwin"; readonly domain: string };
+
+/**
+ * What systemd says of a unit: active is running, its state is its active
+ * state with its sub-state beside it, and the status its main process exited
+ * with is said only where no main process runs and it is not 0, which systemd
+ * shows alike for a process that has not exited and one that exited well, and
+ * which chuggy-linux gives no meaning. One that ends badly or prints no active
+ * state did not answer, which is how it ends where it cannot reach the
+ * person's services.
+ */
+export async function setupUnitShown(
+  ports: SetupPorts,
+  unit: SetupUnit,
+): Promise<SetupServiceIs> {
+  const ended = await setupProbed(ports, [
+    "systemctl",
+    "--user",
+    "show",
+    unit.name,
+    "--property=ActiveState,SubState,MainPID,ExecMainStatus",
+  ]);
+  const shown = new Map(
+    ended.ended === "Exited"
+      ? ended.out.split("\n").flatMap((line) => {
+          const at = line.indexOf("=");
+          return at < 0
+            ? []
+            : [[line.slice(0, at), line.slice(at + 1)] as const];
+        })
+      : [],
+  );
+  const active = shown.get("ActiveState");
+  if (!setupWell(ended) || active === undefined)
+    return { is: false, said: undefined, pid: undefined, exit: undefined };
+  const state = setupServiceWords(active);
+  const sub = setupServiceWords(shown.get("SubState") ?? "");
+  const pid = setupServiceWhole(shown.get("MainPID"));
+  const running = pid !== undefined && pid !== 0;
+  const exit = setupServiceWhole(shown.get("ExecMainStatus"));
+  return {
+    is: state === "active",
+    said: state === "" || sub === "" ? state : `${state} (${sub})`,
+    pid: running ? pid : undefined,
+    exit: running || exit === 0 ? undefined : exit,
+  };
+}
+
+/** Restarts every runner service of this machine's, each of which reads the runner's settings only as it starts: on a Mac, each agent by the label its file is named for. */
+export function setupRestartAll(
+  places: SetupRunnerPlaces,
+  at: SetupServicesAt,
+): string {
+  const program = runnerPackages[at.platform].program;
+  if (at.platform === "linux")
+    return `systemctl --user restart '${program}-*.service'`;
+  const agents = `'${places.units.replaceAll("'", "'\\''")}'/${program}.*.plist`;
+  return `for agent in ${agents}; do launchctl kickstart -k ${at.domain}/"$(basename "$agent" .plist)"; done`;
+}
 
 /**
  * Whether a unit is what `verb` asks, and the one word the service manager said

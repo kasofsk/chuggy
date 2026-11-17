@@ -5,27 +5,32 @@ import { landingQueueTicketsAnsweredMax } from "../../src/contract/http.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   landingQueueReads,
+  type LandingQueueCandidate,
   type LandingQueueCandidates,
 } from "../../src/interpreter/landingQueues.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { ProjectAccessKind } from "../../src/interpreter/projectAccess.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import {
-  serializedQueues,
-  type SerializedCandidate,
-} from "../../src/interpreter/serializedHolder.ts";
+import { serializedQueues } from "../../src/interpreter/serializedHolder.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
 
 const partition = { tenant: asTenantId("acme"), project: asProjectId("atlas") };
 const other = { tenant: asTenantId("acme"), project: asProjectId("other") };
 const reader = asPrincipal("issuer reader");
 
+/** The instant a candidate ranked at `rank` holds from unless a case says otherwise, to the microsecond as the store writes one. */
+function heldAt(rank: number): string {
+  return new Date(Date.UTC(2026, 0, 1, 0, 0, rank))
+    .toISOString()
+    .replace(/Z$/u, "000Z");
+}
+
 /** A Serialized git merge of ticket `ticket` onto `main` of `repo`, ranked at `rank`. */
 function candidate(
   ticket: number,
   rank: number,
-  over: Partial<Omit<SerializedCandidate, "ticket" | "rank">> = {},
-): SerializedCandidate {
+  over: Partial<Omit<LandingQueueCandidate, "ticket" | "rank">> = {},
+): LandingQueueCandidate {
   return {
     partition,
     ticket: asTicketId(ticket),
@@ -34,6 +39,7 @@ function candidate(
     repository: "repo",
     target: "main",
     rank,
+    holderSince: heldAt(rank),
     ...over,
   };
 }
@@ -74,12 +80,17 @@ test("a holder and its waiters across work, evaluation and finalization are answ
         repository: "repo",
         target: "main",
         holder: asTicketId(2),
+        holderSince: heldAt(10),
+        holderPhase: "Evaluation",
         waiting: [asTicketId(1), asTicketId(3), asTicketId(4)],
       },
     ],
     truncated: false,
   });
-  assert.deepEqual(answered.queues, serializedQueues(candidates));
+  assert.deepEqual(
+    answered?.queues.map((queue) => [queue.holder, queue.waiting]),
+    serializedQueues(candidates).map((queue) => [queue.holder, queue.waiting]),
+  );
   assert.deepEqual(asked, [landingQueueTicketsAnsweredMax]);
 });
 
@@ -125,6 +136,39 @@ test("a Direct merge, a pull request, a landing of nothing and a ticket naming n
     (await read())?.queues.map((queue) => [queue.holder, queue.waiting]),
     [[asTicketId(5), []]],
   );
+});
+
+test("each queue says the instant its holder holds from and its holder's phase, never a waiter's", async () => {
+  const { read } = readsOver({
+    candidates: [
+      candidate(1, 10, { phase: "Work", holderSince: heldAt(25) }),
+      candidate(2, 20, { phase: "Finalization", holderSince: heldAt(30) }),
+      candidate(3, 30, { target: "release", phase: "Evaluation" }),
+    ],
+    truncated: false,
+  });
+  assert.deepEqual(
+    (await read())?.queues.map((queue) => [
+      queue.holder,
+      queue.holderSince,
+      queue.holderPhase,
+    ]),
+    [
+      [asTicketId(1), heldAt(25), "Work"],
+      [asTicketId(3), heldAt(30), "Evaluation"],
+    ],
+  );
+});
+
+test("a holder the store answers no instant for fails the read rather than being answered", async () => {
+  const { read } = readsOver({
+    candidates: [
+      candidate(1, 10, { holderSince: undefined }),
+      candidate(2, 20),
+    ],
+    truncated: false,
+  });
+  await assert.rejects(read(), /no instant it holds from/u);
 });
 
 test("a project with no ranked ticket answers no queues", async () => {

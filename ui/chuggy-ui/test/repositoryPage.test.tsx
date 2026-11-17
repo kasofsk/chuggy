@@ -26,7 +26,7 @@ import {
   settled,
   turned,
 } from "./screenHarness.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import {
   abilitiesEvery,
   abilitiesOver,
@@ -57,7 +57,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  useParams: () => ({ ...leadPartition, repository: routed.repository }),
+  useParams: () => ({ ...projectPartition, repository: routed.repository }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
@@ -99,7 +99,7 @@ function binding(
 
 const initialization = {
   configuration: {
-    partition: leadPartition,
+    partition: projectPartition,
     revision: "r6",
     canonical: "{}",
     digest: "a".repeat(64),
@@ -237,7 +237,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   vi.stubGlobal("fetch", (drawing.over ?? ((served) => served))(fetching));
   renderCopied(
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
@@ -331,7 +331,7 @@ test("the page reads its own binding, and says what it lands as", async () => {
  * configurations of its own to list, so the page says only that. */
 test("a repository this project does not bind draws nothing but Not bound", async () => {
   await drawPage({ repository: "https://forge.test/kasofsk/none" });
-  expect(screen.getByText("Not bound")).toBeTruthy();
+  expect(screen.getByText("Not connected")).toBeTruthy();
   expect(screen.queryByRole("region", { name: /^Finalization/u })).toBeNull();
   expect(screen.queryByRole("region", { name: /^Configurations/u })).toBeNull();
 });
@@ -343,7 +343,7 @@ test.each([
   [
     "a retired",
     "2026-09-14T00:00:00Z",
-    `Repositories/kasofsk/chuggy${chuggy}Unbound`,
+    `Repositories/kasofsk/chuggy${chuggy}Disconnected`,
   ],
   ["a live", undefined, `Repositories/kasofsk/chuggy${chuggy}`],
 ])(

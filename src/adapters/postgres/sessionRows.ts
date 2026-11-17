@@ -12,6 +12,10 @@
  */
 
 import {
+  threadTicketWakeSettings,
+  type ThreadTicketWakes,
+} from "../../contract/threadWake.ts";
+import {
   allSessionCapabilities,
   allSessionKinds,
   allSessionStates,
@@ -49,9 +53,8 @@ export interface AgentSessionRow {
   readonly tenant: string | null;
   readonly project: string | null;
   readonly session: string | null;
-  readonly kind: string | null;
+  readonly kind: string;
   readonly principal: string | null;
-  readonly parent_session: string | null;
   readonly agent_reference: string | null;
   readonly capabilities: string[] | null;
   readonly credential_slot: string | null;
@@ -122,7 +125,7 @@ export function sessionPodEndingOf(
   };
 }
 
-/** Reads the row's capability roster, refusing a member the CHECK should have stopped. */
+/** Reads the row's capability roster, refusing any member the CHECK should have stopped. */
 export function sessionRowCapabilities(
   values: readonly string[] | null,
 ): readonly SessionCapability[] {
@@ -142,9 +145,6 @@ export function agentSessionRowOf(row: AgentSessionRow): AgentSession {
     session: asSessionId(sessionRowText(row.session, "session")),
     kind: sessionRowMember(allSessionKinds, row.kind, "session kind"),
     principal: asPrincipal(sessionRowText(row.principal, "principal")),
-    ...(row.parent_session === null
-      ? {}
-      : { parent: asSessionId(row.parent_session) }),
     ...(row.agent_reference === null
       ? {}
       : { agentReference: row.agent_reference }),
@@ -238,8 +238,8 @@ export interface SessionTurnStanding {
 
 /**
  * The turn a standing row carries, or nothing where the session has taken none.
- * It stands here because a lead's mailbox and a thread's are read by two
- * modules and differ in what they add to a turn, never in the turn.
+ * It stands here because a thread's mailbox is read by more than one module,
+ * each adding its own to a turn and none differing in the turn.
  */
 export function sessionTurnStandingOf(
   row: SessionTurnStandingRow,
@@ -332,5 +332,32 @@ export function sessionTurnMeasuredOf(
       "session turn duration",
     ),
     tools: row.tools ?? [],
+  };
+}
+
+/** A thread's own ticket wake choice and its member's chat host's setting, as two columns hold them, each absent where NULL. */
+export function threadTicketWakesOf(
+  thread: string | null,
+  host: string | null,
+): ThreadTicketWakes {
+  return {
+    ...(thread === null
+      ? {}
+      : {
+          thread: sessionRowMember(
+            threadTicketWakeSettings,
+            thread,
+            "thread ticket wakes",
+          ),
+        }),
+    ...(host === null
+      ? {}
+      : {
+          host: sessionRowMember(
+            threadTicketWakeSettings,
+            host,
+            "chat host ticket wakes",
+          ),
+        }),
   };
 }

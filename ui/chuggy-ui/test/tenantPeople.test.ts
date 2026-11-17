@@ -194,10 +194,10 @@ test("removing the reader's own workspace admin is asked first, and no other rol
 });
 
 test("taking hosted runs from a subject that is no account is asked first, and giving them is not", () => {
-  const selector = { ...person, account: false } as const;
+  const service = { ...person, account: false } as const;
   const taken = { scope: "HostedRuns", held: true } as const;
-  expect(tenantPersonChangeAsks(selector, taken)).toBe(true);
-  expect(tenantPersonChangeAsks(selector, { ...taken, held: false })).toBe(
+  expect(tenantPersonChangeAsks(service, taken)).toBe(true);
+  expect(tenantPersonChangeAsks(service, { ...taken, held: false })).toBe(
     false,
   );
   expect(

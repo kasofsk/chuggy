@@ -83,7 +83,7 @@ async function hosted(label: string): Promise<{
   readonly host: ChatHostPlaneIdentity;
 }> {
   const partition = await sessionRigProject(rig, label);
-  await sessionRigRouted(rig, partition, "Pool", "Pool");
+  await sessionRigRouted(rig, partition, "Pool");
   const member = principal(`member-${label}`);
   return { partition, member, host: await chatHost(partition, member) };
 }
@@ -253,24 +253,21 @@ test("a chat host's thread attempt records its thread standing and then not, and
   assert.equal(await standingOf(session), false);
 });
 
-test("an attempt that is not a thread's on a chat host is refused a standing", async () => {
+test("a thread's attempt in the cluster is refused a standing", async () => {
   const partition = await sessionRigProject(rig, "standing-elsewhere");
-  for (const kind of ["Thread", "Lead"] as const) {
-    const label = `standing-elsewhere-${kind}`;
-    const session = await sessionRigSession(rig, partition, label, { kind });
-    await sessionRigTurn(rig, partition, session, label);
-    const placed = await sessionRigAttempt(rig, partition, session, label);
-    assert.equal(
-      await rig.plane.stand({
-        secret: placed.secret,
-        generation: 1,
-        standing: true,
-      }),
-      "NotChatHostThread",
-      kind,
-    );
-    assert.equal(await standingOf(session), false, kind);
-  }
+  const label = "standing-elsewhere";
+  const session = await sessionRigSession(rig, partition, label);
+  await sessionRigTurn(rig, partition, session, label);
+  const placed = await sessionRigAttempt(rig, partition, session, label);
+  assert.equal(
+    await rig.plane.stand({
+      secret: placed.secret,
+      generation: 1,
+      standing: true,
+    }),
+    "NotChatHostThread",
+  );
+  assert.equal(await standingOf(session), false);
 });
 
 test("a standing thread whose attempt ended is placed again with an empty mailbox on the host that ran it, and on no host registered in that host's place", async () => {
@@ -298,6 +295,31 @@ test("a standing thread whose attempt ended is placed again with an empty mailbo
     [],
     "a host registered in the last one's place was handed a standing thread",
   );
+});
+
+test("a standing thread whose host's poll stops listing its attempt is ended Vanished at once and placed again on that host once its backoff runs", async () => {
+  const { partition, member, host } = await hosted("standing-unlisted");
+  const { session, held } = await threadAnswered(
+    partition,
+    member,
+    host,
+    "standing-unlisted",
+  );
+  assert.equal(await reported(held, true), "Recorded");
+
+  assert.deepEqual((await polled(host)).sessions, []);
+  assert.deepEqual(
+    [
+      (await attemptOf(held.assignment))["state"],
+      (await attemptOf(held.assignment))["evidence"],
+    ],
+    ["Lost", "Vanished"],
+  );
+  await endedLongAgo(held.assignment);
+  const [again, ...more] = (await polled(host)).sessions;
+  assert.deepEqual(more, []);
+  assert.ok(again !== undefined, "a standing thread was not placed again");
+  assert.equal((await attemptOf(again.assignment))["session"], session);
 });
 
 test("a thread that is not standing, or that an attempt reported not standing, is placed again only once a turn waits", async () => {

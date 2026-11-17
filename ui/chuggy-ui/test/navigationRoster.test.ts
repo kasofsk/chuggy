@@ -92,7 +92,6 @@ async function followed(
 }
 
 test.each([
-  ["/acme/atlas/lead", "/acme/atlas/settings/lead-session"],
   ["/acme/atlas/catalog", "/acme/atlas/settings/catalog"],
   ["/acme/atlas/repositories", "/acme/atlas/settings/repositories"],
   [
@@ -106,7 +105,6 @@ test.each([
 
 test("every address that moved is one the redirects above follow", () => {
   expect(Object.keys(navMoved)).toStrictEqual([
-    "/$tenant/$project/lead",
     "/$tenant/$project/catalog",
     "/$tenant/$project/repositories",
     "/$tenant/$project/repositories/$repository",

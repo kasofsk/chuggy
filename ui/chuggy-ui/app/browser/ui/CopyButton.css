@@ -41,6 +41,29 @@
     }
   }
 
+  .copy-button-labelled {
+    gap: var(--space-1);
+    padding-inline: var(--space-2);
+    color: var(--ink-2);
+    font: inherit;
+    font-size: var(--text-sm);
+    line-height: var(--leading-tight);
+    white-space: nowrap;
+  }
+
+  .copy-word {
+    display: grid;
+    justify-items: start;
+  }
+
+  .copy-word > * {
+    grid-area: 1 / 1;
+  }
+
+  .copy-word-unshown {
+    visibility: hidden;
+  }
+
   .copy-mark {
     width: 1em;
     height: 1em;

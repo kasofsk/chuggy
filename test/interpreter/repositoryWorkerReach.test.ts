@@ -44,6 +44,7 @@ const elsewhere = asRepositoryId("https://git.vteng.io/vteng/fabric.git");
 
 function summaryOf(url: RepositoryId): ForgeRepositorySummary {
   return {
+    id: "1296269",
     name: asForgeRepositoryName(url.split("/").at(-1) ?? "x"),
     fullName: url,
     url,
@@ -53,10 +54,14 @@ function summaryOf(url: RepositoryId): ForgeRepositorySummary {
 }
 
 /** The installation selecting `chuggy` alone, which is what kasofsk's did. */
-const selectingChuggy: ForgeRepositoriesRead = {
+const selectingChuggy: Extract<
+  ForgeRepositoriesRead,
+  { readonly read: "Repositories" }
+> = {
   read: "Repositories",
   repositories: [summaryOf(chuggy)],
   truncated: false,
+  selection: "Selected",
 };
 
 interface FixtureAsked {

@@ -3,9 +3,9 @@
  * what a mailbox does with the turns it is given, and what closing one does to
  * the turns it never finished.
  *
- * THE UNIQUENESS RULES ARE THE SERVER'S. One lead per project and one open
- * thread per member are partial indexes, so every case here drives the boundary
- * rather than an adapter's opinion of it, and a rule that regressed to a
+ * THE UNIQUENESS RULES ARE THE SERVER'S. A member's open threads within their
+ * limit and one thread per open key are the server's, so every case here
+ * drives the boundary rather than an adapter's opinion of it, and a rule that regressed to a
  * convention would show up as an opened session rather than as a conflict.
  */
 
@@ -39,7 +39,7 @@ test("a session opens once, and offering the same one again is already open", as
     await rig.sessions.open({
       partition,
       session,
-      kind: "Lead",
+      kind: "Thread",
       principal: asPrincipal("principal-reopen"),
       capabilities: ["RepositoryRead"],
       credentialSlot: "claude-code",
@@ -47,7 +47,7 @@ test("a session opens once, and offering the same one again is already open", as
     "AlreadyOpen",
   );
   const stored = await rig.sessions.session(partition, session);
-  assert.equal(stored?.kind, "Lead");
+  assert.equal(stored?.kind, "Thread");
   assert.equal(stored?.state, "Open");
   assert.deepEqual(stored?.capabilities, ["RepositoryRead"]);
 });
@@ -59,7 +59,7 @@ test("the same identity offered different facts is a conflict and changes nothin
     await rig.sessions.open({
       partition,
       session,
-      kind: "Lead",
+      kind: "Thread",
       principal: asPrincipal("someone-else"),
       capabilities: ["RepositoryRead"],
       credentialSlot: "claude-code",
@@ -72,20 +72,8 @@ test("the same identity offered different facts is a conflict and changes nothin
   );
 });
 
-test("a project holds one lead, and a member holds open threads up to their limit", async () => {
+test("a member holds open threads up to their limit", async () => {
   const partition = await sessionRigProject(rig, "one-of-each");
-  await sessionRigSession(rig, partition, "lead");
-  assert.equal(
-    await rig.sessions.open({
-      partition,
-      session: asSessionId("session-second-lead"),
-      kind: "Lead",
-      principal: asPrincipal("principal-other"),
-      capabilities: [],
-      credentialSlot: "claude-code",
-    }),
-    "Conflict",
-  );
   await rig.harness.query(
     `SELECT set_member_thread_limit($1,$2,'member',1,'System','agent session suite')`,
     [partition.tenant, partition.project],
@@ -117,29 +105,6 @@ test("a project holds one lead, and a member holds open threads up to their limi
     }),
     "Opened",
   );
-});
-
-test("an inquiry names a session of its own project to have forked from", async () => {
-  const partition = await sessionRigProject(rig, "inquiry");
-  const lead = await sessionRigSession(rig, partition, "inquiry-lead");
-  const elsewhere = await sessionRigProject(rig, "inquiry-elsewhere");
-  assert.equal(
-    await rig.sessions.open({
-      partition: elsewhere,
-      session: asSessionId(`session-foreign-${elsewhere.project}`),
-      kind: "Inquiry",
-      principal: asPrincipal("principal-inquiry"),
-      parent: lead,
-      capabilities: [],
-      credentialSlot: "claude-code",
-    }),
-    "Conflict",
-  );
-  const inquiry = await sessionRigSession(rig, partition, "inquiry-fork", {
-    kind: "Inquiry",
-    parent: lead,
-  });
-  assert.equal((await rig.sessions.session(partition, inquiry))?.parent, lead);
 });
 
 test("ordinals are contiguous from one and a re-offered turn keeps its own", async () => {
@@ -180,7 +145,7 @@ test("a mailbox refuses a turn above its backlog ceiling and takes one below it"
       partition,
       session,
       turn: sessionRigTurnId(`backlog-${String(queued)}`),
-      inputKind: "Observation",
+      inputKind: "Wake",
       input: "queued",
     });
     assert.equal(enqueued.enqueued, "Enqueued");
@@ -190,7 +155,7 @@ test("a mailbox refuses a turn above its backlog ceiling and takes one below it"
       partition,
       session,
       turn: sessionRigTurnId("over"),
-      inputKind: "Observation",
+      inputKind: "Wake",
       input: "one too many",
     }),
     { enqueued: "Backlogged" },
@@ -257,26 +222,13 @@ test("a member nobody set a limit for opens a second thread beside their first",
   );
 });
 
-test("the server itself admits one lead per project and one thread per member's open key", async () => {
+test("the server itself admits one thread per member's open key", async () => {
   const partition = await sessionRigProject(rig, "indexed");
-  const lead = await sessionRigSession(rig, partition, "indexed-lead");
   const thread = await sessionRigSession(rig, partition, "indexed-thread", {
     kind: "Thread",
     principal: "member-indexed",
   });
 
-  await assert.rejects(
-    rig.harness.query(
-      `INSERT INTO agent_session
-         (tenant,project,session,kind,principal,capabilities,credential_slot,
-          account,cluster)
-       SELECT tenant,project,session||'-again',kind,principal||'-again',
-              capabilities,credential_slot,account,cluster
-         FROM agent_session WHERE session=$1`,
-      [lead],
-    ),
-    /agent_session_one_lead_per_project/u,
-  );
   await assert.rejects(
     rig.harness.query(
       `INSERT INTO agent_session

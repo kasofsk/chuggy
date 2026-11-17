@@ -12,9 +12,15 @@ import {
   setupAgentRead,
   setupServerArguments,
   setupServerName,
-  setupServerProgram,
+  setupServerPackages,
 } from "../app/core/setupAgent.ts";
-import { setupRunnerPlaces } from "../app/core/setupRunnerMachine.ts";
+import { runnerPackages } from "../app/core/runners.ts";
+import {
+  setupChatPackageLeast,
+  setupPackageCurrent,
+  setupPackageLeasts,
+  setupVersionLater,
+} from "../app/core/setupRunnerMachine.ts";
 import { setupFiles } from "../app/core/setupPorts.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
 import {
@@ -41,7 +47,7 @@ const served = { ended: "Served" } as const;
 
 /** A machine signed in to a site set up as far as its project, with nothing of chuggy's server on it. */
 function unserved(): Promise<SetupMachine> {
-  return machineSignedIn(setupSiteAt("NorthStar"), false);
+  return machineSignedIn(setupSiteAt("Project"), false);
 }
 
 /** The step the bare command says of the agent's configuration. */
@@ -113,7 +119,7 @@ test("mcp asks nothing of the site or the issuer, so it runs before a sign-in as
 });
 
 test("mcp where the server is already named for the project changes nothing and says it was found", async () => {
-  const machine = await machineSignedIn(setupSiteAt("NorthStar"));
+  const machine = await machineSignedIn(setupSiteAt("Project"));
   const before = machine.box.paths.get(boxClaudeConfig);
   const report = await machine.command(mcp);
   expect(report).toMatchObject({
@@ -137,25 +143,154 @@ test("mcp where the folder's local chuggy server is for another project removes 
   );
 });
 
-test("mcp on a Mac whose person set a configuration directory names the program that keeps its sign-ins in the store there, over the Mac package's server", async () => {
+/** The next thing the bare command names, as its copy and not its words. */
+async function mcpNext(machine: SetupMachine): Promise<unknown> {
+  const report = await machine.command([]);
+  if (report.report !== "Checklist") throw new Error(report.report);
+  return report.next.thing;
+}
+
+/** The Mac package installed machine-wide at `version`. */
+function darwinHeld(machine: SetupMachine, version: string): void {
+  machine.box.paths.set(darwinCommand, "#!");
+  machine.box.paths.set(
+    `${boxPrefix}/lib/node_modules/chuggy-darwin/package.json`,
+    JSON.stringify({ name: "chuggy-darwin", version }),
+  );
+}
+
+const darwinCommand = `${boxPrefix}/bin/chuggy-darwin`;
+const darwinInstall = runnerPackages.darwin.installCommand.split(" ");
+/** The release the Mac package's install command downloads, as its tag names it. */
+const darwinTagged = /\/download\/v([0-9]+\.[0-9]+\.[0-9]+)\//u.exec(
+  runnerPackages.darwin.installCommand,
+)?.[1];
+
+test("on a Mac with no runner package, mcp offers and installs the Mac's own package and names its server, run by chuggy-darwin", async () => {
+  const machine = await unserved();
+  machine.platform = "darwin";
+  expect(await mcpNext(machine)).toMatchObject({
+    command: "Mcp",
+    tell: {
+      id: "setup-mend-mcp-offer-absent",
+      args: { program: "chuggy-darwin" },
+    },
+  });
+  machine.box.ran.length = 0;
+  expect(ended(await machine.command(mcp))).toEqual(served);
+  expect(machine.box.ran).toContainEqual(darwinInstall);
+  expect(machine.box.ran.flat()).not.toContain(
+    runnerPackages.linux.installCommand.split(" ").at(-1),
+  );
+  expect(machine.box.ran.at(-1)).toEqual([
+    "claude",
+    "mcp",
+    "add",
+    "--scope",
+    "local",
+    setupServerName,
+    "--",
+    darwinCommand,
+    "mcp",
+    "--site",
+    machineSite,
+    "--workspace",
+    "acme",
+    "--project",
+    "widgets",
+  ]);
+  expect(JSON.parse(machine.box.paths.get(boxClaudeConfig) ?? "{}")).toEqual(
+    local(entry("widgets", darwinCommand)),
+  );
+  expect(await mcpStep(machine)).toMatchObject({ state: "done" });
+});
+
+test("on a Mac, mcp leaves a chuggy-darwin whose mcp keeps the shared store as it is, and replaces an older one, which it says is old", async () => {
+  const kept = await unserved();
+  kept.platform = "darwin";
+  darwinHeld(kept, setupServerPackages.darwin.least);
+  expect(await mcpNext(kept)).toMatchObject({
+    tell: { id: "setup-mend-mcp-offer", args: { program: "chuggy-darwin" } },
+  });
+  kept.box.acts.length = 0;
+  expect(ended(await kept.command(mcp))).toEqual(served);
+  expect(kept.box.acts).toEqual(["mcpAdd"]);
+  expect(JSON.parse(kept.box.paths.get(boxClaudeConfig) ?? "{}")).toEqual(
+    local(entry("widgets", darwinCommand)),
+  );
+  const old = await unserved();
+  old.platform = "darwin";
+  darwinHeld(old, "0.22.0");
+  expect(darwinTagged).toBeDefined();
+  expect(await mcpNext(old)).toMatchObject({
+    tell: {
+      id: "setup-mend-mcp-offer-behind",
+      args: {
+        program: "chuggy-darwin",
+        found: {
+          id: "setup-runner-versioned",
+          args: { program: "chuggy-darwin", version: "0.22.0" },
+        },
+        installs: {
+          id: "setup-runner-versioned",
+          args: {
+            program: "chuggy-darwin",
+            version: darwinTagged,
+          },
+        },
+      },
+    },
+  });
+  old.box.ran.length = 0;
+  expect(ended(await old.command(mcp))).toEqual(served);
+  expect(old.box.ran).toContainEqual(darwinInstall);
+});
+
+test("mcp on a Mac whose person set a configuration directory names the Mac's own program, which keeps its sign-ins in the store there, over a Linux package's server", async () => {
   const machine = await unserved();
   machine.platform = "darwin";
   machine.configHome = "/xdg";
-  writeConfig(machine, local(entry("widgets", "chuggy-darwin")));
+  darwinHeld(machine, setupServerPackages.darwin.least);
+  writeConfig(machine, local(entry("widgets", "chuggy-linux")));
   machine.box.acts.length = 0;
   expect(ended(await machine.command(mcp))).toEqual(served);
-  expect(machine.box.acts.filter((act) => act.startsWith("mcp"))).toEqual([
-    "mcpRemove",
-    "mcpAdd",
-  ]);
+  expect(machine.box.acts).toEqual(["mcpRemove", "mcpAdd"]);
   expect(JSON.parse(machine.box.paths.get(boxClaudeConfig) ?? "{}")).toEqual(
-    local(entry()),
+    local(entry("widgets", darwinCommand)),
   );
-  const surroundings = machine.ports().surroundings;
-  expect(setupServerProgram).toBe("chuggy-linux");
   expect(signInStoreDirectory({ home: boxHome, configHome: "/xdg" })).toBe(
-    setupRunnerPlaces(surroundings).pools.replace(/pools$/u, "sign-ins"),
+    "/xdg/chuggy/sign-ins",
   );
+});
+
+test("the package mcp leaves on each platform is one runner and chat-host can use", () => {
+  for (const platform of ["linux", "darwin"] as const) {
+    const left = { command: "", version: setupServerPackages[platform].least };
+    const leasts = setupPackageLeasts[platform];
+    expect(setupPackageCurrent(left, leasts.runner)).toBe(true);
+    expect(setupPackageCurrent(left, leasts.chat)).toBe(true);
+  }
+});
+
+test("the later of two versions is the one past the other, whichever comes first", () => {
+  expect(setupVersionLater("0.23.0", "0.24.1")).toBe("0.24.1");
+  expect(setupVersionLater("0.24.1", "0.23.0")).toBe("0.24.1");
+  expect(setupVersionLater("1.0.0", "0.99.0")).toBe("1.0.0");
+  expect(setupVersionLater("0.23.0", "0.23.0")).toBe("0.23.0");
+});
+
+test("mcp on Linux installs and runs chuggy-linux, at the least a chat host needs", async () => {
+  expect(setupServerPackages.linux).toEqual({
+    offered: runnerPackages.linux,
+    least: setupChatPackageLeast,
+  });
+  const machine = await unserved();
+  machine.box.ran.length = 0;
+  expect(ended(await machine.command(mcp))).toEqual(served);
+  expect(machine.box.ran).toContainEqual(
+    runnerPackages.linux.installCommand.split(" "),
+  );
+  expect(machine.box.ran.at(-1)?.[7]).toBe(command);
 });
 
 test("a run of runner with no runner package here changes nothing and names mcp, which installs it", async () => {
@@ -198,7 +333,7 @@ test("the server the agent would run is the folder's local one over the checkout
 });
 
 test("a sign-in kept by the program before the shared store is moved there once, and one the store already holds is never replaced by it", async () => {
-  const machine = await machineSignedIn(setupSiteAt("NorthStar"));
+  const machine = await machineSignedIn(setupSiteAt("Project"));
   const held = machine.live() ?? "";
   machine.store.clear();
   machine.files.set(

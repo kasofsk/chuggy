@@ -58,7 +58,6 @@ import {
   projectThemeResponseSchema,
   ownedThemesResponseSchema,
   themeChoiceResponseSchema,
-  agenticRefusalsResponseSchema,
   chatAbilitiesResponseSchema,
   chatHostResponseSchema,
   chatThreadsResponseSchema,
@@ -81,8 +80,6 @@ import {
   forgeInstallationsResponseSchema,
   hostedRunsResponseSchema,
   inboxResponseSchema,
-  leadReadResponseSchema,
-  leadTranscriptResponseSchema,
   personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
   projectAbilitiesResponseSchema,
@@ -127,12 +124,7 @@ import {
 import type { ConsoleNetwork } from "./consoleNetwork.ts";
 import { forgeInstallationsFixture } from "./forgeInstallationsFixture.ts";
 import { inviteBrowser } from "./inviteDouble.ts";
-import {
-  leadBody,
-  leadRefusals,
-  leadSelectorSettingsBody,
-  leadTranscriptPage,
-} from "./leadFixture.ts";
+import { selectorSettingsBody } from "./selectorSettingsFixture.ts";
 import { abilitiesEvery } from "./projectAbilitiesFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
@@ -230,8 +222,7 @@ export const consoleRouteParameters: Readonly<Record<string, string>> = {
   epic: String(consoleEpic.number),
 };
 
-/** The ticket the lead refuses, which a held decision of its own also names:
- * the one entry the inbox holds, and the one Reject's note is typed under. */
+/** The one entry the inbox holds, which offers no answer. */
 export const consoleInboxTicket = 42;
 
 const consoleInbox: InboxResponse = {
@@ -243,10 +234,6 @@ const consoleInbox: InboxResponse = {
         ticket: consoleInboxTicket,
       },
       actions: [],
-      refusals: leadRefusals(false).refusals,
-      proposals: [
-        { decision: "selector-decision-2", tickets: [consoleInboxTicket] },
-      ],
     },
   ],
   count: 1,
@@ -357,34 +344,14 @@ const consoleReads: readonly ConsoleRead[] = [
     body: () => abilitiesEvery,
   },
   {
-    path: consoleReadAt(`${projectPath}/lead`),
-    schema: leadReadResponseSchema,
-    body: () => leadBody(1, 1),
-  },
-  {
-    path: consoleReadAt(`${projectPath}/lead/transcript`),
-    schema: leadTranscriptResponseSchema,
-    body: () => leadTranscriptPage(0, 1),
-  },
-  {
-    path: consoleReadAt(`${projectPath}/lead/context`),
-    schema: sessionContextResponseSchema,
-    body: () => contextSessionBody([{ ordinal: 1, total: 96_721 }]),
-  },
-  {
     path: consoleReadAt(`${projectPath}/inbox`),
     schema: inboxResponseSchema,
     body: () => consoleInbox,
   },
   {
-    path: consoleReadAt(`${projectPath}/agentic-refusals`),
-    schema: agenticRefusalsResponseSchema,
-    body: () => leadRefusals(false),
-  },
-  {
     path: consoleReadAt(`${projectPath}/selector-settings`),
     schema: selectorProjectSettingsResponseSchema,
-    body: () => leadSelectorSettingsBody(12, { northStar: "north-star-1" }),
+    body: () => selectorSettingsBody(12, { northStar: "north-star-1" }),
   },
   {
     path: consoleReadAt(`${projectPath}/selector-settings/history`),

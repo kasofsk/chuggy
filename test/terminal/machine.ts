@@ -7,7 +7,8 @@
  * reads back every command that was run, with its words, what it was given to
  * read and whether it led a session of its own. The site sees a runner live
  * once its service on the machine is up and polls, as it would the real one:
- * a pool's as the project's runner, and a chat host's as the person's.
+ * a pool's as the project's runner, the person's own runner's as theirs, and
+ * a chat host's as the person's.
  * The commands that would ask for a password are stood in for too, so one
  * that was run is found and not merely missing.
  */
@@ -32,6 +33,7 @@ import type {
   MachineKnobs,
   MachineState,
 } from "./machineShape.ts";
+import { setupSitePersonalId } from "../../ui/chuggy-ui/test/setupSite.ts";
 import type { Home } from "./program.ts";
 import type { StandIn } from "./standIn.ts";
 
@@ -40,6 +42,9 @@ const script = resolve("test/terminal/machineCommand.ts");
 /** What the runner's Claude login holds on a stand-in machine, which nothing may read or print. */
 export const machineLoginSecret =
   "sk-ant-oat01-stand-in-claude-login-never-read";
+
+/** What the engine of a stand-in machine says its memory is unless a case says otherwise. */
+export const machineEngineBytes = 12_562_779_340;
 
 /** The commands that would ask a person for a password. */
 export const machineAskers = ["sudo", "su", "pkexec"] as const;
@@ -80,6 +85,7 @@ function knobsFirst(prefix: string): MachineKnobs {
     version: "0.35.0",
     pool: "shame",
     engines: { docker: true, podman: true },
+    memoryBytes: machineEngineBytes,
     services: true,
     lingerSaid: true,
     lingerAsks: false,
@@ -98,13 +104,35 @@ function lines(path: string): readonly string[] {
     : [];
 }
 
-/** The id the file of the person's chat host names it by, where there is one. */
+/** The id the file of the person's runner or chat host names it by, where there is one. */
 function machineStoodInClient(file: string): string | undefined {
   if (!existsSync(file)) return undefined;
   const held = JSON.parse(readFileSync(file, "utf8")) as {
     readonly clientId?: string;
   };
   return held.clientId;
+}
+
+/**
+ * Has the site see the person's own runner live whose service `name` is up,
+ * where the file under `pools` names it; a file not there, as under a
+ * configuration directory the run was given, is taken for the latest.
+ */
+function machinePersonalSeen(
+  world: StandIn["world"],
+  name: string,
+  pools: string,
+): void {
+  for (const [tenant, held] of world.personal) {
+    const named = `${machineNamePart(tenant)}.${machineNamePart(world.member)}`;
+    if (name !== `chuggy-linux-${named}.service`) continue;
+    const clientId =
+      machineStoodInClient(join(pools, `${named}.json`)) ??
+      setupSitePersonalId(held.live.length - 1);
+    held.live.forEach((_, at) => {
+      if (setupSitePersonalId(at) === clientId) held.live[at] = true;
+    });
+  }
 }
 
 /** Makes `home` a machine a runner could be put on, and has `installation` see a runner live once its service here is up and polls. */
@@ -145,6 +173,7 @@ export function machineStoodIn(home: Home, installation: StandIn): Machine {
       if (name.endsWith(`.${knobs.pool}.service`))
         for (const project of world.projects)
           if (project.pools.includes(knobs.pool)) project.runner = "Live";
+      machinePersonalSeen(world, name, pools);
       for (const [tenant, host] of world.chat) {
         const named = `${machineNamePart(tenant)}.${machineNamePart(world.member)}.chat.host`;
         if (name !== `chuggy-linux-${named}.service`) continue;

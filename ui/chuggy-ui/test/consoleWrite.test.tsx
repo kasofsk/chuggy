@@ -28,7 +28,7 @@ import {
   consoleWriteWatchOf,
 } from "../app/core/consoleWrite.ts";
 import type { ConsoleWrite } from "../app/core/consoleWrite.ts";
-import { TicketCreationRefused } from "../app/core/ticketCreationRun.ts";
+import { TicketCreationRefused } from "../app/core/ticketCreationRefused.ts";
 import {
   answer,
   heldAnswer,
@@ -40,7 +40,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import type { SentRequest } from "./screenHarness.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { renderCopied } from "./copied.tsx";
 
@@ -81,11 +81,11 @@ async function drawn(
   vi.stubGlobal("fetch", scripted.fetch);
   const tree = (shown: boolean): ReactNode => (
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={client}
       transport={openedStream().ports.fetch}
     >
-      {shown ? <OwnerFallbackSection partition={leadPartition} /> : null}
+      {shown ? <OwnerFallbackSection partition={projectPartition} /> : null}
       <ConsoleWriteToasts />
     </ScreenHarness>
   );
@@ -231,7 +231,7 @@ test("a creation refused for its held draft's failed read says that read's code 
   const client = consoleQueryClient();
   renderCopied(
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={client}
       transport={openedStream().ports.fetch}
     >
@@ -306,7 +306,7 @@ async function landedLeft(says: boolean): Promise<void> {
   const client = consoleQueryClient();
   const harnessed = (shown: boolean): ReactNode => (
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={client}
       transport={openedStream().ports.fetch}
     >

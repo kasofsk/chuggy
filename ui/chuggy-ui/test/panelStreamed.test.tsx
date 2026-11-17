@@ -88,7 +88,6 @@ const sampleResources: Readonly<Record<ProjectChangeKind, string>> = {
   Project: "atlas",
   Execution: "ex-one",
   NativeAction: "3",
-  AgenticRefusal: "3",
   Session: "session-one",
 };
 

@@ -303,7 +303,7 @@ function EpicOverviewUpdated(props: {
       <Figure figure={instantFigure(newest.changedAt, props.held.nowMs)} />
       {" · "}
       <EpicActor
-        label={epicActorLabel(newest.actor, props.held.creatorEmails)}
+        label={epicActorLabel(newest.actor, props.held.creatorNames)}
       />
     </>
   );

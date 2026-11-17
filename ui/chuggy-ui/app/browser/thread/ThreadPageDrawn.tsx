@@ -19,7 +19,7 @@ import type { ReactNode } from "react";
 import type { ThreadResponse } from "../../../../../src/contract/responses.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { copyOrDataText } from "../../core/copy.ts";
-import type { LeadTranscriptHeld } from "../../core/leadTranscript.ts";
+import type { SessionTranscriptHeld } from "../../core/sessionTranscript.ts";
 import { sessionCapabilitiesSaid } from "../../core/sessionCapabilities.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
 import {
@@ -148,7 +148,7 @@ function ThreadPageUnavailableLine(props: {
 /** What the page hands the conversation it draws. */
 export interface ThreadPageConversation {
   readonly unavailable: ReactNode;
-  readonly beside: ((held: LeadTranscriptHeld) => ReactNode) | undefined;
+  readonly beside: ((held: SessionTranscriptHeld) => ReactNode) | undefined;
 }
 
 export function ThreadPageDrawn(props: {

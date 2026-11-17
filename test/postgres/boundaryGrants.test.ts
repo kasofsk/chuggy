@@ -15,6 +15,9 @@ import {
   agentAccountCredentialStandingFunction,
   agentAccountCredentialPauseFunction,
   agentAccountFunction,
+  executionAttemptStartedFunction,
+  executionBetweenStagesFunction,
+  executionTicketRegisteredFunction,
   agentAccountNamedCredentialPausesFunction,
   agentAccountNamedPauseFunction,
   agentAccountPauseFunction,
@@ -44,10 +47,6 @@ import {
   executionPlacementSetFunction,
   finalizerRole,
   forgeInstallationRecordFunction,
-  leadOpenFunction,
-  leadRefusalReadFunction,
-  leadRunnerStandingFunction,
-  leadSessionFunction,
   metricsPlaneRole,
   poolPlaneRole,
   projectChangeAppendFunction,
@@ -73,16 +72,13 @@ import {
   repositoryLandingWriteFunction,
   repositoryRetirementWriteFunction,
   schedulerRole,
+  selectorControlRole,
+  selectorProjectThreadSettingsFunction,
   selectorServiceRole,
-  sessionLeadOfferingFunction,
   sessionPlacementSetFunction,
   sessionRouteFunction,
   sessionRunnerStandingFunction,
   statusMoveFunction,
-  storedLeadOfferingFunction,
-  subsidizedLeadReadFunction,
-  sessionLeadProfileFunction,
-  subsidizedLeadSpendFunction,
   ticketLandingsReadFunction,
   ticketRateLimitResumableFunction,
   ticketServiceRole,
@@ -219,67 +215,6 @@ test("the baseline opens five journal columns to the API and leaves the rest shu
         false,
         `${apiRole} holds ${privilege} on journal_entry`,
       );
-  });
-});
-
-const leadSelectorDoorsPaged = "standing_agentic_refusals(text,text,bigint)";
-
-const leadSelectorDoorsAdded = [
-  "standing_agentic_refusals_among(text,text,bigint[])",
-];
-
-function migrationDoorExecutes(
-  subject: pg.Pool,
-): (role: string, signature: string) => Promise<boolean | undefined> {
-  return async (role, signature) =>
-    (
-      await subject.query<{ granted: boolean }>(
-        "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
-        [role, signature],
-      )
-    ).rows[0]?.granted;
-}
-
-async function migrationLeadDoorsAreStrangers(
-  executes: (role: string, signature: string) => Promise<boolean | undefined>,
-  doors: readonly string[],
-): Promise<void> {
-  for (const door of doors)
-    for (const stranger of ["public", ticketServiceRole, finalizerRole])
-      assert.equal(
-        await executes(stranger, door),
-        false,
-        `${stranger} holds nothing on ${door}`,
-      );
-}
-
-test("the baseline grants the ticket-set standing door to the selector alone", async () => {
-  await migratedDatabase("standing_among_grants", async (subject) => {
-    const executes = migrationDoorExecutes(subject);
-    for (const door of leadSelectorDoorsAdded) {
-      assert.equal(await executes(selectorServiceRole, door), true, door);
-      assert.equal(await executes(apiRole, door), false, door);
-    }
-    await migrationLeadDoorsAreStrangers(executes, leadSelectorDoorsAdded);
-  });
-});
-
-test("the baseline takes the paged standing back off the selector", async () => {
-  await migratedDatabase("standing_paged_revoked", async (subject) => {
-    const executes = migrationDoorExecutes(subject);
-    assert.equal(
-      await executes(selectorServiceRole, leadSelectorDoorsPaged),
-      false,
-      "no selector read opens it, and a grant nothing opens is one a check cannot tell from a grant something needs",
-    );
-    assert.equal(
-      await executes(
-        apiRole,
-        "read_standing_agentic_refusals(text,text,bigint)",
-      ),
-      true,
-      "the console still draws a project's standing refusals",
-    );
   });
 });
 
@@ -652,9 +587,6 @@ function boundaryGrantsDoor(
   return { signature, definer: true, callers, strangers };
 }
 
-const boundaryGrantsSettingsWrite =
-  "update_selector_project_settings(text,text,bigint,text,text,text,text,text,text,text,bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint,text,text,text,text,text,text)";
-
 /** The doors and functions a role reaches the schema through, and the roles each is shut to. */
 const boundaryGrantsDoors: readonly DoorDeclared[] = [
   boundaryGrantsDoor(
@@ -725,13 +657,13 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
   ),
   boundaryGrantsDoor(
     `${sessionRouteFunction}(text,text,text)`,
-    [apiRole],
-    [schedulerRole, workerPlaneRole, poolPlaneRole],
+    [apiRole, schedulerRole],
+    [workerPlaneRole, poolPlaneRole],
   ),
   boundaryGrantsDoor(
     `${sessionRunnerStandingFunction}(text,text,text,bigint)`,
-    [apiRole, selectorServiceRole],
-    [schedulerRole, workerPlaneRole, poolPlaneRole],
+    [apiRole, schedulerRole],
+    [selectorServiceRole, workerPlaneRole, poolPlaneRole],
   ),
   boundaryGrantsDoor(
     `${sessionPlacementSetFunction}(text,text,text,text,text,text,text)`,
@@ -739,54 +671,9 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [schedulerRole, workerPlaneRole, poolPlaneRole],
   ),
   boundaryGrantsDoor(
-    `${sessionLeadOfferingFunction}(text,text)`,
-    [apiRole, selectorServiceRole],
-    [schedulerRole, workerPlaneRole, poolPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${storedLeadOfferingFunction}(text,text)`,
+    `${selectorProjectThreadSettingsFunction}(text,text,bigint,text,text,text,text,text,text)`,
     [apiRole],
-    [selectorServiceRole, schedulerRole, workerPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${subsidizedLeadReadFunction}()`,
-    [apiRole],
-    [selectorServiceRole, schedulerRole, workerPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${sessionLeadProfileFunction}(text,text)`,
-    [apiRole, selectorServiceRole],
-    [schedulerRole, workerPlaneRole, poolPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${subsidizedLeadSpendFunction}(text,text)`,
-    [apiRole, selectorServiceRole],
-    [schedulerRole, workerPlaneRole, poolPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${leadSessionFunction}(text,text)`,
-    [selectorServiceRole],
-    [apiRole, schedulerRole, workerPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${leadOpenFunction}(text,text,text,text,text,text,bigint,text,text,boolean)`,
-    [selectorServiceRole],
-    [apiRole, workerPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    boundaryGrantsSettingsWrite,
-    [apiRole],
-    [selectorServiceRole, workerPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${leadRefusalReadFunction}(text,text,bigint)`,
-    [apiRole],
-    [selectorServiceRole],
-  ),
-  boundaryGrantsDoor(
-    `${leadRunnerStandingFunction}(text,text,bigint)`,
-    [selectorServiceRole],
-    [apiRole, schedulerRole, workerPlaneRole, poolPlaneRole],
+    [selectorServiceRole, selectorControlRole, schedulerRole, workerPlaneRole],
   ),
   boundaryGrantsDoor(
     `${repositoryBindingListFunction}(text,text,bigint)`,
@@ -842,6 +729,23 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     `${ticketEvaluationStacksReadFunction}(text,text,bigint,integer)`,
     [apiRole],
     [finalizerRole, ticketServiceRole, schedulerRole],
+  ),
+  {
+    signature: `${executionAttemptStartedFunction}(text,text,text,text)`,
+    definer: false,
+    callers: [poolPlaneRole, schedulerRole],
+    strangers: [apiRole, workerPlaneRole],
+  },
+  {
+    signature: `${executionTicketRegisteredFunction}(text,text,bigint)`,
+    definer: false,
+    callers: [poolPlaneRole, schedulerRole],
+    strangers: [apiRole, workerPlaneRole],
+  },
+  boundaryGrantsDoor(
+    `${executionBetweenStagesFunction}(text)`,
+    [schedulerRole],
+    [apiRole, workerPlaneRole, ticketServiceRole],
   ),
   {
     signature: `${agentAccountFunction}(text,text,text,text)`,
@@ -1075,15 +979,10 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["execution_attempt", "pool_refusal", "UPDATE", apiRole, false],
   ["execution_attempt", "pool_refusal", "INSERT", apiRole, false],
   ["execution", "placement_backoff_from", "UPDATE", poolPlaneRole, true],
-  ["selector_attempt", "project_revision", "SELECT", selectorServiceRole, true],
-  ["selector_attempt", "project_revision", "UPDATE", selectorServiceRole, true],
   ["invite_link", "workspace", "UPDATE", accessPlaneRole, true],
   ["invite_link", "tenant", "UPDATE", accessPlaneRole, false],
   ["invite_link", "note", "UPDATE", accessPlaneRole, false],
   ["invite_link", "create_accounts", "UPDATE", accessPlaneRole, false],
-  ["selector_lead_refusal", null, "DELETE", selectorServiceRole, true],
-  ["subsidized_lead", null, "DELETE", selectorServiceRole, true],
-  ["subsidized_lead", null, "SELECT", apiRole, false],
   [
     "project_repository",
     "pipelines_writable",
@@ -1222,16 +1121,6 @@ const boundaryGrantsHeld: readonly (readonly [
       `${apiRole} SELECT class`,
       `${poolPlaneRole} SELECT class`,
       `${schedulerRole} SELECT class`,
-    ],
-  ],
-  [
-    "selector_lead_refusal",
-    ["tenant", "project", "refusal", "refused_since"],
-    [
-      `${boundaryOwnerRole} SELECT project,refusal,refused_since,tenant`,
-      `${selectorServiceRole} INSERT project,refusal,refused_since,tenant`,
-      `${selectorServiceRole} SELECT project,refusal,refused_since,tenant`,
-      `${selectorServiceRole} UPDATE refusal,refused_since`,
     ],
   ],
   [

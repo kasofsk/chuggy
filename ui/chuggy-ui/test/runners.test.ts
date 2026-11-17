@@ -11,37 +11,31 @@ import type {
   ExecutionPlacementResponse,
   SessionPlacementResponse,
 } from "../../../src/contract/responses.ts";
-import { selectorProjectSettingsResponseSchema } from "../../../src/contract/responses.ts";
 import {
   placementRouteSources,
   placementRoutes,
   sessionRunnerStandings,
 } from "../../../src/contract/rosters.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
-import { leadSelectorSettingsBody } from "./leadFixture.ts";
 import type { Copy } from "../app/core/copy.ts";
 import { copyOrDataText } from "../app/core/copy.ts";
 import {
   runnerAskRead,
   runnerCapabilitiesTyped,
   runnerCapabilityLabel,
+  runnerInstalledVersion,
   runnerOutdated,
-  runnerPackageOffered,
   runnerPackages,
   runnerRegisterCommand,
   runnerRouteLabel,
   runnerRouteSourceLabel,
   runnerStandingLabel,
-  runnersLeadPlacementChoices,
   runnersPlacementDraft,
-  runnersPlacementLabel,
   runnersPlacementMoved,
   runnersPlacementOptions,
   runnersPlacementRefusal,
   runnersPlacementUnhosted,
-  runnersPlacementValue,
   runnersPlacementWrites,
-  runnersSubsidizedLine,
 } from "../app/core/runners.ts";
 import type { RunnersLeadPlacement } from "../app/core/runners.ts";
 
@@ -57,11 +51,6 @@ const hosted: ExecutionPlacementResponse = {
   evaluation: { route: "Pool", source: "Default" },
   choices: ["InCluster", "Pool"],
 };
-
-/** The effective settings the subsidized lead's line reads, beside the lead's. */
-const selectorEffective = selectorProjectSettingsResponseSchema.parse(
-  leadSelectorSettingsBody(),
-).effective;
 
 const sessions: SessionPlacementResponse = {
   thread: { route: "Pool", source: "Default" },
@@ -126,66 +115,6 @@ const subsidized: RunnersLeadPlacement = {
   offering: "Subsidized",
 };
 
-test("the lead is offered the subsidized lead in cluster wherever the deployment admits it, and its own routes alone otherwise", () => {
-  expect(runnersLeadPlacementChoices(sessions)).toStrictEqual([
-    ownHosted,
-    { route: "Pool", offering: "Own" },
-  ]);
-  expect(
-    runnersLeadPlacementChoices({
-      ...sessions,
-      choices: ["Pool"],
-      leadOfferings: ["Own", "Subsidized"],
-    }),
-  ).toStrictEqual([{ route: "Pool", offering: "Own" }, subsidized]);
-});
-
-/** The subsidized lead runs in cluster too, so its route alone cannot tell it
- * from the members' own lead there. */
-test("a subsidized lead read is its own choice, apart from the members' own lead in cluster", () => {
-  expect(
-    runnersPlacementOptions(subsidized, [ownHosted, subsidized]),
-  ).toStrictEqual([
-    { choice: ownHosted, choosable: true },
-    { choice: subsidized, choosable: true },
-  ]);
-  expect(runnersPlacementOptions(subsidized, [ownHosted])).toStrictEqual([
-    { choice: subsidized, choosable: false },
-    { choice: ownHosted, choosable: true },
-  ]);
-  expect(runnersPlacementValue(subsidized)).toBe("Subsidized");
-  expect(runnersPlacementValue(ownHosted)).toBe("InCluster");
-  expect(copyTextEn(runnersPlacementLabel(subsidized))).toBe("Subsidized");
-  expect(copyTextEn(runnersPlacementLabel(ownHosted))).toBe("Hosted runs");
-});
-
-test("the subsidized lead's line says it is chuggy's, the model the effective settings name for it, and that it is free up to a monthly allowance", () => {
-  expect(copyTextEn(runnersSubsidizedLine(undefined))).toBe(
-    "Runs on chuggy · Free up to a monthly allowance",
-  );
-  const effective = {
-    leadModel: "claude-haiku-5-5",
-  } as const;
-  expect(
-    copyTextEn(
-      runnersSubsidizedLine({
-        ...selectorEffective,
-        ...effective,
-        leadOffering: "Subsidized",
-      }),
-    ),
-  ).toBe("Runs claude-haiku-5-5 on chuggy · Free up to a monthly allowance");
-  expect(
-    copyTextEn(
-      runnersSubsidizedLine({
-        ...selectorEffective,
-        ...effective,
-        leadOffering: "Own",
-      }),
-    ),
-  ).toBe("Runs on chuggy · Free up to a monthly allowance");
-});
-
 /** A write names both its kinds, so a placement is written whole where either
  * moved and not at all where neither did. */
 test("a save writes only the placements the draft moved, each whole", () => {
@@ -209,15 +138,6 @@ test("a save writes only the placements the draft moved, each whole", () => {
     session: undefined,
   });
   expect(
-    runnersPlacementWrites(read, {
-      ...read,
-      lead: { route: "Pool", offering: "Own" },
-    }),
-  ).toStrictEqual({
-    execution: undefined,
-    session: { thread: "Pool", lead: "Pool", leadOffering: "Own" },
-  });
-  expect(
     runnersPlacementWrites(read, { ...read, thread: "InCluster" }),
   ).toStrictEqual({
     execution: undefined,
@@ -226,9 +146,9 @@ test("a save writes only the placements the draft moved, each whole", () => {
 });
 
 /** A write naming no offering keeps the one the project's row stores, which
- * may be a subsidized lead the deployment withdrew, so a write moving only the
- * thread names the offering read and moving the lead names the one chosen. */
-test("a session write names the lead's offering, as read where only the thread moved", () => {
+ * may be a subsidized lead the deployment withdrew, so the session write names
+ * the lead as read, and the editor never moves it. */
+test("a session write names the lead and its offering as read, and moves only the thread", () => {
   const read = {
     work: "InCluster",
     evaluation: "Pool",
@@ -237,11 +157,7 @@ test("a session write names the lead's offering, as read where only the thread m
   } as const;
   expect(
     runnersPlacementWrites(read, { ...read, lead: subsidized }).session,
-  ).toStrictEqual({
-    thread: "Pool",
-    lead: "InCluster",
-    leadOffering: "Subsidized",
-  });
+  ).toBeUndefined();
   const subsidizedRead = { ...read, lead: subsidized };
   expect(
     runnersPlacementWrites(subsidizedRead, {
@@ -295,19 +211,19 @@ test("a write refused for the hosted grant is told apart from any other refusal"
   );
 });
 
-test("setup offers the Linux package: what it needs, the command that installs its pinned release, and its guide", () => {
-  expect(runnerPackageOffered).toBe(runnerPackages.linux);
-  expect(runnerPackageOffered).toStrictEqual({
+test("the Linux package: what it needs, the command that installs its pinned release, and its guide", () => {
+  expect(runnerPackages.linux).toStrictEqual({
     label: { id: "runners-package-linux" },
     program: "chuggy-linux",
     needs: { id: "runners-package-needs-linux" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.53.0/chuggy-linux-0.53.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.55.0/chuggy-linux-0.55.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
-    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-linux#a-chat-host",
+    restartIntervalSecs: 10,
+    exitsMeant: { 3: "Unrestarted", 75: "Updated" },
   });
-  expect(copyTextEn(runnerPackageOffered.label)).toBe("Linux");
-  expect(copyTextEn(runnerPackageOffered.needs)).toBe(
+  expect(copyTextEn(runnerPackages.linux.label)).toBe("Linux");
+  expect(copyTextEn(runnerPackages.linux.needs)).toBe(
     "Linux · Node 24 · Docker or Podman",
   );
 });
@@ -318,9 +234,10 @@ test("a Mac's package is the reader's other choice, and what they ask of either 
     program: "chuggy-darwin",
     needs: { id: "runners-package-needs-darwin" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.23.0/chuggy-darwin-0.23.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.25.0/chuggy-darwin-0.25.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
-    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-darwin#chat-host",
+    restartIntervalSecs: 10,
+    exitsMeant: { 0: "Unrestarted", 75: "Updated" },
   });
   expect(copyTextEn(runnerPackages.darwin.label)).toBe("Mac");
   expect(copyTextEn(runnerPackages.darwin.needs)).toBe(
@@ -379,7 +296,7 @@ test("capabilities typed are refused where one is not a capability, is a platfor
 test("the register command names the package's program, the console's own origin and the token, and what was asked of it", () => {
   expect(
     runnerRegisterCommand(
-      runnerPackageOffered,
+      runnerPackages.linux,
       "https://chuggy.test",
       "tok_en-1",
       "Pool",
@@ -387,7 +304,7 @@ test("the register command names the package's program, the console's own origin
   ).toBe("chuggy-linux register --api https://chuggy.test --token=tok_en-1");
   expect(
     runnerRegisterCommand(
-      { ...runnerPackageOffered, program: "chuggy-darwin" },
+      runnerPackages.darwin,
       "https://chuggy.test",
       "tok_en-1",
       "Pool",
@@ -406,7 +323,7 @@ test("the register command names the package's program, the console's own origin
   );
   expect(
     runnerRegisterCommand(
-      runnerPackageOffered,
+      runnerPackages.linux,
       "https://chuggy.test",
       "tok_en-1",
       "Pool",
@@ -420,7 +337,7 @@ test("the register command names the package's program, the console's own origin
 test("a member's own runner is registered by the same command, marked personal", () => {
   expect(
     runnerRegisterCommand(
-      runnerPackageOffered,
+      runnerPackages.linux,
       "https://chuggy.test",
       "tok_en-1",
       "Personal",
@@ -435,7 +352,7 @@ test("a member's own runner is registered by the same command, marked personal",
 test("a token that starts with a dash stays the token's value", () => {
   expect(
     runnerRegisterCommand(
-      runnerPackageOffered,
+      runnerPackages.linux,
       "https://chuggy.test",
       "-tok",
       "Pool",
@@ -459,4 +376,12 @@ test("a runner is outdated only below a pinned plain release, part by part", () 
   expect(runnerOutdated("0.14.0-rc.1", "0.14.1")).toBe(false);
   expect(runnerOutdated("0.13.0", "0.14.1+build")).toBe(false);
   expect(runnerOutdated("0.13", "0.14.1")).toBe(false);
+});
+
+test("the release each platform's install command installs is the one its archive and its tag name", () => {
+  for (const offered of Object.values(runnerPackages)) {
+    const tagged = /\/download\/v([^/]+)\//u.exec(offered.installCommand)?.[1];
+    expect(tagged).toMatch(/^[0-9]+\.[0-9]+\.[0-9]+$/u);
+    expect(runnerInstalledVersion(offered)).toBe(tagged);
+  }
 });

@@ -22,7 +22,13 @@
  * nobody to tell. The pass counts each of those and carries on, because one
  * member's mailbox is not the pass's business to stop for.
  *
- * A THREAD WHOSE PRINCIPAL MAY NOT CHANGE THE PROJECT IS ONE OF THOSE, because
+ * A THREAD WHOSE TICKET WAKES ARE `Off` IS ONE OF THOSE, as
+ * `threadTicketWakesEffective` derives it from the thread's own choice and its
+ * member's chat host's setting, both read off the page beside the candidate.
+ * It is passed over before the authority is asked, so a setting nobody turned
+ * on is never a turn, and turning it on later delivers nothing already passed.
+ *
+ * A THREAD WHOSE PRINCIPAL MAY NOT CHANGE THE PROJECT IS ONE OF THOSE TOO, because
  * a wake is a turn and a member who may only read starts none; so is one whose
  * principal the project no longer admits at all, and one routed in cluster
  * whose tenant no longer grants them the hosted run the turn would spend. THE
@@ -76,6 +82,10 @@
 import { createHash } from "node:crypto";
 
 import { threadWakesPerPassMax } from "../contract/http.ts";
+import {
+  threadTicketWakesEffective,
+  type ThreadTicketWakes,
+} from "../contract/threadWake.ts";
 import type {
   SessionBearerSecret,
   SessionId,
@@ -114,6 +124,8 @@ export interface ThreadWakeCandidate {
   readonly route: PlacementRoute;
   /** Whether the member has a chat host, which a wake on a runner route needs. */
   readonly runner: SessionRunnerStanding;
+  /** The thread's own choice and its member's chat host's setting, which decide whether it is woken at all. */
+  readonly ticketWakes: ThreadTicketWakes;
   /**
    * The project's own standing rules, absent where it takes the default. It
    * rides on the candidate because the pass composes a document that restates
@@ -273,6 +285,7 @@ async function threadWakesOffered(
   let woken = 0;
   let undecidedAt: number | undefined;
   for (const candidate of page) {
+    if (threadTicketWakesEffective(candidate.ticketWakes) === "Off") continue;
     const admitted = await threadWakeAdmitted(service.access, candidate);
     if (admitted === undefined) {
       undecidedAt ??= candidate.sequence;

@@ -8,7 +8,8 @@
  * was run with, what it was given to read and whether it leads a session of
  * its own, and then answers as the real one was found to: the runner
  * package's own lines, the files it writes under the home it is run in, the
- * servers Claude Code names in the configuration under that home, and a
+ * servers Claude Code names in the configuration under that home, chuggy's
+ * plugin in Claude Code installed and on, and a
  * registration, a pool's or with `--chat` the person's chat host's, redeemed
  * at the site it is pointed to. It answers from what a
  * case told the machine, and keeps what it changed beside the home. Nothing
@@ -24,6 +25,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+
+import { setupPluginId } from "../../ui/chuggy-ui/app/core/setupProgram.ts";
 
 import {
   machineFiles,
@@ -103,14 +106,17 @@ function npm(): number {
   if (failed !== undefined) return failed;
   const at = argv.indexOf("--prefix");
   const prefix = at < 0 ? knobs.prefix : (argv[at + 1] ?? "");
+  const program = (argv.at(-1) ?? "").includes("chuggy-darwin")
+    ? "chuggy-darwin"
+    : "chuggy-linux";
   written(
-    join(prefix, "bin", "chuggy-linux"),
-    machineWrapper(process.execPath, script, state, "chuggy-linux"),
+    join(prefix, "bin", program),
+    machineWrapper(process.execPath, script, state, program),
     0o755,
   );
   written(
-    join(prefix, "lib", "node_modules", "chuggy-linux", "package.json"),
-    JSON.stringify({ name: "chuggy-linux", version: knobs.version }),
+    join(prefix, "lib", "node_modules", program, "package.json"),
+    JSON.stringify({ name: program, version: knobs.version }),
   );
   return said(0, "\nadded 12 packages in 3s\n");
 }
@@ -127,8 +133,21 @@ interface ClaudeConfig {
   >;
 }
 
-/** `claude mcp add|remove --scope local`, as Claude Code does them for the folder it is run in: a server named there, a name already there refused, and one removed only where it is there. */
+/** `claude mcp add|remove --scope local`, as Claude Code does them for the folder it is run in: a server named there, a name already there refused, and one removed only where it is there; and `claude plugin list --json`, which has chuggy's plugin installed and on. */
 function claude(): number {
+  if (argv.join(" ") === "plugin list --json")
+    return said(
+      0,
+      `${JSON.stringify([
+        {
+          id: setupPluginId,
+          version: "0.1.0",
+          scope: "user",
+          enabled: true,
+          installPath: join(home, ".claude", "plugins", "cache", "chuggy"),
+        },
+      ])}\n`,
+    );
   const [group, verb, scopeFlag, scope, server = ""] = argv;
   if (group !== "mcp" || scopeFlag !== "--scope" || scope !== "local")
     return said(1, "", "claude: no\n");
@@ -169,16 +188,20 @@ function unitOf(file: string): string {
 const units = join(config, "systemd", "user");
 const requestMsMax = 10_000;
 
-/** The file the package keeps a registration's credentials in: a pool's named for its project and pool, the person's chat host's for the workspace and the member. */
+/** The file the package keeps a registration's credentials in: a pool's named for its project and pool, the person's own runner's for the workspace and the member, and their chat host's likewise with `.chat.host`. */
 function fileOf(held: {
+  readonly kind?: string;
   readonly tenant: string;
   readonly project?: string;
   readonly owner?: string;
 }): string {
+  const owned = `${machineNamePart(held.tenant)}.${machineNamePart(held.owner ?? "")}`;
   const name =
     held.owner === undefined
       ? `${machineNamePart(held.tenant)}.${machineNamePart(held.project ?? "")}.${knobs.pool}.json`
-      : `${machineNamePart(held.tenant)}.${machineNamePart(held.owner)}.chat.host.json`;
+      : held.kind === "Personal"
+        ? `${owned}.json`
+        : `${owned}.chat.host.json`;
   return join(config, "chuggy", "pools", name);
 }
 
@@ -197,17 +220,23 @@ function takesChat(): boolean {
   return Number(version?.[1] ?? 0) > 0 || Number(version?.[2] ?? 0) >= 35;
 }
 
-/** A registration, a pool's or with `--chat` the person's chat host's: the token redeemed at the site it names, where a chat host's is redeemed where a member's runner's is, and the credentials kept in the file the package names for them. */
+/** A registration, a pool's, with `--personal` the person's own runner's or with `--chat` their chat host's: the token redeemed at the site it names, where the person's are redeemed where a member's runner's is, and the credentials kept in the file the package names for them. */
 async function register(): Promise<number> {
+  const personal = argv[1] === "--personal";
   const chat = argv.at(-1) === "--chat";
   if (chat && !takesChat())
     return said(1, "", "error: unknown option '--chat'\n");
-  const [flag, api = "", word = ""] = argv.slice(1, chat ? -1 : undefined);
+  if (personal && !takesChat())
+    return said(1, "", "error: unknown option '--personal'\n");
+  const [flag, api = "", word = ""] = argv.slice(
+    personal ? 2 : 1,
+    chat ? -1 : undefined,
+  );
   const token = word.startsWith("--token=") ? word.slice(8) : "";
   if (flag !== "--api" || !/^[A-Za-z0-9_-]{43}$/u.test(token))
     return said(2, "", "--token is not a registration token\n");
   const answer = await fetch(
-    `${api}/api/v1/${chat ? "personal-runner" : "worker-pool"}-registrations`,
+    `${api}/api/v1/${chat || personal ? "personal-runner" : "worker-pool"}-registrations`,
     {
       method: "POST",
       headers: {
@@ -215,7 +244,9 @@ async function register(): Promise<number> {
         [machineSender]: "runner",
       },
       body: JSON.stringify(
-        chat ? { token } : { token, pool: knobs.pool, capabilities: [] },
+        chat || personal
+          ? { token }
+          : { token, pool: knobs.pool, capabilities: [] },
       ),
       signal: AbortSignal.timeout(requestMsMax),
     },
@@ -227,6 +258,7 @@ async function register(): Promise<number> {
       "the registration token is unknown, spent or expired; mint another in chuggy's console\n",
     );
   const pool = (await answer.json()) as {
+    kind?: string;
     tenant: string;
     project?: string;
     owner?: string;
@@ -340,14 +372,27 @@ function unitSaid(unit: string, asks: "enabled" | "active"): number {
   return said(is === true ? 0 : 3, is === true ? "active\n" : "inactive\n");
 }
 
+/** How systemd shows a unit's state, its main process and the status that last exited with, where the case has none exit. */
+function unitShown(unit: string): number {
+  const is = held<MachineState>(machineFiles.state).units[unit]?.active;
+  return said(
+    0,
+    is === true
+      ? "ActiveState=active\nSubState=running\nMainPID=4242\nExecMainStatus=0\n"
+      : "ActiveState=inactive\nSubState=dead\nMainPID=0\nExecMainStatus=0\n",
+  );
+}
+
 function systemctl(): number {
   const [verb = "", ...rest] = argv.filter((word) => word !== "--user");
   const unit = rest.at(-1) ?? "";
   switch (verb) {
     case "show":
-      return knobs.services
+      if (!knobs.services)
+        return said(1, "", "Failed to connect to bus: No medium found\n");
+      return rest[0] === "--property"
         ? said(0, "Version=255.4-1ubuntu8\n")
-        : said(1, "", "Failed to connect to bus: No medium found\n");
+        : unitShown(rest[0] ?? "");
     case "daemon-reload":
       return failing("reload") ?? said(0);
     case "is-enabled":
@@ -381,7 +426,19 @@ function loginctl(): number {
   return said(0);
 }
 
+/** What `info` prints of an engine that answers, which runs no container: docker's memory at the top, podman's under its host. */
+function engineInfo(): string {
+  const info =
+    name === "podman"
+      ? { host: { memTotal: knobs.memoryBytes } }
+      : { MemTotal: knobs.memoryBytes };
+  return `${JSON.stringify(info)}\n`;
+}
+
 function engine(): number {
+  if (knobs.engines[name] === true && argv[0] === "info")
+    return said(0, engineInfo());
+  if (knobs.engines[name] === true && argv[0] === "ps") return said(0);
   return knobs.engines[name] === true
     ? said(0, "27.3.1\n")
     : said(

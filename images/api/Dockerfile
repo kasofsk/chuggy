@@ -57,14 +57,14 @@ ENV NODE_ENV=production \
 #
 # NOT PINNED, because what this depends on is a floor rather than a version:
 # `gitVersionMin` in `src/adapters/git/gitRun.ts` is the oldest git whose
-# `merge-tree` writes trees, and `gitAvailablePrecondition` reads
-# `git --version` and refuses below it. The pinned base's candidate clears it
-# today —
+# `merge-tree` writes trees and whose `patch-id` takes `--verbatim`, and
+# `gitAvailablePrecondition` reads `git --version` and refuses below it. The
+# pinned base's candidate clears it today —
 #   docker run --rm \
 #     node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503 \
 #     sh -c 'apt-get -qq update && apt-cache policy git'
 # — and the day it does not, the finalizer says so by name instead of promoting
-# against a git that cannot write the tree.
+# against a git that cannot write the tree or name the change.
 #
 # THE COST IS THE ARGUMENT FOR SPLITTING THIS IMAGE LATER, and it is the layer
 # rather than the certificates: git and its dependencies are most of it, the CA

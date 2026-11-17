@@ -12,7 +12,16 @@ export interface EpicsCopy {
   readonly "epics-search-placeholder": Record<never, never>;
   readonly "epics-show-more": Record<never, never>;
   readonly "epics-reload": Record<never, never>;
-  readonly "epics-chip-archived": {
+  readonly "epics-chip-number": {
+    readonly epic: unknown;
+  };
+  readonly "epics-chip-archived": Record<never, never>;
+  readonly "epics-chip-name": {
+    readonly epic: unknown;
+    readonly title: unknown;
+  };
+  readonly "epics-chip-name-archived": {
+    readonly epic: unknown;
     readonly title: unknown;
   };
   readonly "epics-status-empty": Record<never, never>;

@@ -15,7 +15,6 @@ import {
   settled,
   turned,
 } from "./screenHarness.tsx";
-import { leadBody } from "./leadFixture.ts";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import {
   abilitiesEvery,
@@ -124,20 +123,18 @@ test("a dispatchable ticket submits the version from the strict view", async () 
   });
 });
 
-/** The page over a server whose lead route answers `lead`, with the ticket a
- * dispatch candidate or not as `candidate` says, and the abilities read
- * answering as the page's other reads do unless `over` answers it. */
-async function drawnWithLead(
-  lead: unknown,
+/** The page with the ticket a dispatch candidate or not as `candidate` says,
+ * and the abilities read answering as the page's other reads do unless `over`
+ * answers it. */
+async function drawnDispatching(
   candidate = true,
   over: (served: typeof fetch) => typeof fetch = (served) => served,
 ): Promise<void> {
-  const routes = ticketPageRoutes(atlas, () =>
-    ticketDispatchViewOf(atlas, candidate ? [ticketPageCandidate] : []),
-  );
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
-    route: (url) => (url.endsWith("/lead") ? answer(lead) : routes(url)),
+    route: ticketPageRoutes(atlas, () =>
+      ticketDispatchViewOf(atlas, candidate ? [ticketPageCandidate] : []),
+    ),
   });
   vi.stubGlobal("fetch", over(api.fetch));
   const server = openedStream();
@@ -155,68 +152,38 @@ async function drawnWithLead(
   await settled();
 }
 
-/** No lead dispatches the project, so the press beside the line is how the
- * ticket runs, and the page says so where the press is. */
-test("Dispatch in a project with no lead says tickets are dispatched by hand", async () => {
-  await drawnWithLead({ lead: "None" });
+const byHand = "No lead · Dispatched by hand";
+
+/** A press is how every released ticket runs, so the header offers it and
+ * says nothing of a hand beside it. */
+test("a dispatch candidate is offered Dispatch, with no line of the hand", async () => {
+  await drawnDispatching();
   expect(
     screen.getByRole("button", { name: dispatchButtonName }),
   ).toBeDefined();
-  expect(screen.getByText("No lead · Dispatched by hand")).toBeDefined();
+  expect(screen.queryByText(byHand)).toBeNull();
 });
 
-/** A project that has not needed a lead yet opens one for a released ticket,
- * so a press is not how it runs; one whose selector is paused, or whose lead
- * was refused, runs it only on a press. */
-test("Dispatch says it is by hand only where the read says no lead will open", async () => {
-  await drawnWithLead({ lead: "None", absence: { reason: "NotNeeded" } });
-  expect(
-    screen.getByRole("button", { name: dispatchButtonName }),
-  ).toBeDefined();
-  expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
-  cleanup();
-  await drawnWithLead({ lead: "None", absence: { reason: "Paused" } });
-  expect(screen.getByText("No lead · Dispatched by hand")).toBeDefined();
-  cleanup();
-  await drawnWithLead({
-    lead: "None",
-    absence: { reason: "HostedRunsNotGranted", since: "2026-09-02T09:30:00Z" },
-  });
-  expect(screen.getByText("No lead · Dispatched by hand")).toBeDefined();
-});
-
-test("Dispatch in a project with a lead says nothing of the hand", async () => {
-  await drawnWithLead(leadBody(1, 1));
-  expect(
-    screen.getByRole("button", { name: dispatchButtonName }),
-  ).toBeDefined();
-  expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
-});
-
-test("a ticket offered no Dispatch says nothing of the hand, lead or none", async () => {
-  await drawnWithLead({ lead: "None" }, false);
+test("a ticket offered no Dispatch draws no Dispatch", async () => {
+  await drawnDispatching(false);
   expect(screen.queryByRole("button", { name: dispatchButtonName })).toBeNull();
-  expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
 });
 
 function dispatchOffered(): boolean {
   return screen.queryByRole("button", { name: dispatchButtonName }) !== null;
 }
 
-test("a reader who may not dispatch is offered no Dispatch and is told nothing of the hand", async () => {
-  await drawnWithLead(
-    { lead: "None" },
+test("a reader who may not dispatch is offered no Dispatch", async () => {
+  await drawnDispatching(
     true,
     abilitiesOver({ ...abilitiesEvery, dispatch: false }),
   );
   expect(dispatchOffered()).toBe(false);
-  expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
   expect(await ticketHeaderMenuEntries()).toContain("Edit");
 });
 
 test("a reader who may dispatch and not mutate is offered Dispatch alone", async () => {
-  await drawnWithLead(
-    { lead: "None" },
+  await drawnDispatching(
     true,
     abilitiesOver({ ...abilitiesNone, dispatch: true }),
   );
@@ -227,7 +194,7 @@ test("a reader who may dispatch and not mutate is offered Dispatch alone", async
 test.each(abilitiesUnrefusing)(
   "a reader the abilities read %s is offered Dispatch, as the header's one primary action",
   async (_said, abilities) => {
-    await drawnWithLead({ lead: "None" }, true, abilitiesOver(abilities));
+    await drawnDispatching(true, abilitiesOver(abilities));
     expect(dispatchOffered()).toBe(true);
     expect(
       [...ticketHeader().querySelectorAll(".btn-primary")].map(
@@ -238,8 +205,6 @@ test.each(abilitiesUnrefusing)(
   },
 );
 
-const byHand = "No lead · Dispatched by hand";
-
 /** The line the bar draws where a Dispatch gave way, or nothing where it
  * draws none. */
 function noRunnerLine(): HTMLElement | null {
@@ -248,27 +213,25 @@ function noRunnerLine(): HTMLElement | null {
   );
 }
 
-/** The page in a project no lead dispatches, the reads its runner is
- * decided from answering as the case says. */
+/** The page with the reads its runner is decided from answering as the case
+ * says. */
 async function drawnWithRunner(
   reads: WorkRunnerReads,
   candidate = true,
   over: (served: typeof fetch) => typeof fetch = (served) => served,
 ): Promise<void> {
-  await drawnWithLead({ lead: "None" }, candidate, (served) =>
+  await drawnDispatching(candidate, (served) =>
     workRunnerOver(reads)(over(served)),
   );
 }
 
 /** A press there would escalate the ticket, so the header draws the way to a
- * runner where the press would be, and says nothing of a hand that has
- * nothing to press. */
+ * runner where the press would be. */
 test("a ticket whose project has no runner for its work draws the way to one in Dispatch's place", async () => {
   await drawnWithRunner({ runners: "Unregistered" });
   expect(dispatchOffered()).toBe(false);
   const line = noRunnerLine();
   expect(line?.textContent).toBe("No runner · Add runner");
-  expect(screen.queryByText(byHand)).toBeNull();
   expect(line !== null && ticketHeader().contains(line)).toBe(true);
   expect(await ticketHeaderMenuEntries()).toContain("Edit");
 });
@@ -312,7 +275,6 @@ test.each(runnerReadsStartable)(
     await drawnWithRunner(reads);
     expect(dispatchOffered()).toBe(true);
     expect(noRunnerLine()).toBeNull();
-    expect(screen.getByText(byHand)).toBeDefined();
   },
 );
 

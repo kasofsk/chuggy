@@ -26,6 +26,7 @@ import {
   parseDraftCreation,
   parseDraftRevision,
   parsePartition,
+  parseSelectorProjectSettings,
   parseSubmission,
 } from "../../src/adapters/http/contract.ts";
 import { failureResponse } from "../../src/adapters/http/outcomes.ts";
@@ -54,27 +55,17 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket",
   "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/native-actions",
   "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/native-action-history",
-  "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/agentic-refusals",
   "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/action-reach",
   "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/landings",
   "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/take",
   "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/return",
+  "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/proposal-merge",
   "/api/v1/tenants/:tenant/projects/:project/landing-queues",
   "/api/v1/tenants/:tenant/projects/:project/native-actions",
-  "/api/v1/tenants/:tenant/projects/:project/agentic-refusals",
   "/api/v1/tenants/:tenant/projects/:project/inbox",
   "/api/v1/tenants/:tenant/projects/:project/operational-status",
-  "/api/v1/tenants/:tenant/projects/:project/selector-context",
   "/api/v1/tenants/:tenant/projects/:project/selector-settings",
   "/api/v1/tenants/:tenant/projects/:project/selector-settings/history",
-  "/api/v1/tenants/:tenant/projects/:project/selector-history",
-  "/api/v1/tenants/:tenant/projects/:project/selector-proposals",
-  "/api/v1/tenants/:tenant/projects/:project/selector-proposals/:decision/review",
-  "/api/v1/tenants/:tenant/projects/:project/lead",
-  "/api/v1/tenants/:tenant/projects/:project/lead/transcript",
-  "/api/v1/tenants/:tenant/projects/:project/lead/context",
-  "/api/v1/tenants/:tenant/projects/:project/lead/inquiries",
-  "/api/v1/tenants/:tenant/projects/:project/lead/inquiries/:session",
   "/api/v1/tenants/:tenant/projects/:project/executions",
   "/api/v1/tenants/:tenant/projects/:project/executions/:execution",
   "/api/v1/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal",
@@ -772,4 +763,38 @@ test("a draft creation names the epic it joins as a positive number, or none", (
   assert.equal("epic" in parseDraftCreation(base), false);
   for (const epic of [0, -1, 1.5, "3"])
     assert.throws(() => parseDraftCreation({ ...base, epic }), String(epic));
+});
+
+test("a settings write crosses the door as its four thread fields, an absent one absent", () => {
+  assert.deepEqual(
+    parseSelectorProjectSettings({
+      expectedRevision: 3,
+      overrides: {
+        northStar: "Ship the console.",
+        threadStandingRules: "- You draft, and nothing else.",
+        threadModel: "opus",
+        threadEffort: "high",
+      },
+    }),
+    {
+      expectedRevision: 3,
+      overrides: {
+        northStar: "Ship the console.",
+        threadStandingRules: "- You draft, and nothing else.",
+        threadModel: "opus",
+        threadEffort: "high",
+      },
+    },
+  );
+  const cleared = parseSelectorProjectSettings({
+    expectedRevision: 3,
+    overrides: { threadModel: "opus" },
+  });
+  assert.deepEqual(Object.keys(cleared.overrides), ["threadModel"]);
+  assert.throws(() =>
+    parseSelectorProjectSettings({
+      expectedRevision: 3,
+      overrides: { dispatchMode: "Automatic" },
+    }),
+  );
 });

@@ -6,15 +6,21 @@
 import { expect, test } from "vitest";
 
 import { setupPacing, setupPacingRead } from "../app/core/setupPacing.ts";
+import { setupBindPollMs } from "../app/core/setupBind.ts";
+import { setupMergePollMs } from "../app/core/setupMerge.ts";
 import { setupRemoteWaitMs } from "../app/core/setupRemote.ts";
 import { setupLivePollMs } from "../app/core/setupRunner.ts";
 import { setupSignInPollMs } from "../app/core/setupSignIn.ts";
+import { setupWatchPollMs } from "../app/core/setupTicket.ts";
 
 test("with no text, or text that names nothing, a run is paced as the program is", () => {
   expect(setupPacing).toEqual({
     signInPollMs: setupSignInPollMs,
     livePollMs: setupLivePollMs,
     remoteWaitMs: setupRemoteWaitMs,
+    bindPollMs: setupBindPollMs,
+    mergePollMs: setupMergePollMs,
+    watchPollMs: setupWatchPollMs,
   });
   for (const text of [undefined, "", "{}", "null"])
     expect(setupPacingRead(text)).toEqual(setupPacing);
@@ -30,9 +36,23 @@ test("each field named is taken, from one millisecond up to the value it replace
   ).toEqual(setupPacing);
   expect(
     setupPacingRead(
-      JSON.stringify({ signInPollMs: 25, livePollMs: 100, remoteWaitMs: 700 }),
+      JSON.stringify({
+        signInPollMs: 25,
+        livePollMs: 100,
+        remoteWaitMs: 700,
+        bindPollMs: 40,
+        mergePollMs: 30,
+        watchPollMs: 20,
+      }),
     ),
-  ).toEqual({ signInPollMs: 25, livePollMs: 100, remoteWaitMs: 700 });
+  ).toEqual({
+    signInPollMs: 25,
+    livePollMs: 100,
+    remoteWaitMs: 700,
+    bindPollMs: 40,
+    mergePollMs: 30,
+    watchPollMs: 20,
+  });
 });
 
 test("text that is not a pacing, or names a value no pacing takes, is read as naming nothing", () => {
@@ -45,6 +65,9 @@ test("text that is not a pacing, or names a value no pacing takes, is read as na
     '{"signInPollMs":-25}',
     '{"signInPollMs":2.5}',
     JSON.stringify({ remoteWaitMs: setupRemoteWaitMs + 1 }),
+    JSON.stringify({ bindPollMs: setupBindPollMs + 1 }),
+    JSON.stringify({ mergePollMs: setupMergePollMs + 1 }),
+    JSON.stringify({ watchPollMs: setupWatchPollMs + 1 }),
     JSON.stringify({ livePollMs: 100, lockWaitMs: 1 }),
   ])
     expect(setupPacingRead(text)).toEqual(setupPacing);

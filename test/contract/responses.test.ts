@@ -29,7 +29,7 @@ import {
   forgeInstallationsResponse,
   forgeRepositoriesResponse,
   inventoryResponse,
-  leadResponse,
+  landingQueuesResponse,
   notificationsResponse,
   operationResponse,
   operationalStatusResponse,
@@ -102,15 +102,12 @@ import {
   selectorProjectSettingsResponseSchema,
   selectorSettingsConflictResponseSchema,
   selectorSettingsHistoryResponseSchema,
-  leadNoneResponseSchema,
-  leadReadResponseSchema,
-  leadResponseSchema,
-  ticketAgenticRefusalsResponseSchema,
   ticketFollowingSchema,
   ticketNativeActionsResponseSchema,
   ticketNativeActionHistoryResponseSchema,
   ticketResponseSchema,
   workerPoolCredentialsSchema,
+  landingQueuesResponseSchema,
 } from "../../src/contract/responses.ts";
 import { ticketLatestExecution } from "../../src/interpreter/operationsView.ts";
 import { authoringSchema } from "../../src/contract/authoring.ts";
@@ -119,8 +116,6 @@ import { classify } from "../../src/contract/outcomes.ts";
 import { draftRevisionSchema } from "../../src/contract/requests.ts";
 import {
   draftReleaseRefusalCodes,
-  leadAbsencesUntimed,
-  leadAdmissionRefusals,
   projectRepositoryConfigurationDeferrals,
   workerHeldCredentialAbsences,
 } from "../../src/contract/rosters.ts";
@@ -132,8 +127,6 @@ import type {
 } from "../../src/interpreter/repositoryOnboarding.ts";
 import type { RepositoryFinalization } from "../../src/interpreter/repositoryBinding.ts";
 import {
-  agenticRefusalLedgerAnsweredMax,
-  agenticRefusalReasonCharsMax,
   errorEnvelopeSchema,
   forgeInstallationsAnsweredMax,
   forgeRepositoriesAnsweredMax,
@@ -143,19 +136,21 @@ import {
   repositoryConfigurationIgnoredAnsweredMax,
   runModelCharsMax,
   runTranscriptPageBatchesMax,
-  selectorHandoffNoteBytesMax,
 } from "../../src/contract/http.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asBriefFinalization } from "../../src/interpreter/ticketBrief.ts";
 import {
   asForgeAccount,
   asForgeApp,
+  asForgeAccountId,
   asForgeId,
   asForgeInstallationId,
   asForgeRepositoryName,
 } from "../../src/interpreter/forgeInstallation.ts";
-import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
+import { selectorEffectiveSettings } from "../../src/interpreter/selectorProjectSettings.ts";
+import { resolvedThreadStandingRules } from "../../src/contract/threadSeeding.ts";
 import type { Refusal } from "../../src/interpreter/refusal.ts";
 import { ticketEscalationResource } from "../../src/interpreter/nativeWeb.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
@@ -189,7 +184,6 @@ import {
   partition,
   refusedOperation,
   reopenedDraft,
-  selectorDefaults,
   selectorProjectSettings,
   revision,
   ticketCarried,
@@ -701,37 +695,27 @@ test("a project's selector settings parse as its overrides beside what they reso
   assert.equal(parsed.revision, 2);
   assert.equal(parsed.overrides.northStar, "Ship the console.");
   assert.equal(parsed.effective.northStar, "Ship the console.");
-  assert.equal(parsed.effective.basePrompt, selectorDefaults.basePrompt);
-  assert.equal(parsed.effective.projectRevision, 2);
   assert.equal(
-    parsed.effective.limits.concurrentDecisions,
-    selectorDefaults.limits.concurrentDecisions,
+    parsed.effective.threadStandingRules,
+    "- You draft, and nothing else.",
   );
 });
 
-test("a project pause and an installation pause are not the same body", () => {
-  const body = (installation: "Running" | "Paused") =>
+test("a project that set nothing answers the default standing rules and no North Star", () => {
+  const parsed = selectorProjectSettingsResponseSchema.parse(
     selectorProjectSettingsResponse({
       result: "Found",
       settings: {
         partition,
-        revision: 2,
-        overrides: { mode: "Paused" },
-        effective: resolvedSelectorSettings(
-          partition,
-          { ...selectorDefaults, mode: installation },
-          2,
-          { mode: "Paused" },
-        ),
+        revision: 0,
+        overrides: {},
+        effective: selectorEffectiveSettings({}),
       },
-    }).body;
-  const stopped = selectorProjectSettingsResponseSchema.parse(body("Paused"));
-  const theirs = selectorProjectSettingsResponseSchema.parse(body("Running"));
-  assert.equal(stopped.effective.mode, "Paused");
-  assert.equal(theirs.effective.mode, "Paused");
-  assert.equal(stopped.effective.installationMode, "Paused");
-  assert.equal(theirs.effective.installationMode, "Running");
-  assert.notDeepEqual(body("Paused"), body("Running"));
+    }).body,
+  );
+  assert.deepEqual(parsed.effective, {
+    threadStandingRules: resolvedThreadStandingRules(undefined),
+  });
 });
 
 test("a settings write that lost its fence answers a conflict carrying the current row", () => {
@@ -2041,71 +2025,6 @@ test("a run figure past the bound the contract names is refused", () => {
   );
 });
 
-test("a lead read carries the handoff note by size and preview, never inline", () => {
-  const lead = {
-    session: "lead-atlas",
-    state: "Open",
-    attention: "Monitoring",
-    notificationCursor: 4,
-    handoffNote: { bytes: 2, preview: "{}", truncated: false },
-    turns: [],
-    streams: [],
-  };
-  assert.equal(leadResponseSchema.parse(lead).session, "lead-atlas");
-  assert.throws(() => leadResponseSchema.parse({ ...lead, handoffNote: {} }));
-  assert.throws(() =>
-    leadResponseSchema.parse({
-      ...lead,
-      handoffNote: {
-        bytes: selectorHandoffNoteBytesMax + 1,
-        preview: "{}",
-        truncated: true,
-      },
-    }),
-  );
-});
-
-test("a refusal ledger refuses a reason longer than its column holds", () => {
-  const entry = {
-    ordinal: 1,
-    event: "Refused",
-    ticketVersion: 2,
-    reason: "the dependency is still failing",
-    decision: "selector-decision-one",
-    recordedAt: instant,
-  };
-  const parsed = ticketAgenticRefusalsResponseSchema.parse({
-    ticket: 42,
-    entries: [entry],
-    more: false,
-  });
-  assert.equal(parsed.entries[0]?.event, "Refused");
-  assert.equal(parsed.standing, undefined);
-  assert.equal(parsed.more, false);
-  assert.throws(() =>
-    ticketAgenticRefusalsResponseSchema.parse({ ticket: 42, entries: [entry] }),
-  );
-  assert.throws(() =>
-    ticketAgenticRefusalsResponseSchema.parse({
-      ticket: 42,
-      more: true,
-      entries: Array.from(
-        { length: agenticRefusalLedgerAnsweredMax + 1 },
-        () => entry,
-      ),
-    }),
-  );
-  assert.throws(() =>
-    ticketAgenticRefusalsResponseSchema.parse({
-      ticket: 42,
-      more: false,
-      entries: [
-        { ...entry, reason: "x".repeat(agenticRefusalReasonCharsMax + 1) },
-      ],
-    }),
-  );
-});
-
 test("a drafts page carries whole drafts, its cursor and whether it ends them", () => {
   const body = draftResponseSchema.parse(draftResponse(draftResource).body);
   assert.deepEqual(
@@ -2278,6 +2197,7 @@ test("a tenant's installations and what one grants say whether they are all of i
       result: "Repositories",
       repositories: [
         {
+          id: "1296269",
           name: asForgeRepositoryName("chuggy"),
           fullName: "kasofsk/chuggy",
           url: onboardingRepository,
@@ -2286,10 +2206,15 @@ test("a tenant's installations and what one grants say whether they are all of i
         },
       ],
       truncated: false,
+      selection: "Selected",
+      accountId: asForgeAccountId("1"),
     }).body,
   );
   assert.equal(repositories.truncated, false);
+  assert.equal(repositories.selection, "Selected");
+  assert.equal(repositories.accountId, "1");
   assert.deepEqual(repositories.repositories[0], {
+    id: "1296269",
     name: "chuggy",
     fullName: "kasofsk/chuggy",
     url: onboardingRepository,
@@ -2580,6 +2505,7 @@ test("each onboarding listing refuses one row past the bound it answers under", 
     }),
   );
   const granted = {
+    id: "1296269",
     name: "chuggy",
     fullName: "kasofsk/chuggy",
     url: onboardingRepository,
@@ -2589,6 +2515,7 @@ test("each onboarding listing refuses one row past the bound it answers under", 
   assert.throws(() =>
     forgeRepositoriesResponseSchema.parse({
       truncated: true,
+      selection: "Selected",
       repositories: Array.from(
         { length: forgeRepositoriesAnsweredMax + 1 },
         () => granted,
@@ -2775,76 +2702,6 @@ test("a redemption's pool file parses as the file a runner keeps, and an address
     );
 });
 
-test("every reason a project holds no lead parses as the lead route answers it", () => {
-  const absences = [
-    ...leadAbsencesUntimed.map((reason) => ({ reason })),
-    ...leadAdmissionRefusals.map((reason) => ({
-      reason,
-      since: "2026-09-02T00:00:00.000Z",
-    })),
-  ] as const;
-  for (const absence of absences) {
-    const answered = leadResponse({ result: "None", absence });
-    assert.equal(answered.status, 200);
-    assert.deepEqual(answered.body, { lead: "None", absence });
-    assert.deepEqual(leadReadResponseSchema.parse(answered.body), {
-      lead: "None",
-      absence,
-    });
-  }
-});
-
-/**
- * A server that predates `absence` answers the bare arm, and a server past this
- * one may say more in it; a console reads both rather than drawing either as a
- * body it cannot read.
- */
-test("a lead route's no-lead answer parses without its reason and with fields it does not know", () => {
-  assert.deepEqual(leadNoneResponseSchema.parse({ lead: "None" }), {
-    lead: "None",
-  });
-  assert.deepEqual(
-    leadReadResponseSchema.parse({
-      lead: "None",
-      absence: { reason: "NotNeeded", later: true },
-      later: true,
-    }),
-    { lead: "None", absence: { reason: "NotNeeded" } },
-  );
-  assert.equal(
-    leadNoneResponseSchema.safeParse({
-      lead: "None",
-      absence: { reason: "RunnerOffline" },
-    }).success,
-    false,
-  );
-});
-
-/** A server that predates `held`, or a lead nothing holds, answers a lead without it, and a console reads that body rather than refusing it. */
-test("a lead route's lead answer parses with what holds it and without it", () => {
-  const lead = {
-    session: "lead-atlas",
-    state: "Open",
-    attention: "Monitoring",
-    notificationCursor: 4,
-    handoffNote: { bytes: 2, preview: "{}", truncated: false },
-    turns: [],
-    streams: [],
-  };
-  assert.deepEqual(leadReadResponseSchema.parse(lead), lead);
-  for (const reason of ["Paused", "SelectorNotGranted"] as const)
-    assert.deepEqual(
-      leadReadResponseSchema.parse({ ...lead, held: { reason } }),
-      { ...lead, held: { reason } },
-    );
-  for (const held of [{ reason: "NotNeeded" }, "Paused", true])
-    assert.equal(
-      leadReadResponseSchema.safeParse({ ...lead, held }).success,
-      false,
-      JSON.stringify(held),
-    );
-});
-
 test("a pause names exactly one of until and off, on an agent's own pause and on a credential's", () => {
   const until = "2026-11-03T15:00:00.000Z";
   const body = (pause: object) =>
@@ -2894,6 +2751,46 @@ test("a pause names exactly one of until and off, on an agent's own pause and on
   for (const refused of [{}, { until, off: true }])
     assert.ok(
       !agentAccountsResponseSchema.safeParse(body(refused)).success,
+      JSON.stringify(refused),
+    );
+});
+
+test("a landing queue answers since when its holder holds it, to the microsecond in UTC, and its holder's phase", () => {
+  const queue = {
+    partition: { tenant: asTenantId("acme"), project: asProjectId("atlas") },
+    repository: "acme/atlas",
+    target: undefined,
+    holder: asTicketId(3),
+    holderSince: "2026-11-16T09:30:00.123456Z",
+    holderPhase: "Evaluation" as const,
+    waiting: [asTicketId(1)],
+  };
+  const body = landingQueuesResponse({ queues: [queue], truncated: false })
+    .body as { readonly queues: readonly Record<string, unknown>[] };
+  const answered = {
+    repository: "acme/atlas",
+    holder: 3,
+    holderSince: "2026-11-16T09:30:00.123456Z",
+    holderPhase: "Evaluation",
+    waiting: [1],
+  };
+  assert.deepEqual(landingQueuesResponseSchema.parse(body), {
+    queues: [answered],
+    truncated: false,
+  });
+  for (const refused of [
+    { holderSince: undefined },
+    { holderSince: "2026-11-16T09:30:00.123Z" },
+    { holderSince: "2026-11-16T09:30:00.123456+01:00" },
+    { holderPhase: undefined },
+    { holderPhase: "Landed" },
+  ])
+    assert.throws(
+      () =>
+        landingQueuesResponseSchema.parse({
+          queues: [{ ...answered, ...refused }],
+          truncated: false,
+        }),
       JSON.stringify(refused),
     );
 });

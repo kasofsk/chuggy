@@ -11,7 +11,6 @@ import {
 } from "../../../src/contract/epics.ts";
 import { ticketSearchCharsMax } from "../../../src/contract/http.ts";
 import {
-  epicDraftRefusal,
   epicFormChanged,
   epicFormFaults,
   epicFormFieldOf,
@@ -28,6 +27,7 @@ import {
   epicsQueryOf,
   epicsQueryWith,
 } from "../app/core/epics.ts";
+import { epicDraftRefusal } from "../app/core/ticketCreationRun.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import { saidEn } from "./saidEn.ts";
 import type { EpicForm } from "../app/core/epics.ts";

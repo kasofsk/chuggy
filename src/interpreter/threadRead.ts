@@ -30,12 +30,11 @@
  * older pages walked backwards the way a conversation is scrolled, and a
  * listing answers whole.
  *
- * THE TRANSCRIPT IS THE LEAD'S WALK OVER ANOTHER SESSION, and literally so:
- * nothing here declares a page, a query or a read of its own. The boundary
- * draws a thread's transcript with `leadRead.ts`'s walk over `leadRead.ts`'s
- * row source and answers it through the lead's own wire body, so one transcript
- * has one page type and one representation — and a reader of a thread's and a
- * reader of the lead's cannot be shown two readings of one store.
+ * THE TRANSCRIPT IS THE SESSION'S WALK, and literally so: nothing here
+ * declares a page, a query or a read of its own. The boundary draws a thread's
+ * transcript with `sessionTranscriptPage.ts`'s walk over its row source and
+ * answers it through the session transcript's wire body, so one transcript has
+ * one page type and one representation.
  *
  * THE SEEDING BLOCK IS COMPOSED HERE AND BOUNDED IN `thread.ts`. The first turn
  * of a thread with no agent reference carries the project's North Star and
@@ -52,7 +51,6 @@
  */
 
 import {
-  agenticRefusalsAnsweredMax,
   nativeHttpPageItemsMax,
   textCodePointsCount,
   threadMessageCharsMax,
@@ -96,7 +94,6 @@ import {
   type ThreadProjectTexts,
   type ThreadSeededDraft,
   type ThreadSeededImage,
-  type ThreadSeededRefusal,
   type ThreadSeeding,
   type ThreadStanding,
 } from "./thread.ts";
@@ -139,8 +136,8 @@ export interface MemberThreadRecord extends ThreadRecord {
 
 /**
  * One turn of a thread's mailbox as a reader sees it, carrying its input and
- * its result where the lead's carries neither: a member's input is what they
- * typed and their result is the answer they are waiting for.
+ * its result: a member's input is what they typed and their result is the
+ * answer they are waiting for.
  */
 export interface ThreadTurnRecord {
   readonly turn: SessionTurnId;
@@ -393,9 +390,8 @@ export interface ThreadSessionMint {
 /**
  * What a thread's first turn is seeded from, the project's two texts asked for
  * as themselves rather than as the whole resolved record so the composition
- * answering it cannot hand a thread the lead's prompt or its limits by
- * accident. The drafts and the refusals are filtered to the member the block
- * is for, which is why an authority rather than a principal is what they take.
+ * answering it cannot hand a thread settings it was not given by accident. The drafts are filtered to the member the block is for, which is
+ * why an authority rather than a principal is what they take.
  */
 export interface ThreadSeedingRead {
   /** The overrides as the project holds them; the precedence is the interpreter's. */
@@ -405,11 +401,6 @@ export interface ThreadSeedingRead {
     author: Authority,
     limit: number,
   ): Promise<readonly ThreadSeededDraft[]>;
-  refusals(
-    partition: Partition,
-    tickets: readonly number[],
-    limit: number,
-  ): Promise<readonly ThreadSeededRefusal[]>;
 }
 
 /** One thread as the wire names it, with `mine` decided against the reader's own principal. */
@@ -577,13 +568,11 @@ export function threadMessageSent(
 export const threadBacklogRetrySeconds = 60;
 
 /**
- * How many of the member's drafts and refusals a first turn is seeded from,
- * which are the page bounds the routes behind them already answer at. Neither
- * decides how much the block weighs — `threadTurnInput` sheds these two, in
- * this order, until the turn fits.
+ * How many of the member's drafts a first turn is seeded from, which is the
+ * page bound the route behind them already answers at. It does not decide how
+ * much the block weighs — `threadTurnInput` sheds drafts until the turn fits.
  */
 export const threadSeededDraftsMax = nativeHttpPageItemsMax;
-export const threadSeededRefusalsMax = agenticRefusalsAnsweredMax;
 
 /**
  * The title cut from what a member said: the first non-empty line, run onto one
@@ -761,10 +750,7 @@ export async function threadMessageImages(
 
 /**
  * What a thread's first turn is seeded with: the project's North Star, its
- * standing rules, the member's own open drafts, and the refusals that bind on
- * exactly those drafts. The refusals are asked for by ticket rather
- * than read whole, because a refusal against work this member never authored is
- * not their business on their first turn.
+ * standing rules, and the member's own open drafts.
  */
 export async function threadSeeding(
   seeding: ThreadSeedingRead,
@@ -773,18 +759,9 @@ export async function threadSeeding(
 ): Promise<ThreadSeeding> {
   const texts = await seeding.projectTexts(partition);
   const drafts = await seeding.drafts(partition, author, threadSeededDraftsMax);
-  const refusals =
-    drafts.length === 0
-      ? []
-      : await seeding.refusals(
-          partition,
-          drafts.map((draft) => draft.ticket),
-          threadSeededRefusalsMax,
-        );
   return {
     ...(texts.northStar === undefined ? {} : { northStar: texts.northStar }),
     standingRules: resolvedThreadStandingRules(texts.standingRules),
     drafts,
-    refusals,
   };
 }

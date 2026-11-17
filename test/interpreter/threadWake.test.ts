@@ -50,6 +50,7 @@ import {
   type ThreadTicketWakeReason,
 } from "../../src/interpreter/thread.ts";
 import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
+import type { ThreadTicketWakes } from "../../src/contract/threadWake.ts";
 import {
   threadWakeAdvanced,
   threadWakePass,
@@ -92,6 +93,7 @@ function candidateAt(
     session,
     route,
     runner,
+    ticketWakes: { thread: "On" },
   };
 }
 
@@ -399,6 +401,59 @@ test("each mailbox a wake cannot reach is skipped, and the pass carries on", asy
     );
     assert.deepEqual(store.mailbox(member("gone").session), [], held);
   }
+});
+
+/** A candidate whose ticket wake settings are `wakes`, everything else as `candidateAt` makes it. */
+function candidateSet(
+  sequence: number,
+  label: string,
+  wakes: ThreadTicketWakes,
+): ThreadWakeCandidate {
+  return { ...candidateAt(sequence, label), ticketWakes: wakes };
+}
+
+test("a thread whose ticket wakes nobody turned on is passed over before the authority is asked, and the cursor moves past it", async () => {
+  const unset = candidateSet(1, "unset", {});
+  const store = referenceStore({ log: [unset, candidateAt(2, "here")] });
+  const silent = referenceAccess({ undecided: new Set([unset.principal]) });
+
+  assert.deepEqual(
+    await threadWakePass(serviceOf(store, undefined, silent)),
+    { read: 2, woken: 1, skipped: 1, cursor: 2 },
+    "an authority that could not answer held the cursor at a thread nobody opted in",
+  );
+  assert.deepEqual(store.mailbox(unset.session), []);
+});
+
+test("a thread's own choice decides whatever its host says, and one that made none follows its host", async () => {
+  const log = [
+    candidateSet(1, "on-host-off", { thread: "On", host: "Off" }),
+    candidateSet(2, "off-host-on", { thread: "Off", host: "On" }),
+    candidateSet(3, "follows-on", { host: "On" }),
+    candidateSet(4, "follows-off", { host: "Off" }),
+  ];
+  const store = referenceStore({ log });
+  const report = await threadWakePass(serviceOf(store));
+
+  assert.deepEqual(report, { read: 4, woken: 2, skipped: 2, cursor: 4 });
+  assert.deepEqual(
+    store.offers.map((offer) => offer.session),
+    [member("on-host-off").session, member("follows-on").session],
+  );
+});
+
+test("turning a thread's ticket wakes on delivers nothing the pass already passed over", async () => {
+  const off = candidateSet(1, "late", { thread: "Off" });
+  const store = referenceStore({ log: [off] });
+  await threadWakePass(serviceOf(store));
+  const turnedOn = referenceStore({
+    log: [{ ...off, ticketWakes: { thread: "On" } }],
+    cursor: await store.cursor(),
+  });
+  const report = await threadWakePass(serviceOf(turnedOn));
+
+  assert.deepEqual(report, { read: 0, woken: 0, skipped: 0, cursor: 1 });
+  assert.deepEqual(turnedOn.offers, []);
 });
 
 /**

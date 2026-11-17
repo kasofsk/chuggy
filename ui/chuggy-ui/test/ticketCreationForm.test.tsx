@@ -38,7 +38,7 @@ import {
   creationSubmitEffect,
 } from "../app/core/ticketCreation.ts";
 import type { CreationOffer } from "../app/core/ticketCreation.ts";
-import { creationContextList } from "../app/core/ticketCreationRun.ts";
+import { creationContextList } from "../app/core/configurationQueries.ts";
 import type { CreationContext } from "../app/core/ticketCreationRun.ts";
 import {
   creationBinding,

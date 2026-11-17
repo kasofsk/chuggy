@@ -26,28 +26,12 @@ import type {
   TicketNativeActionHistoryPage,
   TicketResource,
 } from "../../interpreter/nativeWeb.ts";
-import type { SelectorOperationalContext } from "../../interpreter/selector.ts";
-import type {
-  AgenticRefusalsRead,
-  TicketAgenticRefusalsRead,
-} from "../../interpreter/agenticRefusal.ts";
-import {
-  handoffNotePreview,
-  type LeadAbsence,
-  type LeadRead,
-  type LeadRefused,
-  type LeadTranscriptRead,
-  type LeadTurnRecord,
-} from "../../interpreter/leadRead.ts";
+import type { SessionTranscriptRead } from "../../interpreter/sessionTranscriptPage.ts";
 import type { ProjectInboxPage } from "../../interpreter/projectInbox.ts";
 import type { EpicRefusal } from "../../domain/epics.ts";
 import type { EpicRead, EpicWritten } from "../../interpreter/epics.ts";
 import type { TicketTakeWritten } from "../../interpreter/ticketTake.ts";
-import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
-import type {
-  SelectorProposalReviews,
-  SelectorReviewResult,
-} from "../../interpreter/selectorReview.ts";
+import type { TicketProposalMerged } from "../../interpreter/ticketProposalMerge.ts";
 import type { SessionStoreEntry } from "../../interpreter/sessionTranscript.ts";
 import type {
   SelectorProjectSettingsHistoryRead,
@@ -85,28 +69,21 @@ import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import {
   artifactUnavailableCode,
   hostedRunsNotGrantedCode,
-  leadNotSubsidizedCode,
-  leadOfferingNotAdmittedCode,
   noRunnerCode,
   programSkipsPlannedEvaluationsCode,
-  selectorProposalNotHeldCode,
-  subsidyExhaustedCode,
+  proposalMergeForbiddenCode,
+  proposalMergeRefusedCode,
   threadLimitReachedCode,
   briefFinalizationModeOf,
   type BriefFinalizationMode,
   type NativeActionAnswerRefusalCode,
   type TicketTakeRefusalCode,
+  type ProposalMergeRefusal,
   type ProjectArtifactUploadRefusalCode,
   type ProjectImageRefusalCode,
-  type SelectorReviewOutcome,
   type ThreadMessageRefusalCode,
 } from "../../contract/rosters.ts";
 import type { RepositoryFinalization } from "../../interpreter/repositoryBinding.ts";
-import type {
-  LeadInquiriesRead,
-  LeadInquiryAsked,
-  LeadInquiryRead,
-} from "../../interpreter/leadInquiry.ts";
 import type {
   ThreadClosing,
   ThreadHiding,
@@ -208,9 +185,10 @@ import type {
 } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackView } from "../../interpreter/projectOwnerFallback.ts";
 import type { ThreadLimitView } from "../../interpreter/threadLimit.ts";
-import type {
-  SessionPlacementView,
-  SessionPlacementWritten,
+import {
+  sessionPlacementLeadCompatibility,
+  type SessionPlacementView,
+  type SessionPlacementWritten,
 } from "../../interpreter/sessionPlacement.ts";
 import type {
   AgentAccountPressed,
@@ -702,47 +680,15 @@ export function projectAbilitiesResponse(
     : response(200, result.value);
 }
 
-export function selectorOperationalContextResponse(
-  result: AuthorizedResult<SelectorOperationalContext>,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, result.value);
-}
-
-/** The record on the wire, whose effective half names no partition twice. */
+/** The record as the wire carries it. */
 function selectorProjectSettingsBody(
   settings: SelectorProjectSettingsRecord,
 ): unknown {
-  const effective = settings.effective;
   return {
     partition: settings.partition,
     revision: settings.revision,
     overrides: settings.overrides,
-    effective: {
-      revision: effective.revision,
-      projectRevision: effective.projectRevision,
-      mode: effective.mode,
-      installationMode: effective.installationMode,
-      dispatchMode: effective.dispatchMode,
-      basePrompt: effective.basePrompt,
-      ...(effective.northStar === undefined
-        ? {}
-        : { northStar: effective.northStar }),
-      threadStandingRules: effective.threadStandingRules,
-      modelAllowlist: effective.modelAllowlist,
-      toolAllowlist: effective.toolAllowlist,
-      limits: effective.limits,
-      installationLimits: effective.installationLimits,
-      operationalContextMaxAgeMs: effective.operationalContextMaxAgeMs,
-      ...(effective.lead.model === undefined
-        ? {}
-        : { leadModel: effective.lead.model }),
-      ...(effective.lead.effort === undefined
-        ? {}
-        : { leadEffort: effective.lead.effort }),
-      leadOffering: effective.lead.offering,
-    },
+    effective: settings.effective,
   };
 }
 
@@ -762,14 +708,6 @@ function selectorProjectSettingsRefusal(
   refusal: SelectorProjectSettingsRefusal,
 ): NativeHttpResponse {
   switch (refusal) {
-    case "AutomaticDispatchUnavailable":
-      return response(
-        409,
-        nativeHttpError(
-          refusal,
-          "Automatic dispatch needs a production-ready selector policy host.",
-        ),
-      );
     case "SettingsWriteContended":
       return retry(503, 1, refusal);
     default:
@@ -1301,9 +1239,9 @@ export function sessionPlacementBody(
 ): SessionPlacementResponse {
   return {
     thread: view.routes.Thread,
-    lead: view.routes.Lead,
-    leadOffering: view.leadOffering,
-    leadOfferings: [...view.leadOfferings],
+    lead: sessionPlacementLeadCompatibility.lead,
+    leadOffering: sessionPlacementLeadCompatibility.leadOffering,
+    leadOfferings: [...sessionPlacementLeadCompatibility.leadOfferings],
     choices: [...view.choices],
     runners: {
       mine: view.runners.mine,
@@ -1371,18 +1309,10 @@ export function placementWriteResponse<View>(
   }
 }
 
-/** A session placement written, or refused a lead offering its route does not admit on this deployment, by its code. */
+/** A session placement written. */
 export function sessionPlacementWriteResponse(
   result: SessionPlacementWritten,
 ): NativeHttpResponse {
-  if (result.result === "LeadOfferingNotAdmitted")
-    return response(
-      422,
-      nativeHttpError(
-        leadOfferingNotAdmittedCode,
-        "The deployment does not admit this lead offering on this route.",
-      ),
-    );
   return placementWriteResponse(result, sessionPlacementBody);
 }
 
@@ -2102,6 +2032,8 @@ export function landingQueuesResponse(
       repository: queue.repository,
       ...(queue.target === undefined ? {} : { target: queue.target }),
       holder: Number(queue.holder),
+      holderSince: queue.holderSince,
+      holderPhase: queue.holderPhase,
       waiting: queue.waiting.map(Number),
     })),
     truncated: read.truncated,
@@ -2288,6 +2220,10 @@ export function forgeRepositoriesResponse(
       return response(200, {
         repositories: result.repositories,
         truncated: result.truncated,
+        selection: result.selection,
+        ...(result.accountId === undefined
+          ? {}
+          : { accountId: result.accountId }),
       });
     case "NotConfigured":
       return forgeNotConfigured();
@@ -2972,85 +2908,11 @@ export function dispatchViewResponse(
 }
 
 /**
- * One turn of the lead's mailbox on the wire. The turn's identity is the
- * decision's for an observation turn — that is what makes offering one
- * idempotent — so the decision is named rather than stored twice, and no other
- * input kind has one.
- */
-function leadTurnBody(turn: LeadTurnRecord): unknown {
-  return {
-    turn: turn.turn,
-    ordinal: turn.ordinal,
-    inputKind: turn.inputKind,
-    state: turn.state,
-    ...(turn.inputKind === "Observation" ? { decision: turn.turn } : {}),
-    ...(turn.failure === undefined ? {} : { failure: turn.failure }),
-    ...(turn.measured === undefined ? {} : turn.measured),
-    ...(turn.batchFirst === undefined ? {} : { batchFirst: turn.batchFirst }),
-    ...(turn.batchLast === undefined ? {} : { batchLast: turn.batchLast }),
-  };
-}
-
-function leadRefusalBody(refused: LeadRefused): unknown {
-  return {
-    reason: refused.reason,
-    since: refused.since,
-    ...(refused.until === undefined ? {} : { until: refused.until }),
-    ...(refused.off === undefined ? {} : { off: refused.off }),
-  };
-}
-
-function leadAbsenceBody(absence: LeadAbsence): unknown {
-  return "since" in absence
-    ? leadRefusalBody(absence)
-    : { reason: absence.reason };
-}
-
-export function leadResponse(result: LeadRead): NativeHttpResponse {
-  switch (result.result) {
-    case "NotFound":
-      return response(404, nativeHttpError("NotFound", "Resource not found."));
-    case "None":
-      return response(200, {
-        lead: "None",
-        absence: leadAbsenceBody(result.absence),
-      });
-    case "Found":
-      return response(200, {
-        session: result.lead.session,
-        state: result.lead.state,
-        attention: result.lead.attention,
-        ...(result.lead.agentReference === undefined
-          ? {}
-          : { agentReference: result.lead.agentReference }),
-        notificationCursor: result.lead.notificationCursor,
-        handoffNote: handoffNotePreview(result.lead.handoffNote),
-        turns: result.lead.turns.map(leadTurnBody),
-        streams: result.streams,
-        ...(result.held === undefined
-          ? {}
-          : { held: { reason: result.held.reason } }),
-        ...(result.refusal === undefined
-          ? {}
-          : { refusal: leadRefusalBody(result.refusal) }),
-        ...(result.subsidy === undefined
-          ? {}
-          : {
-              subsidy: {
-                tenantMicros: result.subsidy.tenantMicros,
-                tenantMonthlyMicros: result.subsidy.tenantMonthlyMicros,
-              },
-            }),
-      });
-  }
-}
-
-/**
  * One transcript entry as the contract declares it. The stored entry carries the
  * parent links and the compaction metadata the walk needed, and a reader is
  * given neither: the wire says what the chain is, not how it was found.
  */
-function leadTranscriptEntryBody(entry: SessionStoreEntry): unknown {
+function sessionTranscriptEntryBody(entry: SessionStoreEntry): unknown {
   return {
     ...(entry.uuid === undefined ? {} : { uuid: entry.uuid }),
     type: entry.type,
@@ -3059,14 +2921,14 @@ function leadTranscriptEntryBody(entry: SessionStoreEntry): unknown {
   };
 }
 
-export function leadTranscriptResponse(
-  result: LeadTranscriptRead,
+export function sessionTranscriptResponse(
+  result: SessionTranscriptRead,
 ): NativeHttpResponse {
   switch (result.read) {
     case "Page":
       return response(200, {
         ...result.page,
-        entries: result.page.entries.map(leadTranscriptEntryBody),
+        entries: result.page.entries.map(sessionTranscriptEntryBody),
       });
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
@@ -3075,71 +2937,13 @@ export function leadTranscriptResponse(
   }
 }
 
-/** A session nobody may read and a session holding no lead or thread answer alike, as its transcript does. */
+/** A session nobody may read and a session holding no thread answer alike, as its transcript does. */
 export function sessionContextResponse(
   result: SessionContextPageRead,
 ): NativeHttpResponse {
   return result.read === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : response(200, result.page);
-}
-
-export function agenticRefusalsResponse(
-  result: AgenticRefusalsRead,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, { refusals: result.refusals, more: result.more });
-}
-
-/** A ticket's refusals answer with the ticket rather than the partition each entry stands in. */
-export function ticketAgenticRefusalsResponse(
-  result: TicketAgenticRefusalsRead,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, {
-        ticket: result.ticket,
-        entries: result.entries.map((entry) => ({
-          ordinal: entry.ordinal,
-          event: entry.event,
-          ticketVersion: entry.ticketVersion,
-          reason: entry.reason,
-          decision: entry.decision,
-          recordedAt: entry.recordedAt,
-        })),
-        more: result.more,
-        ...(result.standing === undefined
-          ? {}
-          : {
-              standing: {
-                ticketVersion: result.standing.ticketVersion,
-                reason: result.standing.reason,
-                recordedAt: result.standing.recordedAt,
-              },
-            }),
-      });
-}
-
-export function selectorHistoryResponse(
-  result: SelectorHistoryRead,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, {
-        decisions: result.decisions,
-        ...(result.nextAfter === undefined
-          ? {}
-          : { nextAfter: result.nextAfter }),
-      });
-}
-
-export function selectorProposalsResponse(
-  result: Awaited<ReturnType<SelectorProposalReviews["pending"]>>,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, { proposals: result.proposals, more: result.more });
 }
 
 /** One page of the inbox, its cursor the tickets list's own for the same order. */
@@ -3158,30 +2962,6 @@ export function inboxResponse(
       ? {}
       : { nextCursor: encodeTicketActivityCursor(partition, page.nextAfter) }),
   });
-}
-
-/** A decision no longer held — answered by someone else, or never held — is the conflict. */
-export function selectorProposalReviewResponse(
-  result: SelectorReviewResult,
-  decision: string,
-  outcome: SelectorReviewOutcome,
-): NativeHttpResponse {
-  switch (result.result) {
-    case "NotFound":
-      return response(404, nativeHttpError("NotFound", "Resource not found."));
-    case "Stale":
-      return response(
-        409,
-        nativeHttpError(
-          selectorProposalNotHeldCode,
-          "This proposal is no longer awaiting approval.",
-        ),
-      );
-    case "Changed":
-      return response(200, { decision, outcome });
-    default:
-      return assertNever(result);
-  }
 }
 
 /** One turn as the wire carries it, dropping the fields a pod has not measured. */
@@ -3515,103 +3295,6 @@ export function threadTurnStopResponse(
   }
 }
 
-/**
- * The lead's inquiries, and one of them. `NotFound` covers both a project the
- * caller may not read and a session that is not an inquiry of this project's
- * lead, because a member who may not read the project is owed neither fact and
- * a session that is not this lead's fork is not a resource at all.
- */
-export function leadInquiriesResponse(
-  result: LeadInquiriesRead,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, { inquiries: result.inquiries });
-}
-
-export function leadInquiryResponse(
-  result: LeadInquiryRead,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, result.inquiry);
-}
-
-/**
- * The ask door's refusals, each naming which one it met; `InquiriesInFlight` is
- * `409` and carries no `retry-after`, because a retry cannot succeed until one
- * of the asker's own inquiries settles, and `SubsidyExhausted` is `403`, since
- * none can until the month turns or the project moves its lead, and
- * `LeadNotSubsidized` is `409` beside `LeadNotStarted`, since the lead's own
- * next decision is what lets a retry succeed. Asking is idempotent on the two
- * identities the caller minted, so its two successes are one status and one
- * body — a retry is told the ordinal it has, not that a second fork was opened.
- */
-export function askLeadResponse(
-  partition: Partition,
-  result: LeadInquiryAsked,
-): NativeHttpResponse {
-  switch (result.result) {
-    case "NotFound":
-    case "NoLead":
-      return response(404, nativeHttpError("NotFound", "Resource not found."));
-    case "HostedRunsNotGranted":
-      return hostedRunsRefused();
-    case "NoRunner":
-      return noRunnerRefused();
-    case "SubsidyExhausted":
-      return response(
-        403,
-        nativeHttpError(
-          subsidyExhaustedCode,
-          "The lead's subsidy for this month is spent.",
-        ),
-      );
-    case "LeadNotStarted":
-      return response(
-        409,
-        nativeHttpError(
-          "LeadNotStarted",
-          "The lead has taken no turn there is a transcript to fork.",
-        ),
-      );
-    case "LeadClosed":
-      return response(
-        409,
-        nativeHttpError("LeadClosed", "The lead takes no more turns."),
-      );
-    case "LeadNotSubsidized":
-      return response(
-        409,
-        nativeHttpError(
-          leadNotSubsidizedCode,
-          "The lead moves to the subsidy at its next decision.",
-        ),
-      );
-    case "InFlight":
-      return response(
-        409,
-        nativeHttpError(
-          "InquiriesInFlight",
-          "Your own inquiries are unanswered.",
-        ),
-      );
-    case "Asked":
-    case "AlreadyAsked":
-      return response(
-        202,
-        {
-          session: result.session,
-          turn: result.turn,
-          ordinal: result.ordinal,
-        },
-        {
-          location: resourcePath(partition, "lead/inquiries", result.session),
-        },
-      );
-  }
-}
-
 /** What a read of an epic answers: the value as the wire carries it, or the absence of one the caller may see. */
 export function epicReadResponse<Value>(
   result: EpicRead<Value>,
@@ -3702,5 +3385,65 @@ export function ticketTakeResponse(
         outcome: result.outcome,
         ...(result.owner === undefined ? {} : { owner: result.owner }),
       });
+  }
+}
+
+const proposalMergeRefusalMessage: Readonly<
+  Record<ProposalMergeRefusal, string>
+> = {
+  Closed: "The pull request is closed without being merged.",
+  Conflicting: "The pull request conflicts with its base.",
+  Blocked:
+    "The forge's own rules block the merge: a branch protection, a required review or check, or a draft.",
+  Behind: "The pull request's base has moved past it.",
+  HeadMoved:
+    "The pull request's head was pushed after it was evaluated, so chuggy will not merge it.",
+  NotMergeable: "The forge would not merge the pull request.",
+  AppDenied: "The forge refused this deployment's app the merge.",
+};
+
+/**
+ * A merge of a ticket's pull request: merged, by this press or before it, or
+ * refused by name with the pull request's link, a `409` whatever the forge's
+ * reason. A reader not holding `merge_proposals` meets `403`; a ticket the
+ * caller cannot see, or whose newest success opened no pull request, `404`;
+ * and a deployment with no portal app, or a forge that cannot be reached,
+ * `503`.
+ */
+export function ticketProposalMergeResponse(
+  result: TicketProposalMerged,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Forbidden":
+      return response(
+        403,
+        nativeHttpError(
+          proposalMergeForbiddenCode,
+          "Merging a ticket's pull request needs the project's merge_proposals permit, which its administrators hold.",
+        ),
+      );
+    case "Unavailable":
+      return retry(503, authorityRetryAfterSeconds, "ForgeUnavailable");
+    case "Merged":
+      return response(200, {
+        outcome: "Merged",
+        ...(result.mergeCommit === undefined
+          ? {}
+          : { mergeCommit: result.mergeCommit }),
+        ...(result.url === undefined ? {} : { url: result.url }),
+      });
+    case "Refused":
+      return response(409, {
+        ...nativeHttpError(
+          proposalMergeRefusedCode,
+          proposalMergeRefusalMessage[result.refused],
+        ),
+        refused: result.refused,
+        ...(result.url === undefined ? {} : { url: result.url }),
+      });
+    default:
+      return assertNever(result);
   }
 }

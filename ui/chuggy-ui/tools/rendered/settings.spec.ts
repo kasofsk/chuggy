@@ -102,11 +102,11 @@ test("at the desk with the chat pane open the settings' own address is its first
       page.getByRole("complementary", { name: "Chat", exact: true }),
   });
   const page = rendered.page;
-  await expect(page).toHaveURL(`${served.origin}${settingsRoot}/lead`);
+  await expect(page).toHaveURL(`${served.origin}${settingsRoot}/threads`);
   const nav = page.getByRole("navigation", { name: "Settings" });
   await expect(nav).toBeVisible();
   await expect(
-    nav.getByRole("link", { name: "Lead", exact: true }),
+    nav.getByRole("link", { name: "Chats", exact: true }),
   ).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("link", { name: "All settings" })).toBeHidden();
   await renderedNoOverflow(page);

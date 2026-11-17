@@ -45,6 +45,7 @@ import {
   workerPoolReports,
 } from "../interpreter/workerPoolReports.ts";
 import {
+  workerPoolChatImageRead,
   workerPoolImageHostsRead,
   type WorkerPoolImageHosts,
 } from "../interpreter/workerPoolImagePull.ts";
@@ -95,6 +96,16 @@ function poolPlaneImageHosts(): WorkerPoolImageHosts {
   return read.hosts;
 }
 
+const chatImageVariable = "CHUG_POOL_PLANE_CHAT_IMAGE";
+
+/** The image a chat host is named in place of the published session image, where a malformed setting refuses the start rather than naming the other. */
+function poolPlaneChatImage(): { chatImage?: string } {
+  const read = workerPoolChatImageRead(process.env[chatImageVariable]);
+  if (read.read === "Refused")
+    throw new Error(`${chatImageVariable} ${read.why}`);
+  return read.image === undefined ? {} : { chatImage: read.image };
+}
+
 const metricsPortVariable = "CHUG_POOL_PLANE_METRICS_PORT";
 
 /** Where the runners' reports are served, where a malformed port refuses the start rather than serving nothing. */
@@ -130,6 +141,7 @@ function poolPlaneIssuer() {
 /** The bounds a poll is answered within, each read the way every other bound is. */
 function poolPlaneSettings(
   imageHosts: WorkerPoolImageHosts,
+  chatImage: { chatImage?: string },
 ): WorkerPoolPollSettings {
   return {
     leaseSecs: planeEnvironmentPositive("CHUG_POOL_PLANE_LEASE_SECS", 300),
@@ -163,11 +175,13 @@ function poolPlaneSettings(
     ),
     pollsMax: planeEnvironmentPositive("CHUG_POOL_PLANE_POLLS_MAX", 25),
     imageHosts,
+    ...chatImage,
   };
 }
 
 async function main(): Promise<void> {
   const imageHosts = poolPlaneImageHosts();
+  const chatImage = poolPlaneChatImage();
   const metricsAddress = poolPlaneMetricsAddress();
   const issuer = poolPlaneIssuer();
   const reports = workerPoolReports({
@@ -214,7 +228,7 @@ async function main(): Promise<void> {
     releases,
     reports,
     mint: poolBearerMint,
-    settings: poolPlaneSettings(imageHosts),
+    settings: poolPlaneSettings(imageHosts, chatImage),
     ready: async () => {
       try {
         const found = await pool.query<{ current_role: string }>(

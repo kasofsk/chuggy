@@ -17,6 +17,7 @@ import {
   setupWaitSecsDefault,
   setupWaitSecsMax,
 } from "../app/core/setupArguments.ts";
+import { selectorSettingsTextCharsMax } from "../../../src/contract/http.ts";
 
 const site = "https://chuggy.example";
 
@@ -130,7 +131,7 @@ test("plain HTTP is a site only at this machine's own address", () => {
 });
 
 test.each([
-  [["sign-out"], "Command"],
+  [["log-out"], "Command"],
   [["sign-in", "sign-in"], "Command"],
   [["sign-in", "extra"], "Command"],
   [["constructor"], "Command"],
@@ -386,4 +387,149 @@ test("configuration and check read the workspace and project and no site, config
     ["--test", "make"],
   ])
     expect(setupAsked(argv), argv.join(" ")).toEqual(wrongly("Flag"));
+});
+
+test("plugin is read with a site, a workspace and a project, --plugin takes only skip and is read by every command but a listener, and skip is carried back in the arguments a report names", () => {
+  expect(setupAsked(["plugin", "--site", site])).toEqual({
+    asked: "Plugin",
+    site,
+    answers: setupAnswersNone,
+  });
+  expect(
+    setupAsked(["plugin", "--workspace", "acme", "--project", "widgets"]),
+  ).toMatchObject({
+    asked: "Plugin",
+    answers: { workspace: "acme", project: "widgets" },
+  });
+  expect(setupCommandArguments("Plugin")).toEqual(["plugin"]);
+  const skip = { ...setupAnswersNone, plugin: "skip" } as const;
+  for (const command of [
+    [],
+    ["sign-in"],
+    ["plugin"],
+    ["mcp", "--workspace", "acme", "--project", "widgets"],
+    ["project", "--workspace", "acme", "--name", "Atlas"],
+  ])
+    expect(
+      setupAsked([...command, "--plugin", "skip"]),
+      command.join(" "),
+    ).toMatchObject({ answers: { plugin: "skip" } });
+  for (const value of ["yes", "", "Skip"])
+    expect(setupAsked(["--plugin", value]), value).toEqual(wrongly("Plugin"));
+  expect(setupAsked(["--plugin", "skip", "--plugin", "skip"])).toEqual(
+    wrongly("Flag"),
+  );
+  expect(setupAnswerArguments(skip)).toEqual(["--plugin", "skip"]);
+  expect(setupAnswersAsked(setupAnswerArguments(skip))).toEqual(skip);
+});
+
+test("--north-star takes only skip and is read by every command but a listener, and skip is carried back in the arguments a report names, beside the plugin's", () => {
+  const skip = { ...setupAnswersNone, northStar: "skip" } as const;
+  for (const command of [
+    [],
+    ["sign-in"],
+    ["plugin"],
+    ["mcp", "--workspace", "acme", "--project", "widgets"],
+    ["project", "--workspace", "acme", "--name", "Atlas"],
+    ["serve", "--workspace", "acme", "--project", "widgets"],
+    ["north-star", "--text", "Widgets."],
+  ])
+    expect(
+      setupAsked([...command, "--north-star", "skip"]),
+      command.join(" "),
+    ).toMatchObject({ answers: { northStar: "skip" } });
+  for (const value of ["yes", "", "Skip"])
+    expect(setupAsked(["--north-star", value]), value).toEqual(
+      wrongly("NorthStar"),
+    );
+  expect(setupAsked(["--north-star", "skip", "--north-star", "skip"])).toEqual(
+    wrongly("Flag"),
+  );
+  expect(setupAnswerArguments(skip)).toEqual(["--north-star", "skip"]);
+  expect(setupAnswersAsked(setupAnswerArguments(skip))).toEqual(skip);
+  const both = { ...skip, plugin: "skip" } as const;
+  expect(setupAnswersAsked(setupAnswerArguments(both))).toEqual(both);
+});
+
+test("north-star reads its text whole, as one argument and at most as long as the settings take, with a site, a workspace and a project, and --text is read by no other command", () => {
+  const named = ["--workspace", "acme", "--project", "widgets"];
+  const text = "Widgets for everyone, --site and all.\nKept small.";
+  expect(
+    setupAsked(["north-star", ...named, "--site", site, "--text", text]),
+  ).toEqual({
+    asked: "NorthStar",
+    site,
+    answers: { workspace: "acme", project: "widgets" },
+    text,
+  });
+  expect(setupCommandArguments("NorthStar")).toEqual(["north-star"]);
+  const longest = "w".repeat(selectorSettingsTextCharsMax);
+  expect(setupAsked(["north-star", "--text", longest])).toMatchObject({
+    asked: "NorthStar",
+    text: longest,
+  });
+  for (const given of [
+    [],
+    ["--text", ""],
+    ["--text", " \n "],
+    ["--text", `${longest}w`],
+  ])
+    expect(
+      setupAsked(["north-star", ...named, ...given]),
+      given.join(" ").slice(0, 20),
+    ).toEqual(wrongly("NorthStarText"));
+  for (const command of [[], ["ticket"], ["project", "--name", "Atlas"]])
+    expect(
+      setupAsked([...command, "--text", "Widgets."]),
+      command.join(" "),
+    ).toEqual(wrongly("Flag"));
+});
+
+test("bind reads --opened, which takes only github and no other command reads, as a page connecting GitHub already open", () => {
+  expect(setupAsked(["bind"])).toEqual({
+    asked: "Bind",
+    site: undefined,
+    waitSecs: setupWaitSecsDefault,
+    answers: setupAnswersNone,
+    opened: false,
+  });
+  expect(setupAsked(["bind", "--opened", "github"])).toMatchObject({
+    asked: "Bind",
+    opened: true,
+  });
+  for (const value of ["yes", "", "GitHub"])
+    expect(setupAsked(["bind", "--opened", value]), value).toEqual(
+      wrongly("Opened"),
+    );
+  for (const command of [[], ["sign-in"], ["import"]])
+    expect(
+      setupAsked([...command, "--opened", "github"]),
+      command.join(" "),
+    ).toEqual(wrongly("Flag"));
+});
+
+test("serve is read only with the workspace and the project it is for, takes a site and no wait, and is run again as itself", () => {
+  const named = ["--workspace", "acme", "--project", "widgets"];
+  const answers = { workspace: "acme", project: "widgets" };
+  expect(setupAsked(["serve", ...named, "--site", site])).toEqual({
+    asked: "Serve",
+    site,
+    answers,
+    ...answers,
+  });
+  for (const argv of [
+    ["serve"],
+    ["serve", "--workspace", "acme"],
+    ["serve", "--project", "widgets"],
+  ])
+    expect(setupAsked(argv), argv.join(" ")).toEqual(wrongly("Project"));
+  expect(setupAsked(["serve", ...named, "--wait-secs", "5"])).toEqual(
+    wrongly("Flag"),
+  );
+  expect(
+    setupAsked([
+      ...setupCommandArguments("Serve"),
+      ...setupAnswerArguments(answers),
+    ]).asked,
+  ).toBe("Serve");
 });

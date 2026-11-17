@@ -20,10 +20,8 @@
  * ticket has open for a person to answer rather than the ticket itself: an
  * approval is opened and answered without the ticket's own phase or sequence
  * moving, so the two are separate resources under one identity.
- * `AgenticRefusal` is the same arrangement for what the lead declined to
- * dispatch, and `Session` names a session as its identity for the lead read.
- * The schemas of those two admit that body and the stream sends them as
- * tombstones, so a page watching a lead sees a turn move by reading it again.
+ * `Session` names a session as its identity and is always sent as a
+ * tombstone, so a page watching a session sees a turn move by reading it again.
  *
  * `ready` opens the stream, `reset` says the requested
  * `Last-Event-ID` is no longer retained and the client must reload from the GET
@@ -48,9 +46,7 @@ import {
   configurationResponseSchema,
   draftResponseSchema,
   executionSummarySchema,
-  leadResponseSchema,
   operationResponseSchema,
-  ticketAgenticRefusalsResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "./responses.ts";
@@ -65,7 +61,6 @@ export const projectChangeKinds = [
   "Project",
   "Execution",
   "NativeAction",
-  "AgenticRefusal",
   "Session",
 ] as const;
 export type ProjectChangeKind = (typeof projectChangeKinds)[number];
@@ -82,8 +77,8 @@ const versionSchema = z.literal(projectStreamVersion);
 /**
  * The body each kind's GET route answers with. `Project` is the entry
  * `GET /api/v1/projects` lists, `Execution` the row the executions list
- * answers, and `Session` the lead route's lead less `held`, each less than
- * the route that reads the one resource returns.
+ * answers, each less than the route that reads the one resource returns, and
+ * `Session` none, because its frames are always tombstones.
  */
 export const projectChangeRepresentationSchemas = {
   Operation: operationResponseSchema,
@@ -93,8 +88,7 @@ export const projectChangeRepresentationSchemas = {
   Project: partitionSchema,
   Execution: executionSummarySchema,
   NativeAction: ticketNativeActionsResponseSchema,
-  AgenticRefusal: ticketAgenticRefusalsResponseSchema,
-  Session: leadResponseSchema,
+  Session: z.null(),
 } as const satisfies Record<ProjectChangeKind, z.ZodType>;
 
 export type ProjectChangeRepresentation<Kind extends ProjectChangeKind> =
@@ -154,9 +148,6 @@ export const projectChangeDataSchemas = {
   Execution: changeDataSchema(projectChangeRepresentationSchemas.Execution),
   NativeAction: changeDataSchema(
     projectChangeRepresentationSchemas.NativeAction,
-  ),
-  AgenticRefusal: changeDataSchema(
-    projectChangeRepresentationSchemas.AgenticRefusal,
   ),
   Session: changeDataSchema(projectChangeRepresentationSchemas.Session),
 } as const;
@@ -242,12 +233,6 @@ function projectChangeEvent(
       return { event: kind, sequence, data: schemas.Execution.parse(body) };
     case "NativeAction":
       return { event: kind, sequence, data: schemas.NativeAction.parse(body) };
-    case "AgenticRefusal":
-      return {
-        event: kind,
-        sequence,
-        data: schemas.AgenticRefusal.parse(body),
-      };
     case "Session":
       return { event: kind, sequence, data: schemas.Session.parse(body) };
   }

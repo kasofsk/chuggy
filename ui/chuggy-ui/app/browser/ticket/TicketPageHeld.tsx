@@ -13,7 +13,6 @@ import type {
   DispatchViewResponse,
   ExecutionsResponse,
   LandingQueuesResponse,
-  LeadReadResponse,
   TicketNativeActionsResponse,
   TicketResponse,
 } from "../../../../../src/contract/responses.ts";
@@ -35,7 +34,6 @@ export interface TicketReads {
   readonly openState: PanelState<TicketNativeActionsResponse>;
   readonly dispatchState: PanelState<DispatchViewResponse>;
   readonly pageState: PanelState<ExecutionsResponse>;
-  readonly leadState: PanelState<LeadReadResponse>;
   readonly deliveryState: TicketDeliveryState;
   readonly landingsState: TicketLandingsState;
   /** Each work cycle's stack the landings read answers, by its cycle. */

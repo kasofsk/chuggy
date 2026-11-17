@@ -9,6 +9,7 @@
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { shellCrumbs } from "./shellCrumbs.ts";
+import type { ShellCrumbNames } from "./shellCrumbs.ts";
 
 /** What stands between two parts of the title. */
 const shellPageTitleJoin = " · ";
@@ -20,12 +21,13 @@ const shellPageTitleHeadCount = 2;
 export function shellPageTitle(
   partition: PartitionIdentity,
   pathname: string,
+  names: ShellCrumbNames,
 ): string {
-  const page = shellCrumbs(partition, pathname)
+  const page = shellCrumbs(partition, pathname, names)
     .slice(shellPageTitleHeadCount)
     .map((crumb) => crumb.label)
     .reverse();
-  return [...page, partition.project].join(shellPageTitleJoin);
+  return [...page, names.project(partition)].join(shellPageTitleJoin);
 }
 
 /**

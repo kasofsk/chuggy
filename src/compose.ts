@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import type { NativeActionAgents } from "./interpreter/nativeActionAnswer.ts";
 import type pg from "pg";
 
 import { artifactRootPrecondition } from "./adapters/artifacts/artifactRoot.ts";
@@ -48,7 +47,6 @@ import {
 import { gitPromotion } from "./adapters/git/gitPromotion.ts";
 import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
 import { postgresEpics } from "./adapters/postgres/epics.ts";
-import { postgresLeadInquiries } from "./adapters/postgres/leadInquiry.ts";
 import {
   postgresInboxReads,
   postgresNativeReads,
@@ -111,6 +109,11 @@ import { postgresAppearance } from "./adapters/postgres/appearance.ts";
 import { projectAppearanceService } from "./interpreter/projectAppearance.ts";
 import { postgresTicketTakes } from "./adapters/postgres/ticketTake.ts";
 import { ticketTakes, type TicketTakes } from "./interpreter/ticketTake.ts";
+import { postgresTicketProposedLandings } from "./adapters/postgres/ticketProposedLanding.ts";
+import {
+  ticketProposalMerges,
+  type TicketProposalMerges,
+} from "./interpreter/ticketProposalMerge.ts";
 import {
   postgresProjectDeletion,
   postgresTenantDeletion,
@@ -131,7 +134,6 @@ import {
   type ProjectOwnerFallbackAdministration,
 } from "./interpreter/projectOwnerFallback.ts";
 import {
-  postgresLeadRouteReads,
   postgresSessionPlacement,
   postgresSessionRouteReads,
 } from "./adapters/postgres/sessionPlacement.ts";
@@ -150,44 +152,12 @@ import {
   type ProjectCreationAuthority,
   type TenantClaims,
 } from "./interpreter/projectCreation.ts";
-import type { Principal } from "./interpreter/principal.ts";
-import {
-  postgresSelectorProjectSettings,
-  postgresSelectorProposalReviews,
-  postgresSelectorRuntimeControl,
-  postgresSelectorState,
-} from "./adapters/postgres/selector.ts";
+import { postgresSelectorProjectSettings } from "./adapters/postgres/selectorProjectSettings.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
-import {
-  postgresAgenticRefusalBinding,
-  postgresAgenticRefusalLedger,
-} from "./adapters/postgres/agenticRefusal.ts";
-import { postgresLeadMailbox } from "./adapters/postgres/leadMailbox.ts";
-import type { LeadSessionMint } from "./interpreter/leadMailbox.ts";
-import {
-  leadSelectorPolicy,
-  type LeadPolicyClock,
-  type LeadPolicyConfig,
-} from "./interpreter/leadPolicyHost.ts";
-import {
-  selectorPolicyHost,
-  type SelectorHostDeadline,
-} from "./interpreter/selectorPolicyHost.ts";
-import {
-  selectorRunOnce,
-  type SelectorIdentityFactory,
-  type SelectorRunResult,
-  type SelectorRuntimeConfig,
-  type SelectorRuntimeSource,
-} from "./interpreter/selectorRuntime.ts";
 import {
   selectorProjectSettingsAdministration,
   type SelectorProjectSettingsAdministration,
 } from "./interpreter/selectorProjectSettings.ts";
-import {
-  selectorProposalReviews,
-  type SelectorProposalReviews,
-} from "./interpreter/selectorReview.ts";
 import { postgresFinalizer } from "./adapters/postgres/finalizer.ts";
 import { postgresEvaluationStack } from "./adapters/postgres/evaluationStack.ts";
 import { postgresTicketBrief } from "./adapters/postgres/ticketBrief.ts";
@@ -211,6 +181,7 @@ import {
   type ProjectArtifactMinting,
 } from "./interpreter/projectArtifact.ts";
 import type { FinalizerService } from "./interpreter/finalizerRun.ts";
+import { restackRefusals } from "./interpreter/stackRestack.ts";
 import type {
   FinalizerSettings,
   ForgeBindingFile,
@@ -228,7 +199,6 @@ import type { IdempotencyKeying } from "./adapters/postgres/keying.ts";
 import type { OperationInbox } from "./interpreter/operationInbox.ts";
 import {
   nativeWeb,
-  type NativeLeadPorts,
   type NativeThreadPorts,
   type NativeWeb,
   type ProjectAccess,
@@ -242,7 +212,6 @@ import { postgresOperationalReads } from "./adapters/postgres/operationalReads.t
 import { postgresRunEvidenceReads } from "./adapters/postgres/runEvidence.ts";
 import type { OutputContentPort } from "./interpreter/operationsView.ts";
 import type { RunEvidenceContentPort } from "./interpreter/runEvidence.ts";
-import type { SelectorOperationalContextRead } from "./interpreter/selectorOperationalContext.ts";
 import type {
   RepositoryConfigurationSnapshotPort,
   RepositoryDefaultBranchPort,
@@ -253,6 +222,20 @@ import {
   type TicketServiceConfig,
   type TicketServiceMetrics,
 } from "./interpreter/ticketService.ts";
+import type { ExecutionSchedulerService } from "./interpreter/executionSchedulerRun.ts";
+import { dependencyDeliveriesRead } from "./interpreter/dependencyDelivery.ts";
+import { postgresDependencyPins } from "./adapters/postgres/dependencyDeliveries.ts";
+import {
+  postgresFailedLanding,
+  postgresPriorEvaluationReports,
+  postgresPriorWorkReports,
+} from "./adapters/postgres/evaluationReports.ts";
+import { postgresPinnedConfigurations } from "./adapters/postgres/pinnedConfigurations.ts";
+import {
+  postgresProjectNorthStar,
+  postgresReadOnlyRepositories,
+} from "./adapters/postgres/repositoryBinding.ts";
+import { postgresTicketLandings } from "./adapters/postgres/ticketLandings.ts";
 
 export interface TicketService {
   readonly inbox: OperationInbox;
@@ -261,77 +244,18 @@ export interface TicketService {
   readonly projects: ProjectStore;
 }
 
-export interface SelectorRuntimeService {
-  runOnce(): Promise<SelectorRunResult>;
-}
-
-/**
- * Wires the independently operated selector runtime to its owned persistence
- * and to the lead whose turn each decision is. The policy is built here rather
- * than passed in, because every door it opens is on the pool this function
- * already holds and a caller handed the host would need that pool to build it.
- */
-export function composeSelectorRuntime(
-  selectorPool: pg.Pool,
-  source: SelectorRuntimeSource,
-  lead: SelectorLeadRuntime,
-  access: ProjectAccess,
-  identities: SelectorIdentityFactory,
-  config?: SelectorRuntimeConfig,
-): SelectorRuntimeService {
-  const store = postgresSelectorState(selectorPool);
-  const settings = postgresSelectorRuntimeControl(selectorPool);
-  const refusals = postgresAgenticRefusalLedger(selectorPool);
-  const policy = selectorPolicyHost(
-    leadSelectorPolicy(
-      postgresLeadMailbox(selectorPool),
-      store,
-      lead.sessions,
-      lead.clock,
-      access,
-      postgresLeadRouteReads(selectorPool),
-      lead.policy,
-    ),
-    lead.deadline,
-    { controlDeadlineMs: lead.controlDeadlineMs },
-  );
-  return {
-    runOnce: () =>
-      selectorRunOnce(
-        refusals,
-        store,
-        source,
-        policy,
-        identities,
-        settings,
-        config,
-      ),
-  };
-}
-
-/** What the selector process answers the lead host's own ports with. */
-export interface SelectorLeadRuntime {
-  readonly sessions: LeadSessionMint;
-  readonly clock: LeadPolicyClock;
-  readonly deadline: SelectorHostDeadline;
-  readonly policy: LeadPolicyConfig;
-  readonly controlDeadlineMs: number;
-}
-
 /** Project creation over the API role's door, answering `NotConfigured` where no authority to write to is composed. */
 export function composeProjectCreation(
   apiPool: pg.Pool,
   access: ProjectAccess,
   claims: TenantClaims,
   authority: ProjectCreationAuthority | undefined,
-  selector?: Principal,
 ): ProjectCreation {
   return projectCreation({
     access,
     claims,
     store: postgresProjectCreation(apiPool),
     ...(authority === undefined ? {} : { authority }),
-    ...(selector === undefined ? {} : { selector }),
   });
 }
 
@@ -390,17 +314,36 @@ export function composeProjectAppearance(
   };
 }
 
-/** Wires a ticket's takes and returns to API-role credentials, the access that gates them, and the site's selector they refuse. */
+/** Wires a ticket's takes and returns to API-role credentials and the access that gates them. */
 export function composeTicketTakes(
   apiPool: pg.Pool,
   access: ProjectAccess,
-  selector: Principal | undefined,
 ): TicketTakes {
-  return ticketTakes(
-    access,
-    postgresTicketTakes(apiPool),
-    selector === undefined ? {} : { selector },
+  return ticketTakes(access, postgresTicketTakes(apiPool));
+}
+
+/**
+ * Wires a person's merge of a ticket's pull request to API-role credentials
+ * and the portal app's minting. Only the minted credential is ever asked for,
+ * so a repository on a host the app does not mint for is denied rather than
+ * read from a file, and a deployment with no portal key merges nothing.
+ */
+export function composeTicketProposalMerges(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  tokens: ForgeRepositoryTokens | undefined,
+): TicketProposalMerges {
+  const store = postgresTicketProposedLandings(apiPool);
+  if (tokens === undefined) return ticketProposalMerges({ access, store });
+  const credentials = forgeCredentialsByHost(
+    [{ repositoryHost: githubRepositoryHost, tokens, permissions: "propose" }],
+    { credential: () => Promise.resolve({ resolved: "Denied" }) },
   );
+  return ticketProposalMerges({
+    access,
+    store,
+    proposals: githubChangeProposals({ credentials, fetch }),
+  });
 }
 
 /** Wires how many threads each member may hold open to API-role credentials and the access that gates setting it. */
@@ -428,9 +371,9 @@ export function composeExecutionPlacement(
 }
 
 /**
- * Wires a project's own selector settings to API-role credentials and the
- * project membership that bounds them. The installation defaults stay the
- * selector control role's, so a project administrator overrides for their own
+ * Wires a project's own settings to API-role credentials and the project
+ * membership that bounds them. The installation defaults stay
+ * `chuggy_selector_control`'s, so a project administrator overrides for their own
  * project and cannot move what every other project inherits.
  */
 export function composeSelectorProjectSettings(
@@ -443,37 +386,15 @@ export function composeSelectorProjectSettings(
   );
 }
 
-/**
- * Wires the review of a lead's held proposals to the review role, whose definer
- * is the one way a held delivery moves, under the dispatch permit a reviewer needs.
- */
-export function composeSelectorProposalReviews(
-  selectorReviewPool: pg.Pool,
-  access: ProjectAccess,
-): SelectorProposalReviews {
-  return selectorProposalReviews(
-    access,
-    postgresSelectorProposalReviews(selectorReviewPool),
-  );
-}
-
-/**
- * The inbox over the API pool, with the refusals it reads there and the held
- * decisions it reads through the review role, as the proposals route does.
- */
+/** The inbox over the API pool, with the refusals it reads there. */
 export function composeProjectInbox(
   apiPool: pg.Pool,
-  selectorReviewPool: pg.Pool,
   access: ProjectAccess,
   usageResume?: TicketUsageResumeBounds,
-  agents: NativeActionAgents = {},
 ): ProjectInbox {
   return projectInbox(access, {
-    agents,
     store: postgresInboxReads(apiPool, usageResume),
     operationalReads: postgresOperationalReads(apiPool),
-    refusals: postgresAgenticRefusalBinding(apiPool),
-    proposals: composeSelectorProposalReviews(selectorReviewPool, access),
   });
 }
 
@@ -823,6 +744,7 @@ export function composeFinalizerService(
     forges: runtime.forges,
     ticketBriefs: postgresTicketBrief(finalizerPool),
     stacks: postgresEvaluationStack(finalizerPool),
+    restackRefusals: restackRefusals(),
     handoffs: artifacts,
     artifacts,
     pipelinePaths: runtime.pipelinePaths,
@@ -955,9 +877,9 @@ function finalizerServiceRuntime(
 /**
  * Wires the authenticated web application to API-role PostgreSQL ports.
  *
- * THE INQUIRY STORE AND THE SESSION ROUTES ARE COMPOSED HERE AND ARE NOT
- * PARAMETERS, which the lead's and the thread's bundles are: those carry an
- * artifact volume and a credential slot a deployment must choose, these are the
+ * THE SESSION ROUTES ARE COMPOSED HERE AND ARE NOT
+ * PARAMETERS, which the thread's bundle is: that carries an artifact volume
+ * and a credential slot a deployment must choose, these are the
  * API pool and nothing else, and a bundle with nothing to choose is a line no
  * case can refute and a root can forget — a forgotten one costing routes that
  * raise in a deployment while every gate stays green, so there is no composing
@@ -974,10 +896,8 @@ export function composeNativeWeb(
   outputContents?: OutputContentPort &
     RunEvidenceContentPort &
     ProjectArtifactPort,
-  selectorContexts?: SelectorOperationalContextRead,
   repositories?: RepositoryConfigurationSnapshotPort &
     RepositoryDefaultBranchPort,
-  leads?: NativeLeadPorts,
   threads?: NativeThreadPorts,
   usageResume?: TicketUsageResumeBounds,
   memoryMibDefault?: number,
@@ -996,7 +916,6 @@ export function composeNativeWeb(
       authorizedProjectInventory(access, postgresProjectInventory(apiPool)),
     postgresOperationalReads(apiPool, memoryMibDefault),
     outputContents,
-    selectorContexts,
     repositories === undefined
       ? undefined
       : {
@@ -1009,9 +928,7 @@ export function composeNativeWeb(
         },
     postgresRunEvidenceReads(apiPool),
     outputContents,
-    leads,
     threads,
-    postgresLeadInquiries(apiPool),
     postgresSessionRouteReads(apiPool),
     outputContents,
     projectArtifactMinting(),
@@ -1046,5 +963,37 @@ export function composeTicketService(
     discovery: postgresProjectDiscovery(writerPool, metrics),
     decisions: postgresProjectDecision(writerPool, metrics),
     projects: postgresProjectStore(writerPool),
+  };
+}
+
+/** Every read the scheduler gathers a briefing from, over one pool. */
+export function composeSchedulerBriefingReads(
+  pool: pg.Pool,
+): Pick<
+  ExecutionSchedulerService,
+  | "configurations"
+  | "priorWorkReports"
+  | "priorEvaluationReports"
+  | "failedLanding"
+  | "readOnlyRepositories"
+  | "northStar"
+  | "dependencyDeliveries"
+  | "ticketBriefs"
+  | "bindings"
+> {
+  return {
+    configurations: postgresPinnedConfigurations(pool),
+    priorWorkReports: postgresPriorWorkReports(pool),
+    priorEvaluationReports: postgresPriorEvaluationReports(pool),
+    failedLanding: postgresFailedLanding(pool),
+    readOnlyRepositories: postgresReadOnlyRepositories(pool),
+    northStar: postgresProjectNorthStar(pool),
+    dependencyDeliveries: dependencyDeliveriesRead({
+      pinned: postgresDependencyPins(pool),
+      landings: postgresTicketLandings(pool),
+      briefs: postgresTicketBrief(pool),
+    }),
+    ticketBriefs: postgresTicketBrief(pool),
+    bindings: postgresProjectRepositoryBinding(pool),
   };
 }

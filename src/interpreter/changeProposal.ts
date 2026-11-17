@@ -82,6 +82,8 @@
 
 import { assertNever } from "../domain/assertNever.ts";
 import {
+  proposalForgeFailureCharsMax,
+  proposalForgeMessageCharsMax,
   proposalMergeStateCharsMax,
   proposalQueueWordCharsMax,
   textCodePointsCount,
@@ -109,6 +111,7 @@ declare const proposalNumberBrand: unique symbol;
 declare const proposalMergeStateBrand: unique symbol;
 declare const proposalQueueWordBrand: unique symbol;
 declare const proposalQueueInstantBrand: unique symbol;
+declare const proposalForgeTextBrand: unique symbol;
 
 export type ForgeBindingId = string & {
   readonly [forgeBindingIdBrand]: true;
@@ -146,6 +149,32 @@ export type ProposalQueueWord = string & {
 /** The moment a forge's merge queue says one of its events happened, in milliseconds since the epoch. */
 export type ProposalQueueInstant = number & {
   readonly [proposalQueueInstantBrand]: true;
+};
+
+/** A forge's own words about one act, or the name of a failure that reached no forge, held well-formed and bounded. */
+export type ProposalForgeText = string & {
+  readonly [proposalForgeTextBrand]: true;
+};
+
+/**
+ * What a forge answered one act with, beside the arm that act maps it to:
+ * `Answered` is the status it sent and its own message, cut to
+ * `proposalForgeMessageCharsMax` and saying so, and `Unreached` a request that
+ * failed before any status, named by the failure. A port that sent nothing
+ * answers none.
+ */
+export type ChangeProposalForgeReply =
+  | {
+      readonly reached: "Answered";
+      readonly status: number;
+      readonly message?: ProposalForgeText;
+      readonly messageCut?: true;
+    }
+  | { readonly reached: "Unreached"; readonly failure: ProposalForgeText };
+
+/** One act's arm with the forge's reply beside it, where the act sent anything. */
+export type ChangeProposalReplied<Answer> = Answer & {
+  readonly reply?: ChangeProposalForgeReply;
 };
 
 export const proposalTitleCharsMax = 256;
@@ -222,6 +251,50 @@ export function asProposalQueueWord(value: string): ProposalQueueWord {
     "proposal queue word",
     proposalQueueWordCharsMax,
   ) as ProposalQueueWord;
+}
+
+/**
+ * A forge's text as a stored row holds it: well-formed, NUL-free, and cut to
+ * `charsMax` code points, saying whether it was cut. Empty text is none.
+ */
+export function proposalForgeTextOf(
+  value: string,
+  charsMax: number,
+): { readonly text: ProposalForgeText; readonly cut: boolean } | undefined {
+  const held = value.toWellFormed().replaceAll("\u0000", "\uFFFD");
+  if (held.length === 0) return undefined;
+  const cut = textCodePointsCount(held) > charsMax;
+  const text = cut ? [...held].slice(0, charsMax).join("") : held;
+  return { text: text as ProposalForgeText, cut };
+}
+
+/** The reply a forge's status and message come to, the message held as a row holds it. */
+export function changeProposalAnsweredReply(
+  status: number,
+  message: string | undefined,
+): ChangeProposalForgeReply {
+  const held =
+    message === undefined
+      ? undefined
+      : proposalForgeTextOf(message, proposalForgeMessageCharsMax);
+  return {
+    reached: "Answered",
+    status,
+    ...(held === undefined ? {} : { message: held.text }),
+    ...(held?.cut === true ? { messageCut: true as const } : {}),
+  };
+}
+
+/** The reply a request that reached no forge comes to, named by its failure. */
+export function changeProposalUnreachedReply(
+  failure: string,
+): ChangeProposalForgeReply {
+  return {
+    reached: "Unreached",
+    failure:
+      proposalForgeTextOf(failure, proposalForgeFailureCharsMax)?.text ??
+      ("Unknown" as ProposalForgeText),
+  };
 }
 
 /** Refuses a moment that is no count of milliseconds since the epoch, which no two events could then be ordered by. */
@@ -542,20 +615,30 @@ export type ChangeProposalPublicationNext =
 
 /** The provider-neutral API selected by an explicit forge binding at composition. */
 export interface ChangeProposalPort {
-  create(request: ChangeProposalRequest): Promise<ChangeProposalCreated>;
-  readByMarker(request: ChangeProposalRequest): Promise<ChangeProposalRead>;
+  create(
+    request: ChangeProposalRequest,
+  ): Promise<ChangeProposalReplied<ChangeProposalCreated>>;
+  readByMarker(
+    request: ChangeProposalRequest,
+  ): Promise<ChangeProposalReplied<ChangeProposalRead>>;
   readByNumber(
     request: ChangeProposalMergeRequest,
-  ): Promise<ChangeProposalRead>;
-  merge(request: ChangeProposalMergeRequest): Promise<ChangeProposalMerged>;
+  ): Promise<ChangeProposalReplied<ChangeProposalRead>>;
+  merge(
+    request: ChangeProposalMergeRequest,
+  ): Promise<ChangeProposalReplied<ChangeProposalMerged>>;
   updateBranch(
     request: ChangeProposalMergeRequest,
-  ): Promise<ChangeProposalUpdated>;
+  ): Promise<ChangeProposalReplied<ChangeProposalUpdated>>;
   readQueue(
     request: ChangeProposalMergeRequest,
-  ): Promise<ChangeProposalQueueRead>;
-  enqueue(request: ChangeProposalMergeRequest): Promise<ChangeProposalEnqueued>;
-  dequeue(request: ChangeProposalMergeRequest): Promise<ChangeProposalDequeued>;
+  ): Promise<ChangeProposalReplied<ChangeProposalQueueRead>>;
+  enqueue(
+    request: ChangeProposalMergeRequest,
+  ): Promise<ChangeProposalReplied<ChangeProposalEnqueued>>;
+  dequeue(
+    request: ChangeProposalMergeRequest,
+  ): Promise<ChangeProposalReplied<ChangeProposalDequeued>>;
 }
 
 /** The composition boundary selects one adapter by the configured forge binding. */
@@ -1274,6 +1357,8 @@ export type ChangeProposalMergingNext =
         | "Queued"
         | "QueueTimedOut"
         | "Dequeued";
+      /** How many seconds from now the wait's reading falls due, present where the hold is a wait on the cadence the forge is asked again at. */
+      readonly rereadInSecs?: number;
     };
 
 /** What a merge is offered under, before this boundary has checked it addresses one proposal. */
@@ -1489,7 +1574,18 @@ function proposalMergeRereadOr(
 ): ChangeProposalMergingNext {
   return proposalMergeRereadDue(heardAgeSecs)
     ? { next: "ReadByNumber" }
-    : { next: "Held", reason };
+    : proposalMergeRereadHeld(heardAgeSecs, reason);
+}
+
+/** The hold a wait on the cadence is, carrying how long until its reading falls due. */
+function proposalMergeRereadHeld(
+  heardAgeSecs: number,
+  reason: "Blocked" | "HeadMoved" | "Closed" | "Queued",
+): ChangeProposalMergingNext {
+  const rereadInSecs = proposalMergeRereadSecs - heardAgeSecs;
+  if (rereadInSecs <= 0)
+    throw new RangeError("proposal merging: a wait already due was held");
+  return { next: "Held", reason, rereadInSecs };
 }
 
 /**
@@ -1607,7 +1703,7 @@ function proposalMergeQueueRereadOr(
 ): ChangeProposalMergingNext {
   return proposalMergeRereadDue(heardAgeSecs)
     ? { next: "ReadQueue" }
-    : { next: "Held", reason };
+    : proposalMergeRereadHeld(heardAgeSecs, reason);
 }
 
 /**

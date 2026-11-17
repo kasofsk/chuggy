@@ -26,12 +26,6 @@ runners-standing-offline = Offline
 runners-standing-live = Live
 runners-route-hosted = { -hosted-runs(case: "upper") }
 runners-route-pool = { -runner(case: "upper", form: "plural") }
-runners-route-subsidized = Subsidized
-# The model is code, as Claude Code takes it.
-# spells -run: to run is a verb here
-runners-subsidized-about = Runs { $model } on { -brand-name } · Free up to a monthly allowance
-# spells -run: to run is a verb here
-runners-subsidized-about-unnamed = Runs on { -brand-name } · Free up to a monthly allowance
 runners-source-override = { -site(case: "upper") }
 runners-source-project = { -project(case: "upper") }
 runners-source-default = Default
@@ -59,7 +53,6 @@ runners-ask-capabilities = Capabilities
 runners-ask-capabilities-about = Optional · what { -run(form: "a") } may require, like { $example }
 runners-ask-advanced = Advanced
 runners-ask-create = Create token
-runners-ask-cancel = Cancel
 runners-package-linux = Linux
 runners-package-darwin = Mac
 runners-package-needs-linux = Linux · Node 24 · Docker or Podman
@@ -78,11 +71,16 @@ runners-capability-twice = A capability is listed twice
 
 runners-steps-install = Install
 runners-steps-register = Register
-runners-steps-finish = Finish
 runners-steps-copy-install = Copy install command
 runners-steps-copy-register = Copy register command
 runners-steps-expires = Expires
-runners-steps-guide = Setup guide
+
+## A register panel: the line pasted into the person's own coding agent, and registering by hand.
+
+# spells -agent: the person's own coding agent, not one of chuggy's
+runners-register-line-about = Paste this into your coding agent on the machine you want to use.
+runners-register-by-hand = Register by hand
+runners-register-project = { -project(case: "upper") }
 
 ## A member's personal runners.
 
@@ -128,13 +126,12 @@ runners-personal-usage = Usage
 
 runners-chat-host-title = { -chat-host(case: "upper") }
 # spells -run: to run is a verb here
-runners-chat-host-about = The machine of yours your { -thread(form: "plural") } and { -inquiry(form: "plural") } run on.
+runners-chat-host-about = The machine of yours your { -thread(form: "plural") } run on.
 runners-chat-host-register = Register { -chat-host }
 runners-chat-host-empty = No { -chat-host } yet
 runners-chat-host-remove-named = Remove { -chat-host } { $short }
 runners-chat-host-remove-question = Remove { -chat-host } { $short }?
-runners-chat-host-removal = { -chat-host(case: "upper") } { $short } stops taking your { -thread(form: "plural") } and { -inquiry(form: "plural") } in this { -workspace }, and the sessions it is running now end.
-runners-chat-host-claude-code-about = Paste into { -claude-code } on the machine that will be your { -chat-host }
+runners-chat-host-removal = { -chat-host(case: "upper") } { $short } stops taking your { -thread(form: "plural") } in this { -workspace }, and the sessions it is running now end.
 runners-chat-host-replaces = Replaces { -chat-host } { $short } · Ends its sessions
 runners-chat-host-threads = { -thread(case: "upper", form: "plural") } here may: { $capabilities }
 runners-chat-host-threads-whole = { -thread(case: "upper", form: "plural") } here may do everything their own roster allows
@@ -150,12 +147,14 @@ runners-member-remove = Remove { -personal-runner(form: "plural") }
 runners-member-removed = { -personal-runner(case: "upper", form: "plural") } removed
 runners-member-none = No { -personal-runner } you may remove
 
-## Whether a run of the reader's waits on their personal runners.
+## Whether a run of the reader's waits on their personal runners, or a run on its project's pools.
 
 runners-wait-waiting = Waiting on your { -personal-runner(form: "plural") }
 runners-wait-offline = offline
 # spells -run: to run is a verb here
 runners-wait-unable = none can run it
+runners-wait-room = { $free } free, needs { $needed }
+runners-wait-pools = Waiting on this { -project }'s { -runner(form: "plural") }
 
 ## Whether personal runners take a member's work in a project.
 
@@ -186,7 +185,6 @@ runners-placement-col-runner = { -runner(case: "upper") }
 runners-placement-work = { -work-stage(case: "upper") }
 runners-placement-evaluation = { -evaluation(case: "upper") }
 runners-placement-chat = { -thread(case: "upper") }
-runners-placement-lead = { -lead(case: "upper") }
 runners-placement-saved = { -placement(case: "upper") } saved
 runners-placement-landed = { -work-stage(case: "upper") } and { -evaluation } saved
 runners-placement-unhosted = Needs { -hosted-runs }

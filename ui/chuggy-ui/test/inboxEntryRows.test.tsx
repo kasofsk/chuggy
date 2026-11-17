@@ -1,8 +1,7 @@
 /**
- * An item whatever put its ticket in the inbox — an open action, a held
- * proposal or a refusal alone — drawn from the row its entry carries: its
- * number and title, and its last execution where one ran, with no read of the
- * ticket on its own.
+ * An item whatever put its ticket in the inbox — an open action or its phase
+ * alone — drawn from the row its entry carries: its number and title, and its
+ * last execution where one ran, with no read of the ticket on its own.
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
@@ -84,14 +83,6 @@ const failedRun = ticketLatestExecutionSchema.parse({
   terminalAt: "2026-08-26T10:30:00.000Z",
 });
 
-const proposed: ProjectTicket = {
-  ticket: 7,
-  title: "README: how changes land through chuggy",
-  phase: "Pending",
-  sequence: 5,
-  ...ticketInstants,
-};
-
 const escalated: ProjectTicket = {
   ticket: 11,
   title: "Land the release notes",
@@ -101,10 +92,10 @@ const escalated: ProjectTicket = {
   ...ticketInstants,
 };
 
-const refused: ProjectTicket = {
+const phased: ProjectTicket = {
   ticket: 42,
   title: "Write the brief",
-  phase: "Pending",
+  phase: "Escalated",
   sequence: 4,
   latestExecution: { ...failedRun, execution: "e42" },
   ...ticketInstants,
@@ -169,52 +160,19 @@ test("a ticket only an open action names draws its last execution", async () => 
   ).toStrictEqual(["resume", "revoke"]);
 });
 
-test("a ticket only a refusal names draws its last execution", async () => {
-  drawInbox([
-    inboxEntry(refused, {
-      refusals: [
-        {
-          ticket: 42,
-          ticketVersion: 2,
-          reason: "the brief names no reference",
-          decision: "selector-decision-1",
-          recordedAt: "2026-09-01T09:01:00Z",
-          superseded: false,
-        },
-      ],
-    }),
-  ]);
+test("a ticket only its phase names draws its last execution", async () => {
+  drawInbox([inboxEntry(phased)]);
   await settled();
   expect(
-    within(inboxItemOf(42)).getByText(`#42 ${refused.title ?? ""}`),
+    within(inboxItemOf(42)).getByText(`#42 ${phased.title ?? ""}`),
   ).toBeDefined();
   expect(lastRun(42)).toBe("last run Failed");
-});
-
-test("a proposed ticket's item names it, says it never ran, and offers the proposal's answers alone", async () => {
-  drawInbox([
-    inboxEntry(proposed, {
-      proposals: [{ decision: "dec-one", tickets: [7] }],
-    }),
-  ]);
-  await settled();
-  expect(
-    within(inboxItemOf(7)).getByText(`#7 ${proposed.title ?? ""}`),
-  ).toBeDefined();
-  expect(lastRun(7)).toBeUndefined();
-  expect(
-    within(inboxItemOf(7))
-      .getAllByRole("button")
-      .map((button) => button.textContent),
-  ).toStrictEqual(["approve", "reject"]);
 });
 
 test("no ticket is read on its own, whatever put it in the inbox", async () => {
   const drawn = drawInbox([
     inboxEntry(escalated, { actions: [escalation] }),
-    inboxEntry(proposed, {
-      proposals: [{ decision: "dec-one", tickets: [7] }],
-    }),
+    inboxEntry(phased),
   ]);
   await settled();
   expect(drawn.read.filter((url) => /\/tickets\/\d+/u.test(url))).toStrictEqual(

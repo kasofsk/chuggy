@@ -29,9 +29,9 @@ export type EpicHistoryRow = readonly [
 /** Who made a revision, drawn as the ticket list draws a ticket's creator. */
 export function epicActorLabel(
   actor: EpicRevisionActor,
-  emails: ReadonlyMap<string, string>,
+  names: ReadonlyMap<string, string>,
 ): Label {
-  return creatorLabel(actor.subject, emails);
+  return creatorLabel(actor.subject, names);
 }
 
 /** Whether a revision does nothing but add or remove tickets. */

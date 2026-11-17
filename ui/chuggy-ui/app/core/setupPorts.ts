@@ -18,7 +18,7 @@
  */
 
 import type { ApiFetchPort } from "./apiRequest.ts";
-import type { Copy } from "./copy.ts";
+import type { Copy, CopyText } from "./copy.ts";
 import type { PkceDigestPort } from "./pkce.ts";
 import type { FetchJsonPort } from "./sessionHolder.ts";
 
@@ -177,6 +177,8 @@ export interface SetupDiskPort {
   readonly text: (path: string, bytesMax: number) => string | undefined;
   /** Makes a file only its owner reads, with the directories above it, where nothing is at the path; throws which path it could not make. */
   readonly make: (path: string, text: string) => void;
+  /** Puts a file only its owner reads at a path in place of the whole of the file there; throws which path it could not put it at. */
+  readonly replace: (path: string, text: string) => void;
   /** Whether this user may make and remove names in a directory that is there. */
   readonly writable: (directory: string) => boolean;
 }
@@ -185,6 +187,23 @@ export interface SetupDiskPort {
 export const setupPlatforms = ["linux", "darwin"] as const;
 
 export type SetupPlatform = (typeof setupPlatforms)[number];
+
+/** The platform as one the program is served on, or nothing where it is not. */
+export function setupPlatformServed(
+  platform: string,
+): SetupPlatform | undefined {
+  return setupPlatforms.find((served) => served === platform);
+}
+
+/** The platform the program runs on, which `setupRun` has already refused where it is not one served. */
+export function setupPlatformOf(
+  surroundings: SetupSurroundings,
+): SetupPlatform {
+  const platform = setupPlatformServed(surroundings.platform);
+  if (platform === undefined)
+    throw new Error(`unserved platform ${surroundings.platform}`);
+  return platform;
+}
 
 /** Where the program is running, as plain facts read once at its start. */
 export interface SetupSurroundings {
@@ -201,6 +220,8 @@ export interface SetupSurroundings {
   readonly configHome: string | undefined;
   /** Where the person set Claude Code to keep its configuration, where they set that. */
   readonly claudeHome: string | undefined;
+  /** Where the person set Colima to keep its profiles, where they set that. */
+  readonly colimaHome: string | undefined;
   /** The person as the machine numbers its users, or nothing where it numbers none. */
   readonly user: string | undefined;
 }
@@ -222,4 +243,6 @@ export interface SetupPorts {
   readonly process: SetupProcessPort;
   readonly disk: SetupDiskPort;
   readonly surroundings: SetupSurroundings;
+  /** The console's catalog, which a refusal of the console's own ticket creation is said in. */
+  readonly text: CopyText;
 }

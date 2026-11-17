@@ -1,5 +1,5 @@
 /**
- * The project's pools: the machines registered to run its work and its lead,
+ * The project's pools: the machines registered to run its work and its threads,
  * each with what it runs on, the release it runs and when it registered. Read
  * by anyone who reads the project's settings, and added from nowhere here.
  */

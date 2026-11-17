@@ -15,6 +15,8 @@
  */
 
 import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { setupSteps } from "../../ui/chuggy-ui/app/core/setupReport.ts";
@@ -25,6 +27,8 @@ import {
   saidLandingSite,
   saidMember,
   saidMemberSite,
+  saidPluginOn,
+  saidRunnable,
   saidStages,
   saidViewer,
   saidViewerSite,
@@ -37,21 +41,23 @@ import {
   setupSiteRepositoryAddress,
   setupSiteStages,
   setupSiteTwo,
+  setupSiteWaiting,
 } from "../../ui/chuggy-ui/test/setupSite.ts";
 import type {
   SetupSite,
+  SetupSiteFate,
   SetupSiteRead,
 } from "../../ui/chuggy-ui/test/setupSite.ts";
 
-import { browsed, dialect, program } from "./program.ts";
+import { browsed, dialect, program, shellWords } from "./program.ts";
 import type { Ran } from "./program.ts";
 import type { StandIn } from "./standIn.ts";
 import { read, ruled, said, signed } from "./checklistSigned.ts";
 
-const stepLine = /^step: (\w+) +(\w+)(?: +(\S.*))?$/u;
+const stepLine = /^step: ([\w-]+) +(\w+)(?: +(\S.*))?$/u;
 
 /** The steps a run printed, every one of them and in their order, each as how it stands and the words beside it. */
-function steps(done: Ran): readonly (readonly [string, string])[] {
+function stepsAll(done: Ran): readonly (readonly [string, string])[] {
   const printed = done.lines.flatMap((text) => {
     const [, step = "", state = "", detail = ""] = stepLine.exec(text) ?? [];
     return step === "" ? [] : [[step, state, detail] as const];
@@ -64,12 +70,47 @@ function steps(done: Ran): readonly (readonly [string, string])[] {
   return printed.map(([, state, detail]) => [state, detail]);
 }
 
-test("a site set up one thing further at a time, from nothing to a landed first ticket, is printed as it stands at each, with an address of the site's to go to wherever a page is what mends it, and no command but this one again or, where the project is lacking, project with its name, or where the repository holds no configuration, configuration for the project", async () => {
+/** The steps a run printed past the plugin's, which is on. */
+function steps(done: Ran): readonly (readonly [string, string])[] {
+  const [plugin, ...past] = stepsAll(done);
+  assert.deepEqual(plugin, saidPluginOn, done.stdout);
+  return past;
+}
+
+/** The command a run's `next:` names, split by a shell. */
+function nextRun(done: Ran): Promise<readonly string[]> {
+  return shellWords((done.lines.at(-1) ?? "").slice("next: ".length));
+}
+
+/** A command the checklist names to run at once for the project. */
+function runAtOnce(command: string): readonly string[] {
+  return [
+    "node",
+    program,
+    command,
+    "--workspace",
+    "acme",
+    "--project",
+    "widgets",
+  ];
+}
+
+test("a site set up one thing further at a time, from nothing to a landed first ticket, is printed as it stands at each, with an address of the site's to go to wherever a page is what mends it, and no command but this one again or, where the project is lacking, project with its name, or where the repository holds no configuration, configuration for the project, or where the project has no ticket yet, ticket for the project, or where the person goes to GitHub, bind for the project to run at once, or where the first ticket is on its way, watch for the project to run at once", async () => {
   const session = await signed();
   for (const stage of setupSiteStages) {
     const done = await read(session, setupSiteAt(stage));
     assert.equal(done.code, 0, stage);
     assert.deepEqual(steps(done), saidStages[stage], stage);
+    if (stage === "Project" || stage === "Portal") {
+      const [tell = ""] = said(done, "tell");
+      assert.equal(tell.includes(`${session.installation.site}/`), true, tell);
+      assert.deepEqual(await nextRun(done), runAtOnce("bind"), stage);
+      continue;
+    }
+    if (stage === "Moving") {
+      assert.deepEqual(await nextRun(done), runAtOnce("watch"), stage);
+      continue;
+    }
     assert.equal(done.lines.at(-1), "next: stop", stage);
     if (stage === "Workspace") {
       assert.deepEqual(said(done, "tell"), []);
@@ -78,6 +119,19 @@ test("a site set up one thing further at a time, from nothing to a landed first 
         "--workspace",
         "acme",
         "--name",
+      ]);
+      continue;
+    }
+    if (stage === "Live") {
+      assert.deepEqual(said(done, "tell"), []);
+      const [ask = ""] = said(done, "ask");
+      assert.equal(ask.includes(`${session.installation.site}/`), true, ask);
+      assert.deepEqual(await ruled(done), [
+        "ticket",
+        "--workspace",
+        "acme",
+        "--project",
+        "widgets",
       ]);
       continue;
     }
@@ -93,17 +147,53 @@ test("a site set up one thing further at a time, from nothing to a landed first 
       continue;
     }
     const [tell = ""] = said(done, "tell");
-    assert.equal(
-      tell.includes(`${session.installation.site}/`),
-      stage !== "Offline",
-      tell,
-    );
+    assert.equal(tell.includes(`${session.installation.site}/`), true, tell);
     if (stage === "Landed") assert.deepEqual(said(done, "rule"), []);
     else assert.deepEqual(await ruled(done), [], stage);
   }
 });
 
-test("where the repository holds only the bootstrap, a run set up to a done ticket whose pull request is still to merge closes on that pull request, having read the done ticket's landings, and a run where it holds its own reads none and closes as it did", async () => {
+test("signed in where Claude Code here has no chuggy plugin, the plugin is offered first, plugin named under the person's yes and the checklist past it under their no, and that command, split by a shell and run, has the workspace step next and the way past on every command it prints", async () => {
+  const session = await signed();
+  rmSync(join(session.machine.bin, "claude"));
+  const offered = await read(session, setupSiteAt("Nothing"));
+  assert.equal(offered.code, 0, offered.stdout);
+  assert.deepEqual(stepsAll(offered)[0], [
+    "todo",
+    "Claude Code here has no chuggy plugin",
+  ]);
+  const yes = `Run node ${program} plugin only once the person says yes to chuggy's plugin in Claude Code.`;
+  const no = ` only if the person says no to chuggy's plugin in Claude Code.`;
+  const [, ruledNo = ""] = said(offered, "rule");
+  assert.deepEqual(said(offered, "rule"), [yes, ruledNo], offered.stdout);
+  assert.equal(ruledNo.endsWith(no), true, ruledNo);
+  assert.equal(offered.lines.at(-1), "next: stop");
+  const [runner, script, ...skip] = await shellWords(
+    ruledNo.slice("Run ".length, -no.length),
+  );
+  assert.deepEqual(
+    [runner, script, ...skip],
+    ["node", program, "--plugin", "skip"],
+  );
+  for (const stage of setupSiteStages) {
+    const past = await read(session, setupSiteAt(stage), skip);
+    const [plugin, ...rest] = stepsAll(past);
+    assert.deepEqual(plugin, ["done", "passed over without chuggy's plugin"]);
+    assert.deepEqual(rest, saidStages[stage], stage);
+    if (stage === "Nothing")
+      assert.deepEqual(said(past, "rule"), [
+        `Run node ${program} --plugin skip only once the person says their workspace is made.`,
+      ]);
+    const named = [
+      ...said(past, "rule").filter((rule) => rule.startsWith("Run node ")),
+      ...said(past, "next").filter((next) => next !== "stop"),
+    ];
+    for (const command of named)
+      assert.match(command, / --plugin skip(?: |$)/u, stage);
+  }
+});
+
+test("where the repository holds only the bootstrap, a run set up to a done ticket whose pull request is still to merge offers merging that pull request, having read the done ticket's landings, and a run where it holds its own reads none and closes as it did", async () => {
   const session = await signed();
   const { installation } = session;
   const url = "https://github.com/acme-org/widgets/pull/2";
@@ -112,18 +202,22 @@ test("where the repository holds only the bootstrap, a run set up to a done tick
     landed.projects[0]?.landings.set(1, [setupSiteOpened(url)]);
     return landed;
   };
-  const closing = (merge: string) =>
-    `chuggy is set up for acme/widgets: ticket 1 is done.${merge} The next ticket is made at ${installation.site}/acme/widgets/tickets/new.`;
+  const closing = `chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${installation.site}/acme/widgets/tickets/new.`;
   const landings = `GET ${installation.site}/api/v1/tenants/acme/projects/widgets/tickets/1/landings`;
   const bootstrapped = await read(session, setupSiteBootstrap(world()));
   assert.equal(bootstrapped.code, 0, bootstrapped.stdout);
   assert.deepEqual(steps(bootstrapped), saidStages.Landed);
-  assert.deepEqual(said(bootstrapped, "tell"), [
-    closing(
-      ` Its pull request, ${url}, holds the repository's own configuration: merge it on GitHub so later tickets run on that configuration rather than each writing it again.`,
+  const [offer, ...others] = said(bootstrapped, "tell");
+  assert.deepEqual(others, []);
+  assert.ok(
+    offer?.startsWith(
+      `Ticket 1 opened a pull request, ${url}, holding its work and this repository's own configuration;`,
     ),
+    offer ?? "no tell",
+  );
+  assert.deepEqual(said(bootstrapped, "rule"), [
+    `Run node ${program} merge --workspace acme --project widgets only once the person says yes to chuggy merging that pull request.`,
   ]);
-  assert.deepEqual(said(bootstrapped, "rule"), []);
   assert.equal(bootstrapped.lines.at(-1), "next: stop");
   assert.ok(
     installation.asked.includes(landings),
@@ -132,7 +226,7 @@ test("where the repository holds only the bootstrap, a run set up to a done tick
   installation.asked.length = 0;
   const own = await read(session, world());
   assert.equal(own.code, 0, own.stdout);
-  assert.deepEqual(said(own, "tell"), [closing("")]);
+  assert.deepEqual(said(own, "tell"), [closing]);
   assert.ok(!installation.asked.includes(landings));
 });
 
@@ -258,10 +352,12 @@ test("with more than one workspace the person is asked which and then which proj
     const first = await read(session, awkward(), named);
     assert.deepEqual(steps(first).slice(0, 2), [
       ["done", "two words"],
-      ["waiting", `two words/${project} has no North Star yet`],
+      ["done", `two words/${project}`],
     ]);
-    assert.deepEqual(await ruled(first), named);
-    const again = await read(session, awkward(), await ruled(first));
+    const [command, ...flags] = await ruled(first);
+    assert.equal(command, "mcp");
+    assert.deepEqual(flags, named);
+    const again = await read(session, awkward(), flags);
     assert.equal(again.stdout, first.stdout);
   }
 });
@@ -293,8 +389,103 @@ test("with a workspace and no project, the command the rule names, split by a sh
   );
   assert.deepEqual(steps(next).slice(0, 2), [
     ["done", "acme"],
-    ["waiting", "acme/atlas-web has no North Star yet"],
+    ["done", "acme/atlas-web"],
   ]);
+});
+
+/** A site at its workspace, and the checklist run past the project made in it as `project` names it next, with its settings already holding an override but no North Star. */
+async function starless(
+  session: Awaited<ReturnType<typeof signed>>,
+): Promise<{ readonly world: SetupSite; readonly offered: Ran }> {
+  const world = setupSiteAt("Workspace");
+  const asked = await read(session, world);
+  const made = await read(session, world, [...(await ruled(asked)), "Atlas"]);
+  const [project] = world.projects.filter((held) => held.project === "atlas");
+  assert.ok(project, made.stdout);
+  project.overrides = { threadStandingRules: "Say what you ran." };
+  const offered = await read(
+    session,
+    world,
+    made.lines.at(-1)?.split(" ").slice(3) ?? [],
+  );
+  return { world, offered };
+}
+
+test("after the project is made, the checklist names north-star next, and that command, split by a shell and run with the North Star, writes it into the project's settings by its one write with every other override as it was, and the checklist it reads after names mcp", async () => {
+  const session = await signed();
+  const { installation } = session;
+  const { world, offered } = await starless(session);
+  assert.equal(offered.code, 0, offered.stdout);
+  assert.deepEqual(steps(offered)[2], [
+    "todo",
+    "the project has no North Star yet",
+  ]);
+  const named = await ruled(offered);
+  assert.deepEqual(named, [
+    "north-star",
+    "--workspace",
+    "acme",
+    "--project",
+    "atlas",
+  ]);
+  installation.writes.length = 0;
+  const text = "A demo of widgets that works end to end soon.";
+  const written = await read(session, world, [...named, "--text", text]);
+  assert.equal(written.code, 0, written.stdout);
+  assert.deepEqual(said(written, "did"), [
+    "wrote the North Star of acme/atlas",
+  ]);
+  assert.equal(written.stdout.includes(text), false, written.stdout);
+  assert.deepEqual(
+    installation.writes.map((write) => write.split(" ").slice(1).join(" ")),
+    ["PUT /api/v1/tenants/acme/projects/atlas/selector-settings"],
+  );
+  assert.deepEqual(
+    world.projects.find((held) => held.project === "atlas")?.overrides,
+    { threadStandingRules: "Say what you ran.", northStar: text },
+  );
+  assert.deepEqual(steps(written)[2], ["done", "the project has a North Star"]);
+  assert.equal((await ruled(written))[0], "mcp", written.stdout);
+});
+
+test("where the person would rather go on without a North Star, the command the second rule names, split by a shell and run, passes the step over with nothing written and names mcp next, carrying the skip", async () => {
+  const session = await signed();
+  const { installation } = session;
+  const { world, offered } = await starless(session);
+  const no = " only if the person would rather go on without a North Star.";
+  const [, rule = ""] = said(offered, "rule");
+  assert.equal(rule.endsWith(no), true, offered.stdout);
+  const [runner, script, ...skip] = await shellWords(
+    rule.slice("Run ".length, -no.length),
+  );
+  assert.deepEqual(
+    [runner, script, ...skip],
+    [
+      "node",
+      program,
+      "--workspace",
+      "acme",
+      "--project",
+      "atlas",
+      "--north-star",
+      "skip",
+    ],
+  );
+  installation.writes.length = 0;
+  const past = await read(session, world, skip);
+  assert.equal(past.code, 0, past.stdout);
+  assert.deepEqual(steps(past)[2], [
+    "done",
+    "passed over without a North Star",
+  ]);
+  const [mcp, ...flags] = await ruled(past);
+  assert.equal(mcp, "mcp", past.stdout);
+  assert.deepEqual(flags.slice(-2), ["--north-star", "skip"]);
+  assert.deepEqual(installation.writes, []);
+  assert.deepEqual(
+    world.projects.find((held) => held.project === "atlas")?.overrides,
+    { threadStandingRules: "Say what you ran." },
+  );
 });
 
 test("a member who administers nothing, and a viewer of one project, are each shown what they wait on and are not shown, as states and not failures, and are handed nothing to run", async () => {
@@ -338,16 +529,49 @@ for (const fate of Object.keys(saidFates) as (keyof typeof saidFates)[])
     );
   });
 
+test("a ticket in its work waiting on the person's runners short of memory is told, over the wire, how much they have free and the run needs, and an executions read that fails or comes back cut stops nothing and is told as before", async () => {
+  const session = await signed();
+  const working = (fate?: SetupSiteFate): SetupSite => {
+    const { site, project } = saidRunnable();
+    project.tickets.push({ ticket: 7, phase: "Work" });
+    project.executions.set(7, [
+      setupSiteWaiting(7, "Live", { freeMib: 1434, neededMib: 4096 }),
+    ]);
+    if (fate !== undefined) site.fates.set("executions", fate);
+    return site;
+  };
+  const tell = (waits: string): string =>
+    `Ticket 7 is in Work.${waits} Setup is done when it finishes. ${session.installation.site}/acme/widgets/tickets/7 shows where it is. I'll keep watching it and tell you what changes.`;
+  const short = await read(session, working());
+  assert.equal(short.code, 0, short.stdout);
+  assert.deepEqual(steps(short).at(-1), ["waiting", "ticket 7 is in Work"]);
+  assert.deepEqual(said(short, "tell"), [
+    tell(
+      " It is waiting on your personal runner, which has 1.4 GiB free; this run needs 4 GiB.",
+    ),
+  ]);
+  for (const fate of ["Failed", "Cut"] as const) {
+    const done = await read(session, working(fate));
+    assert.equal(done.code, 0, fate);
+    assert.deepEqual(
+      steps(done).at(-1),
+      ["waiting", "ticket 7 is in Work"],
+      fate,
+    );
+    assert.deepEqual(said(done, "tell"), [tell("")], fate);
+  }
+});
+
 const cuts: readonly (readonly [
   SetupSiteRead,
   () => SetupSite,
   number,
   string,
 ])[] = [
-  ["installations", () => setupSiteAt("Portal"), 3, "its GitHub accounts were"],
-  ["repositories", () => setupSiteAt("Added"), 4, "its repositories were"],
-  ["moving", saidLandingSite, 6, "its tickets were"],
-  ["landings", saidLandingSite, 6, "a ticket's finalizations were"],
+  ["installations", () => setupSiteAt("Portal"), 4, "its GitHub accounts were"],
+  ["repositories", () => setupSiteAt("Added"), 5, "its repositories were"],
+  ["moving", saidLandingSite, 7, "its tickets were"],
+  ["landings", saidLandingSite, 7, "a ticket's finalizations were"],
 ];
 
 test("each list cut short leaves its step not read where what was sent does not settle it, and is never read as all there is: no name is taken from a list of projects that did not end, and a project named in full is read without one", async () => {
