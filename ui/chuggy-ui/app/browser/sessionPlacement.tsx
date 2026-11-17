@@ -84,12 +84,12 @@ function SessionRunnerAddLink(props: {
 }
 
 /** Why no runner can take a turn now, and the link to where one is added
- * where none is, or wherever `linked` says. */
+ * where none is. A runner of the reader's own that is offline is replaced on
+ * that same page, so a session waiting on one links there either way. */
 function SessionRunnerNoticeLine(props: {
   readonly session: SessionRunnerSession;
   readonly short: SessionRunnerShort;
   readonly add: ReactNode;
-  readonly linked?: boolean;
 }): ReactNode {
   const text = useCopyText();
   return (
@@ -98,7 +98,8 @@ function SessionRunnerNoticeLine(props: {
       inline
       detail={text(sessionRunnerNoticeWord(props.short, props.session))}
     >
-      {props.short === "NoRunner" || props.linked === true ? (
+      {props.short === "NoRunner" ||
+      sessionRunnerAdded(props.session) === "MyRunner" ? (
         <span className="text-ink-3">
           {" · "}
           {props.add}
@@ -108,7 +109,7 @@ function SessionRunnerNoticeLine(props: {
   );
 }
 
-/** Why no runner can take a turn now, with where one is added where none is. */
+/** A session's line above, linked to the page its runner is added on. */
 export function SessionRunnerNotice(props: {
   readonly partition: PartitionIdentity;
   readonly session: SessionRunnerSession;
@@ -129,8 +130,7 @@ export function SessionRunnerNotice(props: {
 }
 
 /** Why the reader's chat host cannot take a turn of their own chat now, with
- * their own page in the workspace, where one is registered and where one
- * that is offline is replaced. */
+ * their own page in the workspace. */
 export function ChatHostNotice(props: {
   readonly tenant: string;
   readonly short: SessionRunnerShort;
@@ -140,7 +140,6 @@ export function ChatHostNotice(props: {
     <SessionRunnerNoticeLine
       session="Chat"
       short={props.short}
-      linked
       add={
         <Link
           to={settingsRoutes.workspace.myRunner}

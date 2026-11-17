@@ -46,6 +46,7 @@ import {
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import type { ViewportFrame } from "./viewport.ts";
 import { readFailedLines } from "./readFailedLines.ts";
+import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { contextSessionBody } from "./contextFixture.ts";
 import { chatPaneHistoryChosen, chatPaneMenuChosen } from "./chatPaneMenu.tsx";
 
@@ -390,6 +391,28 @@ test("a thread that takes no more messages says its standing in the composer's p
     line: "Closed · Takes no more messages",
     forward: `/${threadPartition.tenant}/${threadPartition.project}`,
   });
+  styleless();
+});
+
+/** A project thread waits on the reader's own runner, which is replaced on
+ * their Personal runners page whether it is absent or offline. */
+test("a thread whose runner is offline says so in the composer's place, with the way to Personal runners", async () => {
+  await mountedAt(
+    threadPath(threadMineSession),
+    (served) =>
+      ((url: string, init?: RequestInit) =>
+        url.endsWith("/session-placement")
+          ? Promise.resolve(
+              answer(sessionPlacementBody({ thread: "Pool", mine: "Offline" })),
+            )
+          : served(url, init)) as typeof fetch,
+  );
+  expect(screen.getByText("Chat host offline")).toBeDefined();
+  expect(
+    screen.getByRole("link", { name: "Personal runners" }).getAttribute("href"),
+  ).toBe(
+    `/${threadPartition.tenant}/${threadPartition.project}/settings/workspace/runner`,
+  );
   styleless();
 });
 
