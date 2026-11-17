@@ -53,6 +53,96 @@ settings-preferences-theme-here-built-in = The console's default
 settings-preferences-theme-here-project-default = Use the { -project }'s default
 settings-preferences-theme-unsaved = Theme not saved
 settings-preferences-theme-not-found = that theme is no longer one of yours
+settings-preferences-theme-new = New theme
+settings-preferences-theme-edit = Edit
+settings-preferences-theme-edit-named = Edit { $name }
+settings-theme-editor-copy-name = { $name } copy
+settings-theme-editor-name = Name
+settings-theme-editor-name-refused = A name of up to { $most } characters
+settings-theme-editor-scheme = Editing
+settings-theme-editor-group = { $group ->
+    [Surfaces] Surfaces
+    [Text] Text
+    [Edges] Edges
+   *[Accent] Accent
+}
+settings-theme-editor-more = More colours
+settings-theme-editor-colour = { $colour ->
+    [surface-0] Page
+    [surface-1] Panel
+    [surface-2] Sunken
+    [surface-inverse] Inverse surface
+    [bubble] Bubble
+    [ink-1] Main text
+    [ink-2] Body text
+    [ink-3] Quiet text
+    [ink-inverse] Inverse text
+    [edge] Edge
+    [edge-strong] Strong edge
+    [edge-control] Control edge
+    [accent] Accent
+    [ink-on-accent] Text on accent
+    [tone-pass] Passed
+    [tone-fail] Failed
+    [tone-live] Working
+    [tone-evaluation] Evaluating
+    [tone-finalization] Finishing
+    [tone-parked] Waiting
+    [tone-queued] Queued
+    [syntax-key] Code key
+    [syntax-string] Code string
+    [syntax-value] Code value
+    [fill-pass] Passed fill
+    [fill-live] Working fill
+    [fill-evaluation] Evaluating fill
+    [fill-finalization] Finishing fill
+    [fill-parked] Waiting fill
+    [wash-pass] Passed wash
+    [wash-fail] Failed wash
+    [wash-live] Working wash
+    [wash-evaluation] Evaluating wash
+    [wash-finalization] Finishing wash
+    [wash-parked] Waiting wash
+   *[wash-queued] Queued wash
+}
+settings-theme-editor-colour-pick = Pick { $name }
+settings-theme-editor-colour-unread = Six hex digits after a #
+settings-theme-editor-font = Font
+settings-theme-editor-font-choice = { $font ->
+    [System] System
+    [Humanist] Humanist
+   *[Serif] Serif
+}
+settings-theme-editor-size = Text size
+settings-theme-editor-size-choice = { $size ->
+    [Small] Small
+    [Standard] Standard
+    [Large] Large
+   *[Larger] Larger
+}
+settings-theme-editor-contrast = { $foreground } on { $background }
+settings-theme-editor-ratio = { $ratio }:1
+settings-theme-editor-passes = Passes
+settings-theme-editor-fails = Needs { $least }:1
+settings-theme-editor-failing = Not saved until every pairing passes:
+settings-theme-editor-failing-role = { $name }, { $scheme }
+settings-theme-editor-nearest = Use { $colour }
+settings-theme-editor-nearest-none = No value near this one passes
+settings-theme-editor-unread = A colour field does not read as a colour
+settings-theme-editor-preview = Preview
+settings-theme-editor-preview-title = Tidy the changelog headings
+settings-theme-editor-preview-surface = A line on the { $surface }
+settings-theme-editor-preview-button = { $variant ->
+    [default] Default
+    [primary] Primary
+    [danger] Danger
+    [danger-filled] Confirm
+   *[quiet] Quiet
+}
+settings-theme-editor-save = Save
+settings-theme-editor-delete = Delete
+settings-theme-editor-delete-title = Delete { $name }?
+settings-theme-editor-delete-about = It is taken off wherever you chose it, and the theme below it applies there instead.
 settings-preferences-wording = Wording
 settings-preferences-wording-standard = Standard
 settings-preferences-wording-pseudo = Pseudo

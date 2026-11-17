@@ -21,7 +21,7 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { useId } from "react";
+import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { ThemeChoice } from "../../../../../src/contract/appearance.ts";
@@ -51,6 +51,7 @@ import {
 } from "../../core/themeQueries.ts";
 import {
   themeGlobalChosen,
+  themeInUseOf,
   themeOverrideChosen,
   themePickerOptions,
   themePickerProjectDefault,
@@ -61,7 +62,10 @@ import type { ThemePickerOption } from "../../core/themePreferences.ts";
 import { themeScopeOf } from "../../core/themeTokens.ts";
 import { usePanelState } from "../api.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
+import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import { ThemeEditor } from "./ThemeEditor.tsx";
+import type { ThemeEditorOpening } from "./ThemeEditor.tsx";
 import { ThemePicker } from "./ThemePicker.tsx";
 import type { ThemePickerCard } from "./ThemePicker.tsx";
 
@@ -350,6 +354,7 @@ function PreferencesThemeGlobal(props: {
   readonly covered: Copy | undefined;
   readonly options: readonly ThemePickerOption[];
   readonly owned: readonly OwnedThemeResponse[];
+  readonly actions: ReactNode;
 }): ReactNode {
   const text = useCopyText();
   const covered = useId();
@@ -376,7 +381,54 @@ function PreferencesThemeGlobal(props: {
           if (option !== undefined) writing.mutate(option.choice);
         }}
       />
+      {props.actions}
       <ThemeRefused refused={writing.error} />
+    </div>
+  );
+}
+
+/** The quiet actions beside the picker: a new theme from the one in use, and
+ * that one changed where it is the reader's own. */
+function PreferencesThemeMaking(props: {
+  readonly partition: PartitionIdentity | undefined;
+  readonly inUse: ReturnType<typeof themeInUseOf>;
+}): ReactNode {
+  const text = useCopyText();
+  const [opening, setOpening] = useState<ThemeEditorOpening | undefined>();
+  const own = props.inUse.own;
+  return (
+    <div className="preferences-theme-making">
+      <Button
+        variant="quiet"
+        size="sm"
+        onClick={() => {
+          setOpening({ kind: "Create", from: props.inUse.theme });
+        }}
+      >
+        {text({ id: "settings-preferences-theme-new" })}
+      </Button>
+      {own === undefined ? null : (
+        <Button
+          variant="quiet"
+          size="sm"
+          named={text({
+            id: "settings-preferences-theme-edit-named",
+            args: { name: own.document.name },
+          })}
+          onClick={() => {
+            setOpening({ kind: "Edit", theme: own });
+          }}
+        >
+          {text({ id: "settings-preferences-theme-edit" })}
+        </Button>
+      )}
+      <ThemeEditor
+        opening={opening}
+        partition={props.partition}
+        onClose={() => {
+          setOpening(undefined);
+        }}
+      />
     </div>
   );
 }
@@ -399,6 +451,12 @@ function PreferencesThemeRead(props: {
         covered={said.global.covered}
         options={options}
         owned={owned}
+        actions={
+          <PreferencesThemeMaking
+            partition={props.partition}
+            inUse={themeInUseOf(choice.value.choice, props.appearance, owned)}
+          />
+        }
       />
       {props.partition === undefined || said.project === undefined ? null : (
         <PreferencesThemeHere

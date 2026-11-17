@@ -191,3 +191,39 @@ test("on the phone the open account menu names the member and holds Settings, Pr
   renderedNoViolations(rendered, [zodProbeViolation]);
   expect(served.unanswered).toEqual([]);
 });
+
+for (const viewport of ["phone", "desk"] as const)
+  test(`at the ${viewport}'s width the open theme editor, every colour shown and a pairing failing, draws under the policy with no sideways scroll${viewport === "phone" ? " and every control the touch height" : ""}`, async ({
+    browser,
+    served,
+  }) => {
+    const rendered = await renderedOpen(browser, served.origin, {
+      route: `${projectRoot}/settings/preferences`,
+      viewport,
+      signedIn: true,
+      touch: viewport === "phone",
+      ready: (page) => page.getByRole("button", { name: "New theme" }),
+    });
+    const page = rendered.page;
+    await page.getByRole("button", { name: "New theme" }).click();
+    const editor = page.getByRole("dialog", { name: "New theme" });
+    await expect(editor.getByRole("textbox", { name: "Name" })).toHaveValue(
+      "Chuggy copy",
+    );
+    await editor.getByRole("button", { name: "More colours" }).click();
+    const accent = await editor
+      .getByRole("textbox", { name: "Accent", exact: true })
+      .inputValue();
+    await editor
+      .getByRole("textbox", { name: "Text on accent", exact: true })
+      .fill(accent);
+    await expect(
+      editor.getByText("Not saved until every pairing passes:"),
+    ).toBeVisible();
+    await expect(editor.getByRole("button", { name: "Save" })).toBeDisabled();
+    await expect(editor.getByRole("region", { name: "Preview" })).toBeVisible();
+    await renderedNoOverflow(page);
+    if (viewport === "phone") await renderedTouchTargets(page, editor);
+    renderedNoViolations(rendered, [zodProbeViolation]);
+    expect(served.unanswered).toEqual([]);
+  });

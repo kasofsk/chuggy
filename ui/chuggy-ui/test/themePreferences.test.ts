@@ -2,7 +2,8 @@
  * What the theme controls say and mark, from the reader's global choice and a
  * project's resolved read: each layer's wording, the note under the global
  * picker where the project's default covers it, the override set and cleared,
- * and the order the pickers offer themes in.
+ * the order the pickers offer themes in, and the theme in use the editor
+ * copies, with the reader's own it edits.
  */
 
 import { expect, test } from "vitest";
@@ -16,6 +17,7 @@ import type { ProjectAppearanceResponse } from "../../../src/contract/responses.
 import { themeColourAssignmentsOf } from "../app/core/themeTokens.ts";
 import {
   themeGlobalChosen,
+  themeInUseOf,
   themeOverrideChosen,
   themePickerKeyOf,
   themePickerOptions,
@@ -170,4 +172,37 @@ test("a refused write says the theme was not saved, and why: a theme no longer t
   expect(
     copyTextEn(themeRefusalOf({ outcome: "Unreachable", reason: "offline" })),
   ).toBe("Theme not saved · No connection");
+});
+
+test("the theme in use is the project's resolved theme inside one and the global choice outside, and is the reader's own only where the layer that applies names one of theirs", () => {
+  expect(themeInUseOf(undefined, undefined, owned)).toStrictEqual({
+    theme: chuggy,
+    own: undefined,
+  });
+  expect(themeInUseOf(mineChoice, undefined, owned)).toStrictEqual({
+    theme: mine,
+    own: owned[0],
+  });
+  expect(themeInUseOf(harbourChoice, undefined, owned)).toStrictEqual({
+    theme: harbour,
+    own: undefined,
+  });
+  const covered: ProjectAppearanceResponse = {
+    theme: ember,
+    layer: "ProjectDefault",
+    layers: { projectDefault: ember, global: mineChoice },
+  };
+  expect(themeInUseOf(mineChoice, covered, owned)).toStrictEqual({
+    theme: ember,
+    own: undefined,
+  });
+  const overridden: ProjectAppearanceResponse = {
+    theme: mine,
+    layer: "ProjectOverride",
+    layers: { override: mineChoice, global: harbourChoice },
+  };
+  expect(themeInUseOf(harbourChoice, overridden, owned)).toStrictEqual({
+    theme: mine,
+    own: owned[0],
+  });
 });
