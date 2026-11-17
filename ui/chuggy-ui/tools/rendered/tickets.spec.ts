@@ -11,7 +11,11 @@
  * section.
  */
 
-import { projectResponseSchema } from "../../../../src/contract/responses.ts";
+import {
+  projectArtifactResponseSchema,
+  projectImagesResponseSchema,
+  projectResponseSchema,
+} from "../../../../src/contract/responses.ts";
 
 import {
   expect,
@@ -156,6 +160,7 @@ for (const viewport of ticketsViewports)
         });
         const page = rendered.page;
         await renderedNoOverflow(page);
+        await expect(page.locator(".project-banner")).toHaveCount(0);
         if (viewport === "phone")
           await renderedTouchTargets(page, page.locator(".ticket-list-page"));
         if (drawn.ready === "heading") {
@@ -240,6 +245,186 @@ for (const viewport of ticketsViewports)
       await expect(page.getByRole("list", { name: "Filters set" })).toHaveCount(
         0,
       );
+      renderedNoViolations(rendered, [zodProbeViolation]);
+      expect(served.unanswered).toEqual([]);
+    } finally {
+      await served.close();
+    }
+  });
+
+const ticketsBannerArtifact = "banner-rendered";
+
+const ticketsBannerPath = `${ticketsProjectPath}/artifacts/${ticketsBannerArtifact}`;
+
+/** A single opaque pixel, which the band crops to fill it. */
+const ticketsBannerPng =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+/** The rows the first screen holds whole under the banner, at either size. */
+const ticketsBannerRowsFirstScreen = 2;
+
+/** Enough rows that the page scrolls well past the band. */
+const ticketsBannerPage = {
+  ...ticketsPage,
+  sequence: 40,
+  tickets: Array.from({ length: 40 }, (_, at) =>
+    ticketsTicket(40 - at, `Ticket ${String(40 - at)}`, "Work"),
+  ),
+};
+
+/** Where the band and the first row stand and how tall each is, as drawn
+ * now. */
+function ticketsBannerBoxes(page: Page): Promise<readonly string[]> {
+  return page.evaluate(() =>
+    [".project-banner", ".ticket-list-page [aria-label='Tickets'] > li"].map(
+      (selector) => {
+        const box = document.querySelector(selector)?.getBoundingClientRect();
+        return box === undefined ? "none" : [box.y, box.height].join(" ");
+      },
+    ),
+  );
+}
+
+/** A route on `path` answered only once the returned release is called. */
+async function ticketsBannerHeld(
+  page: Page,
+  path: string,
+): Promise<() => void> {
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(`**${path}`, async (route) => {
+    await released;
+    await route.continue();
+  });
+  return release;
+}
+
+/** Across a reload, with the images read and then the image's read held:
+ * whether any row was drawn once the rows had answered and the images read
+ * had not, and the boxes once the images read answers and once the image
+ * lands. */
+async function ticketsBannerBoxesAcrossImage(page: Page): Promise<{
+  readonly rowsBeforeImages: number;
+  readonly held: readonly string[];
+  readonly landed: readonly string[];
+}> {
+  const imagesPath = `${ticketsProjectPath}/appearance/images`;
+  const imagesRelease = await ticketsBannerHeld(page, imagesPath);
+  const imageRelease = await ticketsBannerHeld(page, ticketsBannerPath);
+  const rowsAnswered = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === ticketsProjectPath,
+  );
+  const imagesAsked = page.waitForRequest(`**${imagesPath}`);
+  await page.reload();
+  await Promise.all([rowsAnswered, imagesAsked]);
+  await expect(page.locator(".ticket-list-page")).toBeVisible();
+  const rowsBeforeImages = await page
+    .locator(".ticket-list-page [aria-label='Tickets'] > li")
+    .count();
+  const imageAsked = page.waitForRequest(`**${ticketsBannerPath}`);
+  imagesRelease();
+  await imageAsked;
+  await expect(
+    page.getByRole("heading", { level: 3, name: "Ticket 40" }),
+  ).toBeVisible();
+  await expect(page.locator(".project-banner")).toBeVisible();
+  await expect(page.locator(".project-banner img")).toHaveCount(0);
+  const held = await ticketsBannerBoxes(page);
+  imageRelease();
+  await expect(page.locator(".project-banner img")).toBeVisible();
+  return { rowsBeforeImages, held, landed: await ticketsBannerBoxes(page) };
+}
+
+/** Scrolls what the band scrolls in to `pixels` from its top, and returns once
+ * the frame after has been drawn, by which the scroll's event has been
+ * handled. */
+function ticketsBannerScrolled(page: Page, pixels: number): Promise<void> {
+  return page.locator(".project-banner").evaluate(async (band, by) => {
+    let scroller: Element | null = band.parentElement;
+    while (
+      scroller !== null &&
+      !/auto|scroll/u.test(getComputedStyle(scroller).overflowY)
+    )
+      scroller = scroller.parentElement;
+    (scroller ?? document.scrollingElement)?.scrollTo({
+      top: by,
+      behavior: "instant",
+    });
+    for (let frame = 0; frame < 2; frame += 1)
+      await new Promise((drawn) => requestAnimationFrame(drawn));
+  }, pixels);
+}
+
+/**
+ * A project's banner over its tickets list under the served policy: the image
+ * decodes and the band says nothing of it; the first rows are still on the
+ * first screen whole; no row is drawn before it is known whether there is a
+ * band, and nothing under the band moves as the image lands; and
+ * once the page scrolls the band is gone, not back a pixel short of the top,
+ * and back at the top.
+ */
+for (const viewport of ticketsViewports)
+  test(`on the ${viewport} a project's banner heads its tickets list without taking the list's first screen, and is gone once the list scrolls`, async ({
+    browser,
+  }) => {
+    const served = await servedOpen({
+      root: renderedDist,
+      reads: [
+        stubApiRead(
+          ticketsProjectPath,
+          projectResponseSchema,
+          ticketsBannerPage,
+        ),
+        stubApiRead(
+          `${ticketsProjectPath}/appearance/images`,
+          projectImagesResponseSchema,
+          { banner: ticketsBannerArtifact, administers: false },
+        ),
+        stubApiRead(ticketsBannerPath, projectArtifactResponseSchema, {
+          mediaType: "image/png",
+          content: ticketsBannerPng,
+          encoding: "base64",
+        }),
+      ],
+    });
+    try {
+      const rendered = await renderedOpen(browser, served.origin, {
+        route: ticketsPath,
+        viewport,
+        touch: viewport === "phone",
+        signedIn: true,
+        ready: (page) => page.locator(".project-banner img"),
+      });
+      const page = rendered.page;
+      const image = page.locator(".project-banner img");
+      await expect(image).toHaveAttribute("alt", "");
+      expect(
+        await image.evaluate((drawn: HTMLImageElement) => drawn.naturalWidth),
+      ).toBeGreaterThan(0);
+      await renderedNoOverflow(page);
+      const rows = page
+        .getByRole("list", { name: "Tickets", exact: true })
+        .getByRole("listitem");
+      const screenHeight = page.viewportSize()?.height ?? 0;
+      for (let at = 0; at < ticketsBannerRowsFirstScreen; at += 1) {
+        const box = await rows.nth(at).boundingBox();
+        expect(
+          box === null ? Infinity : box.y + box.height,
+        ).toBeLessThanOrEqual(screenHeight);
+      }
+      const boxes = await ticketsBannerBoxesAcrossImage(page);
+      expect(boxes.rowsBeforeImages).toBe(0);
+      expect(boxes.landed).toStrictEqual(boxes.held);
+      const band = page.locator(".project-banner");
+      await ticketsBannerScrolled(page, screenHeight);
+      await expect(band).toHaveAttribute("data-gone");
+      await expect(band).toHaveCSS("height", "0px");
+      await ticketsBannerScrolled(page, 1);
+      await expect(band).toHaveAttribute("data-gone");
+      await ticketsBannerScrolled(page, 0);
+      await expect(band).not.toHaveAttribute("data-gone");
       renderedNoViolations(rendered, [zodProbeViolation]);
       expect(served.unanswered).toEqual([]);
     } finally {

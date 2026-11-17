@@ -14,26 +14,9 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { projectMarkInitial, projectMarkTint } from "../core/projectMark.ts";
 import type { ProjectMarkSize } from "../core/projectMark.ts";
-import { projectImageQuery } from "../core/projectQueries.ts";
-import { usePanelState } from "./api.ts";
-import { projectImageSource } from "./ProjectImage.tsx";
+import { useProjectImageSource } from "./ProjectImage.tsx";
 
 import "./ProjectMark.css";
-
-/** The icon's read as the `data:` URI it is drawn from, and whether the read
- * has failed rather than not yet answered. */
-export function useProjectIconSource(
-  partition: PartitionIdentity,
-  icon: string,
-): { readonly src: string | undefined; readonly failed: boolean } {
-  const state = usePanelState(projectImageQuery(partition, icon));
-  if (state.state === "Ready")
-    return {
-      src: projectImageSource(state.value),
-      failed: false,
-    };
-  return { src: undefined, failed: state.state !== "Pending" };
-}
 
 interface ProjectMarkDrawn {
   readonly name: string;
@@ -70,7 +53,7 @@ function ProjectMarkIcon(
     readonly icon: string;
   },
 ): ReactNode {
-  const read = useProjectIconSource(props.partition, props.icon);
+  const read = useProjectImageSource(props.partition, props.icon);
   const [broken, setBroken] = useState(false);
   if (read.failed || broken) return <ProjectMarkInitial {...props} />;
   const box = `project-mark project-mark-${props.size}`;

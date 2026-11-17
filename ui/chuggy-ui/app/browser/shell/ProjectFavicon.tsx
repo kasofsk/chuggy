@@ -12,7 +12,7 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { useProjectIconSource } from "../ProjectMark.tsx";
+import { useProjectImageSource } from "../ProjectImage.tsx";
 import { useProjectIcon } from "../projectNamed.ts";
 
 /** Every icon link of the document pointed at `src`, and what puts each back. */
@@ -44,7 +44,7 @@ function ProjectFaviconPointed(props: {
   readonly partition: PartitionIdentity;
   readonly icon: string;
 }): null {
-  const { src } = useProjectIconSource(props.partition, props.icon);
+  const { src } = useProjectImageSource(props.partition, props.icon);
   useEffect(
     () =>
       src === undefined ? undefined : projectFaviconPointed(document.head, src),

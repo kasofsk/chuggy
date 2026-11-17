@@ -2,7 +2,8 @@
  * The preferences page: Appearance always, Wording for a site administrator
  * alone, and Chat position in a project where the viewport divides, a titled
  * section each in that order; and the chat pane's placement, chosen on it,
- * applied to the pane the shell holds and kept for the next load.
+ * applied to the pane the shell holds and kept for the next load; and in
+ * Appearance, projects' banners shown or hidden, kept for the next load.
  *
  * In Appearance, the theme controls: the global picker everywhere, a radio
  * group of the built-ins and then the reader's own, a choice worn and marked
@@ -29,6 +30,7 @@ import type { ProjectAppearanceResponse } from "../../../../src/contract/respons
 import { PreferencesPage } from "../../app/browser/settings/PreferencesPage.tsx";
 import { viewportTwoColumnEm } from "../../app/browser/shell/viewport.ts";
 import { ThemeFollowed } from "../../app/browser/ThemeFollowed.tsx";
+import { projectBannersStoreKey } from "../../app/browser/projectBanners.ts";
 import { chatPaneStoreKey } from "../../app/core/chatPane.ts";
 import { themeColourAssignmentsOf } from "../../app/core/themeTokens.ts";
 import {
@@ -129,6 +131,32 @@ test("a chat position chosen is checked at once and is the one the next load rea
   expect(
     screen.getByRole("radio", { name: "Left" }).getAttribute("aria-checked"),
   ).toBe("true");
+});
+
+test("Appearance offers projects' banners shown or hidden, shown where nothing is kept, and a choice is the one the next load reads", async () => {
+  await preferencesDrawn(viewportDeskEm);
+  const appearance = screen.getByRole("region", { name: "Appearance" });
+  const banners = within(appearance).getByRole("radiogroup", {
+    name: "Project banners",
+  });
+  expect(
+    within(banners)
+      .getByRole("radio", { name: "Shown" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  await turned(() => {
+    fireEvent.click(within(banners).getByRole("radio", { name: "Hidden" }));
+  });
+  expect(localStorage.getItem(projectBannersStoreKey)).toBe("Hidden");
+  cleanup();
+  await preferencesDrawn(viewportDeskEm);
+  expect(
+    screen.getByRole("radio", { name: "Hidden" }).getAttribute("aria-checked"),
+  ).toBe("true");
+  await turned(() => {
+    fireEvent.click(screen.getByRole("radio", { name: "Shown" }));
+  });
+  expect(localStorage.getItem(projectBannersStoreKey)).toBeNull();
 });
 
 const choicePath = "/api/v1/appearance/choice";

@@ -24,6 +24,12 @@ import {
 import type { ChatPanePlacement } from "../../core/chatPane.ts";
 import type { Copy } from "../../core/copy.ts";
 import { persistentStore } from "../ports.ts";
+import {
+  projectBannersChoices,
+  projectBannersRead,
+  projectBannersWrite,
+} from "../projectBanners.ts";
+import type { ProjectBannersChoice } from "../projectBanners.ts";
 import { useChatPane } from "../shell/chatPaneHeld.ts";
 import {
   schemeChoiceApply,
@@ -106,11 +112,36 @@ function PreferencesScheme(): ReactNode {
   );
 }
 
+const preferencesBannersWords: Readonly<Record<ProjectBannersChoice, Copy>> = {
+  Shown: { id: "settings-preferences-banners-shown" },
+  Hidden: { id: "settings-preferences-banners-hidden" },
+};
+
+/** Whether projects' banners are drawn, as `projectBanners.ts` keeps it. */
+function PreferencesBanners(): ReactNode {
+  const [chosen, setChosen] = useState<ProjectBannersChoice>(() =>
+    projectBannersRead(persistentStore),
+  );
+  return (
+    <PreferencesChoice
+      label={{ id: "settings-preferences-banners" }}
+      value={chosen}
+      options={projectBannersChoices}
+      words={preferencesBannersWords}
+      onChoose={(choice) => {
+        projectBannersWrite(persistentStore, choice);
+        setChosen(choice);
+      }}
+    />
+  );
+}
+
 function PreferencesAppearance(): ReactNode {
   return (
     <PreferencesSection title={{ id: "settings-preferences-appearance" }}>
       <PreferencesScheme />
       <PreferencesTheme />
+      <PreferencesBanners />
     </PreferencesSection>
   );
 }

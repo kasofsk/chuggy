@@ -44,6 +44,9 @@ export interface SettingsCopy {
   readonly "settings-preferences-scheme-system": Record<never, never>;
   readonly "settings-preferences-scheme-light": Record<never, never>;
   readonly "settings-preferences-scheme-dark": Record<never, never>;
+  readonly "settings-preferences-banners": Record<never, never>;
+  readonly "settings-preferences-banners-shown": Record<never, never>;
+  readonly "settings-preferences-banners-hidden": Record<never, never>;
   readonly "settings-preferences-theme": Record<never, never>;
   readonly "settings-preferences-theme-covered": Record<never, never>;
   readonly "settings-preferences-theme-here": Record<never, never>;
