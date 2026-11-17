@@ -80,7 +80,7 @@ function modelChain(store: ModelStore): readonly string[] {
  * `held` decided from the last cut in the WHOLE store. A page that `draws`
  * nothing is a full one whose every batch was elided or whose every entry was
  * meta — it carries a cursor and no entries, which is the shape a pane must not
- * read as the end of the stream or as a lead that has recorded nothing, while
+ * read as the end of the stream or as a session that has recorded nothing, while
  * one that `stalls` hands back the cursor it was asked with and one that
  * `repeats` sends its own entries twice — the two ways a route can misbehave
  * that the walk's cursor rule and the fold's dedupe are each there for.
@@ -408,7 +408,7 @@ function modelChecked(
   ).toBeLessThanOrEqual(sessionTranscriptEntriesHeldMax);
   expect(
     drawn.holding.every((uuid) => uuids.includes(uuid)),
-    modelSaid(where, "the lead was marked as holding an entry not drawn"),
+    modelSaid(where, "the session was marked as holding an entry not drawn"),
   ).toBe(true);
   if (where.everHadEntries)
     expect(
@@ -594,7 +594,7 @@ test("a walk over a store that stands still stops at the mark it read against", 
  * the mark the stall was read against carries the walk on from exactly the
  * cursor it stopped at, so the batches between are reached rather than
  * abandoned — taking the mark as the cursor instead loses them for the life of
- * the pane, and draws them as a lead holding nothing.
+ * the pane, and draws them as a session holding nothing.
  */
 test("a store written past a stall carries the walk on from where it stopped", () => {
   const store = modelStore(5, modelEntriesPerBatch);

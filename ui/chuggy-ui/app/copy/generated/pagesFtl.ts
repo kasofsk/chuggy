@@ -6,7 +6,6 @@ export const pagesFtl = `## A console page as it is named where a message says i
 
 pages-tickets = { -ticket(case: "upper", form: "plural") }
 pages-inbox = { -inbox(case: "upper") }
-pages-lead = { -lead(case: "upper") }
 pages-catalog = { -catalog(case: "upper") }
 pages-repositories = { -repository(case: "upper", form: "plural") }
 pages-runners = { -runner(case: "upper", form: "plural") }

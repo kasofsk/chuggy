@@ -325,21 +325,15 @@ function ConversationBubble(props: {
 
 /** The line every ask nobody typed opens on, and the record of it a reader can
  * still choose to read — the same card the seeding's `Context` uses. */
-function ConversationObservation(props: {
-  readonly text: string | undefined;
-}): ReactNode {
+function ConversationObservation(props: { readonly text: string }): ReactNode {
   const text = useCopyText();
   const observation = text({ id: "conversation-observation" });
   return (
     <>
       <ConversationSystemLine words={observation} />
-      {props.text === undefined ? null : (
-        <ConversationCard label={observation}>
-          <pre className="max-h-(--height-clip) overflow-auto">
-            {props.text}
-          </pre>
-        </ConversationCard>
-      )}
+      <ConversationCard label={observation}>
+        <pre className="max-h-(--height-clip) overflow-auto">{props.text}</pre>
+      </ConversationCard>
     </>
   );
 }
@@ -360,8 +354,6 @@ function ConversationAskBody(props: {
       return <ConversationSystemLine words={threadTurnKindWord(ask.kind)} />;
     case "Observation":
       return <ConversationObservation text={ask.text} />;
-    case "Inquiry":
-      return <ConversationSystemLine words={{ id: "conversation-inquiry" }} />;
   }
 }
 

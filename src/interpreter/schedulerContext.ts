@@ -3,22 +3,19 @@
  * execution scheduler: bounded project-safe active-work and advisory capacity
  * context, and the authoritative hard execution-backlog guard over dispatch.
  *
- * THE SELECTOR IS THE CONTEXT'S INTENDED READER AND HAS NO ROUTE TO IT HERE,
- * which is why the names below say selector and why this says the rest. 006
- * makes the context selector-facing; in this tree the functions that answer it
- * are granted to the API and ticket-service roles alone, `NativeWeb` publishes
- * no method returning one, and nothing composes the read. What the selector
- * does learn is the guard's verdict, as the answer to its own `ProposeDispatch`.
+ * THE CONTEXT HAS NO READER HERE. The functions that answer it are granted to
+ * the API and ticket-service roles alone, `NativeWeb` publishes no method
+ * returning one, and nothing composes the read. What a dispatcher does learn
+ * is the guard's verdict, as the answer to its dispatch.
  *
  * THE CONTEXT IS ADVISORY AND THE GUARD IS AUTHORITATIVE, and they are
- * separate ports for that reason. issue #180
- * lets capacity and active-work observations guide the selector while forbidding
- * them to reserve capacity, alter ticket eligibility or become a hidden ticket
- * service dispatch policy — and it excludes them from the strict dispatch-view
- * digest, so a proposal must survive their changing underneath it. The guard is
- * the opposite: it is retryable infrastructure backpressure applied at ingress,
- * before an operation becomes durable, and it is neither `TicketGraph` state, ticket
- * eligibility, a commercial entitlement nor a selector reservation.
+ * separate ports for that reason. issue #180 forbids capacity and active-work
+ * observations to reserve capacity, alter ticket eligibility or become a
+ * hidden ticket service dispatch policy, and it excludes them from the strict
+ * dispatch-view digest. The guard is the opposite: it is retryable
+ * infrastructure backpressure applied at ingress, before an operation becomes
+ * durable, and it is neither `TicketGraph` state, ticket eligibility nor a
+ * commercial entitlement.
  *
  * NOTHING CROSSES THE PROJECT BOUNDARY EXCEPT A SAFE AGGREGATE. The active-work
  * numbers are the named project's own; the capacity numbers are the cluster
@@ -79,7 +76,7 @@ export interface ProjectActiveWork {
   readonly running: number;
 }
 
-/** The safe aggregate capacity facts a selector may weigh, and no cross-project detail. */
+/** The safe aggregate capacity facts, and no cross-project detail. */
 export interface AdvisoryCapacity {
   readonly clusterSlotsMax: number;
   readonly clusterActive: number;
@@ -88,7 +85,7 @@ export interface AdvisoryCapacity {
   readonly accountReservationDeficit: number;
 }
 
-/** One observation the selector may record as provenance for a choice or a wait. */
+/** One observation of a project's active work and capacity. */
 export interface SelectorExecutionContext {
   readonly activeWork: ProjectActiveWork;
   readonly capacity: AdvisoryCapacity;
@@ -103,8 +100,8 @@ export interface SelectorRuntimeExecutionContext extends SelectorExecutionContex
 }
 
 /**
- * The advisory read the selector observes through the authenticated ticket
- * service. It answers for one project and reads no other.
+ * The advisory read through the authenticated ticket service. It answers for
+ * one project and reads no other.
  */
 export interface ExecutionContextRead {
   context(partition: Partition): Promise<SelectorRuntimeExecutionContext>;

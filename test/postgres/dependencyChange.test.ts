@@ -3,8 +3,8 @@
  * read back by every reader of them and by the dispatch that follows.
  *
  * EACH READER IS ASKED AFTER THE UPDATE, NOT BEFORE IT ONLY. The journal is
- * replayed from genesis, the dispatch view is the one the lead and the selector
- * read, the ticket's read is the one the console and the change stream render,
+ * replayed from genesis, the dispatch view is the one the API serves, the
+ * ticket's read is the one the console and the change stream render,
  * and the change log is asked for what the update appended.
  */
 
@@ -205,7 +205,7 @@ async function waits(at: Project, ticket: number) {
   };
 }
 
-/** The dispatch view the lead and the selector read, as each candidate and the dependencies it pins. */
+/** The dispatch view the API serves, as each candidate and the dependencies it pins. */
 async function candidates(at: Project) {
   const page = await postgresDispatchViews(rig.harness.pool).read(
     at.partition,

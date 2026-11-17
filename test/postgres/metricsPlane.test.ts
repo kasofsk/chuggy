@@ -44,7 +44,7 @@ import {
 const issuer = "https://issuer.metrics.test";
 const alice = oidcPrincipal(issuer, "alice-id");
 const bob = oidcPrincipal(issuer, "bob-id");
-const selector = oidcPrincipal(issuer, "selector-service");
+const dave = oidcPrincipal(issuer, "dave-id");
 const foreign = oidcPrincipal("https://another.issuer.test", "carol-id");
 
 /** A catalog whose work runs an agent and whose plan runs commands, then a review. */
@@ -506,10 +506,14 @@ async function metricsRunningSeeded(
 async function metricsSessionsSeeded(
   query: (sql: string, values?: readonly unknown[]) => Promise<unknown>,
 ): Promise<void> {
-  await metricsSession(query, one, "session-lead", "Lead", selector, [
+  await metricsSession(query, one, "session-thread-one", "Thread", dave, [
     ["Answered", "model-large", 1_000, 20_000, 45_000],
     ["Failed", null, 0, 0, 0],
     ["Queued", null, 0, 0, 0],
+  ]);
+  await metricsSession(query, one, "session-retired", "Lead", dave, [
+    ["Answered", "model-large", 7_000, 70_000, 70_000],
+    ["Failed", null, 0, 0, 0],
   ]);
   await metricsSession(query, two, "session-thread", "Thread", alice, [
     ["Answered", "model-small", 300, 3_000, 10_000],
@@ -708,13 +712,13 @@ test("a running attempt's run is not counted until the attempt ends", async () =
 
 test("each session turn series began when its first turn ended, and the tickets gauge at no time", async () => {
   const samples = await metricsOpenMetricsPage();
-  const lead = `tenant="metrics-one",project="web",owner="selector-service",session="Lead"`;
+  const daves = `tenant="metrics-one",project="web",owner="dave-id",session="Thread"`;
   const thread = `tenant="metrics-two",project="api",owner="alice-id",session="Thread"`;
   const minuteSecs = (minutes: number) => String(1_767_312_000 + minutes * 60);
   for (const expected of [
-    `chuggy_session_turns_ended_created{${lead},state="Answered"} ${minuteSecs(1)}`,
-    `chuggy_session_turns_ended_created{${lead},state="Failed"} ${minuteSecs(2)}`,
-    `chuggy_session_turn_tokens_created{${lead},model="model-large"} ${minuteSecs(1)}`,
+    `chuggy_session_turns_ended_created{${daves},state="Answered"} ${minuteSecs(1)}`,
+    `chuggy_session_turns_ended_created{${daves},state="Failed"} ${minuteSecs(2)}`,
+    `chuggy_session_turn_tokens_created{${daves},model="model-large"} ${minuteSecs(1)}`,
     `chuggy_session_turn_cost_usd_created{${thread},model="model-small"} ${minuteSecs(1)}`,
     `chuggy_session_turn_duration_seconds_created{${thread}} ${minuteSecs(1)}`,
     `chuggy_tickets{tenant="metrics-one",project="web",repository="",owner="",phase="Work",escalation="NoEscalation"} 2`,
@@ -731,22 +735,32 @@ test("each session turn series began when its first turn ended, and the tickets 
 
 test("session turns are counted by session kind and state, and measured ones spend per model", async () => {
   const samples = metricsSamples((await metricsPage(plane)).body);
-  const lead = `tenant="metrics-one",project="web",owner="selector-service",session="Lead"`;
+  const daves = `tenant="metrics-one",project="web",owner="dave-id",session="Thread"`;
   const thread = `tenant="metrics-two",project="api",owner="alice-id",session="Thread"`;
   for (const expected of [
-    `chuggy_session_turns_ended_total{${lead},state="Answered"} 1`,
-    `chuggy_session_turns_ended_total{${lead},state="Failed"} 1`,
+    `chuggy_session_turns_ended_total{${daves},state="Answered"} 1`,
+    `chuggy_session_turns_ended_total{${daves},state="Failed"} 1`,
     `chuggy_session_turns_ended_total{${thread},state="Answered"} 1`,
-    `chuggy_session_turn_tokens_total{${lead},model="model-large"} 1000`,
-    `chuggy_session_turn_cost_usd_total{${lead},model="model-large"} 0.02`,
+    `chuggy_session_turn_tokens_total{${daves},model="model-large"} 1000`,
+    `chuggy_session_turn_cost_usd_total{${daves},model="model-large"} 0.02`,
     `chuggy_session_turn_cost_usd_total{${thread},model="model-small"} 0.003`,
-    `chuggy_session_turn_duration_seconds_bucket{${lead},le="30"} 0`,
-    `chuggy_session_turn_duration_seconds_bucket{${lead},le="60"} 1`,
-    `chuggy_session_turn_duration_seconds_count{${lead}} 1`,
+    `chuggy_session_turn_duration_seconds_bucket{${daves},le="30"} 0`,
+    `chuggy_session_turn_duration_seconds_bucket{${daves},le="60"} 1`,
+    `chuggy_session_turn_duration_seconds_count{${daves}} 1`,
     `chuggy_session_turn_duration_seconds_sum{${thread}} 10`,
   ])
     assert.ok(samples.includes(expected), expected);
   assert.ok(!samples.some((line) => line.includes('state="Queued"')));
+});
+
+test("the turns of a session of a retired kind are left out of every turn series", async () => {
+  const samples = metricsSamples((await metricsPage(plane)).body);
+  assert.ok(!samples.some((line) => line.includes('session="Lead"')));
+  assert.ok(
+    samples.includes(
+      `chuggy_session_turn_tokens_total{tenant="metrics-one",project="web",owner="dave-id",session="Thread",model="model-large"} 1000`,
+    ),
+  );
 });
 
 test("every member's own turns are counted under one project, beside each project's and named by no digest", async () => {

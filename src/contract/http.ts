@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 
-import { selectorAttentions, type TicketPhase } from "./rosters.ts";
+import type { TicketPhase } from "./rosters.ts";
 
 /** How many code points `text` holds, which is what zod's `.max()` reads on a
  * string past its bound — not `String.length`'s UTF-16 units. */
@@ -301,28 +301,6 @@ export const runModelCharsMax = 128;
 /** The longest settings text the wire carries, which is what its column holds. */
 export const selectorSettingsTextCharsMax = 65_536;
 
-/** The largest handoff note the wire carries, which is what its column holds. */
-export const selectorHandoffNoteBytesMax = 65_536;
-
-/**
- * The most tickets any decision may dispatch, whatever a project asks for: the
- * parse ceiling, refusing a document naming more before any of it is read. It
- * is stated here because a project writes its own `dispatchesPerDecision`
- * through the settings door, and a budget the wire accepted above this is a
- * control reporting a number the parser would refuse the lead for spending.
- */
-export const leadDispatchesMax = 8;
-
-/**
- * The context, in tokens, at which a lead's runtime compacts its conversation:
- * the installation's where it states none, and between the bounds below where
- * a project sets its own. The bounds are the ones Claude Code's own
- * `autoCompactWindow` setting takes.
- */
-export const leadAutoCompactWindowTokensDefault = 200_000;
-export const leadAutoCompactWindowTokensMin = 100_000;
-export const leadAutoCompactWindowTokensMax = 1_000_000;
-
 /**
  * The efforts a session may be told to run at: the agent SDK's `EffortLevel`,
  * in its own order. Codex's are `codexReasoningEfforts`, a different list.
@@ -353,26 +331,6 @@ export const sessionModelSchema = z
   .max(runModelCharsMax)
   .regex(sessionModelUnflagged)
   .regex(sessionModelUnspaced);
-
-/** How many tickets one decision may refuse, and how many it may lift. */
-export const leadRefusalsPerDecisionMax = 16;
-
-/** How many of one project's decisions a single history page answers with. */
-export const selectorHistoryLimitMax = 50;
-
-/**
- * The longest reason one agentic refusal carries. It is what makes a page of
- * standing refusals bounded, so it moves only together with the count below
- * it.
- */
-export const agenticRefusalReasonCharsMax = 1_024;
-
-/**
- * How many standing refusals one read answers with. Its product with the reason
- * bound is half of what a lead turn's observation may weigh, which is the share
- * the refusals may take of a document that also carries the candidates.
- */
-export const agenticRefusalsAnsweredMax = 32;
 
 /** The longest summary a result carries, which the manifest reader accepts and a later evaluation retains. */
 export const resultReportCharsMax = 8_192;
@@ -585,6 +543,18 @@ export const threadTurnRecordedCharsMax = Math.max(
   threadWakeCharsMax,
 );
 
+/**
+ * The longest input one turn a session pod is handed may carry. A thread is
+ * the only kind of session, so it is the widest turn a thread records.
+ */
+export const sessionTurnInputCharsMax = threadTurnRecordedCharsMax;
+
+/**
+ * What `agent_session.system_prompt` holds, as the baseline schema's check
+ * renders it, which is no narrower than any objectives a thread composes.
+ */
+export const agentSessionPromptCharsMax = 136_192;
+
 /** How many wake candidates one pass of the wake runtime reads and enqueues. */
 export const threadWakesPerPassMax = 64;
 
@@ -759,76 +729,6 @@ export const notificationPageLimitMax = 100;
 /** How many candidates one page of the dispatch view carries. */
 export const dispatchViewPageLimitMax = 100;
 
-/** How many of its own past decisions a fresh lead is seeded with. */
-export const leadSeedingDecisionsMax = 16;
-
-/**
- * What a lead's newest decision turn may spend before the lead is replaced by
- * a seeded successor, as the pod measures it. A subsidized lead's profile
- * names its own, no higher than this.
- */
-export const leadTurnTokensMax = 1_000_000;
-
-/**
- * How long after a project's last decision a raised attention, with nothing
- * else for the lead to judge, waits before the changes since are a turn.
- */
-export const leadAttentionRecheckMs = 15 * 60 * 1_000;
-
-/** How many decisions may fail on one dispatch view, the last of which consumes it unanswered. */
-export const selectorFailedDecisionsPerViewMax = 3;
-
-/** The most a lead's objectives weigh beyond the two texts a project sets. */
-export const leadObjectivesFixedCharsMax = 4_096;
-
-/**
- * The longest composed set of objectives one session row holds: what the
- * installation asks of a lead, what the project wants, and what its tools mean.
- * A ceiling below the two texts' sum would refuse a base prompt the settings
- * route had already accepted, on every pass, long after the write that caused it.
- */
-export const sessionSystemPromptCharsMax =
-  selectorSettingsTextCharsMax * 2 + leadObjectivesFixedCharsMax;
-
-/**
- * The most an inquiry's objectives weigh beyond the lead's own that it forked,
- * which is the sentence saying what being a fork means. No door opens an
- * inquiry now, but the rows already written hold one, and the column every
- * kind's objectives share is generated from the roster below.
- */
-export const inquiryObjectivesFixedCharsMax = 1_024;
-
-/**
- * Every kind of session's own ceiling on the objectives it is opened with,
- * which share one column: a kind added here widens what that column holds, and
- * the check must then be replaced where it was last written. An inquiry's is
- * the widest, because a fork carries the lead's own objectives and then says
- * what being a fork means.
- */
-export const sessionPromptCeilings = [
-  sessionSystemPromptCharsMax,
-  sessionSystemPromptCharsMax + inquiryObjectivesFixedCharsMax,
-] as const;
-
-/** What `agent_session.system_prompt` holds, whichever kind of session wrote it. */
-export const agentSessionPromptCharsMax = Math.max(...sessionPromptCeilings);
-
-/** The most digits a cursor the observation carries may be written with. */
-export const cursorDigitsCharsMax = 20;
-
-/**
- * What one refusal the observation shows weighs beyond its reason: the ticket,
- * the version it was made against, the instant, whether it is superseded, and
- * the keys naming each.
- */
-export const leadObservedRefusalEnvelopeCharsMax = 512;
-
-/** What one seeded decision summary weighs: what it dispatched, refused and left. */
-export const leadSeededDecisionCharsMax = 4_096;
-
-/** What one notification in the observation's window weighs: an ordinal, a kind, a resource. */
-export const leadObservedChangeCharsMax = 1_024;
-
 /** How many dependencies one authored draft names. */
 export const nativeHttpDraftDependenciesMax = 100;
 
@@ -844,17 +744,16 @@ export const configurationCanonicalCharsMax = 131_072;
 /** The longest text one prompt holds, which one invocation must carry whole. */
 export const configurationPromptTextCharsMax = 65_536;
 
-/**
- * What one observation carries that is neither a text a project set nor a page
- * of something: its version, its decision reference, its partition, its view
- * token and its operational context.
- */
-export const leadObservationFixedCharsMax = 16_384;
+/** The characters a sha-256 digest is written with, wherever one is carried. */
+export const artifactDigestChars = 64;
+
+/** The configuration name one candidate's version label names. */
+export const repositoryConfigurationNameCharsMax = 128;
 
 /**
- * What one JSON object weighs as `JSON.stringify` writes it, which is what
- * composes an observation: its braces, its quoted keys, its colons and its
- * commas. It is not `jsonb`'s renderer and emits none of its spaces.
+ * What one JSON object weighs as `JSON.stringify` writes it: its braces, its
+ * quoted keys, its colons and its commas. It is not `jsonb`'s renderer and
+ * emits none of its spaces.
  */
 function stringifiedObjectChars(
   members: readonly (readonly [string, number])[],
@@ -871,29 +770,11 @@ function stringifiedArrayChars(members: number, memberChars: number): number {
   return 2 + members * memberChars + Math.max(members - 1, 0);
 }
 
-/** What one refusal weighs where an observation shows it, its reason escaped. */
-const leadObservedRefusalChars =
-  leadObservedRefusalEnvelopeCharsMax +
-  jsonStringChars(agenticRefusalReasonCharsMax);
-
-/**
- * Every standing refusal one observation carries, as one array. It is the
- * standing among the candidates the same document shows, so one page of them is
- * one refusal per candidate at most.
- */
-const leadObservedRefusalsChars = stringifiedArrayChars(
-  dispatchViewPageLimitMax,
-  leadObservedRefusalChars,
-);
-
-/** The characters a sha-256 digest is written with, wherever one is carried. */
-export const artifactDigestChars = 64;
-
 /** The most digits any counter one candidate carries is written with. */
 const candidateCounterDigitsMax = 20;
 
 /** What one stage of a candidate's program weighs: its key and its full roster, every key at the counter's width. */
-export const leadObservedStageCharsMax = stringifiedObjectChars([
+const dispatchCandidateStageCharsMax = stringifiedObjectChars([
   ["key", candidateCounterDigitsMax],
   [
     "evaluators",
@@ -904,15 +785,12 @@ export const leadObservedStageCharsMax = stringifiedObjectChars([
   ],
 ]);
 
-/** The configuration name one candidate's version label names. */
-export const repositoryConfigurationNameCharsMax = 128;
-
 /**
- * What one dispatch candidate weighs in a lead turn: the counters, the two
- * pages authoring bounds, and the identities naming the revision it was pinned
- * under. The turn names that configuration rather than embedding its canonical.
+ * What one dispatch candidate weighs beside its configuration's canonical: the
+ * counters, the two pages authoring bounds, and the identities naming the
+ * revision it was pinned under.
  */
-export const leadObservedCandidateCharsMax = stringifiedObjectChars([
+export const dispatchCandidateCharsMax = stringifiedObjectChars([
   ["ticket", candidateCounterDigitsMax],
   ["ticketVersion", candidateCounterDigitsMax],
   [
@@ -924,7 +802,10 @@ export const leadObservedCandidateCharsMax = stringifiedObjectChars([
   ],
   [
     "program",
-    stringifiedArrayChars(nativeHttpDraftStagesMax, leadObservedStageCharsMax),
+    stringifiedArrayChars(
+      nativeHttpDraftStagesMax,
+      dispatchCandidateStageCharsMax,
+    ),
   ],
   [
     "configurationVersion",
@@ -935,59 +816,6 @@ export const leadObservedCandidateCharsMax = stringifiedObjectChars([
   ],
   ["configurationRevision", jsonStringChars(nativeHttpPathSegmentCharsMax)],
   ["configurationDigest", jsonStringChars(artifactDigestChars)],
-]);
-
-/**
- * The longest observation one lead turn may be given, which is what its mailbox
- * row must hold. Every part of it is bounded somewhere else, and a ceiling
- * below their sum is a document the runtime composes and the database refuses.
- */
-export const sessionTurnInputCharsMax = stringifiedObjectChars([
-  [
-    "instructions",
-    stringifiedObjectChars([
-      ["revision", jsonStringChars(nativeHttpPathSegmentCharsMax)],
-      ["content", jsonStringChars(sessionSystemPromptCharsMax)],
-    ]),
-  ],
-  ["handoffNote", selectorHandoffNoteBytesMax],
-  [
-    "attention",
-    Math.max(
-      ...selectorAttentions.map(
-        (attention) => JSON.stringify(attention).length,
-      ),
-    ),
-  ],
-  ["dispatchesMax", String(leadDispatchesMax).length],
-  ["refusals", leadObservedRefusalsChars],
-  [
-    "seeding",
-    stringifiedObjectChars([
-      ["handoffNote", selectorHandoffNoteBytesMax],
-      [
-        "decisions",
-        stringifiedArrayChars(
-          leadSeedingDecisionsMax,
-          leadSeededDecisionCharsMax,
-        ),
-      ],
-      ["refusals", leadObservedRefusalsChars],
-      ["notificationCursor", cursorDigitsCharsMax],
-    ]),
-  ],
-  [
-    "changes",
-    stringifiedArrayChars(notificationPageLimitMax, leadObservedChangeCharsMax),
-  ],
-  [
-    "candidates",
-    stringifiedArrayChars(
-      dispatchViewPageLimitMax,
-      leadObservedCandidateCharsMax,
-    ),
-  ],
-  ["observation", leadObservationFixedCharsMax],
 ]);
 
 /** The key a change row names, which the durable log is bounded by. */

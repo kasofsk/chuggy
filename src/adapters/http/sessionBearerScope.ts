@@ -1,8 +1,8 @@
 /**
  * Where a session bearer may act: in its own session's partition, under its
  * own session's capabilities, and nowhere else. Its principal may be
- * authorized far more widely than the session is — a lead's is the site's one
- * selector identity, a developer on every project with a lead — and whoever
+ * authorized far more widely than the session is — a member's reaches every
+ * project they belong to — and whoever
  * holds the bearer holds that principal, so the bearer is confined to the
  * partition its session row names and to what that row's capabilities admit.
  *

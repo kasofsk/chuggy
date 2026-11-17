@@ -8,10 +8,9 @@
  * list and never from the roster; a write the grant still refuses says so in
  * the section rather than retrying.
  *
- * EVERY SESSION WRITE NAMES THE LEAD'S ROUTE AND OFFERING as read. The session
- * placement's write still takes them, and one naming no offering keeps the one
- * the project's row stores, which may be one the deployment has withdrawn and
- * the read no longer answers.
+ * EVERY SESSION WRITE NAMES `lead` AND `leadOffering` as read. The session
+ * placement's write still takes them for older servers, and this one ignores
+ * both.
  *
  * WHAT THE READER DID NOT MOVE IS WRITTEN AS LAST READ. A route they may not
  * choose is drawn as it stands rather than moved to one they may, and a save
@@ -217,7 +216,7 @@ function PlacementLanded(props: { readonly landed: boolean }): ReactNode {
   ) : null;
 }
 
-/** The kinds the section draws and edits; the draft's lead is neither. */
+/** The kinds the section draws and edits; the draft's `lead` is neither. */
 type PlacementKind = keyof RunnersPlacementMoves;
 
 /** The label each kind is drawn under. */
@@ -288,7 +287,7 @@ async function placementHeld<T>(
 
 /**
  * The doors the section writes through: work and evaluation, then a thread,
- * with the lead as read, once the first has landed, each only where the draft
+ * with `lead` as read, once the first has landed, each only where the draft
  * moved it. The first is held as its newest read as soon as it lands, since it
  * stands whatever the second answers.
  */

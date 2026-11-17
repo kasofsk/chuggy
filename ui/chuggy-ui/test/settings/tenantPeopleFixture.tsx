@@ -96,7 +96,7 @@ export const linksListed: AccessInviteLinks = {
 };
 
 /** The reader, an admin with an account, and two subjects the plane says are
- * no account, the second holding hosted runs as a workspace's selector does. */
+ * no account, the second holding hosted runs as a service identity does. */
 export const peopleListed: AccessTenantPeople = {
   tenant: peopleTenant,
   projects: ["atlas-web", "beacon-api"],
@@ -124,7 +124,7 @@ export const peopleListed: AccessTenantPeople = {
       account: false,
     },
     {
-      subject: "s-selector",
+      subject: "s-service",
       mine: false,
       tenantRoles: [],
       hostedRuns: true,

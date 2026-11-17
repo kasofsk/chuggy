@@ -2,8 +2,8 @@
  * The ticket commands: what the actor is asked to decide, spelled once.
  *
  * A COMMAND IS THE DECIDER'S INPUT, NOT THE JOURNAL'S ROW. It names a choice
- * already made at the writer's serialization point — which ticket the selector
- * proposed, what a task came back with — and `decide` (`src/domain/deciders.ts`)
+ * already made at the writer's serialization point — which ticket a member
+ * dispatched, what a task came back with — and `decide` (`src/domain/deciders.ts`)
  * either turns it into the `TicketEvent` the journal keeps or refuses it by
  * name. Replay folds `evolve` over events and never consults a decider, a
  * policy or a refusal.

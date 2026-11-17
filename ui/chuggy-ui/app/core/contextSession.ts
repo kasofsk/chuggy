@@ -1,6 +1,5 @@
 /**
- * A session's Context panel — the lead's, a project thread's or a member's
- * own — from the readings its turns carried, what it was opened under, and the
+ * A session's Context panel — a project thread's or a member's own — from the readings its turns carried, what it was opened under, and the
  * transcript the page already walks.
  *
  * GROWTH IS READ PER TURN. A turn's last reading is the context it ended on;
@@ -69,13 +68,12 @@ export async function contextSessionPaged(
     turns.push(...answered.value.turns.filter((turn) => turn.ordinal > from));
     after = answered.value.nextAfter;
   }
-  const { systemPrompt, autoCompactWindow } = first.value;
+  const { systemPrompt } = first.value;
   return {
     outcome: "Ok",
     value: {
       turns: turns.slice(-contextSessionTurnsMax),
       ...(systemPrompt === undefined ? {} : { systemPrompt }),
-      ...(autoCompactWindow === undefined ? {} : { autoCompactWindow }),
     },
   };
 }
@@ -250,12 +248,7 @@ function contextSessionRead(
     latest === undefined ? undefined : contextTurnWindow(latest);
   const window =
     latest === undefined || latestWindow === undefined
-      ? contextWindowUnread(
-          "Turn",
-          undefined,
-          0,
-          read.context?.autoCompactWindow,
-        )
+      ? contextWindowUnread("Turn", undefined, 0, undefined)
       : contextWindowRead("Turn", latest.ordinal, latestWindow);
   const transcribed = contextCutsByReadings(read.cuts, turns);
   return {
@@ -289,7 +282,7 @@ function contextSessionTranscribed(
     "Turn",
     last?.ordinal,
     last?.tokens ?? 0,
-    read.context?.autoCompactWindow,
+    undefined,
   );
   return {
     window,
@@ -330,7 +323,7 @@ export function contextSessionInputsOf(
   return {
     seed,
     prompt: context?.systemPrompt,
-    window: window.window ?? context?.autoCompactWindow,
+    window: window.window,
   };
 }
 

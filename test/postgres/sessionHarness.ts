@@ -224,40 +224,12 @@ export function sessionRigProject(
 export interface SessionRigOpening {
   readonly kind?: SessionKind;
   readonly principal?: string;
-  readonly parent?: SessionId;
   readonly capabilities?: readonly SessionCapability[];
   readonly systemPrompt?: string;
   /** The model and effort the session runs on, written as a thread's doors write them. */
   readonly model?: string;
   readonly effort?: string;
   readonly credentialSlot?: string;
-  /** Whether it runs on its own system prompt, written to its column: no door the rig opens through takes it. */
-  readonly systemPromptOwn?: boolean;
-}
-
-/**
- * Opens a session forked from `parent` through `open_agent_session` itself,
- * since no port of the API opens a fork and the boundary still keeps one.
- */
-export async function sessionRigForkOpen(
-  rig: SessionRig,
-  opening: AgentSessionOpening & { readonly parent: SessionId },
-): Promise<string | undefined> {
-  const [row] = await rig.harness.query(
-    `SELECT open_agent_session($1,$2,$3,$4,$5,$6,$7::text[],$8,$9)::text AS opened`,
-    [
-      opening.partition.tenant,
-      opening.partition.project,
-      opening.session,
-      opening.kind,
-      opening.principal,
-      opening.parent,
-      [...opening.capabilities],
-      opening.credentialSlot,
-      opening.systemPrompt ?? null,
-    ],
-  );
-  return typeof row?.["opened"] === "string" ? row["opened"] : undefined;
 }
 
 /** Opens one session, refusing anything but the arm the case expected. */
@@ -279,10 +251,7 @@ export async function sessionRigSession(
       ? {}
       : { systemPrompt: opening.systemPrompt }),
   };
-  const opened =
-    opening.parent === undefined
-      ? await rig.sessions.open(opens)
-      : await sessionRigForkOpen(rig, { ...opens, parent: opening.parent });
+  const opened = await rig.sessions.open(opens);
   if (opened !== "Opened")
     throw new Error(`session rig: opening ${label} answered ${opened}`);
   if (opening.model !== undefined || opening.effort !== undefined)
@@ -290,10 +259,30 @@ export async function sessionRigSession(
       `UPDATE agent_session SET model=$2,effort=$3 WHERE session=$1`,
       [session, opening.model ?? null, opening.effort ?? null],
     );
-  if (opening.systemPromptOwn !== undefined)
-    await rig.harness.query(
-      `UPDATE agent_session SET system_prompt_own=$2 WHERE session=$1`,
-      [session, opening.systemPromptOwn],
+  return session;
+}
+
+/**
+ * Opens a session of a kind no session takes any more, through
+ * `open_agent_session` itself, since no port of this release opens one and an
+ * installation may still hold such rows: a door or a read that keeps threads
+ * alone is shown keeping it out.
+ */
+export async function sessionRigRetiredSession(
+  rig: SessionRig,
+  partition: Partition,
+  label: string,
+  principal = `principal-${label}`,
+): Promise<SessionId> {
+  const session = asSessionId(`session-${label}-${randomUUID()}`);
+  const [row] = await rig.harness.query(
+    `SELECT open_agent_session($1,$2,$3,'Lead',$4,NULL,
+              ARRAY['RepositoryRead','LeadDecision'],'claude-code',NULL)::text AS opened`,
+    [partition.tenant, partition.project, session, principal],
+  );
+  if (row?.["opened"] !== "Opened")
+    throw new Error(
+      `session rig: opening retired ${label} answered ${String(row?.["opened"])}`,
     );
   return session;
 }

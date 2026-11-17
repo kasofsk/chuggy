@@ -579,11 +579,11 @@ test("a mailbox page outside its bounds is refused rather than clamped", async (
 });
 
 /**
- * The page is drawn by the lead's own walk over the thread's session: the rows
+ * The page is drawn by the transcript walk over the thread's session: the rows
  * are asked for session-keyed, the bytes are read for that session, and the
  * default stream is the thread's own agent reference.
  */
-test("a transcript page is the lead's walk over the thread's own session", async () => {
+test("a transcript page is the transcript walk over the thread's own session", async () => {
   const { web, held } = boundary();
 
   const read = await web.threadTranscript(dana, partition, mine, {

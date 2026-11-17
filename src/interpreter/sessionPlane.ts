@@ -12,9 +12,7 @@
  * THE PLANE READS NO PAYLOAD. A turn's input and result are opaque text it
  * carries, and a store batch is bytes it counts newlines in. Deduplication on
  * the wire is the batch number and its digest and nothing narrower, because
- * anything narrower is a reading of the transcript — and a fork re-appends its
- * parent's entries under their own identities, so a reading of it would discard
- * most of every inquiry.
+ * anything narrower is a reading of the transcript.
  */
 
 import type {
@@ -59,21 +57,10 @@ export interface SessionPlaneIdentity {
   readonly agentReference?: string;
   /** What the session was told it is, absent for a session opened without objectives. */
   readonly systemPrompt?: string;
-  /** The context, in tokens, a lead's runtime compacts at, absent for every other session. */
-  readonly autoCompactWindow?: number;
-  /** The model the session runs on, absent where it takes the site's session model; an inquiry's is its lead's. */
+  /** The model the session runs on, absent where it takes the site's session model. */
   readonly model?: string;
-  /** The effort the session runs at, absent where the runtime chooses; an inquiry's is its lead's. */
+  /** The effort the session runs at, absent where the runtime chooses. */
   readonly effort?: SessionEffort;
-  /**
-   * The transcript this attempt forks from, which is the parent's runtime
-   * reference and is present only for an inquiry. It is the parent's and never
-   * the session's own, so an attempt that follows a lost one forks again from
-   * the lead rather than resuming a fork whose store holds nothing.
-   */
-  readonly forkFrom?: string;
-  /** Present where the session runs on its own system prompt with none of its project's settings; an inquiry's is its lead's. */
-  readonly systemPromptOwn?: true;
   /** Present only for a thread a chat host whose poll named a capability set holds, whose shell is handed its credential. */
   readonly shellCredentialHanded?: true;
   /** Whether the attempt may still act, which every route requires before anything else. */

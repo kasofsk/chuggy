@@ -116,9 +116,10 @@ async function sessionAwaitingPlacement(
 ): Promise<readonly AgentSession[]> {
   sessionRequirePositive(sessionsMax, "the sessions bound");
   const found = await pool.query<AgentSessionRow>(
-    sql`SELECT tenant,project,session,kind,principal,parent_session,agent_reference,
+    sql`SELECT tenant,project,session,kind,principal,agent_reference,
                capabilities,credential_slot,account,cluster,state
-          FROM sessions_awaiting_placement(${epoch},${sessionsMax})`,
+          FROM sessions_awaiting_placement(${epoch},${sessionsMax})
+         WHERE kind='Thread'`,
   );
   return found.rows.map(agentSessionRowOf);
 }

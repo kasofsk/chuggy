@@ -252,7 +252,6 @@ export function contextSessionBody(
         },
       ],
     })),
-    systemPrompt: "You are the project's lead.",
-    autoCompactWindow: 200_000,
+    systemPrompt: "You are the member's thread.",
   };
 }

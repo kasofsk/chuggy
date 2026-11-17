@@ -30,8 +30,6 @@ export interface SessionContextTurn {
 export interface SessionContextOpening {
   /** The text the session appends to the agent runtime's own system prompt. */
   readonly systemPrompt?: string;
-  /** The context, in tokens, at which the session's runtime compacts, which only a lead holds. */
-  readonly autoCompactWindow?: number;
 }
 
 /** Where a session's readings and what it was opened under are read from. */

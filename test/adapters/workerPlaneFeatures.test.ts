@@ -46,7 +46,6 @@ import {
   workerContractLiveStops,
   workerContractProjectReads,
   workerContractRunnerSessions,
-  workerContractSystemPromptsOwn,
   workerContractTargetRefs,
   workerContractThreadOffer,
   workerContractTicketDispatch,
@@ -409,22 +408,6 @@ const workerPlaneFeatureGates: readonly WorkerPlaneFeatureGate[] = [
       );
       assert.equal(asked.length, 1);
       return asked[0] !== undefined;
-    },
-  },
-  {
-    feature: "SystemPromptOwn",
-    range: workerContractSystemPromptsOwn,
-    given: async (headers) => {
-      const answered = await workerPlaneFeatureAsked(
-        workerPlaneFeatureSession({}, { systemPromptOwn: true }),
-        {
-          method: "GET",
-          url: "/v1/session",
-          headers: { ...sessionHeld, ...headers },
-        },
-      );
-      assert.ok([200, 409].includes(answered.statusCode));
-      return answered.statusCode === 200;
     },
   },
 ];

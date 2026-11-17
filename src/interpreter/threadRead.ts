@@ -390,8 +390,7 @@ export interface ThreadSessionMint {
 /**
  * What a thread's first turn is seeded from, the project's two texts asked for
  * as themselves rather than as the whole resolved record so the composition
- * answering it cannot hand a thread the lead's prompt or its limits by
- * accident. The drafts are filtered to the member the block is for, which is
+ * answering it cannot hand a thread settings it was not given by accident. The drafts are filtered to the member the block is for, which is
  * why an authority rather than a principal is what they take.
  */
 export interface ThreadSeedingRead {

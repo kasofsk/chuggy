@@ -639,7 +639,7 @@ export interface ConversationProps {
   /** Whether the exchanges are still being read, which the column says in
    * their place and the composer below it does not wait on. */
   readonly reading?: boolean;
-  /** Whether this mount is the pane's own scroller — lead, thread and chat,
+  /** Whether this mount is the pane's own scroller — thread and chat,
    * whose wrapper gave up its inset for it — rather than a panel that already
    * pads itself. */
   readonly pane?: boolean;

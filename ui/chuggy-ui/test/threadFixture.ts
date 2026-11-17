@@ -5,9 +5,8 @@
  * The listing carries the reader's own thread second, so a case can tell "mine
  * first" from "the order the server gave"; the mailbox carries a turn of every
  * state a page draws differently, so a case can tell an answer from a turn that
- * has not been answered. The store is one batch, because the walk over it is the
- * lead's own and is proved in `leadPage.test.tsx` against a store built to
- * exercise it.
+ * has not been answered. The store is one batch, because the walk over it is
+ * proved in `sessionTranscript.test.ts`.
  */
 
 import type {

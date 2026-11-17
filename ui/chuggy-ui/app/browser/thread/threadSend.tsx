@@ -122,11 +122,7 @@ export function ThreadRunnerNotice(props: {
 }): ReactNode {
   const { home } = props;
   return home.scope === "Project" ? (
-    <SessionRunnerNotice
-      partition={home.partition}
-      session="Thread"
-      short={props.short}
-    />
+    <SessionRunnerNotice partition={home.partition} short={props.short} />
   ) : (
     <ChatHostNotice tenant={home.tenant} short={props.short} />
   );

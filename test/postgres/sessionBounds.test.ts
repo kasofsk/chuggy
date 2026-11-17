@@ -8,18 +8,34 @@ import {
   agentSessionPromptCharsMax,
   projectChangeResourceCharsMax,
   sessionIdentityCharsMax,
-  sessionPromptCeilings,
   sessionTurnResultCharsMax,
 } from "../../src/contract/http.ts";
+import { sessionCapabilitiesRetired } from "../../src/contract/rosters.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import { allSessionTurnFailures } from "../../src/interpreter/agentSession.ts";
 import { allSessionTurnInputKinds } from "../../src/interpreter/agentSession.ts";
 import { allSessionAttemptEvidences } from "../../src/interpreter/sessionScheduler.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
+import { threadSystemPromptCharsMax } from "../../src/interpreter/thread.ts";
 import { migratedDatabase } from "./migrationHarness.ts";
 
-test("the objectives column holds the widest ceiling any kind of session composes", async () => {
-  await migratedDatabase("lead_tool_prompt_bound", async (subject) => {
+/** An installed roster as the members the runtime names, in order, and the rest. */
+function sessionBoundsSplit(
+  installed: readonly (string | undefined)[],
+  runtime: readonly string[],
+): [(string | undefined)[], (string | undefined)[]] {
+  return [
+    installed.filter(
+      (member) => member !== undefined && runtime.includes(member),
+    ),
+    installed.filter(
+      (member) => member === undefined || !runtime.includes(member),
+    ),
+  ];
+}
+
+test("the objectives column holds the widest objectives a thread composes", async () => {
+  await migratedDatabase("session_prompt_bound", async (subject) => {
     const held = (
       await subject.query<{ definition: string }>(
         `SELECT pg_get_constraintdef(c.oid) AS definition
@@ -28,20 +44,19 @@ test("the objectives column holds the widest ceiling any kind of session compose
             AND c.conname = 'agent_session_prompt_is_bounded'`,
       )
     ).rows[0]?.definition;
-    for (const ceiling of sessionPromptCeilings)
-      assert.ok(
-        ceiling <= agentSessionPromptCharsMax,
-        "the column holds every kind's own ceiling",
-      );
+    assert.ok(
+      threadSystemPromptCharsMax <= agentSessionPromptCharsMax,
+      "the column holds a thread's own ceiling",
+    );
     assert.ok(
       held?.includes(String(agentSessionPromptCharsMax)),
-      "a kind with a wider ceiling widens this, and its migration replaces the check",
+      "the runtime names the ceiling the installed check holds",
     );
   });
 });
 
 test("the installed session constraints match the runtime", async () => {
-  await migratedDatabase("lead_composition", async (subject) => {
+  await migratedDatabase("session_composition", async (subject) => {
     const definition = async (relation: string, constraint: string) =>
       (
         await subject.query<{ definition: string }>(
@@ -69,9 +84,12 @@ test("the installed session constraints match the runtime", async () => {
       "the installed roster matches the runtime",
     );
     assert.deepEqual(
-      await members("session_turn", "session_turn_kind_is_known"),
-      [...allSessionTurnInputKinds],
-      "the installed roster matches the runtime",
+      sessionBoundsSplit(
+        await members("session_turn", "session_turn_kind_is_known"),
+        allSessionTurnInputKinds,
+      ),
+      [[...allSessionTurnInputKinds], ["Observation", "Inquiry"]],
+      "the installed roster is the runtime's and the retired kinds rows still hold",
     );
     assert.deepEqual(
       await members("session_attempt", "session_attempt_evidence_is_known"),
@@ -79,9 +97,12 @@ test("the installed session constraints match the runtime", async () => {
       "the installed roster matches the runtime",
     );
     assert.deepEqual(
-      await members("agent_session", "agent_session_capabilities_are_known"),
-      [...allSessionCapabilities],
-      "the installed roster matches the runtime",
+      sessionBoundsSplit(
+        await members("agent_session", "agent_session_capabilities_are_known"),
+        allSessionCapabilities,
+      ),
+      [[...allSessionCapabilities], [...sessionCapabilitiesRetired]],
+      "the installed roster is the runtime's and the retired members rows still hold",
     );
     for (const [relation, constraint, bound] of [
       [

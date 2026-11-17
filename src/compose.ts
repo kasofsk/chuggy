@@ -343,9 +343,9 @@ export function composeExecutionPlacement(
 }
 
 /**
- * Wires a project's own selector settings to API-role credentials and the
- * project membership that bounds them. The installation defaults stay the
- * selector control role's, so a project administrator overrides for their own
+ * Wires a project's own settings to API-role credentials and the project
+ * membership that bounds them. The installation defaults stay
+ * `chuggy_selector_control`'s, so a project administrator overrides for their own
  * project and cannot move what every other project inherits.
  */
 export function composeSelectorProjectSettings(
@@ -849,7 +849,7 @@ function finalizerServiceRuntime(
 /**
  * Wires the authenticated web application to API-role PostgreSQL ports.
  *
- * THE INQUIRY STORE AND THE SESSION ROUTES ARE COMPOSED HERE AND ARE NOT
+ * THE SESSION ROUTES ARE COMPOSED HERE AND ARE NOT
  * PARAMETERS, which the thread's bundle is: that carries an artifact volume
  * and a credential slot a deployment must choose, these are the
  * API pool and nothing else, and a bundle with nothing to choose is a line no

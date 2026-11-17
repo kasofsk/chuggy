@@ -27,7 +27,6 @@ const pages: readonly ConsolePage[] = [
   { page: "TicketNew", from: 12 },
   { page: "TicketNew", draft: 7 },
   { page: "Inbox" },
-  { page: "Lead" },
   { page: "Catalog" },
   { page: "Repositories" },
   { page: "Repository", repository: "github.com/acme/atlas" },

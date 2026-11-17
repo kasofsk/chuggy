@@ -178,7 +178,7 @@ export function postgresExecutionBacklogGuard(
   };
 }
 
-/** The advisory execution context a selector may weigh, over an ingress-role pool. */
+/** The advisory execution context, over an ingress-role pool. */
 export function postgresExecutionContextRead(
   pool: pg.Pool,
 ): ExecutionContextRead {

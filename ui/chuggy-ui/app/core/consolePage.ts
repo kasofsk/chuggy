@@ -160,9 +160,7 @@ const consolePageRoutes: ReadonlyMap<
   ),
 ]);
 
-/** Where under the project one page is, with the query it is opened with. A
- * Lead page the contract still names has no address of its own, and opens the
- * tickets list. */
+/** Where under the project one page is, with the query it is opened with. */
 function consolePagePathOf(page: ConsolePage): string {
   switch (page.page) {
     case "Tickets":
@@ -171,8 +169,6 @@ function consolePagePathOf(page: ConsolePage): string {
     case "Repositories":
     case "Epics":
       return consolePagePlainPaths[page.page satisfies ConsolePagePlain];
-    case "Lead":
-      return consolePagePlainPaths.Tickets;
     case "Runners":
       return consolePageRunnersPath;
     case "Epic":
@@ -266,19 +262,12 @@ const consolePageSectionWords: Readonly<
 
 const consolePageListWords: Readonly<
   Record<
-    | "Tickets"
-    | "Inbox"
-    | "Lead"
-    | "Catalog"
-    | "Repositories"
-    | "Runners"
-    | "Epics",
+    "Tickets" | "Inbox" | "Catalog" | "Repositories" | "Runners" | "Epics",
     Copy
   >
 > = {
   Tickets: { id: "pages-tickets" },
   Inbox: { id: "pages-inbox" },
-  Lead: { id: "pages-lead" },
   Catalog: { id: "pages-catalog" },
   Repositories: { id: "pages-repositories" },
   Runners: { id: "pages-runners" },
@@ -296,7 +285,6 @@ export function consolePageLabel(page: ConsolePage): Copy {
   switch (page.page) {
     case "Tickets":
     case "Inbox":
-    case "Lead":
     case "Catalog":
     case "Repositories":
     case "Runners":

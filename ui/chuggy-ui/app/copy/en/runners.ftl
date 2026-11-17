@@ -122,12 +122,12 @@ runners-personal-usage = Usage
 
 runners-chat-host-title = { -chat-host(case: "upper") }
 # spells -run: to run is a verb here
-runners-chat-host-about = The machine of yours your { -thread(form: "plural") } and { -inquiry(form: "plural") } run on.
+runners-chat-host-about = The machine of yours your { -thread(form: "plural") } run on.
 runners-chat-host-register = Register { -chat-host }
 runners-chat-host-empty = No { -chat-host } yet
 runners-chat-host-remove-named = Remove { -chat-host } { $short }
 runners-chat-host-remove-question = Remove { -chat-host } { $short }?
-runners-chat-host-removal = { -chat-host(case: "upper") } { $short } stops taking your { -thread(form: "plural") } and { -inquiry(form: "plural") } in this { -workspace }, and the sessions it is running now end.
+runners-chat-host-removal = { -chat-host(case: "upper") } { $short } stops taking your { -thread(form: "plural") } in this { -workspace }, and the sessions it is running now end.
 runners-chat-host-claude-code-about = Paste into { -claude-code } on the machine that will be your { -chat-host }
 runners-chat-host-replaces = Replaces { -chat-host } { $short } · Ends its sessions
 runners-chat-host-threads = { -thread(case: "upper", form: "plural") } here may: { $capabilities }

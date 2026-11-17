@@ -13,7 +13,6 @@ import { expect, test } from "vitest";
 
 import {
   sessionChangeSessionNamed,
-  sessionChangeKindNamed,
   sessionStreamBatches,
   sessionStreamListed,
   sessionStreamReplaced,
@@ -65,7 +64,7 @@ function lines(pane: SessionTranscriptPane): readonly SessionTranscriptEntry[] {
   return sessionTranscriptDrawn(pane).entries;
 }
 
-/** The subset the lead is working from, which is a filter and not a fetch. */
+/** The subset the session is working from, which is a filter and not a fetch. */
 function holdingLines(
   pane: SessionTranscriptPane,
 ): readonly SessionTranscriptEntry[] {
@@ -223,12 +222,12 @@ test("each entry lands once, oldest first, over as many pages as it took", () =>
 });
 
 /**
- * The claim the Holding panel makes: the lead is working from the chain that
+ * The claim the Holding panel makes: the session is working from the chain that
  * survived the last compaction. Entries below the boundary are read and are not
- * held, and a pane that could not tell the two apart would say the lead still
+ * held, and a pane that could not tell the two apart would say the session still
  * has a conversation it does not.
  */
-test("what the lead holds is the chain from the seam on and nothing above it", () => {
+test("what the session holds is the chain from the seam on and nothing above it", () => {
   const held = walkedTwice();
   expect(holdingLines(held).map((line) => line.uuid)).toEqual([
     transcriptBoundaryUuid,
@@ -243,7 +242,7 @@ test("what the lead holds is the chain from the seam on and nothing above it", (
  * the last cut in the whole stream, so a page below that cut answers none of
  * its entries and one above it answers all of them; no page can correct or
  * contradict another, and a pane that let a later page replace an earlier
- * page's answer would drop entries the lead is holding.
+ * page's answer would drop entries the session is holding.
  */
 test("each page answers for its own entries and none overrides another", () => {
   const held = paged(walkedTwice(), sessionTranscriptPage(2, 3), 3);
@@ -257,7 +256,7 @@ test("each page answers for its own entries and none overrides another", () => {
  * A PAGE WHOLLY BELOW THE CUT ANSWERS NONE OF ITS ENTRIES, and an empty answer
  * is an answer. A pane falling back to the page's own entries there — the rule
  * that was right when only one page could answer — would mark the whole of a
- * lead's dropped context as the context it is working from.
+ * session's dropped context as the context it is working from.
  */
 test("a page that holds none of its entries is drawn holding none of them", () => {
   const below = sessionTranscriptPage(0, 3);
@@ -443,7 +442,7 @@ test("a reset starts the gathered cuts over", () => {
  * ONE PAGE CAN CARRY ONE ENTRY TWICE. The route builds a page's entries by
  * walking a chain, and a walk that met one entry by two paths would send it
  * twice; a fold that seeded its dedupe from what it already held and not from
- * what it was adding would keep both and draw the lead saying it twice.
+ * what it was adding would keep both and draw the session saying it twice.
  */
 test("a page carrying one entry twice lands it once", () => {
   const doubled = paged(
@@ -463,7 +462,7 @@ test("a page carrying one entry twice lands it once", () => {
 /**
  * A PAGE CAN REACH THE FOLD TWICE WITHOUT A RESET. A page whose cursor did not
  * move is asked for again as soon as the store is written above it, so the same
- * entries arrive a second time; a fold that appended them would draw the lead
+ * entries arrive a second time; a fold that appended them would draw the session
  * saying everything twice.
  */
 test("a page delivered twice lands once, in the place it first took", () => {
@@ -567,8 +566,8 @@ test("a first compaction invalidates as surely as a later one", () => {
 
 /**
  * THE RESET IS A STEP IN THE WALK AND NOT A STATE A READER IS SHOWN: it holds
- * nothing, so a pane drawn from it says the lead has recorded nothing and holds
- * nothing, which are the two claims these panels reserve for a lead that really
+ * nothing, so a pane drawn from it says the session has recorded nothing and holds
+ * nothing, which are the two claims these panels reserve for a session that really
  * has. What is drawn keeps the chain it had and says only what the reset makes
  * true.
  */
@@ -693,7 +692,7 @@ test("a store holding a stream that is neither the one named nor under it wrote 
 });
 
 /**
- * The pane's own ceiling. A lead's store has no retention, so a pane that kept
+ * The pane's own ceiling. A session's store has no retention, so a pane that kept
  * every entry it ever read would grow without a bound; the oldest leave and the
  * count of them is what stops the log reading as the whole of it.
  */
@@ -731,8 +730,7 @@ test("the oldest entries leave at the cap, and the pane counts them going", () =
  * A CHANGE FRAME IS A POINTER AND NEVER A BODY. The `Session` resource is the
  * JSON of the session and the turn or batch that moved, so what a reader takes
  * from it is which session to re-read — and a page watching one session must
- * not re-read on another's, because a project holds a session per thread beside
- * its lead.
+ * not re-read on another's, because a project holds a session per thread.
  */
 test("a Session frame names the session that moved, and only that", () => {
   expect(
@@ -756,9 +754,9 @@ test("a Session frame names the session that moved, and only that", () => {
   ).toBe(threadMineSession);
   expect(
     sessionChangeSessionNamed(
-      JSON.stringify({ session: "lead-other", kind: "Turn", turn: "turn-1" }),
+      JSON.stringify({ session: "other-thread", kind: "Turn", turn: "turn-1" }),
     ),
-  ).toBe("lead-other");
+  ).toBe("other-thread");
 });
 
 /**
@@ -784,62 +782,28 @@ test("a resource that is not a session pointer is ignored, not thrown on", () =>
 });
 
 /**
- * The kind is the SESSION's own, so a panel can watch one kind of session in a
- * project holding several. A frame the lead's panel re-reads on is not one this
- * answers `Inquiry` for, and vice versa: they are two questions about one
- * resource and neither is the other's filter.
+ * A resource that is neither a session pointer nor JSON at all is nothing to
+ * the accessor — and a panel that threw on it would end the stream for every
+ * other kind.
  */
-test("a Session frame names what kind of session moved", () => {
-  expect(
-    sessionChangeKindNamed(
-      JSON.stringify({
-        session: threadMineSession,
-        kind: "Lead",
-        turn: "turn-7",
-      }),
-    ),
-  ).toBe("Lead");
-  expect(
-    sessionChangeKindNamed(
-      JSON.stringify({ session: "inq-1", kind: "Inquiry", turn: "turn-1" }),
-    ),
-  ).toBe("Inquiry");
-  expect(
-    sessionChangeKindNamed(
-      JSON.stringify({
-        session: "inq-1",
-        kind: "Inquiry",
-        stream: transcriptStream,
-        batch: 3,
-      }),
-    ),
-  ).toBe("Inquiry");
-});
-
-/**
- * BOTH ACCESSORS IGNORE THE SAME FRAMES. They share one parse, so a resource
- * neither is a session pointer nor JSON at all is nothing to either — and a
- * panel that threw on it would end the stream for every other kind.
- */
-test("a resource neither accessor can read is ignored by both", () => {
+test("a resource the accessor cannot read is ignored", () => {
   for (const resource of [
     threadMineSession,
     "",
     "{",
     JSON.stringify({ session: threadMineSession }),
-    JSON.stringify({ session: threadMineSession, kind: "Lead", turn: 7 }),
+    JSON.stringify({ session: threadMineSession, kind: "Thread", turn: 7 }),
     JSON.stringify({ ticket: 42, version: 2 }),
     JSON.stringify([threadMineSession]),
   ]) {
     expect(sessionChangeSessionNamed(resource), resource).toBeUndefined();
-    expect(sessionChangeKindNamed(resource), resource).toBeUndefined();
   }
 });
 
 /**
  * `held` ABSENT IS UNDECIDED AND NEVER EMPTY, the route omitting it only where
  * it could not reach the stream's end to decide it. A pane reading absence as
- * an empty set would tell a reader the lead has forgotten everything at the
+ * an empty set would tell a reader the session has forgotten everything at the
  * moment the server said it could not tell.
  */
 test("a page that could not decide what is held is not a page holding nothing", () => {
@@ -942,7 +906,7 @@ test("a failure is drawn until the next page answers", () => {
  * A RE-WALK WHOSE OWN PAGES DRAW NOTHING STILL OWES THE READER A FOLD. A full
  * page can carry no entries at all — every batch on it elided, or every entry
  * meta — so a pane that released what it kept on the first fold of the re-walk
- * would replace a whole chain with an empty one and say the lead has recorded
+ * would replace a whole chain with an empty one and say the session has recorded
  * nothing.
  */
 test("an entry-less re-walk keeps the fold the reader had", () => {

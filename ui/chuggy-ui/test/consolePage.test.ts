@@ -29,7 +29,6 @@ const partitionRouteId = "/$tenant/$project";
 const consolePagesEvery: readonly ConsolePage[] = [
   { page: "Tickets" },
   { page: "Inbox" },
-  { page: "Lead" },
   { page: "Catalog" },
   { page: "Repositories" },
   { page: "Runners" },
@@ -158,23 +157,6 @@ test("a Runners page a thread still names moves the console to the old runners a
   expect(consolePageOf(matched(runnersRedirectRouteId))).toBeUndefined();
 });
 
-test("a Lead page a thread still names moves the console to the tickets list, and no address reads as Lead", () => {
-  const { href, leaf } = consolePageLeaf({ page: "Lead" });
-  expect(href).toBe(
-    consolePageHref({ tenant: "acme", project: "at las" }, { page: "Tickets" }),
-  );
-  expect(
-    leaf === undefined
-      ? undefined
-      : consolePageOf({
-          routeId: leaf.routeId,
-          params: leaf.params,
-          search: {},
-        }),
-  ).toEqual({ page: "Tickets" });
-  expect(consolePageOf(matched("/$tenant/$project/lead"))).toBeUndefined();
-});
-
 test("an address the contract would refuse, or a route it does not know, is no page", () => {
   expect(
     consolePageOf(
@@ -229,7 +211,6 @@ test("a page is named in the console's own words for it", () => {
   ).toEqual([
     "Tickets",
     "Inbox",
-    "Lead",
     "Catalog",
     "Repositories",
     "Runners",
@@ -279,7 +260,7 @@ const runnersRedirectRouteId = `${partitionRouteId}/runners`;
 
 test("every page's address is matched by the console's router as that page", () => {
   for (const page of consolePagesEvery.filter(
-    (named) => named.page !== "Runners" && named.page !== "Lead",
+    (named) => named.page !== "Runners",
   )) {
     const { href, search, leaf } = consolePageLeaf(page);
     expect(leaf?.params, href).toMatchObject({

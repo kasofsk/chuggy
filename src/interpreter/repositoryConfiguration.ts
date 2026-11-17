@@ -5,7 +5,7 @@
  * binding rather than against whichever the project bound first.
  *
  * A VERSION SEQUENCE STAYS PER PROJECT AND NAME. A name is the project's handle
- * for a configuration — a lead selects by it — so two repositories declaring one
+ * for a configuration — a ticket selects by it — so two repositories declaring one
  * name are two sources of one named thing, their numbers interleave into its
  * chronology, and the provenance row is what tells the sources apart.
  *

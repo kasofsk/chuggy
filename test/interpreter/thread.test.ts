@@ -923,7 +923,7 @@ test("both settings texts at the bound the route accepts still compose", () => {
   assert.ok(input.length <= threadTurnInputCharsMax);
   assert.ok(
     input.length <= sessionTurnInputCharsMax,
-    "the widest first turn is a row the mailbox column will not take",
+    "the widest first turn is a turn the session plane will not hand a pod",
   );
 });
 

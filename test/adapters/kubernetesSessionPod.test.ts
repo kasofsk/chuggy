@@ -125,7 +125,7 @@ const placement: SessionPlacement = {
   session: asSessionId("session-one"),
   attempt: asSessionAttemptId("session-attempt-one"),
   generation: 3,
-  kind: "Lead",
+  kind: "Thread",
   capabilities: ["RepositoryRead", "RunCommands"],
   credentialSlot: "claude-code",
   agentReference: "1a2b3c",
@@ -218,7 +218,7 @@ test("a session is handed its fence, what it may do and where its mailbox is, an
     tenant: "tenant",
     project: "project",
     session: "session-one",
-    kind: "Lead",
+    kind: "Thread",
     attempt: "session-attempt-one",
     generation: 3,
     capabilities: ["RepositoryRead", "RunCommands"],
@@ -627,7 +627,7 @@ test("a site whose mounts name no kind builds the pod it built before mounts cou
   });
   assert.equal(
     createHash("sha256").update(JSON.stringify(pod)).digest("hex"),
-    "2a5a5158a6150c601ace22486f31aecb6c730d22e99f438c26972cf62e8102d9",
+    "dde1dd9ece0d0f97b07d3304cb1d06d381a7f3c42527e57fb1d9a39f63939a43",
   );
 });
 

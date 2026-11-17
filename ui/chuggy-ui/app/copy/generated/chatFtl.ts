@@ -36,7 +36,6 @@ chat-capability-project-read = Read the { -project }
 chat-capability-draft-author = Write { -draft(form: "plural") }
 chat-capability-draft-originate = Start new { -draft(form: "plural") }
 chat-capability-ticket-dispatch = { -dispatch(case: "upper") } { -ticket(form: "plural") }
-chat-capability-lead-decision = Decide as the { -lead }
 chat-capability-member-read = Read what is yours
 chat-capability-thread-offer = Offer you a page or an action
 chat-capabilities-none = nothing
@@ -74,8 +73,6 @@ chat-withheld = { -workspace(case: "upper", form: "a") } { -role-admin } has tur
 
 chat-turn-message = Message
 chat-turn-wake = Wake
-chat-turn-observation = Observation
-chat-turn-inquiry = { -inquiry(case: "upper") }
 chat-turn-offer-reply = Offer reply
 
 ## What a wake turn is drawn as: why the chat was woken, and the ticket.

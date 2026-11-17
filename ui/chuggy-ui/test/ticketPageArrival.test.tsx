@@ -98,7 +98,7 @@ const resumedRow = {
   ...ticketInstants,
 };
 
-/** Ticket 21 waiting on a paused selector, where only a press dispatches it. */
+/** Ticket 21 waiting in Pending, where only a press dispatches it. */
 const pendingRead = { ...parkedRead, phase: "Pending", escalation: undefined };
 
 /** Ticket 21 dispatched, as the project's row carries it. */

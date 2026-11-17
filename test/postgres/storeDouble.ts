@@ -6,8 +6,7 @@
  * durable row read, the walk and the route agree; the object store behind the
  * rows is a filesystem in a deployment and its own suites are elsewhere, so a
  * map keyed the way the port addresses an object is what a batch resolves
- * through here. A lead's transcript and a thread's read one store through one
- * walk, so they read it through one double as well.
+ * through here.
  *
  * THE KEY CARRIES THE SESSION, because the store reads are keyed by session and
  * a double that dropped it would answer any session's bytes for one address —

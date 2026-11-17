@@ -1008,7 +1008,7 @@ async function operationalStatusAndList(project: SchedulerProject) {
   };
 }
 
-test("a project's status and its lead's context count a launching execution whose run started as running, as its list does", async () => {
+test("a project's status and its execution context count a launching execution whose run started as running, as its list does", async () => {
   const { project, started, unstarted } = await operationalOneStarted(
     "operational-status-started",
   );

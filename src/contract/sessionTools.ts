@@ -18,13 +18,10 @@
  * answering one they do not 404. A person's own agent's tool presents no
  * session bearer: it reaches the API as that person, authorized as the
  * console's own call is, and an agent-account tool's route is that person's
- * own, at no tenant and no project, which every session bearer is refused. A
- * decision tool writes nothing at all: it accumulates in the pod and becomes
- * the turn's answer, which the selector runtime still reads and acts on under
- * its own fence, so the runtime remains the single writer of a lead's dispatch
- * and of the refusal ledger. An offer tool writes nothing and reaches no route
- * either: its call stands in the thread's transcript like any other, and what
- * it offers is done by the member, as the member, or not at all.
+ * own, at no tenant and no project, which every session bearer is refused. An
+ * offer tool writes nothing and reaches no route: its call stands in the
+ * thread's transcript like any other, and what it offers is done by the
+ * member, as the member, or not at all.
  *
  * A ROSTER IS A CONTROL AS FAR AS THE API HOLDS IT, WHICH IS BY ROUTE AND
  * METHOD. The agent runtime enforces a roster inside the pod, and the pod is
@@ -33,16 +30,13 @@
  * routes some tool of its session row's capabilities calls, so a call to a
  * route none of them calls is refused. A route two capabilities' tools share
  * admits either one's whole body: `release_draft` posts an operation, so a
- * session holding `DraftAuthor` without `DraftOriginate` or `TicketDispatch`,
- * a lead among them, may still post any operation, `ManualDispatch`,
+ * session holding `DraftAuthor` without `DraftOriginate` or `TicketDispatch`
+ * may still post any operation, `ManualDispatch`,
  * `RevokeTicket` and `UpdateTicket` among them, and a draft no parent bears,
  * though no tool its roster holds does. The runtime's own tools reach no
- * route, and what a roster grants them is the pod's alone. Beside it stand the
- * membership, enforced by the database when it authorizes a project access,
- * and the decision controls the selector applies to a finished turn — and the
- * last is post-hoc: the tool has already run and its command has already
- * landed, and what the selector refuses is the decision that used it. A control described as stronger than it is, is worse
- * than none.
+ * route, and what a roster grants them is the pod's alone. Beside it stands
+ * the membership, enforced by the database when it authorizes a project
+ * access. A control described as stronger than it is, is worse than none.
  *
  * DERIVED WORK IS A FACT ABOUT THE MAP. `DraftAuthor` carries no bare create: a
  * dependent is filed against a parent that already exists, and a roster holding
@@ -57,25 +51,21 @@
 import { actionReportLinkCharsMax } from "./actionReport.ts";
 import {
   configurationCanonicalCharsMax,
+  dispatchCandidateCharsMax,
   jsonStringChars,
   jsonTextBytes,
   landingQueueHolderSinceDigits,
   landingQueueTicketsAnsweredMax,
-  leadObservedCandidateCharsMax,
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
-  nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
   proposalForgeFailureCharsMax,
   proposalForgeMessageCharsMax,
   proposalMergeStateCharsMax,
   proposalQueueWordCharsMax,
-  runModelCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptPageBatchesMax,
-  selectorSettingsTextCharsMax,
-  sessionEfforts,
   textUtf8Bytes,
   ticketLandingConflictBytesMax,
   ticketLandingRefCharsMax,
@@ -86,23 +76,17 @@ import {
 } from "./http.ts";
 import { briefBranchCharsMax, briefRepositoryCharsMax } from "./brief.ts";
 import { epicContentBytesMax, epicTicketsMax } from "./epics.ts";
-import {
-  epicStatusRoster,
-  type SelectorProjectSettingsResponse,
-} from "./responses.ts";
+import { epicStatusRoster } from "./responses.ts";
 import { phaseRoster, type ToolCapability } from "./rosters.ts";
 
 /** The public API's own values a tool builds its request with or bounds an argument by. */
 export {
-  leadRefusalsPerDecisionMax,
   nativeHttpBasePath,
   nativeHttpMediaType,
   nativeHttpPageItemsMax,
   sessionStorePageBatchesMax,
   threadTurnsAnsweredMax,
 } from "./http.ts";
-/** Bounds no tool here reads any more, kept because the pinned core imports them by name; they go in T20. */
-export { agenticRefusalsAnsweredMax, selectorHistoryLimitMax } from "./http.ts";
 export { briefLineCharsMax } from "./brief.ts";
 
 /** The request shapes a drafting tool publishes as its arguments' schemas, and the bounds they hold an argument to. */
@@ -165,7 +149,7 @@ export {
   epicTitleCharsMax,
 } from "./epics.ts";
 
-/** What the lead-settings and placement tools publish as their arguments' shapes, and the bound a settings text is held to. */
+/** What the settings and placement tools publish as their arguments' shapes, and the bound a settings text is held to. */
 export { selectorProjectOverridesSchema } from "./requests.ts";
 export { selectorSettingsTextCharsMax } from "./http.ts";
 export { leadOfferings, placementRoutes } from "./rosters.ts";
@@ -332,7 +316,7 @@ const chuggyToolCharBytesMax = 4;
  * at its heaviest, and an ordinary answer's bound for the page around it.
  */
 export const chuggyToolDispatchViewResponseBytesMax =
-  leadObservedCandidateCharsMax +
+  dispatchCandidateCharsMax +
   jsonStringChars(0) +
   configurationCanonicalCharsMax * chuggyToolCharBytesMax +
   nativeHttpBodyBytesMax;
@@ -375,53 +359,6 @@ const chuggyToolEpicViewFieldsBytesMax = textUtf8Bytes(
 export const chuggyToolEpicViewResponseBytesMax =
   epicContentBytesMax +
   chuggyToolEpicViewFieldsBytesMax +
-  nativeHttpBodyBytesMax;
-
-/** The longest member of a roster, which is the most it writes into a body. */
-function chuggyToolLeadSettingsLongest<Member extends string>(
-  roster: readonly Member[],
-): Member {
-  return roster.reduce((longest, member) =>
-    member.length > longest.length ? member : longest,
-  );
-}
-
-/**
- * The lead settings' body with every field present and every string empty, and
- * each other field at its heaviest: every count the largest a count may be and
- * every word its roster's longest.
- */
-const chuggyToolLeadSettingsFieldsBytesMax = textUtf8Bytes(
-  JSON.stringify({
-    partition: { tenant: "", project: "" },
-    revision: Number.MAX_SAFE_INTEGER,
-    overrides: {
-      northStar: "",
-      threadStandingRules: "",
-      threadModel: "",
-      threadEffort: chuggyToolLeadSettingsLongest(sessionEfforts),
-    },
-    effective: { northStar: "", threadStandingRules: "" },
-  } satisfies SelectorProjectSettingsResponse),
-);
-
-/** What a string of at most `chars` characters adds to that body over the empty one, every character escaped. */
-function chuggyToolLeadSettingsStringBytesMax(chars: number): number {
-  return jsonStringChars(chars) - jsonStringChars(0);
-}
-
-/**
- * What the lead settings' route may answer, which a write answers on success
- * and inside its conflict alike: the body's fields at their heaviest; the two
- * texts of its overrides and the two of its effective settings, each at the
- * longest a settings text may be; its partition's two identities; the one
- * model it names; and an ordinary answer's bound for the answer around them.
- */
-export const chuggyToolLeadSettingsResponseBytesMax =
-  chuggyToolLeadSettingsFieldsBytesMax +
-  4 * chuggyToolLeadSettingsStringBytesMax(selectorSettingsTextCharsMax) +
-  2 * chuggyToolLeadSettingsStringBytesMax(nativeHttpPathSegmentCharsMax) +
-  chuggyToolLeadSettingsStringBytesMax(runModelCharsMax) +
   nativeHttpBodyBytesMax;
 
 /**
@@ -506,8 +443,7 @@ const chuggyToolRoster = {
     "release_draft",
   ],
   /**
-   * What a thread does on its member's own word, which no lead roster carries:
-   * it files the draft its owner asked for, against no parent, because the
+   * What a thread does on its member's own word: it files the draft its owner asked for, against no parent, because the
    * member asking is where the work came from; it revokes the ticket its owner
    * said to end; it takes the ticket its owner said to take onto their own
    * runner and account, and returns the one they said to give back to its
@@ -515,8 +451,7 @@ const chuggyToolRoster = {
    * owner said to apply. None is in `DraftAuthor`, for the reason `DraftAuthor`
    * exists, and `revoke_ticket`, `take_ticket`, `return_ticket`,
    * `update_ticket` and the epic writes, which the API authorizes as the
-   * member's `Mutate`, are here because a thread holds this capability and a
-   * lead does not.
+   * member's `Mutate`, are here rather than there for the same reason.
    */
   DraftOriginate: [
     "create_draft",
@@ -535,18 +470,9 @@ const chuggyToolRoster = {
    * session holding this may dispatch exactly what its owner may.
    */
   TicketDispatch: ["dispatch_ticket"],
-  LeadDecision: [
-    "dispatch",
-    "refuse",
-    "lift",
-    "set_attention",
-    "set_handoff_note",
-    "set_planning_intent",
-  ],
   MemberRead: [...chuggyToolMemberReads, "read_docs"],
   /**
-   * What a thread offers its member rather than doing, which no lead roster
-   * carries: `navigate` names a console page, `offer_release` one draft at the
+   * What a thread offers its member rather than doing: `navigate` names a console page, `offer_release` one draft at the
    * exact authoring version to release, and `offer_revoke` one ticket at its
    * version. None writes or reaches a route, so the direct tools in
    * `DraftOriginate` and `TicketDispatch` stay what a thread does on its
@@ -554,11 +480,11 @@ const chuggyToolRoster = {
    */
   ThreadOffer: ["navigate", "offer_release", "offer_revoke"],
   /**
-   * What a person's own agent does to a project's lead settings and to where
-   * its lead runs, which the API authorizes as it does the console's own read
-   * or write of them. Only that person's agent holds it and no session can,
-   * because a lead must not rewrite the settings it runs under and a thread
-   * must not make an administrator's write on the strength of a chat message.
+   * What a person's own agent does to a project's thread settings and to
+   * where its threads run, which the API authorizes as it does the console's
+   * own read or write of them. Only that person's agent holds it and no
+   * session can, because a thread must not rewrite the settings it runs under
+   * or make an administrator's write on the strength of a chat message.
    */
   ProjectSettings: [
     "read_lead_settings",
@@ -591,8 +517,8 @@ const chuggyToolRoster = {
 
 /**
  * Every tool the chuggy server offers, in the order a roster is read in: what a
- * session may see of the project, what it may author, what it may decide, what
- * a member's own session reads of them, what a thread may offer its member,
+ * session may see of the project, what it may author, what a member's own
+ * session reads of them, what a thread may offer its member,
  * and what a person's own agent may do to a project's settings, to their own
  * agent accounts and to a ticket's pull request, each named once.
  */
@@ -601,7 +527,6 @@ export const allChuggyTools = [
   ...chuggyToolRoster.DraftAuthor,
   ...chuggyToolRoster.DraftOriginate,
   ...chuggyToolRoster.TicketDispatch,
-  ...chuggyToolRoster.LeadDecision,
   ...chuggyToolMemberReads,
   ...chuggyToolRoster.ThreadOffer,
   ...chuggyToolRoster.ProjectSettings,
@@ -644,7 +569,6 @@ export const builtInToolCapabilities: Readonly<
   DraftAuthor: [],
   DraftOriginate: [],
   TicketDispatch: [],
-  LeadDecision: [],
   MemberRead: [],
   ThreadOffer: [],
   ProjectSettings: [],

@@ -276,7 +276,7 @@ const metricsPlaneTurnSchema = z
     tenant: z.string(),
     project: z.string(),
     owner: z.string(),
-    kind: z.enum(["Lead", "Thread", "Inquiry"]),
+    kind: z.literal("Thread"),
     state: z.string(),
     model: z.string().nullable(),
     buckets: metricsPlaneBucketsSchema(
@@ -813,7 +813,7 @@ async function metricsPlaneSessionQuery(
         session AS (
           SELECT tenant,project,session,kind,principal,
                  CASE WHEN scope='Member' THEN ${metricsPlaneMemberProject}::text ELSE project END AS label
-            FROM agent_session),
+            FROM agent_session WHERE kind='Thread'),
         turn AS (
           SELECT s.tenant,s.label AS project,coalesce(o.owner,'') AS owner,s.kind,u.state,u.model,
                  CASE WHEN u.model IS NOT NULL THEN (SELECT count(*) FROM unnest(b.secs) AS le

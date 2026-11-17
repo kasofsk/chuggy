@@ -784,9 +784,9 @@ function accessTenantGrantChange(
 }
 
 /**
- * Giving and taking a person's hosted runs. The selector's principal is a
- * person here like any other: taking its hosted runs stops hosted dispatch in
- * the tenant, and holding `GrantHostedExecution` is what decides that.
+ * Giving and taking a person's hosted runs: taking them stops that person's
+ * hosted dispatch in the tenant, and holding `GrantHostedExecution` is what
+ * decides that.
  */
 function accessHostedRunsChanges(
   ports: AccessPlanePorts,

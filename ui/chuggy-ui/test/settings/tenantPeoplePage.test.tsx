@@ -82,7 +82,7 @@ test("a person is a row: an account by its email and login, the reader marked, a
   expect(heldIn(bob)).toStrictEqual(["Member"]);
   expect(within(bob).queryByText("All projects")).toBeNull();
   expect(projectsIn(bob)).toStrictEqual([]);
-  expect(heldIn(personRow("s-selector"))).toStrictEqual(["Hosted runs"]);
+  expect(heldIn(personRow("s-service"))).toStrictEqual(["Hosted runs"]);
   expect(screen.queryByText("Granted")).toBeNull();
   expect(screen.queryByText("Not granted")).toBeNull();
   styleless();
@@ -95,7 +95,7 @@ test("the people are counted over their table, and a subject that is no account 
   expect(
     screen.getByRole("heading", { name: "Other identities" }),
   ).toBeTruthy();
-  expect(namedIn("Other identities")).toStrictEqual(["s-bob", "s-selector"]);
+  expect(namedIn("Other identities")).toStrictEqual(["s-bob", "s-service"]);
   expect(screen.queryByText("No account")).toBeNull();
 });
 
@@ -112,7 +112,7 @@ test("an answer with no account field draws its subjects among the people", asyn
   await drawPeople({
     listing: () => answer({ ...peopleListed, people: bare }),
   });
-  expect(namedIn("People")).toStrictEqual(["s-ada", "s-bob", "s-selector"]);
+  expect(namedIn("People")).toStrictEqual(["s-ada", "s-bob", "s-service"]);
   expect(screen.getByRole("heading", { name: "3 people" })).toBeTruthy();
   expect(screen.queryByRole("heading", { name: "Other identities" })).toBe(
     null,
@@ -549,7 +549,7 @@ test("abilities absent beside a list that was answered leave the tables without 
 test("a reader who may give hosted runs is offered them on every person, checked where held", async () => {
   await drawPeople();
   const drawn: string[] = [];
-  for (const name of ["ada@example.com", "s-bob", "s-selector"]) {
+  for (const name of ["ada@example.com", "s-bob", "s-service"]) {
     drawn.push(...boxesIn(await editorOf(name), "Workspace").slice(-1));
     await press("Done");
   }
@@ -602,17 +602,17 @@ test("taking personal runners from a subject with no account asks nothing and se
       answer({
         ...peopleListed,
         people: peopleListed.people.map((person) =>
-          person.subject === "s-selector"
+          person.subject === "s-service"
             ? { ...person, personalRunners: true }
             : person,
         ),
       }),
   });
-  await boxPressed(await editorOf("s-selector"), "Personal runners");
+  await boxPressed(await editorOf("s-service"), "Personal runners");
   expect(changesSent(drawn)).toStrictEqual([
     {
       method: "DELETE",
-      url: personalRunnersPath("s-selector"),
+      url: personalRunnersPath("s-service"),
       body: undefined,
     },
   ]);
@@ -695,7 +695,7 @@ test("taking hosted runs from a person with an account sends the removal at once
 
 test("taking hosted runs from a subject with no account asks first, and Remove sends the removal", async () => {
   const drawn = await drawPeople();
-  const editor = await editorOf("s-selector");
+  const editor = await editorOf("s-service");
   await boxPressed(editor, "Hosted runs");
   const asked = within(editor).getByRole("group", {
     name: "Remove hosted runs",
@@ -707,13 +707,13 @@ test("taking hosted runs from a subject with no account asks first, and Remove s
   expect(within(editor).getAllByRole("checkbox").every(boxStill)).toBe(true);
   await press("Remove");
   expect(changesSent(drawn)).toStrictEqual([
-    { method: "DELETE", url: hostedRunsPath("s-selector"), body: undefined },
+    { method: "DELETE", url: hostedRunsPath("s-service"), body: undefined },
   ]);
 });
 
 test("cancelling the question on a subject with no account sends nothing and leaves hosted runs checked", async () => {
   const drawn = await drawPeople();
-  const editor = await editorOf("s-selector");
+  const editor = await editorOf("s-service");
   await boxPressed(editor, "Hosted runs");
   await press("Cancel");
   expect(changesSent(drawn)).toStrictEqual([]);
@@ -760,7 +760,7 @@ test("a reader who may not give hosted runs, and one whose abilities are not rea
     expect(screen.queryByRole("button", { name: /^Edit/u })).toBeNull();
     expect(heldIn(personRow("ada@example.com"))).toContain("Hosted runs");
     expect(heldIn(personRow("s-bob"))).not.toContain("Hosted runs");
-    expect(heldIn(personRow("s-selector"))).toStrictEqual(["Hosted runs"]);
+    expect(heldIn(personRow("s-service"))).toStrictEqual(["Hosted runs"]);
     cleanup();
   }
 });

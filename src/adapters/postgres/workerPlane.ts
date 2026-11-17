@@ -275,7 +275,7 @@ interface SessionTaskRow {
   readonly session: string | null;
   readonly attempt: string | null;
   readonly generation: string | null;
-  readonly kind: string | null;
+  readonly kind: string;
   readonly credential_slot: string | null;
   readonly live: boolean | null;
   readonly invocation: unknown;
@@ -305,7 +305,8 @@ async function sessionTask(
   const found = await pool.query<SessionTaskRow>(
     sql`SELECT tenant,project,session,attempt,generation::text AS generation,
                kind,credential_slot,live,invocation,launch
-          FROM read_session_task(${workerSecretDigest(secret)})`,
+          FROM read_session_task(${workerSecretDigest(secret)})
+         WHERE kind = 'Thread'`,
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;

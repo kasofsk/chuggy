@@ -6,7 +6,7 @@
  * a check, a trigger and a filter are each a claim about what the server
  * refuses, and the only way to hold one is to attempt the thing it refuses as
  * the identity that would attempt it. So the six thread doors are driven
- * through the API's role, the three wake doors through the selector's, the
+ * through the API's role, the three wake doors through the scheduler's, the
  * roster door through the identity that owns the boundary, and every other role
  * is asked for each and refused.
  *
@@ -105,7 +105,10 @@ import {
   postgresHarnessConfiguration,
   postgresHarnessDenial,
 } from "./harness.ts";
-import { sessionRigProvision, sessionRigSession } from "./sessionHarness.ts";
+import {
+  sessionRigProvision,
+  sessionRigRetiredSession,
+} from "./sessionHarness.ts";
 import {
   threadRigKey,
   threadRigLimit,
@@ -445,9 +448,11 @@ test("a thread closes through the API's door, its waiting turns abandoned, and s
  */
 test("the close door closes a thread and nothing else the project holds", async () => {
   const partition = await project("close-kind");
-  const lead = await sessionRigSession(rig.sessions, partition, "close-kind", {
-    kind: "Lead",
-  });
+  const lead = await sessionRigRetiredSession(
+    rig.sessions,
+    partition,
+    "close-kind",
+  );
 
   assert.deepEqual(await rig.threads.close({ partition, session: lead }), {
     closed: "NoThread",
@@ -479,9 +484,11 @@ test("the close door closes a thread and nothing else the project holds", async 
  */
 test("the close door waits on no row that is not a thread's", async () => {
   const partition = await project("close-lock");
-  const lead = await sessionRigSession(rig.sessions, partition, "close-lock", {
-    kind: "Lead",
-  });
+  const lead = await sessionRigRetiredSession(
+    rig.sessions,
+    partition,
+    "close-lock",
+  );
   const held = await rig.sessions.harness.begin();
   const api = await rig.apiPool.connect();
   try {
@@ -772,9 +779,7 @@ test("hiding a thread toggles and is idempotent on the side it is asked for", as
 /** Neither door reaches a lead, and neither reaches a session nobody opened. */
 test("neither view door admits a session that is not this project's thread", async () => {
   const partition = await project("view-no-thread");
-  const lead = await sessionRigSession(rig.sessions, partition, "view", {
-    kind: "Lead",
-  });
+  const lead = await sessionRigRetiredSession(rig.sessions, partition, "view");
 
   assert.deepEqual(
     await rig.threads.rename({ partition, session: lead, title: "x" }),
@@ -994,7 +999,7 @@ test("the two view doors are the API's alone", async () => {
 /**
  * The thread's close door is held beside the door it PERFORMs: a grant on the
  * narrow door that had widened into one on `close_agent_session` would let the
- * API end the project's lead, which is the thing the narrowing is for.
+ * API end a session that is no thread, which is the thing the narrowing is for.
  */
 test("the close door is the API's, and the door it performs is no runtime role's", async () => {
   const partition = await project("close-grants");
@@ -1778,9 +1783,11 @@ test("the standing read admits a thread and refuses every other session", async 
   const partition = await project("kindfilter");
   const member = threadRigMember(rig, partition, "kindfilter");
   const thread = await threadRigThread(rig, partition, member);
-  const lead = await sessionRigSession(rig.sessions, partition, "kindfilter", {
-    kind: "Lead",
-  });
+  const lead = await sessionRigRetiredSession(
+    rig.sessions,
+    partition,
+    "kindfilter",
+  );
   const elsewhere = await project("kindfilter-other");
 
   assert.equal(
@@ -1815,9 +1822,7 @@ test("the store reads answer the session they were asked about and no sibling", 
   const partition = await project("store");
   const member = threadRigMember(rig, partition, "store");
   const thread = await threadRigThread(rig, partition, member);
-  const lead = await sessionRigSession(rig.sessions, partition, "store", {
-    kind: "Lead",
-  });
+  const lead = await sessionRigRetiredSession(rig.sessions, partition, "store");
   for (const [session, stream] of [
     [thread.session, "thread-stream"],
     [lead, "lead-stream"],
@@ -1894,10 +1899,12 @@ async function wakeFixture(label: string): Promise<{
   const after = await changeLogHead();
   const member = threadRigMember(rig, partition, label);
   const thread = await threadRigThread(rig, partition, member);
-  await sessionRigSession(rig.sessions, partition, `wake-${label}`, {
-    kind: "Lead",
-    principal: member.principal,
-  });
+  await sessionRigRetiredSession(
+    rig.sessions,
+    partition,
+    `wake-${label}`,
+    member.principal,
+  );
   const revision = await threadConfiguration(partition);
 
   const filed = () => threadDraft(partition, revision, member, thread.session);

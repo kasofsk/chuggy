@@ -1,31 +1,19 @@
 /**
  * The documents a worker and the plane hand each other: the version each is
  * written at, the ways the plane refuses a manifest and its artifacts, and the
- * shapes of the two a worker writes. The rosters and the shapes restate the
+ * shape of the one a worker writes. The rosters and the shape restate the
  * interpreter, which stays the authority: `test/contract/rosters.test.ts` pins
- * the rosters, and `test/contract/workerDocuments.test.ts` holds each parser,
+ * the rosters, and `test/contract/workerDocuments.test.ts` holds the parser,
  * at the version a worker writes, to accepting nothing its shape refuses.
  */
 
 import { z } from "zod";
 
-import {
-  agenticRefusalReasonCharsMax,
-  artifactDigestChars,
-  leadDispatchesMax,
-  leadRefusalsPerDecisionMax,
-  resultReportCharsMax,
-} from "./http.ts";
-import { resultVerdicts, selectorAttentions } from "./rosters.ts";
+import { artifactDigestChars, resultReportCharsMax } from "./http.ts";
+import { resultVerdicts } from "./rosters.ts";
 
-/** The bounds and the roster a worker writes these documents against, and the handoff note a decision carries beside them. */
-export {
-  agenticRefusalReasonCharsMax,
-  leadDispatchesMax,
-  resultReportCharsMax,
-  selectorHandoffNoteBytesMax,
-} from "./http.ts";
-export { selectorAttentions } from "./rosters.ts";
+/** The bound a worker writes these documents against. */
+export { resultReportCharsMax } from "./http.ts";
 
 /** The result manifest schema version workers author now. */
 export const resultManifestSchemaVersion = 3;
@@ -41,9 +29,6 @@ export type ResultManifestSchemaVersion =
 
 /** The longest manifest text the plane parses, checked before parsing rather than after. */
 export const resultManifestTextCharsMax = 131_072;
-
-/** The one lead turn document version the plane writes and the only one it accepts. */
-export const leadTurnDocumentVersion = 1;
 
 /** Every way the plane refuses one result manifest, restating the interpreter's roster. */
 export const resultManifestRejections = [
@@ -133,42 +118,4 @@ export const resultManifestDocumentSchema = z.strictObject({
   diagnostics: z
     .array(resultManifestArtifactSchema)
     .max(manifestDiagnosticsMax),
-});
-
-const leadDecisionTicketSchema = z.number().int().min(1);
-const leadDecisionTicketVersionSchema = z.number().int().min(0);
-
-/**
- * The decision a lead turn answers with. Its choice lists may be left out, and
- * a key the reader does not name is ignored rather than refused, because the
- * reader does both.
- */
-export const leadDecisionDocumentSchema = z.object({
-  version: z.literal(leadTurnDocumentVersion),
-  dispatches: z
-    .array(
-      z.object({
-        ticket: leadDecisionTicketSchema,
-        expectedTicketVersion: leadDecisionTicketVersionSchema,
-      }),
-    )
-    .max(leadDispatchesMax)
-    .optional(),
-  refusals: z
-    .array(
-      z.object({
-        ticket: leadDecisionTicketSchema,
-        ticketVersion: leadDecisionTicketVersionSchema,
-        reason: z.string().min(1).max(agenticRefusalReasonCharsMax),
-      }),
-    )
-    .max(leadRefusalsPerDecisionMax)
-    .optional(),
-  lifts: z
-    .array(z.object({ ticket: leadDecisionTicketSchema }))
-    .max(leadRefusalsPerDecisionMax)
-    .optional(),
-  attention: z.enum(selectorAttentions),
-  handoffNote: z.unknown(),
-  planningIntent: z.unknown().optional(),
 });

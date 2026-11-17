@@ -52,7 +52,6 @@ import {
   type ThreadTicketWakes,
 } from "../../contract/threadWake.ts";
 import {
-  contractVersionRefusalStatus,
   workerContractImplements,
   type WorkerContractPeer,
 } from "../../contract/workerContract.ts";
@@ -165,9 +164,7 @@ import {
   type ManifestRejection,
 } from "../../interpreter/resultManifest.ts";
 import {
-  contractVersionRefusal,
   workerContractAccepted,
-  workerContractSystemPromptsOwn,
   type WorkerArtifactReservationPort,
   type WorkerArtifactStored,
   type WorkerArtifactUploadPort,
@@ -1518,31 +1515,16 @@ function sessionTurnKindTold(
     : kind;
 }
 
-/**
- * A session's facts, or a refusal where the session runs on its own system
- * prompt and the pod does not implement `SystemPromptOwn`: a pod that dropped
- * the field would load its project's settings, so it is never answered the
- * facts without it.
- */
+/** A session's facts, with its thread's ticket wake settings. */
 function sessionFactsRoute(
   register: SessionRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  register("facts", async (request, reply, { identity, secret }) => {
-    if (
-      identity.systemPromptOwn === true &&
-      !workerContractImplements("SystemPromptOwn", workerContractPeer(request))
-    )
-      return reply
-        .code(contractVersionRefusalStatus)
-        .send(contractVersionRefusal(workerContractSystemPromptsOwn));
-    const ticketWakes =
-      identity.kind === "Thread"
-        ? await sessions.ticketWakes.readTicketWakes({
-            secret,
-            generation: identity.generation,
-          })
-        : undefined;
+  register("facts", async (request, _reply, { identity, secret }) => {
+    const ticketWakes = await sessions.ticketWakes.readTicketWakes({
+      secret,
+      generation: identity.generation,
+    });
     return {
       tenant: identity.partition.tenant,
       project: identity.partition.project,
@@ -1556,15 +1538,8 @@ function sessionFactsRoute(
       ...(identity.systemPrompt === undefined
         ? {}
         : { systemPrompt: identity.systemPrompt }),
-      ...(identity.autoCompactWindow === undefined
-        ? {}
-        : { autoCompactWindow: identity.autoCompactWindow }),
       ...(identity.model === undefined ? {} : { model: identity.model }),
       ...(identity.effort === undefined ? {} : { effort: identity.effort }),
-      ...(identity.forkFrom === undefined
-        ? {}
-        : { forkFrom: identity.forkFrom }),
-      ...(identity.systemPromptOwn === true ? { systemPromptOwn: true } : {}),
       ...(identity.shellCredentialHanded === true
         ? { shellCredentialHanded: true }
         : {}),
@@ -2036,7 +2011,7 @@ function sessionStoreReadRoute(
  * stream holds.
  *
  * AN ANSWER PAST THE BOUND IS REFUSED AND NEVER CUT, there being no cursor to
- * page by: a cut list is a resume that materialises some of a lead's subagent
+ * page by: a cut list is a resume that materialises some of a session's subagent
  * history and reports success, which is the silent wrongness this store exists
  * to prevent.
  */

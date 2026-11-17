@@ -38,7 +38,6 @@ import {
 } from "../../src/adapters/http/workerPlaneServer.ts";
 import {
   agentSessionPromptCharsMax,
-  leadAutoCompactWindowTokensMax,
   nativeHttpPageItemsMax,
   runConfigurationBytesMax,
   runModelCharsMax,
@@ -149,7 +148,6 @@ import {
   workerContractAccepted,
   workerContractEvaluatedTrees,
   workerContractProjectReads,
-  workerContractSystemPromptsOwn,
   type WorkerContractRange,
   type SessionTaskRead,
   type WorkerArtifactReserved,
@@ -900,7 +898,7 @@ const liveSession: SessionPlaneIdentity = {
   session: asSessionId("session"),
   attempt: asSessionAttemptId("attempt"),
   generation: 1,
-  kind: "Lead",
+  kind: "Thread",
   capabilities: ["RepositoryRead", "RunCommands"],
   credentialSlot: "claude-code",
 };
@@ -1592,10 +1590,6 @@ const sessionPlaneCases: Readonly<
     ...sessionPlaneStrangers,
     { name: "a session none of whose optional facts exist yet" },
     {
-      name: "a lead told the window it compacts at",
-      service: sessionAuthority({ ...liveSession, autoCompactWindow: 300_000 }),
-    },
-    {
       name: "a session told the model and effort it runs on",
       service: sessionAuthority({
         ...liveSession,
@@ -1604,37 +1598,24 @@ const sessionPlaneCases: Readonly<
       }),
     },
     {
-      name: "a session bound, told what it is, and forking",
+      name: "a session bound and told what it is",
       service: sessionAuthority({
         ...liveSession,
-        kind: "Inquiry",
         agentReference: "reference",
         systemPrompt: "prompt",
-        forkFrom: "parent",
       }),
     },
     {
-      name: "a lead on its own system prompt, holding every fact at its widest",
-      release: workerContractRelease,
-      sent: workerContractSystemPromptsOwn,
+      name: "a session holding every fact at its widest",
       service: sessionAuthority({
         ...liveSession,
         capabilities: allSessionCapabilities,
         credentialSlot: "s".repeat(sessionIdentityCharsMax),
         agentReference: "r".repeat(sessionIdentityCharsMax),
         systemPrompt: "p".repeat(agentSessionPromptCharsMax),
-        autoCompactWindow: leadAutoCompactWindowTokensMax,
         model: "m".repeat(runModelCharsMax),
         effort: "xhigh",
-        forkFrom: "f".repeat(sessionIdentityCharsMax),
-        systemPromptOwn: true,
       }),
-    },
-    {
-      name: "a lead on its own system prompt, asked for by a pod of the release before",
-      release: "1.62.0",
-      status: 409,
-      service: sessionAuthority({ ...liveSession, systemPromptOwn: true }),
     },
     {
       name: "a thread on a chat host naming its threads' capabilities, whose shell is handed its credential",

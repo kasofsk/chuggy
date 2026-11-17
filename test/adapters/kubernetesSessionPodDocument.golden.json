@@ -15,7 +15,7 @@
         "chuggy.internal/session": "golden-session",
         "chuggy.internal/attempt": "golden-attempt",
         "chuggy.internal/generation": "4",
-        "chuggy.internal/kind": "Lead",
+        "chuggy.internal/kind": "Thread",
         "chuggy.internal/profile": "standard",
         "chuggy.internal/runtime-version": "1"
       }
@@ -39,7 +39,7 @@
           "env": [
             {
               "name": "CHUG_SESSION_TASK",
-              "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"session\":\"golden-session\",\"kind\":\"Lead\",\"attempt\":\"golden-attempt\",\"generation\":4,\"capabilities\":[\"RepositoryRead\",\"RunCommands\"],\"credentialSlot\":\"claude-code\",\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"claude-code\",\"forge\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/session-capability/bearer\"},\"api\":{\"url\":\"https://api.invalid\"},\"bounds\":{\"mailboxPollMs\":1000,\"idleMs\":300000,\"resultDrainMs\":2000,\"loadTimeoutMs\":120000,\"turnsMax\":200,\"budgetUsd\":5}}"
+              "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"session\":\"golden-session\",\"kind\":\"Thread\",\"attempt\":\"golden-attempt\",\"generation\":4,\"capabilities\":[\"RepositoryRead\",\"RunCommands\"],\"credentialSlot\":\"claude-code\",\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"claude-code\",\"forge\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/session-capability/bearer\"},\"api\":{\"url\":\"https://api.invalid\"},\"bounds\":{\"mailboxPollMs\":1000,\"idleMs\":300000,\"resultDrainMs\":2000,\"loadTimeoutMs\":120000,\"turnsMax\":200,\"budgetUsd\":5}}"
             },
             {
               "name": "CHUG_WORKER_CREDENTIAL_FILES",
@@ -192,7 +192,7 @@
         "chuggy.internal/session": "golden-session",
         "chuggy.internal/attempt": "golden-attempt",
         "chuggy.internal/generation": "4",
-        "chuggy.internal/kind": "Lead",
+        "chuggy.internal/kind": "Thread",
         "chuggy.internal/profile": "standard",
         "chuggy.internal/runtime-version": "1"
       }
@@ -216,7 +216,7 @@
           "env": [
             {
               "name": "CHUG_SESSION_TASK",
-              "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"session\":\"golden-session\",\"kind\":\"Lead\",\"attempt\":\"golden-attempt\",\"generation\":4,\"capabilities\":[\"RepositoryRead\",\"RunCommands\"],\"credentialSlot\":\"claude-code\",\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"claude-code\",\"forge\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/session-capability/bearer\"},\"api\":{\"url\":\"https://api.invalid\"},\"repository\":{\"reference\":\"golden-repository\"},\"bounds\":{\"mailboxPollMs\":1000,\"idleMs\":300000,\"resultDrainMs\":2000,\"loadTimeoutMs\":120000,\"turnsMax\":200,\"budgetUsd\":5}}"
+              "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"session\":\"golden-session\",\"kind\":\"Thread\",\"attempt\":\"golden-attempt\",\"generation\":4,\"capabilities\":[\"RepositoryRead\",\"RunCommands\"],\"credentialSlot\":\"claude-code\",\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"claude-code\",\"forge\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/session-capability/bearer\"},\"api\":{\"url\":\"https://api.invalid\"},\"repository\":{\"reference\":\"golden-repository\"},\"bounds\":{\"mailboxPollMs\":1000,\"idleMs\":300000,\"resultDrainMs\":2000,\"loadTimeoutMs\":120000,\"turnsMax\":200,\"budgetUsd\":5}}"
             },
             {
               "name": "CHUG_WORKER_CREDENTIAL_FILES",
@@ -369,7 +369,7 @@
         "chuggy.internal/session": "golden-session",
         "chuggy.internal/attempt": "golden-attempt",
         "chuggy.internal/generation": "4",
-        "chuggy.internal/kind": "Lead",
+        "chuggy.internal/kind": "Thread",
         "chuggy.internal/profile": "standard",
         "chuggy.internal/runtime-version": "1"
       }
@@ -393,7 +393,7 @@
           "env": [
             {
               "name": "CHUG_SESSION_TASK",
-              "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"session\":\"golden-session\",\"kind\":\"Lead\",\"attempt\":\"golden-attempt\",\"generation\":4,\"capabilities\":[\"RepositoryRead\",\"RunCommands\"],\"credentialSlot\":\"claude-code\",\"agentReference\":\"golden-agent-reference\",\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"claude-code\",\"forge\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/session-capability/bearer\"},\"api\":{\"url\":\"https://api.invalid\"},\"bounds\":{\"mailboxPollMs\":1000,\"idleMs\":300000,\"resultDrainMs\":2000,\"loadTimeoutMs\":120000,\"turnsMax\":200,\"budgetUsd\":5}}"
+              "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"session\":\"golden-session\",\"kind\":\"Thread\",\"attempt\":\"golden-attempt\",\"generation\":4,\"capabilities\":[\"RepositoryRead\",\"RunCommands\"],\"credentialSlot\":\"claude-code\",\"agentReference\":\"golden-agent-reference\",\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"claude-code\",\"forge\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/session-capability/bearer\"},\"api\":{\"url\":\"https://api.invalid\"},\"bounds\":{\"mailboxPollMs\":1000,\"idleMs\":300000,\"resultDrainMs\":2000,\"loadTimeoutMs\":120000,\"turnsMax\":200,\"budgetUsd\":5}}"
             },
             {
               "name": "CHUG_WORKER_CREDENTIAL_FILES",
@@ -546,7 +546,7 @@
         "chuggy.internal/session": "golden-session",
         "chuggy.internal/attempt": "golden-attempt",
         "chuggy.internal/generation": "4",
-        "chuggy.internal/kind": "Lead",
+        "chuggy.internal/kind": "Thread",
         "chuggy.internal/profile": "standard",
         "chuggy.internal/runtime-version": "1"
       }
@@ -570,7 +570,7 @@
           "env": [
             {
               "name": "CHUG_SESSION_TASK",
-              "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"session\":\"golden-session\",\"kind\":\"Lead\",\"attempt\":\"golden-attempt\",\"generation\":4,\"capabilities\":[\"RepositoryRead\",\"RunCommands\"],\"credentialSlot\":\"claude-code\",\"agentReference\":\"golden-agent-reference\",\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"claude-code\",\"forge\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/session-capability/bearer\"},\"api\":{\"url\":\"https://api.invalid\"},\"repository\":{\"reference\":\"golden-repository\"},\"bounds\":{\"mailboxPollMs\":1000,\"idleMs\":300000,\"resultDrainMs\":2000,\"loadTimeoutMs\":120000,\"turnsMax\":200,\"budgetUsd\":5}}"
+              "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"session\":\"golden-session\",\"kind\":\"Thread\",\"attempt\":\"golden-attempt\",\"generation\":4,\"capabilities\":[\"RepositoryRead\",\"RunCommands\"],\"credentialSlot\":\"claude-code\",\"agentReference\":\"golden-agent-reference\",\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"claude-code\",\"forge\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/session-capability/bearer\"},\"api\":{\"url\":\"https://api.invalid\"},\"repository\":{\"reference\":\"golden-repository\"},\"bounds\":{\"mailboxPollMs\":1000,\"idleMs\":300000,\"resultDrainMs\":2000,\"loadTimeoutMs\":120000,\"turnsMax\":200,\"budgetUsd\":5}}"
             },
             {
               "name": "CHUG_WORKER_CREDENTIAL_FILES",

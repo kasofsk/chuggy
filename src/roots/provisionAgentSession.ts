@@ -163,20 +163,13 @@ function provisionPartition(environment: ProvisionSessionEnvironment) {
   };
 }
 
-/**
- * The kind a session is opened as. An inquiry is a fork of the lead's
- * transcript, and this command names no parent, so the server would answer it
- * only `Conflict`; it is refused here by name instead.
- */
+/** The kind a session is opened as. */
 function provisionKind(environment: ProvisionSessionEnvironment): SessionKind {
-  const kind = member<SessionKind>(
+  return member<SessionKind>(
     allSessionKinds,
     required(environment, variables.kind),
     variables.kind,
   );
-  if (kind === "Inquiry")
-    throw new Error(`${variables.kind} may not be Inquiry: no session forks`);
-  return kind;
 }
 
 export function provisionSessionOpening(

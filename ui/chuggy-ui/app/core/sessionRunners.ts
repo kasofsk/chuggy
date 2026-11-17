@@ -3,10 +3,9 @@
  * nothing where the route is the cluster's or a runner is live, and otherwise
  * the one word for why none can take the turn now.
  *
- * WHOSE RUNNER IS THE CALLER'S CHOICE. A member's threads, inquiries and own
- * chat run only on their chat host, and the lead on any of the project's pools,
- * so the placement read answers each standing and each surface passes the one
- * its turns would wait on.
+ * WHOSE RUNNER IS THE CALLER'S CHOICE. A member's threads and own chat run
+ * only on their chat host, so the placement read answers each standing and each
+ * surface passes the one its turns would wait on.
  */
 
 import type { SessionPlacementResponse } from "../../../../src/contract/responses.ts";
@@ -50,29 +49,6 @@ export function sessionRefusedNoRunner(result: ApiResult<unknown>): boolean {
   return result.outcome === "Rejected" && result.code === noRunnerCode;
 }
 
-/** The session a notice speaks for: a member's thread in a project, their
- * inquiry, the lead, or a thread of their own chat. */
-export type SessionRunnerSession = "Thread" | "Inquiry" | "Lead" | "Chat";
-
-/** Where a reader adds the runner a session's turn waits on. */
-export type SessionRunnerAdded = "MyRunner" | "Pools";
-
-/** A thread, an inquiry and a member's own chat run only on their member's own
- * machines, so one is added on their own page; the lead runs on a project's
- * pools, which its Pools page lists. */
-export function sessionRunnerAdded(
-  session: SessionRunnerSession,
-): SessionRunnerAdded {
-  switch (session) {
-    case "Thread":
-    case "Inquiry":
-    case "Chat":
-      return "MyRunner";
-    case "Lead":
-      return "Pools";
-  }
-}
-
 export function sessionRunnerShortWord(short: SessionRunnerShort): Copy {
   switch (short) {
     case "NoRunner":
@@ -83,13 +59,9 @@ export function sessionRunnerShortWord(short: SessionRunnerShort): Copy {
 }
 
 /** The word for why no runner can take one session's turn, said of the
- * machine it waits on: a thread, an inquiry and a member's own chat wait on
- * their member's chat host alone. */
-export function sessionRunnerNoticeWord(
-  short: SessionRunnerShort,
-  session: SessionRunnerSession,
-): Copy {
-  if (session === "Lead") return sessionRunnerShortWord(short);
+ * machine it waits on: a thread and a member's own chat wait on their member's
+ * chat host alone. */
+export function sessionRunnerNoticeWord(short: SessionRunnerShort): Copy {
   switch (short) {
     case "NoRunner":
       return { id: "runners-chat-host-none" };
@@ -103,11 +75,10 @@ export function sessionRunnerNoticeWord(
  * server that does not read those runners' standing says nothing of them. */
 export function sessionPlacementShort(
   read: SessionPlacementResponse | undefined,
-  session: "thread" | "lead",
   runners: keyof SessionPlacementResponse["runners"],
 ): SessionRunnerShort | undefined {
   const standing = read?.runners[runners];
   return read === undefined || standing === undefined
     ? undefined
-    : sessionRunnerShort(read[session].route, standing);
+    : sessionRunnerShort(read.thread.route, standing);
 }

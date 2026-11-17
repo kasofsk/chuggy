@@ -252,8 +252,8 @@ const poolPlaneMemoryVariable = "CHUG_POOL_PLANE_MEMORY_MIB";
 /**
  * The named credential mount a member's thread speaks through. It is REQUIRED
  * rather than defaulted: the slot is what a per-user Anthropic credential
- * arrives as, and a default would open every member's thread on whatever the
- * lead happens to use while reading as though somebody had chosen it.
+ * arrives as, and a default would open every member's thread on whatever slot
+ * the default named while reading as though somebody had chosen it.
  */
 const threadCredentialSlotVariable = "CHUG_API_THREAD_CREDENTIAL_SLOT";
 const gitScratchRootVariable = "CHUG_API_GIT_SCRATCH_ROOT";

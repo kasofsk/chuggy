@@ -106,30 +106,16 @@ export function postgresSessionContext(pool: pg.Pool): SessionContextRead {
       return sessionContextTurns(found.rows);
     },
     opening: async (partition, session) => {
-      const found = await pool.query<{
-        system_prompt: string | null;
-        auto_compact_window: string | null;
-      }>(
-        sql`SELECT system_prompt,
-                   auto_compact_window::text AS auto_compact_window
+      const found = await pool.query<{ system_prompt: string | null }>(
+        sql`SELECT system_prompt
               FROM read_session_opening(${partition.tenant},
                 ${partition.project},${session})`,
       );
       const row = found.rows[0];
       if (row === undefined) return {};
-      return {
-        ...(row.system_prompt === null
-          ? {}
-          : { systemPrompt: row.system_prompt }),
-        ...(row.auto_compact_window === null
-          ? {}
-          : {
-              autoCompactWindow: projectRowCounter(
-                row.auto_compact_window,
-                "auto compact window",
-              ),
-            }),
-      };
+      return row.system_prompt === null
+        ? {}
+        : { systemPrompt: row.system_prompt };
     },
   };
 }

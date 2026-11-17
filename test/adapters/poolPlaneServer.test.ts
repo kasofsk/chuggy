@@ -38,7 +38,6 @@ import {
   type WorkerPoolThreadClosed,
 } from "../../src/contract/workerPool.ts";
 import { metricsExposition } from "../../src/adapters/http/metricsExposition.ts";
-import type { SessionKind } from "../../src/contract/rosters.ts";
 import {
   asSessionAttemptId,
   asSessionBearerId,
@@ -256,14 +255,13 @@ const launch: SessionLaunchFacts = {
 
 /**
  * Records every call a route made of the session side, which holds `holding`
- * and offers `offered` as sessions of `kind`, each opened as the claim asks,
+ * and offers `offered` as threads, each opened as the claim asks,
  * and answers `closed` as the threads a chat host ran that have since closed.
  */
 function sessionCalls(
   holding: readonly string[] = [],
   offered: readonly string[] = [],
   closed: readonly WorkerPoolThreadClosed[] = [],
-  kind: SessionKind = "Lead",
 ): { readonly made: unknown[]; readonly store: WorkerPoolSessions } {
   const made: unknown[] = [];
   const answer = <T>(call: unknown[], value: T): Promise<T> =>
@@ -284,7 +282,7 @@ function sessionCalls(
           offered.slice(0, max).map((session) => ({
             project: partition.project,
             session: asSessionId(session),
-            kind,
+            kind: "Thread" as const,
             capabilities: [],
           })),
         ),
@@ -1425,16 +1423,6 @@ const poolReplayPolls = [
     undefined,
     undefined,
   ],
-  [
-    "a chat host's inquiry",
-    hostToken,
-    [],
-    0,
-    1,
-    undefined,
-    undefined,
-    undefined,
-  ],
 ] as const;
 
 /** The durable side one replayed poll reaches: each claim taking `claimed`, a runner's where it names a project, and the job `benched` stopped where its credential ran out. */
@@ -1467,6 +1455,9 @@ function poolReplayPorts(
   };
 }
 
+/** The fields a release reads as optional that this server names on every answer carrying their parent, since every session it hands a chat host is a thread's. */
+const poolReplayAlwaysNamed: readonly string[] = ["answer.sessions[].thread"];
+
 /**
  * Every poll a pool built with `older` makes, through the names its own
  * release exports, read by its own reconciliation schema, each naming a
@@ -1497,7 +1488,6 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
         [],
         ["session-waiting"],
         [{ project: partition.project, session: "thread-closed" }],
-        what === "a chat host's inquiry" ? "Inquiry" : "Thread",
       );
       const query = new URLSearchParams([
         ...held.map((assignment) => [older.pollQuery.held, assignment]),
@@ -1538,7 +1528,11 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       workerContractOptionalsSeen(older.reconciliation, body, "answer", seen);
     }
     for (const [field, held] of seen)
-      assert.equal(held.size, 2, `${field} is seen only one way`);
+      assert.equal(
+        held.size,
+        poolReplayAlwaysNamed.includes(field) ? 1 : 2,
+        `${field} is seen only one way`,
+      );
   });
 }
 
@@ -2383,6 +2377,14 @@ test("a chat host's poll names the capabilities its threads may hold as it wrote
     headers: hostSpeaking,
   });
   assert.equal(refused.statusCode, 400);
+});
+
+test("a chat host's poll naming a retired session capability is served, and keeps the rest of its set", async () => {
+  const recorded = await pollRecorded(
+    hostSpeaking,
+    `&${workerPoolPollQuery.sessionCapabilities}=ProjectRead,LeadDecision`,
+  );
+  assert.deepEqual(recorded.hosted, [["ChatHost", ["ProjectRead"]]]);
 });
 
 test("a chat host's poll names its threads' ticket wakes as it wrote them, none where it named none, a pool's is not read, and anything but On or Off is refused", async () => {

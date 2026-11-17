@@ -406,12 +406,10 @@ setup-mend-plugin-offer-off = The first step is { -brand-name }'s plugin for { -
 
 # spells -run: to run is a verb here
 # spells -draft: to draft is a verb here
-# spells -inquiry: a question the setup agent asks, not the lead
 setup-mend-north-star-tell = Every { -agent } { -brand-name } runs for this { -project } reads its North Star: what the { -project } is for and what to favour. { $drawn ->
     [folder] I can draft one from this folder's code, for you to change or say yes to, or we can skip it.
    *[question] I can write a short one from your answer to one question, or we can skip it.
 }
-# spells -inquiry: a question the setup agent asks, not the lead
 setup-north-star-ask = Ask the person one question: is this a demo for one or a few tries, or software they will keep and maintain? Write a short North Star from the answer: a demo favours working end to end soon over structure and polish, and maintained software favours clear structure, tests and docs that let later changes go in safely.
 # spells -draft: to draft is a verb here
 # spells -work-stage: the work in general

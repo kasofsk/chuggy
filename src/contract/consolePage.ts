@@ -61,7 +61,6 @@ export const consolePageSchema = z.union([
   }),
   z.strictObject({ page: z.literal("TicketNew"), draft: ticketNumberSchema }),
   z.strictObject({ page: z.literal("Inbox") }),
-  z.strictObject({ page: z.literal("Lead") }),
   z.strictObject({ page: z.literal("Catalog") }),
   z.strictObject({ page: z.literal("Repositories") }),
   z.strictObject({

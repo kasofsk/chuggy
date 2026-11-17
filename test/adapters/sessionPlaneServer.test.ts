@@ -46,6 +46,7 @@ import {
 import {
   agentReportedTurnFailures,
   sessionContainerEnds,
+  sessionKinds,
 } from "../../src/contract/rosters.ts";
 import {
   allThreadJobWakeReasons,
@@ -88,7 +89,7 @@ const identity: SessionPlaneIdentity = {
   session: asSessionId("session-1"),
   attempt: asSessionAttemptId("attempt-1"),
   generation: 3,
-  kind: "Lead",
+  kind: "Thread",
   capabilities: ["RepositoryRead", "RunCommands"],
   credentialSlot: "claude-code",
 };
@@ -158,7 +159,7 @@ test("a session pod is told what its own session is, and nothing it has not got"
     tenant: "tenant",
     project: "project",
     session: "session-1",
-    kind: "Lead",
+    kind: "Thread",
     capabilities: ["RepositoryRead", "RunCommands"],
     credentialSlot: "claude-code",
   });
@@ -194,29 +195,10 @@ test("a session pod is told what its own session is, and nothing it has not got"
     "what it is",
   );
   await told.close();
-
-  const compacting = sessionPlane({
-    authority: {
-      authenticate: () =>
-        Promise.resolve({ ...identity, autoCompactWindow: 300_000 }),
-    },
-  });
-  assert.equal(
-    (
-      await compacting.inject({
-        method: "GET",
-        url: "/v1/session",
-        headers: held,
-      })
-    ).json<{ autoCompactWindow: number }>().autoCompactWindow,
-    300_000,
-    "a lead is told the window it was opened under",
-  );
-  await compacting.close();
 });
 
 test("a session pod of every kind is told the model and effort it runs on", async () => {
-  for (const kind of ["Lead", "Thread", "Inquiry"] as const) {
+  for (const kind of sessionKinds) {
     const chosen = sessionPlane({
       authority: {
         authenticate: () =>
@@ -341,20 +323,6 @@ test("an offer's reply is handed to a pod whose release reads it as itself, and 
   await app.close();
 });
 
-test("a session told what it forks from is told the reference the plane resolved", async () => {
-  const forking = sessionPlane({
-    authority: {
-      authenticate: () =>
-        Promise.resolve({ ...identity, kind: "Inquiry", forkFrom: "lead-1" }),
-    },
-  });
-  const told = (
-    await forking.inject({ method: "GET", url: "/v1/session", headers: held })
-  ).json<{ forkFrom?: string }>();
-  assert.equal(told.forkFrom, "lead-1");
-  await forking.close();
-});
-
 /** What the plane answers a pod offering `release` for a session of `over`. */
 async function factsAnswered(
   over: Partial<SessionPlaneIdentity>,
@@ -377,18 +345,12 @@ async function factsAnswered(
   return answered;
 }
 
-test("a session on its own system prompt is told so, and a lead or a thread on its project's settings is not", async () => {
-  const told = await factsAnswered(
-    { systemPromptOwn: true },
-    workerContractRelease,
-  );
-  assert.equal(told.statusCode, 200);
-  assert.equal(told.json<{ systemPromptOwn?: true }>().systemPromptOwn, true);
-  for (const kind of ["Lead", "Thread"] as const) {
-    const answered = await factsAnswered({ kind }, workerContractRelease);
-    assert.equal(answered.statusCode, 200, kind);
-    assert.equal("systemPromptOwn" in answered.json<object>(), false, kind);
-  }
+test("a session's facts name no lead's compaction window, no fork and no own system prompt", async () => {
+  const answered = await factsAnswered({}, workerContractRelease);
+  assert.equal(answered.statusCode, 200);
+  const facts = answered.json<object>();
+  for (const retired of ["autoCompactWindow", "forkFrom", "systemPromptOwn"])
+    assert.equal(retired in facts, false, retired);
 });
 
 test("a session whose shell is handed its credential is told so, and a session told nothing is answered no such fact", async () => {
@@ -401,37 +363,9 @@ test("a session whose shell is handed its credential is told so, and a session t
     told.json<{ shellCredentialHanded?: true }>().shellCredentialHanded,
     true,
   );
-  for (const kind of ["Lead", "Thread", "Inquiry"] as const) {
-    const answered = await factsAnswered({ kind }, workerContractRelease);
-    assert.equal(answered.statusCode, 200, kind);
-    assert.equal(
-      "shellCredentialHanded" in answered.json<object>(),
-      false,
-      kind,
-    );
-  }
-});
-
-test("a pod whose release predates a session's own system prompt is refused that session's facts, and answered a session on its project's settings as before", async () => {
-  for (const release of ["1.62.0", "1.0.0", undefined]) {
-    const refused = await factsAnswered({ systemPromptOwn: true }, release);
-    assert.equal(refused.statusCode, 409, String(release));
-    assert.deepEqual(
-      refused.json(),
-      {
-        action: "stop",
-        reason: "UnsupportedContractVersion",
-        accepted: {
-          min: "1.63",
-          max: workerContractRelease.split(".").slice(0, 2).join("."),
-        },
-      },
-      String(release),
-    );
-    const own = await factsAnswered({}, release);
-    assert.equal(own.statusCode, 200, String(release));
-    assert.equal(own.json<{ session: string }>().session, identity.session);
-  }
+  const answered = await factsAnswered({}, workerContractRelease);
+  assert.equal(answered.statusCode, 200);
+  assert.equal("shellCredentialHanded" in answered.json<object>(), false);
 });
 
 /** What a loss port's read answers for a live attempt on an open session that failed no turn. */
@@ -661,8 +595,8 @@ test("a mailbox already holding its most waiters answers at once rather than que
 /**
  * The bound is backpressure and never a latch. It is the claiming path that the
  * case above does not reach, and a slot it fails to give back is a mailbox that
- * answers empty for the life of the process — every lead and thread on the
- * plane stopping, with only a restart to recover it.
+ * answers empty for the life of the process — every thread on the plane
+ * stopping, with only a restart to recover it.
  */
 test("claiming a turn gives the mailbox slot back, so the bound never latches shut", async () => {
   const claimed = {
@@ -1802,19 +1736,16 @@ test("a page of a stream carries every batch's bytes, and marks the ones it has 
 });
 
 /**
- * A fork's page is the case where the reader and the writer are two sessions,
- * and the address of an object is the writer's. The store here holds the
- * parent's objects and NOTHING under the caller's own session, so a route that
- * addressed the caller reads a hole and reports every batch missing — which is
- * what a live installation measured (kasofsk/chuggy#551).
+ * The address of an object is the session its row names, which need not be the
+ * reader's. The store here holds another session's objects and NOTHING under
+ * the caller's own, so a route that addressed the caller reads a hole and
+ * reports every batch missing (kasofsk/chuggy#551).
  */
-test("each object of a fork's page is read under the session its row names", async () => {
-  const parent = asSessionId("lead-1");
+test("each object of a page is read under the session its row names", async () => {
+  const parent = asSessionId("writer-1");
   const forked: SessionPlaneIdentity = {
     ...identity,
-    session: asSessionId("inquiry-1"),
-    kind: "Inquiry",
-    forkFrom: "1a2b",
+    session: asSessionId("reader-1"),
   };
   const addressed: string[] = [];
   const app = sessionPlane({
@@ -1855,7 +1786,7 @@ test("each object of a fork's page is read under the session its row names", asy
       { batch: 2, content: "batch 2\n" },
     ],
   });
-  assert.deepEqual(addressed, ["lead-1/1", "lead-1/2"]);
+  assert.deepEqual(addressed, ["writer-1/1", "writer-1/2"]);
   await app.close();
 });
 
@@ -1981,7 +1912,7 @@ test("the streams a session holds are answered whole, or narrowed by the prefix 
 });
 
 /**
- * A cut list is a resume that materialises some of a lead's subagent history
+ * A cut list is a resume that materialises some of a session's subagent history
  * and reports success, which is the silent wrongness the store exists to
  * prevent. There is no cursor to page by, so the answer is refused whole.
  */

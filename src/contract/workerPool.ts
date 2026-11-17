@@ -36,6 +36,7 @@ import {
 } from "./http.ts";
 import {
   sessionCapabilities,
+  sessionCapabilitiesRetired,
   sessionContainerEnds,
   type SessionCapability,
 } from "./rosters.ts";
@@ -146,7 +147,7 @@ export const workerPoolSessionAssignmentSchema = workerPoolAssignmentSchema
     /**
      * The thread the session is an attempt of, so a chat host may keep what
      * it keeps for that thread across its attempts. It is named only to a chat
-     * host whose poll's release reads it, and absent for an inquiry or a lead.
+     * host whose poll's release reads it.
      */
     thread: workerPoolThreadClosedSchema.optional(),
   });
@@ -221,11 +222,16 @@ const workerPoolQueryCountSchema = z
   .transform(Number)
   .pipe(z.number().int().nonnegative().safe());
 
-/** A set of session capabilities, each named once. */
+/** A set of session capabilities, each named once, read without any `sessionCapabilitiesRetired` names. */
 export const workerPoolSessionCapabilitiesSchema = z
-  .array(z.enum(sessionCapabilities))
-  .max(sessionCapabilities.length)
-  .refine((named) => new Set(named).size === named.length);
+  .array(z.enum([...sessionCapabilities, ...sessionCapabilitiesRetired]))
+  .max(sessionCapabilities.length + sessionCapabilitiesRetired.length)
+  .refine((named) => new Set(named).size === named.length)
+  .transform((named) =>
+    named.filter((capability): capability is SessionCapability =>
+      (sessionCapabilities as readonly string[]).includes(capability),
+    ),
+  );
 
 /** The separator a set of session capabilities is written with in one query value, which no capability's name holds. */
 const workerPoolSessionCapabilitiesSeparator = ",";
