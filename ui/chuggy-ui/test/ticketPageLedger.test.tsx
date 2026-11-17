@@ -50,8 +50,8 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   nowMs: () => pageClock.atMs ?? Date.now(),
 }));
 
-vi.mock("@tanstack/react-router", () => ({
-  createLink: (component: unknown) => component,
+vi.mock("@tanstack/react-router", async () => ({
+  ...(await import("./routerLinkStubbed.tsx")),
   Link: (props: {
     readonly ref?: Ref<HTMLAnchorElement>;
     readonly children?: ReactNode;
@@ -500,7 +500,10 @@ test("the page fills no second header row in the shell's top bar: its tabs are i
     { shell: true },
   );
   expect(
-    screen.getByText("Overview").closest("nav")?.getAttribute("aria-label"),
+    screen
+      .getByRole("link", { name: "Overview" })
+      .closest("nav")
+      ?.getAttribute("aria-label"),
   ).toBe("Ticket");
   expect(screen.getByRole("heading", { level: 1 }).closest("header")).not.toBe(
     null,
@@ -664,7 +667,7 @@ test("a short page says so", async () => {
       "link",
       { name: /^Runs/u },
     ).textContent,
-  ).toBe("Runs4+");
+  ).toBe("Runs 4+");
 });
 
 test("without the draft the rows still group by the program the ticket was released with", async () => {

@@ -59,7 +59,7 @@ test("the tabs are links to the epic's four addresses, Tickets counting its memb
       .getAllByRole("link")
       .map((link) => [
         link.textContent,
-        link.querySelector(".ticket-tab-count")?.textContent,
+        link.querySelector(".epic-tab-count")?.textContent,
         link.getAttribute("href"),
       ]),
   ).toStrictEqual([

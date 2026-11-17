@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
-import "../ticket/ticket.css";
+import "./epic.css";
 
 function EpicTab(props: {
   readonly to:
@@ -30,11 +30,11 @@ function EpicTab(props: {
         to={props.to}
         params={props.params}
         activeOptions={{ exact: true, includeSearch: false }}
-        className="ticket-tab"
+        className="epic-tab"
       >
         {props.children}
         {props.count === undefined ? null : (
-          <span className="ticket-tab-count">{props.count}</span>
+          <span className="epic-tab-count">{props.count}</span>
         )}
       </Link>
     </li>
@@ -53,7 +53,7 @@ export function EpicTabs(props: {
   const text = useCopyText();
   const params = { ...props.partition, epic: String(props.epic) };
   return (
-    <nav aria-label={text({ id: "epics-tabs-label" })} className="ticket-tabs">
+    <nav aria-label={text({ id: "epics-tabs-label" })} className="epic-tabs">
       <ul>
         <EpicTab to="/$tenant/$project/epics/$epic" params={params}>
           {text({ id: "epics-tab-overview" })}

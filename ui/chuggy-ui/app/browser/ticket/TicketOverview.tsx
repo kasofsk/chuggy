@@ -441,7 +441,7 @@ function TicketDraftOverview(props: {
   );
 }
 
-export function TicketOverviewTab(): ReactNode {
+export function TicketOverview(): ReactNode {
   const held = useTicketPageHeld();
   if (held.draft !== undefined)
     return <TicketDraftOverview held={held} draft={held.draft} />;
