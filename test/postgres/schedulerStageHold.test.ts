@@ -281,3 +281,52 @@ test("an account below its reserved share takes a slot a started ticket's comple
     execution: await stageHoldExecution(owed, owed.request),
   });
 });
+
+test("a completion its own account has no room to use holds back no other account's unstarted ticket", async () => {
+  const project = await schedulerProject(rig, "stage-hold-roomless", {
+    slotsMax: 2,
+    reserved: 0,
+    maximum: 2,
+    tasks: 1,
+  });
+  await stageHoldRegister(project, project.request, "stage-hold-roomless");
+  const work = await stageHoldExecution(project, project.request);
+  assert.deepEqual(await rig.store.admit(project.cluster), {
+    admitted: "Admitted",
+    execution: work,
+  });
+  const further = await schedulerFurtherTicket(
+    rig,
+    project,
+    project.memory,
+    "stage-hold-roomless-further",
+    1,
+  );
+  await stageHoldRegister(
+    project,
+    further.request,
+    "stage-hold-roomless-further",
+  );
+  assert.deepEqual(await rig.store.admit(project.cluster), {
+    admitted: "Admitted",
+    execution: await stageHoldExecution(project, further.request),
+  });
+  await stageHoldPassed(project, work);
+  await rig.harness.query(
+    `UPDATE capacity_account SET maximum=1
+      WHERE account=(SELECT account FROM execution
+                      WHERE tenant=$1 AND project=$2 AND execution=$3)`,
+    [project.partition.tenant, project.partition.project, work],
+  );
+  const other = await schedulerProject(rig, "stage-hold-roomless-other", {
+    cluster: project.cluster,
+    reserved: 0,
+    maximum: 8,
+    tasks: 1,
+  });
+  await stageHoldRegister(other, other.request, "stage-hold-roomless-other");
+  assert.deepEqual(await rig.store.admit(project.cluster), {
+    admitted: "Admitted",
+    execution: await stageHoldExecution(other, other.request),
+  });
+});

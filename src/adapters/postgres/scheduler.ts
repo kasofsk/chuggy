@@ -46,12 +46,14 @@
  * its next stage on later passes of separate loops, so until then admission
  * holds back an unstarted ticket's execution that would take the slot:
  * counting each completion `execution_between_stages` names as a slot held in
- * its account and its cluster, it admits one only where both still have room
- * past them, and answers `HeldBetweenStages` where that is all that stopped
- * it. What bounds the hold is that function's: the ticket service answering,
- * within its deferral bounds, and the next stage being admitted. A started
- * ticket's execution is never held back, nor one of an account below its
- * reserved share, which `preferredOver` already ranks first.
+ * its account, and in its cluster up to the room its account has left, it
+ * admits one only where both still have room past them, and answers
+ * `HeldBetweenStages` where that is all that stopped it. What bounds the hold
+ * is that function's: the ticket service answering, within its deferral
+ * bounds, and the next stage being admitted; a next stage its own account's
+ * `maximum` keeps queued holds back no other account. A started ticket's
+ * execution is never held back, nor one of an account below its reserved
+ * share, which `preferredOver` already ranks first.
  *
  * AN APPROVAL IS REGISTERED AND NEVER ADMITTED. Its execution is queued as any
  * is, which holds no slot, but names no requirement because a person answers
@@ -840,12 +842,19 @@ async function schedulerAdmit(
     held_back: boolean;
   }>(
     sql`WITH awaiting AS MATERIALIZED (
-         SELECT s.account FROM execution_between_stages(${cluster}) s)
+         SELECT s.account FROM execution_between_stages(${cluster}) s),
+     awaiting_usable AS MATERIALIZED (
+         SELECT coalesce(sum(least(b.awaiting, greatest(a.maximum - h.held, 0))), 0) AS slots
+           FROM (SELECT account, count(*) AS awaiting FROM awaiting GROUP BY account) b
+           JOIN capacity_account a ON a.account = b.account
+           CROSS JOIN LATERAL (SELECT count(*) AS held FROM execution x
+                                WHERE x.account = b.account
+                                  AND x.status IN ('Admitted', 'Launching', 'Running')) h)
      SELECT e.tenant, e.project, e.execution,
             NOT (execution_attempt_started(e.tenant, e.project, e.execution, NULL::text)
                  OR h.held < a.reserved
                  OR (h.held + w.awaiting < a.maximum
-                     AND ${ledger.active}::bigint + (SELECT count(*) FROM awaiting) < ${ledger.slotsMax}::bigint)) AS held_back
+                     AND ${ledger.active}::bigint + (SELECT u.slots FROM awaiting_usable u) < ${ledger.slotsMax}::bigint)) AS held_back
        FROM execution e
        JOIN capacity_account a ON a.account = e.account
        LEFT JOIN LATERAL (SELECT count(*) AS held FROM execution x
