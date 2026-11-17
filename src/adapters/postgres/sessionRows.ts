@@ -11,7 +11,6 @@
  * stands beside the execution scheduler.
  */
 
-import { sessionCapabilitiesRetired } from "../../contract/rosters.ts";
 import {
   threadTicketWakeSettings,
   type ThreadTicketWakes,
@@ -126,24 +125,15 @@ export function sessionPodEndingOf(
   };
 }
 
-/**
- * Reads the row's capability roster, dropping a `sessionCapabilitiesRetired`
- * member a stored roster may still hold and refusing any other the CHECK
- * should have stopped.
- */
+/** Reads the row's capability roster, refusing any member the CHECK should have stopped. */
 export function sessionRowCapabilities(
   values: readonly string[] | null,
 ): readonly SessionCapability[] {
   if (values === null)
     throw new Error("agent session row: the capability roster is null");
-  return values
-    .filter(
-      (value) =>
-        !(sessionCapabilitiesRetired as readonly string[]).includes(value),
-    )
-    .map((value) =>
-      sessionRowMember(allSessionCapabilities, value, "session capability"),
-    );
+  return values.map((value) =>
+    sessionRowMember(allSessionCapabilities, value, "session capability"),
+  );
 }
 
 export function agentSessionRowOf(row: AgentSessionRow): AgentSession {

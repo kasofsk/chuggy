@@ -511,10 +511,6 @@ async function metricsSessionsSeeded(
     ["Failed", null, 0, 0, 0],
     ["Queued", null, 0, 0, 0],
   ]);
-  await metricsSession(query, one, "session-retired", "Lead", dave, [
-    ["Answered", "model-large", 7_000, 70_000, 70_000],
-    ["Failed", null, 0, 0, 0],
-  ]);
   await metricsSession(query, two, "session-thread", "Thread", alice, [
     ["Answered", "model-small", 300, 3_000, 10_000],
   ]);
@@ -751,16 +747,6 @@ test("session turns are counted by session kind and state, and measured ones spe
   ])
     assert.ok(samples.includes(expected), expected);
   assert.ok(!samples.some((line) => line.includes('state="Queued"')));
-});
-
-test("the turns of a session of a retired kind are left out of every turn series", async () => {
-  const samples = metricsSamples((await metricsPage(plane)).body);
-  assert.ok(!samples.some((line) => line.includes('session="Lead"')));
-  assert.ok(
-    samples.includes(
-      `chuggy_session_turn_tokens_total{tenant="metrics-one",project="web",owner="dave-id",session="Thread",model="model-large"} 1000`,
-    ),
-  );
 });
 
 test("every member's own turns are counted under one project, beside each project's and named by no digest", async () => {

@@ -205,6 +205,7 @@ import { migration204 } from "./204-pool-memory-room.ts";
 import { migration205 } from "./205-selector-retired.ts";
 import { migration206 } from "./206-forge-answers.ts";
 import { migration207 } from "./207-lead-retired.ts";
+import { migration208 } from "./208-session-history-retired.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -415,4 +416,5 @@ export const migrations: readonly Migration[] = [
   migration205,
   migration206,
   migration207,
+  migration208,
 ];

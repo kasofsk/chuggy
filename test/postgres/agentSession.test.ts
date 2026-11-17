@@ -13,16 +13,11 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import { sessionTurnBacklogMax } from "../../src/contract/http.ts";
-import {
-  asSessionId,
-  type SessionId,
-} from "../../src/interpreter/agentSession.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
   sessionRigOpen,
   sessionRigProject,
-  sessionRigRetiredSession,
   sessionRigSession,
   sessionRigTurn,
   sessionRigTurnId,
@@ -281,23 +276,4 @@ test("the trigger refuses each change a session row may never take back", async 
     "state='Open',closed_at=NULL",
     /is closed, and a closed session takes no more turns/u,
   );
-});
-
-/** A session of a retired kind, holding a turn of a kind no session takes, as rows an installation may still hold. */
-async function agentSessionRetiredRows(
-  label: string,
-): Promise<{ partition: Partition; session: SessionId }> {
-  const partition = await sessionRigProject(rig, label);
-  const session = await sessionRigRetiredSession(rig, partition, label);
-  await rig.harness.query(
-    `SELECT enqueue_session_turn($1,$2,$3,$4,'Observation','observed','InCluster')`,
-    [partition.tenant, partition.project, session, sessionRigTurnId(label)],
-  );
-  return { partition, session };
-}
-
-test("a session of a retired kind is read as no session, and its turns as none", async () => {
-  const { partition, session } = await agentSessionRetiredRows("retired");
-  assert.equal(await rig.sessions.session(partition, session), undefined);
-  assert.deepEqual(await rig.sessions.turns(partition, session, 10), []);
 });

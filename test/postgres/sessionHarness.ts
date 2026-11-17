@@ -262,31 +262,6 @@ export async function sessionRigSession(
   return session;
 }
 
-/**
- * Opens a session of a kind no session takes any more, through
- * `open_agent_session` itself, since no port of this release opens one and an
- * installation may still hold such rows: a door or a read that keeps threads
- * alone is shown keeping it out.
- */
-export async function sessionRigRetiredSession(
-  rig: SessionRig,
-  partition: Partition,
-  label: string,
-  principal = `principal-${label}`,
-): Promise<SessionId> {
-  const session = asSessionId(`session-${label}-${randomUUID()}`);
-  const [row] = await rig.harness.query(
-    `SELECT open_agent_session($1,$2,$3,'Lead',$4,NULL,
-              ARRAY['RepositoryRead','LeadDecision'],'claude-code',NULL)::text AS opened`,
-    [partition.tenant, partition.project, session, principal],
-  );
-  if (row?.["opened"] !== "Opened")
-    throw new Error(
-      `session rig: opening retired ${label} answered ${String(row?.["opened"])}`,
-    );
-  return session;
-}
-
 /** A turn identity no other case is using. */
 export function sessionRigTurnId(label: string): SessionTurnId {
   return asSessionTurnId(`turn-${label}-${randomUUID()}`);

@@ -297,7 +297,10 @@ and by `rename_member_thread` and `hide_member_thread` writing the member's own
 name for a thread and their own way of putting it away, and by a chat host's
 thread attempt reporting whether its thread is standing through
 `report_session_standing`, which `close_agent_session` clears; a trigger refuses every
-other change, which is what makes the transcript the row points at singular. A project holds one OPEN lead at most, by a partial index over `state='Open'`.
+other change, which is what makes the transcript the row points at singular.
+Every session is a `Thread`: migration 208 deleted every lead and inquiry with
+the rows under it, and dropped `parent_session`, `auto_compact_window` and
+`system_prompt_own`, which only they used.
 `close_agent_session`, which abandons a session's queued
 and claimed turns, no runtime role may execute.
 A member holds any number of open threads up to `member_thread_limit`, which
@@ -366,8 +369,8 @@ changed by enqueuing, by a claim, by an answer or a failure, by an ending
 attempt returning it, by a close abandoning it, and by `stop_thread_turn`, the
 API's door, abandoning the one turn a member stops; a partial unique index
 admits one claimed turn per session, which is what makes the claim a lease
-rather than a convention. Each turn carries the route it was admitted on,
-fixed at the enqueue. Unfinished work is found by selecting queued turns for a
+rather than a convention. Each turn is a `UserMessage`, a `Wake` or an
+`OfferReply`, and carries the route it was admitted on, fixed at the enqueue. Unfinished work is found by selecting queued turns for a
 session in ordinal order, which is what a claim takes the lowest of, and only
 where that turn's route is the attempt's own; a queued `Pool` turn older than
 the dwell the scheduler names is withdrawn by `withdraw_unserved_pool_turns`,
@@ -379,7 +382,8 @@ owner and written only through `record_session_store_batch`; its composite key
 is `(tenant, project, session)` and its identity `(tenant, project, session,
 stream, batch)`, batch numbers per stream contiguous from one. It is changed by
 nothing: `session_store_batch_is_written_once` refuses both later verbs,
-because a transcript that could be edited is not a memory. It has no unfinished
+because a transcript that could be edited is not a memory, and only migration
+208 set it aside, to delete the leads' batches. It has no unfinished
 work — a batch is committed or it was rolled back — and it carries no path,
 because a store object's path is a total function of the key above and a stored
 one would be a duplicate of a derivable fact.
