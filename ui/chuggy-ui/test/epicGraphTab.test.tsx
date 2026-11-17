@@ -4,8 +4,8 @@
  * when a pointer or the keyboard previews one and when touch does not, the
  * lines and the ports they light, when the cards are measured and which are
  * written, the longest chain and its toggle, the ticket selected and how it is
- * cleared, the side panel with a ticket and without one, its dispatch, the
- * sheet in its place on a phone with its pills, the room it leaves and the
+ * cleared, the side panel with a ticket and without one, its dispatch and the
+ * question it asks, the sheet in its place on a phone with its pills, the room it leaves and the
  * scroll a pill makes, the key, the toggle for the tickets outside the epic, the states before and
  * without a graph, and the reads that draw it again.
  */
@@ -38,6 +38,7 @@ import {
 import { projectPartition } from "./projectFixture.ts";
 import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
 import { settled } from "./screenHarness.tsx";
+import { dispatchAskTitle } from "./ticketDispatchPressed.ts";
 
 vi.mock(
   "@tanstack/react-router",
@@ -825,6 +826,37 @@ test("dispatch is offered for a Ready ticket to a reader who may dispatch, and n
   await graphic();
   expect(side().dataset["ticket"]).toBe("5");
   expect(within(side()).queryByRole("button", { name: "Dispatch" })).toBeNull();
+});
+
+test("the side panel's dispatch asks first, an escape keeps the ticket selected and sends nothing, and a confirm sends it once", async () => {
+  epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
+  const { sent } = await epicPageDrawn(abilitiesEvery, {
+    tab: <EpicGraphTabAddressed ticket={5} />,
+  });
+  await graphic();
+  const dispatch = await within(side()).findByRole("button", {
+    name: "Dispatch",
+  });
+  const writes = () => sent.filter((request) => request.method !== "GET");
+  fireEvent.click(dispatch);
+  fireEvent.keyDown(screen.getByRole("dialog", { name: dispatchAskTitle(5) }), {
+    key: "Escape",
+  });
+  await settled();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(side().dataset["ticket"]).toBe("5");
+  expect(writes()).toEqual([]);
+  fireEvent.click(dispatch);
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: dispatchAskTitle(5) })).getByRole(
+      "button",
+      { name: "Dispatch" },
+    ),
+  );
+  await settled();
+  expect(writes().map((request) => request.body)).toMatchObject([
+    { mutation: { mutation: "ManualDispatch", ticket: 5 } },
+  ]);
 });
 
 /** A phone's viewport, narrower than the console's narrow breakpoint. */
