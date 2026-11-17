@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";
+import { EpicTabHeading } from "./EpicTabs.tsx";
 import { EpicGraphView } from "./EpicGraphView.tsx";
 
 import "./epicGraph.css";
@@ -72,6 +73,7 @@ export function EpicGraphTab(props: {
       className="epic-graph-section"
       aria-label={text({ id: "epics-graph-label" })}
     >
+      <EpicTabHeading tab="epics-tab-graph" />
       {drawn()}
     </section>
   );

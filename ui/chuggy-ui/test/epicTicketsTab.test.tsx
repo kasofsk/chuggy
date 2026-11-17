@@ -101,10 +101,15 @@ function rowOf(ticket: number): HTMLElement {
   return row;
 }
 
+/** Each group's heading as it is drawn: its word, then the figure its count
+ * shows, whose name only assistive technology reads. */
 function heads(): readonly string[] {
   return within(tab())
     .queryAllByRole("heading", { level: 3 })
-    .map((head) => head.textContent ?? "");
+    .map((head) => {
+      const named = head.querySelector(".count-badge .visually-hidden");
+      return (head.textContent ?? "").replace(named?.textContent ?? "", "");
+    });
 }
 
 function writes(sent: readonly SentRequest[]): readonly SentRequest[] {

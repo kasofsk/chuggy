@@ -9,7 +9,6 @@
  */
 
 import { Link } from "@tanstack/react-router";
-import { DropdownMenu } from "radix-ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -26,21 +25,20 @@ import {
   epicVisibilityWrite,
   epicWriteFrom,
 } from "../../core/epics.ts";
+import { readValue } from "../../core/freshness.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import { currentOrigin } from "../ports.ts";
-import { TicketActionConfirm } from "../ticket/TicketActionConfirm.tsx";
-import { readValue } from "../ticket/TicketPageHeld.tsx";
-import { buttonLookClassName } from "../ui/Button.tsx";
+import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { CopySaid, useCopyPress } from "../ui/CopyButton.tsx";
 import type { CopyPress } from "../ui/CopyButton.tsx";
-import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
+import { MoreMenu } from "../ui/MoreMenu.tsx";
+import type { MoreMenuItem } from "../ui/MoreMenu.tsx";
 import { PageHeader } from "../ui/PageHeader.tsx";
 import type { PageHeaderAction } from "../ui/PageHeader.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import type { EpicPageHeld } from "./EpicPageHeld.tsx";
 import { EpicProgressPage, EpicStatusChip } from "./EpicProgress.tsx";
 
-import "../ticket/ticket.css";
 import "./epic.css";
 
 function useEpicHeaderWriting(partition: PartitionIdentity) {
@@ -48,21 +46,6 @@ function useEpicHeaderWriting(partition: PartitionIdentity) {
 }
 
 type EpicHeaderWriting = ReturnType<typeof useEpicHeaderWriting>;
-
-function EpicHeaderMenuMark(): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="size-4"
-      fill="currentColor"
-    >
-      <circle cx="3" cy="8" r="1.4" />
-      <circle cx="8" cy="8" r="1.4" />
-      <circle cx="13" cy="8" r="1.4" />
-    </svg>
-  );
-}
 
 /** Archive, or Reactivate an archived epic, asked before it is sent at the
  * revision the page read. */
@@ -76,7 +59,7 @@ function EpicHeaderVisibilityConfirm(props: {
   const { view } = props;
   const archived = view.visibility === "Archived";
   return (
-    <TicketActionConfirm
+    <ConfirmDialog
       title={text({
         id: archived ? "epics-reactivate-title" : "epics-archive-title",
       })}
@@ -97,39 +80,32 @@ function EpicHeaderVisibilityConfirm(props: {
       {text({
         id: archived ? "epics-reactivate-body" : "epics-archive-body",
       })}
-    </TicketActionConfirm>
+    </ConfirmDialog>
   );
 }
 
 /** The menu's Copy link, which stays open to say it copied. */
-function EpicHeaderCopyLink(props: {
-  readonly held: EpicPageHeld;
-  readonly view: EpicViewResponse;
-  readonly copy: CopyPress;
-}): ReactNode {
-  const text = useCopyText();
-  const { copy } = props;
-  return (
-    <DropdownMenu.Item
-      className={menuItemClassName}
-      onSelect={(event) => {
-        event.preventDefault();
-        copy.press(
-          new URL(
-            consolePageHref(props.held.partition, {
-              page: "Epic",
-              epic: props.view.number,
-            }),
-            currentOrigin(),
-          ).href,
-        );
-      }}
-    >
-      {text({
-        id: copy.copied ? "epics-copy-link-copied" : "epics-copy-link",
-      })}
-    </DropdownMenu.Item>
-  );
+function epicHeaderMenuCopyItem(
+  held: EpicPageHeld,
+  view: EpicViewResponse,
+  copy: CopyPress,
+  text: CopyText,
+): MoreMenuItem {
+  return {
+    kind: "action",
+    label: text({
+      id: copy.copied ? "epics-copy-link-copied" : "epics-copy-link",
+    }),
+    onSelect: (event) => {
+      event.preventDefault();
+      copy.press(
+        new URL(
+          consolePageHref(held.partition, { page: "Epic", epic: view.number }),
+          currentOrigin(),
+        ).href,
+      );
+    },
+  };
 }
 
 /** The ⋯ menu: Archive, or Reactivate an archived epic, for a reader who may
@@ -144,38 +120,32 @@ function EpicHeaderMenu(props: {
   const copy = useCopyPress();
   const [asking, setAsking] = useState(false);
   const { held, view } = props;
-  const word = text({
-    id: view.visibility === "Archived" ? "epics-reactivate" : "epics-archive",
-  });
-  if (!held.writing && copy === undefined) return null;
+  const items: readonly MoreMenuItem[] = [
+    ...(held.writing
+      ? [
+          {
+            kind: "action",
+            label: text({
+              id:
+                view.visibility === "Archived"
+                  ? "epics-reactivate"
+                  : "epics-archive",
+            }),
+            disabled: props.writing.isPending,
+            onSelect: () => {
+              setAsking(true);
+            },
+          } satisfies MoreMenuItem,
+        ]
+      : []),
+    ...(copy === undefined
+      ? []
+      : [epicHeaderMenuCopyItem(held, view, copy, text)]),
+  ];
+  if (items.length === 0) return null;
   return (
     <>
-      <DropdownMenu.Root modal={false}>
-        <DropdownMenu.Trigger
-          className={buttonLookClassName({ size: "icon" })}
-          aria-label={text({ id: "epics-menu-label" })}
-        >
-          <EpicHeaderMenuMark />
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <MenuContent sideOffset={4} align="end">
-            {held.writing ? (
-              <DropdownMenu.Item
-                className={menuItemClassName}
-                disabled={props.writing.isPending}
-                onSelect={() => {
-                  setAsking(true);
-                }}
-              >
-                {word}
-              </DropdownMenu.Item>
-            ) : null}
-            {copy === undefined ? null : (
-              <EpicHeaderCopyLink held={held} view={view} copy={copy} />
-            )}
-          </MenuContent>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+      <MoreMenu label={text({ id: "epics-menu-label" })} items={items} />
       {copy === undefined ? null : <CopySaid copied={copy.copied} />}
       <EpicHeaderVisibilityConfirm
         view={view}
@@ -253,7 +223,7 @@ function EpicHeaderNotes(props: {
     (node) => node.member && node.phase === "Escalated",
   );
   return (
-    <div className="ticket-header-notes">
+    <div className="epic-header-notes">
       {escalated.map((node) => (
         <p key={node.ticket} className="epic-header-note" data-note="attention">
           {text({ id: "epics-note-attention" })}{" "}

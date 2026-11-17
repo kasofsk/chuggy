@@ -1,45 +1,20 @@
 /**
- * The epic page's tabs, drawn as the ticket page's are: each a link to its
- * own address, which the router marks current, and the same whatever the
- * epic's state. Tickets carries how many members the epic holds and History
- * how many revisions it has had. The edit page is none of them, so none is
+ * The epic page's tabs, drawn through `TabNav`: each a link to its own
+ * address, which the router marks current, and the same whatever the epic's
+ * state. Tickets carries how many members the epic holds and History how
+ * many revisions it has had. The edit page is none of them, so none is
  * current there.
+ *
+ * Each tab's content opens with a heading naming the tab, a level under the
+ * page's title. The current tab already says the name where it is seen, so
+ * the heading is drawn only for whoever reads the page by its headings.
  */
 
-import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
-
-import "../ticket/ticket.css";
-
-function EpicTab(props: {
-  readonly to:
-    | "/$tenant/$project/epics/$epic"
-    | "/$tenant/$project/epics/$epic/tickets"
-    | "/$tenant/$project/epics/$epic/graph"
-    | "/$tenant/$project/epics/$epic/history";
-  readonly params: PartitionIdentity & { readonly epic: string };
-  readonly count?: number | undefined;
-  readonly children: ReactNode;
-}): ReactNode {
-  return (
-    <li>
-      <Link
-        to={props.to}
-        params={props.params}
-        activeOptions={{ exact: true, includeSearch: false }}
-        className="ticket-tab"
-      >
-        {props.children}
-        {props.count === undefined ? null : (
-          <span className="ticket-tab-count">{props.count}</span>
-        )}
-      </Link>
-    </li>
-  );
-}
+import { TabNav, TabNavLink } from "../ui/TabNav.tsx";
 
 export function EpicTabs(props: {
   readonly partition: PartitionIdentity;
@@ -52,30 +27,51 @@ export function EpicTabs(props: {
 }): ReactNode {
   const text = useCopyText();
   const params = { ...props.partition, epic: String(props.epic) };
+  const exact = { exact: true, includeSearch: false };
   return (
-    <nav aria-label={text({ id: "epics-tabs-label" })} className="ticket-tabs">
-      <ul>
-        <EpicTab to="/$tenant/$project/epics/$epic" params={params}>
-          {text({ id: "epics-tab-overview" })}
-        </EpicTab>
-        <EpicTab
-          to="/$tenant/$project/epics/$epic/tickets"
-          params={params}
-          count={props.memberCount}
-        >
-          {text({ id: "epics-tab-tickets" })}
-        </EpicTab>
-        <EpicTab to="/$tenant/$project/epics/$epic/graph" params={params}>
-          {text({ id: "epics-tab-graph" })}
-        </EpicTab>
-        <EpicTab
-          to="/$tenant/$project/epics/$epic/history"
-          params={params}
-          count={props.revisionCount}
-        >
-          {text({ id: "epics-tab-history" })}
-        </EpicTab>
-      </ul>
-    </nav>
+    <TabNav label={text({ id: "epics-tabs-label" })}>
+      <TabNavLink
+        to="/$tenant/$project/epics/$epic"
+        params={params}
+        activeOptions={exact}
+      >
+        {text({ id: "epics-tab-overview" })}
+      </TabNavLink>
+      <TabNavLink
+        to="/$tenant/$project/epics/$epic/tickets"
+        params={params}
+        activeOptions={exact}
+        count={props.memberCount}
+      >
+        {text({ id: "epics-tab-tickets" })}
+      </TabNavLink>
+      <TabNavLink
+        to="/$tenant/$project/epics/$epic/graph"
+        params={params}
+        activeOptions={exact}
+      >
+        {text({ id: "epics-tab-graph" })}
+      </TabNavLink>
+      <TabNavLink
+        to="/$tenant/$project/epics/$epic/history"
+        params={params}
+        activeOptions={exact}
+        count={props.revisionCount}
+      >
+        {text({ id: "epics-tab-history" })}
+      </TabNavLink>
+    </TabNav>
   );
+}
+
+/** The heading a tab's content opens with, named as its tab is. */
+export function EpicTabHeading(props: {
+  readonly tab:
+    | "epics-tab-overview"
+    | "epics-tab-tickets"
+    | "epics-tab-graph"
+    | "epics-tab-history";
+}): ReactNode {
+  const text = useCopyText();
+  return <h2 className="visually-hidden">{text({ id: props.tab })}</h2>;
 }

@@ -99,6 +99,34 @@ test("the History address marks History current and draws the revisions", async 
   consoleSiteClean(site);
 });
 
+/** The headings in the page's main landmark, in document order, each as its
+ * level and its words. */
+function headingsInMain(): readonly (readonly [number, string])[] {
+  return [
+    ...screen.getByRole("main").querySelectorAll("h1, h2, h3, h4, h5, h6"),
+  ].map((heading) => [
+    Number(heading.tagName.slice(1)),
+    heading.textContent ?? "",
+  ]);
+}
+
+for (const [tab, path] of [
+  ["Overview", epicPath],
+  ["Tickets", `${epicPath}/tickets`],
+  ["Graph", `${epicPath}/graph`],
+  ["History", `${epicPath}/history`],
+] as const)
+  test(`the ${tab} tab's content opens with a heading naming it a level under the epic's one h1`, async () => {
+    await mountedAt(path);
+    const headings = headingsInMain();
+    expect(headings.filter(([level]) => level === 1)).toHaveLength(1);
+    expect(headings.slice(0, 2)).toStrictEqual([
+      [1, expect.stringMatching(/ #\d+$/u)],
+      [2, tab],
+    ]);
+    consoleSiteClean(site);
+  });
+
 test("the edit address draws the edit page under the header and marks no tab current", async () => {
   await mountedAt(`${epicPath}/edit`);
   expect(tabCurrent()).toBe("");

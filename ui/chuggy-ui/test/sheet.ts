@@ -7,6 +7,13 @@
 /** The query the console's narrow width is, as tokens.css names it. */
 export const sheetNarrowCondition = "(max-width: 40em)";
 
+/** The narrow width asked of the page's own container, which the shell names
+ * `page`, rather than of the nearest. */
+export const sheetPageNarrowCondition = `page ${sheetNarrowCondition}`;
+
+/** A finger's pointer, which is the device's and not the width's. */
+export const sheetCoarseCondition = "(pointer: coarse)";
+
 /**
  * Every style rule of a sheet that holds under the conditions named, in source
  * order: those outside any media or container query, and those inside one

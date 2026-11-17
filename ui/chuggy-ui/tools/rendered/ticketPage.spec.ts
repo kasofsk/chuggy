@@ -5,13 +5,40 @@
  * Duplicate. Neither scrolls the page sideways, the title is the page's one
  * heading and wraps rather than pushing the actions off the screen, on the
  * phone every control in the header is at least the touch height, and every
- * read is one the stub answers.
+ * read is one the stub answers. Beside them, a ticket whose Runs tab counts
+ * more runs than leave its tabs room on a phone: the tab row scrolls inside
+ * itself, and the page still does not.
+ *
+ * Then every tab, a run's details and the landing of a ticket that has run,
+ * whose branch, model and conflicting path are each longer than a phone is
+ * wide: at the desk with the chat pane open, at the desk with the pane widened
+ * until the page is narrower than the two-column breakpoint, and on a phone.
+ * None scrolls the page or its column sideways and none cuts content off,
+ * where the pane leaves the page narrow the overview lays one column while
+ * the screen is still a desk's, which is the page asking its own width, and a
+ * step's evaluator list sits below its box rather than over it.
  */
 
+import { ticketActionReachResponseSchema } from "../../../../src/contract/actionReach.ts";
 import {
+  configurationResponseSchema,
+  executionResponseSchema,
+  executionsResponseSchema,
   projectResponseSchema,
+  ticketLandingsResponseSchema,
+  ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "../../../../src/contract/responses.ts";
+import {
+  landingConflicted,
+  landingsRead,
+} from "../../test/ticketLandingsFixture.ts";
+import {
+  ledgerExecution,
+  ledgerPage,
+  ticket21Parked,
+  ticket21Program,
+} from "../../test/ticketLedgerFixture.ts";
 
 import {
   expect,
@@ -23,8 +50,14 @@ import {
   test,
 } from "./driver.ts";
 import type { RenderedViewport } from "./driver.ts";
+import type { Page } from "@playwright/test";
 import { servedOpen } from "./served.ts";
-import { stubApiProject, stubApiRead, stubApiTenant } from "./stubApi.ts";
+import {
+  stubApiNotFound,
+  stubApiProject,
+  stubApiRead,
+  stubApiTenant,
+} from "./stubApi.ts";
 
 const zodProbeViolation = { directive: "script-src", blocked: "eval" };
 
@@ -120,3 +153,374 @@ for (const viewport of ticketPageViewports)
         await served.close();
       }
     });
+
+const ticketPageRunCount = 12;
+
+/** The stub ticket's runs, one a cycle, each a work run that passed. */
+const ticketPageRuns = Array.from(
+  { length: ticketPageRunCount },
+  (_, index) => ({
+    execution: `e${String(index + 1)}`,
+    ticket: 1,
+    task: index + 1,
+    taskKind: "Work",
+    identity: { type: "WorkTask", value: { ticket: 1, cycle: index + 1 } },
+    cluster: "rig",
+    configurationRevision: "r1",
+    requirementIdentity: "req-1",
+    requirement: {
+      mode: "Container",
+      operatingSystem: "Linux",
+      architecture: "Amd64",
+      image: "chuggy/worker",
+    },
+    requirementDigest: "a".repeat(64),
+    requirementSource: "PlatformDefault",
+    platformDefaultVersion: 1,
+    status: "Terminal",
+    outcome: "Passed",
+    retriesSpent: 0,
+    registeredAt: "2026-11-01T00:00:00Z",
+  }),
+);
+
+test("a ticket whose Runs tab carries its count has more tabs than a phone holds: the row scrolls inside itself and the page does not", async ({
+  browser,
+}) => {
+  const ticket = ticketPageTicket("Pending");
+  const served = await servedOpen({
+    root: renderedDist,
+    reads: [
+      stubApiRead(
+        `${ticketPageProjectPath}/tickets/1`,
+        ticketResponseSchema,
+        ticket,
+      ),
+      stubApiRead(ticketPageProjectPath, projectResponseSchema, {
+        partition: { tenant: stubApiTenant, project: stubApiProject },
+        sequence: 1,
+        tickets: [ticket],
+      }),
+      stubApiRead(
+        `${ticketPageProjectPath}/executions`,
+        executionsResponseSchema,
+        { executions: ticketPageRuns },
+      ),
+    ],
+  });
+  try {
+    const rendered = await renderedOpen(browser, served.origin, {
+      route: `/${stubApiTenant}/${stubApiProject}/tickets/1`,
+      viewport: "phone",
+      touch: true,
+      signedIn: true,
+      ready: (page) =>
+        page.getByRole("link", {
+          name: `Runs ${String(ticketPageRunCount)}`,
+        }),
+    });
+    const page = rendered.page;
+    const tabs = page.getByRole("navigation", { name: "Ticket" });
+    const usage = tabs.getByRole("link", { name: "Usage" });
+    expect(
+      await tabs.evaluate((row) => row.scrollWidth > row.clientWidth),
+      "the tabs are wider than their row",
+    ).toBe(true);
+    await expect(tabs).toHaveAttribute("data-more-end", "");
+    await expect(tabs).toBeInViewport({ ratio: 1 });
+    await expect(usage).not.toBeInViewport({ ratio: 1 });
+    await renderedNoOverflow(page, page.locator("header.page-header"));
+    await tabs.evaluate((row) => {
+      row.scrollLeft = row.scrollWidth;
+    });
+    await expect(usage).toBeInViewport({ ratio: 1 });
+    await expect(tabs).toHaveAttribute("data-more-start", "");
+    await renderedNoOverflow(page, page.locator("header.page-header"));
+    renderedNoViolations(rendered, [zodProbeViolation]);
+    expect(served.unanswered).toEqual([]);
+  } finally {
+    await served.close();
+  }
+});
+
+/** Ticket 21's program with its second stage two evaluators wide, so its
+ * step lists them under its box. */
+const ticketPageRanProgram = [
+  ticket21Program[0],
+  { key: 2, evaluators: [{ key: 1 }, { key: 2 }] },
+];
+
+/** Ticket 21 of the ledger fixture, parked after three cycles, its branch,
+ * its model and the path its landing conflicted on each one unbroken string
+ * longer than a phone is wide. */
+const ticketPageRan = {
+  ticket: 21,
+  creator: "issuer member",
+  title: "Lay the ticket page out by its container",
+  phase: "Escalated",
+  sequence: 167,
+  revision: 1,
+  releasedAt: "2026-08-26T00:00:00Z",
+  changedAt: "2026-08-27T00:00:00Z",
+  revokedDependencies: [],
+  openDependencies: [],
+  brief: {
+    intent: "Lay the ticket page out by the space it is given.",
+    links: [],
+    branch:
+      "refs/heads/chug/ticket-21-the-ticket-page-lays-out-by-its-container-not-the-viewport",
+    finalization: { kind: "PullRequest", target: "refs/heads/main" },
+  },
+  configurationRevision: "r1",
+  program: ticketPageRanProgram,
+  escalation: { kind: "EvaluationFailureEscalated", resumeAt: "ResumeRework" },
+  runTotals: {
+    turns: 212,
+    durationMs: 3_960_000,
+    durationApiMs: 3_490_000,
+    tokensInput: 150_000,
+    tokensOutput: 12_000,
+    tokensCacheCreation: 16_000,
+    tokensCacheRead: 20_000,
+    costUsdMicros: 2_740_000,
+    costBasis: "List",
+    permissionDenials: 0,
+    models: [
+      {
+        model: "claude-opus-5-5-a-model-whose-name-runs-past-a-phone-unbroken",
+        tokensInput: 120_000,
+        tokensOutput: 9_000,
+        tokensCacheCreation: 12_000,
+        tokensCacheRead: 15_000,
+        costUsdMicros: 2_310_000,
+      },
+    ],
+  },
+};
+
+const ticketPageRanPath = `${ticketPageProjectPath}/tickets/21`;
+
+const ticketPageRanReads = [
+  stubApiRead(ticketPageRanPath, ticketResponseSchema, ticketPageRan),
+  stubApiRead(ticketPageProjectPath, projectResponseSchema, {
+    partition: { tenant: stubApiTenant, project: stubApiProject },
+    sequence: 1,
+    tickets: [ticketPageRan],
+  }),
+  stubApiNotFound(`${ticketPageProjectPath}/drafts/21`),
+  stubApiRead(
+    `${ticketPageRanPath}/native-actions`,
+    ticketNativeActionsResponseSchema,
+    { actions: [] },
+  ),
+  stubApiRead(
+    `${ticketPageRanPath}/action-reach`,
+    ticketActionReachResponseSchema,
+    { repository: null, commit: null, actions: [] },
+  ),
+  stubApiRead(
+    `${ticketPageProjectPath}/executions`,
+    executionsResponseSchema,
+    ledgerPage(ticket21Parked),
+  ),
+  ...ticket21Parked.map((shape) =>
+    stubApiRead(
+      `${ticketPageProjectPath}/executions/${shape.execution}`,
+      executionResponseSchema,
+      { ...ledgerExecution(shape), attempts: [] },
+    ),
+  ),
+  stubApiRead(
+    `${ticketPageRanPath}/landings`,
+    ticketLandingsResponseSchema,
+    landingsRead([
+      {
+        ...landingConflicted(3),
+        conflict: {
+          paths: [
+            "services/billing/src/invoices/a-module-whose-path-runs-past-a-phone-unbroken.ts",
+          ],
+          truncated: false,
+        },
+      },
+    ]),
+  ),
+  stubApiRead(
+    `${ticketPageProjectPath}/configurations/r1`,
+    configurationResponseSchema,
+    {
+      partition: { tenant: stubApiTenant, project: stubApiProject },
+      revision: "r1",
+      canonical: "{}",
+      digest: "c".repeat(64),
+    },
+  ),
+];
+
+/** Each tab, by the heading it opens with, and the two pages under Runs. The
+ * landing's details are opened, since they hold its commits and paths. */
+const ticketPageRanTabs = [
+  { at: "", heading: "Overview" },
+  { at: "/runs", heading: "Runs" },
+  { at: "/runs/7?view=details", heading: "Runs" },
+  { at: "/landing", heading: "Runs", opens: "Details" },
+  { at: "/configuration", heading: "Configuration" },
+  { at: "/usage", heading: "Usage" },
+] as const;
+
+/** The page's own column neither scrolls sideways nor holds anything past its
+ * edge or cut off inside a box: only the tab row, which scrolls itself, what
+ * is hidden but for assistive technology, and a value cut short with an
+ * ellipsis whose whole is drawn too, are wider than they show. */
+async function ticketPageRanFits(page: Page): Promise<void> {
+  await renderedNoOverflow(page, page.locator("header.page-header"));
+  const column = await page.evaluate(() => {
+    const scroller = document.querySelector("#shell-main > div");
+    if (scroller === null) return { scrolled: -1, past: [], cut: [] };
+    const edge = scroller.getBoundingClientRect().right;
+    const drawn = [...scroller.querySelectorAll("*")].filter(
+      (element) => element.closest(".tab-nav") === null,
+    );
+    const text = (element: Element): string =>
+      (element.textContent ?? "").trim();
+    const whole = (element: Element): boolean =>
+      getComputedStyle(element).textOverflow === "ellipsis" &&
+      (element.getAttribute("title") === text(element) ||
+        drawn.some(
+          (other) =>
+            other !== element &&
+            !other.contains(element) &&
+            text(other).includes(text(element)),
+        ));
+    const named = (element: Element): string =>
+      `${element.tagName.toLowerCase()}.${element.className}`;
+    return {
+      scrolled: scroller.scrollWidth - scroller.clientWidth,
+      past: drawn
+        .filter((element) => element.getBoundingClientRect().right > edge + 0.5)
+        .map(named),
+      cut: drawn
+        .filter(
+          (element) =>
+            getComputedStyle(element).overflowX !== "visible" &&
+            element.clientWidth > 1 &&
+            element.scrollWidth > element.clientWidth + 1 &&
+            !whole(element),
+        )
+        .map(named),
+    };
+  });
+  expect(column, "the page's column scrolls sideways or cuts content").toEqual({
+    scrolled: 0,
+    past: [],
+    cut: [],
+  });
+}
+
+/** A step's evaluator list is drawn, and below its step's box rather than
+ * over it. */
+async function ticketPageRanStepsApart(page: Page): Promise<void> {
+  const list = page.locator(".ticket-steps-evaluators");
+  await expect(list).toHaveCount(1);
+  const box = list.locator("xpath=preceding-sibling::*[1]");
+  await expect(box).toHaveClass(/ticket-steps-box/u);
+  const [listTop, boxBottom] = await Promise.all([
+    list.evaluate((drawn) => drawn.getBoundingClientRect().top),
+    box.evaluate((drawn) => drawn.getBoundingClientRect().bottom),
+  ]);
+  expect(
+    listTop,
+    "the evaluator list starts below its box",
+  ).toBeGreaterThanOrEqual(boxBottom);
+}
+
+/** The chat pane widened by dragging its edge, again where a drag lands
+ * before the panels have laid out, until the page's column is
+ * narrower than the two-column breakpoint, 60em in tokens.css, which a
+ * container query reads in the column's own em. */
+async function ticketPageRanNarrowed(page: Page): Promise<void> {
+  const edge = page.getByRole("separator", { name: /chat/iu });
+  const narrow = (): Promise<boolean> =>
+    page.evaluate(() => {
+      const column = document.querySelector("#shell-main > div");
+      return (
+        column !== null &&
+        column.clientWidth <
+          60 * Number.parseFloat(getComputedStyle(column).fontSize)
+      );
+    });
+  const stride = (page.viewportSize()?.width ?? 0) / 10;
+  await expect(async () => {
+    const box = await edge.boundingBox();
+    expect(box, "the pane's edge is drawn").not.toBeNull();
+    if (box === null) return;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + box.width / 2, y);
+    await page.mouse.down();
+    for (let step = 1; step < 10 && !(await narrow()); step += 1)
+      await page.mouse.move(box.x - step * stride, y, { steps: 4 });
+    await page.mouse.up();
+    expect(await narrow(), "the pane leaves the page narrow").toBe(true);
+  }).toPass();
+}
+
+const ticketPageRanScreens = [
+  { name: "desk with the chat pane open", viewport: "desk", narrowed: false },
+  { name: "desk with the chat pane widened", viewport: "desk", narrowed: true },
+  { name: "phone", viewport: "phone", narrowed: false },
+] as const;
+
+for (const screen of ticketPageRanScreens)
+  test(`every tab of a ticket that has run fits the page, with no sideways scroll and nothing cut off, on the ${screen.name}`, async ({
+    browser,
+  }) => {
+    const served = await servedOpen({
+      root: renderedDist,
+      reads: ticketPageRanReads,
+    });
+    try {
+      for (const tab of ticketPageRanTabs) {
+        const rendered = await renderedOpen(browser, served.origin, {
+          route: `/${stubApiTenant}/${stubApiProject}/tickets/21${tab.at}`,
+          viewport: screen.viewport,
+          touch: screen.viewport === "phone",
+          signedIn: true,
+          ready: (page) =>
+            page.getByRole("heading", { level: 2, name: tab.heading }),
+        });
+        const page = rendered.page;
+        if (screen.viewport === "desk")
+          await expect(
+            page.getByRole("complementary", { name: "Chat", exact: true }),
+          ).toBeVisible();
+        if (screen.narrowed) await ticketPageRanNarrowed(page);
+        if ("opens" in tab)
+          await page
+            .locator("#shell-main")
+            .getByRole("button", { name: tab.opens })
+            .click();
+        if (tab.at === "") {
+          const overview = page.locator(".ticket-overview");
+          await expect(overview).toBeVisible();
+          await expect
+            .poll(
+              () =>
+                overview.evaluate(
+                  (grid) =>
+                    getComputedStyle(grid).gridTemplateColumns.split(" ")
+                      .length,
+                ),
+              { message: "the overview's columns" },
+            )
+            .toBe(screen.viewport === "desk" && !screen.narrowed ? 2 : 1);
+          await ticketPageRanStepsApart(page);
+        }
+        await ticketPageRanFits(page);
+        renderedNoViolations(rendered, [zodProbeViolation]);
+        await page.context().close();
+      }
+      expect(served.unanswered).toEqual([]);
+    } finally {
+      await served.close();
+    }
+  });
