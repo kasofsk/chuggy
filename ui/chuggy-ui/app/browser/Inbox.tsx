@@ -144,7 +144,6 @@ import { CountBadge } from "./ui/CountBadge.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { RecordList, RecordRow } from "./ui/RecordList.tsx";
 import { StatusBadge } from "./ui/StatusBadge.tsx";
-import { Tooltip, tooltipTriggerWrapping } from "./ui/Tooltip.tsx";
 import { copyOrDataText } from "../core/copy.ts";
 import type { Copy, CopyText } from "../core/copy.ts";
 
@@ -231,33 +230,49 @@ function inboxRowAnswers(
   };
 }
 
-/** One answer's button, opening the sentence it sends. */
+/** One answer's button, described by the line in its item that says what it
+ * does. */
 function InboxActionButton(props: {
-  readonly entry: InboxEntryResponse;
   readonly action: TicketAction;
+  readonly describedBy: string;
   readonly primary: boolean;
   readonly busy: boolean;
   readonly onPress: () => void;
 }): ReactNode {
   const text = useCopyText();
   return (
-    <Tooltip
-      trigger={tooltipTriggerWrapping(props.busy)}
-      text={ticketActionSentence(props.action.action, {
-        kind: inboxEntryPhased(props.entry)?.escalation?.kind,
-      })}
+    <Button
+      variant={props.primary ? "primary" : "quiet"}
+      size="sm"
+      disabled={props.busy}
+      describedBy={props.describedBy}
+      onClick={props.onPress}
     >
-      <span>
-        <Button
-          variant={props.primary ? "primary" : "quiet"}
-          size="sm"
-          disabled={props.busy}
-          onClick={props.onPress}
-        >
-          {text(inboxActionLabel(props.action.action))}
-        </Button>
-      </span>
-    </Tooltip>
+      {text(inboxActionLabel(props.action.action))}
+    </Button>
+  );
+}
+
+/** What each answer does, drawn under the answers rather than only hovered, so
+ * a reader on a phone reads what Resume will do before pressing it. */
+function InboxActionsDo(props: {
+  readonly entry: InboxEntryResponse;
+  readonly actions: readonly TicketAction[];
+  readonly idOf: (index: number) => string;
+}): ReactNode {
+  const text = useCopyText();
+  const kind = inboxEntryPhased(props.entry)?.escalation?.kind;
+  return (
+    <dl className="inbox-item-does">
+      {props.actions.map((action, index) => (
+        <div key={nativeActionAnswerKey(action)}>
+          <dt>{text(inboxActionLabel(action.action))}</dt>
+          <dd id={props.idOf(index)}>
+            {text(ticketActionSentence(action.action, { kind }))}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -284,6 +299,8 @@ function InboxActions(props: {
     ? actions.find((action) => action !== revoke)
     : undefined;
   const busy = inboxAnswerInFlight(props.answer?.step);
+  const doesId = useId();
+  const doesIdOf = (index: number) => `${doesId}-${String(index)}`;
   if (offered.length === 0)
     return props.entry.proposals.length > 0 ? null : (
       <p className="inbox-item-said">{text({ id: "inbox-no-action" })}</p>
@@ -299,11 +316,11 @@ function InboxActions(props: {
       />
       {actions.length === 0 ? null : (
         <div className="inbox-item-answers">
-          {actions.map((action) => (
+          {actions.map((action, index) => (
             <InboxActionButton
               key={nativeActionAnswerKey(action)}
-              entry={props.entry}
               action={action}
+              describedBy={doesIdOf(index)}
               primary={action === primary}
               busy={busy}
               onPress={() => {
@@ -313,6 +330,9 @@ function InboxActions(props: {
             />
           ))}
         </div>
+      )}
+      {actions.length === 0 ? null : (
+        <InboxActionsDo entry={props.entry} actions={actions} idOf={doesIdOf} />
       )}
       {revoke === undefined ? null : (
         <InboxRevokeAsk

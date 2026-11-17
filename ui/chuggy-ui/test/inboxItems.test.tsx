@@ -216,6 +216,28 @@ test("every answer the inbox offers is reachable from the item it answers, with 
   ).toContain("btn-primary");
 });
 
+test("what each answer does is drawn in its item, not only hovered, and describes its button", async () => {
+  drawInbox(() => [
+    inboxEntry({
+      ...escalatedTicket(4),
+      escalation: {
+        kind: "EvaluationFailureEscalated",
+        resumeAt: "ResumeWork",
+      },
+    }),
+  ]);
+  await settled();
+  const item = within(inboxItemOf(4));
+  const resumeDoes = item.getByText("rework this ticket with a fresh cycle");
+  expect(resumeDoes.tagName).toBe("DD");
+  expect(item.getByText("revoke this ticket").tagName).toBe("DD");
+  expect(
+    item
+      .getByRole("button", { name: "resume" })
+      .getAttribute("aria-describedby"),
+  ).toBe(resumeDoes.id);
+});
+
 test("revoke, which cannot be undone, asks in a dialog; a rejection, which can, asks in place", async () => {
   drawInbox(() => everyKind);
   await settled();

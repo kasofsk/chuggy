@@ -9,7 +9,7 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -260,17 +260,6 @@ test("the inbox names itself only for a reader who does not see the bar", async 
   expect(heading.nextElementSibling?.textContent).not.toBe("1");
 });
 
-test("an answer's button still opens the sentence it sends", async () => {
-  drawInbox(served);
-  await settled();
-  const button = screen.getByRole("button", { name: "resume" });
-  expect(button.parentElement?.closest("[tabindex]")).toBeNull();
-  fireEvent.focus(button);
-  expect((await screen.findByRole("tooltip")).textContent).toBe(
-    "continue this ticket from where it was escalated",
-  );
-});
-
 /**
  * A refused ticket keeps its phase and has no open question behind it, so the
  * reason the refusal names is what the reader came for, and it is in the item
@@ -293,14 +282,12 @@ test("a ticket the lead refused is an item of its own, marked, its reason in the
 });
 
 /** The served policy refuses `style-src` but `'self'`, so nothing this screen
- * draws — a tooltip or the Revoke dialog open included — may append a runtime
- * style element. */
+ * draws — the Revoke dialog open included — may append a runtime style
+ * element. */
 test("nothing the inbox screen draws is a runtime style element", async () => {
   drawInbox(servedWithRefusal);
   await settled();
   expect(document.querySelectorAll("style").length).toBe(0);
-  fireEvent.focus(screen.getByRole("button", { name: "resume" }));
-  await screen.findByRole("tooltip");
   await turned(() => {
     screen.getByRole("button", { name: "revoke" }).click();
   });

@@ -91,4 +91,28 @@
     align-items: center;
     gap: var(--space-2);
   }
+
+  /* Each answer's word and what it does, one line apiece. */
+  .inbox-item-does {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-1) var(--space-2);
+    margin: 0;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+  }
+
+  .inbox-item-does > div {
+    display: contents;
+  }
+
+  .inbox-item-does dt {
+    color: var(--ink-1);
+    font-weight: var(--weight-strong);
+  }
+
+  .inbox-item-does dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
 }
