@@ -1,7 +1,9 @@
 /**
  * The epics a ticket belongs to, each a link to its page, drawn where a ticket
- * is named. An archived epic is drawn as one, so a reader who follows the link
- * is not surprised that it takes no new ticket.
+ * is named: the title cut short, then the number, which is never cut. The link
+ * is named by the whole title and number, so a hover and a screen reader read
+ * what the chip cut. An archived epic is drawn as one, so a reader who follows
+ * the link is not surprised that it takes no new ticket.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -13,6 +15,8 @@ import { useCopyText } from "../copy/CopyProvider.tsx";
 import { pillLookClassName } from "./ui/Pill.tsx";
 
 import "./Epic.css";
+
+type Epic = NonNullable<TicketResponse["epics"]>[number];
 
 export function EpicChips(props: {
   readonly partition: PartitionIdentity;
@@ -27,17 +31,44 @@ export function EpicChips(props: {
       aria-label={text({ id: "epics-title" })}
     >
       {props.epics.map((epic) => (
-        <Link
+        <EpicChipsChip
           key={epic.number}
-          to="/$tenant/$project/epics/$epic"
-          params={{ ...props.partition, epic: String(epic.number) }}
-          className={pillLookClassName({ tone: "neutral" })}
-        >
-          {epic.visibility === "Archived"
-            ? text({ id: "epics-chip-archived", args: { title: epic.title } })
-            : epic.title}
-        </Link>
+          partition={props.partition}
+          epic={epic}
+        />
       ))}
     </span>
+  );
+}
+
+function EpicChipsChip(props: {
+  readonly partition: PartitionIdentity;
+  readonly epic: Epic;
+}): ReactNode {
+  const text = useCopyText();
+  const { epic } = props;
+  const args = { title: epic.title, epic: String(epic.number) };
+  const archived = epic.visibility === "Archived";
+  const name = archived
+    ? text({ id: "epics-chip-name-archived", args })
+    : text({ id: "epics-chip-name", args });
+  return (
+    <Link
+      to="/$tenant/$project/epics/$epic"
+      params={{ ...props.partition, epic: String(epic.number) }}
+      className={`${pillLookClassName({ tone: "neutral" })} epic-chip`}
+      aria-label={name}
+      title={name}
+    >
+      <span className="epic-chip-title">{epic.title}</span>
+      <span className="epic-chip-number">
+        {text({ id: "epics-chip-number", args: { epic: args.epic } })}
+      </span>
+      {archived ? (
+        <span className="epic-chip-archived">
+          {text({ id: "epics-chip-archived" })}
+        </span>
+      ) : null}
+    </Link>
   );
 }
