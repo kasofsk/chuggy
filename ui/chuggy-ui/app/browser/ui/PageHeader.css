@@ -32,6 +32,13 @@
     overflow-wrap: anywhere;
   }
 
+  .page-header-meta {
+    margin: 0;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+
   .page-header-standing {
     display: flex;
     flex-wrap: wrap;
@@ -63,7 +70,8 @@
   }
 
   /* Narrow, the actions take a row of their own under the status, from its
-     start, each a finger's height. */
+     start, each a finger's height, as the back link and a link in the meta
+     line are. */
   @container (max-width: 40em) {
     .page-header-actions {
       flex-basis: 100%;
@@ -75,7 +83,8 @@
       height: var(--height-touch);
     }
 
-    .page-header .breadcrumb-link {
+    .page-header .breadcrumb-link,
+    .page-header-meta a {
       display: inline-flex;
       align-items: center;
       min-height: var(--height-touch);

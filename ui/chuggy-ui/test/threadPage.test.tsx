@@ -46,6 +46,7 @@ import {
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import type { ViewportFrame } from "./viewport.ts";
 import { readFailedLines } from "./readFailedLines.ts";
+import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { contextSessionBody } from "./contextFixture.ts";
 import { chatPaneHistoryChosen, chatPaneMenuChosen } from "./chatPaneMenu.tsx";
 
@@ -163,7 +164,7 @@ async function mountedAt(
 
 /** The names of what the thread's menu offers, its menu opened. */
 async function threadMenuOffers(): Promise<readonly string[]> {
-  fireEvent.keyDown(screen.getByRole("button", { name: "Chat actions" }), {
+  fireEvent.keyDown(screen.getByRole("button", { name: "Chat menu" }), {
     key: "ArrowDown",
   });
   return within(await screen.findByRole("menu"))
@@ -173,6 +174,27 @@ async function threadMenuOffers(): Promise<readonly string[]> {
 
 function threadPath(session: string): string {
   return `/${threadPartition.tenant}/${threadPartition.project}/threads/${session}`;
+}
+
+/** The one line drawn in the composer's place, and where its way forward,
+ * Back to the project, links. */
+function threadPageUnavailableSaid(): {
+  readonly line: string | undefined;
+  readonly forward: string | null;
+} {
+  const forward = screen.getByRole("link", { name: "Back to atlas" });
+  return {
+    line: forward.parentElement?.querySelector("span")?.textContent,
+    forward: forward.getAttribute("href"),
+  };
+}
+
+/** The page's own head, which the bar standing in for it once it has
+ * scrolled away is not. */
+function threadPageHead(): HTMLElement {
+  const head = document.querySelector<HTMLElement>("header.page-header");
+  if (head === null) throw new Error("the page draws no head");
+  return head;
 }
 
 function chatDrawn(): HTMLElement | null {
@@ -201,6 +223,25 @@ test("a thread's address draws its conversation as the page, with no chat pane a
   styleless();
 });
 
+test("a thread's page heads itself with its title as its one heading, its project linked under it, and Context beside the Chat menu", async () => {
+  await mountedAt(threadPath(threadMineSession));
+  const head = threadPageHead();
+  expect(
+    screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent),
+  ).toStrictEqual(["mine"]);
+  const project = within(head).getByRole("link", { name: "In atlas" });
+  expect(project.closest(".page-header-meta")).not.toBeNull();
+  expect(project.getAttribute("href")).toBe(
+    `/${threadPartition.tenant}/${threadPartition.project}`,
+  );
+  expect(
+    within(head)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label") ?? button.textContent),
+  ).toStrictEqual(["Context", "Chat menu"]);
+  expect(screen.getAllByRole("log")).toHaveLength(1);
+});
+
 test("a thread kept running says so beside its standing, with how to end it, and one that is not says nothing of it", async () => {
   await mountedAt(threadPath(threadMineSession));
   expect(screen.queryByText("Kept running")).toBeNull();
@@ -215,7 +256,9 @@ test("a thread kept running says so beside its standing, with how to end it, and
       }) as typeof fetch,
   );
   const kept = screen.getByText("Kept running");
-  expect(screen.getByText("Open")).toBeDefined();
+  expect(
+    within(threadPageHead()).getByText("Open").closest(".page-header-status"),
+  ).not.toBeNull();
   fireEvent.focus(kept.closest("[tabindex]") ?? kept);
   expect(
     (await screen.findAllByText(/Close it, or ask it to stop them/u)).length,
@@ -325,7 +368,51 @@ test("another member's thread is read without a composer", async () => {
   expect(screen.getByText("question-1")).toBeDefined();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   expect(chatDrawn()).toBeNull();
+  expect(threadPageUnavailableSaid()).toStrictEqual({
+    line: "Not your chat · View only",
+    forward: `/${threadPartition.tenant}/${threadPartition.project}`,
+  });
   expect(await threadMenuOffers()).toStrictEqual(["Copy link", "Close"]);
+  styleless();
+});
+
+test("a thread that takes no more messages says its standing in the composer's place, with the way back to its project", async () => {
+  await mountedAt(
+    threadPath(threadMineSession),
+    (served) =>
+      (async (url: string, init?: RequestInit) => {
+        const read = await served(url, init);
+        if (!url.endsWith(`/threads/${threadMineSession}`)) return read;
+        return answer({ ...(await read.json()), state: "Closed" });
+      }) as typeof fetch,
+  );
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(threadPageUnavailableSaid()).toStrictEqual({
+    line: "Closed · Takes no more messages",
+    forward: `/${threadPartition.tenant}/${threadPartition.project}`,
+  });
+  styleless();
+});
+
+/** A project thread waits on the reader's own runner, which is replaced on
+ * their Personal runners page whether it is absent or offline. */
+test("a thread whose runner is offline says so in the composer's place, with the way to Personal runners", async () => {
+  await mountedAt(
+    threadPath(threadMineSession),
+    (served) =>
+      ((url: string, init?: RequestInit) =>
+        url.endsWith("/session-placement")
+          ? Promise.resolve(
+              answer(sessionPlacementBody({ thread: "Pool", mine: "Offline" })),
+            )
+          : served(url, init)) as typeof fetch,
+  );
+  expect(screen.getByText("Chat host offline")).toBeDefined();
+  expect(
+    screen.getByRole("link", { name: "Personal runners" }).getAttribute("href"),
+  ).toBe(
+    `/${threadPartition.tenant}/${threadPartition.project}/settings/workspace/runner`,
+  );
   styleless();
 });
 
