@@ -135,10 +135,12 @@ export const workerPoolThreadClosedSchema = z.strictObject({
 
 /**
  * An assignment that runs one of a project's agent sessions: the same shape,
- * its image always named, because a session runs its site's session image and
- * never one a pool chooses, no runtime, because that image carries its own,
- * and no project, because a session mounts none of its owner's volumes. Its
- * bearer is the session's own, which the same bound admits.
+ * its image always named, because it is the site's session image and never
+ * one a pool chooses, which a pool runs the session in and a chat host does
+ * not, running it in the container it started from the `chatImage` its poll
+ * was answered, no runtime, because that image carries its own, and no
+ * project, because a session mounts none of its owner's volumes. Its bearer
+ * is the session's own, which the same bound admits.
  */
 export const workerPoolSessionAssignmentSchema = workerPoolAssignmentSchema
   .omit({ runtime: true, project: true })
@@ -574,13 +576,14 @@ export const workerPoolReconciliationSchema = z
     jobsWaiting: z.boolean().optional(),
     /**
      * The image a chat host runs its sessions in, by the host it pulls it from,
-     * which is the session image the site publishes as this answer is made: the
-     * host starts one long-lived container from it, whose chat supervisor runs
-     * those sessions, before it names room for any, may pull it while it holds
-     * nothing, and where an answer names another than it runs, drains what it
-     * holds and restarts on the new one. It is named only to a chat host, and
-     * absent where the plane serves no session or its scheduler has published
-     * no launch yet, where the host starts nothing and polls again.
+     * which is the chat image the site names, or where it names none the
+     * session image it publishes as this answer is made: the host starts one
+     * long-lived container from it, whose chat supervisor runs those sessions,
+     * before it names room for any, may pull it while it holds nothing, and
+     * where an answer names another than it runs, drains what it holds and
+     * restarts on the new one. It is named only to a chat host, and absent
+     * where the plane serves no session or its scheduler has published no
+     * launch yet, where the host starts nothing and polls again.
      */
     chatImage: workerPoolImageSchema.optional(),
     /**

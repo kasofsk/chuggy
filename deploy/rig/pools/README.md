@@ -141,6 +141,14 @@ registered the same way, with a token from
 `POST /api/v1/tenants/:tenant/chat-host-registration-tokens` and the runner's
 `register --chat`; registering another replaces it, ending what it held.
 
+A chat host runs its sessions in one container, started from the image its
+poll is answered. That is the pool plane's `CHUG_POOL_PLANE_CHAT_IMAGE`, a
+reference pinned by digest on the registry host the cluster names, which is
+what a host's pull is allowed by, and where it is unset the image of
+`CHUG_SCHEDULER_SESSION_POLICY`. The `chat` target of `images/worker/Dockerfile`
+is built for it. A value that is not pinned by digest refuses the plane's
+start.
+
 ## The order an operator writes in
 
 **The deployed relation model gains `pools` first.** Keto writes a tuple naming

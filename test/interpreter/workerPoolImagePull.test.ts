@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { workerImageCharsMax } from "../../src/contract/workerPool.ts";
 import {
+  workerPoolChatImageRead,
   workerPoolImageHosted,
   workerPoolImageHostsRead,
   workerPoolImagePullAllowed,
@@ -315,4 +316,25 @@ for (const text of [
 ])
   test(`an image-host setting of ${JSON.stringify(text)} is refused`, () => {
     assert.equal(workerPoolImageHostsRead(text).read, "Refused");
+  });
+
+test("an unset or empty chat-image setting names no chat image, and one pinned by digest names itself", () => {
+  for (const unset of [undefined, ""])
+    assert.deepEqual(workerPoolChatImageRead(unset), {
+      read: "Image",
+      image: undefined,
+    });
+  for (const image of [pinned, `registry.invalid:5000/chat:lean@${digest}`])
+    assert.deepEqual(workerPoolChatImageRead(image), { read: "Image", image });
+});
+
+for (const text of [
+  "registry.chuggy.internal/chuggy/chat",
+  "registry.chuggy.internal/chuggy/chat:latest",
+  `chuggy/chat@sha256:${hex.slice(1)}`,
+  `chat@${digest}`,
+  `registry.chuggy.internal/${"a".repeat(workerImageCharsMax)}@${digest}`,
+])
+  test(`a chat-image setting of ${JSON.stringify(text.slice(0, 64))} is refused`, () => {
+    assert.equal(workerPoolChatImageRead(text).read, "Refused");
   });
