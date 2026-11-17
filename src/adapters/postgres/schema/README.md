@@ -355,9 +355,7 @@ unique globally. `holder_kind` names what holds a runner's attempt, `Pool`,
 for its own attempt. It is changed by opening, placing, ending, the two
 reapers and the fences of the epoch, a pool and a chat host, and
 `session_attempt_is_fenced` refuses a finished attempt any change but its
-cleanup acknowledgement, which migration 208 alone set aside, deleting every
-lead's and inquiry's attempt and taking `LeadDecision` out of
-`host_capabilities`. Unfinished work is found by selecting live attempts
+cleanup acknowledgement. Unfinished work is found by selecting live attempts
 whose lease has expired by database time, whose epoch is not the current one,
 or which have been idle longer than their own `idle_secs` where they have one
 and the window the caller names otherwise.
