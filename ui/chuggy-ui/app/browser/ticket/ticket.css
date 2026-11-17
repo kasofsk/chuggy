@@ -644,7 +644,7 @@
     stroke-linejoin: round;
   }
 
-  /* A mark or a word drawn apart from the label takes its tone's ink itself. */
+  /* A mark drawn apart from the label takes its tone's ink itself. */
   .ticket-state-ink {
     color: var(--ink-3);
   }

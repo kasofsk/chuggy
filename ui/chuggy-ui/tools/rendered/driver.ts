@@ -25,6 +25,7 @@ import {
 } from "../../test/viewportSizes.ts";
 import { servedOpen } from "./served.ts";
 import type { Served } from "./served.ts";
+import type { StubApiRead } from "./stubApi.ts";
 
 export const renderedDist = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -208,6 +209,100 @@ export async function renderedNoOverflow(
     scrolled: 0,
     past: [],
   });
+}
+
+/** The chat pane widened by dragging its edge, again where a drag lands
+ * before the panels have laid out, until the page's column is narrower than
+ * `em`, a breakpoint a container query reads in the column's own em. */
+export async function renderedChatWidened(
+  page: Page,
+  em: number,
+): Promise<void> {
+  const edge = page.getByRole("separator", { name: /chat/iu });
+  const narrow = (): Promise<boolean> =>
+    page.evaluate((under) => {
+      const column = document.querySelector("#shell-main > div");
+      return (
+        column !== null &&
+        column.clientWidth <
+          under * Number.parseFloat(getComputedStyle(column).fontSize)
+      );
+    }, em);
+  const stride = (page.viewportSize()?.width ?? 0) / 10;
+  await expect(async () => {
+    const box = await edge.boundingBox();
+    expect(box, "the pane's edge is drawn").not.toBeNull();
+    if (box === null) return;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + box.width / 2, y);
+    await page.mouse.down();
+    for (let step = 1; step < 10 && !(await narrow()); step += 1)
+      await page.mouse.move(box.x - step * stride, y, { steps: 4 });
+    await page.mouse.up();
+    expect(await narrow(), "the pane leaves the page narrow").toBe(true);
+  }).toPass();
+}
+
+/** A screen a page's every tab is opened on: a phone, or the desk with the
+ * chat pane open and, where `narrowed`, widened until the page's column is
+ * narrower than the breakpoint a case names. */
+export interface RenderedScreen {
+  readonly name: string;
+  readonly viewport: RenderedViewport;
+  readonly narrowed: boolean;
+}
+
+export const renderedScreens: readonly RenderedScreen[] = [
+  { name: "desk with the chat pane open", viewport: "desk", narrowed: false },
+  { name: "desk with the chat pane widened", viewport: "desk", narrowed: true },
+  { name: "phone", viewport: "phone", narrowed: false },
+];
+
+/** Each tab under `route`, by the level-two heading it opens with, opened
+ * signed in on `screen` against the stub with `reads` ahead of its own, and
+ * held to `each`: the chat pane is drawn at the desk and widened past
+ * `narrowEm` where the screen says, no violation but those `known` is
+ * reported, and every read is one the stub answers. */
+export async function renderedTabsOpened<
+  Tab extends { readonly at: string; readonly heading: string },
+>(
+  browser: Browser,
+  opening: {
+    readonly reads: readonly StubApiRead[];
+    readonly route: string;
+    readonly tabs: readonly Tab[];
+    readonly screen: RenderedScreen;
+    readonly narrowEm: number;
+    readonly known: readonly RenderedViolationKnown[];
+    readonly each: (page: Page, tab: Tab) => Promise<void>;
+  },
+): Promise<void> {
+  const { screen } = opening;
+  const served = await servedOpen({ root: renderedDist, reads: opening.reads });
+  try {
+    for (const tab of opening.tabs) {
+      const rendered = await renderedOpen(browser, served.origin, {
+        route: `${opening.route}${tab.at}`,
+        viewport: screen.viewport,
+        touch: screen.viewport === "phone",
+        signedIn: true,
+        ready: (page) =>
+          page.getByRole("heading", { level: 2, name: tab.heading }),
+      });
+      const page = rendered.page;
+      if (screen.viewport === "desk")
+        await expect(
+          page.getByRole("complementary", { name: "Chat", exact: true }),
+        ).toBeVisible();
+      if (screen.narrowed) await renderedChatWidened(page, opening.narrowEm);
+      await opening.each(page, tab);
+      renderedNoViolations(rendered, opening.known);
+      await page.context().close();
+    }
+    expect(served.unanswered).toEqual([]);
+  } finally {
+    await served.close();
+  }
 }
 
 /** The pixels a custom property on the root resolves to as a height. Set

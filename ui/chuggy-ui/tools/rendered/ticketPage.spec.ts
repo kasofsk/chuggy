@@ -40,12 +40,15 @@ import {
   ticket21Program,
 } from "../../test/ticketLedgerFixture.ts";
 
+import { viewportTwoColumnEm } from "../../app/browser/shell/viewport.ts";
 import {
   expect,
   renderedDist,
   renderedNoOverflow,
   renderedNoViolations,
   renderedOpen,
+  renderedScreens,
+  renderedTabsOpened,
   renderedTouchTargets,
   test,
 } from "./driver.ts";
@@ -434,66 +437,18 @@ async function ticketPageRanStepsApart(page: Page): Promise<void> {
   ).toBeGreaterThanOrEqual(boxBottom);
 }
 
-/** The chat pane widened by dragging its edge, again where a drag lands
- * before the panels have laid out, until the page's column is
- * narrower than the two-column breakpoint, 60em in tokens.css, which a
- * container query reads in the column's own em. */
-async function ticketPageRanNarrowed(page: Page): Promise<void> {
-  const edge = page.getByRole("separator", { name: /chat/iu });
-  const narrow = (): Promise<boolean> =>
-    page.evaluate(() => {
-      const column = document.querySelector("#shell-main > div");
-      return (
-        column !== null &&
-        column.clientWidth <
-          60 * Number.parseFloat(getComputedStyle(column).fontSize)
-      );
-    });
-  const stride = (page.viewportSize()?.width ?? 0) / 10;
-  await expect(async () => {
-    const box = await edge.boundingBox();
-    expect(box, "the pane's edge is drawn").not.toBeNull();
-    if (box === null) return;
-    const y = box.y + box.height / 2;
-    await page.mouse.move(box.x + box.width / 2, y);
-    await page.mouse.down();
-    for (let step = 1; step < 10 && !(await narrow()); step += 1)
-      await page.mouse.move(box.x - step * stride, y, { steps: 4 });
-    await page.mouse.up();
-    expect(await narrow(), "the pane leaves the page narrow").toBe(true);
-  }).toPass();
-}
-
-const ticketPageRanScreens = [
-  { name: "desk with the chat pane open", viewport: "desk", narrowed: false },
-  { name: "desk with the chat pane widened", viewport: "desk", narrowed: true },
-  { name: "phone", viewport: "phone", narrowed: false },
-] as const;
-
-for (const screen of ticketPageRanScreens)
+for (const screen of renderedScreens)
   test(`every tab of a ticket that has run fits the page, with no sideways scroll and nothing cut off, on the ${screen.name}`, async ({
     browser,
   }) => {
-    const served = await servedOpen({
-      root: renderedDist,
+    await renderedTabsOpened(browser, {
       reads: ticketPageRanReads,
-    });
-    try {
-      for (const tab of ticketPageRanTabs) {
-        const rendered = await renderedOpen(browser, served.origin, {
-          route: `/${stubApiTenant}/${stubApiProject}/tickets/21${tab.at}`,
-          viewport: screen.viewport,
-          touch: screen.viewport === "phone",
-          signedIn: true,
-          ready: (page) =>
-            page.getByRole("heading", { level: 2, name: tab.heading }),
-        });
-        const page = rendered.page;
-        if (screen.viewport === "desk")
-          await expect(
-            page.getByRole("complementary", { name: "Chat", exact: true }),
-          ).toBeVisible();
-        if (screen.narrowed) await ticketPageRanNarrowed(page);
+      route: `/${stubApiTenant}/${stubApiProject}/tickets/21`,
+      tabs: ticketPageRanTabs,
+      screen,
+      narrowEm: viewportTwoColumnEm,
+      known: [zodProbeViolation],
+      each: async (page, tab) => {
         if ("opens" in tab)
           await page
             .locator("#shell-main")
@@ -516,11 +471,6 @@ for (const screen of ticketPageRanScreens)
           await ticketPageRanStepsApart(page);
         }
         await ticketPageRanFits(page);
-        renderedNoViolations(rendered, [zodProbeViolation]);
-        await page.context().close();
-      }
-      expect(served.unanswered).toEqual([]);
-    } finally {
-      await served.close();
-    }
+      },
+    });
   });
