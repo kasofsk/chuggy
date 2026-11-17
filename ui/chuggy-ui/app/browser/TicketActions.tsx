@@ -806,7 +806,8 @@ export function TicketHeaderNotes(props: TicketHeaderActionsProps): ReactNode {
   );
 }
 
-/** The press a ready row's state chip answers, where the row may be dispatched. */
+/** The press a ready row's state chip answers, where the row may be dispatched,
+ * which asks before anything is sent. */
 export interface TicketRowDispatch {
   readonly busy: boolean;
   /** This tab does not reach the network, so a press would not be sent. */
@@ -819,8 +820,9 @@ export interface TicketRowDispatch {
  * The Dispatch a ready row of the ticket list offers, expecting the version the
  * row was drawn at, as the press its state chip answers and the notes its
  * follow draws beside it. The reader's abilities and the project's runner take
- * it away as they take it on the ticket page, and a press is followed by the
- * same submission the ticket page would follow.
+ * it away as they take it on the ticket page, a press asks the question the
+ * ticket page asks, and only its confirm sends the same submission the ticket
+ * page would follow.
  */
 export function TicketRowDispatchScope(props: {
   readonly partition: PartitionIdentity;
@@ -835,6 +837,7 @@ export function TicketRowDispatchScope(props: {
   const runner = useWorkRunner(props.partition, "Unknown");
   const online = useApiOnline();
   const text = useCopyText();
+  const [asking, setAsking] = useState(false);
   const { offers } = ticketOffersStartable(
     ticketOffersAllowed(
       {
@@ -856,19 +859,36 @@ export function TicketRowDispatchScope(props: {
   );
   return (
     <TicketActingScope partition={props.partition} ticket={props.ticket} drawn>
-      {(acting) =>
-        props.children(
-          {
-            busy: acting.busy,
-            offline: !online,
-            effect,
-            press: () => {
-              acting.submitting.submit(offered);
+      {(acting) => (
+        <>
+          {props.children(
+            {
+              busy: acting.busy,
+              offline: !online,
+              effect,
+              press: () => {
+                setAsking(true);
+              },
             },
-          },
-          <FollowNotes submitting={acting.submitting} />,
-        )
-      }
+            <FollowNotes submitting={acting.submitting} />,
+          )}
+          <TicketActionConfirm
+            title={text({
+              id: "ticket-dispatch-confirm-title",
+              args: { number: String(props.ticket) },
+            })}
+            confirm={text(ticketActionLabel("Dispatch"))}
+            confirmOffered={!acting.busy && online}
+            open={asking}
+            onOpenChange={setAsking}
+            onConfirm={() => {
+              acting.submitting.submit(offered);
+            }}
+          >
+            {effect}
+          </TicketActionConfirm>
+        </>
+      )}
     </TicketActingScope>
   );
 }

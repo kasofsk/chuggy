@@ -27,6 +27,7 @@ import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
 import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { answer, settled, turned } from "./screenHarness.tsx";
 import type { SentRequest } from "./screenHarness.tsx";
+import { dispatchAskTitle } from "./ticketDispatchPressed.ts";
 
 vi.mock(
   "@tanstack/react-router",
@@ -170,15 +171,30 @@ test("a Done row says nothing of what waits on it", async () => {
   expect(rowOf(11).querySelector(".epic-tickets-meta")).toBeNull();
 });
 
-test("a ready row's state is the ticket list's dispatch, which sends the dispatch", async () => {
+test("a ready row's state is the ticket list's dispatch, which asks and sends the dispatch once confirmed", async () => {
   epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
   const { sent } = await drawn(abilitiesEvery, () => answer({}, 503));
   const dispatch = await within(rowOf(5)).findByRole("button", {
     name: "Dispatch ticket #5",
   });
   expect(dispatch.textContent).toBe("Ready");
+  const asked = async (): Promise<HTMLElement> => {
+    await turned(() => {
+      fireEvent.click(dispatch);
+    });
+    return screen.getByRole("dialog", { name: dispatchAskTitle(5) });
+  };
+  const cancel = within(await asked()).getByRole("button", { name: "Cancel" });
   await turned(() => {
-    fireEvent.click(dispatch);
+    fireEvent.click(cancel);
+  });
+  await settled();
+  expect(writes(sent)).toEqual([]);
+  const confirm = within(await asked()).getByRole("button", {
+    name: "Dispatch",
+  });
+  await turned(() => {
+    fireEvent.click(confirm);
   });
   await settled();
   expect(writes(sent).map((request) => request.body)).toMatchObject([
