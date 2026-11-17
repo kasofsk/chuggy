@@ -23,7 +23,7 @@ import type { SelectorProjectOverrides } from "../../core/selectorSettingsForm.t
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { SelectorSettingsRefusedLine } from "../settings/lead/SelectorSection.tsx";
 import type { SelectorSettingsShown } from "../selectorSettingsWriting.ts";
 
@@ -83,16 +83,17 @@ function SelectorStripCell(props: {
     <div className="selector-cell">
       <span className="selector-key">{text(cell.name)}</span>
       <span className="selector-standing">
-        {cell.tone === undefined ? null : (
-          <i
-            className="selector-dot"
-            data-tone={cell.tone}
-            aria-hidden="true"
-          />
+        {cell.tone === undefined ? (
+          text(cell.value)
+        ) : (
+          <StatusBadge tone={cell.tone} size="small">
+            {text(cell.value)}
+          </StatusBadge>
         )}
-        {text(cell.value)}
         {cell.inherited ? (
-          <Pill tone="neutral">{text({ id: "lead-settings-default" })}</Pill>
+          <StatusBadge tone="neutral" size="small">
+            {text({ id: "lead-settings-default" })}
+          </StatusBadge>
         ) : null}
       </span>
       <Button

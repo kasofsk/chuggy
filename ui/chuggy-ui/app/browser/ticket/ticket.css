@@ -500,9 +500,10 @@
     vertical-align: -0.125em;
   }
 
-  /* A place in a landing queue: the merge mark and its figure, as wide as
-     its figure whatever row or header it stands in. */
+  /* A place in a landing queue: its badge, as wide as its figure whatever
+     row or header it stands in. */
   .finalization-queue-chip {
+    display: inline-flex;
     flex: none;
     font-variant-numeric: tabular-nums;
   }
@@ -541,158 +542,7 @@
     display: none;
   }
 
-  /* The state label: filled is the tone as the ground under inverse ink,
-     tinted its wash inside an edge of the tone, outlined a dashed edge. */
-  .ticket-state {
-    --state-tone: var(--ink-3);
-    --state-fill: var(--fill-retired);
-    --state-wash: var(--surface-2);
-    display: inline-flex;
-    flex: none;
-    align-items: center;
-    gap: var(--space-2);
-    box-sizing: border-box;
-    height: var(--height-state);
-    padding-inline: var(--space-3);
-    border: var(--hairline) solid transparent;
-    border-radius: var(--radius-3);
-    font-size: var(--text-md);
-    font-weight: var(--weight-strong);
-    line-height: 1;
-    white-space: nowrap;
-  }
-
-  .ticket-state[data-size="small"] {
-    height: var(--height-state-small);
-    padding-inline: var(--space-2);
-    gap: var(--space-1);
-    font-size: var(--text-sm);
-  }
-
-  .ticket-state[data-size="small"] .ticket-state-word {
-    text-align: center;
-  }
-
-  /* A small label's word is as wide as the widest it could say: every word,
-     a line each, stacked under it with no height and no text to read. */
-  .ticket-state-word[data-words]::before {
-    content: attr(data-words);
-    content: attr(data-words) / "";
-    display: block;
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
-    white-space: pre;
-  }
-
-  .ticket-state[data-tone="pass"] {
-    --state-tone: var(--tone-pass);
-    --state-fill: var(--fill-pass);
-    --state-wash: var(--wash-pass);
-  }
-
-  .ticket-state[data-tone="queued"] {
-    --state-tone: var(--tone-queued);
-    --state-wash: var(--wash-queued);
-  }
-
-  .ticket-state[data-tone="live"] {
-    --state-tone: var(--tone-live);
-    --state-fill: var(--fill-live);
-  }
-
-  .ticket-state[data-tone="evaluation"] {
-    --state-tone: var(--tone-evaluation);
-    --state-fill: var(--fill-evaluation);
-  }
-
-  .ticket-state[data-tone="finalization"] {
-    --state-tone: var(--tone-finalization);
-    --state-fill: var(--fill-finalization);
-  }
-
-  .ticket-state[data-tone="parked"] {
-    --state-tone: var(--tone-parked);
-    --state-fill: var(--fill-parked);
-  }
-
-  .ticket-state[data-form="filled"] {
-    background: var(--state-fill);
-    color: var(--ink-inverse);
-  }
-
-  .ticket-state[data-form="tinted"] {
-    background: var(--state-wash);
-    border-color: color-mix(in srgb, var(--state-tone) 45%, transparent);
-    color: var(--state-tone);
-  }
-
-  .ticket-state[data-form="outlined"] {
-    background: transparent;
-    border: var(--hairline) dashed var(--edge-control);
-    color: var(--ink-2);
-  }
-
-  .ticket-state-mark {
-    flex: none;
-    width: 1em;
-    height: 1em;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.6;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  /* A mark drawn apart from the label takes its tone's ink itself. */
-  .ticket-state-ink {
-    color: var(--ink-3);
-  }
-
-  .ticket-state-ink[data-tone="pass"] {
-    color: var(--tone-pass);
-  }
-
-  .ticket-state-ink[data-tone="queued"] {
-    color: var(--tone-queued);
-  }
-
-  .ticket-state-ink[data-tone="live"] {
-    color: var(--tone-live);
-  }
-
-  .ticket-state-ink[data-tone="evaluation"] {
-    color: var(--tone-evaluation);
-  }
-
-  .ticket-state-ink[data-tone="finalization"] {
-    color: var(--tone-finalization);
-  }
-
-  .ticket-state-ink[data-tone="parked"] {
-    color: var(--tone-parked);
-  }
-
-  .ticket-state-filled-path {
-    fill: currentColor;
-    stroke: none;
-  }
-
-  .ticket-state-track {
-    opacity: 0.35;
-  }
-
-  .ticket-state-mark[data-spins] {
-    animation: ticket-state-spin var(--duration-spin) linear infinite;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .ticket-state-mark[data-spins] {
-      animation: none;
-    }
-  }
-
-  @keyframes ticket-state-spin {
+  @keyframes ticket-run-spin {
     to {
       transform: rotate(1turn);
     }
@@ -717,7 +567,7 @@
   }
 
   .ticket-run-mark[data-mark="Spin"] {
-    animation: ticket-state-spin var(--duration-spin) linear infinite;
+    animation: ticket-run-spin var(--duration-spin) linear infinite;
   }
 
   .ticket-run-track {

@@ -75,7 +75,7 @@ import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Input } from "../ui/Input.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { WordDetail } from "../ui/WordDetail.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
@@ -282,7 +282,9 @@ function UsageSettingsReading(props: {
         <span>
           <WordDetail
             word={
-              <Pill tone="parked">{text(agentAccountReadingStaleWord)}</Pill>
+              <StatusBadge tone="parked" size="small">
+                {text(agentAccountReadingStaleWord)}
+              </StatusBadge>
             }
             detail={agentAccountReadingStaleLine}
           />
@@ -453,7 +455,9 @@ function UsageSettingsCredential(props: {
       <span className="inline-flex flex-wrap items-center gap-2">
         <span className="font-medium">{name}</span>
         {agentAccountCredentialOff(props.credential) ? (
-          <Pill tone="parked">{text(agentAccountCredentialOffWord)}</Pill>
+          <StatusBadge tone="parked" size="small">
+            {text(agentAccountCredentialOffWord)}
+          </StatusBadge>
         ) : null}
         {asking === undefined ? (
           <UsageSettingsCredentialPresses

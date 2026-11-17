@@ -41,7 +41,7 @@ import { useInboxRows } from "../Inbox.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { CountBadge } from "../ui/CountBadge.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { useChatPaneYields } from "./chatPaneHeld.ts";
 import { DetailsToggle } from "./DetailsPane.tsx";
 import { NavIcon } from "./navIcons.tsx";
@@ -86,7 +86,9 @@ function TopBarNav(props: {
   const text = useCopyText();
   const phone = useViewportAtMostEm(viewportNarrowEm);
   const viewOnly = projectAbilityRefused(abilities, "mutate") ? (
-    <Pill tone="neutral">{text({ id: "shell-view-only" })}</Pill>
+    <StatusBadge tone="neutral" size="small">
+      {text({ id: "shell-view-only" })}
+    </StatusBadge>
   ) : null;
   if (phone)
     return viewOnly === null ? null : (
@@ -159,11 +161,7 @@ function TopBarInboxLink(props: {
       className="topbar-inbox"
     >
       <NavIcon id="inbox" />
-      {count === undefined ? null : (
-        <span aria-hidden="true" className="topbar-inbox-badge">
-          {count}
-        </span>
-      )}
+      {count === undefined ? null : <CountBadge count={count} name={label} />}
     </Link>
   );
 }

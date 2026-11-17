@@ -511,7 +511,7 @@ export interface TicketLandingCommit {
 }
 
 /**
- * What a landing's row says beside its pill: text, a link, the commit it
+ * What a landing's row says beside its badge: text, a link, the commit it
  * landed at, and what a reader must not miss about that commit.
  */
 export interface TicketLandingFragment {

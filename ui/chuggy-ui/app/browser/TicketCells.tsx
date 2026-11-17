@@ -18,7 +18,7 @@ import { agoFigure } from "../core/figures.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import { verdictTone } from "../core/tones.ts";
 import { Figure } from "./ui/Figure.tsx";
-import { Pill } from "./ui/Pill.tsx";
+import { StatusBadge } from "./ui/StatusBadge.tsx";
 
 export const cellAbsent = "—";
 
@@ -66,7 +66,11 @@ export function TicketRowExecutionCell(props: {
   const verdict = props.row.executionVerdict;
   if (verdict === undefined)
     return <span className="text-ink-3">{cellAbsent}</span>;
-  return <Pill tone={verdictTone(verdict)}>{verdict}</Pill>;
+  return (
+    <StatusBadge tone={verdictTone(verdict)} size="small">
+      {verdict}
+    </StatusBadge>
+  );
 }
 
 /** A ticket's last activity, wherever it is drawn: how long ago it was,

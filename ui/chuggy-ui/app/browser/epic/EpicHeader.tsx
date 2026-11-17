@@ -35,7 +35,7 @@ import { MoreMenu } from "../ui/MoreMenu.tsx";
 import type { MoreMenuItem } from "../ui/MoreMenu.tsx";
 import { PageHeader } from "../ui/PageHeader.tsx";
 import type { PageHeaderAction } from "../ui/PageHeader.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import type { EpicPageHeld } from "./EpicPageHeld.tsx";
 import { EpicProgressPage, EpicStatusChip } from "./EpicProgress.tsx";
 
@@ -260,9 +260,9 @@ export function EpicHeader(props: {
         <>
           <EpicStatusChip status={view.status} />
           {view.visibility === "Archived" ? (
-            <Pill tone="retired">
+            <StatusBadge tone="retired" size="small">
               {text({ id: "epics-visibility-archived" })}
-            </Pill>
+            </StatusBadge>
           ) : null}
         </>
       }

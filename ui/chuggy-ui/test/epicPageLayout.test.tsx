@@ -58,15 +58,15 @@ test("the tabs are links to the epic's four addresses, Tickets counting its memb
     tabs
       .getAllByRole("link")
       .map((link) => [
-        link.textContent,
-        link.querySelector(".tab-nav-count")?.textContent,
+        link.firstChild?.textContent,
+        link.querySelector('.count-badge [aria-hidden="true"]')?.textContent,
         link.getAttribute("href"),
       ]),
   ).toStrictEqual([
     ["Overview", undefined, epicPath],
-    ["Tickets 2", "2", `${epicPath}/tickets`],
+    ["Tickets", "2", `${epicPath}/tickets`],
     ["Graph", undefined, `${epicPath}/graph`],
-    ["History 3", "3", `${epicPath}/history`],
+    ["History", "3", `${epicPath}/history`],
   ]);
 });
 

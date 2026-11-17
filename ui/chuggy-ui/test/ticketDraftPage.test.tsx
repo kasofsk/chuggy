@@ -207,10 +207,11 @@ function drawn(
   };
 }
 
+/** The word the header's state badge says. */
 function standing(): string | null | undefined {
-  return ticketHeader()
-    .querySelector(".page-header-status .ticket-state")
-    ?.getAttribute("data-standing");
+  return ticketHeader().querySelector(
+    ".page-header-status .status-badge .status-badge-word",
+  )?.textContent;
 }
 
 test("a draft never released draws the ticket page in Draft state, read from the draft, leading with Release and Edit in the menu", async () => {

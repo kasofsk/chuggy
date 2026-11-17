@@ -31,6 +31,7 @@ import { copyOrDataText } from "../../core/copy.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
 import { rosterSearchFilter } from "../../core/rosterSearch.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
+import { Chip } from "../ui/Chip.tsx";
 import { CountBadge } from "../ui/CountBadge.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
@@ -71,9 +72,7 @@ export function CatalogBadges(props: {
   return (
     <span className="catalog-badges">
       {props.entry.defaults.map((role) => (
-        <span key={role} className="catalog-badge">
-          {text(catalogDefaultLabel(role))}
-        </span>
+        <Chip key={role}>{text(catalogDefaultLabel(role))}</Chip>
       ))}
     </span>
   );

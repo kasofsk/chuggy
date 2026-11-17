@@ -39,7 +39,8 @@ function tabNavDrawn(): ReturnType<typeof render> {
       <TabNavLink
         to="/$tenant/$project/tickets/$ticket/runs"
         params={tabNavParams}
-        count="3+"
+        count={3}
+        countCut
         aria-current="page"
       >
         Runs
@@ -80,14 +81,15 @@ test("a tab's name is its label, then its count where it carries one", () => {
     screen
       .getAllByRole("link")
       .map((link) => [
-        link.textContent,
-        link.querySelector(".tab-nav-count")?.textContent,
+        link.firstChild?.textContent,
+        link.querySelector('.count-badge [aria-hidden="true"]')?.textContent,
       ]),
   ).toStrictEqual([
     ["Overview", undefined],
-    ["Runs 3+", "3+"],
-    ["Usage 0", "0"],
+    ["Runs", "3+"],
+    ["Usage", "0"],
   ]);
+  expect(screen.getByRole("link", { name: "Usage 0" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Runs 3+" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Overview" })).toBeTruthy();
 });

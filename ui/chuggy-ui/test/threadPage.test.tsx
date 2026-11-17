@@ -283,7 +283,7 @@ test("a thread its owner's chat host holds says so beside its standing, with wha
       }) as typeof fetch,
   );
   const hosted = screen.getByText("On your chat host");
-  expect(hosted.closest(".pill")?.parentElement?.textContent).toBe(
+  expect(hosted.closest(".status-badge")?.parentElement?.textContent).toBe(
     "On your chat host · Read the repository, Run commands",
   );
   expect(screen.queryByRole("tooltip")).toBeNull();

@@ -78,10 +78,11 @@ test("the epic is drawn with its figures, its graph and its history", async () =
   ).toMatch(/^#2 Schema: .+, outside the epic$/u);
   expect(graphic.querySelectorAll("[data-member]")).toHaveLength(2);
   expect(
-    within(screen.getByRole("navigation", { name: "Epic" }))
-      .getAllByRole("link")
-      .map((link) => link.textContent),
-  ).toContain("History 3");
+    within(screen.getByRole("navigation", { name: "Epic" })).getAllByRole(
+      "link",
+      { name: "History 3" },
+    ),
+  ).toHaveLength(1);
 });
 
 test("a reader who may not write epics is sent from the edit page to the Overview", async () => {

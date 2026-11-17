@@ -20,7 +20,7 @@ import {
   epicStatusLook,
 } from "../../core/epics.ts";
 import type { EpicProgressSegment } from "../../core/epics.ts";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 
 import "./epic.css";
 
@@ -31,7 +31,11 @@ export function EpicStatusChip(props: {
 }): ReactNode {
   const text = useCopyText();
   const look = epicStatusLook(props.status);
-  return <Pill tone={look.tone}>{text(look.word)}</Pill>;
+  return (
+    <StatusBadge tone={look.tone} size="small">
+      {text(look.word)}
+    </StatusBadge>
+  );
 }
 
 /** What the bar says, each part in words, joined as a sentence or a line. */

@@ -1,8 +1,8 @@
 /**
- * The chip over both its shapes: one that stands, drawn as the neutral pill
- * with no control, and one that can be taken away, ending in a button named by
- * its caller that removes it only while it may. Then the ticket list's row
- * state chip, as the small state label at its one width.
+ * The chip over both its shapes: one that stands, with no control, and one
+ * that can be taken away, ending in a button named by its caller that removes
+ * it only while it may. Then the ticket list's row state chip, as the state's
+ * status badge.
  */
 
 import { cleanup, fireEvent, screen } from "@testing-library/react";
@@ -10,14 +10,10 @@ import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { TicketStateChip } from "../app/browser/ticket/TicketStateChip.tsx";
-import { TicketStateLabel } from "../app/browser/ticket/TicketStateLabel.tsx";
 import { Chip } from "../app/browser/ui/Chip.tsx";
-import { Pill } from "../app/browser/ui/Pill.tsx";
-import ticketSheet from "../app/browser/ticket/ticket.css?raw";
 import { copyTextEn } from "../app/copy/catalog.ts";
-import { ticketStateWords } from "../app/core/ticketHeader.ts";
+import { ticketStateLabelOf } from "../app/core/ticketHeader.ts";
 import type { TicketListStanding } from "../app/core/ticketListView.ts";
-import { sheetRules } from "./sheet.ts";
 import { styleless } from "./styleless.ts";
 
 afterEach(() => {
@@ -25,19 +21,12 @@ afterEach(() => {
   cleanup();
 });
 
-test("a standing chip is its words in the neutral pill's look, with no control", () => {
-  const view = renderCopied(
-    <>
-      <Chip>Site admins</Chip>
-      <Pill tone="neutral">Default</Pill>
-    </>,
-  );
+test("a standing chip is its words with no control, and draws no state's mark", () => {
+  const view = renderCopied(<Chip>Site admins</Chip>);
   const chip = screen.getByText("Site admins").closest(".chip");
-  const pill = screen.getByText("Default");
   expect(chip?.textContent).toBe("Site admins");
-  expect(
-    pill.className.split(" ").every((name) => chip?.classList.contains(name)),
-  ).toBe(true);
+  expect(chip?.querySelector("svg")).toBeNull();
+  expect(chip?.closest(".status-badge")).toBeNull();
   expect(screen.queryByRole("button")).toBeNull();
   expect(view.container.querySelector("[style]")).toBeNull();
 });
@@ -88,48 +77,26 @@ const standings: readonly TicketListStanding[] = [
   "Revoked",
 ];
 
-/** The state label a chip draws, read off the word it says. */
+/** The status badge a chip draws, read off the word it says. */
 function stateLabelDrawn(word: string): HTMLElement {
-  const label = screen.getByText(word).closest<HTMLElement>(".ticket-state");
-  if (label === null) throw new Error(`no state label around ${word}`);
+  const label = screen.getByText(word).closest<HTMLElement>(".status-badge");
+  if (label === null) throw new Error(`no status badge around ${word}`);
   return label;
 }
 
-test("every state's row chip is the small label with a mark, and only a moving state's mark spins", () => {
+test("every state's row chip is its status badge, in the word and tone its label is given", () => {
   for (const standing of standings) {
     renderCopied(<TicketStateChip ticket={7} standing={standing} />);
-    const labels = document.querySelectorAll<HTMLElement>(".ticket-state");
-    expect(labels, standing).toHaveLength(1);
-    for (const label of labels) {
-      const mark = label.querySelector("svg.ticket-state-mark");
-      expect(label.dataset["size"], standing).toBe("small");
-      expect(label.dataset["standing"], standing).toBe(standing);
-      expect(mark?.getAttribute("aria-hidden"), standing).toBe("true");
-      expect(mark?.childElementCount, standing).toBeGreaterThan(0);
-      expect(mark?.hasAttribute("data-spins"), standing).toBe(
-        standing === "Work" ||
-          standing === "Evaluation" ||
-          standing === "Finalization",
-      );
-    }
+    const label = ticketStateLabelOf(standing);
+    const badge = stateLabelDrawn(copyTextEn(label.word));
+    expect(document.querySelectorAll(".status-badge"), standing).toHaveLength(
+      1,
+    );
+    expect(badge.dataset["tone"], standing).toBe(label.tone);
+    expect(badge.dataset["size"], standing).toBe("regular");
+    expect(badge.hasAttribute("data-compact"), standing).toBe(false);
     cleanup();
   }
-});
-
-test("Ready and Done differ: Ready tinted with its own mark, Done filled with a check", () => {
-  renderCopied(
-    <>
-      <TicketStateChip ticket={7} standing="Ready" />
-      <TicketStateChip ticket={8} standing="Done" />
-    </>,
-  );
-  const ready = stateLabelDrawn("Ready");
-  const done = stateLabelDrawn("Done");
-  expect(ready.dataset["form"]).toBe("tinted");
-  expect(done.dataset["form"]).toBe("filled");
-  expect(ready.querySelector("svg")?.innerHTML).not.toBe(
-    done.querySelector("svg")?.innerHTML,
-  );
 });
 
 test("a ready chip that dispatches is the button around the label, which presses the dispatch", () => {
@@ -193,55 +160,4 @@ test("a ticket's number is named as it is written, never grouped as a count is",
   expect(
     screen.getByRole("button", { name: "Dispatch ticket #1345" }),
   ).toBeDefined();
-});
-
-test("every small state label's word is sized by every state's word, whatever its own, and the page's by its own", () => {
-  renderCopied(
-    <>
-      <TicketStateChip ticket={7} standing="Done" />
-      <TicketStateChip ticket={8} standing="Finalization" />
-      <TicketStateChip ticket={9} standing="Ready" />
-      <TicketStateLabel standing="Done" size="page" />
-    </>,
-  );
-  const every = ticketStateWords.map(copyTextEn).join("\n");
-  expect(
-    Array.from(
-      document.querySelectorAll<HTMLElement>(
-        '.ticket-state[data-size="small"] .ticket-state-word',
-      ),
-      (word) => [word.textContent, word.dataset["words"]] as const,
-    ),
-  ).toStrictEqual([
-    ["Done", every],
-    ["Finalizing", every],
-    ["Ready", every],
-  ]);
-  expect(
-    document.querySelector<HTMLElement>(
-      '.ticket-state[data-size="page"] .ticket-state-word',
-    )?.dataset["words"],
-  ).toBeUndefined();
-});
-
-test("the words a small label is sized by are laid out unseen and take no height", () => {
-  const sizer = sheetRules(ticketSheet, []).find(
-    (rule) => rule.selectorText === ".ticket-state-word[data-words]::before",
-  );
-  expect(sizer?.style.getPropertyValue("content")).toContain(
-    "attr(data-words)",
-  );
-  expect(sizer?.style.getPropertyValue("display")).toBe("block");
-  expect(sizer?.style.getPropertyValue("height")).toBe("0px");
-  expect(sizer?.style.getPropertyValue("visibility")).toBe("hidden");
-  expect(sizer?.style.getPropertyValue("white-space")).toBe("pre");
-});
-
-test("a small state label centres its word in its box whatever element carries the label", () => {
-  const word = sheetRules(ticketSheet, []).find(
-    (rule) =>
-      rule.selectorText ===
-      '.ticket-state[data-size="small"] .ticket-state-word',
-  );
-  expect(word?.style.getPropertyValue("text-align")).toBe("center");
 });

@@ -1,6 +1,6 @@
 /**
- * A ticket's place in its landing queue, as a merge mark and `position/total`
- * with the place in words on hover and as its name. A ticket in no queue draws
+ * A ticket's place in its landing queue, as `position/total` on the status
+ * badge of its tone, with the place in words on hover and as its name. A ticket in no queue draws
  * nothing, and so does every ticket while the read is out or has failed, since
  * the read is then nothing.
  */
@@ -18,10 +18,9 @@ import {
 import type { LandingQueuePlace } from "../../core/landingQueues.ts";
 import { landingQueuesQuery } from "../../core/ticketQueries.ts";
 import { usePanelState } from "../api.ts";
-import { pillLookClassName } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
 import { readValue } from "../../core/freshness.ts";
-import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 
 import "./ticket.css";
 
@@ -48,13 +47,14 @@ export function LandingQueueChip(props: {
   const words = text(landingQueuePlaceWords(place));
   const chip = (
     <span
-      className={`${pillLookClassName({ tone })} finalization-queue-chip`}
+      className="finalization-queue-chip"
       role="img"
       aria-label={words}
       data-holding={place.holding || undefined}
     >
-      <TicketRunMarkDrawn mark="Merge" tone={tone} />
-      <span aria-hidden="true">{text(landingQueuePlaceFigure(place))}</span>
+      <StatusBadge tone={tone} size="small">
+        {text(landingQueuePlaceFigure(place))}
+      </StatusBadge>
     </span>
   );
   return props.inLink === true ? (

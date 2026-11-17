@@ -126,7 +126,6 @@ import {
   dependencyStandingOf,
   TicketStateChip,
 } from "./ticket/TicketStateChip.tsx";
-import type { TicketStateChipLook } from "./ticket/TicketStateChip.tsx";
 import {
   LandingQueueChip,
   useLandingQueues,
@@ -202,7 +201,6 @@ function ticketListFilterOf(word: unknown): TicketFilter {
 export function TicketListState(props: {
   readonly row: ProjectTableRow;
   readonly dispatch?: TicketRowDispatch | undefined;
-  readonly look?: TicketStateChipLook | undefined;
 }): ReactNode {
   const row = props.row;
   return (
@@ -210,7 +208,6 @@ export function TicketListState(props: {
       ticket={row.ticket}
       standing={ticketListStandingOf(row)}
       dispatch={props.dispatch}
-      look={props.look}
     />
   );
 }
@@ -362,7 +359,7 @@ function TicketListFoot(props: {
               <div className="ticket-list-notes">{notes}</div>
               <span className="ticket-list-foot-standing">
                 {queued}
-                <TicketListState row={row} dispatch={dispatch} look="Badge" />
+                <TicketListState row={row} dispatch={dispatch} />
               </span>
             </>
           )}
@@ -370,7 +367,7 @@ function TicketListFoot(props: {
       ) : (
         <span className="ticket-list-foot-standing">
           {queued}
-          <TicketListState row={row} look="Badge" />
+          <TicketListState row={row} />
         </span>
       )}
     </>

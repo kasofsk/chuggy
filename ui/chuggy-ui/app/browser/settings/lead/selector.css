@@ -54,21 +54,6 @@
     font-weight: var(--weight-medium);
   }
 
-  .selector-dot {
-    width: 0.5em;
-    height: 0.5em;
-    border-radius: var(--radius-circle);
-    flex: none;
-  }
-
-  .selector-dot[data-tone="live"] {
-    background: var(--tone-live);
-  }
-
-  .selector-dot[data-tone="parked"] {
-    background: var(--tone-parked);
-  }
-
   .selector-prose {
     white-space: pre-wrap;
     max-width: var(--measure);
@@ -152,7 +137,6 @@
   }
 
   @media (forced-colors: active) {
-    .selector-dot[data-tone],
     .selector-mark {
       background: var(--forced-ink);
     }

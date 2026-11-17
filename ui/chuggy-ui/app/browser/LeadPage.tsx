@@ -89,7 +89,7 @@ import {
 import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
-import { Pill } from "./ui/Pill.tsx";
+import { StatusBadge } from "./ui/StatusBadge.tsx";
 import { Table } from "./ui/Table.tsx";
 import { WordDetail } from "./ui/WordDetail.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
@@ -158,17 +158,17 @@ function LeadTopBar(props: {
     <TopBarSlot>
       <h1 className="visually-hidden">{text({ id: "lead-heading" })}</h1>
       <div className="flex min-w-0 flex-wrap items-center gap-3">
-        <Pill tone={sessionStateTone(lead.state)} emphasis>
+        <StatusBadge tone={sessionStateTone(lead.state)} size="regular">
           {text(leadSessionStateLabel(lead.state))}
-        </Pill>
+        </StatusBadge>
         {props.runner === undefined ? null : (
-          <Pill tone="parked">
+          <StatusBadge tone="parked" size="small">
             {text(sessionRunnerShortWord(props.runner))}
-          </Pill>
+          </StatusBadge>
         )}
-        <Pill tone={selectorAttentionTone(lead.attention)}>
+        <StatusBadge tone={selectorAttentionTone(lead.attention)} size="small">
           {text(selectorAttentionLabel(lead.attention))}
-        </Pill>
+        </StatusBadge>
         <span className="num text-ink-3 text-sm">
           {lead.notificationCursor}
         </span>
@@ -245,9 +245,9 @@ function LeadTurnRow(props: { readonly turn: LeadTurnResponse }): ReactNode {
       <td>
         <WordDetail
           word={
-            <Pill tone={sessionTurnStateTone(turn.state)}>
+            <StatusBadge tone={sessionTurnStateTone(turn.state)} size="small">
               {text(leadTurnStateLabel(turn.state))}
-            </Pill>
+            </StatusBadge>
           }
           detail={
             turn.failure === undefined

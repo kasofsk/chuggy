@@ -42,7 +42,7 @@ import {
   FinalizationMethod,
   SummaryCell,
 } from "../TicketProvenance.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { TicketReference } from "../ui/TicketReference.tsx";
 
 import "./threadOffer.css";
@@ -243,9 +243,9 @@ export function ThreadOfferTicketSubject(props: {
         ticket={ticket.ticket}
         title={ticket.title}
         aside={
-          <Pill tone={phaseTone(ticket.phase)}>
+          <StatusBadge tone={phaseTone(ticket.phase)} size="small">
             {text(phaseLabel(ticket.phase))}
-          </Pill>
+          </StatusBadge>
         }
       />
       <ThreadOfferSubjectIntent intent={ticket.brief?.intent} />

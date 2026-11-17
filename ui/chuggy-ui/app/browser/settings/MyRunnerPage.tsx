@@ -96,7 +96,7 @@ import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Picker } from "../ui/Picker.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 import {
   SettingsListing,
@@ -356,9 +356,9 @@ function myRunnerCells(
       </>
     ),
     status: (
-      <Pill tone={runnerStandingTone(standing)}>
+      <StatusBadge tone={runnerStandingTone(standing)} size="small">
         {text(runnerStandingLabel(standing))}
-      </Pill>
+      </StatusBadge>
     ),
     version: <RunnerVersion runner={runner.runner} named />,
     polled:

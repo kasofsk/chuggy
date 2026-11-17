@@ -29,7 +29,7 @@ import type { Copy } from "../../../core/copy.ts";
 import { Button } from "../../ui/Button.tsx";
 import { Figure } from "../../ui/Figure.tsx";
 import { Input } from "../../ui/Input.tsx";
-import { Pill } from "../../ui/Pill.tsx";
+import { StatusBadge } from "../../ui/StatusBadge.tsx";
 import { SelectorRowsSection } from "./SelectorRowsSection.tsx";
 import type { SelectorRowsChrome } from "./SelectorRowsSection.tsx";
 
@@ -56,7 +56,9 @@ function SelectorLimitStanding(props: {
   if (!selectorSettingsLimitOverridden(row.draft, row.name))
     return (
       <span className="selector-was">
-        <Pill tone="neutral">{text({ id: "lead-settings-default" })}</Pill>
+        <StatusBadge tone="neutral" size="small">
+          {text({ id: "lead-settings-default" })}
+        </StatusBadge>
       </span>
     );
   const installation = selectorSettingsLimitFigure(

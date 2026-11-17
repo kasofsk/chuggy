@@ -37,9 +37,8 @@ import type { EpicTicketsMember } from "../../core/epicTickets.ts";
 import { instantFigure } from "../../core/figures.ts";
 import { projectTableRow } from "../../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../../core/projectTableRows.ts";
-import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import { readValue } from "../../core/freshness.ts";
-import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
+import { TicketStateLabel } from "../ticket/TicketStateLabel.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { EpicActor } from "./EpicHistoryTab.tsx";
@@ -64,12 +63,9 @@ function EpicOverviewTicket(props: {
         to="/$tenant/$project/tickets/$ticket"
         params={{ ...props.partition, ticket: String(member.ticket) }}
       >
-        <span
-          className="epic-overview-ticket-mark ticket-state-ink"
-          data-tone={ticketStateLabelOf(member.standing).tone}
-        >
-          <TicketStateMark standing={member.standing} />
-        </span>
+        <span className="epic-overview-ticket-mark">
+          <TicketStateLabel standing={member.standing} size="small" compact />
+        </span>{" "}
         <span className="epic-overview-ticket-title">
           <span className="epic-overview-ticket-number">#{member.ticket}</span>{" "}
           {member.title}

@@ -3,14 +3,15 @@
  * landmark, the current one marked `aria-current="page"` as the router marks
  * an active link.
  *
- * A tab may carry a count beside its label, which its name reads after the
- * label. A row wider than its container scrolls inside itself and fades the
+ * A tab may carry a count beside its label, as a `CountBadge` its name reads
+ * after the label, marked as a least where what was read was cut. A row wider than its container scrolls inside itself and fades the
  * side the more is on, rather than widening the page.
  */
 
 import { createLink } from "@tanstack/react-router";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
+import { CountBadge, countBadgeFigure } from "./CountBadge.tsx";
 import { useScrollSides } from "./useScrollSides.ts";
 
 import "./ScrollSides.css";
@@ -36,10 +37,11 @@ export function TabNav(props: {
 
 function TabNavAnchor(
   props: ComponentPropsWithoutRef<"a"> & {
-    readonly count?: number | string | undefined;
+    readonly count?: number | undefined;
+    readonly countCut?: boolean | undefined;
   },
 ): ReactNode {
-  const { count, children, ...anchor } = props;
+  const { count, countCut, children, ...anchor } = props;
   return (
     <li>
       <a {...anchor} className="tab-nav-tab">
@@ -47,7 +49,11 @@ function TabNavAnchor(
         {count === undefined ? null : (
           <>
             {" "}
-            <span className="tab-nav-count">{count}</span>
+            <CountBadge
+              count={count}
+              cut={countCut}
+              name={countBadgeFigure(count, countCut)}
+            />
           </>
         )}
       </a>

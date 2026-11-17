@@ -199,9 +199,11 @@ test("a card is a button holding its state's mark and its number, then its title
   expect(
     [...(head?.children ?? [])].map((child) => child.className),
   ).toStrictEqual(["epic-card-mark", "epic-card-number"]);
-  expect(
-    head?.querySelector(".epic-card-mark svg.ticket-state-mark"),
-  ).not.toBeNull();
+  const mark = head?.querySelector<HTMLElement>(
+    ".epic-card-mark .status-badge[data-compact]",
+  );
+  expect(mark?.dataset["tone"]).toBe("live");
+  expect(mark?.textContent).toBe("Working");
   expect(running.querySelector(".epic-card-number")?.textContent).toBe("5");
   expect(running.querySelector(".epic-card-title")?.textContent).toBe("Refund");
   expect(running.dataset["standing"]).toBe("Work");
@@ -643,14 +645,19 @@ test("with nothing selected the side panel lists the longest chain, what is runn
     ),
   ).toStrictEqual(["Longest chain4", "Running2", "Ready1"]);
   expect(listed(panel, "Longest chain")).toStrictEqual([
-    "#2 Schema",
-    "#5 Refund",
-    "#6 Ledger",
-    "#7 Report",
+    "Working #2 Schema",
+    "Working #5 Refund",
+    "Blocked #6 Ledger",
+    "Blocked #7 Report",
   ]);
-  expect(listed(panel, "Running")).toStrictEqual(["#2 Schema", "#5 Refund"]);
-  expect(listed(panel, "Ready")).toStrictEqual(["#9 Audit"]);
-  fireEvent.click(within(panel).getByRole("button", { name: "#9 Audit" }));
+  expect(listed(panel, "Running")).toStrictEqual([
+    "Working #2 Schema",
+    "Working #5 Refund",
+  ]);
+  expect(listed(panel, "Ready")).toStrictEqual(["Ready #9 Audit"]);
+  fireEvent.click(
+    within(panel).getByRole("button", { name: "Ready #9 Audit" }),
+  );
   expect(side().dataset["ticket"]).toBe("9");
   expect(written).toStrictEqual([9]);
 });
@@ -671,7 +678,7 @@ test("with nothing running the summary leaves Running out, and with nothing Read
   await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
   await graphic();
   expect(within(summary()).queryByRole("list", { name: "Running" })).toBeNull();
-  expect(listed(summary(), "Ready")).toStrictEqual(["#6 Ledger"]);
+  expect(listed(summary(), "Ready")).toStrictEqual(["Ready #6 Ledger"]);
   cleanup();
   epicServing.graph = {
     nodes: [{ ticket: 4, title: "Charge", phase: "Done", member: true }],
@@ -766,7 +773,10 @@ test("the selected ticket's panel says its layer and step, and how many it depen
       (heading) => heading.textContent,
     ),
   ).toStrictEqual(["Depends on1 of 2 done", "Blocks"]);
-  expect(listed(panel, "Blocks")).toStrictEqual(["#6 Ledger", "#8 Export"]);
+  expect(listed(panel, "Blocks")).toStrictEqual([
+    "Blocked #6 Ledger",
+    "Blocked #8 Export",
+  ]);
   expect(
     within(panel)
       .getByRole("link", { name: "Open ticket" })
@@ -786,12 +796,16 @@ test("a ticket the side panel lists selects that ticket when pressed", async () 
   });
   await graphic();
   const dependsOn = within(side()).getByRole("list", { name: "Depends on" });
-  fireEvent.click(within(dependsOn).getByRole("button", { name: "#5 Refund" }));
+  fireEvent.click(
+    within(dependsOn).getByRole("button", {
+      name: "Working #5 Refund",
+    }),
+  );
   expect(side().dataset["ticket"]).toBe("5");
   fireEvent.click(
     within(within(side()).getByRole("list", { name: "Depends on" })).getByRole(
       "button",
-      { name: /^#2 / },
+      { name: /^Working #2 / },
     ),
   );
   expect(side().dataset["ticket"]).toBe("2");
@@ -871,7 +885,10 @@ test("on a phone the graph takes the screen at rest, and a tapped card rises in 
   const pills = (name: string) =>
     within(within(sheet()).getByRole("list", { name }))
       .getAllByRole("button")
-      .map((button) => [button.textContent, button.getAttribute("aria-label")]);
+      .map((button) => [
+        button.querySelector(".epic-graph-sheet-number")?.textContent,
+        button.getAttribute("aria-label"),
+      ]);
   expect(pills("Depends on")).toStrictEqual([
     ["2", "#2 Schema: Working"],
     ["4", "#4 Charge: Done"],

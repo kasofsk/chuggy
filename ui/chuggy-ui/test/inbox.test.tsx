@@ -333,7 +333,11 @@ function servedCarrying(run: unknown): (url: string) => Response {
 test("a row says how its last run ended, and never Terminal", async () => {
   drawInbox(servedCarrying(failedRun));
   await settled();
-  expect(screen.getByText("Failed").className).toContain("pill-fail");
+  expect(
+    screen.getByText("Failed").closest<HTMLElement>(".status-badge")?.dataset[
+      "tone"
+    ],
+  ).toBe("fail");
   expect(document.body.textContent).not.toContain("Terminal");
 });
 
@@ -349,7 +353,11 @@ const admittedRun = {
 test("a row draws a run still waiting for its worker as its ticket page does", async () => {
   drawInbox(servedCarrying(admittedRun));
   await settled();
-  expect(screen.getByText("Starting").className).toBe("pill pill-queued");
+  expect(
+    screen.getByText("Starting").closest<HTMLElement>(".status-badge")?.dataset[
+      "tone"
+    ],
+  ).toBe("queued");
   expect(document.body.textContent).not.toContain("Admitted");
 });
 
@@ -397,7 +405,11 @@ test("a ticket escalating while the inbox is open draws how its last run ended",
   });
   await settled();
   expect(screen.getByText("#4 Serve the reason")).toBeDefined();
-  expect(screen.getByText("Failed").className).toContain("pill-fail");
+  expect(
+    screen.getByText("Failed").closest<HTMLElement>(".status-badge")?.dataset[
+      "tone"
+    ],
+  ).toBe("fail");
 });
 
 test("a reader who may not mutate keeps the row and is offered no answer", async () => {

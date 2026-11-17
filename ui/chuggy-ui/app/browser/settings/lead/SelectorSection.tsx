@@ -3,7 +3,7 @@
  * value, and what its own last write answered.
  *
  * The chrome is `SettingsSection`'s and only what is the selector's is here:
- * the Default pill, and the line this route's refusals are drawn as.
+ * the Default badge, and the line this route's refusals are drawn as.
  */
 
 import type { ReactNode } from "react";
@@ -19,7 +19,7 @@ import type { SelectorSettingsShown } from "../../selectorSettingsWriting.ts";
 import { Figure } from "../../ui/Figure.tsx";
 import { Identity } from "../../ui/Identity.tsx";
 import { Notice } from "../../ui/Notice.tsx";
-import { Pill } from "../../ui/Pill.tsx";
+import { StatusBadge } from "../../ui/StatusBadge.tsx";
 import { SettingsSection } from "../../ui/SettingsSection.tsx";
 import type { SettingsSectionRefusal } from "../../ui/SettingsSection.tsx";
 
@@ -110,7 +110,9 @@ export function SelectorSection(props: {
         <span className="flex items-center gap-2">
           {props.title}
           {props.inherited ? (
-            <Pill tone="neutral">{text({ id: "lead-settings-default" })}</Pill>
+            <StatusBadge tone="neutral" size="small">
+              {text({ id: "lead-settings-default" })}
+            </StatusBadge>
           ) : null}
         </span>
       }

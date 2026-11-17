@@ -38,7 +38,7 @@ import { useProjectAbilities } from "../projectAbilities.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { PageHeader } from "../ui/PageHeader.tsx";
 import { Panel } from "../ui/Panel.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import {
   RepositoryImportButton,
   RepositoryImportLine,
@@ -138,7 +138,13 @@ export function RepositoryPage(): ReactNode {
         description={repository}
         {...(binding?.retiredAt === undefined
           ? {}
-          : { status: <Pill tone="retired">{text(repositoryUnbound)}</Pill> })}
+          : {
+              status: (
+                <StatusBadge tone="retired" size="small">
+                  {text(repositoryUnbound)}
+                </StatusBadge>
+              ),
+            })}
       />
       <PanelUnready state={bindings} />
       {bindings.state === "Ready" && binding === undefined ? (

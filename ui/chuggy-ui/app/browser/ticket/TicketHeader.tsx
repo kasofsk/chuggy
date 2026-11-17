@@ -106,7 +106,7 @@ export function TicketHeader(props: {
       status={
         <>
           <TicketStateAnnouncement standing={props.standing} />
-          <TicketStateLabel standing={props.standing} size="page" />
+          <TicketStateLabel standing={props.standing} size="regular" />
           <TicketHeaderFragmentDrawn
             fragment={props.fragment}
             nowMs={props.nowMs}

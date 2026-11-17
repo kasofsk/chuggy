@@ -56,12 +56,12 @@ import { InstallLink } from "../repositories/InstallLink.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { Table } from "../ui/Table.tsx";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 
-/** Whether an app is on an account, as its pill says it. */
+/** Whether an app is on an account, as its badge says it. */
 function forgeAppStandingLabel(standing: ForgeAppStanding): Copy {
   switch (standing) {
     case "Installed":
@@ -93,15 +93,18 @@ function InstalledApp(props: {
   );
   if (read.state !== "Ready" || read.value.permissions !== "Behind")
     return (
-      <Pill tone={forgeAppStandingTone("Installed")}>
+      <StatusBadge tone={forgeAppStandingTone("Installed")} size="small">
         {text(forgeAppStandingLabel("Installed"))}
-      </Pill>
+      </StatusBadge>
     );
   return (
     <>
-      <Pill tone={forgeInstallationPermissionsTone(read.value.permissions)}>
+      <StatusBadge
+        tone={forgeInstallationPermissionsTone(read.value.permissions)}
+        size="small"
+      >
         {text({ id: "settings-accounts-update-pending" })}
-      </Pill>
+      </StatusBadge>
       <a
         href={read.value.settingsUrl}
         className={buttonLookClassName({ size: "sm" })}
@@ -129,9 +132,9 @@ function AppStanding(props: {
   );
   if (installationId === undefined)
     return (
-      <Pill tone={forgeAppStandingTone(props.standing)}>
+      <StatusBadge tone={forgeAppStandingTone(props.standing)} size="small">
         {text(forgeAppStandingLabel(props.standing))}
-      </Pill>
+      </StatusBadge>
     );
   return <InstalledApp tenant={props.tenant} installationId={installationId} />;
 }

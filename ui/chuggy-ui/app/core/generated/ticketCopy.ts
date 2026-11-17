@@ -14,7 +14,6 @@ export interface TicketCopy {
   readonly "ticket-verdict-rejected": Record<never, never>;
   readonly "ticket-verdict-killed": Record<never, never>;
   readonly "ticket-cycle-current": Record<never, never>;
-  readonly "ticket-standing-ready": Record<never, never>;
   readonly "ticket-value-none": Record<never, never>;
   readonly "ticket-value-unknown": Record<never, never>;
   readonly "ticket-value-default": Record<never, never>;

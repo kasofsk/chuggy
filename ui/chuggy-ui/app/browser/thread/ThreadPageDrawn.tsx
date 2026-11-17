@@ -35,20 +35,20 @@ import {
 } from "../context/SessionContext.tsx";
 import { ChatPaneMenu, useChatThreadMenu } from "../shell/ChatPaneHeader.tsx";
 import { PageHeader } from "../ui/PageHeader.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { WordDetail } from "../ui/WordDetail.tsx";
 import { ThreadEntryRename } from "./ThreadEntryLabel.tsx";
 
 /** The thread's standing, which is all the bar standing in for the head
  * once it has scrolled away says of it. */
-function ThreadPageStandingPill(props: {
+function ThreadPageStandingBadge(props: {
   readonly thread: ThreadResponse;
 }): ReactNode {
   const text = useCopyText();
   return (
-    <Pill tone={threadStandingTone(props.thread.state)} emphasis>
+    <StatusBadge tone={threadStandingTone(props.thread.state)} size="regular">
       {text(threadStandingLabel(props.thread.state))}
-    </Pill>
+    </StatusBadge>
   );
 }
 
@@ -61,17 +61,19 @@ function ThreadPageStanding(props: {
   const { thread } = props;
   return (
     <>
-      <ThreadPageStandingPill thread={thread} />
+      <ThreadPageStandingBadge thread={thread} />
       {thread.jobsStanding === true ? (
-        <Pill tone="live">{text({ id: "chat-kept-running" })}</Pill>
+        <StatusBadge tone="live" size="small">
+          {text({ id: "chat-kept-running" })}
+        </StatusBadge>
       ) : null}
       {thread.chatHostCapabilities === undefined ? null : (
         <span>
           <WordDetail
             word={
-              <Pill tone="neutral">
+              <StatusBadge tone="neutral" size="small">
                 {text({ id: "chat-host-capabilities" })}
-              </Pill>
+              </StatusBadge>
             }
             detail={sessionCapabilitiesSaid(text, thread.chatHostCapabilities)}
           />
@@ -102,7 +104,7 @@ export function ThreadPageHeader(props: {
       title={copyOrDataText(text, threadLabel(thread))}
       meta={props.meta}
       status={<ThreadPageStanding thread={thread} />}
-      statusCondensed={<ThreadPageStandingPill thread={thread} />}
+      statusCondensed={<ThreadPageStandingBadge thread={thread} />}
       overflow={
         <>
           <ContextToggle open={props.context} onToggle={props.onContext} />

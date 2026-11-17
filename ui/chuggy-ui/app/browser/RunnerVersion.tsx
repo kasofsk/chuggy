@@ -11,7 +11,7 @@ import type { RunnerListedResponse } from "../../../../src/contract/responses.ts
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { runnerOutdated } from "../core/runners.ts";
 import { cellAbsent } from "./TicketCells.tsx";
-import { Pill } from "./ui/Pill.tsx";
+import { StatusBadge } from "./ui/StatusBadge.tsx";
 import { WordDetail } from "./ui/WordDetail.tsx";
 
 export function RunnerVersion(props: {
@@ -34,9 +34,9 @@ export function RunnerVersion(props: {
         <span>
           <WordDetail
             word={
-              <Pill tone="parked">
+              <StatusBadge tone="parked" size="small">
                 {text({ id: "runners-version-outdated" })}
-              </Pill>
+              </StatusBadge>
             }
             detail={{
               id: "runners-version-available",

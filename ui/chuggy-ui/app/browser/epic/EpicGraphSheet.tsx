@@ -25,6 +25,7 @@ import { epicGraphSheetScrollOf } from "../../core/epicGraphSheet.ts";
 import type { ProjectTableRow } from "../../core/projectTableRows.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import { useViewportMotion } from "../shell/viewport.ts";
+import { TicketStateLabel } from "../ticket/TicketStateLabel.tsx";
 import { Button } from "../ui/Button.tsx";
 import {
   EpicGraphSideActions,
@@ -170,9 +171,8 @@ function EpicGraphSheetHead(props: {
   const label = ticketStateLabelOf(standing);
   return (
     <div className="epic-graph-sheet-head" data-tone={label.tone}>
-      <EpicGraphSideMark standing={standing} />
       <span className="epic-graph-sheet-number">{`#${String(node.ticket)}`}</span>
-      <span className="epic-graph-sheet-word">{text(label.word)}</span>
+      <TicketStateLabel standing={standing} size="small" />
       <Button
         size="icon"
         variant="quiet"

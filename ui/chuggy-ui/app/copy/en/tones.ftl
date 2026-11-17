@@ -1,4 +1,4 @@
-## The one status word a pill says beside its tone.
+## The one status word a status badge says beside its tone.
 
 ## Where one of a lead decision's dispatches got to.
 

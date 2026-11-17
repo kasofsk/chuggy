@@ -55,7 +55,7 @@ import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { TabNav, TabNavLink } from "../ui/TabNav.tsx";
 import { useTicketPageHeld, useTicketRunsWithin } from "./TicketPageHeld.tsx";
 import { readValue } from "../../core/freshness.ts";
@@ -226,9 +226,9 @@ function TicketRunHead(props: {
         <TicketRunMarkDrawn mark={ticketRunMarkOf(step.verdict)} tone={tone} />
         <h2>{step.name}</h2>
         <span className="ticket-run-cycle">{text(cycleLabel(step.cycle))}</span>
-        <Pill tone={tone}>
+        <StatusBadge tone={tone} size="small">
           {text(ticketRunVerdictLabel(step.verdict, step.approval))}
-        </Pill>
+        </StatusBadge>
       </div>
       <TicketRunMeta held={props.held} step={step} nowMs={props.nowMs} />
     </div>

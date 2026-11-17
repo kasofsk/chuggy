@@ -144,8 +144,9 @@ test("the members are grouped Escalated, Running, Ready, Blocked, Draft, Done, R
     "Revoked1",
   ]);
   expect(
-    tab().querySelector('[data-group="Blocked"] h3 svg.ticket-state-mark'),
-  ).not.toBeNull();
+    tab().querySelector<HTMLElement>('[data-group="Blocked"] h3 .status-badge')
+      ?.dataset["tone"],
+  ).toBe("queued");
 });
 
 test("a group's rows are in the order the work will happen, through the chain and its branch", async () => {

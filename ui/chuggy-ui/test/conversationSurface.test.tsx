@@ -371,7 +371,7 @@ test("a tool result that failed marks the row and draws no pill", () => {
   renderCopied(<Conversation exchanges={[failed]} empty="No conversation" />);
   fireEvent.click(screen.getByRole("button", { name: /tool/ }));
   expect(screen.getByText("Bash").className).toContain("text-tone-fail");
-  expect(document.querySelectorAll(".pill")).toHaveLength(0);
+  expect(document.querySelectorAll(".status-badge")).toHaveLength(0);
   styleless();
 });
 
@@ -478,7 +478,7 @@ test("a markers-only exchange draws its markers and no pill", () => {
   );
   expect(screen.getByText("Truncated")).toBeDefined();
   expect(screen.queryByRole("button")).toBeNull();
-  expect(document.querySelectorAll(".pill").length).toBe(0);
+  expect(document.querySelectorAll(".status-badge").length).toBe(0);
   styleless();
 });
 

@@ -40,46 +40,9 @@
     background: var(--surface-1);
   }
 
-  /* Each tone a mark, a word, a wash and an edge are drawn in. */
-  .epic-graph [data-tone] {
-    --epic-tone: var(--ink-3);
-    --epic-wash: var(--surface-1);
-  }
-
-  .epic-graph [data-tone="pass"] {
-    --epic-tone: var(--tone-pass);
-    --epic-wash: var(--wash-pass);
-  }
-
-  .epic-graph [data-tone="queued"] {
-    --epic-tone: var(--tone-queued);
-    --epic-wash: var(--wash-queued);
-  }
-
-  .epic-graph [data-tone="live"] {
-    --epic-tone: var(--tone-live);
-    --epic-wash: var(--wash-live);
-  }
-
-  .epic-graph [data-tone="evaluation"] {
-    --epic-tone: var(--tone-evaluation);
-    --epic-wash: var(--wash-evaluation);
-  }
-
-  .epic-graph [data-tone="finalization"] {
-    --epic-tone: var(--tone-finalization);
-    --epic-wash: var(--wash-finalization);
-  }
-
-  .epic-graph [data-tone="parked"] {
-    --epic-tone: var(--tone-parked);
-    --epic-wash: var(--wash-parked);
-  }
-
   .epic-graph-mark {
     display: inline-flex;
     flex: none;
-    color: var(--epic-tone);
   }
 
   /* The bar over the graph: the key with its counts, and the toggles. */
@@ -354,11 +317,11 @@
     color: var(--ink-3);
   }
 
-  .epic-card[data-dim] :is(.epic-card-mark, .epic-card-number) {
+  .epic-card[data-dim] .epic-card-number {
     color: var(--ink-3);
   }
 
-  .epic-card[data-dim] .epic-card-ports {
+  .epic-card[data-dim] :is(.epic-card-mark, .epic-card-ports) {
     opacity: 0.4;
   }
 
@@ -419,7 +382,6 @@
   .epic-card-mark {
     display: inline-flex;
     flex: none;
-    color: var(--epic-tone);
   }
 
   .epic-card-number {
@@ -485,9 +447,8 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .epic-graph-side-word {
+  .epic-graph-side-head > .status-badge {
     margin-inline-start: auto;
-    color: var(--epic-tone);
   }
 
   .epic-graph-side-title {
@@ -618,9 +579,8 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .epic-graph-sheet-word {
-    flex: 1;
-    color: var(--epic-tone);
+  .epic-graph-sheet-head > .status-badge {
+    margin-inline-end: auto;
   }
 
   .epic-graph-sheet-title {
@@ -667,10 +627,6 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     cursor: pointer;
-  }
-
-  .epic-graph-sheet-pill .epic-graph-mark {
-    color: var(--epic-tone);
   }
 
   .epic-graph-sheet-foot {

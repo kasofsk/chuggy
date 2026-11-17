@@ -2,7 +2,7 @@
  * One state as a small mark: its word in its tone, on its tone's own ground,
  * after a mark whose shape is the tone's.
  *
- * Total over `pillTones`, and no two tones share a mark, so a reader who sees
+ * Total over `toneRoster`, and no two tones share a mark, so a reader who sees
  * no colour still tells every state apart. The word is always in the document:
  * the compact form hides it from the eye and leaves it to assistive technology,
  * and the mark is decorative in both.
@@ -10,7 +10,7 @@
 
 import type { ReactNode } from "react";
 
-import { pillTones } from "../../core/tones.ts";
+import { toneRoster } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
 
 import "./StatusBadge.css";
@@ -44,7 +44,7 @@ export const statusBadgeMarkOf = {
   neutral: "Dash",
 } as const satisfies Record<Tone, StatusBadgeMark>;
 
-export { pillTones as statusBadgeTones };
+export { toneRoster as statusBadgeTones };
 
 function StatusBadgeMarkPaths(props: {
   readonly mark: StatusBadgeMark;

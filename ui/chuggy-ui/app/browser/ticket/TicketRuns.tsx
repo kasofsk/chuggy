@@ -61,7 +61,7 @@ import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import {
   TicketRunApprovalLine,
   TicketRunApprovalTime,
@@ -360,7 +360,9 @@ function TicketRunsCycleDrawn(props: {
       <header className="ticket-runs-head">
         <h3>{text(cycleLabel(cycle.ordinal))}</h3>
         {standingLabel === undefined ? null : (
-          <Pill tone="neutral">{text(standingLabel)}</Pill>
+          <StatusBadge tone="neutral" size="small">
+            {text(standingLabel)}
+          </StatusBadge>
         )}
         <span className="ticket-runs-outcome">{cycle.outcome}</span>
         <span className="ticket-runs-rollup">

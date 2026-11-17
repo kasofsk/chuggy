@@ -354,7 +354,7 @@ test("the cycles are newest first, the current one marked", async () => {
     "Cycle 1",
   ]);
   expect(
-    drawn.map((group) => group.querySelector(".pill")?.textContent),
+    drawn.map((group) => group.querySelector(".status-badge")?.textContent),
   ).toEqual(["Current", undefined, undefined]);
 });
 
@@ -675,9 +675,9 @@ test("a short page says so", async () => {
   expect(
     within(screen.getByRole("navigation", { name: "Ticket" })).getByRole(
       "link",
-      { name: /^Runs/u },
-    ).textContent,
-  ).toBe("Runs 4+");
+      { name: "Runs 4+" },
+    ),
+  ).toBeDefined();
 });
 
 test("without the draft the rows still group by the program the ticket was released with", async () => {
@@ -1099,7 +1099,7 @@ test("a sparse stage draws each evaluator as its own row, priced apart", async (
 test("a relaunched, short stage row in a superseded cycle still fits the copy budget", async () => {
   const { container } = await drawFanout();
   const superseded = groups(container).at(-1);
-  expect(superseded?.querySelector(".pill")).toBeNull();
+  expect(superseded?.querySelector(".status-badge")).toBeNull();
   const over = drawnStringsOver(container);
   expect(over).toEqual([]);
 });
