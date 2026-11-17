@@ -58,6 +58,7 @@ import type { RepositoryConfigurationImportAttemptResponse } from "../../../../s
 import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type { Copy, CopyArgument } from "./copy.ts";
 import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
+import { claudeCodeRunnerLine } from "./claudeCodeLine.ts";
 import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
 import {
@@ -76,7 +77,7 @@ import { setupServerPackages } from "./setupAgent.ts";
 import type { SetupMcpPackaged } from "./setupAgent.ts";
 import { setupAnswersSkipped, setupNameFlag } from "./setupArguments.ts";
 import { setupConfigurationPath } from "./setupConfiguration.ts";
-import type { SetupAnswers, SetupChatHostAnswer } from "./setupArguments.ts";
+import type { SetupAnswers } from "./setupArguments.ts";
 import { setupMergeImportFailed } from "./setupMerge.ts";
 import type { SetupHistory, SetupMergeSince } from "./setupMerge.ts";
 import type { SetupTracked } from "./setupNorthStar.ts";
@@ -91,6 +92,8 @@ import type { SetupTicketOffers } from "./setupTicket.ts";
 import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
 import {
   setupChatCost,
+  setupClaudeSaved,
+  setupClaudeWords,
   setupDockerBarredTold,
   setupEnginesNone,
   setupFitStopOf,
@@ -452,12 +455,8 @@ function setupConfigurationMend(
   };
 }
 
-/** Something `runner` would do on this machine for the checklist's project, which waits on the person's yes. */
-function setupOffer(
-  tell: Copy,
-  at: SetupAt,
-  chatHost: SetupChatHostAnswer | undefined,
-): SetupThing {
+/** What `runner` does on this machine for the checklist's project, said before it is run, with the line that has it run on another machine instead; `chat` where it makes this machine the person's chat host too. */
+function setupOffer(tell: Copy, at: SetupAt, chat: boolean): SetupThing {
   const { workspace, project } = at;
   return {
     thing: "Offer",
@@ -466,7 +465,8 @@ function setupOffer(
     when: { id: "setup-offer-when" },
     workspace,
     project,
-    ...(chatHost === undefined ? {} : { chatHost }),
+    ...(chat ? { chatHost: "yes" as const } : {}),
+    elsewhere: claudeCodeRunnerLine(at.site, workspace, project, chat),
   };
 }
 
@@ -474,7 +474,7 @@ const setupMcpOffers = {
   Current: "setup-mend-mcp-offer",
   Behind: "setup-mend-mcp-offer-behind",
   Absent: "setup-mend-mcp-offer-absent",
-} as const satisfies Record<SetupMcpPackaged, string>;
+} as const satisfies Record<SetupMcpPackaged["packaged"], string>;
 
 /**
  * The agent's MCP server for the checklist's project, which `mcp` names in
@@ -488,13 +488,30 @@ function setupMcpMend(
 ): SetupThing {
   const { site, workspace, project } = at;
   const program = setupServerPackages[platform].offered.program;
+  const named = setupNamed(at);
+  const versioned = (version: string | undefined): Copy | string =>
+    version === undefined
+      ? program
+      : { id: "setup-runner-versioned", args: { program, version } };
   return {
     thing: "Offer",
     command: "Mcp",
-    tell: {
-      id: setupMcpOffers[packaged],
-      args: { project: setupNamed(at), site, program },
-    },
+    tell:
+      packaged.packaged === "Behind"
+        ? {
+            id: setupMcpOffers.Behind,
+            args: {
+              project: named,
+              site,
+              program,
+              found: versioned(packaged.version),
+              installs: versioned(packaged.installs),
+            },
+          }
+        : {
+            id: setupMcpOffers[packaged.packaged],
+            args: { project: named, site, program },
+          },
     when: { id: "setup-offer-mcp-when" },
     workspace,
     project,
@@ -563,46 +580,59 @@ const setupJobSaid: Copy = quantityFigureCopy(
   memoryMibFigure(setupJobMemoryMib),
 );
 
-/** The answer `runner` is told for the person's chat host where a chat host here is asked about, which is the one recommended: yes only where the engine's memory has room for one beside a job. */
-function setupChatHostRecommended(size: SetupChatSize): SetupChatHostAnswer {
-  return size.room > 0 ? "yes" : "no";
-}
-
 /** What a chat host here would be, where the machine was looked at and its engine named; sized as having no room where the engine was not read. */
 function setupChatSizeHere(here: SetupRunnerHere): SetupChatSize {
   return here.chatSize ?? setupChatSized(undefined, undefined, {});
 }
 
-/** Where memory is short for a chat host of `size` beside a run, as the engine `engine` said it or did not. */
-function setupChatHostShort(size: SetupChatSize, engine: string): Copy {
-  const id = "setup-mend-chat-host-short";
-  const { engineMib, inUseMib } = size;
-  if (engineMib === undefined)
-    return { id, args: { said: "unsaid", engine, memory: "", used: "" } };
-  if (inUseMib === undefined)
-    return { id, args: { said: "uncounted", engine, memory: "", used: "" } };
-  const memory = setupMemorySaid(engineMib);
-  return inUseMib === 0
-    ? { id, args: { said: "said", engine, memory, used: "" } }
-    : {
-        id,
-        args: { said: "used", engine, memory, used: setupMemorySaid(inUseMib) },
-      };
+/** What an offer of `runner` says of the two things it puts here, or of the runner alone where `chat` says the person's chat host is not made here. */
+function setupRunnerThings(chat: boolean): Copy {
+  return { id: "setup-mend-runner-things", args: { chat: setupWith(chat) } };
 }
 
-/** The question an offer of `runner` asks of the person's chat host: what it would hold, what it is for, and whether it is recommended, with where memory is short where it is not; an engine not yet answering is a Mac's docker, which Colima runs. */
-function setupChatHostAsk(here: SetupRunnerHere): Copy {
+/** What an offer of `runner` says the person's chat host here holds, and that its first check downloads the chat image; nothing where it is not made here. */
+function setupChatHostSaid(chat: boolean, here: SetupRunnerHere): CopyArgument {
+  if (!chat) return "";
   const size = setupChatSizeHere(here);
-  const engine = here.room.room === "Open" ? here.room.engine : "docker";
-  const short = setupChatHostShort(size, engine);
   return {
-    id: "setup-mend-chat-host-ask",
+    id: "setup-mend-chat-host-holds",
+    args: setupChatCost(size.sessionsMax, size.sessionMemoryMib),
+  };
+}
+
+/** What an offer of `runner` says it finds here and keeps: the runner's settings, and whose Claude login they run work on. */
+function setupRunnerFoundSaid(here: SetupRunnerHere): CopyArgument {
+  const { settings } = here;
+  if (settings === undefined) return "";
+  return {
+    id: "setup-mend-runner-found-settings",
     args: {
-      ...setupChatCost(size.sessionsMax, size.sessionMemoryMib),
-      recommend: setupChatHostRecommended(size),
-      short,
+      path: settings.path,
+      credential: setupClaudeWords[settings.credential.kind].credential,
+      login: settings.credential.path,
     },
   };
+}
+
+/** Where the Claude credential work here would run on is not on this machine yet, what the person is told to do first, before anything is put here. */
+function setupRunnerLoginMend(
+  here: SetupRunnerHere,
+  chat: boolean,
+): SetupThing | undefined {
+  const credential = here.loginMissing;
+  if (credential === undefined) return undefined;
+  const things = setupRunnerThings(chat);
+  const saved = setupClaudeSaved(credential);
+  const words = setupClaudeWords[credential.kind].credential;
+  return setupHand(
+    credential.kind === "Subscription"
+      ? { id: "setup-mend-runner-login", args: { things, saved } }
+      : {
+          id: "setup-mend-runner-login-named",
+          args: { things, credential: words, path: credential.path, saved },
+        },
+    { id: "setup-runner-login-missing-when", args: { credential: words } },
+  );
 }
 
 /** Memory as an offer says it. */
@@ -691,14 +721,6 @@ function setupFitToldMend(
   );
 }
 
-/** The answer an offer of `runner` carries for the chat host, where it asks of one: where the person's chats run on a chat host they lack. */
-function setupChatHostOffered(
-  chat: boolean,
-  here: SetupRunnerHere,
-): SetupChatHostAnswer | undefined {
-  return chat ? setupChatHostRecommended(setupChatSizeHere(here)) : undefined;
-}
-
 /** A runner registered and not running: started here on the person's yes where this machine holds a registration for the project, and otherwise theirs to start where it is. */
 function setupRunnerLiveMend(
   at: SetupAt,
@@ -709,6 +731,7 @@ function setupRunnerLiveMend(
   if (here?.held !== true)
     return setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning);
   return (
+    setupRunnerLoginMend(here, chat) ??
     setupFitToldMend(here.fit, instead) ??
     setupOffer(
       {
@@ -718,12 +741,12 @@ function setupRunnerLiveMend(
           runs: setupRunsOn(here.claude),
           job: setupJobSaid,
           fit: setupFitSaid(here),
-          chat: setupWith(chat),
-          ask: chat ? setupChatHostAsk(here) : "",
+          found: setupRunnerFoundSaid(here),
+          chat: setupChatHostSaid(chat, here),
         },
       },
       at,
-      setupChatHostOffered(chat, here),
+      chat,
     )
   );
 }
@@ -830,13 +853,16 @@ function setupRunnerPutMend(
   platform: SetupPlatform,
   instead: Copy,
 ): SetupThing {
-  const told = setupFitToldMend(here.fit, instead);
+  const told =
+    setupRunnerLoginMend(here, chat) ?? setupFitToldMend(here.fit, instead);
   if (told !== undefined) return told;
-  const page = setupPage(at, settingsRoutes.project.myRunner);
   return setupOffer(
     {
       id: "setup-mend-runner-offer",
       args: {
+        things: setupRunnerThings(chat),
+        chat: setupWith(chat),
+        found: setupRunnerFoundSaid(here),
         put: {
           id: "setup-mend-runner-put",
           args: {
@@ -846,14 +872,12 @@ function setupRunnerPutMend(
           },
         },
         fit: setupFitSaid(here),
-        chat: setupWith(chat),
-        ask: chat ? setupChatHostAsk(here) : "",
-        page,
-        add: setupPressed.runner,
+        holds: setupChatHostSaid(chat, here),
+        project: setupNamed(at),
       },
     },
     at,
-    setupChatHostOffered(chat, here),
+    chat,
   );
 }
 
@@ -1449,7 +1473,7 @@ export function setupNext(
   answers: SetupAnswers,
   platform: SetupPlatform,
   here?: SetupRunnerHere,
-  packaged: SetupMcpPackaged = "Absent",
+  packaged: SetupMcpPackaged = { packaged: "Absent" },
   offers?: SetupTicketOffers,
   merge: SetupMergeSeen = setupMergeUnseen,
   tracked?: SetupTracked,

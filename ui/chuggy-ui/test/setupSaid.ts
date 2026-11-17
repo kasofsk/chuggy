@@ -54,6 +54,7 @@ export type SaidThing =
       readonly workspace: string;
       readonly project: string | undefined;
       readonly chatHost?: SetupChatHostAnswer;
+      readonly elsewhere?: string;
     }
   | {
       readonly thing: "Offer";

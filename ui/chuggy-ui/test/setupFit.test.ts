@@ -13,7 +13,6 @@ import {
   machineScript,
   machineServing,
   machineSignedIn,
-  machineSite,
 } from "./setupMachine.ts";
 import type { SetupMachine } from "./setupMachine.ts";
 import {
@@ -27,8 +26,8 @@ import { setupSiteAt } from "./setupSite.ts";
 
 const gib = 2 ** 30;
 const runner = ["runner", "--workspace", "acme", "--project", "widgets"];
-const pages = `${machineSite}/acme/widgets`;
-const instead = `For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows.`;
+const takes =
+  "Your runner will take work for acme/widgets. Say if you'd rather it didn't.";
 const short =
   "Colima's VM here has 2 GiB, short of the 4 GiB a run naming no memory needs, and 1 GiB for the container engine beside it, and runs no amd64 images, which a run naming no platform needs.";
 
@@ -82,7 +81,11 @@ async function said(
 /** What the bare command tells the person of the runner step. */
 async function offered(machine: SetupMachine): Promise<string> {
   const { lines } = await said(machine, []);
-  return lines.find((line) => line.includes("The next step is a runner")) ?? "";
+  return (
+    lines.find((line) =>
+      /^tell: (?:chuggy needs|The next step is a runner)/u.test(line),
+    ) ?? ""
+  );
 }
 
 function colimaRan(machine: SetupMachine): readonly string[] {
@@ -95,7 +98,7 @@ test("a Mac with Rosetta whose VM is short of memory and amd64 is offered both, 
   const machine = await macOf({ vm: vmSmall() });
   const offer = await offered(machine);
   expect(offer).toContain(
-    `${short} With your yes I first stop it, which stops its containers, and start it again with 8 GiB and Rosetta: colima stop, then colima start --memory 8 --vz-rosetta. Tell me yes to go ahead. ${instead}`,
+    `${short} I first stop it, which stops its containers, and start it again with 8 GiB and Rosetta: colima stop, then colima start --memory 8 --vz-rosetta. ${takes}`,
   );
   expect(colimaRan(machine)).toEqual([]);
 
@@ -134,7 +137,7 @@ test("a Mac without Rosetta is told to install it first, with no restart offered
 test("a stopped VM, read from Colima's list and its profile's settings, is started with what it lacks and never stopped", async () => {
   const machine = await macOf({ vm: { ...vmSmall(), running: false } });
   expect(await offered(machine)).toContain(
-    "With your yes I first start it with 8 GiB and Rosetta: colima start --memory 8 --vz-rosetta.",
+    "I first start it with 8 GiB and Rosetta: colima start --memory 8 --vz-rosetta.",
   );
   const { exit } = await said(machine, runner);
   expect(exit).toBe(0);
@@ -188,14 +191,14 @@ test("a Linux box of 3 GiB is told it cannot run a job naming no memory, and one
 
   const roomy = await machineSignedIn(site);
   const offer = await offered(roomy);
-  expect(offer).toContain("4 GiB a run. Tell me yes to go ahead.");
+  expect(offer).toContain(`4 GiB a run. ${takes}`);
   expect(offer).not.toContain("no room");
 });
 
 test("a Mac with Colima and no VM is offered one made as vz with Rosetta and room for a job, which the yes makes before registering", async () => {
   const machine = await macOf({ vm: undefined });
   expect(await offered(machine)).toContain(
-    "Colima has no VM here yet. With your yes I first make one with 8 GiB and Rosetta",
+    "Colima has no VM here yet. I first make one with 8 GiB and Rosetta",
   );
   const { exit, lines } = await said(machine, runner);
   expect(exit).toBe(0);

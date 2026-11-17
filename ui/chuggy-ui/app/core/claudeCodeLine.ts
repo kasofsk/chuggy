@@ -1,14 +1,15 @@
 /**
  * The lines a person pastes into Claude Code to have the setup program run
  * for them, and what their cards say of them: one that sets up chuggy for the
- * repository in the folder it is open in, and one that makes the machine it is
- * open on the person's chat host in a workspace.
+ * repository in the folder it is open in, one that makes the machine it is
+ * open on the person's chat host in a workspace, and one that makes it their
+ * own runner for a project, and their chat host too.
  *
  * The first line is the same text for every reader of a site. It carries the
  * site's own address and the path the site serves the setup program at, and
  * nothing of who is reading: no workspace and no project, which the program
- * reads and asks for where it cannot tell. The second names its workspace
- * too, and neither carries a token, since the program signs in and mints its
+ * reads and asks for where it cannot tell. The others name their workspace
+ * too, and none carries a token, since the program signs in and mints its
  * own.
  */
 
@@ -33,6 +34,19 @@ export function claudeCodeLine(origin: string): string {
 export function claudeCodeChatHostLine(origin: string, tenant: string): string {
   const run = `node ${claudeCodeLineScript} chat-host --site ${origin} --workspace ${tenant}`;
   return `Make this machine my chuggy chat host: run "${claudeCodeLineFetched(origin)} && ${run}" and do what its output says.`;
+}
+
+/** The line that has the program fetched as `claudeCodeLine` has it make this machine the person's own runner for `project` in `tenant`, and their chat host too where `chat` says so. */
+export function claudeCodeRunnerLine(
+  origin: string,
+  tenant: string,
+  project: string,
+  chat: boolean,
+): string {
+  const host = chat ? " --chat-host yes" : "";
+  const run = `node ${claudeCodeLineScript} runner --site ${origin} --workspace ${tenant} --project ${project}${host}`;
+  const things = chat ? "runner and chat host" : "runner";
+  return `Make this machine my chuggy ${things}: run "${claudeCodeLineFetched(origin)} && ${run}" and do what its output says.`;
 }
 
 /** What the card says of the line: where it is pasted, and where the reader is when it is. */

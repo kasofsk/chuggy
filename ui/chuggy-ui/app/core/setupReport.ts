@@ -203,8 +203,10 @@ export type SetupThing =
       readonly when: Copy;
       readonly workspace: string;
       readonly project: string | undefined;
-      /** The answer `runner` is named with for the person's chat host, the one recommended, where the offer asks of one. */
+      /** The answer `runner` is named with for the person's chat host, where the offer makes this machine it. */
       readonly chatHost?: SetupChatHostAnswer;
+      /** The line that has `runner` run on another machine of the person's instead, where the offer is of one. */
+      readonly elsewhere?: string;
     }
   | {
       readonly thing: "Offer";
@@ -1373,6 +1375,17 @@ function setupOfferLines(
         { id: "setup-runner-rule", args: { command, when: thing.when } },
       ],
       ...(chatHost === undefined ? [] : [setupChatHostRule(chatHost)]),
+      ...(thing.elsewhere === undefined
+        ? []
+        : [
+            [
+              "rule",
+              {
+                id: "setup-runner-rule-elsewhere",
+                args: { line: thing.elsewhere },
+              },
+            ] as const,
+          ]),
       ["next", setupNextStop],
     ];
   }

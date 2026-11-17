@@ -49,13 +49,18 @@ export const runnerAlone = [
 /** `runner` as a person who said yes to their chat host too runs it. */
 export const runner = [...runnerAlone, "--chat-host", "yes"];
 export const flags = "--workspace acme --project widgets";
-export const poolFile = "acme.widgets.shame.json";
-export const unit = "chuggy-linux-acme.widgets.shame.service";
+export const personalFile = `acme.${machineNamePart(setupSiteMember)}.json`;
+export const unit = `chuggy-linux-acme.${machineNamePart(setupSiteMember)}.service`;
 /** The user a run takes itself for, by number: the one the runner package takes docker from. */
 export const user = "1000";
 export const mint =
-  "program POST /api/v1/tenants/acme/projects/widgets/worker-pool-registration-tokens";
-export const redemption = "runner POST /api/v1/worker-pool-registrations";
+  "program POST /api/v1/tenants/acme/personal-runner-registration-tokens";
+export const redemption = "runner POST /api/v1/personal-runner-registrations";
+/** The writes that let the person's runner take the project's work: the project given to it, and Preferred named as the project's owner fallback. */
+export const serve = [
+  "program PUT /api/v1/tenants/acme/personal-runner/projects/widgets",
+  "program PUT /api/v1/tenants/acme/projects/widgets/owner-fallback",
+];
 export const chatFile = `acme.${machineNamePart(setupSiteMember)}.chat.host.json`;
 export const chatUnit = `chuggy-linux-acme.${machineNamePart(setupSiteMember)}.chat.host.service`;
 export const next = `next: node ${program} ${flags}`;
@@ -100,7 +105,7 @@ export function stoodSearched(): void {
   const handed = stoodAll.flatMap((on) => on.installation.world.secrets);
   for (const kind of ["registration", "credential"])
     assert.ok(
-      handed.some((secret) => secret.startsWith(kind)),
+      handed.some((secret) => secret.includes(kind)),
       kind,
     );
   for (const on of stoodAll) {
@@ -131,7 +136,7 @@ export function lines(on: Stood, engine: "docker" | "podman" = "docker") {
     command: join(on.machine.prefix, "bin", "chuggy-linux"),
     settings: on.machine.settings,
     login: on.machine.login,
-    pool: join(on.machine.pools, poolFile),
+    personal: join(on.machine.pools, personalFile),
     unit,
     chat: join(on.machine.pools, chatFile),
     chatUnit,

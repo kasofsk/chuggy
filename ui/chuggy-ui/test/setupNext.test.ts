@@ -44,7 +44,14 @@ import type {
   SetupRunnerHere,
   SetupRunnerRoom,
 } from "../app/core/setupRunnerMachine.ts";
-import type { SetupClaudeKind } from "../app/core/setupRunnerSaid.ts";
+import type {
+  SetupClaudeCredential,
+  SetupClaudeKind,
+} from "../app/core/setupRunnerSaid.ts";
+import {
+  setupClaudeSaved,
+  setupClaudeWords,
+} from "../app/core/setupRunnerSaid.ts";
 import type {
   SetupFate,
   SetupLack,
@@ -354,18 +361,20 @@ test("the MCP step offers mcp, which installs the runner package first where non
     );
   const opening = `The next step is chuggy's tools in your agent, for acme/widgets at ${stoodSite}.`;
   const installing = `With your yes I will install it with npm, without a password, and then name its server in Claude Code's configuration for this folder. ${mcpServes}`;
-  expect(thing(lacking)).toEqual(offered("Absent"));
-  expect(offered("Absent")).toEqual(
+  expect(thing(lacking)).toEqual(offered({ packaged: "Absent" }));
+  expect(offered({ packaged: "Absent" })).toEqual(
     mcpOffered(
       `${opening} The runner package, chuggy-linux, serves them as an MCP server, and it is not installed here. ${installing}`,
     ),
   );
-  expect(offered("Behind")).toEqual(
+  expect(
+    offered({ packaged: "Behind", version: "0.3.0", installs: "0.4.0" }),
+  ).toEqual(
     mcpOffered(
-      `${opening} The runner package, chuggy-linux, serves them as an MCP server, and the one installed here is not at a version chuggy setup uses. With your yes I will install the one it uses with npm, without a password, and then name its server in Claude Code's configuration for this folder. ${mcpServes}`,
+      `${opening} The runner package, chuggy-linux, serves them as an MCP server, and the one installed here, chuggy-linux 0.3.0, is older than chuggy setup uses. With your yes I will install chuggy-linux 0.4.0 in its place with npm, without a password, and then name its server in Claude Code's configuration for this folder. ${mcpServes}`,
     ),
   );
-  expect(offered("Current")).toEqual(
+  expect(offered({ packaged: "Current" })).toEqual(
     mcpOffered(
       `${opening} The runner package here, chuggy-linux, serves them as an MCP server. With your yes I will name that server in Claude Code's configuration for this folder. ${mcpServes}`,
     ),
@@ -391,7 +400,11 @@ test("on a Mac the MCP step and the runner, with or without the chat host, offer
         ).thing,
       ),
     );
-  for (const packaged of ["Current", "Behind", "Absent"] as const) {
+  for (const packaged of [
+    { packaged: "Current" },
+    { packaged: "Behind", version: "0.3.0", installs: "0.4.0" },
+    { packaged: "Absent" },
+  ] as const) {
     expect(mcp(packaged)).toContain(", chuggy-darwin, serves them");
     expect(mcp(packaged)).not.toContain("chuggy-linux");
   }
@@ -402,6 +415,8 @@ test("on a Mac the MCP step and the runner, with or without the chat host, offer
     chatSize: setupChatSized(engineRoomy, 0, {}),
     claude: "Subscription",
     fit: { fit: "Room" },
+    settings: undefined,
+    loginMissing: undefined,
   };
   for (const lack of [
     { lacks: "Runner", chat: false },
@@ -879,13 +894,22 @@ test.each(["Refused", "Failed", "Garbled", "Unauthenticated", "Cut"] as const)(
   },
 );
 
-const offered = (tell: string): SaidThing => ({
+/** The line that sets up the runner, with the chat host where `chat`, on another machine. */
+function otherMachine(chat: boolean): string {
+  const things = chat ? "runner and chat host" : "runner";
+  const host = chat ? " --chat-host yes" : "";
+  return `Make this machine my chuggy ${things}: run "curl -fsS ${stoodSite}/chuggy-setup.mjs -o ~/.chuggy-setup.mjs && node ~/.chuggy-setup.mjs runner --site ${stoodSite} --workspace acme --project widgets${host}" and do what its output says.`;
+}
+
+const offered = (tell: string, chat = false): SaidThing => ({
   thing: "Offer",
   command: "Runner",
   tell,
-  when: "once the person says yes to a runner on this machine",
+  when: "once the person has been told what it does here, and has not asked for it on another machine instead",
   workspace: "acme",
   project: "widgets",
+  ...(chat ? { chatHost: "yes" } : {}),
+  elsewhere: otherMachine(chat),
 });
 
 /** The memory, in MiB, the engine of the box's machine reports. */
@@ -907,6 +931,8 @@ function here(
     chatSize,
     claude: "Subscription",
     fit: { fit: "Room" },
+    settings: undefined,
+    loginMissing: undefined,
   };
   return saidThing(
     setupNext(lacking(lack), setupAnswersNone, platform, looked).thing,
@@ -920,98 +946,101 @@ const runnerKinds: readonly string[] = ["Runner", "RunnerLive"];
 const runnerIs =
   "The next step is a runner: the machine that does the work on your tickets";
 
-test("with no runner yet and a machine that could take one, the person is told once what runner would put here, and the command waits on their yes", () => {
+const runnerOnly =
+  "chuggy needs a **runner** running on a machine of yours, which does the work of tickets. I'll install it on this machine, as yours alone. It can live on another machine instead; say so if you want that.";
+const runnerAndHost =
+  "chuggy needs two things running on a machine of yours. A **runner** does the work of tickets. A **chat host** runs your chats with chuggy. I'll install both on this machine, as yours alone. They can live on another machine instead; say so if you want that.";
+const putHere =
+  "The runner package, chuggy-linux, runs it as a background service of yours that starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan, 4 GiB a run.";
+const takesWork =
+  "Your runner will take work for acme/widgets. Say if you'd rather it didn't.";
+
+test("with no runner yet and a machine that could take one, the person is told what a runner is, that it goes here as theirs alone and takes the project's work, and the line for another machine instead, and nothing waits on a yes", () => {
   expect(here({ lacks: "Runner", chat: false }, roomy)).toEqual(
-    offered(
-      `${runnerIs}. I can make this machine one. That puts a background service of yours here. The runner package, chuggy-linux, runs it, and it starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan, 4 GiB a run. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows.`,
-    ),
+    offered(`${runnerOnly} ${putHere} ${takesWork}`),
   );
   expect(here({ lacks: "Runner", chat: false }, roomy, true)).toEqual(
     here({ lacks: "Runner", chat: false }, roomy),
   );
 });
 
-test("with neither a runner of the project nor the person's chat host, the offer asks once of the chat host as well, says what it holds, and recommends it, by the value its command carries, only where the engine's memory has room for it beside a run", () => {
-  const put = `${runnerIs}. I can make this machine one. That puts a background service of yours here. The runner package, chuggy-linux, runs it, and it starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan, 4 GiB a run.`;
-  const instead = `For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows.`;
-  const ask = (holds: string) =>
-    `I can also make this machine your chat host, a second background service, which holds ${holds} at once. It is only for chatting with chuggy in the browser, so tools in your own agent need none.`;
-  const going =
-    "Tell me yes to go ahead, and whether you want the chat host too.";
-  expect(here({ lacks: "Runner", chat: true }, roomy)).toEqual({
-    ...offered(
-      `${put} ${ask("6 GiB whenever it runs: 2 GiB a chat, for up to 3")} There is room for it here beside a run, so I recommend it. ${going} ${instead}`,
+test("with neither a runner nor the person's chat host, the offer explains both and installs both by default, the chat host sized to the engine's memory whatever room it leaves", () => {
+  const holds = (size: string) =>
+    `Your chat host is a second background service, which holds ${size} at once.`;
+  expect(here({ lacks: "Runner", chat: true }, roomy)).toEqual(
+    offered(
+      `${runnerAndHost} ${putHere} ${holds("6 GiB whenever it runs: 2 GiB a chat, for up to 3")} ${takesWork}`,
+      true,
     ),
-    chatHost: "yes",
-  });
-  expect(
-    here(
-      { lacks: "Runner", chat: true },
-      roomy,
-      false,
-      false,
-      "linux",
-      setupChatSized(6_144, 0, {}),
-    ),
-  ).toEqual({
-    ...offered(
-      `${put} ${ask("2 GiB whenever it runs: 2 GiB a chat, for up to 1")} I recommend against it here: docker here has only 6 GiB, too little for a run and a chat host at once. ${going} ${instead}`,
-    ),
-    chatHost: "no",
-  });
-  expect(
-    here(
-      { lacks: "Runner", chat: true },
-      roomy,
-      false,
-      false,
-      "linux",
-      setupChatSized(undefined, 0, {}),
-    ),
-  ).toMatchObject({
-    tell: expect.stringContaining(
-      "I recommend against it here: docker here did not say how much memory it has.",
-    ) as unknown,
-    chatHost: "no",
-  });
+  );
+  for (const size of [
+    setupChatSized(6_144, 0, {}),
+    setupChatSized(6_144, 2_048, {}),
+    setupChatSized(6_144, undefined, {}),
+    setupChatSized(undefined, 0, {}),
+  ])
+    expect(
+      here({ lacks: "Runner", chat: true }, roomy, false, false, "linux", size),
+    ).toEqual(
+      offered(
+        `${runnerAndHost} ${putHere} ${holds("2 GiB whenever it runs: 2 GiB a chat, for up to 1")} ${takesWork}`,
+        true,
+      ),
+    );
 });
 
-test("an offer recommending against the chat host for what the engine already runs says how much of its memory is in use, and one whose use was not counted says so", () => {
-  const short = (inUseMib: number | undefined) =>
-    here(
-      { lacks: "Runner", chat: true },
-      roomy,
-      false,
-      false,
-      "linux",
-      setupChatSized(6_144, inUseMib, {}),
-    );
-  expect(short(2_048)).toMatchObject({
-    tell: expect.stringContaining(
-      "I recommend against it here: docker here has 6 GiB, 2 GiB of it in use, too little for a run and a chat host at once.",
-    ) as unknown,
-    chatHost: "no",
-  });
-  expect(short(undefined)).toMatchObject({
-    tell: expect.stringContaining(
-      "I recommend against it here: docker here did not say what its containers use.",
-    ) as unknown,
-    chatHost: "no",
-  });
-  expect(
-    here(
-      { lacks: "Runner", chat: true },
-      roomy,
-      false,
-      false,
-      "linux",
-      setupChatSized(engineRoomy, undefined, {}),
+/** What is next for a runner the machine lacks, where its settings and Claude login are as `looked` says. */
+function hereFound(
+  chat: boolean,
+  looked: Pick<SetupRunnerHere, "settings" | "loginMissing" | "claude">,
+): SaidThing {
+  return saidThing(
+    setupNext(lacking({ lacks: "Runner", chat }), setupAnswersNone, "linux", {
+      room: roomy,
+      held: false,
+      chat: false,
+      chatSize: setupChatSized(engineRoomy, 0, {}),
+      fit: { fit: "Room" },
+      ...looked,
+    }).thing,
+  );
+}
+
+test("runner settings already on this machine are named before anything is changed, with the Claude credential they run work on, which is whose they are", () => {
+  const settings = "/home/person/.config/chuggy-linux/runner.json";
+  const found = (credential: SetupClaudeCredential) =>
+    hereFound(false, {
+      claude: credential.kind,
+      settings: { path: settings, credential },
+      loginMissing: undefined,
+    });
+  expect(found({ kind: "Subscription", path: "/home/other/token" })).toEqual(
+    offered(
+      `${runnerOnly} This machine already has runner settings, in ${settings}, which run its work on the Claude login at /home/other/token. I keep them as they are. ${putHere} ${takesWork}`,
     ),
-  ).toMatchObject({
-    tell: expect.stringContaining(
-      "I recommend against it here: docker here did not say what its containers use.",
-    ) as unknown,
-    chatHost: "no",
+  );
+  expect(
+    (found({ kind: "ApiKey", path: "/srv/key" }) as { tell: string }).tell,
+  ).toContain(
+    `This machine already has runner settings, in ${settings}, which run its work on the Anthropic API key at /srv/key. I keep them as they are.`,
+  );
+});
+
+test("a Claude login the runner would run on and that is not there yet is the first thing the person does, before anything is installed, and nothing else is offered", () => {
+  const login = "/home/person/.config/chuggy-linux/claude/token";
+  expect(
+    hereFound(true, {
+      claude: "Subscription",
+      settings: undefined,
+      loginMissing: { kind: "Subscription", path: login },
+    }),
+  ).toEqual({
+    thing: "Hand",
+    tell: `chuggy needs two things running on a machine of yours. A **runner** does the work of tickets. A **chat host** runs your chats with chuggy. First, Claude needs to be logged in for them: run \`claude setup-token\` and tell me when it's done. ${copyTextEn(setupClaudeSaved({ kind: "Subscription", path: login }))}`,
+    when: copyTextEn({
+      id: "setup-runner-login-missing-when",
+      args: { credential: setupClaudeWords.Subscription.credential },
+    }),
   });
 });
 
@@ -1098,22 +1127,24 @@ test("a user the runner package bars from docker is told the package's reason an
   );
 });
 
-test("a runner registered and not running is offered to be started here only where this machine holds a registration for the project, said as held and as registered again where the site no longer knows it, and is otherwise the person's to start where it is", () => {
+test("a runner registered and not running is offered to be started here only where this machine holds a registration, said as held and as registered again where the site no longer knows it, and is otherwise the person's to start where it is", () => {
+  const holds =
+    "A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner. I'll check it and start it here as a background service of yours that starts when you log in, registering this machine again as yours alone first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan, 4 GiB a run.";
+  const instead =
+    "It can live on another machine instead; say so if you want that.";
   expect(here({ lacks: "RunnerLive", chat: false }, roomy, true)).toEqual(
-    offered(
-      "A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan, 4 GiB a run. Tell me yes to go ahead.",
-    ),
+    offered(`${holds} ${takesWork} ${instead}`),
   );
   for (const room of [roomy, { room: "Serviceless" }] as const)
     expect(here({ lacks: "RunnerLive", chat: false }, room), room.room).toEqual(
       mends.RunnerLive[1],
     );
-  expect(here({ lacks: "RunnerLive", chat: true }, roomy, true)).toMatchObject({
-    tell: expect.stringMatching(
-      / 4 GiB a run\. I can also make this machine your chat host, .* so I recommend it\. Tell me yes to go ahead, and whether you want the chat host too\.$/u,
-    ) as unknown,
-    chatHost: "yes",
-  });
+  expect(here({ lacks: "RunnerLive", chat: true }, roomy, true)).toEqual(
+    offered(
+      `${holds} Your chat host is a second background service, which holds 6 GiB whenever it runs: 2 GiB a chat, for up to 3 at once. ${takesWork} ${instead}`,
+      true,
+    ),
+  );
 });
 
 test("an offer names a Claude plan only where the runner's credential is a subscription's: another kind is named as its own, and one whose settings could not be read is not named at all", () => {
@@ -1133,6 +1164,8 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
           chatSize: setupChatSized(engineRoomy, 0, {}),
           claude,
           fit: { fit: "Room" },
+          settings: undefined,
+          loginMissing: undefined,
         }),
       );
       return thing.thing === "Offer" ? thing.tell : "";

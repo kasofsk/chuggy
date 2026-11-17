@@ -74,6 +74,13 @@ export function runnerOutdated(
   return false;
 }
 
+/** The release a package's install command installs, as its archive's name carries it, or nothing where it names none. */
+export function runnerInstalledVersion(
+  offered: RunnerPackage,
+): string | undefined {
+  return /-([0-9]+\.[0-9]+\.[0-9]+)\.tgz$/u.exec(offered.installCommand)?.[1];
+}
+
 /** The packages a machine is made a runner with, an entry a package. */
 export const runnerPackages = {
   linux: {

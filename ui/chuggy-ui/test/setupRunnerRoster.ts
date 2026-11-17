@@ -21,12 +21,11 @@ import {
   boxChatFile,
   boxChatUnitName,
   boxOwn,
-  boxPoolFile,
-  boxPoolName,
+  boxPersonalFile,
+  boxPersonalUnitName,
   boxPools,
   boxPrefix,
   boxSettings,
-  boxUnitName,
   boxUnits,
   boxVersion,
 } from "./setupRunnerBox.ts";
@@ -34,8 +33,8 @@ import { setupSiteMember } from "./setupSite.ts";
 
 const guide = runnerPackages.linux.guideAddress;
 export const rosterCommand = `${boxPrefix}/bin/chuggy-linux`;
-export const rosterPool = boxPoolFile("acme", "widgets");
-export const rosterUnit = boxUnitName("acme", "widgets");
+export const rosterPersonal = boxPersonalFile("acme", setupSiteMember);
+export const rosterUnit = boxPersonalUnitName("acme", setupSiteMember);
 
 /** An `Inactive` stop of the roster's unit, on Linux and straight after its start unless `given` says otherwise. */
 function rosterInactive(
@@ -140,10 +139,10 @@ export const runnerStops: {
   ],
   Unread: [
     { stop: "Unread", read: "work", outcome: "Refused" },
-    { stop: "Unread", read: "placement", outcome: "Fault" },
-    { stop: "Unread", read: "pools", outcome: "Cut" },
-    { stop: "Unread", read: "placement", outcome: "Refused" },
-    { stop: "Unread", read: "pools", outcome: "Refused" },
+    { stop: "Unread", read: "fallback", outcome: "Fault" },
+    { stop: "Unread", read: "personal", outcome: "Cut" },
+    { stop: "Unread", read: "fallback", outcome: "Refused" },
+    { stop: "Unread", read: "personal", outcome: "Refused" },
     { stop: "Unread", read: "threads", outcome: "Refused" },
     { stop: "Unread", read: "permit", outcome: "Fault" },
     { stop: "Unread", read: "chat", outcome: "Fault" },
@@ -260,7 +259,7 @@ export const runnerStops: {
       failed: {
         how: "Exit",
         exit: 1,
-        excerpt: `${boxUnits}/${rosterUnit} serves /elsewhere.json, not ${rosterPool}; remove it if it is stale`,
+        excerpt: `${boxUnits}/${rosterUnit} serves /elsewhere.json, not ${rosterPersonal}; remove it if it is stale`,
       },
     },
     {
@@ -334,6 +333,11 @@ export const runnerStops: {
     { stop: "PermitWithheld", people: rosterPeople, work: "Runner" },
     { stop: "PermitWithheld", people: rosterPeople, work: "Cluster" },
     { stop: "PermitWithheld", people: rosterPeople, work: undefined },
+  ],
+  RunnerWithheld: [{ stop: "RunnerWithheld", people: rosterPeople }],
+  ServeRefused: [
+    { stop: "ServeRefused", write: "Give", outcome: "Rejected" },
+    { stop: "ServeRefused", write: "Allow", outcome: "Fault" },
   ],
   ChatMintRefused: [
     { stop: "ChatMintRefused", outcome: "Absent", lapseMins: 60 },
@@ -459,11 +463,19 @@ export const runnerNotes: {
     note: "Login" as const,
     credential,
   })),
-  Pool: [{ note: "Pool", path: rosterPool }],
+  Personal: [{ note: "Personal", path: rosterPersonal }],
   ServerFound: [{ note: "ServerFound", path: boxClaudeConfig }],
   ServerAdded: [{ note: "ServerAdded", path: boxClaudeConfig }],
-  PoolGone: [{ note: "PoolGone", path: rosterPool, pool: boxPoolName }],
-  Registered: [{ note: "Registered", path: rosterPool }],
+  PersonalGone: [{ note: "PersonalGone", path: rosterPersonal }],
+  PersonalRegistered: [{ note: "PersonalRegistered", path: rosterPersonal }],
+  Given: [
+    { note: "Given", now: false },
+    { note: "Given", now: true },
+  ],
+  Allowed: [
+    { note: "Allowed", now: false },
+    { note: "Allowed", now: true },
+  ],
   Checked: [
     { note: "Checked", warned: undefined },
     { note: "Checked", warned: "warn  job network: it is slow" },
@@ -508,7 +520,7 @@ export interface RosterPlaces {
   readonly command: string;
   readonly settings: string;
   readonly login: string;
-  readonly pool: string;
+  readonly personal: string;
   readonly unit: string;
   readonly chat: string;
   readonly chatUnit: string;
@@ -519,7 +531,7 @@ export interface RosterPlaces {
 
 /** What a run prints of each thing it found as it should be, and of each thing it did, for acme/widgets on a machine whose things are at `places`. */
 export function rosterLines(places: RosterPlaces) {
-  const { command, settings, login, pool, unit, chat, chatUnit } = places;
+  const { command, settings, login, personal, unit, chat, chatUnit } = places;
   const engine = places.engine ?? "docker";
   const program = places.program ?? "chuggy-linux";
   return {
@@ -528,12 +540,14 @@ export function rosterLines(places: RosterPlaces) {
       login: `found: the runner's Claude login is in ${login}`,
       settings: `found: the runner's settings are in ${settings}`,
       package: `found: the runner package is installed: ${program} ${boxVersion}, at ${command}`,
-      pool: `found: this machine is registered as a runner of acme/widgets, in ${pool}`,
+      personal: `found: this machine is registered as your runner, in ${personal}`,
       check: "found: the runner's own check passed",
       unit: `found: the runner's service is installed: ${unit}`,
       linger: "found: your services keep running after you log out",
       running: `found: ${unit} is enabled and running`,
-      live: "found: the site sees a runner of acme/widgets live",
+      given: "found: your runners are given acme/widgets",
+      allowed: "found: acme/widgets lets your own runners take your work in it",
+      live: "found: the site sees your runner live, taking your work in acme/widgets",
       chat: `found: this machine is registered as your chat host, in ${chat}`,
       chatGone: `found: ${chat} registered this machine as your chat host, and the site no longer knows that registration`,
       chatCheck: "found: the chat host's own check passed",
@@ -547,11 +561,14 @@ export function rosterLines(places: RosterPlaces) {
     did: {
       package: `did: installed the runner package, ${program} ${boxVersion}, at ${command}`,
       settings: `did: wrote the runner's settings to ${settings}: its guide's own, with ${engine} as the engine`,
-      pool: `did: registered this machine as a runner of acme/widgets, in ${pool}`,
+      personal: `did: registered this machine as your runner, in ${personal}`,
       unit: `did: installed the runner's service, ${unit}`,
       linger: "did: set your services to keep running after you log out",
       enabled: `did: set ${unit}, which was running, to start when you log in`,
       started: `did: started ${unit}, which also starts when you log in`,
+      given: "did: gave your runners acme/widgets",
+      allowed:
+        "did: set acme/widgets to let your own runners take your work in it while one is online, and a shared runner while none is",
       restarted: `did: restarted ${unit}, so it runs as it is now registered and installed`,
       chatSized: `did: wrote the size of your chat host into ${settings}, every other setting kept as it was: the most chats it runs at once is 3, at 2 GiB each, 6 GiB in all`,
       chat: `did: registered this machine as your chat host, in ${chat}`,

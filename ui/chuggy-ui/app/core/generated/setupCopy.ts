@@ -705,6 +705,8 @@ export interface SetupCopy {
     readonly project: unknown;
     readonly site: unknown;
     readonly program: unknown;
+    readonly found: unknown;
+    readonly installs: unknown;
   };
   readonly "setup-offer-plugin-when": Record<never, never>;
   readonly "setup-rule-plugin-skip": {
@@ -789,9 +791,9 @@ export interface SetupCopy {
     readonly project: unknown;
     readonly runs: unknown;
     readonly job: unknown;
+    readonly found: unknown;
     readonly fit: unknown;
     readonly chat: unknown;
-    readonly ask: unknown;
   };
   readonly "setup-mend-runner-live-tell": Record<never, never>;
   readonly "setup-mend-runner-put": {
@@ -799,18 +801,28 @@ export interface SetupCopy {
     readonly runs: unknown;
     readonly job: unknown;
   };
-  readonly "setup-mend-chat-host-ask": {
+  readonly "setup-mend-chat-host-holds": {
     readonly total: unknown;
     readonly each: unknown;
     readonly sessions: unknown;
-    readonly recommend: unknown;
-    readonly short: unknown;
   };
-  readonly "setup-mend-chat-host-short": {
-    readonly said: unknown;
-    readonly engine: unknown;
-    readonly memory: unknown;
-    readonly used: unknown;
+  readonly "setup-mend-runner-things": {
+    readonly chat: unknown;
+  };
+  readonly "setup-mend-runner-found-settings": {
+    readonly path: unknown;
+    readonly credential: unknown;
+    readonly login: unknown;
+  };
+  readonly "setup-mend-runner-login": {
+    readonly things: unknown;
+    readonly saved: unknown;
+  };
+  readonly "setup-mend-runner-login-named": {
+    readonly things: unknown;
+    readonly credential: unknown;
+    readonly path: unknown;
+    readonly saved: unknown;
   };
   readonly "setup-mend-runner-elsewhere": {
     readonly page: unknown;
@@ -821,12 +833,13 @@ export interface SetupCopy {
     readonly add: unknown;
   };
   readonly "setup-mend-runner-offer": {
+    readonly things: unknown;
+    readonly chat: unknown;
+    readonly found: unknown;
     readonly put: unknown;
     readonly fit: unknown;
-    readonly chat: unknown;
-    readonly ask: unknown;
-    readonly page: unknown;
-    readonly add: unknown;
+    readonly holds: unknown;
+    readonly project: unknown;
   };
   readonly "setup-mend-serving-offer": {
     readonly project: unknown;

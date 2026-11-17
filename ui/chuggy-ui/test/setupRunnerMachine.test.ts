@@ -56,6 +56,7 @@ import {
   boxChatFile,
   boxChatUnitName,
   boxOwn,
+  boxPersonalFile,
   boxPoolFile,
   boxPools,
   boxPrefix,
@@ -736,6 +737,8 @@ test("what the bare command reads of the machine changes nothing: whether a runn
       sessionMemoryMib: 2_048,
     },
     claude: "Subscription",
+    settings: undefined,
+    loginMissing: undefined,
     fit: { fit: "Room" },
   });
   expect(bare.box.paths).toEqual(before);
@@ -759,6 +762,24 @@ test("what the bare command reads of the machine changes nothing: whether a runn
     start: undefined,
   });
 
+  const keyed = setupMachine();
+  keyed.box.paths.set(
+    boxSettings,
+    JSON.stringify({
+      claudeCredential: { kind: "ApiKey", apiKeyFile: "/k/a" },
+    }),
+  );
+  expect((await here(keyed)).claude).toBe("ApiKey");
+  keyed.box.paths.set(boxSettings, "{");
+  expect(await here(keyed)).toMatchObject({
+    room: { room: "Open", engine: "docker" },
+    claude: undefined,
+  });
+});
+
+test("a user barred from docker is read as that before the engine is asked, with the settings and the Claude credential they name", async () => {
+  const here = (machine: SetupMachine) =>
+    setupRunnerHere(machine.ports(), acme);
   const barred = pooled(["acme.widgets.shame.json"]);
   barred.user = "1001";
   barred.box.paths.set(
@@ -773,23 +794,24 @@ test("what the bare command reads of the machine changes nothing: whether a runn
     },
     held: false,
     chat: false,
+    chatSize: undefined,
     claude: "Subscription",
+    settings: {
+      path: boxSettings,
+      credential: { kind: "Subscription", path: boxLogin },
+    },
+    loginMissing: undefined,
     fit: { fit: "Room" },
   });
   expect(barred.box.acts).toEqual(["services"]);
+});
 
-  const keyed = setupMachine();
-  keyed.box.paths.set(
-    boxSettings,
-    JSON.stringify({
-      claudeCredential: { kind: "ApiKey", apiKeyFile: "/k/a" },
-    }),
-  );
-  expect((await here(keyed)).claude).toBe("ApiKey");
-  keyed.box.paths.set(boxSettings, "{");
-  expect(await here(keyed)).toMatchObject({
-    room: { room: "Open", engine: "docker" },
-    claude: undefined,
+test("a personal runner's registration on this machine is held", async () => {
+  const personal = setupMachine();
+  personal.box.paths.set(boxPersonalFile("acme", setupSiteMember), "{}");
+  expect(await setupRunnerHere(personal.ports(), acme)).toMatchObject({
+    held: true,
+    chat: false,
   });
 });
 
@@ -812,6 +834,11 @@ test("on a Mac the bare command reads the settings at chuggy-darwin's place and 
       sessionMemoryMib: 2_048,
     },
     claude: "Subscription",
+    settings: {
+      path: boxMacSettings,
+      credential: { kind: "Subscription", path: boxMacLogin },
+    },
+    loginMissing: { kind: "Subscription", path: boxMacLogin },
     fit: { fit: "Room" },
   });
   expect(darwin.box.acts).toEqual(["docker"]);

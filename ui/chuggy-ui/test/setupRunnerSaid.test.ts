@@ -44,7 +44,7 @@ import {
   rosterChatUnit,
   rosterLingerRefusal,
   rosterMyRunners,
-  rosterPool,
+  rosterPersonal,
   rosterUnit,
   runnerNotes,
   runnerNotesAll,
@@ -101,22 +101,22 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Again",
     ],
     [
-      "the site did not say of acme/widgets how its runners stand (Fault)",
+      "the site did not say of acme/widgets whether it lets your own runners take its work (Fault)",
       1,
       "Again",
     ],
     [
-      "the site did not say of acme/widgets which runners it has (Cut)",
+      "the site did not say of acme/widgets which runners of yours it knows (Cut)",
       1,
       "Again",
     ],
     [
-      "the site does not show you acme/widgets or how its runners stand",
+      "the site does not show you acme/widgets or whether it lets your own runners take its work",
       0,
       "Again",
     ],
     [
-      "the site does not show you acme/widgets or which runners it has",
+      "the site does not show you acme/widgets or which runners of yours it knows",
       0,
       "Again",
     ],
@@ -132,6 +132,21 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     ],
     [
       "the site did not say of acme/widgets whether you have a chat host (Fault)",
+      1,
+      "Again",
+    ],
+  ],
+  RunnerWithheld: [
+    [
+      "the workspace does not let you register a runner of your own",
+      0,
+      "Again",
+    ],
+  ],
+  ServeRefused: [
+    ["the site did not give your runners acme/widgets (Rejected)", 1, "Again"],
+    [
+      "the site did not let your own runners take your work in acme/widgets (Fault)",
       1,
       "Again",
     ],
@@ -360,7 +375,7 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   ],
   ServiceRefused: [
     [
-      `installing the runner's service ended with exit 1, saying: ${boxUnits}/${rosterUnit} serves /elsewhere.json, not ${rosterPool}; remove it if it is stale`,
+      `installing the runner's service ended with exit 1, saying: ${boxUnits}/${rosterUnit} serves /elsewhere.json, not ${rosterPersonal}; remove it if it is stale`,
       1,
       "Again",
     ],
@@ -372,20 +387,16 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   ],
   MintRefused: [
     [
-      "the site made no registration token for acme/widgets (Absent)",
+      "the site made no registration token for your runner (Absent)",
       1,
       "Again",
     ],
     [
-      "the site made no registration token for acme/widgets (Conflict)",
+      "the site made no registration token for your runner (Conflict)",
       1,
       "Again",
     ],
-    [
-      "the site made no registration token for acme/widgets (Fault)",
-      1,
-      "Again",
-    ],
+    ["the site made no registration token for your runner (Fault)", 1, "Again"],
   ],
   CheckFailed: [
     [
@@ -451,12 +462,12 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   ],
   NotLive: [
     [
-      "the runner's service is running as process 69807, and after 90 s the site still sees no runner of acme/widgets live",
+      "the runner's service is running as process 69807, and after 90 s the site still does not see your runner live, taking your work in acme/widgets",
       1,
       "Again",
     ],
     [
-      "the runner's service is running, and after 5 s the site lists no runner of acme/widgets",
+      "the runner's service is running, and after 5 s the site lists no runner of yours by its registration",
       1,
       "Again",
     ],
@@ -633,6 +644,7 @@ test("only a stop made before the run's first act says nothing was changed, whic
     "Serviceless",
     "SettingsUnread",
     "Unpackaged",
+    "fallback Refused",
     "threads Refused",
     "work Refused",
   ]);
@@ -642,11 +654,10 @@ test("only a stop made before the run's first act says nothing was changed, whic
     ),
   ).toEqual([
     "chat Fault",
+    "fallback Fault",
     "permit Fault",
-    "placement Fault",
-    "placement Refused",
-    "pools Cut",
-    "pools Refused",
+    "personal Cut",
+    "personal Refused",
   ]);
   const unread = runnerStops.Unread.map(
     (stop) => setupRunnerStopSaid(stop, widgets).tell,
@@ -795,8 +806,14 @@ test("each thing a run found is said as found and each thing it did as did, in w
   expect(lines("Package")).toEqual([
     `found: the runner package is installed: chuggy-linux ${boxVersion}, at ${rosterCommand}`,
   ]);
-  expect(lines("PoolGone")).toEqual([
-    `found: ${rosterPool} registered this machine as shame, and the site lists no runner of acme/widgets by that name`,
+  expect(lines("PersonalGone")).toEqual([
+    `found: ${rosterPersonal} registered this machine as your runner, and the site no longer knows that registration`,
+  ]);
+  expect([...lines("Given"), ...lines("Allowed")]).toEqual([
+    "found: your runners are given acme/widgets",
+    "did: gave your runners acme/widgets",
+    "found: acme/widgets lets your own runners take your work in it",
+    "did: set acme/widgets to let your own runners take your work in it while one is online, and a shared runner while none is",
   ]);
   expect(lines("Checked")).toEqual([
     "found: the runner's own check passed",
@@ -830,9 +847,11 @@ test("each kind of note is said as found, as did or as a tell, by its kind alone
     Settings: ["found"],
     SettingsWritten: ["did"],
     Login: ["found"],
-    Pool: ["found"],
-    PoolGone: ["found"],
-    Registered: ["did"],
+    Personal: ["found"],
+    PersonalGone: ["found"],
+    PersonalRegistered: ["did"],
+    Given: ["found", "did"],
+    Allowed: ["found", "did"],
     Checked: ["found"],
     Unit: ["found"],
     UnitWritten: ["did"],
@@ -883,7 +902,7 @@ test("the person's chat host is said as theirs, apart from the project's runner:
     .map((note) => setupRunnerNoteSaid(note, widgets).join(": "));
   expect(lines).toEqual([
     `did: wrote the size of your chat host into ${boxSettings}, every other setting kept as it was: the most chats it runs at once is 3, at 2 GiB each, 6 GiB in all`,
-    "found: the site sees a runner of acme/widgets live",
+    "found: the site sees your runner live, taking your work in acme/widgets",
     "found: hosted runs take the work of acme/widgets, so that work needs no runner",
     `found: this machine is registered as your chat host, in ${rosterChat}`,
     `found: ${rosterChat} registered this machine as your chat host, and the site no longer knows that registration`,

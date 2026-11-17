@@ -232,6 +232,8 @@ export interface SetupSite {
   readonly chat: Map<string, SetupSiteChatHost>;
   readonly chatTokens: Map<string, string>;
   chatMade: number;
+  /** The tokens minted for a personal runner of the caller's that nobody has redeemed, each with its workspace. */
+  readonly personalTokens: Map<string, string>;
   /** The caller's personal runners, by workspace, where they hold any. */
   readonly personal: Map<string, SetupSitePersonalRunners>;
   /** What each mint that was answered asked for. */
@@ -326,6 +328,7 @@ export function setupSiteEmpty(): SetupSite {
     chat: new Map(),
     chatTokens: new Map(),
     chatMade: 0,
+    personalTokens: new Map(),
     personal: new Map(),
     mints: [],
     pushed: new Map(),
@@ -753,6 +756,59 @@ export function setupSiteChatRedeemed(
   };
 }
 
+/** The id the site holds the caller's personal runner at `at` in a workspace's list by. */
+export function setupSitePersonalId(at: number): string {
+  return `chuggy-runner-${String(at + 1)}`;
+}
+
+/** A redemption of a token minted for a personal runner of the caller's: a new runner of theirs in its workspace, which has not polled. */
+export function setupSitePersonalRedeemed(
+  site: SetupSite,
+  token: string,
+): SetupSiteAnswer {
+  const tenant = site.personalTokens.get(token);
+  if (tenant === undefined) return refused();
+  site.personalTokens.delete(token);
+  const held = site.personal.get(tenant) ?? { live: [], projects: [] };
+  site.personal.set(tenant, held);
+  held.live.push(false);
+  return {
+    status: 201,
+    body: {
+      kind: "Personal",
+      tenant,
+      owner: site.member,
+      capabilities: ["Platform:Linux:Amd64"],
+      tokenUrl: "https://auth.example/oauth2/token",
+      audience: "https://chuggy.example/pool",
+      planeUrl: "https://pool.chuggy.example/",
+      clientId: setupSitePersonalId(held.live.length - 1),
+      clientSecret: drawn(site, "credential"),
+    },
+  };
+}
+
+/** A token for a personal runner of the caller's in a workspace, to a caller it lets register one and while it holds fewer than the bound. */
+function personalMinted(
+  site: SetupSite,
+  tenant: string,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "mint");
+  if (fate !== undefined) return fate;
+  if (site.withheld.has(tenant)) return refused();
+  const held = [...site.personalTokens.values()].filter((of) => of === tenant);
+  if (held.length >= setupSiteTokensMax)
+    return {
+      status: 409,
+      body: { error: { code: "TokenLimitReached", message: "At its bound." } },
+    };
+  site.mints.push(JSON.parse(body ?? "{}") as SetupSiteMint);
+  const token = drawn(site, "personalregistration");
+  site.personalTokens.set(token, tenant);
+  return { status: 201, body: { token, expiresAtMs: 4_102_444_800_000 } };
+}
+
 /** A token for the caller's chat host in a workspace, to a caller it lets register one and while it holds fewer than the bound. */
 function chatMinted(
   site: SetupSite,
@@ -799,7 +855,7 @@ function personalAnswered(site: SetupSite, tenant: string): SetupSiteAnswer {
       ? refused()
       : answered({
           runners: held.live.map((live, at) => ({
-            id: `chuggy-runner-${String(at + 1)}`,
+            id: setupSitePersonalId(at),
             capabilities: ["Platform:Linux:Amd64"],
             registeredAt: "2026-10-09T00:00:00Z",
             ...(live ? { polledAt: "2026-10-09T00:01:00Z" } : {}),
@@ -1131,6 +1187,7 @@ function executions(
 const mintPath = "/worker-pool-registration-tokens";
 const redeemPath = "/api/v1/worker-pool-registrations";
 const chatMintPath = "/chat-host-registration-tokens";
+const personalMintPath = "/personal-runner-registration-tokens";
 /** Where a chat host's token is redeemed, which is where a member's runner's is. */
 const chatRedeemPath = "/api/v1/personal-runner-registrations";
 
@@ -1612,6 +1669,8 @@ function tenantWritten(
 ): SetupSiteAnswer | undefined {
   if (sent.method === "POST" && rest === chatMintPath)
     return chatMinted(site, tenant, sent.body);
+  if (sent.method === "POST" && rest === personalMintPath)
+    return personalMinted(site, tenant, sent.body);
   const served = /^\/personal-runner\/projects\/([^/]+)$/u.exec(rest);
   if (sent.method === "PUT" && served !== null) {
     const project = projectOf(site, tenant, served[1]);
@@ -1802,12 +1861,14 @@ export function setupSiteAnswered(
     return redeemed(site, sent.body);
   if (sent.method === "POST" && url.pathname === "/api/v1/projects")
     return projectCreated(site, sent.body);
-  if (sent.method === "POST" && url.pathname === chatRedeemPath)
-    return setupSiteChatRedeemed(
-      site,
+  if (sent.method === "POST" && url.pathname === chatRedeemPath) {
+    const token =
       (JSON.parse(sent.body ?? "{}") as { readonly token?: string }).token ??
-        "",
-    );
+      "";
+    return site.personalTokens.has(token)
+      ? setupSitePersonalRedeemed(site, token)
+      : setupSiteChatRedeemed(site, token);
+  }
   const tenant = /^\/api\/v1\/tenants\/([^/]+)(\/.*)$/u.exec(url.pathname);
   const named = decodeURIComponent(tenant?.[1] ?? "");
   const rest = tenant?.[2] ?? "";
