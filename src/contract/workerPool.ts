@@ -135,10 +135,12 @@ export const workerPoolThreadClosedSchema = z.strictObject({
 
 /**
  * An assignment that runs one of a project's agent sessions: the same shape,
- * its image always named, because a session runs its site's session image and
- * never one a pool chooses, no runtime, because that image carries its own,
- * and no project, because a session mounts none of its owner's volumes. Its
- * bearer is the session's own, which the same bound admits.
+ * its image always named, because it is the site's session image and never
+ * one a pool chooses, which a pool runs the session in and a chat host does
+ * not, running it in the container it started from the `chatImage` its poll
+ * was answered, no runtime, because that image carries its own, and no
+ * project, because a session mounts none of its owner's volumes. Its bearer
+ * is the session's own, which the same bound admits.
  */
 export const workerPoolSessionAssignmentSchema = workerPoolAssignmentSchema
   .omit({ runtime: true, project: true })

@@ -143,7 +143,8 @@ registered the same way, with a token from
 
 A chat host runs its sessions in one container, started from the image its
 poll is answered. That is the pool plane's `CHUG_POOL_PLANE_CHAT_IMAGE`, a
-reference pinned by digest, and where it is unset the image of
+reference pinned by digest on the registry host the cluster names, which is
+what a host's pull is allowed by, and where it is unset the image of
 `CHUG_SCHEDULER_SESSION_POLICY`. The `chat` target of `images/worker/Dockerfile`
 is built for it. A value that is not pinned by digest refuses the plane's
 start.

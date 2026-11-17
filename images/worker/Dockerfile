@@ -170,9 +170,9 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 #   check.sh      what a job's container runs first, in the job's own image
 #
 # The core finds `bin/` from where it sits, and nothing puts it on PATH. The
-# `worker-base` stage puts `path/` there instead, last, so a chat session's
-# shell, which is handed the supervisor's PATH, finds `chuggy` and runs it on
-# the image's own node.
+# `worker-base` and `chat` stages put `path/` there instead, last, so a chat
+# session's shell, which is handed the supervisor's PATH, finds `chuggy` and
+# runs it on the image's own node.
 #
 # A SITE COPIES THE TREE OUT OF THIS IMAGE with this image's `cp`, as the user a
 # job runs as. So `/opt/chuggy` is a directory and not a link, and every file in

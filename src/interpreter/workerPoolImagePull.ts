@@ -10,7 +10,8 @@
  * are pulled as its blobs are. What an image is called on the
  * cluster and what a pool off it pulls it by differ only in the host, so the
  * digest a pool is handed is the one its execution pinned, its attempt was
- * opened under, or its site publishes for sessions.
+ * opened under, its site publishes for sessions, or its plane's chat-image
+ * setting names.
  */
 import { textCodePointsCount } from "../contract/http.ts";
 import { workerImageCharsMax } from "../contract/workerPool.ts";
