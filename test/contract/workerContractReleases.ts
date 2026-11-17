@@ -86,6 +86,7 @@ export const workerContractFieldReleases: readonly string[] = [
   "1.115.0",
   "1.117.0",
   "1.131.0",
+  "1.140.0",
 ];
 
 /** Where the version `release` speaks sits against `version`: below it, at it, or past it. */
