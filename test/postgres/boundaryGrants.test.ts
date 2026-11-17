@@ -35,6 +35,7 @@ import {
   projectThemeSetFunction,
   projectThemeOverrideReadFunction,
   projectThemeOverrideWriteFunction,
+  projectImageSetFunction,
   configurationFollowingMoveFunction,
   configurationImporterRole,
   draftCreateFunction,
@@ -974,6 +975,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     `${projectThemeSetFunction}(text,text,jsonb,text,text)`,
     `${projectThemeOverrideReadFunction}(text,text,text)`,
     `${projectThemeOverrideWriteFunction}(text,text,text,text,bigint)`,
+    `${projectImageSetFunction}(text,text,text,text,text,text)`,
   ].map((signature) =>
     boundaryGrantsDoor(
       signature,
@@ -1155,6 +1157,10 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["project_theme_override", null, "SELECT", apiRole, false],
   ["project_theme_override", null, "UPDATE", boundaryOwnerRole, true],
   ["project_theme_override", null, "DELETE", boundaryOwnerRole, true],
+  ["project_image", null, "SELECT", apiRole, true],
+  ["project_image", null, "UPDATE", apiRole, false],
+  ["project_image", null, "INSERT", boundaryOwnerRole, true],
+  ["project_image", null, "SELECT", schedulerRole, false],
 ];
 
 test("each role holds of a relation the columns it reaches it by, and is refused the ones it does not", async () => {

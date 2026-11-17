@@ -1094,6 +1094,14 @@ export const projectArtifactUploadRefusalCodes = [
 export type ProjectArtifactUploadRefusalCode =
   (typeof projectArtifactUploadRefusalCodes)[number];
 
+/** What naming an artifact a project's icon or banner refuses: one the project does not hold, one of a type neither role admits, or one past its role's bound. */
+export const projectImageRefusalCodes = [
+  "ImageNotFound",
+  "ImageTypeNotAdmitted",
+  "ImageTooLarge",
+] as const;
+export type ProjectImageRefusalCode = (typeof projectImageRefusalCodes)[number];
+
 /**
  * What a door answers a caller with no runner that would take their turn, where
  * the turn would be offered to runners; shared for the same reason.

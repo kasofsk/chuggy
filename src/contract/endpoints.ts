@@ -27,6 +27,7 @@ import {
   leadInquirySchema,
   selectorProposalReviewSchema,
   projectThemeSchema,
+  projectImageSchema,
 } from "./requests.ts";
 import {
   operationalStatusResponseSchema,
@@ -73,6 +74,7 @@ import {
   themeChoiceResponseSchema,
   projectThemeResponseSchema,
   projectAppearanceResponseSchema,
+  projectImagesResponseSchema,
 } from "./responses.ts";
 
 function endpointInteger(name: string, fallback?: number) {
@@ -504,6 +506,22 @@ export const nativeHttpEndpoints = {
     method: "GET",
     path: nativeHttpRoutes.projectAppearance,
     response: projectAppearanceResponseSchema,
+  },
+  viewProjectImages: {
+    method: "GET",
+    path: nativeHttpRoutes.projectImages,
+    response: projectImagesResponseSchema,
+  },
+  nameProjectImage: {
+    method: "PUT",
+    path: nativeHttpRoutes.projectImage,
+    body: projectImageSchema,
+    response: projectImagesResponseSchema,
+  },
+  clearProjectImage: {
+    method: "DELETE",
+    path: nativeHttpRoutes.projectImage,
+    response: projectImagesResponseSchema,
   },
 } as const;
 

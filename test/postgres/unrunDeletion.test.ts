@@ -122,6 +122,7 @@ const unrunDeletionBeneath: Readonly<Record<string, string>> = {
 
 /** Every relation keyed by a project that goes with the project row, by the cascade its key to it carries, rather than by a delete of the door's. */
 const unrunDeletionCascaded: readonly string[] = [
+  "project_image",
   "project_theme",
   "project_theme_override",
 ];
@@ -255,7 +256,8 @@ test("a project that released nothing is deleted with its drafts, bindings, conf
   );
   await harness.query(
     `SELECT set_project_theme($1,$2,'{}','Member','alice'),
-            write_project_theme_override($1,$2,'alice','ember',NULL)`,
+            write_project_theme_override($1,$2,'alice','ember',NULL),
+            set_project_image($1,$2,'icon','image/png:t','Member','alice')`,
     [partition.tenant, partition.project],
   );
   await harness.query(
@@ -275,6 +277,7 @@ test("a project that released nothing is deleted with its drafts, bindings, conf
     "project_owner_fallback",
     "project_theme",
     "project_theme_override",
+    "project_image",
     "epic",
   ])
     assert.ok((before[relation] ?? 0) > 0, `${relation} holds a row first`);
