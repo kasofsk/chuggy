@@ -27,6 +27,8 @@ export interface Asking {
   readonly sent?: string[];
   /** What stands between the run and the site's answers, where a case answers a read its own way. */
   readonly through?: (ports: ApiPorts) => ApiPorts;
+  /** Whether the agent's configuration here names chuggy's server for the project, which it does unless a case says not. */
+  readonly named?: boolean;
 }
 
 /** Ports that answer from `site` by path, as the ports a session is opened with are asked, and fail whatever it has no answer for. */
@@ -70,7 +72,7 @@ export async function stood(
   site: SetupSite,
   asking: Asking = {},
 ): Promise<SetupStanding> {
-  return setupStanding(await siteRead(site, asking));
+  return setupStanding(await siteRead(site, asking), asking.named ?? true);
 }
 
 /** The next thing for a site, as a run given `asking` would name it. */

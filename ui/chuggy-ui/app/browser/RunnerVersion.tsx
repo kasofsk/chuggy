@@ -31,6 +31,7 @@ export function RunnerVersion(props: {
         : runner.version}
       {pinned !== undefined && runnerOutdated(runner.version, pinned) ? (
         <Tooltip
+          trigger="abbreviation"
           text={{ id: "runners-version-available", args: { version: pinned } }}
         >
           <span>

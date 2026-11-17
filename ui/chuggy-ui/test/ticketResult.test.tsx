@@ -38,8 +38,8 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   sleepMs: () => Promise.resolve(),
 }));
 
-vi.mock("@tanstack/react-router", () => ({
-  createLink: (component: unknown) => component,
+vi.mock("@tanstack/react-router", async () => ({
+  ...(await import("./routerLinkStubbed.tsx")),
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),

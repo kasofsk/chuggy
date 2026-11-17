@@ -1,6 +1,7 @@
 /**
  * A lead routed to its project's runners is offered a turn only where a live
- * runner's owner has their Claude account unpaused, against a real server: the
+ * runner's owner has their Claude account unpaused, on a credential the runner
+ * named or, where it named none, on the whole agent, against a real server: the
  * selector's admission and the pool plane's claim read one rule over the same
  * rows, a refused pass keeps `UsagePaused` and offers nothing, and the next
  * pass after the pause lifts offers the turn the changes were waiting for.
@@ -21,6 +22,7 @@ import type { LeadPolicyClock } from "../../src/interpreter/leadPolicyHost.ts";
 import { leadSystemPrompt } from "../../src/interpreter/leadTools.ts";
 import type { DispatchViewPage } from "../../src/interpreter/dispatchView.ts";
 import type { ProjectNotification } from "../../src/interpreter/notifications.ts";
+import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
@@ -28,20 +30,24 @@ import {
   type SelectorRunResult,
   type SelectorRuntimeSource,
 } from "../../src/interpreter/selectorRuntime.ts";
-import { agentAccountHarnessCommitted } from "./agentAccountHarness.ts";
+import {
+  agentAccountHarnessCommitted,
+  agentAccountHarnessCredentialsOver,
+} from "./agentAccountHarness.ts";
 import {
   postgresHarnessRolePool,
   postgresHarnessSelectorContext,
 } from "./harness.ts";
 import {
   leadRigHostedAccess,
+  leadRigNamed,
   leadRigObservation,
   leadRigOpen,
   leadRigPooled,
   leadRigProject,
   type LeadRig,
 } from "./leadHarness.ts";
-import { sessionRigSession } from "./sessionHarness.ts";
+import { sessionRigSession, sessionRigTurn } from "./sessionHarness.ts";
 
 let rig: LeadRig;
 
@@ -341,4 +347,122 @@ test("a lead with one paused and one unpaused owner's live runner is admitted, a
   assert.deepEqual(await usagePauseTurns(partition), [{ route: "Pool" }]);
   assert.deepEqual(await usagePauseAwaiting(partition, pausedPool), []);
   assert.equal((await usagePauseAwaiting(partition, runningPool)).length, 1);
+});
+
+/** One pool's case of the named rule: why, the Claude credentials it named or none, when each paused credential's pause ends, and whose pause the standing answers it ends at, where it is paused. */
+const usagePauseNamedCases = [
+  ["one of two named paused", ["work", "home"], { work: 3600, spare: 1800 }],
+  [
+    "both named paused",
+    ["work", "home"],
+    { work: 7200, home: 3600, spare: 1800 },
+    "home",
+  ],
+  ["none named and one paused", undefined, { work: 3600, spare: 1800 }, "work"],
+] as const;
+
+test("a pool that named credentials takes its lead while one is free and is paused until the earliest of its own ends while none is, and one that named none while any is paused", async () => {
+  for (const [why, named, ends, endedBy] of usagePauseNamedCases) {
+    const partition = await usagePauseProject(`usage-named-${why}`);
+    const owner = usagePauseOwner("named");
+    const pool = await leadRigPooled(rig, partition, owner);
+    await leadRigNamed(rig, partition, pool, named);
+    await agentAccountHarnessCommitted(
+      rig.sessions.harness,
+      owner,
+      "Claude",
+      agentAccountHarnessCredentialsOver(ends),
+    );
+    const [lead] = await rig.sessions.harness.query(
+      `SELECT session FROM agent_session WHERE tenant=$1 AND project=$2`,
+      [partition.tenant, partition.project],
+    );
+    await sessionRigTurn(
+      rig.sessions,
+      partition,
+      asSessionId(String(lead?.["session"])),
+      why,
+    );
+    const until =
+      endedBy === undefined
+        ? null
+        : (
+            await rig.sessions.harness.query(
+              `SELECT resets_at FROM agent_account_usage
+                WHERE principal=$1 AND credential=$2`,
+              [owner, endedBy],
+            )
+          )[0]?.["resets_at"];
+    assert.deepEqual(
+      await rig.sessions.harness.query(
+        `SELECT standing,paused_until FROM lead_runner_standing($1,$2,60)`,
+        [partition.tenant, partition.project],
+      ),
+      [
+        {
+          standing: endedBy === undefined ? "Live" : "Paused",
+          paused_until: until,
+        },
+      ],
+      why,
+    );
+    assert.equal(
+      (await usagePauseAwaiting(partition, pool)).length,
+      endedBy === undefined ? 1 : 0,
+      why,
+    );
+  }
+});
+
+/** The refusal `read_lead_refusal` answers of the project, its end as seconds from now. */
+async function usagePauseRefusalRead(partition: Partition) {
+  return rig.sessions.harness.query(
+    `SELECT refusal,extract(epoch FROM paused_until-now())::int AS until_secs,off
+       FROM read_lead_refusal($1,$2,60)`,
+    [partition.tenant, partition.project],
+  );
+}
+
+test("a lead refused UsagePaused reads off with no end where every live pool is held only by credentials turned off, and the other pools' earliest end beside one that is not", async () => {
+  const partition = await usagePauseProject("usage-off");
+  const owner = usagePauseOwner("off");
+  await leadRigNamed(
+    rig,
+    partition,
+    await leadRigPooled(rig, partition, owner),
+    ["work", "home"],
+  );
+  await agentAccountHarnessCommitted(rig.sessions.harness, owner, "Claude", {
+    off: ["work", "home"],
+  });
+  const pass = usagePausePass(partition);
+  try {
+    assert.deepEqual((await pass.passed).failures, [
+      { phase: "UsagePaused", partition },
+    ]);
+  } finally {
+    await pass.close();
+  }
+  assert.deepEqual(await usagePauseRefusalRead(partition), [
+    { refusal: "UsagePaused", until_secs: null, off: true },
+  ]);
+  const other = usagePauseOwner("limited");
+  await leadRigNamed(
+    rig,
+    partition,
+    await leadRigPooled(rig, partition, other),
+    ["work"],
+  );
+  await agentAccountHarnessCommitted(
+    rig.sessions.harness,
+    other,
+    "Claude",
+    agentAccountHarnessCredentialsOver({ work: 1800 }),
+  );
+  const [read] = await usagePauseRefusalRead(partition);
+  assert.equal(read?.["off"], false);
+  assert.ok(
+    Math.abs(Number(read?.["until_secs"]) - 1800) <= 2,
+    "the end of the pool not held off alone",
+  );
 });

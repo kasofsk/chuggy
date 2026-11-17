@@ -554,7 +554,7 @@ export interface ChatPaneTrailFrame {
 
 /**
  * A move the reader makes: a placement other than the one chosen, from the
- * gear; a control of the pane; the window narrowed, widened or made another
+ * preferences; a control of the pane; the window narrowed, widened or made another
  * height; a thread's own page and back; a reload; or the edge dragged to a
  * share of the frame along its axis. A drag short of the pane's least is one
  * into the strip: the threshold between the two is the library's, and a trail
@@ -753,7 +753,7 @@ function chatPaneTrailChanged(
 }
 
 /** The moves the frame offers the reader now: the window, a thread and a
- * reload always, the gear where it offers a placement, the edge wherever it is
+ * reload always, the preferences where they offer a placement, the edge wherever it is
  * drawn, and the controls the pane draws as it is presented, which take it to
  * or from the whole body only where the frame divides. */
 export function chatPaneTrailOffered(

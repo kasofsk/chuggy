@@ -88,19 +88,6 @@ export function finalizerLandingOf(
 }
 
 /**
- * The ref the ticket lands on, where its brief or its binding names one. A
- * landing on whatever branch the remote defaults to names none, because only
- * the finalizer's own read of the remote at landing says which branch that is.
- */
-export function finalizerLandingRef(
-  brief: DraftBrief | undefined,
-  binding: RepositoryBinding | undefined,
-): GitRefName | undefined {
-  const landing = finalizerLandingOf(brief, binding);
-  return landing.landing === "Lands" ? landing.repository.targetRef : undefined;
-}
-
-/**
  * The binding a proposal's base is read through: the reference its
  * finalization names, read as itself rather than through the binding's own, or
  * the branch the remote defaults to where it names none.
@@ -118,7 +105,8 @@ export const finalizerRemoteDefaultRef = "HEAD";
 /**
  * The ref a work task merges in to meet the change it lands beside: where the
  * ticket lands, for a push, and for a proposal the base it opens into rather
- * than the branch it opens from. A base the remote defaults to is named as
+ * than the branch it opens from. A base the remote defaults to, which is where
+ * a push naming no reference lands as well, is named as
  * `finalizerRemoteDefaultRef`, because only the finalizer's own read of the
  * remote says which branch that is.
  */
@@ -130,7 +118,7 @@ export function finalizerLandingBaseRef(
   if (landing.landing !== "Lands") return undefined;
   const finalization = landing.branches.brief?.finalization;
   if (!briefFinalizationOpensProposal(finalization))
-    return landing.repository.targetRef;
+    return landing.repository.targetRef ?? finalizerRemoteDefaultRef;
   return (
     finalizerProposalBaseBinding(
       landing.binding,

@@ -5,9 +5,10 @@
  * answers with no box is left empty, and no project draws no grid.
  *
  * Total over a grid wide enough for a name beside its roles and one that is
- * not, where a project is a block and the sheet draws each box under its
- * role's word. The word is in every cell that has a box for that form alone:
- * the box is named without it, so it is hidden from a reader who is read to.
+ * not, where a project is the table's card: its name over a row of its boxes,
+ * each under its role's word, and a cell with no box keeping its place so a
+ * role stands at the same place down the grid. The box is named without the
+ * role's word, which the card draws for the eye alone.
  */
 
 import type { ReactNode } from "react";
@@ -15,9 +16,12 @@ import type { ReactNode } from "react";
 import { accessProjectRoles } from "../../../../../src/contract/accessPlane.ts";
 import type { AccessProjectRole } from "../../../../../src/contract/accessPlane.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { CopyText } from "../../core/copy.ts";
 import { projectRoleLabel } from "../../core/tenantPeople.ts";
+import { useProjectNamed } from "../projectNamed.ts";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Table } from "../ui/Table.tsx";
+import type { TableRow } from "../ui/Table.tsx";
 
 import "./tenantPeople.css";
 
@@ -29,48 +33,50 @@ export interface TenantProjectsBox {
   readonly held?: boolean;
 }
 
-function TenantProjectsRow(props: {
-  readonly project: string;
-  readonly box: (role: AccessProjectRole) => TenantProjectsBox | undefined;
-  readonly onToggle: (role: AccessProjectRole) => void;
-}): ReactNode {
-  const text = useCopyText();
-  return (
-    <tr>
-      <th scope="row">{props.project}</th>
-      {accessProjectRoles.map((role) => {
-        const box = props.box(role);
-        const word = projectRoleLabel(role);
-        return (
-          <td key={role}>
-            {box === undefined ? null : (
-              <label className="people-grid-box">
-                <span className="people-grid-role" aria-hidden="true">
-                  {text(word)}
-                </span>
-                <Checkbox
-                  bare
-                  label={text({
-                    id: "settings-people-grid-box",
-                    args: { project: props.project, role: word },
-                  })}
-                  checked={box.checked}
-                  disabled={box.disabled}
-                  held={box.held ?? false}
-                  onChange={() => {
-                    props.onToggle(role);
-                  }}
-                />
-              </label>
-            )}
-          </td>
-        );
-      })}
-    </tr>
-  );
+type TenantProjectsColumn = "project" | AccessProjectRole;
+
+function tenantProjectsRow(
+  project: string,
+  drawn: {
+    readonly name: string;
+    readonly box: (role: AccessProjectRole) => TenantProjectsBox | undefined;
+    readonly onToggle: (role: AccessProjectRole) => void;
+    readonly text: CopyText;
+  },
+): TableRow<TenantProjectsColumn> {
+  const boxes = accessProjectRoles.map((role) => {
+    const box = drawn.box(role);
+    return [
+      role,
+      box === undefined ? null : (
+        <Checkbox
+          bare
+          label={drawn.text({
+            id: "settings-people-grid-box",
+            args: { project: drawn.name, role: projectRoleLabel(role) },
+          })}
+          checked={box.checked}
+          disabled={box.disabled}
+          held={box.held ?? false}
+          onChange={() => {
+            drawn.onToggle(role);
+          }}
+        />
+      ),
+    ] as const;
+  });
+  return {
+    key: project,
+    cells: {
+      project: drawn.name,
+      ...(Object.fromEntries(boxes) as Record<AccessProjectRole, ReactNode>),
+    },
+    empty: boxes.filter(([, box]) => box === null).map(([role]) => role),
+  };
 }
 
 export function TenantProjectsGrid(props: {
+  readonly tenant: string;
   readonly projects: readonly string[];
   readonly box: (
     project: string,
@@ -79,34 +85,39 @@ export function TenantProjectsGrid(props: {
   readonly onToggle: (project: string, role: AccessProjectRole) => void;
 }): ReactNode {
   const text = useCopyText();
+  const named = useProjectNamed();
   if (props.projects.length === 0) return null;
   const projects = text({ id: "settings-people-projects" });
   return (
     <div className="people-grid">
-      <Table caption={projects}>
-        <thead>
-          <tr>
-            <th scope="col">{projects}</th>
-            {accessProjectRoles.map((role) => (
-              <th key={role} scope="col">
-                {text(projectRoleLabel(role))}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {props.projects.map((project) => (
-            <TenantProjectsRow
-              key={project}
-              project={project}
-              box={(role) => props.box(project, role)}
-              onToggle={(role) => {
+      <Table
+        caption={projects}
+        stacked={{
+          columns: [
+            {
+              key: "project",
+              label: projects,
+              rowHeader: true,
+              headClassName: "people-grid-project",
+            },
+            ...accessProjectRoles.map((role) => ({
+              key: role,
+              label: text(projectRoleLabel(role)),
+              inline: true,
+            })),
+          ],
+          rows: props.projects.map((project) =>
+            tenantProjectsRow(project, {
+              name: named({ tenant: props.tenant, project }),
+              box: (role) => props.box(project, role),
+              onToggle: (role) => {
                 props.onToggle(project, role);
-              }}
-            />
-          ))}
-        </tbody>
-      </Table>
+              },
+              text,
+            }),
+          ),
+        }}
+      />
     </div>
   );
 }

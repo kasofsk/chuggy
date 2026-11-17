@@ -68,6 +68,7 @@ export function operationRefusalSamples(
     SelectionUnsupported: { type: "SelectionUnsupported" },
     ProgramExceedsPlan: { type: "ProgramExceedsPlan" },
     ProgramSkipsBriefChecks: { type: "ProgramSkipsBriefChecks" },
+    ProgramStageOutOfPosition: { type: "ProgramStageOutOfPosition" },
     OverridesUnsupported: { type: "OverridesUnsupported" },
     OverridesUnknown: { type: "OverridesUnknown" },
     TicketCapacityReached: { type: "TicketCapacityReached" },

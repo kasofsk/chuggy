@@ -12,6 +12,7 @@ import { copyTextEn } from "../app/copy/catalog.ts";
 import { copyOrDataText } from "../app/core/copy.ts";
 import type { CopyOrData } from "../app/core/copy.ts";
 import type {
+  SetupMachineCommand,
   SetupNext,
   SetupStepSaid,
   SetupStepState,
@@ -46,15 +47,28 @@ export type SaidThing =
   | { readonly thing: "Hand"; readonly tell: string; readonly when: string }
   | {
       readonly thing: "Offer";
+      readonly command: SetupMachineCommand;
       readonly tell: string;
       readonly when: string;
       readonly workspace: string;
-      readonly project: string;
+      readonly project: string | undefined;
     }
   | {
       readonly thing: "Ask";
       readonly ask: string;
       readonly flag: "workspace" | "project";
+    }
+  | {
+      readonly thing: "Name";
+      readonly ask: string;
+      readonly workspace: string;
+      readonly project: string | undefined;
+    }
+  | {
+      readonly thing: "Configure";
+      readonly tell: string;
+      readonly workspace: string;
+      readonly project: string;
     }
   | {
       readonly thing: "Failed";
@@ -65,6 +79,7 @@ export type SaidThing =
 export function saidThing(thing: SetupThing): SaidThing {
   switch (thing.thing) {
     case "Done":
+    case "Configure":
       return { ...thing, tell: copyTextEn(thing.tell) };
     case "Hand":
     case "Offer":
@@ -74,6 +89,7 @@ export function saidThing(thing: SetupThing): SaidThing {
         when: copyTextEn(thing.when),
       };
     case "Ask":
+    case "Name":
       return { ...thing, ask: copyTextEn(thing.ask) };
     case "Failed":
       return { ...thing, found: copyTextEn(thing.found) };
@@ -91,6 +107,11 @@ export const saidTodo: Said = ["todo", ""];
 export const saidAcme: Said = ["done", "acme"];
 export const saidWidgets: Said = ["done", "acme/widgets"];
 export const saidOrg: Said = ["done", "acme-org"];
+/** The MCP step where the agent's configuration here names chuggy's server for the project. */
+export const saidServed: Said = [
+  "done",
+  "Claude Code here runs chuggy's MCP server for acme/widgets",
+];
 /** GitHub once a repository is added: the account that owns it, and that both apps there are granted it. */
 export const saidGranted: Said = [
   "done",
@@ -101,6 +122,7 @@ export const saidLive: Said = ["done", "live"];
 export const saidReady = [
   saidAcme,
   saidWidgets,
+  saidServed,
   saidGranted,
   saidRepository,
   saidLive,
@@ -114,6 +136,7 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
     saidTodo,
     saidTodo,
     saidTodo,
+    saidTodo,
   ],
   Workspace: [
     saidAcme,
@@ -122,28 +145,48 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
     saidTodo,
     saidTodo,
     saidTodo,
+    saidTodo,
   ],
   Project: [
     saidAcme,
     ["waiting", "acme/widgets has no North Star yet"],
+    saidServed,
     saidTodo,
     saidTodo,
     saidTodo,
     saidTodo,
   ],
-  NorthStar: [saidAcme, saidWidgets, saidTodo, saidTodo, saidTodo, saidTodo],
+  NorthStar: [
+    saidAcme,
+    saidWidgets,
+    saidServed,
+    saidTodo,
+    saidTodo,
+    saidTodo,
+    saidTodo,
+  ],
   Portal: [
     saidAcme,
     saidWidgets,
+    saidServed,
     ["waiting", "acme-org has the portal app, not the worker app"],
     saidTodo,
     saidTodo,
     saidTodo,
   ],
-  Apps: [saidAcme, saidWidgets, saidOrg, saidTodo, saidTodo, saidTodo],
+  Apps: [
+    saidAcme,
+    saidWidgets,
+    saidServed,
+    saidOrg,
+    saidTodo,
+    saidTodo,
+    saidTodo,
+  ],
   Added: [
     saidAcme,
     saidWidgets,
+    saidServed,
     saidGranted,
     ["waiting", "acme-org/widgets is added, its configuration not read yet"],
     saidTodo,
@@ -152,6 +195,7 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Configured: [
     saidAcme,
     saidWidgets,
+    saidServed,
     saidGranted,
     saidRepository,
     saidTodo,
@@ -160,6 +204,7 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Offline: [
     saidAcme,
     saidWidgets,
+    saidServed,
     saidGranted,
     saidRepository,
     ["waiting", "registered, not running"],
@@ -194,29 +239,38 @@ export function saidLandingSite(): SetupSite {
 
 export const saidLanding: readonly Said[] = [
   ...saidReady,
-  ["waiting", "ticket 1 is in Landing"],
+  ["waiting", "ticket 1 is in Finalization"],
 ];
 
-/** The step each read leaves unread, and what the read is called there. */
+/** The step each read leaves unread, and what the read is called there. The
+ * owner fallback's leaves one unread only where the project has no pool, and
+ * the person's personal runners' only where it also names a fallback, so
+ * their cases are their own. */
 export const saidUnread: Readonly<
-  Record<Exclude<SetupSiteRead, "workspaces">, readonly [number, string]>
+  Record<
+    Exclude<SetupSiteRead, "workspaces" | "fallback" | "personal">,
+    readonly [number, string]
+  >
 > = {
   inventory: [1, "your projects were"],
   settings: [1, "acme/widgets: its lead settings were"],
-  installations: [2, "its GitHub accounts were"],
-  portalGrant: [2, "what the portal app is granted on GitHub was"],
-  workerGrant: [2, "what the worker app is granted on GitHub was"],
-  repositories: [3, "its repositories were"],
-  work: [4, "where its work runs was"],
-  placement: [4, "its runners were"],
-  landed: [5, "its tickets were"],
-  moving: [5, "its tickets were"],
-  drafts: [5, "its drafts were"],
-  landings: [5, "a ticket's landings were"],
+  installations: [3, "its GitHub accounts were"],
+  portalGrant: [3, "what the portal app is granted on GitHub was"],
+  workerGrant: [3, "what the worker app is granted on GitHub was"],
+  repositories: [4, "its repositories were"],
+  work: [5, "where its work runs was"],
+  placement: [5, "its runners were"],
+  landed: [6, "its tickets were"],
+  moving: [6, "its tickets were"],
+  drafts: [6, "its drafts were"],
+  landings: [6, "a ticket's finalizations were"],
 };
 
 /** Where the GitHub step is said, which the project's repositories leave unread as they do their own step: it is held to the account that owns one. */
-const saidGithubAt = 2;
+const saidGithubAt = 3;
+
+/** Where the MCP step is said, which is to do wherever no project is read. */
+const saidMcpAt = 2;
 
 /** How each way a read fails is said. */
 export const saidFates: Readonly<
@@ -249,11 +303,12 @@ export function saidFated(
   if (read === "inventory")
     for (const [after, hung] of [
       [saidGithubAt, "its repositories were"],
-      [3, "its repositories were"],
-      [4, "where its work runs was"],
-      [5, "its tickets were"],
+      [4, "its repositories were"],
+      [5, "where its work runs was"],
+      [6, "its tickets were"],
     ] as const)
       said[after] = ["unread", `${hung} not read`];
+  if (read === "inventory") said[saidMcpAt] = saidTodo;
   return said;
 }
 
@@ -261,7 +316,12 @@ export function saidFated(
 export function saidMemberSite(): SetupSite {
   const site = setupSiteAt("Workspace");
   site.tenants = [
-    { tenant: setupSiteWorkspace, roles: ["Member"], administer: false },
+    {
+      tenant: setupSiteWorkspace,
+      displayName: setupSiteWorkspace,
+      roles: ["Member"],
+      administer: false,
+    },
   ];
   return site;
 }
@@ -274,6 +334,7 @@ export const saidAccountsUnshown: Said = [
 export const saidMember: readonly Said[] = [
   ["waiting", "acme, where you are a member and not an admin"],
   ["todo", "no project of acme is shown to you"],
+  saidTodo,
   saidAccountsUnshown,
   saidTodo,
   saidTodo,
@@ -291,6 +352,7 @@ export function saidViewerSite(): SetupSite {
 export const saidViewer: readonly Said[] = [
   ["waiting", "acme, where you see a project and are not an admin"],
   ["unread", "acme/widgets: its lead settings were not shown to you"],
+  saidServed,
   saidAccountsUnshown,
   saidRepository,
   saidLive,

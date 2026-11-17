@@ -12,6 +12,7 @@ import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
 import type { Copy } from "./copy.ts";
 import { setVerdict } from "./ticketLedger.ts";
+import { ticketTaker } from "./ticketOffers.ts";
 import type { SetVerdict } from "./ticketLedger.ts";
 import { ticketBadgeLabel } from "./ticketSections.ts";
 import type { UpNextOpenDependency } from "./upNextOrder.ts";
@@ -25,6 +26,9 @@ export interface ProjectTableRow {
   /** The principal who filed the ticket, absent where the wire names none;
    * drawn by `creatorLabel` against the project's people. */
   readonly creator: string | undefined;
+  /** The member the ticket's work is placed for, absent where that is its
+   * creator or the wire names none; drawn as `creator` is. */
+  readonly owner: string | undefined;
   readonly phase: TicketPhase;
   /** The journal entry that last changed the ticket's own row, which is the
    * version a Dispatch from the row expects. */
@@ -64,6 +68,7 @@ export function projectTableRow(ticket: ProjectTicket): ProjectTableRow {
     title: ticket.title,
     repository: ticket.repository,
     creator: ticket.creator,
+    owner: ticketTaker(ticket),
     phase: ticket.phase,
     sequence: ticket.sequence,
     badge: ticketBadgeLabel(ticket.phase, ticket.escalation),

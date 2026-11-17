@@ -95,7 +95,6 @@ export function isCompletionTicketCommand(
  */
 export const nativeActionResolutions = {
   TicketEscalation: ["Resume", "Revoke"],
-  FinalizationApproval: ["Approve", "Decline"],
   EvaluationApproval: ["Approve", "Reject"],
 } as const;
 
@@ -111,20 +110,12 @@ export const allNativeActionKinds = Object.keys(
 export type EscalationResolution =
   (typeof nativeActionResolutions)["TicketEscalation"][number];
 
-/**
- * The two answers a finalization approval admits, and the only resolutions that
- * name no ticket command at all. Answering one settles its operation and
- * journals nothing, because approval is operational protocol and not `TicketGraph` state.
- */
-export type ApprovalResolution =
-  (typeof nativeActionResolutions)["FinalizationApproval"][number];
-
 /** The two answers an evaluation approval admits, each of which is that evaluator's verdict on the work. */
 export type EvaluationApprovalResolution =
   (typeof nativeActionResolutions)["EvaluationApproval"][number];
 
 export type NativeActionResolution =
-  EscalationResolution | ApprovalResolution | EvaluationApprovalResolution;
+  EscalationResolution | EvaluationApprovalResolution;
 
 /** Every resolution once, so a suite and a database CHECK iterate rather than restate. */
 export const allNativeActionResolutions: readonly NativeActionResolution[] = [
@@ -145,15 +136,6 @@ export function isEscalationResolution(
   resolution: NativeActionResolution,
 ): resolution is EscalationResolution {
   return nativeActionResolutions.TicketEscalation.some(
-    (each) => each === resolution,
-  );
-}
-
-/** Whether an answer is one of the two a finalization approval admits, which name no ticket command. */
-export function isApprovalResolution(
-  resolution: NativeActionResolution,
-): resolution is ApprovalResolution {
-  return nativeActionResolutions.FinalizationApproval.some(
     (each) => each === resolution,
   );
 }

@@ -27,7 +27,7 @@ function FigureSpan(props: {
 }): ReactNode {
   const span = props.figure;
   return (
-    <Tooltip text={span.title}>
+    <Tooltip trigger="abbreviation" text={span.title}>
       <span
         className={span.open ? "fig fig-live" : "fig"}
         data-open={span.open ? "true" : undefined}
@@ -59,7 +59,7 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
         <span className="fig">
           {figure.text}
           {figure.basis === undefined ? null : (
-            <Tooltip text={text(figureBasisTitle)}>
+            <Tooltip trigger="abbreviation" text={text(figureBasisTitle)}>
               <i className="fig-basis">{text(figure.basis)}</i>
             </Tooltip>
           )}
@@ -83,13 +83,13 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
       );
     case "Instant":
       return (
-        <Tooltip text={figure.iso}>
+        <Tooltip trigger="abbreviation" text={figure.iso}>
           <span className="fig">{copyOrDataText(text, figure.text)}</span>
         </Tooltip>
       );
     case "Ago":
       return (
-        <Tooltip text={figure.full}>
+        <Tooltip trigger="abbreviation" text={figure.full}>
           <span className="fig">{text(figure.text)}</span>
         </Tooltip>
       );
@@ -97,7 +97,7 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
       return <FigureSpan figure={figure} />;
     case "Absent":
       return (
-        <Tooltip text={text(figure.why)}>
+        <Tooltip trigger="abbreviation" text={text(figure.why)}>
           <span className="fig fig-dim">—</span>
         </Tooltip>
       );

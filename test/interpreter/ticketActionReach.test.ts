@@ -41,7 +41,7 @@ import type {
   RepositoryActionId,
   RepositoryActionName,
 } from "../../src/interpreter/repositoryAction.ts";
-import { repositoryDeclarationsMax } from "../../src/interpreter/repositoryDeclaration.ts";
+import { repositoryDeclarationsMax } from "../../src/contract/repositoryDeclaration.ts";
 import type { RuntimePacing } from "../../src/interpreter/serviceRuntime.ts";
 import {
   asTicketLandedStamp,
