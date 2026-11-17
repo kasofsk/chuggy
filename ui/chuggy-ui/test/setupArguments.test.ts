@@ -131,7 +131,7 @@ test("plain HTTP is a site only at this machine's own address", () => {
 });
 
 test.each([
-  [["sign-out"], "Command"],
+  [["log-out"], "Command"],
   [["sign-in", "sign-in"], "Command"],
   [["sign-in", "extra"], "Command"],
   [["constructor"], "Command"],

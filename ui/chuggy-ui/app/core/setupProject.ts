@@ -110,6 +110,7 @@ export async function setupProject(
   return {
     report: "Project",
     site: entered.session.site,
+    login: entered.session.login,
     ...setupRunnerAtNamed({ workspace, project: given }, entered.session),
     name,
     ended,

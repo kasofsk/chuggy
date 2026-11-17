@@ -719,6 +719,10 @@ const roster: {
     directory,
     ended,
   })),
+  SignedOutHere: [
+    { report: "SignedOutHere", site, held: true },
+    { report: "SignedOutHere", site, held: false },
+  ],
   Checklist: Object.values(things)
     .flat()
     .flatMap((thing) => choices.map((carried) => checklist(thing, carried))),
@@ -1234,7 +1238,10 @@ test("a report of a run not signed in that does not stop names no command in a r
       unknown ? [["--site"]] : reloading ? [["--site", site]] : [],
     );
     expect(lines.at(-1) === stop, said).toBe(
-      unknown || reloading || report.report === "Unserved",
+      unknown ||
+        reloading ||
+        report.report === "Unserved" ||
+        report.report === "SignedOutHere",
     );
   }
 });
@@ -1287,6 +1294,7 @@ test("a state a person can move on from exits zero, and a failure exits one", ()
   );
   expect(exit).toMatchObject({
     SignedOut: [0],
+    SignedOutHere: [0],
     SignInWaiting: [0],
     Busy: [1],
     Faulted: [1],
@@ -1320,6 +1328,7 @@ test("a sign-in that ended on the person's side exits zero, and one the installa
 const driven = [
   `rule: Run the command on the next: line exactly as written, and stop where it says ${setupNextStop}. Say each tell: line to the person as it is written. Put each ask: line to the person, and pass their answer in the flag it names.`,
   "rule: Never read or print anything under ~/.chuggy-setup: it holds the sign-in.",
+  `rule: To change which GitHub account chuggy setup is signed in as, run node ${machineScript} sign-out and then sign in again.`,
 ];
 
 function signedOut(ended: SetupSignInEnded | undefined): readonly string[] {
@@ -1898,7 +1907,7 @@ function signedOutAs(answers: SetupAnswers): readonly string[] {
 }
 
 const waitingTell =
-  "tell: A sign-in page is open in your browser and is waiting for you. Sign in with GitHub there and allow chuggy setup. If the page is gone, open http://127.0.0.1:41001/ on this machine.";
+  "tell: A sign-in page is open in a browser and is waiting for you. Open http://127.0.0.1:41001/ in the browser where you are signed in to GitHub as the account you want to use. Then allow chuggy setup.";
 const waitingRule =
   "rule: Run the command on the next: line again, and go on running it while the sign-in page waits: it waits on the same page and opens no other. Nothing has failed, so do not tell the person that it did or give them a deadline. Once the page has closed, that command says what became of it.";
 
@@ -1927,8 +1936,52 @@ test("a page that is waiting is said with the address the person can open, and s
   expect(lines(2)).toEqual([
     `site: ${site}, not signed in`,
     "found: no browser could be opened from here",
-    "tell: Open http://127.0.0.1:41001/ in a browser on this machine, sign in with GitHub and allow chuggy setup.",
+    "tell: Open http://127.0.0.1:41001/ in the browser where you are signed in to GitHub as the account you want to use. Then allow chuggy setup.",
     `${next} sign-in`,
+  ]);
+});
+
+test("signed in, the site line names the GitHub login the site gave, and says only signed in where it gave none", () => {
+  const thing = things.Done[0] as SetupThing;
+  const first = (report: SetupReport) =>
+    setupReportLines(report, machineScript, copyTextEn)[0];
+  expect(first({ ...checklist(thing), login: "ana-1" })).toBe(
+    `site: ${site}, signed in as ana-1`,
+  );
+  expect(first(checklist(thing))).toBe(`site: ${site}, signed in`);
+  expect(
+    setupReportLines(
+      { report: "SignInEnded", site, ended: "SignedIn", login: "ana-1" },
+      machineScript,
+      copyTextEn,
+    ),
+  ).toEqual([
+    `site: ${site}, signed in as ana-1`,
+    `rule: To change which GitHub account chuggy setup is signed in as, run node ${machineScript} sign-out and then sign in again.`,
+    next,
+  ]);
+});
+
+test("sign-out says the site is not signed in on this machine, that what runs elsewhere keeps running, and runs nothing after it", () => {
+  const lines = (held: boolean) =>
+    setupReportLines(
+      { report: "SignedOutHere", site, held },
+      machineScript,
+      copyTextEn,
+    );
+  const tell =
+    "tell: Signed out of chuggy on this machine. Runners and chat hosts keep running.";
+  expect(lines(true)).toEqual([
+    `site: ${site}, not signed in`,
+    `did: removed this machine's sign-in to ${site}`,
+    tell,
+    stop,
+  ]);
+  expect(lines(false)).toEqual([
+    `site: ${site}, not signed in`,
+    `found: this machine held no sign-in to ${site}`,
+    tell,
+    stop,
   ]);
 });
 
@@ -1985,7 +2038,7 @@ test("an ending that was the installation's says so to the person, and sign-in i
   const told: Partial<Record<SetupSignInEnded, readonly [string, string]>> = {
     Refused: [
       "found: the sign-in server refused the request",
-      "tell: The sign-in server refused the sign-in, so chuggy setup is not signed in. Tell me if you want to try signing in again.",
+      "tell: The sign-in server refused the sign-in, so chuggy setup is not signed in. Signing in again opens a new sign-in page, and a sign-in it refused can go through then. Tell me if you want to try signing in again.",
     ],
     Mismatched: [
       "found: the answer that came back did not belong to this sign-in",

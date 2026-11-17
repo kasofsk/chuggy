@@ -210,6 +210,8 @@ export type SetupSiteFate =
 
 export interface SetupSite {
   tenants: AccessCallerTenant[];
+  /** The GitHub login the caller's account records, where a case gives it one. */
+  login?: string | undefined;
   projects: SetupSiteProject[];
   /** How many pages the list of projects is answered in, where that is more than the projects' own pages come to. */
   inventoryPages: number;
@@ -1817,6 +1819,10 @@ export function setupSiteAnswered(
     return (
       fated(site, "workspaces") ??
       answered({ tenants: site.tenants, truncated: cut(site, "workspaces") })
+    );
+  if (url.pathname === "/access/v1/account")
+    return answered(
+      site.login === undefined ? {} : { githubLogin: site.login },
     );
   if (url.pathname === "/api/v1/forge/github") return appsAnswered(site);
   return url.pathname === "/api/v1/projects"

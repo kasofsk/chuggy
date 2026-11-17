@@ -197,6 +197,8 @@ export interface SetupRunnerSession {
   readonly bearer: string;
   /** The person's own workspaces, as the site answered them on signing in. */
   readonly workspaces: readonly AccessCallerTenant[];
+  /** The GitHub login the site named the person by, where it named one. */
+  readonly login: string | undefined;
 }
 
 /** Where a run was for, with its workspace's display name where the sign-in's list names that workspace. */
@@ -1519,11 +1521,12 @@ function setupRunMade(
 /** What a run's report says of how it ended, for the project or the workspace `at`. */
 function setupRunSaid(
   at: SetupRunnerAt,
-  site: string | undefined,
+  session: Pick<SetupRunnerSession, "site" | "login">,
   notes: readonly SetupRunnerNote[],
   ended: SetupRunnerEnded,
 ): SetupReport {
-  return { report: "Runner", site, ...at, notes, ended };
+  const { site, login } = session;
+  return { report: "Runner", site, login, ...at, notes, ended };
 }
 
 /** A walk's end as a run's report, with whatever the walk found and did before it, also where what ended it is a sign-in the site stopped taking part-way. */
@@ -1541,7 +1544,7 @@ function setupRunReported(
     };
   return setupRunSaid(
     at,
-    run.session.site,
+    run.session,
     run.notes,
     "halt" in ended ? { ended: "Stopped", stop: ended.halt } : ended,
   );

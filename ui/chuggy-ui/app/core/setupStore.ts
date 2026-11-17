@@ -107,6 +107,17 @@ export function setupTokenRead(
   return text === undefined ? undefined : signInStoreTokenRead(text);
 }
 
+/** Removes the renewal token the shared store holds for a site, answering whether it held one. The caller holds the lock. */
+export function setupTokenRemoved(
+  store: SetupStorePort,
+  site: string,
+): boolean {
+  const name = signInStoreFileName(site);
+  if (store.read(name) === undefined) return false;
+  store.remove(name);
+  return true;
+}
+
 /**
  * Moves a token an older copy of this program kept beside the site it
  * remembers into the shared store, where the store holds none for that site,
@@ -292,6 +303,8 @@ export type SetupSignInNote =
       readonly ended: SetupSignInEnded;
       readonly endedAtMs: number;
       readonly told: boolean;
+      /** The GitHub login the site named the person by once signed in, where it named one. */
+      readonly login?: string | undefined;
     };
 
 const setupSignInNoteSchema = z.discriminatedUnion("note", [
@@ -308,6 +321,7 @@ const setupSignInNoteSchema = z.discriminatedUnion("note", [
     ended: z.enum(setupSignInEndings),
     endedAtMs: z.number(),
     told: z.boolean(),
+    login: z.string().min(1).optional(),
   }),
 ]);
 

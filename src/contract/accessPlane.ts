@@ -291,6 +291,7 @@ export const accessPlaneRoutes = {
   },
   siteTenants: { method: "GET", path: `${accessSitePath}/workspaces` },
   callerTenants: { method: "GET", path: `${accessPlaneBasePath}/workspaces` },
+  callerAccount: { method: "GET", path: `${accessPlaneBasePath}/account` },
   siteWorkspaceLinkCreation: {
     method: "POST",
     path: `${accessSitePath}/workspace-links`,
@@ -736,6 +737,15 @@ export const accessCallerTenantsSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
+/**
+ * Who the caller is, answered to any caller signed in about them alone: the
+ * GitHub login their account records, absent where the plane has no
+ * directory or the directory records none.
+ */
+export const accessCallerAccountSchema = z.strictObject({
+  githubLogin: accessGithubLoginSchema.optional(),
+});
+
 /** How long an invite link stands once made. */
 export const accessInviteLinkLifetimeMs = 7 * 24 * 60 * 60 * 1_000;
 
@@ -987,6 +997,7 @@ export type AccessSiteTenant = z.infer<typeof accessSiteTenantSchema>;
 export type AccessSiteTenants = z.infer<typeof accessSiteTenantsSchema>;
 export type AccessCallerTenant = z.infer<typeof accessCallerTenantSchema>;
 export type AccessCallerTenants = z.infer<typeof accessCallerTenantsSchema>;
+export type AccessCallerAccount = z.infer<typeof accessCallerAccountSchema>;
 export type AccessTenantDisplayNameChange = z.infer<
   typeof accessTenantDisplayNameChangeSchema
 >;

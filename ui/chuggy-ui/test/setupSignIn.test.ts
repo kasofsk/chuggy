@@ -11,6 +11,7 @@
 import { expect, test } from "vitest";
 
 import { copyTextEn } from "../app/copy/catalog.ts";
+import { setupReportLines } from "../app/core/setupReport.ts";
 import { setupPacing } from "../app/core/setupPacing.ts";
 import { setupFiles, SetupMachineError } from "../app/core/setupPorts.ts";
 import type { SetupAnswered } from "../app/core/setupPorts.ts";
@@ -24,6 +25,7 @@ import {
   folded,
   machineAudience,
   machineRemembered,
+  machineScript,
   machineSite,
   machineTokenFile,
   machineTokenAddress,
@@ -83,6 +85,73 @@ test("a sign-in the person finishes is remembered, and leaves neither a lock nor
   expect([...machine.files.keys()]).toEqual([setupFiles.session]);
   expect(machine.listening()).toBeUndefined();
   expect(machine.asked).toContain(`${machineSite}/access/v1/workspaces`);
+});
+
+/** The lines a command's report prints. */
+async function said(
+  machine: SetupMachine,
+  argv: readonly string[],
+): Promise<readonly string[]> {
+  return setupReportLines(
+    await machine.command(argv),
+    machineScript,
+    copyTextEn,
+  );
+}
+
+test("a sign-in the person finishes names the account the site says it is, and so does the bare command after it", async () => {
+  const machine = prompt();
+  machine.world.login = "ana-1";
+  expect(await machine.command(signIn)).toEqual({
+    ...ended("SignedIn"),
+    login: "ana-1",
+  });
+  expect((await said(machine, []))[0]).toBe(
+    `site: ${machineSite}, signed in as ana-1`,
+  );
+  expect((await said(machine, ["sign-in"]))[0]).toBe(
+    `site: ${machineSite}, signed in as ana-1`,
+  );
+});
+
+test("sign-out leaves no sign-in on this machine and asks nothing of anyone, and the bare command after it is not signed in", async () => {
+  const machine = prompt();
+  await machine.command(signIn);
+  expect(machine.store.has(machineTokenFile())).toBe(true);
+  const asked = machine.asked.length;
+  expect(await machine.command(["sign-out"])).toEqual({
+    report: "SignedOutHere",
+    site: machineSite,
+    held: true,
+  });
+  expect(machine.store.has(machineTokenFile())).toBe(false);
+  expect(machine.asked).toHaveLength(asked);
+  expect(machine.lock).toBeUndefined();
+  expect((await said(machine, []))[0]).toBe(
+    `site: ${machineSite}, not signed in`,
+  );
+  expect(await machine.command(["sign-out"])).toEqual({
+    report: "SignedOutHere",
+    site: machineSite,
+    held: false,
+  });
+});
+
+test("a page the browser was opened on is still told by its address", async () => {
+  const machine = setupMachine();
+  let opened = "";
+  machine.opened = (address) => {
+    opened = address;
+    return Promise.resolve();
+  };
+  const lines = await said(machine, signIn);
+  expect(opened).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/u);
+  expect(lines).toContain(`did: opened ${opened} in a browser`);
+  expect(lines.filter((line) => line.startsWith("tell: "))).toEqual([
+    expect.stringContaining(
+      `Open ${opened} in the browser where you are signed in to GitHub as the account you want to use.`,
+    ),
+  ]);
 });
 
 test("the issuer is asked as the setup client, to answer on this machine's own address", async () => {

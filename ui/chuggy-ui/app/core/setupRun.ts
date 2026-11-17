@@ -78,7 +78,11 @@ import type {
   SetupRunnerEntered,
 } from "./setupRunner.ts";
 import { setupRunnerHere } from "./setupRunnerMachine.ts";
-import { setupSessionOpened, setupWorkspacesRead } from "./setupSession.ts";
+import {
+  setupLoginRead,
+  setupSessionOpened,
+  setupWorkspacesRead,
+} from "./setupSession.ts";
 import type {
   SetupSessionOpened,
   SetupWorkspacesAnswered,
@@ -108,6 +112,7 @@ import {
   setupSessionSite,
   setupSessionSiteWritten,
   setupTokenRead,
+  setupTokenRemoved,
 } from "./setupStore.ts";
 
 type SetupBegun =
@@ -151,13 +156,14 @@ async function setupBegun(
   return { begun: "Session", opened };
 }
 
-/** Whether a session is signed in: with the bearer the site took and the workspaces it answered, or the report that says why it is not. */
+/** Whether a session is signed in: with the bearer the site took, the workspaces it answered and, once asked after the lock is given up, the GitHub login it named where it named one, or the report that says why it is not. */
 type SetupSigned =
   | {
       readonly signed: "In";
       readonly opened: SetupSessionOpened;
       readonly bearer: string;
       readonly workspaces: SetupWorkspacesAnswered;
+      readonly login: string | undefined;
     }
   | { readonly signed: "Out"; readonly report: SetupReport };
 
@@ -201,7 +207,7 @@ async function setupSigned(
     });
   const bearer = (await opened.holder.bearer()) ?? renewed;
   opened.store.kept();
-  return { signed: "In", opened, bearer, workspaces };
+  return { signed: "In", opened, bearer, workspaces, login: undefined };
 }
 
 /**
@@ -286,6 +292,7 @@ async function setupChecklist(
   return {
     report: "Checklist",
     site: standing.site,
+    login: signed.login,
     found: standing.found,
     steps: standing.steps.map(({ step, state, detail }) => ({
       step,
@@ -344,15 +351,16 @@ async function setupChecklistNamed(
 /**
  * The remembered sign-in entered under the lock, for a command that opens no
  * page: signed in, or the report that says why not, which for a run not
- * signed in says how the last sign-in ended while that ending stands. Nothing
- * is answered where another run kept the lock past the wait.
+ * signed in says how the last sign-in ended while that ending stands, and
+ * signed in, named by the login the site then gives once the lock is given
+ * up. Nothing is answered where another run kept the lock past the wait.
  */
-function setupEntered(
+async function setupEntered(
   ports: SetupPorts,
   given: string | undefined,
   asked: SetupCommand,
 ): Promise<SetupSigned | undefined> {
-  return setupLocked(ports, async (): Promise<SetupSigned> => {
+  const held = await setupLocked(ports, async (): Promise<SetupSigned> => {
     const begun = await setupBegun(ports, given, asked);
     if (begun.begun === "Reported")
       return { signed: "Out", report: begun.report };
@@ -362,6 +370,9 @@ function setupEntered(
     const ended = setupSignInStoodSaid(ports, signed.report.site);
     return { signed: "Out", report: { ...signed.report, ended } };
   });
+  return held?.signed === "In"
+    ? { ...held, login: await setupLoginRead(held.opened) }
+    : held;
 }
 
 /**
@@ -775,6 +786,7 @@ async function setupRunnerEntry(
         api,
         bearer: held.bearer,
         workspaces: held.workspaces.tenants,
+        login: held.login,
       },
     };
   } catch (failure: unknown) {
@@ -801,6 +813,7 @@ function setupRunnerRun(
 
 type SetupSignInStep =
   | { readonly step: "Reported"; readonly report: SetupReport }
+  | { readonly step: "SignedIn"; readonly opened: SetupSessionOpened }
   | {
       readonly step: "Waiting";
       readonly site: string;
@@ -822,10 +835,7 @@ async function setupSignInStep(
   const signed = await setupSigned(ports, begun.opened, "SignIn");
   if (signed.signed === "In") {
     setupSignInSettled(ports);
-    return {
-      step: "Reported",
-      report: { report: "SignInEnded", site, ended: "SignedIn" },
-    };
+    return { step: "SignedIn", opened: signed.opened };
   }
   if (signed.report.report !== "SignedOut")
     return { step: "Reported", report: signed.report };
@@ -846,6 +856,13 @@ async function setupSignIn(
   );
   if (step === undefined) return setupBusy(ports, "SignIn", given);
   if (step.step === "Reported") return step.report;
+  if (step.step === "SignedIn")
+    return {
+      report: "SignInEnded",
+      site: step.opened.site,
+      ended: "SignedIn",
+      login: await setupLoginRead(step.opened),
+    };
   return setupSignInAwaited(
     ports,
     step.site,
@@ -853,6 +870,31 @@ async function setupSignIn(
     waitSecs,
     pacing.signInPollMs,
   );
+}
+
+/**
+ * `sign-out` removes the sign-in this machine holds for the site, asking the
+ * site nothing, and leaves the site remembered and whatever runs from that
+ * sign-in elsewhere alone.
+ */
+async function setupSignOut(
+  ports: SetupPorts,
+  given: string | undefined,
+): Promise<SetupReport> {
+  const report = await setupLocked(ports, (): Promise<SetupReport> => {
+    setupSessionMoved(ports.files, ports.store);
+    const site = given ?? setupSessionSite(ports.files);
+    return Promise.resolve(
+      site === undefined
+        ? { report: "SiteUnknown" }
+        : {
+            report: "SignedOutHere",
+            site,
+            held: setupTokenRemoved(ports.store, site),
+          },
+    );
+  });
+  return report ?? setupBusy(ports, "SignOut", given);
 }
 
 /** What a port threw, as a member of a closed set: the machine's own word for what it would not do, or only that something unexpected happened. */
@@ -893,6 +935,8 @@ export async function setupRun(
         return await setupStatus(ports, asked, pacing);
       case "SignIn":
         return await setupSignIn(ports, asked.site, asked.waitSecs, pacing);
+      case "SignOut":
+        return await setupSignOut(ports, asked.site);
       case "Project":
         return await setupProject(
           ports,
