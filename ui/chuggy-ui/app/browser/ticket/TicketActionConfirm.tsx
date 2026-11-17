@@ -1,7 +1,7 @@
 /**
  * The question a dispatch, a revoke or a draft's deletion is asked before it
  * is sent, in a dialog over the page: what it does, then Cancel and the button
- * that sends it.
+ * that sends it, which is not offered while `confirmOffered` is false.
  */
 
 import type { ReactNode } from "react";
@@ -14,6 +14,7 @@ export function TicketActionConfirm(props: {
   readonly title: string;
   readonly confirm: string;
   readonly danger?: boolean;
+  readonly confirmOffered?: boolean;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onConfirm: () => void;
@@ -39,6 +40,7 @@ export function TicketActionConfirm(props: {
           <Button
             variant={props.danger === true ? "danger" : "primary"}
             size="sm"
+            disabled={props.confirmOffered === false}
             onClick={() => {
               props.onOpenChange(false);
               props.onConfirm();
