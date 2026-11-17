@@ -14,7 +14,7 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import type { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { renderCopied } from "./copied.tsx";
 import type { RenderResult } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -346,11 +346,9 @@ test("a follow that throws leaves the panel settled and says why", async () => {
   });
   await settled();
 
-  expect(document.body.textContent).not.toContain("the clock stopped");
   expect(button("Resume")?.hasAttribute("disabled")).toBe(false);
-  fireEvent.focus(screen.getByText("Failed"));
-  expect((await screen.findByRole("tooltip")).textContent).toBe(
-    "the clock stopped",
+  expect(screen.getByText("Failed").parentElement?.textContent).toBe(
+    "Failed · the clock stopped",
   );
 });
 
@@ -383,7 +381,7 @@ test("an unread action list offers nothing the phase alone would allow", async (
   expect(button("Resume")).toBeNull();
   expect(button("Revoke")).toBeNull();
   expect(readFailedLines(ticketHeader())).toStrictEqual([
-    "Not read · Server error",
+    "Not read · Server error · Fault",
   ]);
 });
 
@@ -925,7 +923,7 @@ test("a refusal leaves the next press free to mean a new intent", async () => {
   expect(api.posts()).toBe(2);
 });
 
-test("a refused submission says one word, its code on hover and in no line", async () => {
+test("a refused submission says one word, its code after it in the document", async () => {
   vi.stubGlobal("fetch", refusing().fetch);
   mounted(queryClientUnretried());
   await settled();
@@ -934,11 +932,10 @@ test("a refused submission says one word, its code on hover and in no line", asy
   });
   await settled();
 
-  expect(document.body.textContent).not.toContain("TicketVersionStale");
-  fireEvent.focus(screen.getByText("Refused"));
-  expect((await screen.findByRole("tooltip")).textContent).toBe(
-    "TicketVersionStale",
+  expect(screen.getByText("Refused").parentElement?.textContent).toBe(
+    "Refused · TicketVersionStale",
   );
+  expect(screen.queryByRole("tooltip")).toBeNull();
 });
 
 /** A submission the API faults on, which says nothing about whether it acted:

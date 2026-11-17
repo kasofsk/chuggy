@@ -24,7 +24,7 @@ import type {
   AccessSiteTenant,
 } from "../../../../../src/contract/accessPlane.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
-import type { Copy } from "../../core/copy.ts";
+import type { Copy, CopyText } from "../../core/copy.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import {
   siteWorkspaceInvitesLabel,
@@ -34,13 +34,13 @@ import {
   siteWorkspaceUnnamedLine,
 } from "../../core/siteWorkspaces.ts";
 import { Notice } from "../ui/Notice.tsx";
+import type { TableRow } from "../ui/Table.tsx";
 import {
   SettingsListing,
   SettingsListingCut,
   SettingsListingNone,
-  settingsListingNone,
   SettingsListingSection,
-  SettingsListingTable,
+  SettingsListingStacked,
   SettingsListingUnread,
   SettingsListingWithheld,
 } from "./SettingsListing.tsx";
@@ -53,6 +53,9 @@ import {
 } from "./siteWorkspacesResource.ts";
 import { TenantPersonWho } from "./TenantPersonRow.tsx";
 import { useSiteAbilities } from "./tenantPermissionsResource.ts";
+
+import "./tenantPeople.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 /** Who administers one workspace, a line a person, then the count of those
  * the answer does not name. */
@@ -75,39 +78,40 @@ function SiteWorkspaceAdmins(props: {
   );
 }
 
-function SiteWorkspaceRow(props: {
-  readonly listed: AccessSiteTenant;
-}): ReactNode {
-  const text = useCopyText();
-  const listed = props.listed;
+type SiteWorkspaceColumn = "workspace" | "admins" | "invites";
+
+function siteWorkspaceRow(
+  listed: AccessSiteTenant,
+  text: CopyText,
+): TableRow<SiteWorkspaceColumn> {
   const unnamed = siteWorkspaceUnnamedLine(listed);
   const none = listed.administrators.length === 0 && unnamed === undefined;
-  return (
-    <tr>
-      <th scope="row">
-        <span
-          className="people-name block font-strong text-ink-1"
-          title={listed.tenant}
-        >
-          {listed.tenant}
+  return {
+    key: listed.tenant,
+    cells: {
+      workspace: (
+        <Tooltip trigger="abbreviation" text={listed.tenant}>
+          <span
+            className="tabular-cut block font-strong text-ink-1"
+            translate="no"
+          >
+            {listed.displayName}
+          </span>
+        </Tooltip>
+      ),
+      admins: none ? (
+        <SettingsListingNone />
+      ) : (
+        <SiteWorkspaceAdmins listed={listed} unnamed={unnamed} />
+      ),
+      invites: (
+        <span className={listed.createAccounts ? undefined : "text-ink-3"}>
+          {text(siteWorkspaceInvitesLabel(listed.createAccounts))}
         </span>
-      </th>
-      <td data-none={settingsListingNone(none)}>
-        {none ? (
-          <SettingsListingNone />
-        ) : (
-          <SiteWorkspaceAdmins listed={listed} unnamed={unnamed} />
-        )}
-      </td>
-      <td
-        className={
-          listed.createAccounts ? "people-beside" : "people-beside text-ink-3"
-        }
-      >
-        {text(siteWorkspaceInvitesLabel(listed.createAccounts))}
-      </td>
-    </tr>
-  );
+      ),
+    },
+    empty: none ? ["admins"] : [],
+  };
 }
 
 function SiteWorkspacesTable(props: {
@@ -115,24 +119,25 @@ function SiteWorkspacesTable(props: {
 }): ReactNode {
   const text = useCopyText();
   return (
-    <SettingsListingTable caption={text({ id: "settings-workspaces-title" })}>
-      <thead>
-        <tr>
-          <th scope="col" className="w-[28%]">
-            {text({ id: "settings-workspaces-workspace" })}
-          </th>
-          <th scope="col">{text({ id: "settings-workspaces-admins" })}</th>
-          <th scope="col" className="w-[14em]">
-            {text({ id: "settings-workspaces-invites" })}
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.tenants.map((listed) => (
-          <SiteWorkspaceRow key={listed.tenant} listed={listed} />
-        ))}
-      </tbody>
-    </SettingsListingTable>
+    <SettingsListingStacked
+      className="people-table"
+      caption={text({ id: "settings-workspaces-title" })}
+      columns={[
+        {
+          key: "workspace",
+          label: text({ id: "settings-workspaces-workspace" }),
+          rowHeader: true,
+          headClassName: "w-[28%]",
+        },
+        { key: "admins", label: text({ id: "settings-workspaces-admins" }) },
+        {
+          key: "invites",
+          label: text({ id: "settings-workspaces-invites" }),
+          headClassName: "w-[14em]",
+        },
+      ]}
+      rows={props.tenants.map((listed) => siteWorkspaceRow(listed, text))}
+    />
   );
 }
 

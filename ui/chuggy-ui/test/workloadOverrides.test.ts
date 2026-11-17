@@ -103,7 +103,7 @@ test("a workload naming another runner is the whole override and keeps none of t
   expect(overrideOf("quick", written)).toStrictEqual(override);
   const effective = JSON.parse(
     workloadsEffectiveCanonicalOf(creationCatalogCanonical, {
-      quick: overrideOf("quick", written),
+      workloads: { quick: overrideOf("quick", written) },
     }),
   ) as { workloads: { quick: unknown } };
   expect(effective.workloads.quick).toStrictEqual(written);

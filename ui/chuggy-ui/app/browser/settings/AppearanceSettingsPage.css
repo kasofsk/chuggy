@@ -1,0 +1,116 @@
+/* A project's appearance: its three fields in one column, each a card; an
+   image's preview above its actions; the icon as the project's mark at its
+   sizes on a surface of each scheme; and the banner as its band, cropped to
+   fill it, at a phone's width and at the column's. In a narrow column every
+   action is given a finger's height. */
+
+@layer page {
+  .appearance {
+    container-type: inline-size;
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .appearance > .form-field {
+    padding: var(--space-4);
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+  }
+
+  .appearance-theme,
+  .appearance-image,
+  .appearance-preview {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .appearance-theme-drifted,
+  .appearance-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .appearance-placeholder {
+    display: grid;
+    place-items: center;
+    margin: 0;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    border: var(--hairline) dashed var(--edge-strong);
+    border-radius: var(--radius-2);
+  }
+
+  .appearance-placeholder-icon {
+    justify-self: start;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .appearance-placeholder-banner {
+    height: var(--height-project-banner);
+  }
+
+  .appearance-surface {
+    background: var(--surface-0);
+    color: var(--ink-2);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+  }
+
+  .appearance-surface[data-scheme="light"] {
+    color-scheme: light;
+  }
+
+  .appearance-surface[data-scheme="dark"] {
+    color-scheme: dark;
+  }
+
+  .appearance-icons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+
+  .appearance-preview-word {
+    min-width: 0;
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+  }
+
+  .appearance-icons .appearance-preview-word {
+    flex: 1 1 auto;
+  }
+
+  .appearance-band-at-phone,
+  .appearance-band-at-desk {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  .appearance-band-at-phone {
+    max-width: var(--width-preview-phone);
+  }
+
+  .appearance-band {
+    overflow: hidden;
+  }
+
+  .appearance-band-image {
+    display: block;
+    width: 100%;
+    height: var(--height-project-banner);
+    object-fit: cover;
+  }
+
+  @container (max-width: 40em) {
+    .appearance .btn {
+      min-height: var(--height-touch);
+    }
+  }
+}

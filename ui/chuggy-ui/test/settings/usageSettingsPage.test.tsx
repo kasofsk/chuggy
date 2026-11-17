@@ -1,9 +1,12 @@
 /**
  * The Usage page, mounted: each agent of the reader's own account drawn with
  * each window's newest reading and how long ago it was read, a stale one marked
- * so, the pause holding it and the press that tries it once past a limit; and
- * its thresholds and options written whole, a threshold outside the wire's
- * bounds refused in its own box before anything is sent.
+ * so, the pause holding it and the press that tries it once past a limit; each
+ * credential it is drawn by marked Off where it is, turned off once the reader
+ * confirms it and on at a press, and retired once the reader confirms it; its
+ * thresholds and options written whole, a threshold outside the wire's bounds
+ * refused in its own box before anything is sent, Save offered once something
+ * moved, a landing said in a success toast and a refusal where focus moves.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -12,10 +15,12 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { nativeHttpBasePath } from "../../../../src/contract/http.ts";
+import { ConsoleWriteToasts } from "../../app/browser/consoleWrite.tsx";
 import { UsageSettingsPage } from "../../app/browser/settings/UsageSettingsPage.tsx";
 import { copyTextEn } from "../../app/copy/catalog.ts";
 import { copyOrDataText } from "../../app/core/copy.ts";
 import { instantText } from "../../app/core/figures.ts";
+import { agentAccountReadingStaleLine } from "../../app/core/agentAccounts.ts";
 import {
   answer,
   drawnStrict,
@@ -27,6 +32,7 @@ import {
 import type { SentRequest } from "../screenHarness.tsx";
 import { leadPartition } from "../leadFixture.ts";
 import { resizeObserverStubbed } from "../resizeObserver.ts";
+import { toastsDrawn } from "../toastsDrawn.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 
 const readAtMs = Date.parse("2026-10-03T10:00:00Z");
@@ -58,8 +64,8 @@ const settings = {
 
 /** Claude read two minutes ago in its five-hour window and last week in its
  * weekly one, whose window has reset since, and stopped by its provider;
- * Codex never read and paused by nothing. */
-function accounts(pressed = false): unknown {
+ * Codex never read and paused by nothing. `claude` is laid over Claude's. */
+function accounts(pressed = false, claude: object = {}): unknown {
   return {
     accounts: [
       {
@@ -81,6 +87,7 @@ function accounts(pressed = false): unknown {
         ],
         limit: { observedAt: "2026-10-03T09:00:00Z", resetsAt: limitUntil },
         pause: { until: limitUntil, reasons: ["limit"], pressed },
+        ...claude,
       },
       { agent: "Codex", settings, readings: [] },
     ],
@@ -89,8 +96,16 @@ function accounts(pressed = false): unknown {
 
 interface Drawing {
   pressed: boolean;
+  /** Where set, laid over Claude's account. */
+  claude?: object;
   /** Where set, the status a press is answered with. */
   pressStatus?: number;
+  /** Where set, the status a retirement is answered with. */
+  retireStatus?: number;
+  /** Where set, the status turning a credential off is answered with. */
+  offStatus?: number;
+  /** Where set, the status a write of the settings is answered with. */
+  settingsStatus?: number;
 }
 
 let drawing: Drawing = { pressed: false };
@@ -106,9 +121,16 @@ afterEach(() => {
 });
 
 async function drawUsage(): Promise<readonly SentRequest[]> {
-  const drawn = await drawnStrict(<UsageSettingsPage />, (request) => {
+  const page = (
+    <>
+      <UsageSettingsPage />
+      <ConsoleWriteToasts />
+    </>
+  );
+  const drawn = await drawnStrict(page, (request) => {
     const path = request.url.split("?")[0] ?? "";
-    if (path === accountsPath) return answer(accounts(drawing.pressed));
+    if (path === accountsPath)
+      return answer(accounts(drawing.pressed, drawing.claude));
     if (path.endsWith("/presses"))
       return drawing.pressStatus === undefined
         ? answer(undefined, 204)
@@ -116,7 +138,27 @@ async function drawUsage(): Promise<readonly SentRequest[]> {
             { error: { code: "NotHardPaused", message: "No limit" } },
             drawing.pressStatus,
           );
-    if (path.endsWith("/settings")) return answer(undefined, 204);
+    if (path.endsWith("/settings"))
+      return drawing.settingsStatus === undefined
+        ? answer(undefined, 204)
+        : answer(
+            { error: { code: "Fault", message: "Fault" } },
+            drawing.settingsStatus,
+          );
+    if (path.endsWith("/off"))
+      return drawing.offStatus === undefined
+        ? answer(undefined, 204)
+        : answer(
+            { error: { code: "OffFull", message: "Full" } },
+            drawing.offStatus,
+          );
+    if (path.includes("/credentials/"))
+      return drawing.retireStatus === undefined
+        ? answer(undefined, 204)
+        : answer(
+            { error: { code: "CredentialInUse", message: "In use" } },
+            drawing.retireStatus,
+          );
     return answer({}, 404);
   });
   await settled();
@@ -145,6 +187,9 @@ test("each window's reading is drawn as its share and how long ago it was read, 
   expect(claude).toContain("pauses at 80 %");
   expect(claude).toContain("95 %");
   expect(within(sectionOf("Claude")).getAllByText("Stale")).toHaveLength(1);
+  expect(sectionOf("Claude").textContent).toContain(
+    `Stale · ${copyTextEn(agentAccountReadingStaleLine)}`,
+  );
   expect(claude).toContain("Chats and questionsPause with it");
   expect(claude).not.toMatch(/lead/iu);
   const codex = sectionOf("Codex").textContent ?? "";
@@ -170,6 +215,24 @@ test("a paused agent says why and until when in the reader's own zone, and a pro
   ).toBeNull();
 });
 
+test("a pause held only by credentials turned off says so and no until, and offers no press", async () => {
+  drawing.claude = {
+    limit: undefined,
+    pause: { off: true, reasons: ["off"], pressed: false },
+  };
+  await drawUsage();
+  const line = sectionOf("Claude").textContent ?? "";
+  expect(line).toContain("Paused · Off");
+  expect(
+    line.replace(copyTextEn(agentAccountReadingStaleLine), ""),
+  ).not.toContain("until");
+  expect(
+    within(sectionOf("Claude")).queryByRole("button", {
+      name: "Try Claude again now",
+    }),
+  ).toBeNull();
+});
+
 test("a press tries the agent once and reads the account again, after which it says so and offers no second press", async () => {
   const sent = await drawUsage();
   const before = reads(sent);
@@ -188,6 +251,379 @@ test("a press refused because no limit holds the agent any longer says so", asyn
   await drawUsage();
   await press("Try Claude again now");
   expect(sectionOf("Claude").textContent).toContain("No limit holds it");
+});
+
+const workUntil = "2026-10-03T12:00:00Z";
+
+/** `home` read two minutes ago in its five-hour window and stale in its weekly
+ * one, `work` over its five-hour threshold and paused by it, and `old` read
+ * only in a window that has reset since. */
+const twoCredentials = {
+  readings: [
+    {
+      window: "five_hour",
+      utilization: 0.85,
+      resetsAt: workUntil,
+      observedAt: "2026-10-03T09:58:00Z",
+    },
+  ],
+  pause: { until: workUntil, reasons: ["five_hour"], pressed: false },
+  credentials: [
+    {
+      name: "home",
+      readings: [
+        {
+          window: "five_hour",
+          utilization: 0.42,
+          resetsAt: limitUntil,
+          observedAt: "2026-10-03T09:50:00Z",
+        },
+        {
+          window: "seven_day",
+          utilization: 0.95,
+          resetsAt: "2026-10-01T00:00:00Z",
+          observedAt: "2026-09-26T00:00:00Z",
+        },
+      ],
+    },
+    {
+      name: "old",
+      readings: [
+        {
+          window: "seven_day",
+          utilization: 0.61,
+          resetsAt: "2026-10-01T00:00:00Z",
+          observedAt: "2026-09-20T00:00:00Z",
+        },
+      ],
+    },
+    {
+      name: "work",
+      readings: [
+        {
+          window: "five_hour",
+          utilization: 0.85,
+          resetsAt: workUntil,
+          observedAt: "2026-10-03T09:58:00Z",
+        },
+      ],
+      pause: { until: workUntil, reasons: ["five_hour"], pressed: false },
+    },
+  ],
+};
+
+/** Each line of a window's field, of the Claude section. */
+function windowLines(window: string): readonly string[] {
+  return within(sectionOf("Claude"))
+    .getAllByText(window)
+    .map((label) => label.parentElement?.textContent ?? "");
+}
+
+test("an agent holding one credential, or read without the field, reads as its own, naming none", async () => {
+  drawing.claude = {
+    credentials: [
+      {
+        name: "home",
+        readings: [
+          {
+            window: "five_hour",
+            utilization: 0.42,
+            resetsAt: limitUntil,
+            observedAt: "2026-10-03T09:58:00Z",
+          },
+        ],
+        pause: { until: limitUntil, reasons: ["limit"], pressed: false },
+      },
+    ],
+  };
+  await drawUsage();
+  const claude = sectionOf("Claude").textContent ?? "";
+  expect(claude).not.toContain("home");
+  expect(claude).toContain("Paused · Provider limit");
+  expect(claude).toContain("95 %");
+  expect(
+    within(sectionOf("Claude")).getAllByRole("button", {
+      name: "Try Claude again now",
+    }),
+  ).toHaveLength(1);
+});
+
+test("an agent holding several credentials reads each current one's reading in each window under its name, and a pause line only for the one a pause holds", async () => {
+  drawing.claude = twoCredentials;
+  await drawUsage();
+  const claude = sectionOf("Claude").textContent ?? "";
+  expect(claude).not.toContain("old");
+  expect(claude).not.toContain("61 %");
+  expect(windowLines("Five-hour window").join("")).toMatch(
+    /home42 %· 10m ago.*work85 %· 2m ago.*pauses at 80 %/u,
+  );
+  expect(windowLines("Weekly window").join("")).toMatch(
+    /home95 %· 7d ago.*Stale.*workNo reading.*pauses at 90 %/u,
+  );
+  expect(claude).toContain("work · Paused · Five-hour window");
+  expect(claude).not.toContain("home · Paused");
+  expect(claude.match(/Paused/gu)).toHaveLength(1);
+  expect(
+    within(sectionOf("Claude")).queryByRole("button", {
+      name: "Try Claude again now",
+    }),
+  ).toBeNull();
+});
+
+test("an agent's pause names the one credential holding it, and of several drawn, only those it names draw a line", async () => {
+  drawing.claude = {
+    pause: {
+      until: limitUntil,
+      reasons: ["limit"],
+      pressed: false,
+      credentials: ["home"],
+    },
+  };
+  await drawUsage();
+  expect(sectionOf("Claude").textContent).toContain("Paused · Provider limit");
+  expect(sectionOf("Claude").textContent).toContain("held by home");
+  cleanup();
+  const [home, old, work] = twoCredentials.credentials;
+  drawing.claude = {
+    ...twoCredentials,
+    pause: { ...twoCredentials.pause, credentials: ["work"] },
+    credentials: [{ ...home, pause: { ...twoCredentials.pause } }, old, work],
+  };
+  await drawUsage();
+  const claude = sectionOf("Claude").textContent ?? "";
+  expect(claude).toContain("work · Paused · Five-hour window");
+  expect(claude).not.toContain("home · Paused");
+});
+
+test("an agent whose credentials are none of them current reads each window as never read", async () => {
+  const old = twoCredentials.credentials[1];
+  drawing.claude = {
+    readings: twoCredentials.readings,
+    pause: undefined,
+    credentials: [old, { ...old, name: "older" }],
+  };
+  await drawUsage();
+  const claude = sectionOf("Claude").textContent ?? "";
+  expect(claude).not.toMatch(/old|Paused/u);
+  expect(within(sectionOf("Claude")).getAllByText("No reading")).toHaveLength(
+    2,
+  );
+});
+
+test("credentials each stopped at a limit draw a line each, the one a press lets through saying so, and the agent's press once", async () => {
+  const limited = (pressed: boolean) => ({
+    until: limitUntil,
+    reasons: ["limit"],
+    pressed,
+  });
+  drawing.claude = {
+    readings: [],
+    credentials: [
+      { name: "home", readings: [], pause: limited(false) },
+      { name: "work", readings: [], pause: limited(false) },
+    ],
+  };
+  await drawUsage();
+  const claude = sectionOf("Claude").textContent ?? "";
+  expect(claude).toContain("home · Paused · Provider limit");
+  expect(claude).toContain("work · Paused · Provider limit");
+  expect(
+    within(sectionOf("Claude")).getAllByRole("button", {
+      name: "Try Claude again now",
+    }),
+  ).toHaveLength(1);
+  drawing.claude = {
+    ...drawing.claude,
+    credentials: [
+      { name: "home", readings: [], pause: limited(true) },
+      { name: "work", readings: [], pause: limited(false) },
+    ],
+  };
+  drawing.pressed = true;
+  await press("Try Claude again now");
+  expect(sectionOf("Claude").textContent?.match(/Trying once/gu)).toHaveLength(
+    1,
+  );
+  expect(sectionOf("Claude").textContent).toContain(
+    "home · Paused · Provider limit",
+  );
+  expect(
+    screen.queryByRole("button", { name: "Try Claude again now" }),
+  ).toBeNull();
+});
+
+test("each credential an agent is drawn by is retired only once the reader confirms it, and the account is read again", async () => {
+  drawing.claude = twoCredentials;
+  const sent = await drawUsage();
+  const claude = within(sectionOf("Claude"));
+  expect(
+    claude
+      .getAllByRole("button", { name: /^Retire credential / })
+      .map((button) => button.getAttribute("aria-label")),
+  ).toStrictEqual(["Retire credential home", "Retire credential work"]);
+  await press("Retire credential work");
+  const asked = claude.getByRole("group", {
+    name: "Retire credential work?",
+  });
+  expect(asked.textContent).toContain(
+    "Its readings and its limit are forgotten. A runner that reports work again brings it back.",
+  );
+  expect(written(sent)).toStrictEqual([]);
+  await press("Cancel");
+  expect(claude.queryByRole("group")).toBeNull();
+  expect(written(sent)).toStrictEqual([]);
+  const before = reads(sent);
+  await press("Retire credential work");
+  await press("Retire");
+  expect(written(sent)).toStrictEqual([
+    ["DELETE /Claude/credentials/work", undefined],
+  ]);
+  expect(reads(sent)).toBeGreaterThan(before);
+});
+
+test("a retirement refused because a live runner still names the credential says so", async () => {
+  drawing.claude = twoCredentials;
+  drawing.retireStatus = 409;
+  await drawUsage();
+  await press("Retire credential home");
+  await press("Retire");
+  expect(sectionOf("Claude").textContent).toContain(
+    "A live runner still names it",
+  );
+});
+
+test("an agent drawn by its own readings offers no credential to retire", async () => {
+  await drawUsage();
+  expect(
+    within(sectionOf("Claude")).queryByRole("button", {
+      name: /^Retire credential /,
+    }),
+  ).toBeNull();
+});
+
+const offPause = { off: true, reasons: ["off"], pressed: false };
+
+/** `home` read and on, `work` read and turned off, and `spare` turned off and never read. */
+const offCredentials = {
+  pause: undefined,
+  credentials: [
+    twoCredentials.credentials[0],
+    { ...twoCredentials.credentials[2], pause: offPause },
+    { name: "spare", readings: [], pause: offPause },
+  ],
+};
+
+test("a credential is turned off only once the reader confirms it, and on at a press, and the account is read again after each", async () => {
+  drawing.claude = twoCredentials;
+  const sent = await drawUsage();
+  const claude = within(sectionOf("Claude"));
+  await press("Turn off credential home");
+  const asked = claude.getByRole("group", {
+    name: "Turn off credential home?",
+  });
+  expect(asked.textContent).toContain("Every runner of yours passes it over.");
+  expect(written(sent)).toStrictEqual([]);
+  await press("Cancel");
+  expect(written(sent)).toStrictEqual([]);
+  const before = reads(sent);
+  await press("Turn off credential home");
+  await press("Turn off");
+  expect(written(sent)).toStrictEqual([
+    ["PUT /Claude/credentials/home/off", undefined],
+  ]);
+  expect(reads(sent)).toBeGreaterThan(before);
+  cleanup();
+  drawing.claude = offCredentials;
+  const again = await drawUsage();
+  const turnedOn = reads(again);
+  await press("Turn on credential work");
+  expect(within(sectionOf("Claude")).queryByRole("group")).toBeNull();
+  expect(written(again)).toStrictEqual([
+    ["DELETE /Claude/credentials/work/off", undefined],
+  ]);
+  expect(reads(again)).toBeGreaterThan(turnedOn);
+});
+
+test("an agent holding one credential that is on offers it no Turn off", async () => {
+  drawing.claude = {
+    credentials: [
+      { name: "home", readings: twoCredentials.credentials[0]?.readings },
+    ],
+  };
+  await drawUsage();
+  expect(
+    within(sectionOf("Claude")).queryByRole("button", { name: /^Turn off/u }),
+  ).toBeNull();
+});
+
+test("an agent holding one credential, turned off and never read, draws it marked Off with its Turn on", async () => {
+  drawing.claude = {
+    readings: [],
+    limit: undefined,
+    pause: { ...offPause, credentials: ["work"] },
+    credentials: [{ name: "work", readings: [], pause: offPause }],
+  };
+  await drawUsage();
+  const claude = within(sectionOf("Claude"));
+  expect(windowLines("Five-hour window").join("")).toContain("workNo reading");
+  expect(
+    claude.getByText("Off", { selector: ".status-badge-word" }),
+  ).toBeTruthy();
+  expect(
+    claude.getByRole("button", { name: "Turn on credential work" }),
+  ).toBeTruthy();
+});
+
+test("a credential turned off beside one that is on is marked Off while the agent is paused by nothing", async () => {
+  drawing.claude = offCredentials;
+  await drawUsage();
+  const claude = sectionOf("Claude").textContent ?? "";
+  expect(claude).not.toContain("Paused");
+  expect(
+    within(sectionOf("Claude")).getAllByText("Off", {
+      selector: ".status-badge-word",
+    }),
+  ).toHaveLength(2);
+  expect(
+    within(sectionOf("Claude")).getByRole("button", {
+      name: "Turn off credential home",
+    }),
+  ).toBeTruthy();
+});
+
+test("an agent every credential of which is off draws its own line once, naming none, and no line of any credential", async () => {
+  const [, work, spare] = offCredentials.credentials;
+  drawing.claude = {
+    ...offCredentials,
+    pause: { ...offPause, credentials: ["work", "spare"] },
+    credentials: [work, spare],
+  };
+  await drawUsage();
+  const claude = sectionOf("Claude").textContent ?? "";
+  expect(claude.match(/Paused/gu)).toHaveLength(1);
+  expect(claude).toContain("Paused · Off");
+  expect(claude).not.toMatch(/held by|work · Paused|spare · Paused/u);
+});
+
+test("a credential turned off offers Retire only where it lists a reading", async () => {
+  drawing.claude = offCredentials;
+  await drawUsage();
+  expect(
+    within(sectionOf("Claude"))
+      .getAllByRole("button", { name: /^Retire credential / })
+      .map((button) => button.getAttribute("aria-label")),
+  ).toStrictEqual(["Retire credential home", "Retire credential work"]);
+});
+
+test("turning a credential off refused because as many as the account holds off are off says so", async () => {
+  drawing.claude = twoCredentials;
+  drawing.offStatus = 409;
+  await drawUsage();
+  await press("Turn off credential home");
+  await press("Turn off");
+  expect(sectionOf("Claude").textContent).toContain(
+    "No more credentials can be off",
+  );
 });
 
 /** One section's Edit pressed, of the two the page draws. */
@@ -211,7 +647,7 @@ test.each(["0", "101", "8.5", ""])(
   async (value) => {
     const sent = await drawUsage();
     const section = await editing("Codex");
-    typed(section, "Weekly window", value);
+    typed(section, "Weekly window pauses at", value);
     expect(sectionOf("Codex").textContent).toContain("Whole percent, 1 to 100");
     const save = within(section).getByRole<HTMLButtonElement>("button", {
       name: "Save changes",
@@ -224,8 +660,8 @@ test.each(["0", "101", "8.5", ""])(
 test("an agent's thresholds and options are written whole, at either end of the bounds", async () => {
   const sent = await drawUsage();
   const section = await editing("Codex");
-  typed(section, "Five-hour window", "1");
-  typed(section, "Weekly window", "100");
+  typed(section, "Five-hour window pauses at", "1");
+  typed(section, "Weekly window pauses at", "100");
   await turned(() => {
     fireEvent.click(
       within(section).getByRole("checkbox", {
@@ -247,6 +683,56 @@ test("an agent's thresholds and options are written whole, at either end of the 
   expect(
     within(sectionOf("Codex")).queryByRole("button", { name: "Save changes" }),
   ).toBeNull();
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Codex account settings saved" },
+  ]);
+});
+
+function saveIn(section: HTMLElement): HTMLButtonElement {
+  return within(section).getByRole<HTMLButtonElement>("button", {
+    name: "Save changes",
+  });
+}
+
+test("each threshold is named by the label drawn over its box, and its fault is bound to it", async () => {
+  await drawUsage();
+  const section = await editing("Codex");
+  const box = within(section).getByRole<HTMLInputElement>("textbox", {
+    name: "Weekly window pauses at",
+  });
+  expect(box.labels?.[0]?.htmlFor).toBe(box.id);
+  expect(box.hasAttribute("aria-label")).toBe(false);
+  typed(section, "Weekly window pauses at", "0");
+  expect(box.getAttribute("aria-invalid")).toBe("true");
+  const fault = document.getElementById(
+    box.getAttribute("aria-describedby") ?? "",
+  );
+  expect(fault?.textContent).toBe("Whole percent, 1 to 100");
+});
+
+test("Save is not offered until a threshold or the option moved, and not once it is moved back", async () => {
+  await drawUsage();
+  const section = await editing("Codex");
+  expect(saveIn(section).disabled).toBe(true);
+  typed(section, "Weekly window pauses at", "80");
+  expect(saveIn(section).disabled).toBe(false);
+  typed(section, "Weekly window pauses at", "90");
+  expect(saveIn(section).disabled).toBe(true);
+});
+
+test("a write refused says so above the section's actions, moves focus there, keeps the form open, and toasts nothing", async () => {
+  drawing = { pressed: false, settingsStatus: 500 };
+  const sent = await drawUsage();
+  const section = await editing("Codex");
+  typed(section, "Weekly window pauses at", "80");
+  await press("Save changes");
+  await settled();
+  expect(written(sent)).toHaveLength(1);
+  const refusal = section.querySelector(".notice-danger");
+  expect(refusal).not.toBeNull();
+  expect(document.activeElement?.contains(refusal)).toBe(true);
+  expect(saveIn(section).disabled).toBe(false);
+  expect(toastsDrawn()).toStrictEqual([]);
 });
 
 test("an agent's lead is offered no option, since it always pauses with the account", async () => {

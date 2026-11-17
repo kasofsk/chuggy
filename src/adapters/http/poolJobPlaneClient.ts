@@ -19,6 +19,7 @@
 import { workerErrorPath } from "../../contract/http.ts";
 import type { RunEndedEvidence } from "../../contract/rosters.ts";
 import {
+  workerContractFeaturesHeader,
   workerContractHeader,
   workerContractRelease,
 } from "../../contract/workerContract.ts";
@@ -27,6 +28,7 @@ import {
   workerPlaneRoutes,
   workerRunEndedSchema,
 } from "../../contract/workerPlane.ts";
+import { workerContractClientFeatures } from "../../interpreter/workerContractClientFeatures.ts";
 import type {
   WorkerPoolEndAnswer,
   WorkerPoolJobEnd,
@@ -77,6 +79,7 @@ async function poolJobPlaneCalled(
       authorization: `Bearer ${ended.job.bearer}`,
       "content-type": sent.contentType,
       [workerContractHeader]: workerContractRelease,
+      [workerContractFeaturesHeader]: workerContractClientFeatures,
     },
     body: sent.body,
   });

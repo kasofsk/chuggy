@@ -63,15 +63,15 @@ export type BlockedReason = (typeof blockedReasons)[number];
  * the same pinned input, reaching the repository, the target, the proposal or
  * its base a second time and counting the finalizer's own budgets afresh, a
  * push the repository declined among them once its rules or settings allow
- * it; the wire owns the list outright as `notificationKinds` is owned here, so
+ * it, and a target no job may merge in once a person has landed the branch;
+ * the wire owns the list outright as `notificationKinds` is owned here, so
  * the finalizer recording a hold, the door admitting a result and the desk
  * reading one all name the same kinds, and `test/contract/rosters.test.ts`
  * holds it against the interpreter's `allFinalizationHoldKinds` as
  * `test/postgres/finalizationHold.test.ts` holds it against the column that
- * mirrors it. The six left out stay holds, each for its own reason:
- * `ApprovalDeclined` is a human's answer, which a resume would put to the same
- * human again; `ProposalRefused` is that answer or a pin the rows contradict,
- * and neither is reachability; `ContradictoryEvidence` is durable rows
+ * mirrors it. The five left out stay holds, each for its own reason:
+ * `ProposalRefused` is a human's answer or a pin the rows contradict, and
+ * neither is reachability; `ContradictoryEvidence` is durable rows
  * disagreeing, which is a defect for telemetry and not a desk item;
  * `ProposalMergeBlocked` and `ProposalHeadMoved` are merges waiting on the
  * forge, read again until somebody merges or closes the proposal, and a wait
@@ -100,6 +100,7 @@ export const finalizationUnavailableKinds = [
   "ProposalQueueTimedOut",
   "ProposalDequeued",
   "RecheckReworksExhausted",
+  "TargetPathsRefused",
 ] as const;
 export type FinalizationUnavailableKind =
   (typeof finalizationUnavailableKinds)[number];
@@ -230,15 +231,16 @@ export const attemptEvidences = [
   "RunPushFailed",
   "RunTimedOut",
   "RunDiskLow",
+  "RunCredentialAbsent",
   ...workerImageFaults,
 ] as const;
 export type AttemptEvidence = (typeof attemptEvidences)[number];
 
 /**
- * The labels a run ends under when one of its own steps failed, or it was
- * killed at its deadline or because its runner's disk ran low: a failure
- * another attempt would repeat, so the work waits for a person rather than
- * being resumed.
+ * The labels a run ends under when one of its own steps failed, it was
+ * killed at its deadline or because its runner's disk ran low, or a credential
+ * its job lists was not delivered: a failure another attempt would repeat, so
+ * the work waits for a person rather than being resumed.
  */
 export const runStepEvidences = [
   "RunCloneFailed",
@@ -247,6 +249,7 @@ export const runStepEvidences = [
   "RunPushFailed",
   "RunTimedOut",
   "RunDiskLow",
+  "RunCredentialAbsent",
 ] as const;
 export type RunStepEvidence = (typeof runStepEvidences)[number];
 
@@ -260,6 +263,20 @@ export const runEndedEvidences = [
   ...runStepEvidences,
 ] as const;
 export type RunEndedEvidence = (typeof runEndedEvidences)[number];
+
+/**
+ * Why a credential asked for was not served: the attempt's grant does not
+ * allow its name, nothing here holds or issues it, it is not enabled for the
+ * attempt's project or repository, the outside system that issues it refused,
+ * or the worker's release is too old to read the shape it is served in.
+ */
+export const workerHeldCredentialAbsences = [
+  "NotGranted",
+  "NotHeld",
+  "NotEnabled",
+  "IssuerRefused",
+  "WorkerTooOld",
+] as const;
 
 /** The windows a provider limits an agent account's usage in, as the agent runtime names them. */
 export const runUsageWindows = ["five_hour", "seven_day"] as const;
@@ -293,8 +310,8 @@ export type RunContextCategoryKind = (typeof runContextCategoryKinds)[number];
 export const accountAgents = ["Claude", "Codex"] as const;
 export type AccountAgent = (typeof accountAgents)[number];
 
-/** What holds an account's agent paused: a window's reading at or over its threshold, or the limit a provider stopped it at. */
-export const agentPauseReasons = [...runUsageWindows, "limit"] as const;
+/** What holds an account's agent paused: a window's reading at or over its threshold, the limit a provider stopped it at, or its owner turning a credential off. */
+export const agentPauseReasons = [...runUsageWindows, "limit", "off"] as const;
 export type AgentPauseReason = (typeof agentPauseReasons)[number];
 
 /** What a cost figure is: the agent runtime's published list price, never a bill. */
@@ -375,6 +392,7 @@ export const operationBoundaryRefusalCodes = [
   "SelectionUnsupported",
   "ProgramExceedsPlan",
   "ProgramSkipsBriefChecks",
+  "ProgramStageOutOfPosition",
   "OverridesUnsupported",
   "OverridesUnknown",
   "TicketCapacityReached",
@@ -394,7 +412,8 @@ export type OperationBoundaryRefusalCode =
  * stage contradicts a brief that appends check lines to it, a brief naming no
  * repository has nothing to pair with, a configuration imported from a
  * repository contradicts a brief working in a different one, a program
- * leaving out the task a brief's check lines join would never run them, an
+ * stage keyed other than by its place has no place in a released plan, a
+ * program leaving out the task a brief's check lines join would never run them, an
  * approval selected as the work has no change to make, and an override may not
  * make a workload an approval or one no longer. A revision of the draft mends
  * each, so each is refused under its own code rather than as the
@@ -408,6 +427,7 @@ export const releasePairingFaults = [
   "SelectionUnsupported",
   "ProgramExceedsPlan",
   "ProgramSkipsBriefChecks",
+  "ProgramStageOutOfPosition",
   "OverridesUnsupported",
   "OverridesUnknown",
   "ApprovalAsWork",
@@ -616,7 +636,6 @@ export type BriefFinalizationMode = (typeof briefFinalizationModes)[number];
 export const ticketLandingStates = [
   "Running",
   "Held",
-  "AwaitingApproval",
   "AwaitingMerge",
   "Failed",
   "Unavailable",
@@ -639,6 +658,7 @@ export const finalizationFailureKinds = [
   "PreparationFailed",
   "QueueChecksFailed",
   "RecheckRequired",
+  "Restack",
 ] as const;
 
 /** Why one finalization attempt was sent back to re-check, restating the interpreter's `allFinalizationRecheckReasons`. */
@@ -746,6 +766,7 @@ export const repositoryConfigurationFaults = [
   "DuplicatePath",
   "ReferenceAbsent",
   "TooManyReferences",
+  "ApprovalOutsidePlan",
 ] as const;
 export type RepositoryConfigurationFault =
   (typeof repositoryConfigurationFaults)[number];
@@ -753,7 +774,6 @@ export type RepositoryConfigurationFault =
 /** The kinds of question a native action puts to a person. */
 export const nativeActionKinds = [
   "TicketEscalation",
-  "FinalizationApproval",
   "EvaluationApproval",
 ] as const;
 export type NativeActionKind = (typeof nativeActionKinds)[number];
@@ -765,16 +785,18 @@ export type NativeActionKind = (typeof nativeActionKinds)[number];
  */
 export const nativeActionKindResolutions = {
   TicketEscalation: ["Resume", "Revoke"],
-  FinalizationApproval: ["Approve", "Decline"],
   EvaluationApproval: ["Approve", "Reject"],
 } as const;
+
+/** Where a native action stands: still asked, answered, or settled without an answer. */
+export const nativeActionStates = ["Open", "Resolved", "Withdrawn"] as const;
+export type NativeActionState = (typeof nativeActionStates)[number];
 
 /** Every resolution the wire names, each once, in the order the kinds first name them. */
 export const nativeActionResolutions = [
   "Resume",
   "Revoke",
   "Approve",
-  "Decline",
   "Reject",
 ] as const;
 export type NativeActionResolution = (typeof nativeActionResolutions)[number];
@@ -823,7 +845,10 @@ export type SessionCapability = (typeof sessionCapabilities)[number];
  * `chuggy-linux mcp` as that person. It is kept out of `sessionCapabilities`
  * so that no session's facts can name it.
  */
-export const personalAgentCapabilities = ["ProjectSettings"] as const;
+export const personalAgentCapabilities = [
+  "ProjectSettings",
+  "AgentAccounts",
+] as const;
 export type PersonalAgentCapability =
   (typeof personalAgentCapabilities)[number];
 
@@ -927,7 +952,8 @@ export type SessionRunnerStanding = (typeof sessionRunnerStandings)[number];
  * hosted route the tenant grants the lead's principal no hosted runs, or a
  * subsidized lead's tenant or the whole deployment has spent its month's
  * subsidy, and on a runner route none of the project's runners is live, or
- * every live one's owner has their Claude account paused.
+ * every live one is paused for its owner's Claude account, on every credential
+ * it named or, where it named none, on the whole agent.
  */
 export const leadAdmissionRefusals = [
   "HostedRunsNotGranted",
@@ -954,12 +980,31 @@ export const leadAbsencesUntimed = [
 export type LeadAbsenceUntimed = (typeof leadAbsencesUntimed)[number];
 
 /**
+ * What holds a lead that stands from dispatching where no refusal dates it, the
+ * untimed absences that outrank a kept refusal: its selector is paused, or the
+ * site's selector may not read the project.
+ */
+export const leadHolds = [
+  "Paused",
+  "SelectorNotGranted",
+] as const satisfies readonly LeadAbsenceUntimed[];
+export type LeadHold = (typeof leadHolds)[number];
+
+/**
  * When a pool other than its owner's personal runner may take an owned
  * execution, in a project that lets personal runners serve their owners:
  * never while the owner has one for it, or only while that runner is not live.
  */
 export const ownerFallbacks = ["Strict", "Preferred"] as const;
 export type OwnerFallback = (typeof ownerFallbacks)[number];
+
+/**
+ * What an owner's execution waits on of their own runners able to run it: one
+ * offered its agent and `Live`, under `Strict` one offered it and `Offline`,
+ * or under `Strict` runners none of which is offered it, `Unable`.
+ */
+export const personalRunnerWaits = ["Live", "Offline", "Unable"] as const;
+export type PersonalRunnerWait = (typeof personalRunnerWaits)[number];
 
 /**
  * Where a project stands among the others its member's personal runners
@@ -1012,6 +1057,28 @@ export const nativeActionAnswerRefusalCodes = [
 export type NativeActionAnswerRefusalCode =
   (typeof nativeActionAnswerRefusalCodes)[number];
 
+/** What a take or a return of a ticket did: made the caller its owner, gave it back to its creator, or found the caller its owner already. */
+export const ticketTakeOutcomes = [
+  "Taken",
+  "Returned",
+  "AlreadyOwner",
+] as const;
+export type TicketTakeOutcomeKind = (typeof ticketTakeOutcomes)[number];
+
+/**
+ * Why a take or a return of a ticket wrote nothing. An agent takes nothing, a
+ * draft never released is its author's, a Done or Revoked ticket runs nothing
+ * more, and only its taker returns a ticket.
+ */
+export const ticketTakeRefusalCodes = [
+  "TakerNotAPerson",
+  "Unreleased",
+  "TicketDone",
+  "TicketRevoked",
+  "NotTaker",
+] as const;
+export type TicketTakeRefusalCode = (typeof ticketTakeRefusalCodes)[number];
+
 /**
  * What the project-artifact routes answer while the store cannot, and what the
  * message door answers when it cannot ask the store whether an image it was
@@ -1026,6 +1093,14 @@ export const projectArtifactUploadRefusalCodes = [
 ] as const;
 export type ProjectArtifactUploadRefusalCode =
   (typeof projectArtifactUploadRefusalCodes)[number];
+
+/** What naming an artifact a project's icon or banner refuses: one the project does not hold, one of a type neither role admits, or one past its role's bound. */
+export const projectImageRefusalCodes = [
+  "ImageNotFound",
+  "ImageTypeNotAdmitted",
+  "ImageTooLarge",
+] as const;
+export type ProjectImageRefusalCode = (typeof projectImageRefusalCodes)[number];
 
 /**
  * What a door answers a caller with no runner that would take their turn, where

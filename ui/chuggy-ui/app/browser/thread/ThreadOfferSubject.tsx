@@ -28,7 +28,11 @@ import {
   configurationCatalogSelected,
 } from "../../core/configurationCatalog.ts";
 import { configurationQuery } from "../../core/configurationQueries.ts";
-import { programPlannedUnder, programShort } from "../../core/programPlan.ts";
+import {
+  programPlannedUnder,
+  programShort,
+  programShortOfCatalog,
+} from "../../core/programPlan.ts";
 import { phaseTone } from "../../core/tones.ts";
 import { usePanelState } from "../api.ts";
 import { IntentFolded } from "../ticket/TicketInstructions.tsx";
@@ -38,7 +42,7 @@ import {
   FinalizationMethod,
   SummaryCell,
 } from "../TicketProvenance.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { TicketReference } from "../ui/TicketReference.tsx";
 
 import "./threadOffer.css";
@@ -94,10 +98,17 @@ function ThreadOfferDraftPlan(props: {
     catalog === undefined
       ? undefined
       : configurationCatalogSelected(catalog, draft.selection);
-  const short = programShort(
-    programPlannedUnder(canonical, draft.selection),
-    draft.authoring.program,
-  );
+  const short =
+    programShort(
+      programPlannedUnder(canonical, draft.selection, draft.overrides),
+      draft.authoring.program,
+    ) ||
+    programShortOfCatalog(
+      canonical,
+      draft.overrides,
+      draft.selection,
+      draft.authoring.program,
+    );
   return (
     <>
       {selected === undefined ? null : (
@@ -232,9 +243,9 @@ export function ThreadOfferTicketSubject(props: {
         ticket={ticket.ticket}
         title={ticket.title}
         aside={
-          <Pill tone={phaseTone(ticket.phase)}>
+          <StatusBadge tone={phaseTone(ticket.phase)} size="small">
             {text(phaseLabel(ticket.phase))}
-          </Pill>
+          </StatusBadge>
         }
       />
       <ThreadOfferSubjectIntent intent={ticket.brief?.intent} />

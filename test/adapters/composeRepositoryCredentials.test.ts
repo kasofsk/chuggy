@@ -240,6 +240,7 @@ function allowanceTokens(pipelinesWritable: boolean, allowance: Allowance) {
               boundAt: "2026-10-25T00:00:00Z",
               landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
               pipelinesWritable,
+              pipelinesRunnable: false,
             }
           : undefined,
       );
@@ -368,6 +369,7 @@ test("a member's write or proposal carries the pipeline definitions only where t
                 boundAt: "2026-10-25T00:00:00Z",
                 landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
                 pipelinesWritable: false,
+                pipelinesRunnable: false,
               }),
           },
           tokens,

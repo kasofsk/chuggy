@@ -34,6 +34,11 @@ export type PanelState<T> =
       readonly retry?: () => void;
     };
 
+/** The value a ready read holds, and nothing otherwise. */
+export function readValue<T>(state: PanelState<T>): T | undefined {
+  return state.state === "Ready" ? state.value : undefined;
+}
+
 /** The resource's own observation when it states one, and the cache's if not. */
 export function panelObservedAtMs(
   value: unknown,

@@ -27,7 +27,6 @@ import type {
   ExecutionStatus,
 } from "../../../src/contract/rosters.ts";
 import { TicketRowExecutionCell } from "../app/browser/TicketCells.tsx";
-import { pillLookClassName } from "../app/browser/ui/Pill.tsx";
 import { projectTableRow } from "../app/core/projectTableRows.ts";
 import { ticketLedger } from "../app/core/ticketLedger.ts";
 import { verdictTone } from "../app/core/tones.ts";
@@ -53,7 +52,7 @@ const runStartedAt = "2026-08-26T00:05:00.000Z";
 
 interface Drawn {
   readonly word: string | undefined;
-  readonly className: string | undefined;
+  readonly tone: string | undefined;
 }
 
 /** What the ticket page draws for the one set this execution is: a work
@@ -68,10 +67,10 @@ function ledgerDrawnOf(execution: ExecutionSummary): Drawn {
       : stage?.kind === "Ran"
         ? stage.evaluators[0]?.set
         : undefined;
-  if (set === undefined) return { word: undefined, className: undefined };
+  if (set === undefined) return { word: undefined, tone: undefined };
   return {
     word: set.verdict,
-    className: pillLookClassName({ tone: verdictTone(set.verdict) }),
+    tone: verdictTone(set.verdict),
   };
 }
 
@@ -85,10 +84,10 @@ function cellDrawnOf(execution: ExecutionSummary): Drawn {
       })}
     />,
   );
-  const pill = container.querySelector(".pill");
+  const pill = container.querySelector<HTMLElement>(".status-badge");
   const drawn = {
     word: pill?.textContent ?? undefined,
-    className: pill?.className,
+    tone: pill?.dataset["tone"],
   };
   cleanup();
   return drawn;
@@ -158,7 +157,7 @@ test("an execution still waiting for its worker reads Starting in the queued hue
   for (const [status, carrier] of waiting)
     expect(
       cellDrawnOf(executionOf({ identity: workIdentity(1), status, carrier })),
-    ).toEqual({ word: "Starting", className: "pill pill-queued" });
+    ).toEqual({ word: "Starting", tone: "queued" });
   expect(
     cellDrawnOf(
       executionOf({
@@ -168,15 +167,15 @@ test("an execution still waiting for its worker reads Starting in the queued hue
         runStartedAt,
       }),
     ),
-  ).toEqual({ word: "Running", className: "pill pill-live" });
+  ).toEqual({ word: "Running", tone: "live" });
 });
 
 test("an evaluator whose process failed is drawn as a stop, and a work task's as a failure", () => {
   const failed = { status: "Terminal", outcome: "ProcessFailed" } as const;
   expect(
     cellDrawnOf(executionOf({ identity: evalIdentity(1, 1, 1), ...failed })),
-  ).toEqual({ word: "Blocked", className: "pill pill-parked" });
+  ).toEqual({ word: "Blocked", tone: "parked" });
   expect(
     cellDrawnOf(executionOf({ identity: workIdentity(1), ...failed })),
-  ).toEqual({ word: "Failed", className: "pill pill-fail" });
+  ).toEqual({ word: "Failed", tone: "fail" });
 });

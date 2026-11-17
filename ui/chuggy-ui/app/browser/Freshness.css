@@ -1,0 +1,12 @@
+/* When a panel's read was observed, and that it is stale. */
+
+@layer page {
+  .freshness {
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+  }
+
+  .freshness-stale {
+    color: var(--tone-parked);
+  }
+}

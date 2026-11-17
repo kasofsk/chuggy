@@ -1,7 +1,7 @@
 /**
  * The ticket header as drawn: a label for every state that is never only a
  * colour, the bar that stands in for the header once it scrolls away, the
- * epics under the title, and the Runs tab's count.
+ * epics under the title, and the status a change of state is said in.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -10,19 +10,18 @@ import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import {
-  TicketHeader,
-  TicketTabs,
-} from "../app/browser/ticket/TicketHeader.tsx";
+import { TicketHeader } from "../app/browser/ticket/TicketHeader.tsx";
 import { TicketStateLabel } from "../app/browser/ticket/TicketStateLabel.tsx";
+import { ticketStateLabelOf } from "../app/core/ticketHeader.ts";
 import type { TicketListStanding } from "../app/core/ticketListView.ts";
 import { intersectionObserverStubbed } from "./intersectionObserver.ts";
 
-vi.mock("@tanstack/react-router", () => ({
-  Link: (props: { readonly children?: ReactNode }) => (
+vi.mock("@tanstack/react-router", () => {
+  const stub = (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
-  ),
-}));
+  );
+  return { createLink: () => stub, Link: stub };
+});
 // jscpd:ignore-end -- the case's own doubles resume here
 
 afterEach(() => {
@@ -41,28 +40,25 @@ const standings: readonly TicketListStanding[] = [
   "Revoked",
 ];
 
-test("every state's label is its word after a mark, and only a moving state's mark spins", () => {
+test("every state's label is its status badge, the page's regular and the bar's small, in its label's tone", () => {
   for (const standing of standings) {
     const { container } = renderCopied(
-      <TicketStateLabel standing={standing} size="page" />,
+      <TicketStateLabel standing={standing} size="regular" />,
     );
-    const label = container.querySelector<HTMLElement>(".ticket-state");
+    const label = container.querySelector<HTMLElement>(".status-badge");
     const mark = label?.querySelector("svg");
     expect(label?.tagName, standing).toBe("SPAN");
-    expect(mark?.getAttribute("aria-hidden"), standing).toBe("true");
-    expect(mark?.hasAttribute("data-spins"), standing).toBe(
-      standing === "Work" ||
-        standing === "Evaluation" ||
-        standing === "Finalization",
+    expect(label?.dataset["tone"], standing).toBe(
+      ticketStateLabelOf(standing).tone,
     );
+    expect(mark?.getAttribute("aria-hidden"), standing).toBe("true");
     cleanup();
   }
   renderCopied(<TicketStateLabel standing="Evaluation" size="small" />);
   const small = screen
     .getByText("Evaluating")
-    .closest<HTMLElement>(".ticket-state");
+    .closest<HTMLElement>(".status-badge");
   expect(small?.dataset["size"]).toBe("small");
-  expect(small?.dataset["form"]).toBe("filled");
   expect(small?.dataset["tone"]).toBe("evaluation");
 });
 
@@ -84,7 +80,7 @@ function headerDrawn(): void {
 test("the bar holding the small label and the title shows once the header has scrolled out of view, and goes when it is back", () => {
   const report = intersectionObserverStubbed();
   headerDrawn();
-  const bar = document.querySelector<HTMLElement>(".ticket-sticky-bar");
+  const bar = document.querySelector<HTMLElement>(".page-header-sticky-bar");
   expect(bar?.hidden).toBe(true);
   act(() => {
     report(false);
@@ -93,7 +89,7 @@ test("the bar holding the small label and the title shows once the header has sc
   expect(
     within(bar as HTMLElement)
       .getByText("Escalated")
-      .closest<HTMLElement>(".ticket-state")?.dataset["size"],
+      .closest<HTMLElement>(".status-badge")?.dataset["size"],
   ).toBe("small");
   expect(
     within(bar as HTMLElement).getByText("Lock the contract"),
@@ -108,7 +104,7 @@ test("a browser without the observer never shows the bar", () => {
   vi.stubGlobal("IntersectionObserver", undefined);
   headerDrawn();
   expect(
-    document.querySelector<HTMLElement>(".ticket-sticky-bar")?.hidden,
+    document.querySelector<HTMLElement>(".page-header-sticky-bar")?.hidden,
   ).toBe(true);
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
     "Lock the contract #335",
@@ -129,7 +125,7 @@ test("the epics the header is given are drawn in it, after the title", () => {
       notes={null}
     />,
   );
-  const header = document.querySelector<HTMLElement>(".ticket-header");
+  const header = document.querySelector<HTMLElement>("header.page-header");
   const epics = within(header as HTMLElement).getByText("Billing");
   expect(
     screen.getByRole("heading", { level: 1 }).compareDocumentPosition(epics) &
@@ -137,49 +133,41 @@ test("the epics the header is given are drawn in it, after the title", () => {
   ).toBeTruthy();
 });
 
-test("Runs carries its count once the page holds a run, and the tabs are the same either way", () => {
-  const partition = { tenant: "acme", project: "atlas" };
-  const drawn = (
-    runCount: number | undefined,
-    runCountCut = false,
-  ): readonly string[] => {
-    renderCopied(
-      <TicketTabs
-        partition={partition}
-        ticket={335}
-        runCount={runCount}
-        runCountCut={runCountCut}
-        runsWithin={false}
-      />,
-    );
-    const names = screen
-      .getAllByRole("link")
-      .map((link) => link.textContent ?? "");
-    cleanup();
-    return names;
-  };
-  expect(drawn(undefined)).toStrictEqual([
-    "Overview",
-    "Runs",
-    "Configuration",
-    "Usage",
-  ]);
-  expect(drawn(0)).toStrictEqual([
-    "Overview",
-    "Runs",
-    "Configuration",
-    "Usage",
-  ]);
-  expect(drawn(6)).toStrictEqual([
-    "Overview",
-    "Runs6",
-    "Configuration",
-    "Usage",
-  ]);
-  expect(drawn(50, true)).toStrictEqual([
-    "Overview",
-    "Runs50+",
-    "Configuration",
-    "Usage",
-  ]);
+function headerOf(standing: TicketListStanding): ReactNode {
+  return (
+    <TicketHeader
+      ticket={335}
+      title="Lock the contract"
+      standing={standing}
+      fragment={{ fragment: "None" }}
+      nowMs={0}
+      actions={null}
+      epics={null}
+      notes={null}
+    />
+  );
+}
+
+test("a change of state is said once through a status, and the state the page opens on is not", () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  const view = renderCopied(headerOf("Ready"));
+  const status = screen.getByRole("status");
+  expect(status.classList.contains("visually-hidden")).toBe(true);
+  expect(status.textContent).toBe("");
+  view.rerender(headerOf("Ready"));
+  expect(status.textContent).toBe("");
+  view.rerender(headerOf("Work"));
+  expect(status.textContent).toBe("Ticket is now Working");
+  const changes = new MutationObserver(() => undefined);
+  changes.observe(status, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+  });
+  view.rerender(headerOf("Work"));
+  expect(changes.takeRecords()).toStrictEqual([]);
+  changes.disconnect();
+  view.rerender(headerOf("Done"));
+  expect(screen.getByRole("status")).toBe(status);
+  expect(status.textContent).toBe("Ticket is now Done");
 });

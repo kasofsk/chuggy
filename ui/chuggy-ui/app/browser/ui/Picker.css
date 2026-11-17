@@ -14,4 +14,10 @@
     border-radius: var(--radius-circle);
     background: currentColor;
   }
+
+  @media (forced-colors: active) {
+    .picker-mark {
+      background: var(--forced-ink);
+    }
+  }
 }

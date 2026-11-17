@@ -82,10 +82,12 @@ async function drawnReady(
       acceptedAt: "2026-08-26T10:00:00Z",
       ...decided,
     },
-    route: (url) =>
-      url.includes("/executions")
-        ? answer({ executions: [] })
-        : answer({ partition: atlas, sequence: 900, tickets }),
+    route: (url) => {
+      if (url.includes("/executions")) return answer({ executions: [] });
+      if (url.includes("/appearance/images"))
+        return answer({ administers: false });
+      return answer({ partition: atlas, sequence: 900, tickets });
+    },
   });
   const urls: string[] = [];
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {

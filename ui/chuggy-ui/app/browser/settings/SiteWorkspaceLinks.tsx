@@ -28,6 +28,7 @@ import {
 } from "./InviteLinksListing.tsx";
 import { SettingsListingNone } from "./SettingsListing.tsx";
 import { siteWorkspaceLinksReread } from "./siteWorkspacesResource.ts";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 function SiteWorkspaceLinkNote(props: {
   readonly link: AccessWorkspaceLink;
@@ -42,7 +43,7 @@ function SiteWorkspaceLinkNote(props: {
         <span className="wrap-anywhere">{link.note}</span>
       )}
       {link.createAccounts ? (
-        <span className="text-sm text-ink-3">
+        <span className="text-sm font-regular text-ink-3">
           {text(siteWorkspaceCreateAccountsLabel)}
         </span>
       ) : null}
@@ -55,19 +56,14 @@ function SiteWorkspaceLinkMade(props: {
   readonly link: Extract<AccessWorkspaceLink, { state: "Used" }>;
   readonly nowMs: number;
 }): ReactNode {
-  const text = useCopyText();
   const link = props.link;
   return (
     <div className="grid min-w-0">
-      <span className="people-stacked-label">
-        {text(siteWorkspaceLinkWords.workspace)}
-      </span>
-      <span
-        className="people-name font-strong text-ink-1"
-        title={link.workspace}
-      >
-        {link.workspace}
-      </span>
+      <Tooltip trigger="abbreviation" text={link.workspace}>
+        <span className="tabular-cut font-strong text-ink-1">
+          {link.workspace}
+        </span>
+      </Tooltip>
       <div className="text-sm text-ink-3">
         <InviteLinkWho
           person={link.usedBy}
@@ -90,6 +86,7 @@ export function SiteWorkspaceLinks(props: {
   return (
     <InviteLinksListing
       links={props.links}
+      heading={siteWorkspaceLinkWords.heading}
       first={{
         heading: siteWorkspaceLinkWords.note,
         cell: (link) => <SiteWorkspaceLinkNote link={link} />,

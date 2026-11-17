@@ -2,11 +2,12 @@
  * Creating a ticket: one screen, one submit, and a configuration asked about
  * unless the project is known to offer one alone.
  *
- * What is visible is what only a person can state — which configuration does
- * the work where there is a choice, the title, the intent, what to read first,
- * the images it carries, the check lines this ticket adds where its
- * configuration commands a stage for them, the branch the work happens on and
- * the one it lands on; the rest is prefilled behind the disclosure. Submit
+ * What is visible is what a ticket cannot be filed without: which configuration
+ * does the work, where there is a choice, its intent, and the repository the
+ * work happens in, where the project binds one. Everything else is under one
+ * disclosure, closed until it is opened or a refused submit's first field at
+ * fault is in it, and marked while it holds a value a fresh form would not. A
+ * refused submit moves the focus to the first field at fault. Submit
  * creates the draft, releases it and, for a reader who may dispatch, starts
  * the ticket in one motion, and the navigation happens on a settled release
  * alone, so a screen never hands a reader a ticket the projection has not got
@@ -15,8 +16,8 @@
  */
 
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useId, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import {
   briefChecksMax,
@@ -138,19 +139,30 @@ import {
   overridesNestedOf,
 } from "../core/ticketOverrides.ts";
 import type { OverrideField } from "../core/ticketOverrides.ts";
+import {
+  creationDisclosedHeld,
+  creationFieldDisclosed,
+  creationFieldFirstFaulted,
+} from "../core/ticketCreationDisclosed.ts";
 import { Panel } from "./ui/Panel.tsx";
 import { CreationImages } from "./TicketCreationImages.tsx";
 import type { CreationImagesApi } from "./TicketCreationImages.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Notice } from "./ui/Notice.tsx";
+import { FormField } from "./ui/FormField.tsx";
+import { Input } from "./ui/Input.tsx";
 import { Picker } from "./ui/Picker.tsx";
+import type { PickerAction } from "./ui/Picker.tsx";
+import { Textarea } from "./ui/Textarea.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import type { Copy, CopyText } from "../core/copy.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 
 import "./TicketCreation.css";
+import "./DataPanel.css";
 
 export type Attempt<Held extends DraftHeld = DraftHeld> =
   | { readonly attempt: "Idle" }
@@ -169,14 +181,42 @@ interface FormEdit {
   readonly onChange: (form: TicketCreationForm) => void;
 }
 
+/** A fault the form states of no one box, said where the part it is about is. */
 function Fault(props: {
   readonly field: CreationField;
   readonly faults: readonly CreationFault[];
+  readonly id?: string;
 }): ReactNode {
   const text = useCopyText();
   const found = props.faults.find((fault) => fault.field === props.field);
   return found === undefined ? null : (
-    <p className="text-tone-fail">{text(found.reason)}</p>
+    <p id={props.id} className="form-field-error">
+      {text(found.reason)}
+    </p>
+  );
+}
+
+/** The error a field is drawn with, as the parts a `FormField` takes: none
+ * where no fault names it. */
+function faultParts(
+  field: CreationField,
+  faults: readonly CreationFault[],
+  text: CopyText,
+): { readonly error?: string } {
+  const found = faults.find((fault) => fault.field === field);
+  return found === undefined ? {} : { error: text(found.reason) };
+}
+
+/** Where a field is drawn, so a refused submit can find the control to
+ * move to. */
+function FieldAt(props: {
+  readonly field: CreationField;
+  readonly children: ReactNode;
+}): ReactNode {
+  return (
+    <div className="creation-at" data-creation-field={props.field}>
+      {props.children}
+    </div>
   );
 }
 
@@ -187,8 +227,8 @@ function ConfigurationLine(props: {
   const text = useCopyText();
   const shaping = creationConfigurationLabel(props.offer);
   return (
-    <Tooltip text={shaping.title}>
-      <p className="text-ink-3">{text(shaping.text)}</p>
+    <Tooltip trigger="abbreviation" text={shaping.title}>
+      <p className="creation-sole text-ink-3">{text(shaping.text)}</p>
     </Tooltip>
   );
 }
@@ -204,7 +244,9 @@ type FormDrawn = FormEdit & {
  * one, and a choice among them by name where it offers several, starting on
  * none the reader did not choose.
  */
-function Configuration(props: FormDrawn): ReactNode {
+function Configuration(
+  props: FormDrawn & { readonly faults: readonly CreationFault[] },
+): ReactNode {
   const { form, onChange, offers, repositories } = props;
   const text = useCopyText();
   const chosen = creationOfferOf(offers, form.configuration);
@@ -213,34 +255,43 @@ function Configuration(props: FormDrawn): ReactNode {
     : chosen;
   const bootstrap =
     chosen === undefined ? undefined : creationBootstrapLine(chosen);
+  const label = text({ id: "ticket-authoring-configuration" });
   return (
-    <>
+    <FieldAt field="configuration">
       {sole === undefined ? (
-        <div className="creation-row">
-          <span>{text({ id: "ticket-authoring-configuration" })}</span>
-          <Picker
-            label={text({ id: "ticket-authoring-configuration" })}
-            value={form.configuration}
-            placeholder={text({ id: "ticket-authoring-choose" })}
-            hint={chosen?.initialization.configuration.revision}
-            options={offers.map((offer) => ({
-              value: offer.name,
-              text: offer.name,
-            }))}
-            onChoose={(name) => {
-              onChange(
-                creationConfigurationChosen(form, offers, name, repositories),
-              );
-            }}
-          />
-        </div>
+        <FormField
+          label={label}
+          {...faultParts("configuration", props.faults, text)}
+        >
+          {(field) => (
+            <Picker
+              label={label}
+              field={field}
+              value={form.configuration}
+              placeholder={text({ id: "ticket-authoring-choose" })}
+              hint={chosen?.initialization.configuration.revision}
+              options={offers.map((offer) => ({
+                value: offer.name,
+                text: offer.name,
+              }))}
+              onChoose={(name) => {
+                onChange(
+                  creationConfigurationChosen(form, offers, name, repositories),
+                );
+              }}
+            />
+          )}
+        </FormField>
       ) : (
-        <ConfigurationLine offer={sole} />
+        <>
+          <ConfigurationLine offer={sole} />
+          <Fault field="configuration" faults={props.faults} />
+        </>
       )}
       {bootstrap === undefined ? null : (
         <Notice tone="info" detail={text(bootstrap)} />
       )}
-    </>
+    </FieldAt>
   );
 }
 
@@ -251,7 +302,7 @@ const selectionLabels: Readonly<
 > = {
   work: { id: "ticket-authoring-selection-work" },
   evaluation: { id: "ticket-authoring-selection-evaluation" },
-  finalization: { id: "ticket-authoring-selection-landing" },
+  finalization: { id: "ticket-authoring-selection-finalization" },
 };
 
 /**
@@ -273,276 +324,307 @@ function Selection(
   const selected = configurationCatalogSelected(catalog, form.selection);
   const choices = configurationCatalogChoices(catalog, text);
   return (
-    <>
-      {(["work", "evaluation", "finalization"] as const).map((field) =>
-        choices[field].length === 0 ? null : (
-          <div className="creation-row" key={field}>
-            <span>{text(selectionLabels[field])}</span>
-            <Picker
-              label={text(selectionLabels[field])}
-              value={selected[field] ?? ""}
-              placeholder={text({ id: "ticket-authoring-none" })}
-              options={choices[field]}
-              onChoose={(name) => {
-                onChange(
-                  creationSelectionChosen(
-                    form,
-                    offers,
-                    configurationCatalogSelection(catalog, {
-                      ...selected,
-                      [field]: name,
-                    }),
-                    repositories,
-                  ),
-                );
-              }}
-            />
-          </div>
+    <FieldAt field="overrides">
+      {(["work", "evaluation", "finalization"] as const).map((part) =>
+        choices[part].length === 0 ? null : (
+          <FormField key={part} label={text(selectionLabels[part])}>
+            {(field) => (
+              <Picker
+                label={text(selectionLabels[part])}
+                field={field}
+                value={selected[part] ?? ""}
+                placeholder={text({ id: "ticket-authoring-none" })}
+                options={choices[part]}
+                onChoose={(name) => {
+                  onChange(
+                    creationSelectionChosen(
+                      form,
+                      offers,
+                      configurationCatalogSelection(catalog, {
+                        ...selected,
+                        [part]: name,
+                      }),
+                      repositories,
+                    ),
+                  );
+                }}
+              />
+            )}
+          </FormField>
         ),
       )}
       <Fault field="overrides" faults={props.faults} />
-    </>
+    </FieldAt>
   );
 }
 
-function Title(props: FormEdit): ReactNode {
+/** A part of the form that only one box edits. */
+type FormFaulted = FormEdit & { readonly faults: readonly CreationFault[] };
+
+function Title(props: FormFaulted): ReactNode {
   const { form, onChange } = props;
   const text = useCopyText();
   return (
-    <label className="creation-row">
-      <span>{text({ id: "ticket-authoring-title" })}</span>
-      <input
-        type="text"
+    <FieldAt field="title">
+      <Input
+        labelShown
+        label={text({ id: "ticket-authoring-title" })}
         value={form.title}
         placeholder={text({ id: "ticket-authoring-title-placeholder" })}
-        onChange={(event) => {
-          onChange({ ...form, title: event.target.value });
+        {...faultParts("title", props.faults, text)}
+        onChange={(title) => {
+          onChange({ ...form, title });
         }}
       />
-    </label>
+    </FieldAt>
   );
 }
 
-function Intent(props: FormEdit): ReactNode {
+function Intent(props: FormFaulted): ReactNode {
   const { form, onChange } = props;
   const text = useCopyText();
   return (
-    <label className="creation-row creation-intent">
-      <span>{text({ id: "ticket-authoring-intent" })}</span>
-      <textarea
-        rows={8}
+    <FieldAt field="intent">
+      <Textarea
+        labelShown
+        required
+        label={text({ id: "ticket-authoring-intent" })}
         value={form.intent}
         placeholder={text({ id: "ticket-authoring-intent-placeholder" })}
-        onChange={(event) => {
-          onChange({ ...form, intent: event.target.value });
+        {...faultParts("intent", props.faults, text)}
+        onChange={(intent) => {
+          onChange({ ...form, intent });
         }}
       />
-    </label>
+    </FieldAt>
   );
 }
 
-function Links(props: FormEdit): ReactNode {
+/** A list of one-line boxes under one legend, each with its Remove, and the
+ * fault the list earns as a whole described on every box in it. */
+function CreationLines(props: {
+  readonly field: CreationField;
+  readonly legend: string;
+  readonly lineLabel: (number: string) => string;
+  readonly placeholder: string;
+  readonly addLabel: string;
+  readonly lines: readonly string[];
+  readonly linesMax: number;
+  readonly faults: readonly CreationFault[];
+  readonly onLines: (lines: readonly string[]) => void;
+}): ReactNode {
+  const { lines, onLines } = props;
+  const text = useCopyText();
+  const errorId = useId();
+  const faulted = props.faults.some((fault) => fault.field === props.field);
+  return (
+    <FieldAt field={props.field}>
+      <fieldset className="creation-set">
+        <legend className="form-field-label">{props.legend}</legend>
+        {lines.map((line, index) => (
+          <div key={index} className="creation-line">
+            <Input
+              label={props.lineLabel(String(index + 1))}
+              value={line}
+              placeholder={props.placeholder}
+              invalid={faulted}
+              {...(faulted ? { describedBy: errorId } : {})}
+              onChange={(value) => {
+                onLines(lines.map((held, at) => (at === index ? value : held)));
+              }}
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                onLines(lines.filter((_, at) => at !== index));
+              }}
+            >
+              {text({ id: "ticket-authoring-remove" })}
+            </Button>
+          </div>
+        ))}
+        <Button
+          size="sm"
+          disabled={lines.length >= props.linesMax}
+          onClick={() => {
+            onLines([...lines, ""]);
+          }}
+        >
+          {props.addLabel}
+        </Button>
+        <Fault field={props.field} faults={props.faults} id={errorId} />
+      </fieldset>
+    </FieldAt>
+  );
+}
+
+function Links(props: FormFaulted): ReactNode {
   const { form, onChange } = props;
   const text = useCopyText();
   return (
-    <fieldset className="creation-set">
-      <legend>{text({ id: "ticket-authoring-links" })}</legend>
-      {form.links.map((link, index) => (
-        <div key={index} className="creation-row creation-line">
-          <input
-            type="url"
-            aria-label={text({
-              id: "ticket-authoring-link",
-              args: { number: String(index + 1) },
-            })}
-            value={link}
-            placeholder={briefLinkScheme}
-            onChange={(event) => {
-              onChange({
-                ...form,
-                links: form.links.map((held, at) =>
-                  at === index ? event.target.value : held,
-                ),
-              });
-            }}
-          />
-          <Button
-            size="sm"
-            onClick={() => {
-              onChange({
-                ...form,
-                links: form.links.filter((_, at) => at !== index),
-              });
-            }}
-          >
-            {text({ id: "ticket-authoring-remove" })}
-          </Button>
-        </div>
-      ))}
-      <Button
-        size="sm"
-        disabled={form.links.length >= briefLinksMax}
-        onClick={() => {
-          onChange({ ...form, links: [...form.links, ""] });
-        }}
-      >
-        {text({ id: "ticket-authoring-add-link" })}
-      </Button>
-    </fieldset>
+    <CreationLines
+      field="links"
+      legend={text({ id: "ticket-authoring-links" })}
+      lineLabel={(number) =>
+        text({ id: "ticket-authoring-link", args: { number } })
+      }
+      placeholder={briefLinkScheme}
+      addLabel={text({ id: "ticket-authoring-add-link" })}
+      lines={form.links}
+      linesMax={briefLinksMax}
+      faults={props.faults}
+      onLines={(links) => {
+        onChange({ ...form, links });
+      }}
+    />
   );
 }
 
 /** The command lines this ticket adds to the stage its configuration runs. */
-function Checks(props: FormEdit): ReactNode {
+function Checks(props: FormFaulted): ReactNode {
   const { form, onChange } = props;
   const text = useCopyText();
   return (
-    <fieldset className="creation-set">
-      <legend>{text({ id: "ticket-authoring-checks" })}</legend>
-      {form.checks.map((check, index) => (
-        <div key={index} className="creation-row creation-line">
-          <input
-            type="text"
-            aria-label={text({
-              id: "ticket-authoring-check",
-              args: { number: String(index + 1) },
-            })}
-            value={check}
-            placeholder={text({ id: "ticket-authoring-check-placeholder" })}
-            onChange={(event) => {
-              onChange({
-                ...form,
-                checks: form.checks.map((held, at) =>
-                  at === index ? event.target.value : held,
-                ),
-              });
-            }}
-          />
-          <Button
-            size="sm"
-            onClick={() => {
-              onChange({
-                ...form,
-                checks: form.checks.filter((_, at) => at !== index),
-              });
-            }}
-          >
-            {text({ id: "ticket-authoring-remove" })}
-          </Button>
-        </div>
-      ))}
-      <Button
-        size="sm"
-        disabled={form.checks.length >= briefChecksMax}
-        onClick={() => {
-          onChange({ ...form, checks: [...form.checks, ""] });
-        }}
-      >
-        {text({ id: "ticket-authoring-add-check" })}
-      </Button>
-    </fieldset>
-  );
-}
-
-/** A branch box, its hint the box's description rather than part of its name. */
-function BranchRow(props: {
-  readonly label: string;
-  readonly hint: string;
-  readonly value: string;
-  readonly placeholder: string;
-  readonly onChange: (value: string) => void;
-}): ReactNode {
-  const box = useId();
-  const hint = useId();
-  return (
-    <div className="creation-row">
-      <label htmlFor={box} className="text-ink-3">
-        {props.label}
-      </label>
-      <input
-        id={box}
-        type="text"
-        value={props.value}
-        placeholder={props.placeholder}
-        aria-describedby={hint}
-        onChange={(event) => {
-          props.onChange(event.target.value);
-        }}
-      />
-      <span id={hint} className="creation-hint text-ink-3 text-xs">
-        {props.hint}
-      </span>
-    </div>
+    <CreationLines
+      field="checks"
+      legend={text({ id: "ticket-authoring-checks" })}
+      lineLabel={(number) =>
+        text({ id: "ticket-authoring-check", args: { number } })
+      }
+      placeholder={text({ id: "ticket-authoring-check-placeholder" })}
+      addLabel={text({ id: "ticket-authoring-add-check" })}
+      lines={form.checks}
+      linesMax={briefChecksMax}
+      faults={props.faults}
+      onLines={(checks) => {
+        onChange({ ...form, checks });
+      }}
+    />
   );
 }
 
 /** The branch box, which an empty one draws the screen's proposal in where it
  * has one, as the name a submit sends. */
 function Branch(
-  props: FormEdit & { readonly proposed: string | undefined },
+  props: FormFaulted & { readonly proposed: string | undefined },
 ): ReactNode {
   const { form, onChange } = props;
   const text = useCopyText();
   return (
-    <BranchRow
-      label={text({ id: "ticket-authoring-branch" })}
-      hint={text(creationBranchFieldHint)}
-      value={form.branchName}
-      placeholder={
-        props.proposed ?? text({ id: "ticket-authoring-branch-placeholder" })
-      }
-      onChange={(branchName) => {
-        onChange({ ...form, branchName });
-      }}
-    />
+    <FieldAt field="branch">
+      <Input
+        labelShown
+        label={text({ id: "ticket-authoring-branch" })}
+        hint={text(creationBranchFieldHint)}
+        value={form.branchName}
+        placeholder={
+          props.proposed ?? text({ id: "ticket-authoring-branch-placeholder" })
+        }
+        {...faultParts("branch", props.faults, text)}
+        onChange={(branchName) => {
+          onChange({ ...form, branchName });
+        }}
+      />
+    </FieldAt>
   );
 }
 
-function TargetBranch(props: FormEdit): ReactNode {
+function TargetBranch(props: FormFaulted): ReactNode {
   const { form, onChange } = props;
   const text = useCopyText();
   return (
-    <BranchRow
-      label={text({ id: "ticket-authoring-target-branch" })}
-      hint={text(creationTargetBranchFieldHint(form.finalization))}
-      value={form.targetBranchName}
-      placeholder={text({ id: "ticket-authoring-target-branch-placeholder" })}
-      onChange={(targetBranchName) => {
-        onChange({ ...form, targetBranchName });
-      }}
-    />
+    <FieldAt field="target">
+      <Input
+        labelShown
+        label={text({ id: "ticket-authoring-target-branch" })}
+        hint={text(creationTargetBranchFieldHint(form.finalization))}
+        value={form.targetBranchName}
+        placeholder={text({ id: "ticket-authoring-target-branch-placeholder" })}
+        {...faultParts("target", props.faults, text)}
+        onChange={(targetBranchName) => {
+          onChange({ ...form, targetBranchName });
+        }}
+      />
+    </FieldAt>
   );
 }
 
 /** The repository the work happens in, drawn only where the project holds a live
  * binding: holding none names none, and the form neither asks nor sends. */
-function Repository(props: FormDrawn): ReactNode {
+function Repository(
+  props: FormDrawn & { readonly faults: readonly CreationFault[] },
+): ReactNode {
   const { form, onChange, offers, repositories } = props;
   const text = useCopyText();
   if (repositories.length === 0) return null;
+  const label = text({ id: "ticket-authoring-repository" });
   return (
-    <div className="creation-row">
-      <span>{text({ id: "ticket-authoring-repository" })}</span>
-      <Picker
-        label={text({ id: "ticket-authoring-repository" })}
-        value={form.repository}
-        placeholder={text({ id: "ticket-authoring-choose" })}
-        hint={form.repository === "" ? undefined : form.repository}
-        options={repositories.map((binding) => ({
-          value: binding.repository,
-          text: repositoryLabel(binding.repository),
-        }))}
-        onChoose={(repository) => {
-          onChange(
-            creationRepositoryChosen(form, repositories, repository, offers),
-          );
-        }}
-      />
-    </div>
+    <FieldAt field="repository">
+      <FormField
+        label={label}
+        {...faultParts("repository", props.faults, text)}
+      >
+        {(field) => (
+          <Picker
+            label={label}
+            field={field}
+            value={form.repository}
+            placeholder={text({ id: "ticket-authoring-choose" })}
+            hint={form.repository === "" ? undefined : form.repository}
+            options={repositories.map((binding) => ({
+              value: binding.repository,
+              text: repositoryLabel(binding.repository),
+            }))}
+            onChoose={(repository) => {
+              onChange(
+                creationRepositoryChosen(
+                  form,
+                  repositories,
+                  repository,
+                  offers,
+                ),
+              );
+            }}
+          />
+        )}
+      </FormField>
+    </FieldAt>
   );
 }
 
 const epicNone = "none";
+
+/** The pages of the epic roster the picker offers, and the actions that move
+ * between them. */
+function epicChoiceActions(
+  text: CopyText,
+  after: number | undefined,
+  nextAfter: number | undefined,
+  setAfter: (after: number | undefined) => void,
+): PickerAction[] {
+  return [
+    ...(nextAfter === undefined
+      ? []
+      : [
+          {
+            text: text({ id: "ticket-authoring-epics-more" }),
+            onSelect: () => {
+              setAfter(nextAfter);
+            },
+          },
+        ]),
+    ...(after === undefined
+      ? []
+      : [
+          {
+            text: text({ id: "ticket-authoring-epics-first" }),
+            onSelect: () => {
+              setAfter(undefined);
+            },
+          },
+        ]),
+  ];
+}
 
 /** The epic this ticket joins as it is made, chosen from the Active ones a
  * page at a time, by title. The roster is read only once the field is drawn,
@@ -568,70 +650,59 @@ function EpicChoice(
   const epics = page?.epics ?? [];
   if (epics.length === 0 && after === undefined && form.epic === "")
     return null;
-  const nextAfter = page?.nextAfter;
+  const label = text({ id: "ticket-authoring-epic" });
   return (
-    <div className="creation-row">
-      <span>{text({ id: "ticket-authoring-epic" })}</span>
-      <Picker
-        label={text({ id: "ticket-authoring-epic" })}
-        value={form.epic === "" ? epicNone : form.epic}
-        placeholder={text({ id: "ticket-authoring-none" })}
-        options={[
-          { value: epicNone, text: text({ id: "ticket-authoring-none" }) },
-          ...epicPickerOptions(
-            epics,
-            picked !== undefined && String(picked.number) === form.epic
-              ? picked
-              : undefined,
-          ),
-        ]}
-        onChoose={(epic) => {
-          setPicked(epics.find((held) => String(held.number) === epic));
-          onChange({ ...form, epic: epic === epicNone ? "" : epic });
-        }}
-        actions={[
-          ...(nextAfter === undefined
-            ? []
-            : [
-                {
-                  text: text({ id: "ticket-authoring-epics-more" }),
-                  onSelect: () => {
-                    setAfter(nextAfter);
-                  },
-                },
-              ]),
-          ...(after === undefined
-            ? []
-            : [
-                {
-                  text: text({ id: "ticket-authoring-epics-first" }),
-                  onSelect: () => {
-                    setAfter(undefined);
-                  },
-                },
-              ]),
-        ]}
-      />
-    </div>
+    <FormField label={label}>
+      {(field) => (
+        <Picker
+          label={label}
+          field={field}
+          value={form.epic === "" ? epicNone : form.epic}
+          placeholder={text({ id: "ticket-authoring-none" })}
+          options={[
+            { value: epicNone, text: text({ id: "ticket-authoring-none" }) },
+            ...epicPickerOptions(
+              epics,
+              picked !== undefined && String(picked.number) === form.epic
+                ? picked
+                : undefined,
+            ),
+          ]}
+          onChoose={(epic) => {
+            setPicked(epics.find((held) => String(held.number) === epic));
+            onChange({ ...form, epic: epic === epicNone ? "" : epic });
+          }}
+          actions={epicChoiceActions(text, after, page?.nextAfter, setAfter)}
+        />
+      )}
+    </FormField>
   );
 }
 
-/** How this ticket is finalized, seeded from the repository's default. */
-function Finalization(props: FormEdit): ReactNode {
+/** How this ticket is finalized, seeded from the repository's default, each
+ * group under its visible name and the fault the choice earns describing the
+ * first. */
+function Finalization(props: FormFaulted): ReactNode {
   const { form, onChange } = props;
+  const errorId = useId();
+  const faulted = props.faults.some((fault) => fault.field === "finalization");
   return (
-    <FinalizationChoiceFields
-      choice={form.finalization}
-      onChoose={(finalization) => {
-        onChange({ ...form, finalization });
-      }}
-      row={(label, control) => (
-        <div className="creation-row">
-          <span>{label}</span>
-          {control}
-        </div>
-      )}
-    />
+    <FieldAt field="finalization">
+      <FinalizationChoiceFields
+        choice={form.finalization}
+        describedBy={faulted ? errorId : undefined}
+        onChoose={(finalization) => {
+          onChange({ ...form, finalization });
+        }}
+        row={(label, control) => (
+          <div className="form-field">
+            <span className="form-field-label">{label}</span>
+            {control}
+          </div>
+        )}
+      />
+      <Fault field="finalization" faults={props.faults} id={errorId} />
+    </FieldAt>
   );
 }
 
@@ -703,8 +774,8 @@ export function AttemptNote(props: {
 }
 
 /**
- * What the ticket replaces of the configuration it names, behind a disclosure
- * of its own: an override is free text, which the advanced settings, offering
+ * What the ticket replaces of the configuration it names, under a heading of
+ * its own: an override is free text, which the advanced settings, offering
  * only what the initialization offered, never are.
  */
 function Overrides(
@@ -731,10 +802,10 @@ function Overrides(
   );
   if (canonical === undefined) return null;
   return (
-    <Panel
-      title={text({ id: "ticket-authoring-overrides" })}
-      collapsible={{ open: false }}
-    >
+    <FieldAt field="overrides">
+      <h4 className="creation-subheading">
+        {text({ id: "ticket-authoring-overrides" })}
+      </h4>
       <ConfigurationOverrides
         document={document}
         overrides={form.overrides}
@@ -745,7 +816,7 @@ function Overrides(
         }}
       />
       <Fault field="overrides" faults={general} />
-    </Panel>
+    </FieldAt>
   );
 }
 
@@ -769,37 +840,44 @@ interface CreationFieldsProps extends FormEdit {
   readonly standing?: AuthoringStanding;
 }
 
-export function CreationFields(props: CreationFieldsProps): ReactNode {
+/** One group of the disclosed fields, under its short heading. */
+function CreationGroup(props: {
+  readonly heading: string;
+  readonly children: ReactNode;
+}): ReactNode {
+  return (
+    <section className="creation-group">
+      <h3 className="creation-group-heading">{props.heading}</h3>
+      {props.children}
+    </section>
+  );
+}
+
+/** What the first screen draws: what a ticket cannot be filed without. */
+function CreationEssentials(props: CreationFieldsProps): ReactNode {
   const text = useCopyText();
   const { faults, form, onChange, offers, repositories } = props;
-  const drawn = creationOfferDrawn(offers, form);
   const drawing: FormDrawn = { form, onChange, offers, repositories };
   return (
     <>
-      <Configuration {...drawing} />
-      <Selection {...drawing} faults={faults} />
-      <Fault field="configuration" faults={faults} />
+      <Configuration {...drawing} faults={faults} />
       {props.partial === true ? (
         <p className="text-ink-3 text-sm">{text(configurationsPartialLabel)}</p>
       ) : null}
-      <Title form={form} onChange={onChange} />
-      <Fault field="title" faults={faults} />
-      <Intent form={form} onChange={onChange} />
-      <Fault field="intent" faults={faults} />
-      <Links form={form} onChange={onChange} />
-      <Fault field="links" faults={faults} />
-      <CreationImages form={form} onChange={onChange} api={props.api} />
-      <Fault field="images" faults={faults} />
-      {drawn?.initialization.commandedCheckStage === undefined ? null : (
-        <>
-          <Checks form={form} onChange={onChange} />
-          <Fault field="checks" faults={faults} />
-        </>
-      )}
-      <Branch form={form} onChange={onChange} proposed={props.branchProposed} />
-      <Fault field="branch" faults={faults} />
-      <Repository {...drawing} />
-      <Fault field="repository" faults={faults} />
+      <Intent form={form} onChange={onChange} faults={faults} />
+      <Repository {...drawing} faults={faults} />
+    </>
+  );
+}
+
+/** What the ticket says beyond its intent. */
+function CreationDetails(props: CreationFieldsProps): ReactNode {
+  const text = useCopyText();
+  const { faults, form, onChange } = props;
+  const drawn = creationOfferDrawn(props.offers, form);
+  return (
+    <CreationGroup heading={text({ id: "ticket-authoring-group-details" })}>
+      <Title form={form} onChange={onChange} faults={faults} />
       {props.epicChoice === true ? (
         <EpicChoice
           form={form}
@@ -807,30 +885,187 @@ export function CreationFields(props: CreationFieldsProps): ReactNode {
           partition={props.api.partition}
         />
       ) : null}
-      <Finalization form={form} onChange={onChange} />
-      <Fault field="finalization" faults={faults} />
+      <Links form={form} onChange={onChange} faults={faults} />
+      <FieldAt field="images">
+        <CreationImages form={form} onChange={onChange} api={props.api} />
+        <Fault field="images" faults={faults} />
+      </FieldAt>
+      {drawn?.initialization.commandedCheckStage === undefined ? null : (
+        <Checks form={form} onChange={onChange} faults={faults} />
+      )}
+    </CreationGroup>
+  );
+}
+
+/** Where the work happens and where it lands. */
+function CreationLanding(props: CreationFieldsProps): ReactNode {
+  const text = useCopyText();
+  const { faults, form, onChange } = props;
+  return (
+    <CreationGroup heading={text({ id: "ticket-authoring-group-landing" })}>
+      <Branch
+        form={form}
+        onChange={onChange}
+        faults={faults}
+        proposed={props.branchProposed}
+      />
+      <Finalization form={form} onChange={onChange} faults={faults} />
       {form.finalization.kind === "None" ? null : (
-        <>
-          <TargetBranch form={form} onChange={onChange} />
-          <Fault field="target" faults={faults} />
-        </>
+        <TargetBranch form={form} onChange={onChange} faults={faults} />
       )}
-      {drawn === undefined ? null : (
-        <TicketCreationAdvanced
-          form={form}
-          onChange={onChange}
-          initialization={drawn.initialization}
-          maySkipPlanned={props.standing?.maySkipPlanned !== false}
-        />
-      )}
-      <Fault field="authoring" faults={faults} />
+    </CreationGroup>
+  );
+}
+
+/** What the configuration runs of the ticket, and after what. */
+function CreationStages(props: CreationFieldsProps): ReactNode {
+  const text = useCopyText();
+  const { faults, form, onChange, offers, repositories } = props;
+  const drawn = creationOfferDrawn(offers, form);
+  return (
+    <CreationGroup heading={text({ id: "ticket-authoring-group-stages" })}>
+      <Selection
+        form={form}
+        onChange={onChange}
+        offers={offers}
+        repositories={repositories}
+        faults={faults}
+      />
+      <FieldAt field="authoring">
+        {drawn === undefined ? null : (
+          <TicketCreationAdvanced
+            form={form}
+            onChange={onChange}
+            initialization={drawn.initialization}
+            maySkipPlanned={props.standing?.maySkipPlanned !== false}
+          />
+        )}
+        <Fault field="authoring" faults={faults} />
+      </FieldAt>
       {creationCatalogOf(drawn) === undefined &&
       (props.standing?.mayOverride !== false ||
         overridesNestedOf(form.overrides) !== undefined) ? (
         <Overrides {...props} offer={drawn} />
       ) : null}
-      <Fault field="fence" faults={faults} />
-    </>
+    </CreationGroup>
+  );
+}
+
+/**
+ * Whether the disclosure is open: as the reader leaves it, and open over a
+ * refusal whose first field at fault is inside it until the reader closes it
+ * over that same refusal.
+ */
+function useCreationMoreOpen(
+  faults: readonly CreationFault[],
+  catalog: boolean,
+): {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+} {
+  const [chosen, setChosen] = useState(false);
+  const [closedOver, setClosedOver] = useState<readonly CreationFault[]>();
+  const faulted = creationFieldFirstFaulted(
+    faults.map((fault) => fault.field),
+    catalog,
+  );
+  const forced =
+    faulted !== undefined &&
+    creationFieldDisclosed(faulted) &&
+    closedOver !== faults;
+  return {
+    open: chosen || forced,
+    onOpenChange: (open) => {
+      setChosen(open);
+      setClosedOver(open ? undefined : faults);
+    },
+  };
+}
+
+const creationFocusable = [
+  "input:not([type=hidden]):not(:disabled)",
+  "textarea:not(:disabled)",
+  "select:not(:disabled)",
+  "button:not(:disabled)",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
+/** On each refusal, and only once for it, the focus on the first control of
+ * the first field at fault, the disclosure having been opened over it where it
+ * is inside. */
+function useCreationFaultFocus(
+  root: RefObject<HTMLElement | null>,
+  faults: readonly CreationFault[],
+  catalog: boolean,
+): void {
+  const answered = useRef<readonly CreationFault[]>(undefined);
+  useEffect(() => {
+    if (answered.current === faults) return;
+    answered.current = faults;
+    const first = creationFieldFirstFaulted(
+      faults.map((fault) => fault.field),
+      catalog,
+    );
+    if (first === undefined) return;
+    const at = root.current?.querySelector(`[data-creation-field="${first}"]`);
+    at?.querySelector<HTMLElement>(creationFocusable)?.focus();
+  }, [root, faults, catalog]);
+}
+
+/** Everything a ticket can be filed without, under the one disclosure, which
+ * is marked while any of it holds a value a fresh form would not. */
+function CreationMore(
+  props: CreationFieldsProps & {
+    readonly open: boolean;
+    readonly onOpenChange: (open: boolean) => void;
+  },
+): ReactNode {
+  const text = useCopyText();
+  const held = creationDisclosedHeld(
+    props.offers,
+    props.repositories,
+    props.form,
+    { epic: props.epicChoice === true },
+  );
+  return (
+    <Panel
+      variant="section"
+      title={
+        <span className="creation-more">
+          {text({ id: "ticket-authoring-more" })}
+          {held ? " " : null}
+          {held ? (
+            <span className="creation-more-held">
+              {text({ id: "ticket-authoring-more-held" })}
+            </span>
+          ) : null}
+        </span>
+      }
+      about={text({ id: "ticket-authoring-more-about" })}
+      collapsible={{ open: props.open, onOpenChange: props.onOpenChange }}
+    >
+      <div className="creation-groups">
+        <CreationDetails {...props} />
+        <CreationLanding {...props} />
+        <CreationStages {...props} />
+      </div>
+    </Panel>
+  );
+}
+
+export function CreationFields(props: CreationFieldsProps): ReactNode {
+  const root = useRef<HTMLDivElement>(null);
+  const catalog =
+    creationCatalogOf(creationOfferDrawn(props.offers, props.form)) !==
+    undefined;
+  const more = useCreationMoreOpen(props.faults, catalog);
+  useCreationFaultFocus(root, props.faults, catalog);
+  return (
+    <div className="creation-fields" ref={root}>
+      <CreationEssentials {...props} />
+      <CreationMore {...props} {...more} />
+      <Fault field="fence" faults={props.faults} />
+    </div>
   );
 }
 
@@ -1262,6 +1497,9 @@ export function CreationFormDrawn(props: CreationFormDrawnProps): ReactNode {
   return (
     <div className="creation">
       {props.lead}
+      <p className="text-ink-3 text-sm">
+        {text({ id: "ticket-authoring-chat-line" })}
+      </p>
       <TicketAuthoring
         initial={held.initial}
         form={held.form}
@@ -1411,7 +1649,7 @@ export function CreationContextAbsent(props: {
       label={text(creationContextSentence(context))}
       action={
         context.context === "NoRepository" ? (
-          <Link to="/$tenant/$project/repositories" params={partition}>
+          <Link to={settingsRoutes.project.repositories} params={partition}>
             {text({ id: "ticket-authoring-repositories" })}
           </Link>
         ) : undefined

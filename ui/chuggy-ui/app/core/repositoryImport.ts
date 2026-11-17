@@ -47,7 +47,7 @@ export function repositoryImportFaultless(
   return (repositoryImportFaultlessWords as readonly string[]).includes(word);
 }
 
-/** An attempt's word, or that none was attempted, as the line's pill says it. */
+/** An attempt's word, or that none was attempted, as the line's badge says it. */
 export function repositoryImportWordLabel(
   word: RepositoryImportWord | typeof repositoryImportNever,
 ): Copy {
@@ -196,13 +196,16 @@ export function repositoryImportNote(
     : repositoryImportRefusalLabel(refusal);
 }
 
+/** The word a refused import is refused with. */
+export function repositoryImportRefusedWord(failure: ApiFailure): Copy {
+  return repositoryImportRefusalLabel(repositoryImportRefusal(failure));
+}
+
 /** What a refused Import now says under the line, where it says anything. */
 export function repositoryImportRefused(failure: ApiFailure): Copy {
   return {
     id: "repositories-import-refused-now",
-    args: {
-      word: repositoryImportRefusalLabel(repositoryImportRefusal(failure)),
-    },
+    args: { word: repositoryImportRefusedWord(failure) },
   };
 }
 
@@ -223,6 +226,7 @@ const repositoryImportFaultWords: Readonly<
   DuplicatePath: { id: "repositories-fault-duplicate-path" },
   ReferenceAbsent: { id: "repositories-fault-reference-absent" },
   TooManyReferences: { id: "repositories-fault-too-many-references" },
+  ApprovalOutsidePlan: { id: "repositories-fault-approval-outside-plan" },
 };
 
 /** One refusal's fault in words: a configuration too long as its length against the limit, and a missing reference by its path. */

@@ -28,8 +28,19 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+  Link: (
+    props: Readonly<Record<string, unknown>> & {
+      readonly children?: ReactNode;
+    },
+  ) => (
+    <a
+      href="/"
+      {...Object.fromEntries(
+        Object.entries(props).filter(([key]) => /^(on|aria-)/u.test(key)),
+      )}
+    >
+      {props.children}
+    </a>
   ),
   useParams: () => ({ ...atlas, ticket: "11" }),
 }));
@@ -181,7 +192,13 @@ test("the revision a ticket was released under stays reachable from its name", a
   await drawTicket(named);
   const names = screen.getAllByText("chuggy #12");
   expect(names.length).toBeGreaterThan(0);
-  for (const name of names) expect(name.getAttribute("title")).toBe(revision);
+  for (const name of names) {
+    expect(name.hasAttribute("title")).toBe(false);
+    fireEvent.focus(name);
+    expect((await screen.findByRole("tooltip")).textContent).toBe(revision);
+    fireEvent.keyDown(name, { key: "Escape" });
+    fireEvent.blur(name);
+  }
 });
 
 test("the configuration panel keeps the revision its heading no longer shows", async () => {

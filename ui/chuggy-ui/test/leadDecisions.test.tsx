@@ -34,7 +34,7 @@ import {
   leadRouteAnswer,
 } from "./leadFixture.ts";
 import { navRoutes } from "../app/core/shellNav.ts";
-import { pillTones } from "../app/core/tones.ts";
+import { toneRoster } from "../app/core/tones.ts";
 import { operationRefusalCodes } from "../../../src/contract/rosters.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -97,7 +97,7 @@ function groups(): readonly HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>(".ledger-group")];
 }
 
-/** One row of a group as a reader takes it: its label, its pill's tone and
+/** One row of a group as a reader takes it: its label, its badge's tone and
  * word, and the tickets the row names. */
 interface DrawnRow {
   readonly label: string;
@@ -106,19 +106,17 @@ interface DrawnRow {
   readonly note: string;
 }
 
-/** The rows of one group, read off the pills rather than off the text, because
+/** The rows of one group, read off the badges rather than off the text, because
  * the tone is half of what a landing says and text alone cannot see it. The
- * tone is found from the roster the pill draws from, so a hue the console gains
+ * tone is found from the roster the badge draws from, so a hue the console gains
  * is one this reader gains too. */
 function rows(group: HTMLElement | undefined): readonly DrawnRow[] {
   return [...(group?.querySelectorAll<HTMLElement>("li.ledger-row") ?? [])].map(
     (row) => {
-      const pill = row.querySelector<HTMLElement>(".ledger-pill .pill");
+      const pill = row.querySelector<HTMLElement>(".ledger-pill .status-badge");
       return {
         label: row.querySelector(".ledger-label")?.textContent ?? "",
-        tone: pillTones.find((tone) =>
-          pill?.classList.contains(`pill-${tone}`),
-        ),
+        tone: toneRoster.find((tone) => pill?.dataset["tone"] === tone),
         word: pill?.textContent ?? "",
         note: row.querySelector(".ledger-note")?.textContent ?? "",
       };
@@ -227,11 +225,13 @@ test("a decision's three dispatches are three rows, each with its own landing", 
 
 /** A group with a landing hue anywhere in it says something landed. A decision
  * the writer refused every dispatch of landed nothing, and the summary counts
- * the same way the pills do. */
+ * the same way the badges do. */
 test("a decision whose every dispatch was refused draws no landing", async () => {
   await drawDecisions({ decisions: [leadDecisionRefusedEvery] });
   const group = groups()[0];
-  expect(group?.querySelectorAll(".pill-pass").length).toBe(0);
+  expect(
+    group?.querySelectorAll('.status-badge[data-tone="pass"]').length,
+  ).toBe(0);
   expect(rows(group).map((row) => row.word)).toStrictEqual([
     "SelectionChanged",
     "TicketChanged",
@@ -315,7 +315,9 @@ test.each(["Cancelled", "Answered", "IdempotencyConflict", "InvalidCommand"])(
     expect(rows(group)).toStrictEqual([
       { label: "Dispatch", tone: "fail", word: outcome, note: "81" },
     ]);
-    expect(group?.querySelectorAll(".pill-pass").length).toBe(0);
+    expect(
+      group?.querySelectorAll('.status-badge[data-tone="pass"]').length,
+    ).toBe(0);
     expect(group?.textContent).toContain("Monitoring · 0 of 1 dispatched");
   },
 );
@@ -334,7 +336,9 @@ test.each(operationRefusalCodes)(
     expect(rows(group)).toStrictEqual([
       { label: "Dispatch", tone: "fail", word: code, note: "81" },
     ]);
-    expect(group?.querySelectorAll(".pill-pass").length).toBe(0);
+    expect(
+      group?.querySelectorAll('.status-badge[data-tone="pass"]').length,
+    ).toBe(0);
   },
 );
 

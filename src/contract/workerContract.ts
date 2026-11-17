@@ -1,17 +1,30 @@
 /**
  * Which worker contract a request and an answer speak. Each side names its
  * release in one header, and a plane serves a range of versions and refuses the
- * rest by name. A version is a release's major and minor; the patch moves only
- * the packaging, so two releases differing in it speak one wire.
+ * rest by name. A version is a release's major and minor, so two releases
+ * differing in their patch speak one wire.
+ *
+ * The release this tree names is frozen, and a change to the contract does not
+ * move it. What a peer implements is asked by feature. A peer that lists its features in
+ * a header of their own is answered by that list, and one that lists none by
+ * its release. A new gate takes a feature name, never a new version constant.
  */
 
 import { z } from "zod";
 
-/** The release of the worker contract, which versions the package `scripts/pack-worker-contract.ts` builds. */
-export const workerContractRelease = "1.74.0";
+/**
+ * The version of the wire each side names in the header, frozen: a change to
+ * the contract does not move it, a feature being how a side learns what its
+ * peer implements. Only a deliberate break moves it, by hand, and a package's
+ * label is its publisher's.
+ */
+export const workerContractRelease = "1.106.0";
 
 /** The header a pod or a pool names its release in, and a plane answers with its own. */
 export const workerContractHeader = "chuggy-worker-contract";
+
+/** The header a side lists the features it implements in, their names joined by `, `. */
+export const workerContractFeaturesHeader = "chuggy-worker-features";
 
 /** One version of the wire. */
 export interface WorkerContractVersion {
@@ -79,6 +92,12 @@ export const workerContractCredentialOutcome: WorkerContractVersion = {
   minor: 49,
 };
 
+/** The first version whose pool plane reads the credentials a runner's or a pool's poll names, as a later one reads a chat host's too, and may answer each with those of them that are paused, which a plane names only to a poll whose release names this version or a later one. */
+export const workerContractCredentialPauses: WorkerContractVersion = {
+  major: 1,
+  minor: 78,
+};
+
 /** The first version in which a member's personal runner names, among the capabilities its poll advertises, exactly the agents it takes now, so that a pool plane offers a runner whose poll names this version or a later one a job only where it names that job's agent or the job runs no agent. */
 export const workerContractRunnerAgentsAdvertised: WorkerContractVersion = {
   major: 1,
@@ -96,6 +115,71 @@ export const workerContractCredentialBundles: WorkerContractVersion = {
   major: 1,
   minor: 74,
 };
+
+/** The first version whose job plane takes the credential a run's usage and its limit were read of: a runner names one only to a plane whose answers name this version or a later one. */
+export const workerContractRunCredential: WorkerContractVersion = {
+  major: 1,
+  minor: 77,
+};
+
+/** The first version whose job plane takes a run ended `RunCredentialAbsent`, naming the credential its job lists that was not delivered and why: a runner sends that label only to a plane whose answers name this version or a later one. */
+export const workerContractRunCredentialAbsent: WorkerContractVersion = {
+  major: 1,
+  minor: 94,
+};
+
+/** The first version whose pool plane reads the session capabilities a chat host's poll names: a host names them only to a plane whose answers name this version or a later one. */
+export const workerContractSessionCapabilitiesNamed: WorkerContractVersion = {
+  major: 1,
+  minor: 97,
+};
+
+/**
+ * Every feature a side may be asked for, with the version it first shipped in.
+ * A feature with no version shipped after releases stopped saying what a peer
+ * implements, so only a peer's list names it.
+ */
+export const workerContractFeatures = {
+  RunnerSessions: { major: 1, minor: 3 },
+  LiveStops: { major: 1, minor: 5 },
+  ProjectReads: { major: 1, minor: 8 },
+  RunnerReleases: { major: 1, minor: 11 },
+  RunnerProjects: { major: 1, minor: 15 },
+  RunDiskLow: workerContractRunDiskLow,
+  TicketDispatch: { major: 1, minor: 20 },
+  MemoryRoom: workerContractMemoryRoom,
+  ChatHost: { major: 1, minor: 27 },
+  RunnerReport: workerContractRunnerReport,
+  UnscopedChat: { major: 1, minor: 29 },
+  RunUsage: workerContractRunUsage,
+  TargetRef: workerContractTargetRef,
+  EvaluatedTree: workerContractEvaluatedTree,
+  ThreadOffer: { major: 1, minor: 36 },
+  RunContext: workerContractRunContext,
+  SessionContext: workerContractSessionContext,
+  CredentialOutcome: workerContractCredentialOutcome,
+  RunnerAgentsAdvertised: workerContractRunnerAgentsAdvertised,
+  SystemPromptOwn: workerContractSystemPromptOwn,
+  CredentialBundles: workerContractCredentialBundles,
+  RunCredential: workerContractRunCredential,
+  CredentialPauses: workerContractCredentialPauses,
+  ChatThreadsClosed: { major: 1, minor: 93 },
+  RunCredentialAbsent: workerContractRunCredentialAbsent,
+  SessionCapabilitiesNamed: workerContractSessionCapabilitiesNamed,
+  ChatSessionThreads: { major: 1, minor: 98 },
+  TargetMerge: undefined,
+  /** A work task may name the paths its push may not change, a field a pod that does not implement it refuses its whole answer over. */
+  PushPathsRefused: undefined,
+} as const satisfies Readonly<
+  Record<string, WorkerContractVersion | undefined>
+>;
+export type WorkerContractFeature = keyof typeof workerContractFeatures;
+
+/** What is known of the side a feature is asked of: the release it named, and the features it listed. */
+export interface WorkerContractPeer {
+  readonly release: string | undefined;
+  readonly features: readonly string[] | undefined;
+}
 
 /** A release as the header carries it: major, minor and patch, each written without a leading zero. */
 const workerContractReleasePattern =
@@ -116,6 +200,59 @@ export function workerContractVersionText(
   version: WorkerContractVersion,
 ): string {
   return `${String(version.major)}.${String(version.minor)}`;
+}
+
+/** The version `feature` first shipped in, or nothing where it has none. */
+function workerContractFeatureVersion(
+  feature: WorkerContractFeature,
+): WorkerContractVersion | undefined {
+  return workerContractFeatures[feature];
+}
+
+/** The features header naming `names`. */
+export function workerContractFeaturesText(
+  names: readonly WorkerContractFeature[],
+): string {
+  return names.join(", ");
+}
+
+/**
+ * The names a features header lists, one this tree does not know kept. A
+ * header not sent, or naming nothing, is no list rather than an empty one.
+ */
+export function workerContractFeaturesOf(
+  text: string | undefined,
+): readonly string[] | undefined {
+  if (text === undefined) return undefined;
+  const names = text
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name !== "");
+  return names.length === 0 ? undefined : names;
+}
+
+/**
+ * Whether `peer` implements `feature`: a peer that listed its features
+ * implements exactly those, whatever release it named. One that listed none is
+ * read by its release, where naming none speaks `workerContractUnnamed`, text
+ * that is no release implements nothing, and any other implements a feature
+ * from the version it first shipped in.
+ */
+export function workerContractImplements(
+  feature: WorkerContractFeature,
+  peer: WorkerContractPeer,
+): boolean {
+  if (peer.features !== undefined) return peer.features.includes(feature);
+  const first = workerContractFeatureVersion(feature);
+  const spoken =
+    peer.release === undefined
+      ? workerContractUnnamed
+      : workerContractVersionOf(peer.release);
+  if (first === undefined || spoken === undefined) return false;
+  return (
+    spoken.major > first.major ||
+    (spoken.major === first.major && spoken.minor >= first.minor)
+  );
 }
 
 const workerContractVersionTextSchema = z

@@ -91,7 +91,9 @@ test("the site's read loading or failed is its unready line, with no table", asy
   cleanup();
   await drawSitePermissions({ site: () => answer({}, 500) });
   const site = sectionOf("Site");
-  expect(readFailedLines(site)).toStrictEqual(["Not read · Server error"]);
+  expect(readFailedLines(site)).toStrictEqual([
+    "Not read · Server error · InternalError",
+  ]);
   expect(within(site).queryByRole("table")).toBeNull();
 });
 

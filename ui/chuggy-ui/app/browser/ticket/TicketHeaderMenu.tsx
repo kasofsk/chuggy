@@ -1,12 +1,11 @@
 /**
- * The header's ⋯ menu: Revoke, which asks before it submits, Duplicate where
- * it is not the header's main action, Copy link, which stays open to say it
- * copied, and a draft's Delete, which asks as Revoke does. A menu with nothing
- * in it is not drawn.
+ * The header's ⋯ menu, drawn through `MoreMenu`: whatever the header does not
+ * lead with, as the caller hands it, then Duplicate where it is not the
+ * header's main action, Copy link, which stays open to say it copied, and the
+ * destructive Revoke and a draft's Delete, each asking before it submits.
  */
 
 import { Link } from "@tanstack/react-router";
-import { DropdownMenu } from "radix-ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -14,31 +13,20 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { consolePageHref } from "../../core/consolePage.ts";
 import type { TicketAction } from "../../core/ticketActions.ts";
 import { currentOrigin } from "../ports.ts";
-import { buttonLookClassName } from "../ui/Button.tsx";
 import { CopySaid, useCopyPress } from "../ui/CopyButton.tsx";
 import type { CopyPress } from "../ui/CopyButton.tsx";
-import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
+import { MoreMenu } from "../ui/MoreMenu.tsx";
+import type { MoreMenuItem } from "../ui/MoreMenu.tsx";
 import { TicketActionConfirm } from "./TicketActionConfirm.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
-
-function TicketHeaderMenuMark(): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="size-4"
-      fill="currentColor"
-    >
-      <circle cx="3" cy="8" r="1.4" />
-      <circle cx="8" cy="8" r="1.4" />
-      <circle cx="13" cy="8" r="1.4" />
-    </svg>
-  );
-}
+import type { CopyText } from "../../core/copy.ts";
 
 interface TicketHeaderMenuProps {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
+  /** The entries the menu opens with: what the header offers beside its
+   * primary action. */
+  readonly leading?: readonly MoreMenuItem[];
   readonly revoke: TicketAction | undefined;
   readonly duplicate: boolean;
   readonly busy: boolean;
@@ -47,107 +35,105 @@ interface TicketHeaderMenuProps {
   readonly onDelete?: (() => void) | undefined;
 }
 
-function TicketHeaderMenuItems(
-  props: TicketHeaderMenuProps & {
-    readonly copy: CopyPress | undefined;
-    readonly onRevoking: () => void;
-    readonly onDeleting: () => void;
-  },
-): ReactNode {
-  const copy = props.copy;
-  const text = useCopyText();
-  return (
-    <MenuContent sideOffset={4} align="end">
-      {props.revoke === undefined ? null : (
-        <DropdownMenu.Item
-          className={menuItemClassName}
-          disabled={props.busy}
-          onSelect={props.onRevoking}
-        >
-          {text({ id: "ticket-revoke-menu-item" })}
-        </DropdownMenu.Item>
-      )}
-      {props.duplicate ? (
-        <DropdownMenu.Item asChild className={menuItemClassName}>
-          <Link
-            to="/$tenant/$project/tickets/new"
-            params={props.partition}
-            search={{ from: props.ticket }}
-            className="text-ink-1 no-underline"
-          >
-            {text({ id: "ticket-duplicate" })}
-          </Link>
-        </DropdownMenu.Item>
-      ) : null}
-      {copy === undefined ? null : (
-        <DropdownMenu.Item
-          className={menuItemClassName}
-          onSelect={(event) => {
-            event.preventDefault();
-            copy.press(
-              new URL(
-                consolePageHref(props.partition, {
-                  page: "Ticket",
-                  ticket: props.ticket,
-                }),
-                currentOrigin(),
-              ).href,
-            );
-          }}
-        >
-          {text({
-            id: copy.copied ? "ticket-copy-link-copied" : "ticket-copy-link",
-          })}
-        </DropdownMenu.Item>
-      )}
-      {props.onDelete === undefined ? null : (
-        <DropdownMenu.Item
-          className={menuItemClassName}
-          disabled={props.busy}
-          onSelect={props.onDeleting}
-        >
-          {text({ id: "ticket-draft-delete-menu-item" })}
-        </DropdownMenu.Item>
-      )}
-    </MenuContent>
-  );
+function ticketHeaderMenuCopyItem(
+  props: TicketHeaderMenuProps,
+  copy: CopyPress,
+  text: CopyText,
+): MoreMenuItem {
+  return {
+    kind: "action",
+    label: text({
+      id: copy.copied ? "ticket-copy-link-copied" : "ticket-copy-link",
+    }),
+    onSelect: (event) => {
+      event.preventDefault();
+      copy.press(
+        new URL(
+          consolePageHref(props.partition, {
+            page: "Ticket",
+            ticket: props.ticket,
+          }),
+          currentOrigin(),
+        ).href,
+      );
+    },
+  };
 }
 
+function ticketHeaderMenuItems(
+  props: TicketHeaderMenuProps,
+  copy: CopyPress | undefined,
+  text: CopyText,
+  asking: { readonly revoke: () => void; readonly delete: () => void },
+): readonly MoreMenuItem[] {
+  const { partition, ticket } = props;
+  return [
+    ...(props.leading ?? []),
+    ...(props.duplicate
+      ? [
+          {
+            kind: "link",
+            label: text({ id: "ticket-duplicate" }),
+            link: (anchor) => (
+              <Link
+                to="/$tenant/$project/tickets/new"
+                params={partition}
+                search={{ from: ticket }}
+                {...anchor}
+              />
+            ),
+          } satisfies MoreMenuItem,
+        ]
+      : []),
+    ...(copy === undefined
+      ? []
+      : [ticketHeaderMenuCopyItem(props, copy, text)]),
+    ...(props.revoke === undefined
+      ? []
+      : [
+          {
+            kind: "destructive",
+            label: text({ id: "ticket-revoke-menu-item" }),
+            disabled: props.busy,
+            onSelect: asking.revoke,
+          } satisfies MoreMenuItem,
+        ]),
+    ...(props.onDelete === undefined
+      ? []
+      : [
+          {
+            kind: "destructive",
+            label: text({ id: "ticket-draft-delete-menu-item" }),
+            disabled: props.busy,
+            onSelect: asking.delete,
+          } satisfies MoreMenuItem,
+        ]),
+  ];
+}
+
+/** The menu, and the questions Revoke and Delete ask; a menu with nothing in
+ * it is not drawn. */
 export function TicketHeaderMenu(props: TicketHeaderMenuProps): ReactNode {
   const copy = useCopyPress();
   const [revoking, setRevoking] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const { revoke, onDelete } = props;
   const text = useCopyText();
-  if (
-    revoke === undefined &&
-    !props.duplicate &&
-    copy === undefined &&
-    onDelete === undefined
-  )
-    return null;
+  const items = ticketHeaderMenuItems(props, copy, text, {
+    revoke: () => {
+      setRevoking(true);
+    },
+    delete: () => {
+      setDeleting(true);
+    },
+  });
+  if (items.length === 0) return null;
   return (
     <>
-      <DropdownMenu.Root modal={false}>
-        <DropdownMenu.Trigger
-          className={buttonLookClassName({ size: "icon" })}
-          aria-label={text({ id: "ticket-header-menu-label" })}
-        >
-          <TicketHeaderMenuMark />
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <TicketHeaderMenuItems
-            {...props}
-            copy={copy}
-            onRevoking={() => {
-              setRevoking(true);
-            }}
-            onDeleting={() => {
-              setDeleting(true);
-            }}
-          />
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+      <MoreMenu
+        label={text({ id: "ticket-header-menu-label" })}
+        items={items}
+      />
       {copy === undefined ? null : <CopySaid copied={copy.copied} />}
       {revoke === undefined ? null : (
         <TicketActionConfirm

@@ -4,8 +4,8 @@
  *
  * Total over `figureKinds`, and over a span that is open or closed. It formats
  * nothing — `core/figures.ts` did that — so the same quantity cannot be rounded
- * two ways on one page, and an absence is drawn as an absence with its reason
- * in a tooltip rather than as a zero.
+ * two ways on one page, and an absence is drawn as an absence, a dash whose
+ * tooltip spells out its reason, rather than as a zero.
  */
 
 import { Fragment } from "react";
@@ -19,7 +19,8 @@ import type { Copy } from "../../core/copy.ts";
 
 import "./Figure.css";
 
-/** What a list price is not, said where a reader hovers the tag that says it. */
+/** What a list price is not, said where a reader hovers or presses the tag
+ * that says it. */
 export const figureBasisTitle: Copy = { id: "figures-basis-title" };
 
 function FigureSpan(props: {
@@ -27,7 +28,7 @@ function FigureSpan(props: {
 }): ReactNode {
   const span = props.figure;
   return (
-    <Tooltip text={span.title}>
+    <Tooltip trigger="abbreviation" text={span.title}>
       <span
         className={span.open ? "fig fig-live" : "fig"}
         data-open={span.open ? "true" : undefined}
@@ -59,7 +60,7 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
         <span className="fig">
           {figure.text}
           {figure.basis === undefined ? null : (
-            <Tooltip text={text(figureBasisTitle)}>
+            <Tooltip trigger="abbreviation" text={text(figureBasisTitle)}>
               <i className="fig-basis">{text(figure.basis)}</i>
             </Tooltip>
           )}
@@ -83,13 +84,13 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
       );
     case "Instant":
       return (
-        <Tooltip text={figure.iso}>
+        <Tooltip trigger="abbreviation" text={figure.iso}>
           <span className="fig">{copyOrDataText(text, figure.text)}</span>
         </Tooltip>
       );
     case "Ago":
       return (
-        <Tooltip text={figure.full}>
+        <Tooltip trigger="abbreviation" text={figure.full}>
           <span className="fig">{text(figure.text)}</span>
         </Tooltip>
       );
@@ -97,7 +98,7 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
       return <FigureSpan figure={figure} />;
     case "Absent":
       return (
-        <Tooltip text={text(figure.why)}>
+        <Tooltip trigger="abbreviation" text={text(figure.why)}>
           <span className="fig fig-dim">—</span>
         </Tooltip>
       );

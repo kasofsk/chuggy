@@ -1,0 +1,245 @@
+/**
+ * An escalation reaching the inbox and leaving it, which no pure function can
+ * express: the row's membership is the server's, read again on a live frame,
+ * and the cache holds it between. The shell is mounted beside the screen, so
+ * the badge and the list are read as the one value they are meant to be.
+ */
+
+// jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
+import { QueryClient } from "@tanstack/react-query";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { ReactNode } from "react";
+
+import { copyCatalogEn, copyTextEn } from "../app/copy/catalog.ts";
+import { copyTextOf } from "../app/copy/copyBundle.ts";
+import { CopyProvider } from "../app/copy/CopyProvider.tsx";
+import { copyPseudoBundleOf } from "../app/copy/copyPseudo.ts";
+import { inboxActionLabel } from "../app/core/inboxAnswers.ts";
+
+import type { PartitionIdentity } from "../../../src/contract/http.ts";
+import type {
+  InboxEntryResponse,
+  ProjectNativeActionResponse,
+  ProjectTicket,
+} from "../../../src/contract/responses.ts";
+import { InboxScreen } from "../app/browser/Inbox.tsx";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
+import {
+  answer,
+  openedStream,
+  ScreenHarness,
+  settled,
+  turned,
+} from "./screenHarness.tsx";
+import { frame } from "./streamDouble.ts";
+import type * as BrowserPorts from "../app/browser/ports.ts";
+import { inboxAsked, inboxBody, inboxEntry } from "./inboxFixture.ts";
+import { inboxShellMounted } from "./inboxShellHarness.tsx";
+import { ticketInstants } from "./ticketInstants.ts";
+
+const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
+
+vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof BrowserPorts>()),
+  sleepMs: () => Promise.resolve(),
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  createLink: (component: unknown) => component,
+  Link: (props: {
+    readonly children?: ReactNode;
+    readonly "aria-label"?: string;
+  }) => (
+    <a href="/" aria-label={props["aria-label"]}>
+      {props.children}
+    </a>
+  ),
+  Outlet: () => <InboxScreen partition={atlas} />,
+  useNavigate: () => () => undefined,
+  useParams: () => atlas,
+  useRouterState: (options: {
+    readonly select: (state: {
+      readonly location: {
+        readonly pathname: string;
+        readonly search: object;
+      };
+      readonly matches: readonly {
+        readonly routeId: string;
+        readonly params: object;
+      }[];
+    }) => unknown;
+  }) =>
+    options.select({
+      location: { pathname: "/acme/atlas", search: {} },
+      matches: [{ routeId: "/$tenant/$project/", params: atlas }],
+    }),
+}));
+// jscpd:ignore-end -- the case's own doubles resume here
+
+/** The runner has no globals, so a case's tree is torn down here rather than by
+ * the library's own hook — a second case would otherwise read the first's. */
+beforeEach(resizeObserverStubbed);
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+const escalation: ProjectNativeActionResponse = {
+  ticket: 11,
+  action: "action-eleven",
+  kind: "TicketEscalation",
+  authorizingSequence: 51,
+  admits: ["Resume", "Revoke"],
+  answerable: true,
+};
+
+const escalated: ProjectTicket = {
+  ticket: 11,
+  title: "Land the release notes",
+  phase: "Escalated",
+  sequence: 6,
+  ...ticketInstants,
+};
+
+const awaiting = inboxEntry(escalated, { actions: [escalation] });
+
+/** The routes a mounted shell reads, the inbox answering what `inbox` holds or failing where it is `undefined`. */
+function serving(inbox: () => readonly InboxEntryResponse[] | undefined) {
+  return (url: string): Response => {
+    if (inboxAsked(url)) {
+      const entries = inbox();
+      return entries === undefined
+        ? answer({ error: { code: "InternalError", message: "fault" } }, 500)
+        : answer(inboxBody(entries));
+    }
+    if (url.includes("/executions")) return answer({ executions: [] });
+    if (url.includes("/tenants/"))
+      return answer({ partition: atlas, sequence: 9, tickets: [] });
+    return answer({ projects: [{ ...atlas, name: atlas.project }] });
+  };
+}
+
+/** The count the bar's inbox badge carries, and nothing where the inbox is
+ * clear. */
+function badge(): string | undefined {
+  const entry = screen.queryByRole("link", { name: /^Inbox/u });
+  const count =
+    entry?.querySelector('.count-badge [aria-hidden="true"]')?.textContent ??
+    "";
+  if (count === "") return undefined;
+  expect(entry?.getAttribute("aria-label")).toBe(`Inbox, ${count} unread`);
+  return count;
+}
+
+function openActions(actions: readonly unknown[]): string {
+  return frame("NativeAction", "12", {
+    version: 1,
+    resource: "11",
+    representation: { actions },
+  });
+}
+
+function mounted(route: (url: string) => Response) {
+  return inboxShellMounted(atlas, route);
+}
+
+test("an escalation opening puts its ticket in the inbox and its answer takes it out", async () => {
+  let entries: readonly InboxEntryResponse[] = [];
+  const { api, server } = mounted(serving(() => entries));
+  await settled();
+  expect(screen.getByText("Inbox is clear")).toBeDefined();
+  expect(badge()).toBeUndefined();
+
+  entries = [awaiting];
+  await turned(() => {
+    server.push(openActions([escalation]));
+  });
+  await settled();
+  expect(screen.getByRole("button", { name: "resume" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "revoke" })).toBeDefined();
+  expect(badge()).toBe("1");
+
+  await turned(() => {
+    screen.getByRole("button", { name: "resume" }).click();
+  });
+  expect(api.submissions()).toBe(1);
+  expect(
+    screen.queryByRole("button", { name: "resume" }),
+    "the answered row left the inbox before a frame said the question was answered",
+  ).not.toBeNull();
+  expect(badge()).toBe("1");
+
+  entries = [];
+  await turned(() => {
+    server.push(openActions([]));
+  });
+  await settled();
+  expect(screen.queryByRole("button", { name: "resume" })).toBeNull();
+  expect(screen.getByText("Inbox is clear")).toBeDefined();
+  expect(badge()).toBeUndefined();
+});
+
+/**
+ * One read is one failed state. A reread that fails keeps the escalation it
+ * last drew answerable and the badge counting it, and says only that it was
+ * not updated.
+ */
+test("a reread that fails leaves the escalation it drew answerable, and counted", async () => {
+  let entries: readonly InboxEntryResponse[] | undefined = [awaiting];
+  const { server } = mounted(serving(() => entries));
+  await settled();
+  expect(badge()).toBe("1");
+  entries = undefined;
+  await turned(() => {
+    server.push(openActions([escalation]));
+  });
+  await settled();
+  expect(badge()).toBe("1");
+  expect(screen.getByRole("button", { name: "resume" })).toBeDefined();
+  expect(screen.getByText("Not updated")).toBeDefined();
+  expect(screen.queryByText("Inbox is clear")).toBeNull();
+});
+
+/** The served policy refuses `style-src` but `'self'`, so nothing drawn here —
+ * loaded, answered or clicked — may append a runtime style element. */
+test("nothing the inbox draws is a runtime style element", async () => {
+  const held = mounted(serving(() => [awaiting]));
+  await settled();
+  expect(document.querySelectorAll("style").length).toBe(0);
+  await turned(() => {
+    screen.getByRole("button", { name: "resume" }).click();
+  });
+  expect(held.api.submissions()).toBe(1);
+  expect(document.querySelectorAll("style").length).toBe(0);
+});
+
+test("an open action's answers are drawn under the catalog's words for them, which a wording alters", async () => {
+  vi.stubGlobal(
+    "fetch",
+    serving(() => [awaiting]),
+  );
+  render(
+    <CopyProvider wording="en-x-pseudo">
+      <ScreenHarness
+        partition={atlas}
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+        transport={openedStream().ports.fetch}
+      >
+        <InboxScreen partition={atlas} />
+      </ScreenHarness>
+    </CopyProvider>,
+  );
+  await settled();
+  const pseudo = copyTextOf(copyPseudoBundleOf(copyCatalogEn));
+  for (const action of ["Resume", "Revoke"] as const) {
+    const name = pseudo(inboxActionLabel(action));
+    expect(name).not.toBe(copyTextEn(inboxActionLabel(action)));
+    expect(screen.getByRole("button", { name })).toBeDefined();
+  }
+  expect(screen.queryByRole("button", { name: "resume" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "revoke" })).toBeNull();
+});

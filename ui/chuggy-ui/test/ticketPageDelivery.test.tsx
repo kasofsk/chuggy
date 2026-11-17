@@ -176,11 +176,11 @@ function linesDrawn(row: HTMLElement): readonly HTMLElement[] {
 
 /** What one line says, part by part: its name, its word and tone, its commit. */
 function lineSaid(line: HTMLElement): readonly (string | null | undefined)[] {
-  const pill = line.querySelector(".pill");
+  const pill = line.querySelector<HTMLElement>(".status-badge");
   return [
     line.querySelector(".ticket-delivery-name")?.textContent,
     pill?.textContent,
-    pill?.className,
+    pill?.dataset["tone"],
     line.querySelector(".identity")?.textContent,
   ];
 }
@@ -213,11 +213,11 @@ test("the row opened is one line an action in the read's order: its name, its wo
     await drawn(() => answer(deliveryEveryMark)),
   );
   expect(linesDrawn(row).map(lineSaid)).toEqual([
-    ["API image", "Reached", "pill pill-pass", "43a251a"],
-    ["Console image", "Waiting", "pill pill-queued", undefined],
-    ["Release published", "Failed", "pill pill-fail", "43a251a"],
-    ["Rig", "Rolled back", "pill pill-retired", "43a251a"],
-    ["Smoke", "Unknown", "pill pill-neutral", undefined],
+    ["API image", "Reached", "pass", "43a251a"],
+    ["Console image", "Waiting", "queued", undefined],
+    ["Release published", "Failed", "fail", "43a251a"],
+    ["Rig", "Rolled back", "retired", "43a251a"],
+    ["Smoke", "Unknown", "neutral", undefined],
   ]);
   expect(row.textContent).not.toContain(deliveryReported);
 });
@@ -242,7 +242,7 @@ test("a failure whose reporter said neither draws its word and its commit alone"
     await drawn(() => answer(deliveryLandedWith([deliveryFailedBare]))),
   );
   expect(linesDrawn(row).map(lineSaid)).toEqual([
-    ["Rig", "Failed", "pill pill-fail", "43a251a"],
+    ["Rig", "Failed", "fail", "43a251a"],
   ]);
   expect(row.querySelector(".ticket-delivery-detail")).toBeNull();
   expect(within(row).queryByRole("link")).toBeNull();
@@ -298,10 +298,14 @@ test("a read that fails is drawn as a failed read in this row, and the page arou
   );
   expect(rowsDrawn(container)).toEqual(["delivery"]);
   const row = await deliveryOpened(container);
-  expect(readFailedLines(row)).toStrictEqual(["Not read · Server error"]);
+  expect(readFailedLines(row)).toStrictEqual([
+    "Not read · Server error · InternalError",
+  ]);
   expect(linesDrawn(row)).toEqual([]);
   expect(
-    readFailedLines().filter((line) => line === "Not read · Server error"),
+    readFailedLines().filter(
+      (line) => line === "Not read · Server error · InternalError",
+    ),
   ).toHaveLength(1);
   expect(ticketHeader().textContent).toContain("Done");
 });
@@ -314,7 +318,9 @@ test("an answer that is not the read's is a failed read too, and draws no line o
     }),
   );
   const row = await deliveryOpened(container);
-  expect(readFailedLines(row)).toStrictEqual(["Not read · Unreadable"]);
+  expect(readFailedLines(row).map((line) => line.split("[")[0])).toStrictEqual([
+    "Not read · Unreadable Details",
+  ]);
   expect(linesDrawn(row)).toEqual([]);
 });
 
@@ -342,7 +348,7 @@ test("a re-read the page makes for another reason asks again whatever the row la
     answer(deliveryLandedWith([deliveryAction("rig", "Rig", reach)])),
   );
   const reachSaid = (): string | null | undefined =>
-    deliveryRow(container).querySelector(".pill")?.textContent;
+    deliveryRow(container).querySelector(".status-badge")?.textContent;
   expect(reachSaid()).toBe("Unknown");
   reach = "Reached";
   await turned(() => {
@@ -375,7 +381,7 @@ test("another ticket's page on the same client starts unread, asks its own route
         }),
   );
   const said = (): string | null | undefined =>
-    deliveryRow(container).querySelector(".pill")?.textContent;
+    deliveryRow(container).querySelector(".status-badge")?.textContent;
   expect(said()).toBe("Reached");
 
   await addressedAt(12);
@@ -487,20 +493,20 @@ test("an answer kept while every later read fails is said to be stale, its lines
   const container = await drawn(() => next());
   const lines = (): readonly (readonly (string | null | undefined)[])[] =>
     linesDrawn(deliveryRow(container)).map(lineSaid);
-  expect(lines()).toEqual([["Rig", "Reached", "pill pill-pass", "43a251a"]]);
+  expect(lines()).toEqual([["Rig", "Reached", "pass", "43a251a"]]);
 
   next = () => answer({ error: { code: "InternalError" } }, 500);
   await clockMoved(ticketDeliveryPolledMs);
   await settled();
   expect(reachAsked).toHaveLength(2);
-  expect(lines()).toEqual([["Rig", "Reached", "pill pill-pass", "43a251a"]]);
+  expect(lines()).toEqual([["Rig", "Reached", "pass", "43a251a"]]);
 
   for (let poll = 1; poll < 20; poll += 1)
     await clockMoved(ticketDeliveryPolledMs);
   await settled();
   expect(reachAsked).toHaveLength(21);
   const row = await deliveryOpened(container);
-  expect(lines()).toEqual([["Rig", "Reached", "pill pill-pass", "43a251a"]]);
+  expect(lines()).toEqual([["Rig", "Reached", "pass", "43a251a"]]);
   expect(row.querySelector(".freshness")?.className).toBe(
     "freshness freshness-stale",
   );

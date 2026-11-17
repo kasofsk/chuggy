@@ -73,11 +73,13 @@ test("Running lists the members at work, each a link, and Next the Ready ones", 
     [[4, 6]],
   );
   await epicPageDrawn(abilitiesNone);
-  expect(listed("running")).toStrictEqual([["#4 T4", `${tickets}/4`, ""]]);
+  expect(listed("running")).toStrictEqual([
+    ["Working #4 T4", `${tickets}/4`, ""],
+  ]);
   expect(
     part("running").querySelector(".epic-overview-ticket-mark svg"),
   ).not.toBeNull();
-  expect(listed("next")).toStrictEqual([["#5 T5", `${tickets}/5`, ""]]);
+  expect(listed("next")).toStrictEqual([["Ready #5 T5", `${tickets}/5`, ""]]);
 });
 
 test("with no Ready member, Next is the Blocked members waiting only on running tickets, in the Tickets tab's order, each with what it comes after", async () => {
@@ -100,8 +102,8 @@ test("with no Ready member, Next is the Blocked members waiting only on running 
   );
   await epicPageDrawn(abilitiesNone);
   expect(listed("next")).toStrictEqual([
-    ["#5 T5", `${tickets}/5`, "after #4"],
-    ["#6 T6", `${tickets}/6`, "after #2, #4"],
+    ["Blocked #5 T5", `${tickets}/5`, "after #4"],
+    ["Blocked #6 T6", `${tickets}/6`, "after #2, #4"],
   ]);
 });
 
@@ -111,7 +113,7 @@ test("Running says None where nothing is running", async () => {
   expect(part("running").querySelector("li")).toBeNull();
 });
 
-test("the small graph draws a block for each member, numbered, and an edge as a line, and is a link to the Graph tab", async () => {
+test("the small graph draws each member a tile in its group, numbered, and the goal a bar, and is a link to the Graph tab", async () => {
   await epicPageDrawn(abilitiesNone);
   const link = within(part("graph")).getByRole("link", {
     name: "Graph of the epic",
@@ -119,28 +121,26 @@ test("the small graph draws a block for each member, numbered, and an edge as a 
   expect(link.getAttribute("href")).toBe(
     `/${leadPartition.tenant}/${leadPartition.project}/epics/7/graph`,
   );
-  await waitFor(() => {
-    expect(link.querySelectorAll("rect")).toHaveLength(2);
+  const tiles = await waitFor(() => {
+    const drawn = link.querySelectorAll(".epic-overview-graph-tile");
+    expect(drawn).toHaveLength(1);
+    return [...drawn];
   });
-  expect(link.querySelectorAll("polyline")).toHaveLength(1);
   expect(
-    [...link.querySelectorAll("rect")].map((block) => [
-      block.getAttribute("data-ticket"),
-      block.getAttribute("data-tone"),
+    tiles.map((tile) => [
+      tile.getAttribute("data-ticket"),
+      tile.getAttribute("data-group"),
+      tile.textContent,
     ]),
-  ).toStrictEqual([
-    ["4", "pass"],
-    ["5", "queued"],
-  ]);
-  expect(
-    [...link.querySelectorAll("text")].map((number) => [
-      number.textContent,
-      number.getAttribute("data-tone"),
-    ]),
-  ).toStrictEqual([
-    ["#4", "pass"],
-    ["#5", "queued"],
-  ]);
+  ).toStrictEqual([["4", "Done", "4"]]);
+  const goal = link.querySelector(".epic-overview-graph-goal");
+  expect([
+    goal?.getAttribute("data-ticket"),
+    goal?.hasAttribute("data-step"),
+  ]).toStrictEqual(["5", true]);
+  expect(link.querySelector("svg")?.getAttribute("viewBox")).toMatch(
+    /^0 0 230 /u,
+  );
 });
 
 test("the details name the tickets outside it waits on, its revision, and when and by whom it was updated, drawn by email", async () => {
@@ -193,7 +193,9 @@ test("an epic without a description says so in one muted line", async () => {
 test("the Overview draws no style attribute, which the served policy refuses", async () => {
   await epicPageDrawn(abilitiesNone);
   await waitFor(() => {
-    expect(part("graph").querySelectorAll("rect")).toHaveLength(2);
+    expect(
+      part("graph").querySelector(".epic-overview-graph-goal"),
+    ).not.toBeNull();
   });
   expect(
     document.querySelector(".epic-overview")?.querySelector("[style]"),

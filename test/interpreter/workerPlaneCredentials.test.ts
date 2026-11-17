@@ -19,7 +19,7 @@ import {
   type ForgeTokenMinted,
   type ForgeRepositoryTokens,
 } from "../../src/interpreter/forgeInstallation.ts";
-import type { ExecutionTaskKind } from "../../src/interpreter/executionRequirement.ts";
+import type { ExecutionTaskKind } from "../../src/contract/executionRequirement.ts";
 import {
   asRepositoryId,
   type RepositoryId,
@@ -121,6 +121,7 @@ function bindingOf(
       policy: "Direct",
     }),
     pipelinesWritable: false,
+    pipelinesRunnable: false,
     ...(retiredAt === undefined ? {} : { retiredAt }),
   };
 }

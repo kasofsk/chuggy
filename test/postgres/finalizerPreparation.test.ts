@@ -68,6 +68,10 @@ import {
 } from "../../src/interpreter/finalizerPreparation.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import {
+  canonicalConfigurationOf,
+  releaseConfigurationReadiness,
+} from "../../src/interpreter/authoring.ts";
+import {
   finalizerBriefBranch,
   finalizerBriefFinalizationTarget,
   finalizerClaim,
@@ -113,7 +117,6 @@ interface AttemptState {
   readonly failure_kind: string | null;
   readonly conflict_manifest: string | null;
   readonly conflict_manifest_digest: string | null;
-  readonly approval_required: boolean;
   readonly attempt_digest: string;
 }
 
@@ -123,8 +126,7 @@ async function attemptsOf(
 ): Promise<readonly AttemptState[]> {
   return (await rig.as(
     `SELECT attempt, target_ref, target_commit, candidate_commit, outcome, failure_kind,
-            conflict_manifest, conflict_manifest_digest, approval_required,
-            attempt_digest
+            conflict_manifest, conflict_manifest_digest, attempt_digest
        FROM finalization_attempt WHERE tenant=$1 AND project=$2
       ORDER BY prepared_at, attempt`,
     [project.partition.tenant, project.partition.project],
@@ -156,7 +158,6 @@ function attemptRecordOf(
       revision: project.configurationRevision,
       digest: project.configurationDigest,
     },
-    approvalRequired: false,
     outcome: "Prepared",
     candidate: asGitObjectId(finalizerCommit()),
     attemptDigest: finalizerDigest(),
@@ -191,7 +192,6 @@ test("a clean preparation writes the candidate over the observed target and reco
   assert.equal(attempts.length, 1);
   assert.equal(written?.outcome, "Prepared");
   assert.equal(written?.failure_kind, null);
-  assert.equal(written?.approval_required, false);
   assert.equal(written?.attempt_digest.length, 64);
   assert.equal(
     written?.target_commit,
@@ -2575,8 +2575,25 @@ test("an artifact whose bytes are not what the manifest declared cannot become a
   assert.equal(written?.conflict_manifest, null);
 });
 
-test("a pinned revision that asks for approval opens the ask through the one door that may", async () => {
-  const { project } = await finalizerSubject(rig, "approval", [
+/** A stored catalog whose finalizer, the one its ticket selects, names an approval policy. */
+const approvalNamingCatalog = canonicalConfigurationOf({
+  version: 2,
+  image: "worker:v2",
+  workloads: { tests: { runner: "Commands", commands: ["npm test"] } },
+  plans: { checks: [{ name: "checks", evaluators: ["tests"] }] },
+  finalizers: { gated: { approvalRequired: true } },
+  defaults: { work: "tests", evaluation: "checks", finalization: "gated" },
+});
+
+/** The most passes a direct landing takes, past which the case has stalled. */
+const landingPassesMax = 6;
+
+test("a stored revision whose selected finalizer names an approval still reads, and its ticket lands without asking anyone", async () => {
+  assert.equal(
+    releaseConfigurationReadiness(approvalNamingCatalog).readiness,
+    "Ready",
+  );
+  const { project, remote } = await finalizerSubject(rig, "approval", [
     { path: "one.txt", content: "one\n" },
   ]);
   await rig.harness.query(
@@ -2586,33 +2603,46 @@ test("a pinned revision that asks for approval opens the ask through the one doo
     [
       project.partition.tenant,
       project.partition.project,
-      '{"finalizationApprovalRequired":true,"image":"i","version":1}',
+      approvalNamingCatalog,
+    ],
+  );
+  await rig.harness.query(
+    `UPDATE ticket_definition SET selection = $4
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.ticket,
+      JSON.stringify({ finalization: "gated" }),
     ],
   );
   const port = finalizerRemotePort(rig);
-  await finalizerPassOnce(rig, project, port, "approval");
-  assert.equal((await attemptsOf(project))[0]?.approval_required, true);
-  await finalizerExpireClaim(rig, project);
-  const asked = await finalizerPassOnce(rig, project, port, "approval-again");
-  assert.equal(asked.approvals, 1);
-  const actions = await rig.as(
-    `SELECT kind, required_capability, state, attempt FROM native_action
-      WHERE tenant=$1 AND project=$2`,
-    [project.partition.tenant, project.partition.project],
+  let concluded = 0;
+  for (let pass = 0; pass < landingPassesMax && concluded === 0; pass += 1) {
+    await finalizerExpireClaim(rig, project);
+    const report = await finalizerPassOnce(
+      rig,
+      project,
+      port,
+      `approval-${String(pass)}`,
+    );
+    assert.equal(report.holds, 0, `pass ${String(pass)} held`);
+    concluded = report.conclusions;
+  }
+  assert.equal(concluded, 1);
+  const landed = (await attemptsOf(project))[0];
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main"),
+    landed?.candidate_commit,
   );
-  assert.equal(actions.length, 1);
-  assert.equal(actions[0]?.["kind"], "FinalizationApproval");
-  assert.equal(actions[0]?.["required_capability"], "ApproveFinalization");
-  assert.equal(actions[0]?.["state"], "Open");
-  await finalizerExpireClaim(rig, project);
-  const standing = await finalizerPassOnce(
-    rig,
-    project,
-    port,
-    "approval-third",
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT count(*)::text AS opened FROM native_action
+        WHERE tenant=$1 AND project=$2`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [{ opened: "0" }],
   );
-  assert.equal(standing.approvals, 0);
-  assert.equal(standing.holds, 1);
 });
 
 test("an attempt a retired holder offers is refused, and its bundle is refused with it", async () => {

@@ -27,6 +27,7 @@ import {
 import type { DrawnStrict } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { styleless } from "../styleless.ts";
+import { dialogFields } from "./inviteDialogDrawn.ts";
 import { permissionsTenant } from "./permissionsFixture.tsx";
 import {
   creationsSent,
@@ -144,17 +145,9 @@ function pressedOutside(): void {
 test("New workspace opens a dialog of that name at a form's width: the name, the owner's fields under their word, the box, and Cancel then Create", async () => {
   await opened();
   expect(dialog().classList.contains("max-w-measure")).toBe(true);
-  expect(
-    within(dialog())
-      .getAllByRole("textbox")
-      .map((input) => input.getAttribute("aria-label")),
-  ).toStrictEqual(Object.keys(owner));
+  expect(dialogFields(dialog())).toStrictEqual(Object.keys(owner));
   const owned = within(dialog()).getByRole("group", { name: "Owner" });
-  expect(
-    within(owned)
-      .getAllByRole("textbox")
-      .map((input) => input.getAttribute("aria-label")),
-  ).toStrictEqual(["GitHub username", "Email"]);
+  expect(dialogFields(owned)).toStrictEqual(["GitHub username", "Email"]);
   expect(owned.contains(checkbox())).toBe(true);
   expect(formDrawn()).toStrictEqual(["", "", "", true]);
   expect(
@@ -214,7 +207,11 @@ test.each([[201], [200]])(
   async (status) => {
     const grown = [
       ...workspacesListed.tenants,
-      { ...workspacesListed.tenants[3], tenant: "northwind-co" },
+      {
+        ...workspacesListed.tenants[3],
+        tenant: "northwind-co",
+        displayName: "northwind-co",
+      },
     ];
     const drawn = await filled(
       listedAfterCreation(
@@ -222,7 +219,9 @@ test.each([[201], [200]])(
         status,
       ),
     );
-    expect(screen.getByRole("heading", { name: "4 workspaces" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "4 workspaces", hidden: true }),
+    ).toBeTruthy();
     const read = workspaceListReads(drawn);
     await press("Create");
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -255,7 +254,7 @@ test("a creation's line stands until the dialog is opened again, which starts as
 
 test("a creation whose reread fails still leaves its line, over the list it held", async () => {
   await filled(listedAfterCreation(() => answer({}, 500)));
-  expect(screen.getByRole("table")).toBeTruthy();
+  expect(screen.getByRole("table", { hidden: true })).toBeTruthy();
   await press("Create");
   expect(screen.getByRole("status").textContent).toBe(createdLine);
   expect(screen.getByRole("table")).toBeTruthy();
@@ -420,7 +419,7 @@ test("a creation unanswered, no field, box or action takes a press and nothing c
     fireEvent.click(create());
     pressedOutside();
     fireEvent.keyDown(shown, { key: "Escape" });
-    fireEvent.click(screen.getByRole("button", { name: opener }));
+    fireEvent.click(screen.getByRole("button", { name: opener, hidden: true }));
   });
   await settled();
   expect(dialog()).toBe(shown);

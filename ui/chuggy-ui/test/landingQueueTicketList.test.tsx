@@ -97,17 +97,18 @@ async function listDrawn(queues: () => Response): Promise<QueryClient> {
 }
 
 function rowOf(ticket: number): HTMLElement {
-  const row = document.querySelector<HTMLElement>(
-    `.ticket-list-item[data-ticket="${String(ticket)}"]`,
-  );
-  if (row === null) throw new Error(`no row for #${String(ticket)}`);
+  const row = [...document.querySelectorAll<HTMLElement>(".ticket-list-number")]
+    .find((number) => number.textContent === `#${String(ticket)}`)
+    ?.closest("li");
+  if (row === null || row === undefined)
+    throw new Error(`no row for #${String(ticket)}`);
   return row;
 }
 
 test("a queued row draws its place just before its state chip, and a row in no queue draws none", async () => {
   await listDrawn(() => answer(queued));
   const holding = within(rowOf(11)).getByRole("img", {
-    name: `Lands next: #11 holds ${repository}'s default branch, 1 of 2 in its queue`,
+    name: `Finalizes next: #11 holds ${repository}'s default branch, 1 of 2 in its queue`,
   });
   expect(holding.textContent).toBe("1/2");
   expect(holding.nextElementSibling?.className).toContain(
@@ -115,10 +116,10 @@ test("a queued row draws its place just before its state chip, and a row in no q
   );
   expect(
     within(rowOf(12)).getByRole("img", {
-      name: `Waiting 2 of 2 to land: #11 holds ${repository}'s default branch`,
+      name: `Waiting 2 of 2 to finalize: #11 holds ${repository}'s default branch`,
     }).textContent,
   ).toBe("2/2");
-  expect(rowOf(13).querySelector(".landing-queue-chip")).toBeNull();
+  expect(rowOf(13).querySelector(".finalization-queue-chip")).toBeNull();
   expect(
     rowOf(13).querySelector(".ticket-list-foot-standing")?.children,
   ).toHaveLength(1);
@@ -136,5 +137,5 @@ test("a queue read that fails draws no chip and leaves every row drawn", async (
   await settled();
   expect(screen.getByText("Row 11")).toBeTruthy();
   expect(screen.getByText("Row 13")).toBeTruthy();
-  expect(document.querySelector(".landing-queue-chip")).toBeNull();
+  expect(document.querySelector(".finalization-queue-chip")).toBeNull();
 });

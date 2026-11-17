@@ -205,16 +205,17 @@ git -C "$R" add -A
 run_in "$R"
 check "the token file's rules must still be in a layer" 1 "$RC" ".leaked — a rule outside the layer"
 
-# The sheet the console drew before the design system is being deleted rather
-# than tokenised, and is out of both clauses for exactly as long as it exists.
+# A sheet at the console's root is a console sheet like any other: no file but
+# the token file is out of a clause.
 fresh_repo "$R"
 mkdir -p "$R/$SHEETS" "$R/ui/chuggy-ui/app/styles"
 printf '%s\n' '@layer tokens { :root { --ink-1: light-dark(#151a17, #eef2ee); } }' > "$R/$TOKENS"
-printf '%s\n' '.badge { color: #e3b341; padding: 0.15rem; }' > "$R/ui/chuggy-ui/app/styles.css"
+printf '%s\n' '.badge { color: #e3b341; }' > "$R/ui/chuggy-ui/app/styles.css"
 printf '%s\n' '@layer ui { .pill { color: var(--ink-1); } }' > "$R/$SHEETS/Pill.css"
 git -C "$R" add -A
 run_in "$R"
-check "the pre-system sheet is out of the corpus" 0 "$RC" "across 2 sheet(s)"
+check "a sheet at the console's root is in the corpus" 1 "$RC" "across 3 sheet(s)"
+check "a sheet at the console's root is held to both clauses" 1 "$RC" ".badge — a rule outside the layer"
 
 # --- Could not run -----------------------------------------------------------
 
@@ -226,14 +227,13 @@ git -C "$R" add -A
 run_in "$R"
 check "no token file exits 2, not 0" 2 "$RC" "no definition site"
 
-# Naming a file scans it wherever it lives, which is what keeps the exemption
-# from being a place to hide a colour.
+# Naming a file scans it wherever it lives, outside the corpus too.
 fresh_repo "$R"
-mkdir -p "$R/ui/chuggy-ui/app/styles"
+mkdir -p "$R/ui/chuggy-ui/app/styles" "$R/elsewhere"
 printf '%s\n' '@layer tokens { :root { --ink-1: light-dark(#151a17, #eef2ee); } }' > "$R/$TOKENS"
-printf '%s\n' '.badge { color: #e3b341; }' > "$R/ui/chuggy-ui/app/styles.css"
+printf '%s\n' '.badge { color: #e3b341; }' > "$R/elsewhere/stray.css"
 git -C "$R" add -A
-run_in "$R" ui/chuggy-ui/app/styles.css
+run_in "$R" elsewhere/stray.css
 check "a named file is scanned wherever it lives" 1 "$RC" "#e3b341 — a raw colour"
 
 run_in "$BARE"

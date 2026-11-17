@@ -119,7 +119,7 @@ function mounted(inbox: () => readonly InboxEntryResponse[]) {
     if (url.includes("/executions")) return answer({ executions: [] });
     if (url.includes("/tenants/"))
       return answer({ partition: atlas, sequence: 9, tickets: [] });
-    return answer({ projects: [atlas] });
+    return answer({ projects: [{ ...atlas, name: atlas.project }] });
   });
 }
 
@@ -129,7 +129,9 @@ function question(): HTMLElement {
 
 function badge(): string | undefined {
   const count =
-    screen.queryByRole("link", { name: /^Inbox/u })?.textContent ?? "";
+    screen
+      .queryByRole("link", { name: /^Inbox/u })
+      ?.querySelector('.count-badge [aria-hidden="true"]')?.textContent ?? "";
   return count === "" ? undefined : count;
 }
 

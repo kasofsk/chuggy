@@ -35,6 +35,7 @@ import {
   consoleSiteEachCase,
 } from "./consoleSite.tsx";
 import type { ConsoleSession, ConsoleSite } from "./consoleSite.tsx";
+import { inboxItemOf } from "./inboxFixture.ts";
 import { threadMineSession, threadSessionResource } from "./threadFixture.ts";
 import { ticketPageTicket } from "./ticketPageFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -84,13 +85,9 @@ function consoleComposer(): ConsoleBox {
   return screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
 }
 
-/** The Inbox's row for the ticket its fixture holds. */
+/** The Inbox's item for the ticket its fixture holds. */
 function consoleInboxRow(): HTMLElement {
-  const row = screen
-    .getByRole("link", { name: String(consoleInboxTicket) })
-    .closest("tr");
-  if (row === null) throw new Error("the inbox draws no row for its ticket");
-  return row;
+  return inboxItemOf(consoleInboxTicket);
 }
 
 /** A screen at an address, and the places on it a reader types into. */

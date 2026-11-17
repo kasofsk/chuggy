@@ -12,7 +12,6 @@ import type { SessionPlacementResponse } from "../../../../src/contract/response
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import type { PanelState } from "../core/freshness.ts";
 import { sessionPlacementQuery } from "../core/projectQueries.ts";
-import { navRoutes } from "../core/shellNav.ts";
 import {
   sessionPlacementShort,
   sessionRunnerAdded,
@@ -75,17 +74,18 @@ function SessionRunnerAddLink(props: {
           {text({ id: "runners-personal-link" })}
         </Link>
       );
-    case "Runners":
+    case "Pools":
       return (
-        <Link to={navRoutes.runners} params={props.partition}>
-          {text({ id: "runners-title" })}
+        <Link to={settingsRoutes.project.pools} params={props.partition}>
+          {text({ id: "runners-pools-title" })}
         </Link>
       );
   }
 }
 
 /** Why no runner can take a turn now, and the link to where one is added
- * where none is. */
+ * where none is. A runner of the reader's own that is offline is replaced on
+ * that same page, so a session waiting on one links there either way. */
 function SessionRunnerNoticeLine(props: {
   readonly session: SessionRunnerSession;
   readonly short: SessionRunnerShort;
@@ -98,7 +98,8 @@ function SessionRunnerNoticeLine(props: {
       inline
       detail={text(sessionRunnerNoticeWord(props.short, props.session))}
     >
-      {props.short === "NoRunner" ? (
+      {props.short === "NoRunner" ||
+      sessionRunnerAdded(props.session) === "MyRunner" ? (
         <span className="text-ink-3">
           {" · "}
           {props.add}
@@ -108,7 +109,7 @@ function SessionRunnerNoticeLine(props: {
   );
 }
 
-/** Why no runner can take a turn now, with where one is added where none is. */
+/** A session's line above, linked to the page its runner is added on. */
 export function SessionRunnerNotice(props: {
   readonly partition: PartitionIdentity;
   readonly session: SessionRunnerSession;
@@ -129,7 +130,7 @@ export function SessionRunnerNotice(props: {
 }
 
 /** Why the reader's chat host cannot take a turn of their own chat now, with
- * their own page in the workspace, where one is registered, where none is. */
+ * their own page in the workspace. */
 export function ChatHostNotice(props: {
   readonly tenant: string;
   readonly short: SessionRunnerShort;

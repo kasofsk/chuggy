@@ -30,7 +30,7 @@
  * is decided again.
  *
  * AN ANSWERED ACTION WRITES NO ENTRY EITHER, AND IT IS NOT A REFUSAL. The two
- * answers a finalization approval admits name no domain command, so `TicketGraph`
+ * answers an evaluation approval admits name no domain command, so `TicketGraph`
  * learns nothing and there is nothing to journal; the input settles carrying
  * which of the offered answers was given, and the head and the projection are
  * exactly as they were.
@@ -199,6 +199,12 @@ export interface ExecutionRequestBundle {
     readonly repository: string;
     readonly targetRef?: string;
     readonly targetCommit: string;
+    /**
+     * The ref the forge holds the target commit on, which only an evaluation
+     * names: a work spawn's ref is where its work is observed, which may have
+     * moved past the commit or not exist yet.
+     */
+    readonly targetCommitRef?: string;
     readonly manifests: readonly string[];
     readonly changeBase?: string;
     /** The git tree an evaluation must be run against, which the terminal report is held to. */

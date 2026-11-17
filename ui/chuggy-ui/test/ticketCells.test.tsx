@@ -22,6 +22,7 @@ function row(
     title: undefined,
     repository: undefined,
     creator: undefined,
+    owner: undefined,
     phase: "Escalated",
     sequence: 1,
     badge: { id: "codes-escalation-work-failure" },
@@ -34,12 +35,12 @@ function row(
 
 test("a joined row draws its execution as a chip", () => {
   const { container } = render(<TicketRowExecutionCell row={row("Failed")} />);
-  expect(container.querySelector(".pill")?.textContent).toBe("Failed");
+  expect(container.querySelector(".status-badge")?.textContent).toBe("Failed");
 });
 
 test("a row with nothing joined draws the dash and no chip", () => {
   const { container } = render(<TicketRowExecutionCell row={row(undefined)} />);
   expect(container.textContent).toBe(cellAbsent);
-  expect(container.querySelector(".pill")).toBeNull();
+  expect(container.querySelector(".status-badge")).toBeNull();
   expect(container.textContent).not.toContain("not read");
 });

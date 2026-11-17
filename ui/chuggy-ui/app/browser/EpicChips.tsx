@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
-import { pillLookClassName } from "./ui/Pill.tsx";
+import { chipClassName } from "./ui/Chip.tsx";
 
 import "./Epic.css";
 
@@ -31,7 +31,7 @@ export function EpicChips(props: {
           key={epic.number}
           to="/$tenant/$project/epics/$epic"
           params={{ ...props.partition, epic: String(epic.number) }}
-          className={pillLookClassName({ tone: "neutral" })}
+          className={chipClassName}
         >
           {epic.visibility === "Archived"
             ? text({ id: "epics-chip-archived", args: { title: epic.title } })

@@ -9,6 +9,10 @@ import test from "node:test";
 
 import {
   isHeldCredentialVariable,
+  sessionApiOriginVariable,
+  sessionBearerVariable,
+  sessionProjectVariable,
+  sessionTenantVariable,
   workerImageFaults,
   workerImageFaultStatuses,
   workerJobCommand,
@@ -80,4 +84,21 @@ test("a held credential is written under a variable ending _FILE, and never unde
     "GIT_TOKEN_FILE",
   ])
     assert.ok(!isHeldCredentialVariable(variable), variable);
+});
+
+test("a session's shell is told its API's origin, its bearer, its tenant and its project, each under the name a session tool reads it by", () => {
+  assert.deepEqual(
+    [
+      sessionApiOriginVariable,
+      sessionBearerVariable,
+      sessionTenantVariable,
+      sessionProjectVariable,
+    ],
+    [
+      "CHUG_SESSION_API_ORIGIN",
+      "CHUG_SESSION_BEARER",
+      "CHUG_SESSION_TENANT",
+      "CHUG_SESSION_PROJECT",
+    ],
+  );
 });

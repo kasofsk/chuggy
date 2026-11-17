@@ -122,6 +122,7 @@ test("a thread is read at the tenant as the member's own, and no request names a
           thread: entry,
           turns: [],
           streams: [],
+          jobsStanding: false,
         });
       },
     }),
