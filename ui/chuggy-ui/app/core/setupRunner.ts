@@ -1584,9 +1584,10 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   if (halted(personal)) return personal;
   const colima = await setupColimaHad(run);
   if (halted(colima)) return colima;
+  const leasts = setupPackageLeasts[run.platform];
   const machine = await setupMachineProbed(
     run,
-    setupPackageLeasts[run.platform].chat,
+    chats ? leasts.chat : leasts.runner,
   );
   if (halted(machine)) return machine;
   const packaged = await setupMachineShared(run, machine);

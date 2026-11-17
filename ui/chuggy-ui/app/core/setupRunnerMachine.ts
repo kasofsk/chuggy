@@ -786,16 +786,16 @@ export const setupPackageLeast = "0.14.0";
 export const setupChatPackageLeast = "0.35.0";
 
 /**
- * The oldest of each platform's runner package a run can use: `pool` for the
- * project's runner alone, `chat` where the person's chat host is set up too.
+ * The oldest of each platform's runner package a run can use: `runner` for
+ * the person's runner alone, `chat` where their chat host is set up too.
  * Linux's are the two above; chuggy-darwin's are its first release with every
  * command a run uses.
  */
 export const setupPackageLeasts: Readonly<
-  Record<SetupPlatform, { readonly pool: string; readonly chat: string }>
+  Record<SetupPlatform, { readonly runner: string; readonly chat: string }>
 > = {
-  linux: { pool: setupPackageLeast, chat: setupChatPackageLeast },
-  darwin: { pool: "0.23.0", chat: "0.23.0" },
+  linux: { runner: setupPackageLeast, chat: setupChatPackageLeast },
+  darwin: { runner: "0.23.0", chat: "0.23.0" },
 };
 
 function setupVersionParts(version: string): readonly number[] {

@@ -249,7 +249,7 @@ test("the package mcp leaves on each platform is one runner and chat-host can us
   for (const platform of ["linux", "darwin"] as const) {
     const left = { command: "", version: setupServerPackages[platform].least };
     const leasts = setupPackageLeasts[platform];
-    expect(setupPackageCurrent(left, leasts.pool)).toBe(true);
+    expect(setupPackageCurrent(left, leasts.runner)).toBe(true);
     expect(setupPackageCurrent(left, leasts.chat)).toBe(true);
   }
 });

@@ -666,15 +666,15 @@ export function boxServing(
   );
 }
 
-/** Whether the package a command is run from is new enough to know `--chat`, as its manifest says. */
-function boxTakesChat(box: RunnerBox, program: string): boolean {
+/** Whether the package a command is run from is new enough to know `--personal`, or `--chat` where `chat`, as its manifest says. */
+function boxTakes(box: RunnerBox, program: string, chat: boolean): boolean {
   const name = program.slice(program.lastIndexOf("/") + 1);
   const prefix = program.slice(0, -`/bin/${name}`.length);
   const manifest = box.paths.get(
     `${prefix}/lib/node_modules/${name}/package.json`,
   );
   const version = /"version":"(\d+)\.(\d+)\./u.exec(manifest ?? "");
-  const least = name === "chuggy-darwin" ? 23 : 35;
+  const least = name === "chuggy-darwin" ? 23 : chat ? 35 : 4;
   return Number(version?.[1] ?? 0) > 0 || Number(version?.[2] ?? 0) >= least;
 }
 
@@ -696,7 +696,7 @@ function registered(
   const words = personal ? said.slice(1) : said;
   const chat = words.at(-1) === "--chat";
   const option = personal ? "--personal" : "--chat";
-  if ((chat || personal) && !boxTakesChat(box, program))
+  if ((chat || personal) && !boxTakes(box, program, chat))
     return exited(1, "", `error: unknown option '${option}'\n`);
   const [flag, api, token = ""] = chat ? words.slice(0, -1) : words;
   if (flag !== "--api" || api !== world.origin || !token.startsWith("--token="))

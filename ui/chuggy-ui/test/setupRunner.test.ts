@@ -39,7 +39,10 @@ import {
   setupRunnerWrites,
   setupWritePorts,
 } from "../app/core/setupRunner.ts";
-import { setupChatPackageLeast } from "../app/core/setupRunnerMachine.ts";
+import {
+  setupChatPackageLeast,
+  setupPackageLeast,
+} from "../app/core/setupRunnerMachine.ts";
 import { setupSignInNoteWritten } from "../app/core/setupStore.ts";
 import { setupExcerpt } from "../app/core/setupText.ts";
 import { signInStoreLockWord } from "../../../src/contract/signInStore.ts";
@@ -453,7 +456,7 @@ test("settings naming claudeCredential with a package older than the runner need
   expect(unpackaged.exit).toBe(0);
   expect(unpackaged.lines).toEqual([
     ...head,
-    `found: the runner package here is chuggy-linux 0.13.0, and chuggy setup needs ${setupChatPackageLeast} or later`,
+    `found: the runner package here is chuggy-linux 0.13.0, and chuggy setup needs ${setupPackageLeast} or later`,
     expect.stringMatching(
       /^tell: The runner package, chuggy-linux, is installed by the MCP step/u,
     ) as unknown,
@@ -507,7 +510,7 @@ test("runner on a machine with no runner package, or one older than it needs, ch
     expect(stopped.lines.slice(3), said).toEqual([
       version === undefined
         ? "found: the runner package, chuggy-linux, is not installed here"
-        : `found: the runner package here is chuggy-linux ${version}, and chuggy setup needs ${setupChatPackageLeast} or later`,
+        : `found: the runner package here is chuggy-linux ${version}, and chuggy setup needs ${setupPackageLeast} or later`,
       expect.stringMatching(/nothing was changed on this machine/u) as unknown,
       `rule: Run node ${machineScript} mcp ${flags} only once the person says yes to chuggy-linux and chuggy's MCP server on this machine.`,
       stop,
@@ -1218,15 +1221,15 @@ test("runner asks nothing of npm: with no npm it names mcp where no package it c
   machine.box.paths.set(`${boxOwn}/bin/chuggy-linux`, "#!/usr/bin/env node");
   machine.box.paths.set(manifest, JSON.stringify({ version: "0.3.0" }));
   expect((await ran(machine)).lines[3]).toBe(
-    `found: the runner package here is chuggy-linux 0.3.0, and chuggy setup needs ${setupChatPackageLeast} or later`,
+    `found: the runner package here is chuggy-linux 0.3.0, and chuggy setup needs ${setupPackageLeast} or later`,
   );
   machine.box.paths.set(
     manifest,
-    JSON.stringify({ version: setupChatPackageLeast }),
+    JSON.stringify({ version: setupPackageLeast }),
   );
   const done = await ran(machine);
   expect(done.lines[3]).toBe(
-    `found: the runner package is installed: chuggy-linux ${setupChatPackageLeast}, at ${boxOwn}/bin/chuggy-linux`,
+    `found: the runner package is installed: chuggy-linux ${setupPackageLeast}, at ${boxOwn}/bin/chuggy-linux`,
   );
   expect(done.lines.slice(-2)).toEqual([live, next]);
   expect(times(machine, "install")).toBe(0);
