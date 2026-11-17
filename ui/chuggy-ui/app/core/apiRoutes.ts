@@ -10,6 +10,7 @@ import { partitionPath } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
 import {
+  ownedThemeSchema,
   agentAccountsResponseSchema,
   agenticRefusalsResponseSchema,
   chatHostResponseSchema,
@@ -78,6 +79,7 @@ import type {
   ForgeInstallationsResponse,
   ForgeRepositoriesResponse,
   OperationAcceptance,
+  OwnedThemeResponse,
   OperationResponse,
   OutputContentResponse,
   ProjectArtifactResponse,
@@ -125,7 +127,10 @@ import type {
   chatThreadMessageSchema,
   threadOfferReplyRequestSchema,
 } from "../../../../src/contract/requests.ts";
-import type { ThemeChoice } from "../../../../src/contract/appearance.ts";
+import type {
+  ThemeChoice,
+  ThemeDocument,
+} from "../../../../src/contract/appearance.ts";
 import type {
   AccountAgent,
   PersonalRunnerPriority,
@@ -695,6 +700,51 @@ export function apiWriteThemeChoice(
   return apiRead(
     ports,
     { method: "PUT", path: nativeHttpRoutes.themeChoice, body: choice },
+    () => undefined,
+  );
+}
+
+/** A theme of the reader's own made from `document`, answered with the
+ * number it is known by. */
+export function apiCreateOwnTheme(
+  ports: ApiPorts,
+  document: ThemeDocument,
+): Promise<ApiResult<OwnedThemeResponse>> {
+  return apiRead(
+    ports,
+    { method: "POST", path: nativeHttpRoutes.ownThemes, body: document },
+    (value) => ownedThemeSchema.parse(value),
+  );
+}
+
+/** A theme of the reader's own, written whole. */
+export function apiWriteOwnTheme(
+  ports: ApiPorts,
+  theme: number,
+  document: ThemeDocument,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "PUT",
+      path: endpointPath(nativeHttpRoutes.ownTheme, { theme }),
+      body: document,
+    },
+    () => undefined,
+  );
+}
+
+/** A theme of the reader's own deleted, and with it the choice naming it. */
+export function apiDeleteOwnTheme(
+  ports: ApiPorts,
+  theme: number,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "DELETE",
+      path: endpointPath(nativeHttpRoutes.ownTheme, { theme }),
+    },
     () => undefined,
   );
 }
