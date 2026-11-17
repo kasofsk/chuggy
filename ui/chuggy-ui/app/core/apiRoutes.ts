@@ -1466,12 +1466,6 @@ export const apiHostedRuns = apiProjectEndpoint(
 );
 
 /** Which of the project's doors the reader may press. */
-/** The artifacts the project names its icon and its banner. */
-export const apiProjectImages = apiProjectEndpoint(
-  nativeHttpEndpoints.viewProjectImages,
-  (partition) => ({ parameters: partition }),
-);
-
 export const apiProjectAbilities = apiProjectEndpoint(
   nativeHttpEndpoints.abilities,
   (partition) => ({ parameters: partition }),

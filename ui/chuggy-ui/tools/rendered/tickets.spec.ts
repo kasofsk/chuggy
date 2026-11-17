@@ -261,7 +261,7 @@ const ticketsBannerPng =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
 /** The rows the first screen holds whole under the banner, at either size. */
-const ticketsBannerRowsFirstScreen = 3;
+const ticketsBannerRowsFirstScreen = 2;
 
 /** Enough rows that the page scrolls well past the band. */
 const ticketsBannerPage = {
