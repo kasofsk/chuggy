@@ -837,7 +837,7 @@ async function schedulerAdmit(
     tenant: string;
     project: string;
     execution: string;
-    held_back: boolean | null;
+    held_back: boolean;
   }>(
     sql`WITH awaiting AS MATERIALIZED (
          SELECT s.account FROM execution_between_stages(${cluster}) s)
@@ -864,7 +864,7 @@ async function schedulerAdmit(
   );
   const row = candidate.rows[0];
   if (row === undefined) return schedulerNoCandidate(client, cluster);
-  if (row.held_back !== false) return { admitted: "HeldBetweenStages" };
+  if (row.held_back) return { admitted: "HeldBetweenStages" };
   const taken = await client.query(
     sql`UPDATE execution SET status = 'Admitted'
       WHERE tenant = ${row.tenant} AND project = ${row.project}
