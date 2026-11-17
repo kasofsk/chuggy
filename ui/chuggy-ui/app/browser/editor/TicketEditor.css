@@ -63,9 +63,9 @@
     overflow-wrap: anywhere;
   }
 
-  /* A phone zooms into any field typed smaller than this, so a narrow screen
+  /* A phone zooms into any field typed smaller than this, so a coarse pointer
      is given the size it would zoom to. */
-  @media (max-width: 40em) {
+  @media (pointer: coarse) {
     .ticket-editor-fallback {
       font-size: var(--text-unzoomed);
     }

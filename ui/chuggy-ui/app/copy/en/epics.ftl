@@ -92,6 +92,10 @@ epics-tickets-filter = Filter { -ticket(form: "plural") }
 epics-tickets-no-match = No { -ticket(form: "plural") } match
 epics-tickets-running = Running
 epics-tickets-group = { $word }, { $count }
+epics-tickets-group-count = { $count ->
+    [one] { $count } { -ticket }
+   *[other] { $count } { -ticket(form: "plural") }
+}
 epics-tickets-after = after
 epics-tickets-blocks = blocks { $count }
 epics-tickets-menu = More actions for #{ $ticket }
@@ -111,6 +115,7 @@ epics-tickets-add-chosen = Add { $count ->
 epics-graph-empty = This { -epic } has no { -ticket(form: "plural") } to draw
 epics-graph-loading = Drawing the graph…
 epics-graph-failed = The graph could not be read.
+epics-graph-as-list = Read these { -ticket(form: "plural") } as a list
 epics-graph-outside-shown = Show { -ticket(form: "plural") } outside the { -epic } ({ $count })
 epics-graph-label = { -ticket(case: "upper", form: "plural") } of the { -epic } and what they wait on
 epics-graph-key = Key

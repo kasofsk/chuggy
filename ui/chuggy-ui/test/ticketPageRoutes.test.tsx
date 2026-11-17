@@ -64,6 +64,28 @@ async function mountedAt(path: string): Promise<void> {
   await consoleAdvanced(ticketPageSettleMs);
 }
 
+/** The headings in the page's main landmark, in document order, each as its
+ * level and its words. */
+function headingsInMain(): readonly (readonly [number, string])[] {
+  return [
+    ...screen.getByRole("main").querySelectorAll("h1, h2, h3, h4, h5, h6"),
+  ].map((heading) => [
+    Number(heading.tagName.slice(1)),
+    heading.textContent ?? "",
+  ]);
+}
+
+/** That the page's headings open with its title and then the tab's own, a
+ * level under it, and that no heading after them skips a level. */
+function headingsOpenWithTab(tab: string): void {
+  const headings = headingsInMain();
+  expect(headings.slice(0, 2).map(([level]) => level)).toStrictEqual([1, 2]);
+  expect(headings[1]?.[1]).toBe(tab);
+  for (const [index, [level]] of headings.entries())
+    if (index > 0)
+      expect(level).toBeLessThanOrEqual((headings[index - 1]?.[0] ?? 0) + 1);
+}
+
 test("the ticket's address draws the header, marks Overview current, and draws Instructions", async () => {
   await mountedAt(ticketPath);
   expect(tabCurrent()).toBe("Overview");
@@ -301,4 +323,21 @@ test("the landing's address says its read failed rather than that the ticket has
   await mountedAt(`${ticketPath}/landing`);
   expect(document.querySelector(".read-failed")).not.toBeNull();
   expect(screen.queryByText("No finalization")).toBeNull();
+});
+
+test("every tab's content opens with a heading naming its tab, a level under the title, and no heading skips one", async () => {
+  runServed();
+  for (const [path, tab] of [
+    ["", "Overview"],
+    ["/runs", "Runs"],
+    ["/runs/1", "Runs"],
+    ["/landing", "Runs"],
+    ["/configuration", "Configuration"],
+    ["/usage", "Usage"],
+  ] as const) {
+    await mountedAt(`${ticketPath}${path}`);
+    expect(tabCurrent()?.startsWith(tab)).toBe(true);
+    headingsOpenWithTab(tab);
+    cleanup();
+  }
 });

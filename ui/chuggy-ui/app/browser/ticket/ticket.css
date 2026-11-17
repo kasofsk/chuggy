@@ -441,7 +441,7 @@
   /* Narrow, the heading's links take a line of their own, and a row stacks:
      its step and model on one line, what runs it on the next, and its
      overrides under that. */
-  @media (max-width: 40em) {
+  @container page (max-width: 40em) {
     .config-heading-title {
       flex-basis: 100%;
     }
@@ -539,62 +539,6 @@
 
   .ticket-header-notes:empty {
     display: none;
-  }
-
-  .ticket-tabs {
-    min-width: 0;
-    overflow-x: auto;
-    border-bottom: var(--hairline) solid var(--edge);
-  }
-
-  .ticket-tabs ul {
-    display: flex;
-    gap: var(--space-1);
-  }
-
-  .ticket-tab {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    color: var(--ink-3);
-    font-size: var(--text-md);
-    white-space: nowrap;
-    text-decoration: none;
-  }
-
-  .ticket-tab:hover {
-    color: var(--ink-1);
-  }
-
-  .ticket-tab[aria-current="page"] {
-    color: var(--ink-1);
-    font-weight: var(--weight-medium);
-  }
-
-  .ticket-tab[aria-current="page"]::after {
-    content: "";
-    position: absolute;
-    inset-inline: 0;
-    bottom: 0;
-    height: var(--rail);
-    background: var(--ink-1);
-  }
-
-  @media (max-width: 40em) {
-    .ticket-tab {
-      padding-inline: var(--space-2);
-    }
-  }
-
-  .ticket-tab-count {
-    padding: 0 var(--space-2);
-    border-radius: var(--radius-3);
-    background: var(--surface-2);
-    color: var(--ink-2);
-    font-size: var(--text-xs);
-    line-height: var(--leading-dense);
   }
 
   /* The state label: filled is the tone as the ground under inverse ink,
@@ -700,7 +644,7 @@
     stroke-linejoin: round;
   }
 
-  /* A mark or a word drawn apart from the label takes its tone's ink itself. */
+  /* A mark drawn apart from the label takes its tone's ink itself. */
   .ticket-state-ink {
     color: var(--ink-3);
   }
@@ -908,7 +852,7 @@
     color: var(--ink-3);
   }
 
-  @media (max-width: 40em) {
+  @container page (max-width: 40em) {
     .ticket-runs-row {
       grid-template-columns: auto minmax(0, 1fr) auto auto;
       row-gap: 0;
@@ -1083,7 +1027,7 @@
     white-space: pre-wrap;
   }
 
-  @media (max-width: 60em) {
+  @container page (max-width: 60em) {
     .ticket-run-frame {
       grid-template-columns: minmax(0, 1fr);
       gap: var(--space-3);
@@ -1185,7 +1129,7 @@
     gap: var(--space-2);
   }
 
-  @media (max-width: 60em) {
+  @container page (max-width: 60em) {
     .ticket-overview {
       grid-template-columns: minmax(0, 1fr);
       gap: var(--space-5);
@@ -1339,10 +1283,13 @@
     text-decoration: none;
   }
 
+  /* A cell's two rows, its phase's heading and its body, are the grid's, so
+     a heading that wraps lowers every box in the row with it. */
   .ticket-steps-grid {
     display: grid;
     grid-auto-flow: column;
     grid-auto-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
     background: var(--surface-1);
     border: var(--hairline) solid var(--edge);
     border-radius: var(--radius-2);
@@ -1373,6 +1320,8 @@
   .ticket-steps-cell {
     position: relative;
     display: grid;
+    grid-row: span 2;
+    grid-template-rows: subgrid;
     align-content: start;
     gap: var(--space-2);
     min-width: 0;
@@ -1388,15 +1337,21 @@
     border-left: var(--hairline) solid var(--edge-strong);
   }
 
+  .ticket-steps-body {
+    display: grid;
+    align-content: start;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
   .ticket-steps-phase {
     min-height: 1lh;
-    overflow: hidden;
     color: var(--ink-3);
     font-size: var(--text-xs);
     font-weight: var(--weight-strong);
     letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 
   .ticket-steps-order {
@@ -1494,13 +1449,16 @@
     flex: none;
   }
 
-  @media (max-width: 40em) {
+  @container page (max-width: 40em) {
     .ticket-steps-grid {
       grid-auto-flow: row;
       grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: none;
     }
 
     .ticket-steps-cell {
+      grid-row: auto;
+      grid-template-rows: none;
       border-top: none;
       padding-block: var(--space-2);
     }
@@ -1541,7 +1499,8 @@
   }
 
   /* Usage: the tiles over the by-step and by-model tables, each table boxed
-     and scrolling inside its box rather than the page. */
+     and stacking into cards in its box where it is narrow, rather than
+     scrolling. */
   .ticket-usage {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -1579,7 +1538,7 @@
   }
 
   .ticket-usage-tile-figure .fig,
-  .ticket-usage-section .tabular tfoot .fig {
+  .ticket-usage-steps tbody tr:last-child .fig {
     color: var(--ink-1);
   }
 
@@ -1611,16 +1570,25 @@
     font-weight: var(--weight-regular);
   }
 
-  .ticket-usage-section .tabular tfoot > tr > * {
-    border-top: var(--hairline) solid var(--edge);
-    border-bottom: 0;
+  /* The by-step table's last row is its total. */
+  .ticket-usage-steps tbody tr:last-child > *,
+  .ticket-usage-steps tbody tr:last-child .tabular-value {
     color: var(--ink-1);
     font-weight: var(--weight-strong);
   }
 
+  @container not (max-width: 40em) {
+    .ticket-usage-steps tbody tr:last-child > * {
+      border-top: var(--hairline) solid var(--edge);
+    }
+  }
+
+  /* A model's name wraps rather than widening its table. */
   .ticket-usage-section .tabular code {
     font-family: var(--font-mono);
     font-size: var(--mono-optical);
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .ticket-usage-minor {

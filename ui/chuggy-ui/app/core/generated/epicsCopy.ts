@@ -98,6 +98,9 @@ export interface EpicsCopy {
     readonly word: unknown;
     readonly count: unknown;
   };
+  readonly "epics-tickets-group-count": {
+    readonly count: unknown;
+  };
   readonly "epics-tickets-after": Record<never, never>;
   readonly "epics-tickets-blocks": {
     readonly count: unknown;
@@ -116,6 +119,7 @@ export interface EpicsCopy {
   readonly "epics-graph-empty": Record<never, never>;
   readonly "epics-graph-loading": Record<never, never>;
   readonly "epics-graph-failed": Record<never, never>;
+  readonly "epics-graph-as-list": Record<never, never>;
   readonly "epics-graph-outside-shown": {
     readonly count: unknown;
   };
