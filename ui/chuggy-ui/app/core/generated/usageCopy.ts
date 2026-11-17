@@ -36,8 +36,9 @@ export interface UsageCopy {
   readonly "usage-threads-pause": Record<never, never>;
   readonly "usage-threads-pause-with": Record<never, never>;
   readonly "usage-threads-keep-running": Record<never, never>;
-  readonly "usage-writing": Record<never, never>;
-  readonly "usage-written": Record<never, never>;
+  readonly "usage-saved": {
+    readonly agent: unknown;
+  };
   readonly "usage-credentials": Record<never, never>;
   readonly "usage-retire": Record<never, never>;
   readonly "usage-retire-named": {

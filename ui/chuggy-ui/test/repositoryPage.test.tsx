@@ -17,6 +17,7 @@ import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
+import { ConsoleWriteToasts } from "../app/browser/consoleWrite.tsx";
 import { RepositoryPage } from "../app/browser/repositories/RepositoryPage.tsx";
 import {
   answer,
@@ -32,6 +33,7 @@ import {
   abilitiesUnrefusing,
 } from "./projectAbilitiesFixture.ts";
 import { styleless } from "./styleless.ts";
+import { toastsDrawn } from "./toastsDrawn.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -242,6 +244,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
       transport={openedStream().ports.fetch}
     >
       <RepositoryPage />
+      <ConsoleWriteToasts />
     </ScreenHarness>,
   );
   await settled();
@@ -403,7 +406,9 @@ test("a saved finalization is written against the one the page read", async () =
     pipelinesWritable: { expected: false, wanted: false },
     pipelinesRunnable: { expected: false, wanted: false },
   });
-  expect(screen.getByText("Written")).toBeTruthy();
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Finalization saved" },
+  ]);
   expect(chosenFinalization()).toBe("Pull request");
   expect(
     within(sectionOf("Finalization")).getByRole("button", { name: "Edit" }),
@@ -545,7 +550,9 @@ test("allowing workflow files writes them against what the page read, the finali
     pipelinesWritable: { expected: false, wanted: true },
     pipelinesRunnable: { expected: false, wanted: false },
   });
-  expect(within(sectionOf("Workflow files")).getByText("Written")).toBeTruthy();
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Workflow files saved" },
+  ]);
   expect(chosenWorkflowFiles()).toBe("On");
   expect(chosenFinalization()).toBe("Pull request");
 });
@@ -783,7 +790,9 @@ test("allowing workflow runs writes them against what the page read, the other s
     pipelinesWritable: { expected: true, wanted: true },
     pipelinesRunnable: { expected: false, wanted: true },
   });
-  expect(within(sectionOf("Workflow runs")).getByText("Written")).toBeTruthy();
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Workflow runs saved" },
+  ]);
   expect(chosenSwitch("Workflow runs")).toBe("On");
   expect(chosenWorkflowFiles()).toBe("On");
 });

@@ -1,12 +1,11 @@
 /**
- * The fields of the forms that invite, the same in each: a labelled line with
+ * The fields of the forms that invite, the same in each: a `FormField` with
  * its fault under it before anything is sent, or what the field holds where a
  * form says that and no fault stands, the email and the GitHub username a
  * person is named by, each held to the contract's schema, and under the
  * username the line a reader who may make no account is told.
  */
 
-import { useId } from "react";
 import type { ReactNode } from "react";
 
 import { useCopyText } from "../../copy/CopyProvider.tsx";
@@ -45,23 +44,22 @@ export function InvitationText(props: {
   readonly disabled?: boolean | undefined;
   readonly onChange: (value: string) => void;
 }): ReactNode {
-  const faultId = useId();
+  const hint = props.fault === undefined ? props.about : undefined;
   return (
-    <label className={`grid gap-1 ${invitationLabelClassName}`}>
-      {props.label}
+    <div className="grid gap-1">
       <Input
+        labelShown
         label={props.label}
         value={props.value}
         onChange={props.onChange}
-        invalid={props.fault !== undefined}
         disabled={props.disabled}
-        describedBy={faultId}
+        {...(hint === undefined ? {} : { hint })}
+        {...(props.fault === undefined ? {} : { error: props.fault })}
       />
-      <InvitationFault id={faultId} fault={props.fault} about={props.about} />
       {props.line === undefined ? null : (
         <span className="text-xs font-regular">{props.line}</span>
       )}
-    </label>
+    </div>
   );
 }
 

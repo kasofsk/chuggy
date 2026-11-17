@@ -19,10 +19,17 @@ export function inviteModesDrawn(dialog: HTMLElement): readonly string[] {
     );
 }
 
+/** Each box's name: the words of the label drawn over it, before any
+ * Required mark, or its own `aria-label` where none is drawn. */
 export function dialogFields(dialog: HTMLElement): readonly (string | null)[] {
   return within(dialog)
-    .queryAllByRole("textbox")
-    .map((box) => box.getAttribute("aria-label"));
+    .queryAllByRole<HTMLInputElement>("textbox")
+    .map((box) => {
+      const label = box.labels?.[0];
+      return label === undefined
+        ? box.getAttribute("aria-label")
+        : (label.firstChild?.textContent ?? null);
+    });
 }
 
 export function dialogActions(dialog: HTMLElement): readonly (string | null)[] {

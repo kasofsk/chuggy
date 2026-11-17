@@ -29,8 +29,10 @@ import {
   projectLeadPresent,
 } from "../../core/projectLead.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
+import type { Copy } from "../../core/copy.ts";
 import {
   selectorSettingsModelPinned,
+  selectorSettingsSection,
   selectorSettingsSectionCleared,
   selectorSettingsSectionRestored,
   selectorSettingsTextNames,
@@ -60,6 +62,7 @@ import {
   useSelectorSettingsWriting,
 } from "../selectorSettingsWriting.ts";
 import type {
+  SelectorSettingsPressed,
   SelectorSettingsShown,
   SelectorSettingsWriting,
 } from "../selectorSettingsWriting.ts";
@@ -96,14 +99,14 @@ interface SelectorSettingsSectionChrome {
 function selectorRowsChrome(
   chrome: SelectorSettingsSectionChrome,
   name: "limits" | "models",
-  savable: boolean,
+  ready: boolean,
 ): SelectorRowsChrome {
   return {
     draft: chrome.draft,
     faults: selectorSettingsWrite(chrome.draft).faults,
     editing: chrome.editing === name,
     editable: chrome.editing === undefined,
-    savable,
+    ready,
     saved: selectorSettingsShown(chrome.writing, name),
     onChange: chrome.onChange,
     onEdit: () => {
@@ -125,9 +128,7 @@ function SelectorSettingsSections(props: {
   const text = useCopyText();
   const chrome = props.chrome;
   const editing = chrome.editing;
-  const savable =
-    selectorSettingsWrite(chrome.draft).overrides !== undefined &&
-    !chrome.writing.saving.isPending;
+  const ready = selectorSettingsWrite(chrome.draft).overrides !== undefined;
   return (
     <>
       {selectorSettingsTextNames.map((name) => (
@@ -141,7 +142,7 @@ function SelectorSettingsSections(props: {
           }
           editing={editing === name}
           editable={editing === undefined}
-          savable={savable}
+          ready={ready}
           saved={selectorSettingsShown(chrome.writing, name)}
           onChange={chrome.onChange}
           onEdit={() => {
@@ -160,16 +161,31 @@ function SelectorSettingsSections(props: {
         />
       ))}
       <SelectorLimitsSection
-        {...selectorRowsChrome(chrome, "limits", savable)}
+        {...selectorRowsChrome(chrome, "limits", ready)}
         settings={chrome.settings}
       />
       <SelectorModelsSection
-        {...selectorRowsChrome(chrome, "models", savable)}
+        {...selectorRowsChrome(chrome, "models", ready)}
         pinned={selectorSettingsModelPinned(chrome.settings.effective)}
         subsidy={chrome.subsidy}
       />
     </>
   );
+}
+
+/** What a landed write's toast says: the section saved, or the revision a
+ * restore was written as. */
+function selectorSettingsLandedSaid(
+  settings: SelectorProjectSettingsResponse,
+  pressed: SelectorSettingsPressed<SelectorSettingsWriter>,
+): Copy {
+  const revision = String(settings.revision);
+  if (pressed.writer === "revisions")
+    return { id: "lead-history-restored", args: { revision } };
+  return {
+    id: "lead-settings-saved",
+    args: { section: selectorSettingsSection(pressed.writer).title, revision },
+  };
 }
 
 function SelectorSettingsForm(props: {
@@ -181,6 +197,7 @@ function SelectorSettingsForm(props: {
     "Settings",
     props.partition,
     held,
+    selectorSettingsLandedSaid,
   );
   const [editing, setEditing] = useState<
     SelectorSettingsSectionName | undefined

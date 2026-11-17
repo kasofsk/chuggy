@@ -17,6 +17,7 @@ export interface UiCopy {
   readonly "ui-reload": Record<never, never>;
   readonly "ui-required": Record<never, never>;
   readonly "ui-save": Record<never, never>;
+  readonly "ui-saving": Record<never, never>;
   readonly "ui-toasts": Record<never, never>;
   readonly "ui-toasts-held": {
     readonly hotkey: unknown;
