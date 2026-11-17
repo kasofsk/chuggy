@@ -7,7 +7,10 @@ import {
 } from "../../../../src/contract/endpoints.ts";
 
 import { partitionPath } from "../../../../src/contract/http.ts";
-import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type {
+  PartitionIdentity,
+  ProjectImageRole,
+} from "../../../../src/contract/http.ts";
 import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
 import {
   ownedThemeSchema,
@@ -36,6 +39,8 @@ import {
   operationResponseSchema,
   outputContentResponseSchema,
   projectArtifactResponseSchema,
+  projectImagesResponseSchema,
+  projectThemeResponseSchema,
   projectArtifactUploadedResponseSchema,
   projectCreatedSchema,
   projectInventoryResponseSchema,
@@ -83,6 +88,8 @@ import type {
   OperationResponse,
   OutputContentResponse,
   ProjectArtifactResponse,
+  ProjectImagesResponse,
+  ProjectThemeResponse,
   ProjectArtifactUploadedResponse,
   ProjectCreatedResponse,
   InventoryProject,
@@ -763,6 +770,59 @@ export function apiWriteProjectThemeOverride(
       ? { method: "DELETE", path }
       : { method: "PUT", path, body: choice },
     () => undefined,
+  );
+}
+
+/** The project's default theme, the document written whole, or cleared where
+ * `document` is none. */
+export function apiWriteProjectTheme(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  document: ThemeDocument | undefined,
+): Promise<ApiResult<ProjectThemeResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "PUT",
+      path: endpointPath(nativeHttpRoutes.projectTheme, partition),
+      body: document === undefined ? {} : { document },
+    },
+    (value) => projectThemeResponseSchema.parse(value),
+  );
+}
+
+/** The artifacts the project names its icon and its banner. */
+export function apiProjectImages(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  signal?: AbortSignal,
+): Promise<ApiResult<ProjectImagesResponse>> {
+  return apiGet(
+    ports,
+    endpointPath(nativeHttpRoutes.projectImages, partition),
+    (value) => projectImagesResponseSchema.parse(value),
+    signal,
+  );
+}
+
+/** One of the project's own artifacts named its icon or its banner, or that
+ * role cleared where `artifact` is none. */
+export function apiWriteProjectImage(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  role: ProjectImageRole,
+  artifact: string | undefined,
+): Promise<ApiResult<ProjectImagesResponse>> {
+  const path = endpointPath(nativeHttpRoutes.projectImage, {
+    ...partition,
+    role,
+  });
+  return apiRead(
+    ports,
+    artifact === undefined
+      ? { method: "DELETE", path }
+      : { method: "PUT", path, body: { artifact } },
+    (value) => projectImagesResponseSchema.parse(value),
   );
 }
 

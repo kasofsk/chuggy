@@ -29,9 +29,11 @@ import type { CatalogQuery } from "../../core/catalogConfigurations.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import { CatalogPage } from "../catalog/CatalogPage.tsx";
 import { LeadPage } from "../LeadPage.tsx";
+import { useProjectAbilities } from "../projectAbilities.tsx";
 import { ProjectlessFrame } from "../ProjectCreation.tsx";
 import { RepositoriesPage } from "../RepositoriesPage.tsx";
 import { RepositoryPage } from "../repositories/RepositoryPage.tsx";
+import { AppearanceSettingsPage } from "./AppearanceSettingsPage.tsx";
 import { LeadSettingsPage } from "./LeadSettingsPage.tsx";
 import { MyRunnerPage } from "./MyRunnerPage.tsx";
 import { PlacementSettingsPage } from "./PlacementSettingsPage.tsx";
@@ -83,6 +85,11 @@ function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
       getParentRoute,
       path: "/repositories/$repository",
       component: RepositoryPage,
+    }),
+    createRoute({
+      getParentRoute,
+      path: "/appearance",
+      component: AppearanceSettingsPage,
     }),
     createRoute({
       getParentRoute,
@@ -155,14 +162,25 @@ function personPageRoutes<TParent extends AnyRoute>(parent: TParent) {
 
 function ProjectSettings(): ReactNode {
   const params = useParams({ from: "/$tenant/$project" });
-  return <SettingsLayout tenant={params.tenant} project={params.project} />;
+  const abilities = useProjectAbilities(params);
+  return (
+    <SettingsLayout
+      tenant={params.tenant}
+      project={params.project}
+      administers={abilities?.administer === true}
+    />
+  );
 }
 
 function WorkspaceSettings(): ReactNode {
   const params = useParams({ from: "/tenants/$tenant/settings" });
   return (
     <ProjectlessFrame>
-      <SettingsLayout tenant={params.tenant} project={undefined} />
+      <SettingsLayout
+        tenant={params.tenant}
+        project={undefined}
+        administers={false}
+      />
     </ProjectlessFrame>
   );
 }

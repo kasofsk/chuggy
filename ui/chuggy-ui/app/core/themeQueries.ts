@@ -13,6 +13,7 @@ import {
   ownedThemeSchema,
   ownedThemesResponseSchema,
   projectAppearanceResponseSchema,
+  projectThemeResponseSchema,
   themeChoiceResponseSchema,
 } from "../../../../src/contract/responses.ts";
 
@@ -26,6 +27,19 @@ export function projectAppearanceQuery(partition: PartitionIdentity) {
       ports,
       endpointPath(nativeHttpRoutes.projectAppearance, partition),
       (value) => projectAppearanceResponseSchema.parse(value),
+      signal,
+    ),
+  );
+}
+
+/** The project's default theme, absent where it keeps none, and whether the
+ * reader may change it. */
+export function projectThemeQuery(partition: PartitionIdentity) {
+  return consolePartitionQuery(partition, "appearance-theme", (ports, signal) =>
+    apiGet(
+      ports,
+      endpointPath(nativeHttpRoutes.projectTheme, partition),
+      (value) => projectThemeResponseSchema.parse(value),
       signal,
     ),
   );

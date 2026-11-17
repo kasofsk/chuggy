@@ -26,11 +26,16 @@ const zodProbeViolation = { directive: "script-src", blocked: "eval" };
 const settingsRoot = `/${stubApiTenant}/${stubApiProject}/settings`;
 
 /** Every section's name, in order, as the stub's member is drawn them: none
- * of the site's, whose abilities the stub answers with none. */
+ * of the site's, whose abilities the stub answers with none, and not the
+ * project's appearance, which the stub says they do not administer. */
 const settingsSectionNames = settingsNav({
   tenant: stubApiTenant,
   tenantName: stubApiTenant,
-  project: { address: stubApiProject, name: stubApiProject },
+  project: {
+    address: stubApiProject,
+    name: stubApiProject,
+    administers: false,
+  },
   site: { workspaces: false, permissions: false },
 }).flatMap((group) => group.entries.map((entry) => copyTextEn(entry.label)));
 
