@@ -46,7 +46,7 @@ import type { ProjectTableRow } from "../../core/projectTableRows.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketStateStanding } from "../../core/ticketHeader.ts";
 import { useViewportAtMostEm, viewportNarrowEm } from "../shell/viewport.ts";
-import { readValue } from "../ticket/TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
