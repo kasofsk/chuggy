@@ -21,6 +21,7 @@ import { ticketAt } from "./ticketGraph.ts";
 import type {
   EvaluationFailureDisposition,
   EvaluationInstance,
+  FinalizationOperation,
   FinalizationResultReport,
   InvalidateEvaluationRequest,
   Obligation,
@@ -45,8 +46,10 @@ import {
 import {
   applyEvaluationReport,
   cancelLiveTasks,
+  evaluationRequested,
   executeEvaluationTasks,
   executeWork,
+  finalizationAfter,
   finalizationCurrent,
   finalizationResultValid,
   finalize,
@@ -58,6 +61,7 @@ import {
   reportTask,
   reportTicket,
   reportValid,
+  requestedEvaluation,
   resumedFinalization,
   taskRefOf,
   workTaskObligation,
@@ -181,6 +185,7 @@ export function commandValid(command: TicketCommand): boolean {
       return (
         command.value.ticket > 0 &&
         command.value.workCycle > 0 &&
+        command.value.round > 0 &&
         command.value.evidence > 0
       );
     case "ReportTaskTerminal":
@@ -423,11 +428,24 @@ export function decideResume(
   }
 }
 
+/** Whether an invalidation names the evaluation a ticket holds: its work cycle and its round. */
+export function invalidationCurrent(
+  evaluation: EvaluationInstance,
+  request: InvalidateEvaluationRequest,
+): boolean {
+  return (
+    evaluation.workCycle === request.workCycle &&
+    evaluation.round === request.round
+  );
+}
+
 /**
  * An abandoned evaluation: the one the ticket is judging, or the one a blocked
- * wall holds, is dropped without a verdict and the ticket returns to Work from
- * the source it was judging. Refused `EvaluationNotCurrent` for any other
- * state, or for a cycle the ticket's evaluation is not.
+ * wall holds, is dropped without a verdict and returns to what opened it. One
+ * a work result opened sends the ticket back to Work from the source it was
+ * judging; a requested one goes back to its requester's finalizer. Refused
+ * `EvaluationNotCurrent` for any other state, or for a cycle or round the
+ * ticket's evaluation is not.
  */
 export function decideInvalidateEvaluation(
   graph: TicketGraph,
@@ -437,12 +455,42 @@ export function decideInvalidateEvaluation(
     return refused({ type: "TicketNotFound", value: request.ticket });
   const ticket = ticketAt(graph, asTicketId(request.ticket));
   const evaluation = invalidatableEvaluation(ticket.state);
-  if (evaluation === null || evaluation.workCycle !== request.workCycle)
+  if (evaluation === null || !invalidationCurrent(evaluation, request))
     return refused({
       type: "EvaluationNotCurrent",
-      value: { ticket: request.ticket, workCycle: request.workCycle },
+      value: {
+        ticket: request.ticket,
+        workCycle: request.workCycle,
+        round: request.round,
+      },
     });
   const state = ticket.state;
+  const cancellations =
+    typeof state !== "string" && state.type === "Evaluation"
+      ? cancelLiveTasks(ticket)
+      : [];
+  if (evaluationRequested(evaluation))
+    return decided(
+      {
+        type: "TicketEvaluationWithdrawn",
+        value: {
+          ticket: request.ticket,
+          workCycle: request.workCycle,
+          round: request.round,
+          evidence: request.evidence,
+        },
+      },
+      [
+        ...cancellations,
+        finalize(
+          ticket,
+          finalizationAfter(evaluation, {
+            type: "WithdrawnVerdict",
+            value: request.evidence,
+          }),
+        ),
+      ],
+    );
   return decided(
     {
       type: "TicketEvaluationInvalidated",
@@ -452,12 +500,7 @@ export function decideInvalidateEvaluation(
         evidence: request.evidence,
       },
     },
-    [
-      ...(typeof state !== "string" && state.type === "Evaluation"
-        ? cancelLiveTasks(ticket)
-        : []),
-      executeWork(ticket, nextCycleNumber(ticket)),
-    ],
+    [...cancellations, executeWork(ticket, nextCycleNumber(ticket))],
   );
 }
 
@@ -475,6 +518,8 @@ function decideWorkTerminal(
       const { ticket: id, result, acceptedSourceRef } = report.value;
       const evaluation = begin(
         ticket.workCyclesStarted,
+        1,
+        "OpenedByWork",
         {
           ticket: ticket.definition.id,
           workResult: result.resultRef,
@@ -525,9 +570,12 @@ export function runningStageIndex(instance: EvaluationInstance): number {
  *
  *   - still RUNNING the same stage — Progressed, owing nothing new
  *   - RUNNING a later stage — Progressed, owing the next stage's evaluators
- *   - PASSED — the first finalization attempt of this cycle is owed
- *   - FAILED — the policy picks the edge and the event names it: ReworkStarted
- *     owes a new work cycle, FailureEscalated parks and owes nothing
+ *   - PASSED — the finalization attempt that follows this round is owed
+ *   - FAILED on a requested round — FailureReturned hands the verdict back to
+ *     the finalizer that asked for it, and no policy is consulted
+ *   - FAILED otherwise — the policy picks the edge and the event names it:
+ *     ReworkStarted owes a new work cycle, FailureEscalated parks and owes
+ *     nothing
  *   - BLOCKED — every evaluator answered and one was stopped, so the judgement
  *     is intact and unmade: park, and the resume re-asks exactly those
  */
@@ -552,14 +600,24 @@ function decideEvaluationTerminal(
       );
     case "EvaluationPassed":
       return decided({ type: "TicketEvaluationPassed", value: fact }, [
-        finalize(ticket, {
-          workCycle: updated.workCycle,
-          generation: 1,
-          input: updated.input.workResult,
-          source: updated.input.acceptedSourceRef,
-        }),
+        finalize(ticket, finalizationAfter(updated, "PassedVerdict")),
       ]);
     case "EvaluationFailed": {
+      // A requested evaluation's verdict goes back to its requester, and no
+      // policy is asked until the requester says the failure stands.
+      if (evaluationRequested(updated))
+        return decided(
+          { type: "TicketEvaluationFailureReturned", value: fact },
+          [
+            finalize(
+              ticket,
+              finalizationAfter(updated, {
+                type: "FailedVerdict",
+                value: updated,
+              }),
+            ),
+          ],
+        );
       const entries = reworkEntries(updated, state.value);
       const rework = { ticket: id, report, evidence: entries };
       const disposition = failurePolicy(updated);
@@ -641,15 +699,60 @@ export function decideTaskTerminal(
 }
 
 /**
+ * A finalizer that says a failed verdict stands: the policy is asked of the
+ * evaluation that failed, and the event names the edge it took. Refused
+ * `FinalizationResultNotAllowed` when the attempt does not follow a failure.
+ */
+function decideFailureStands(
+  ticket: Ticket,
+  operation: FinalizationOperation,
+  fact: {
+    readonly ticket: number;
+    readonly workCycle: number;
+    readonly generation: number;
+    readonly evidence: number;
+  },
+  failurePolicy: EvaluationFailurePolicy,
+): TicketDecision {
+  const basis = operation.basis;
+  if (basis === "PassedVerdict" || basis.type !== "FailedVerdict")
+    return refused({
+      type: "FinalizationResultNotAllowed",
+      value: {
+        ticket: fact.ticket,
+        workCycle: fact.workCycle,
+        generation: fact.generation,
+      },
+    });
+  const disposition = failurePolicy(basis.value);
+  const rework = [executeWork(ticket, nextCycleNumber(ticket))];
+  if (typeof disposition !== "string")
+    return decided(
+      {
+        type: "TicketFinalizationFailureInvalidated",
+        value: { ...fact, invalidation: disposition.value },
+      },
+      rework,
+    );
+  return disposition === "ReworkEvaluationFailure"
+    ? decided({ type: "TicketFinalizationFailureReworked", value: fact }, rework)
+    : decided({ type: "TicketFinalizationFailureEscalated", value: fact }, []);
+}
+
+/**
  * The finalizer's result, for the attempt the report names: success completes
- * the ticket, failure owes a new work cycle, and no result at all parks it at
- * the wall whose resume runs the finalizer again. Refused
- * `FinalizationNotCurrent` outside Finalization, or for an attempt the ticket
- * is not on — its work cycle and its generation both.
+ * the ticket when the attempt follows a pass, failure owes a new work cycle, a
+ * request for another evaluation owes its first stage's evaluators, a failure
+ * that stands takes the policy's edge, and no result at all parks it at the
+ * wall whose resume runs the finalizer again. Refused `FinalizationNotCurrent`
+ * outside Finalization, or for an attempt the ticket is not on — its work
+ * cycle and its generation both — and `FinalizationResultNotAllowed` for a
+ * success or a standing failure the attempt's basis does not admit.
  */
 export function decideFinalizationResult(
   graph: TicketGraph,
   report: FinalizationResultReport,
+  failurePolicy: EvaluationFailurePolicy,
 ): TicketDecision {
   if (!graph.tickets.has(report.ticket))
     return refused({ type: "TicketNotFound", value: report.ticket });
@@ -671,9 +774,25 @@ export function decideFinalizationResult(
     generation,
     evidence: report.result.value,
   };
+  const operation = state.value;
   switch (report.result.type) {
     case "FinalizationSucceeded":
+      if (operation.basis !== "PassedVerdict")
+        return refused({
+          type: "FinalizationResultNotAllowed",
+          value: { ticket: report.ticket, workCycle, generation },
+        });
       return decided({ type: "TicketFinalizationSucceeded", value: fact }, []);
+    case "FinalizationNeedsEvaluation":
+      return decided(
+        { type: "TicketFinalizationNeedsEvaluation", value: fact },
+        executeEvaluationTasks(
+          report.ticket,
+          requestedEvaluation(ticket, operation, fact.evidence),
+        ),
+      );
+    case "FinalizationFailureStands":
+      return decideFailureStands(ticket, operation, fact, failurePolicy);
     case "FinalizationNeedsWork":
       return decided({ type: "TicketFinalizationNeedsWork", value: fact }, [
         executeWork(ticket, nextCycleNumber(ticket)),
@@ -688,8 +807,9 @@ export function decideFinalizationResult(
 
 /**
  * THE DECISION: each command to its decider. The policy is asked only by a
- * completion that concludes a failing stage, and the event names the edge it
- * took, so nothing after this asks it again.
+ * completion that concludes a failing stage of an evaluation a work result
+ * opened, or by a finalizer saying a failed verdict stands, and the event
+ * names the edge it took, so nothing after this asks it again.
  */
 export function decide(
   graph: TicketGraph,
@@ -712,6 +832,6 @@ export function decide(
     case "ReportTaskTerminal":
       return decideTaskTerminal(graph, command.value, failurePolicy);
     case "ReportFinalizationResult":
-      return decideFinalizationResult(graph, command.value);
+      return decideFinalizationResult(graph, command.value, failurePolicy);
   }
 }

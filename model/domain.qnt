@@ -355,9 +355,15 @@ module chuggy_domain {
     | TicketEvaluationInvalidated(invalidated) => invalidated.ticket
     | TicketEvaluationFailureInvalidated(invalidated) => invalidated.ticket
     | TicketEvaluationBlocked(progress) => progress.ticket
+    | TicketEvaluationFailureReturned(progress) => progress.ticket
+    | TicketEvaluationWithdrawn(withdrawn) => withdrawn.ticket
     | TicketFinalizationSucceeded(result) => result.ticket
     | TicketFinalizationNeedsWork(result) => result.ticket
     | TicketFinalizationUnavailable(result) => result.ticket
+    | TicketFinalizationNeedsEvaluation(result) => result.ticket
+    | TicketFinalizationFailureReworked(result) => result.ticket
+    | TicketFinalizationFailureEscalated(result) => result.ticket
+    | TicketFinalizationFailureInvalidated(result) => result.ticket
   }
 
   /// THE CONSTRUCTOR'S OWN NAME, which is how the golden aims (and nothing
@@ -381,9 +387,19 @@ module chuggy_domain {
     | TicketEvaluationFailureInvalidated(_) =>
       "TicketEvaluationFailureInvalidated"
     | TicketEvaluationBlocked(_) => "TicketEvaluationBlocked"
+    | TicketEvaluationFailureReturned(_) => "TicketEvaluationFailureReturned"
+    | TicketEvaluationWithdrawn(_) => "TicketEvaluationWithdrawn"
     | TicketFinalizationSucceeded(_) => "TicketFinalizationSucceeded"
     | TicketFinalizationNeedsWork(_) => "TicketFinalizationNeedsWork"
     | TicketFinalizationUnavailable(_) => "TicketFinalizationUnavailable"
+    | TicketFinalizationNeedsEvaluation(_) =>
+      "TicketFinalizationNeedsEvaluation"
+    | TicketFinalizationFailureReworked(_) =>
+      "TicketFinalizationFailureReworked"
+    | TicketFinalizationFailureEscalated(_) =>
+      "TicketFinalizationFailureEscalated"
+    | TicketFinalizationFailureInvalidated(_) =>
+      "TicketFinalizationFailureInvalidated"
   }
 
   /// THE REFUSAL'S NAME, for the golden aims (lastRefusal) and the suites.
@@ -402,6 +418,7 @@ module chuggy_domain {
     | TicketNotResumable(_) => "TicketNotResumable"
     | TaskNotCurrent(_) => "TaskNotCurrent"
     | FinalizationNotCurrent(_) => "FinalizationNotCurrent"
+    | FinalizationResultNotAllowed(_) => "FinalizationResultNotAllowed"
     | EvaluationNotCurrent(_) => "EvaluationNotCurrent"
   }
 
@@ -445,7 +462,7 @@ module chuggy_domain {
 
   /// THE INSTANCE A STEP CLOSES: the one the ticket held before and holds no
   /// longer, as the event left it — a pass or a failure applies its report
-  /// first, and a revoke closes it as it stood.
+  /// first, and a revoke or a withdrawal closes it as it stood.
   pure def closedBy(
       before: Ticket, after: Ticket,
       fact: TicketEvent): List[EvaluationInstance] =
@@ -457,6 +474,8 @@ module chuggy_domain {
         | TicketEvaluationReworkStarted(rework) =>
           applyEvaluationReport(held, rework.report)
         | TicketEvaluationFailureEscalated(failure) =>
+          applyEvaluationReport(held, failure.report)
+        | TicketEvaluationFailureReturned(failure) =>
           applyEvaluationReport(held, failure.report)
         | _ => held
       }))
@@ -651,10 +670,15 @@ module chuggy_domain {
     ReportFinalizationResult({ ticket: j, workCycle: cycle, generation: gen,
       result: FinalizationSucceeded(aFinalizationEvidence) })
 
-  /// An invalidation of ticket j's evaluation of work cycle `cycle`.
-  pure def invalidationOf(j: int, cycle: int): TicketCommand =
-    InvalidateEvaluation({ ticket: j, workCycle: cycle,
+  /// An invalidation of ticket j's evaluation `round` of work cycle `cycle`.
+  pure def invalidationOf(j: int, cycle: int, round: int): TicketCommand =
+    InvalidateEvaluation({ ticket: j, workCycle: cycle, round: round,
       evidence: anInvalidationEvidence })
+
+  /// THE ROUND OF THE EVALUATION A TICKET HOLDS OPEN, and the first round
+  /// where it holds none.
+  pure def heldRound(ticket: Ticket): int =
+    heldInstances(ticket.state).foldl(1, (_, held) => held.round)
 
   /// An id the instance can name that is not j: the universe holds 1 and 2
   /// whenever it holds a ticket at all (init's N_TICKETS >= 1).
@@ -699,8 +723,9 @@ module chuggy_domain {
   /// for every task a ticket has ever been owed, and for the first work task
   /// of an id not released; and a finalizer's result for the attempt a
   /// ticket is on, the generation before it and the cycle before it; and an
-  /// invalidation of the cycle a ticket is on and of the cycle before it, and
-  /// of the first cycle of an id not released. Every
+  /// invalidation of the round a ticket holds in the cycle it is on and of the
+  /// first round of the cycle before it, and of the first round of the first
+  /// cycle of an id not released. Every
   /// one is a command the machine takes (commandTaken), so which of them
   /// `decide` refuses is the ticket's state and nothing else.
   pure def commandProbesIn(
@@ -732,11 +757,13 @@ module chuggy_domain {
       }).flatten()
       .union(absent.map(j => finalizationReportOf(j, 1, 1)))
     val invalidations = live.map(j => {
-        val cycle = c.tickets.get(j).workCyclesStarted
-        if (cycle > 1) Set(invalidationOf(j, cycle), invalidationOf(j, cycle - 1))
-        else Set(invalidationOf(j, 1))
+        val jb = c.tickets.get(j)
+        val cycle = jb.workCyclesStarted
+        if (cycle > 1) Set(invalidationOf(j, cycle, heldRound(jb)),
+          invalidationOf(j, cycle - 1, 1))
+        else Set(invalidationOf(j, 1, heldRound(jb)))
       }).flatten()
-      .union(absent.map(j => invalidationOf(j, 1)))
+      .union(absent.map(j => invalidationOf(j, 1, 1)))
     perId.union(reports).union(finalizations).union(invalidations)
 
   /// The probes `decide` refuses in this graph. No refusal asks the policy,
@@ -1008,12 +1035,13 @@ module chuggy_domain {
     take(ResumeTicket(j), unaskedDisposition)
   }
 
-  /// Whatever the evaluation was judging no longer holds, so the evaluation
-  /// of the cycle the ticket is on is dropped without a verdict.
+  /// Whatever the evaluation was judging no longer holds, so the round the
+  /// ticket holds in the cycle it is on is dropped without a verdict.
   action invalidateEvaluation = all {
     invalidatableTickets.size() > 0,
     nondet j = invalidatableTickets.oneOf()
-    take(invalidationOf(j, tickets.get(j).workCyclesStarted),
+    take(invalidationOf(j, tickets.get(j).workCyclesStarted,
+        heldRound(tickets.get(j))),
       unaskedDisposition)
   }
 
@@ -1109,8 +1137,9 @@ module chuggy_domain {
   /// plan the ticket was released with (so no plan can drift from the
   /// authored data), for a work cycle the ticket has actually started, and
   /// the instances — closed, then the open one — stand in the order those
-  /// cycles ran, strictly ascending, so no cycle has two. The open one's
-  /// agreement with the state holding it is the package's (ticketInvariant).
+  /// cycles and their rounds ran, strictly ascending, so no round of a cycle
+  /// has two. The open one's agreement with the state holding it is the
+  /// package's (ticketInvariant).
   val evaluationsWellFormed: bool = liveTickets.forall(j =>
     val jb = tickets.get(j)
     val instances = ledgerInstances(jb, ledgers.get(j))
@@ -1122,6 +1151,8 @@ module chuggy_domain {
         ev.plan == jb.definition.evaluationPlan,
         ev.workCycle <= jb.workCyclesStarted,
         i == 0 or instances[i - 1].workCycle < ev.workCycle
+          or (instances[i - 1].workCycle == ev.workCycle
+            and instances[i - 1].round < ev.round)
       }))
 
   /// HISTORY IS APPEND-ONLY: against the ledgers the last decision found

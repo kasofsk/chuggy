@@ -583,22 +583,15 @@ async function nativeActionSource(
   };
 }
 
-/** The ticket command a finalizer's stack invalidation is, which the envelope carries whole. */
+/**
+ * A finalizer's stack invalidation, whose command the writer builds: the round
+ * it names is the held evaluation's, which only the replayed graph knows.
+ */
 function stackInvalidationSource(
   operation: string,
   command: StackInvalidationSubmission,
 ): DecisionInput["source"] {
-  return {
-    kind: "Operation",
-    operation: asOperationId(operation),
-    command,
-    ticketCommand: ticketCommandOf({
-      envelope: "SubmitStackInvalidation",
-      ticket: command.ticket,
-      workCycle: command.workCycle,
-      evidence: command.evidence,
-    }),
-  };
+  return { kind: "Operation", operation: asOperationId(operation), command };
 }
 
 async function operationSource(

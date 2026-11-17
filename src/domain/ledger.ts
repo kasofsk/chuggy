@@ -72,7 +72,7 @@ export function slotsClaimed(before: Ticket, after: Ticket): number {
 /**
  * The instance a step closes: the one the ticket held before and holds no
  * longer, as the event left it — a pass or a failure applies its report
- * first, and a revoke closes it as it stood.
+ * first, and a revoke or a withdrawal closes it as it stood.
  */
 export function closedBy(
   before: Ticket,
@@ -83,7 +83,8 @@ export function closedBy(
   return heldInstances(before.state).map((held) =>
     event.type === "TicketEvaluationPassed" ||
     event.type === "TicketEvaluationReworkStarted" ||
-    event.type === "TicketEvaluationFailureEscalated"
+    event.type === "TicketEvaluationFailureEscalated" ||
+    event.type === "TicketEvaluationFailureReturned"
       ? applyEvaluationReport(held, event.value.report)
       : held,
   );

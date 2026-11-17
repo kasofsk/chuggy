@@ -30,6 +30,8 @@ export function isSpawnFor(event: TicketEvent, ticket: TicketId): boolean {
     case "TicketEvaluationInvalidated":
     case "TicketEvaluationFailureInvalidated":
     case "TicketFinalizationNeedsWork":
+    case "TicketFinalizationFailureReworked":
+    case "TicketFinalizationFailureInvalidated":
       return true;
     case "TicketCreated":
     case "TicketUpdated":
@@ -43,8 +45,12 @@ export function isSpawnFor(event: TicketEvent, ticket: TicketId): boolean {
     case "TicketEvaluationPassed":
     case "TicketEvaluationFailureEscalated":
     case "TicketEvaluationBlocked":
+    case "TicketEvaluationFailureReturned":
+    case "TicketEvaluationWithdrawn":
     case "TicketFinalizationSucceeded":
     case "TicketFinalizationUnavailable":
+    case "TicketFinalizationNeedsEvaluation":
+    case "TicketFinalizationFailureEscalated":
       return false;
   }
 }

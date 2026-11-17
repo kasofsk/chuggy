@@ -33,6 +33,7 @@ module chuggy_api {
   type ApiStageRun = StageRun
   type ApiEvaluationProgress = EvaluationProgress
   type ApiEvaluationState = EvaluationState
+  type ApiEvaluationOrigin = EvaluationOrigin
   type ApiEvaluationInstance = EvaluationInstance
   type ApiEvaluationFailureDisposition = EvaluationFailureDisposition
   type ApiResume = Resume
@@ -57,14 +58,17 @@ module chuggy_api {
   // should use projections; its map codec is retained so the generator's
   // mapping remains explicit and tested.
   type ApiTicketGraph = TicketGraph
+  type ApiFinalizationBasis = FinalizationBasis
   type ApiFinalizationOperation = FinalizationOperation
   type ApiTaskTerminalFact = TaskTerminalFact
   type ApiEvaluationReworkFact = EvaluationReworkFact
   type ApiEvaluationInvalidatedFact = EvaluationInvalidatedFact
   type ApiEvaluationFailureInvalidatedFact = EvaluationFailureInvalidatedFact
+  type ApiEvaluationWithdrawnFact = EvaluationWithdrawnFact
   type ApiWorkResultAcceptedEvent = WorkResultAcceptedEvent
   type ApiWorkFailureEvent = WorkFailureEvent
   type ApiFinalizationFact = FinalizationFact
+  type ApiFinalizationFailureInvalidatedFact = FinalizationFailureInvalidatedFact
   type ApiTicketUpdate = TicketUpdate
   type ApiTicketEvent = TicketEvent
   type ApiTicketTaskObligation = TicketTaskObligation

@@ -123,10 +123,10 @@ module chuggy_witness_resume_test {
     .then(doneProduced(4, workTaskIdentity(4, 1))).expect(and {
       stateName(tickets.get(4)) == "Evaluation",
       lastEvent == "TicketWorkResultAccepted",
-      liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 1, 2)),
+      liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 1, 1, 2)),
       allInvariants })
-    .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 2),
-        walled(evaluatorTaskIdentity(4, 1, 1, 1, 2)))).expect(and {
+    .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 1, 2),
+        walled(evaluatorTaskIdentity(4, 1, 1, 1, 1, 2)))).expect(and {
       wallName(tickets.get(4)) == "EvaluationBlockedEscalated",
       lastEvent == "TicketEvaluationBlocked",
       resumeOf(tickets.get(4).state) == ResumeEvaluation,
@@ -140,7 +140,7 @@ module chuggy_witness_resume_test {
     .then(resume(4)).expect(and {
       stateName(tickets.get(4)) == "Evaluation",
       lastEvent == "TicketEvaluationResumed",
-      liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 2, 2)),
+      liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 1, 2, 2)),
       allInvariants })
 
   /// THE PARTIAL RESUME, through the machine: a stage of two, one judging
@@ -152,25 +152,25 @@ module chuggy_witness_resume_test {
     .then(doDispatch(4))
     .then(doneProduced(4, workTaskIdentity(4, 1))).expect(and {
       liveTasks(tickets.get(4)) ==
-        Set(evaluatorTaskIdentity(4, 1, 1, 1, 1), evaluatorTaskIdentity(4, 1, 1, 1, 2)),
+        Set(evaluatorTaskIdentity(4, 1, 1, 1, 1, 1), evaluatorTaskIdentity(4, 1, 1, 1, 1, 2)),
       allInvariants })
-    .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 1),
-        judged(4, evaluatorTaskIdentity(4, 1, 1, 1, 1), EvaluatorPass))).expect(and {
+    .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 1, 1),
+        judged(4, evaluatorTaskIdentity(4, 1, 1, 1, 1, 1), EvaluatorPass))).expect(and {
       // one answer does not conclude the stage
       stateName(tickets.get(4)) == "Evaluation",
       lastEvent == "TicketEvaluationProgressed", lastObligations == [],
-      liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 1, 2)),
+      liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 1, 1, 2)),
       allInvariants })
-    .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 2),
-        walled(evaluatorTaskIdentity(4, 1, 1, 1, 2)))).expect(and {
+    .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 1, 2),
+        walled(evaluatorTaskIdentity(4, 1, 1, 1, 1, 2)))).expect(and {
       wallName(tickets.get(4)) == "EvaluationBlockedEscalated", allInvariants })
     .then(resume(4)).expect(and {
-      liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 2, 2)),
+      liveTasks(tickets.get(4)) == Set(evaluatorTaskIdentity(4, 1, 1, 1, 2, 2)),
       statusOf(tickets.get(4), 1) == Produced(EvaluatorPassed(1)),
       statusOf(tickets.get(4), 2) == Awaiting,
       allInvariants })
-    .then(done(4, evaluatorTaskIdentity(4, 1, 1, 2, 2),
-        judged(4, evaluatorTaskIdentity(4, 1, 1, 2, 2), EvaluatorPass))).expect(and {
+    .then(done(4, evaluatorTaskIdentity(4, 1, 1, 1, 2, 2),
+        judged(4, evaluatorTaskIdentity(4, 1, 1, 1, 2, 2), EvaluatorPass))).expect(and {
       stateName(tickets.get(4)) == "Finalization",
       lastEvent == "TicketEvaluationPassed", allInvariants })
 }
@@ -219,7 +219,7 @@ module chuggy_witness_rework_test {
     .then(doDispatch(4)).expect(allInvariants)
     .then(doneWork(4, workTaskIdentity(4, 1))).expect(and {
       stateName(tickets.get(4)) == "Evaluation", allInvariants })
-    .then(judge(4, evaluatorTaskIdentity(4, 1, 1, 1, 1), EvaluatorFail,
+    .then(judge(4, evaluatorTaskIdentity(4, 1, 1, 1, 1, 1), EvaluatorFail,
         ReworkEvaluationFailure)).expect(and {
       stateName(tickets.get(4)) == "Work",
       lastEvent == "TicketEvaluationReworkStarted",
@@ -233,7 +233,7 @@ module chuggy_witness_rework_test {
     .then(release(4)).expect(allInvariants)
     .then(doDispatch(4)).expect(allInvariants)
     .then(doneWork(4, workTaskIdentity(4, 1))).expect(allInvariants)
-    .then(judge(4, evaluatorTaskIdentity(4, 1, 1, 1, 1), EvaluatorFail,
+    .then(judge(4, evaluatorTaskIdentity(4, 1, 1, 1, 1, 1), EvaluatorFail,
         EscalateEvaluationFailure)).expect(and {
       wallName(tickets.get(4)) == "EvaluationFailureEscalated",
       resumeOf(tickets.get(4).state) == ResumeRework,
@@ -271,13 +271,13 @@ module chuggy_witness_stage_test {
       verdict: EvaluatorPass })), ReworkEvaluationFailure) }
   run stagedPlanWitness = init.then(release).then(doDispatch)
     .then(doneWork(workTaskIdentity(2, 1)))
-    .then(pass(evaluatorTaskIdentity(2, 1, 1, 1, 1)))
+    .then(pass(evaluatorTaskIdentity(2, 1, 1, 1, 1, 1)))
     .expect(and { stateName(tickets.get(2)) == "Evaluation",
       lastEvent == "TicketEvaluationProgressed",
       lastObligations.length() == 1, not(stageAdvanceNever),
-      liveTasks(tickets.get(2)) == Set(evaluatorTaskIdentity(2, 1, 2, 1, 1)),
+      liveTasks(tickets.get(2)) == Set(evaluatorTaskIdentity(2, 1, 1, 2, 1, 1)),
       allInvariants })
-    .then(pass(evaluatorTaskIdentity(2, 1, 2, 1, 1)))
+    .then(pass(evaluatorTaskIdentity(2, 1, 1, 2, 1, 1)))
     .expect(and { stateName(tickets.get(2)) == "Finalization", allInvariants })
 }
 
@@ -353,7 +353,7 @@ module chuggy_witness_gate_test {
   def refusedWith(reason:TicketRefusal):bool=and{
     lastStep==Refused(reason), tickets==prevTickets, allInvariants}
   /// The pass owes the finalizer the operation the ticket now runs.
-  run finalizationSuccessWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskIdentity(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
+  run finalizationSuccessWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskIdentity(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1,1)))
     .expect(and{lastEvent=="TicketEvaluationPassed",
       match tickets.get(1).state {
         | Finalization(op) => lastObligations==[finalize(tickets.get(1),op)]
@@ -365,14 +365,14 @@ module chuggy_witness_gate_test {
   /// A finalizer that reports failure sends the ticket back to work, every
   /// time: there is no wall on this edge. The second cycle's judgement is a
   /// SECOND instance, which is what makes the history a list.
-  run safeAbortReworkWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskIdentity(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
+  run safeAbortReworkWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskIdentity(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1,1)))
     .then(resolve(1,e => FinalizationNeedsWork(e))).expect(and{stateName(tickets.get(1))=="Work",
       lastEvent=="TicketFinalizationNeedsWork",allInvariants})
     // A failure for the cycle the rework replaced names no task the ticket
     // owes.
     .then(refuseWith(ReportTaskTerminal(failureReportOf(1,workTaskIdentity(1,1)))))
     .expect(refusedWith(TaskNotCurrent({ticket:1,task:workTaskIdentity(1,1)})))
-    .then(td(1,workTaskIdentity(1,2))).then(pass(1,evaluatorTaskIdentity(1,2,1,1,1)))
+    .then(td(1,workTaskIdentity(1,2))).then(pass(1,evaluatorTaskIdentity(1,2,1,1,1,1)))
     .expect(and{ledgers.get(1).closedEvaluations.length()==2,allInvariants})
     // A result for the first cycle's attempt is fenced by the cycle.
     .then(refuseWith(finalizationReportOf(1,1,1)))
@@ -387,7 +387,7 @@ module chuggy_witness_gate_test {
   /// there until the environment moved.
   action resume(j:int):bool=all{retryableEscalated.contains(j),
     take(ResumeTicket(j), unaskedDisposition)}
-  run finalizationUnavailableWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskIdentity(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
+  run finalizationUnavailableWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskIdentity(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1,1)))
     .then(resolve(1,e => FinalizationResultUnavailable(e))).expect(and{
       lastEvent=="TicketFinalizationUnavailable",
       wallName(tickets.get(1))=="FinalizationUnavailableEscalated",
@@ -402,7 +402,7 @@ module chuggy_witness_gate_test {
     .expect(refusedWith(FinalizationNotCurrent({ticket:1,workCycle:1,generation:1})))
     .then(resolve(1,e => FinalizationSucceeded(e))).expect(and{tickets.get(1).state==Done,allInvariants})
 
-  run revokeBoundaryWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskIdentity(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1)))
+  run revokeBoundaryWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,workTaskIdentity(1,1))).then(pass(1,evaluatorTaskIdentity(1,1,1,1,1,1)))
     .expect(and{not(revocableTickets.contains(1)),allInvariants})
     .then(refuseWith(RevokeTicket(1)))
     .expect(refusedWith(TicketNotRevocable(1)))

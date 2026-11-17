@@ -574,7 +574,8 @@ module chuggy_refinement {
   action actorInvalidateEvaluation = all {
     invalidatableTickets.size() > 0,
     nondet j = invalidatableTickets.oneOf()
-    journalStep(invalidationOf(j, graph.tickets.get(j).workCyclesStarted),
+    journalStep(invalidationOf(j, graph.tickets.get(j).workCyclesStarted,
+        heldRound(graph.tickets.get(j))),
       unaskedDisposition)
   }
 

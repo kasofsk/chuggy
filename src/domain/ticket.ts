@@ -15,6 +15,7 @@ import type {
   ArtifactMark,
   EvaluationInstance,
   EvaluationReworkEntry,
+  FinalizationBasis,
   FinalizationOperation,
   FinalizationResult,
   Obligation,
@@ -34,8 +35,10 @@ import type {
 import {
   applyFailure,
   applyProduced,
+  begin,
   currentTaskObligations,
   planValid,
+  reworkEntries,
   taskCurrent,
   taskIdentityFor,
 } from "./evaluation.ts";
@@ -201,7 +204,7 @@ export function invalidatedWorkInput(
 ): WorkInput {
   return {
     released: definition.content,
-    cause: { type: "StackInvalidated", value: evidence },
+    cause: { type: "EvaluationInvalidated", value: evidence },
     retryEvidence: [],
   };
 }
@@ -264,6 +267,67 @@ export function finalizationCurrent(
   return (
     operation.workCycle === workCycle && operation.generation === generation
   );
+}
+
+/** Whether a finalizer asked for this evaluation rather than a work result opening it. */
+export function evaluationRequested(instance: EvaluationInstance): boolean {
+  return instance.origin !== "OpenedByWork";
+}
+
+/**
+ * The operation an evaluation hands the ticket to. One a work result opened
+ * starts the cycle's count; a requested one continues from its requester.
+ */
+export function finalizationAfter(
+  instance: EvaluationInstance,
+  basis: FinalizationBasis,
+): FinalizationOperation {
+  return {
+    workCycle: instance.workCycle,
+    round: instance.round,
+    generation:
+      instance.origin === "OpenedByWork"
+        ? 1
+        : instance.origin.value.generation + 1,
+    input: instance.input.workResult,
+    source: instance.input.acceptedSourceRef,
+    basis,
+  };
+}
+
+/**
+ * The next evaluation of the result a finalization holds, in the same work
+ * cycle and under the plan the ticket was dispatched with.
+ */
+export function requestedEvaluation(
+  ticket: Ticket,
+  operation: FinalizationOperation,
+  evidence: number,
+): EvaluationInstance {
+  return begin(
+    operation.workCycle,
+    operation.round + 1,
+    {
+      type: "Requested",
+      value: { generation: operation.generation, evidence },
+    },
+    {
+      ticket: ticket.definition.id,
+      workResult: operation.input,
+      acceptedSourceRef: operation.source,
+    },
+    ticket.definition.evaluationPlan,
+  );
+}
+
+/** The rework entries a failed basis carries, and none for any other basis. */
+export function failedBasisEntries(
+  basis: FinalizationBasis,
+): readonly EvaluationReworkEntry[] {
+  if (basis === "PassedVerdict" || basis.type !== "FailedVerdict") return [];
+  const failed = basis.value;
+  if (failed.state.type !== "EvaluationFailed") return [];
+  return reworkEntries(failed, failed.state.value);
 }
 
 /** Run every evaluator an instance's current run still owes, in the roster's order. */

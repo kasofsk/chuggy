@@ -38,6 +38,7 @@ import {
   attemptGeneration,
   dependenciesComplete,
   hasOpenHumanTask,
+  heldInstances,
   instanceTasks,
   invalidatableEvaluation,
   isReady,
@@ -298,12 +299,21 @@ export function finalizationReportOf(
   };
 }
 
-/** An invalidation of ticket `id`'s evaluation of `workCycle`. */
-export function invalidationOf(id: number, workCycle: number): TicketCommand {
+/** An invalidation of ticket `id`'s evaluation `round` of `workCycle`. */
+export function invalidationOf(
+  id: number,
+  workCycle: number,
+  round: number,
+): TicketCommand {
   return {
     type: "InvalidateEvaluation",
-    value: { ticket: id, workCycle, evidence: anInvalidationEvidence },
+    value: { ticket: id, workCycle, round, evidence: anInvalidationEvidence },
   };
+}
+
+/** The round of the evaluation a ticket holds open, and the first round where it holds none. */
+export function heldRound(ticket: Ticket): number {
+  return heldInstances(ticket.state).at(-1)?.round ?? 1;
 }
 
 /** An id the instance can name that is not `id`: the universe holds 1 and 2 whenever it holds a ticket. */
@@ -377,9 +387,10 @@ export function updateProbesIn(
  * resume; a failure for every task a ticket has ever been owed, and for the
  * first work task of an id not released; and a finalizer's result for the
  * attempt a ticket is on, the generation before it and the cycle before it; and
- * an invalidation of the cycle a ticket is on and of the cycle before it, and
- * of the first cycle of an id not released. Every one is well-formed, so which of them `decide` refuses is the ticket's
- * state and nothing else.
+ * an invalidation of the round a ticket holds in the cycle it is on and of the
+ * first round of the cycle before it, and of the first round of the first
+ * cycle of an id not released. Every one is well-formed, so which of them
+ * `decide` refuses is the ticket's state and nothing else.
  */
 export function commandProbesIn(
   config: Config,
@@ -434,12 +445,16 @@ export function commandProbesIn(
   ];
   const invalidations = [
     ...live.flatMap((j) => {
-      const cycle = ticketAt(graph, j).workCyclesStarted;
+      const ticket = ticketAt(graph, j);
+      const cycle = ticket.workCyclesStarted;
       return cycle > 1
-        ? [invalidationOf(j, cycle), invalidationOf(j, cycle - 1)]
-        : [invalidationOf(j, 1)];
+        ? [
+            invalidationOf(j, cycle, heldRound(ticket)),
+            invalidationOf(j, cycle - 1, 1),
+          ]
+        : [invalidationOf(j, 1, heldRound(ticket))];
     }),
-    ...absent.map((j) => invalidationOf(j, 1)),
+    ...absent.map((j) => invalidationOf(j, 1, 1)),
   ];
   return [...perId, ...reports, ...finalizations, ...invalidations];
 }

@@ -305,7 +305,7 @@ module chuggy_refinement_unit_test {
   pure val g3 = evolveGraph(g2, accepted2.event)
   pure val reworked3 = acceptedAt(g3, ReportTaskTerminal(EvaluationResultReport({
     ticket: 2,
-    result: producedResult(g3.tickets.get(2), evaluatorTaskIdentity(2, 1, 1, 1, 1)),
+    result: producedResult(g3.tickets.get(2), evaluatorTaskIdentity(2, 1, 1, 1, 1, 1)),
     verdict: EvaluatorFail })))
   pure val e4: Entry = { seq: 4, event: reworked3.event }
   pure val reworkJ: List[Entry] = [e1, e2, e3, e4]
@@ -410,7 +410,7 @@ module chuggy_refinement_unit_test {
         ReworkEvaluationFailure))
       .then(journalStep(ReportTaskTerminal(EvaluationResultReport({ ticket: 2,
         result: producedResult(memGraph.tickets.get(2),
-          evaluatorTaskIdentity(2, 1, 1, 1, 1)),
+          evaluatorTaskIdentity(2, 1, 1, 1, 1, 1)),
         verdict: EvaluatorPass })), ReworkEvaluationFailure))
       .expect(and {
         memLedgers.get(2).completions == 0, journalCompletions(2) == 0,
@@ -455,7 +455,7 @@ module chuggy_refinement_witness_test {
       failure: { task: task, evidence: taskRefOf(task) },
       kind: ExecutionUnavailableFailure }))
   pure def evalTask(ticket: int, cycle: int, generation: int): TaskIdentity =
-    evaluatorTaskIdentity(ticket, cycle, 1, generation, 1)
+    evaluatorTaskIdentity(ticket, cycle, 1, 1, generation, 1)
   pure def finalizationOf(cycle: int,
       result: FinalizationResult): TicketCommand =
     ReportFinalizationResult({ ticket: 2, workCycle: cycle, generation: 1,
@@ -637,7 +637,7 @@ module chuggy_refinement_hazard_test {
       result: producedResult(memGraph.tickets.get(ticket), task),
       verdict: v }))
   pure def evalTask(ticket: int, cycle: int): TaskIdentity =
-    evaluatorTaskIdentity(ticket, cycle, 1, 1, 1)
+    evaluatorTaskIdentity(ticket, cycle, 1, 1, 1, 1)
   pure val succeeded: TicketCommand = ReportFinalizationResult({ ticket: 2,
     workCycle: 1, generation: 1,
     result: FinalizationSucceeded(aFinalizationEvidence) })

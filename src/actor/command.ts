@@ -60,15 +60,16 @@ export function dispatchTicketCommand(
   return { type: "DispatchTicket", value: { ticket, source } };
 }
 
-/** The abandonment of the evaluation `workCycle` of a ticket, with the evidence of why. */
+/** The abandonment of evaluation `round` of `workCycle` of a ticket, with the evidence of why. */
 export function invalidateEvaluationCommand(
   ticket: TicketId,
   workCycle: number,
+  round: number,
   evidence: number,
 ): TicketCommand {
   return {
     type: "InvalidateEvaluation",
-    value: { ticket, workCycle, evidence },
+    value: { ticket, workCycle, round, evidence },
   };
 }
 

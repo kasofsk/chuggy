@@ -16,6 +16,7 @@
 
 import type {
   EvaluationInstance,
+  EvaluationOrigin,
   EvaluationPlan,
   EvaluationInput,
   EvaluationReworkEntry,
@@ -64,6 +65,7 @@ export function taskIdentityFor(
   return evaluationTaskOf(
     instance.input.ticket,
     instance.workCycle,
+    instance.round,
     stageOf(instance, run).key,
     run.generation,
     evaluator,
@@ -358,6 +360,8 @@ export function reworkEntries(
 /** Judgement begins: the plan's lowest stage is asked over the artifact named. */
 export function begin(
   workCycle: number,
+  round: number,
+  origin: EvaluationOrigin,
   input: EvaluationInput,
   plan: EvaluationPlan,
 ): EvaluationInstance {
@@ -366,6 +370,8 @@ export function begin(
     throw new Error("evaluation: a plan with no stages cannot begin");
   return {
     workCycle,
+    round,
+    origin,
     input,
     plan,
     state: {
@@ -477,10 +483,22 @@ export function planValid(plan: EvaluationPlan): boolean {
   );
 }
 
+/** Round 1 is the one a work result opens, and every later round was requested. */
+export function originValid(instance: EvaluationInstance): boolean {
+  if (instance.origin === "OpenedByWork") return instance.round === 1;
+  return (
+    instance.round > 1 &&
+    instance.origin.value.generation > 0 &&
+    instance.origin.value.evidence > 0
+  );
+}
+
 /** The protocol's own invariant, which every instance on every ticket satisfies. */
 export function instanceValid(instance: EvaluationInstance): boolean {
   return (
     instance.workCycle > 0 &&
+    instance.round > 0 &&
+    originValid(instance) &&
     instance.input.ticket > 0 &&
     instance.input.workResult > 0 &&
     instance.input.acceptedSourceRef > 0 &&
@@ -605,12 +623,26 @@ export function evaluationStateEquals(
   }
 }
 
+export function evaluationOriginEquals(
+  left: EvaluationOrigin,
+  right: EvaluationOrigin,
+): boolean {
+  if (left === "OpenedByWork" || right === "OpenedByWork")
+    return left === right;
+  return (
+    left.value.generation === right.value.generation &&
+    left.value.evidence === right.value.evidence
+  );
+}
+
 export function instanceEquals(
   left: EvaluationInstance,
   right: EvaluationInstance,
 ): boolean {
   return (
     left.workCycle === right.workCycle &&
+    left.round === right.round &&
+    evaluationOriginEquals(left.origin, right.origin) &&
     left.input.ticket === right.input.ticket &&
     left.input.workResult === right.input.workResult &&
     left.input.acceptedSourceRef === right.input.acceptedSourceRef &&

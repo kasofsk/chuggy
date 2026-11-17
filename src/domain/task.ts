@@ -19,20 +19,21 @@ export function workTaskIdentity(ticket: number, cycle: number): TaskIdentity {
 }
 
 /**
- * One evaluator of one run of one stage, under the two keys the plan
- * authored. No offset is applied: a caller holding a stage index passes that
- * stage's key, which the positional rule makes the same number.
+ * One evaluator of one run of one stage of one round, under the two keys the
+ * plan authored. No offset is applied: a caller holding a stage index passes
+ * that stage's key, which the positional rule makes the same number.
  */
 export function evaluationTaskOf(
   ticket: number,
   workCycle: number,
+  round: number,
   stage: number,
   generation: number,
   evaluator: number,
 ): TaskIdentity {
   return {
     type: "EvaluationTask",
-    value: { ticket, workCycle, stage, generation, evaluator },
+    value: { ticket, workCycle, round, stage, generation, evaluator },
   };
 }
 
@@ -52,6 +53,7 @@ export function taskIdentityEquals(
     right.type === "EvaluationTask" &&
     left.value.ticket === right.value.ticket &&
     left.value.workCycle === right.value.workCycle &&
+    left.value.round === right.value.round &&
     left.value.stage === right.value.stage &&
     left.value.generation === right.value.generation &&
     left.value.evaluator === right.value.evaluator
@@ -73,6 +75,7 @@ export function taskIdentityValid(identity: TaskIdentity): boolean {
   return (
     identity.value.ticket > 0 &&
     identity.value.workCycle > 0 &&
+    identity.value.round > 0 &&
     identity.value.stage > 0 &&
     identity.value.generation > 0 &&
     identity.value.evaluator > 0

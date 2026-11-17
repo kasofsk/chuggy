@@ -128,8 +128,8 @@ export const terminalsAbsorbing: Invariant = (_config, view) =>
  * Every instance is well-formed by the protocol's own invariant, and agrees
  * with the ticket carrying it — this ticket, this plan, a cycle it has
  * started — and the instances, closed then open, stand in the order those
- * cycles ran. The open one's agreement with the state holding it is the
- * package's (`ticketInvariant`).
+ * cycles and their rounds ran. The open one's agreement with the state
+ * holding it is the package's (`ticketInvariant`).
  */
 export const evaluationsWellFormed: Invariant = (_config, view) =>
   everyLiveLedger(view, (t, l, id) => {
@@ -141,7 +141,10 @@ export const evaluationsWellFormed: Invariant = (_config, view) =>
         instance.input.ticket === id &&
         stagesEqual(instance.plan.stages, t.definition.evaluationPlan.stages) &&
         instance.workCycle <= t.workCyclesStarted &&
-        (previous === undefined || previous.workCycle < instance.workCycle)
+        (previous === undefined ||
+          previous.workCycle < instance.workCycle ||
+          (previous.workCycle === instance.workCycle &&
+            previous.round < instance.round))
       );
     });
   });

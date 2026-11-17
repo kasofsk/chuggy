@@ -9,10 +9,12 @@
 
 import type {
   Escalation,
+  FinalizationOperation,
   Obligation,
   TaskIdentity,
   Ticket,
   TicketDecision,
+  TicketEvent,
   TicketGraph,
   WorkInput,
 } from "./generated/modelTypes.ts";
@@ -28,7 +30,9 @@ import {
   taskOwner,
 } from "./task.ts";
 import {
+  evaluationRequested,
   evaluationReworkInput,
+  failedBasisEntries,
   liveTaskList,
   listHasTask,
   releasedContentValid,
@@ -49,7 +53,7 @@ export function workInputValid(input: WorkInput): boolean {
         cause.value.every((entry) => entry.evaluator > 0 && entry.resultRef > 0)
       );
     case "FinalizationRework":
-    case "StackInvalidated":
+    case "EvaluationInvalidated":
       return cause.value > 0;
   }
 }
@@ -60,6 +64,46 @@ export function workInputMatchesTicket(
   input: WorkInput,
 ): boolean {
   return workInputValid(input) && input.released === ticket.definition.content;
+}
+
+/**
+ * Only a requested evaluation, which is never round 1, leaves a basis that is
+ * not a pass, and a failed basis is the evaluation the operation follows.
+ */
+export function finalizationBasisValid(
+  ticket: Ticket,
+  operation: FinalizationOperation,
+): boolean {
+  const basis = operation.basis;
+  if (basis === "PassedVerdict") return true;
+  if (basis.type === "WithdrawnVerdict")
+    return operation.round > 1 && basis.value > 0;
+  const evaluation = basis.value;
+  return (
+    instanceValid(evaluation) &&
+    evaluationRequested(evaluation) &&
+    evaluation.input.ticket === ticket.definition.id &&
+    evaluation.workCycle === operation.workCycle &&
+    evaluation.round === operation.round &&
+    evaluation.input.workResult === operation.input &&
+    evaluation.input.acceptedSourceRef === operation.source &&
+    failedBasisEntries(basis).length > 0
+  );
+}
+
+/** What a finalization attempt must carry for the ticket on it. */
+export function finalizationOperationValid(
+  ticket: Ticket,
+  operation: FinalizationOperation,
+): boolean {
+  return (
+    operation.workCycle === ticket.workCyclesStarted &&
+    operation.round > 0 &&
+    operation.generation >= operation.round &&
+    operation.input > 0 &&
+    operation.source > 0 &&
+    finalizationBasisValid(ticket, operation)
+  );
 }
 
 /** What each wall must carry for the ticket parked at it. */
@@ -93,13 +137,7 @@ export function escalationValid(
     }
     case "FinalizationUnavailableEscalated": {
       const { finalization, evidence } = escalation.value;
-      return (
-        finalization.workCycle === ticket.workCyclesStarted &&
-        finalization.generation > 0 &&
-        finalization.input > 0 &&
-        finalization.source > 0 &&
-        evidence > 0
-      );
+      return finalizationOperationValid(ticket, finalization) && evidence > 0;
     }
   }
 }
@@ -129,12 +167,7 @@ export function ticketInvariant(ticket: Ticket): boolean {
       );
     }
     case "Finalization":
-      return (
-        state.value.workCycle === ticket.workCyclesStarted &&
-        state.value.generation > 0 &&
-        state.value.input > 0 &&
-        state.value.source > 0
-      );
+      return finalizationOperationValid(ticket, state.value);
     case "Escalated":
       return escalationValid(ticket, state.value);
   }
@@ -196,6 +229,7 @@ export function obligationValid(obligation: Obligation): boolean {
       return (
         ticket > 0 &&
         finalization.workCycle > 0 &&
+        finalization.round > 0 &&
         finalization.generation > 0 &&
         configuration > 0 &&
         finalization.input > 0 &&
@@ -307,6 +341,22 @@ export function applyDecision(
     : evolve(graph, decision.value.event);
 }
 
+/** A ticket completes only from a finalization whose basis is a pass. */
+export function completionFollowsAPass(
+  prior: TicketGraph,
+  event: TicketEvent,
+): boolean {
+  if (event.type !== "TicketFinalizationSucceeded") return true;
+  const ticket = prior.tickets.get(event.value.ticket);
+  if (ticket === undefined) return false;
+  const state = ticket.state;
+  return (
+    typeof state !== "string" &&
+    state.type === "Finalization" &&
+    state.value.basis === "PassedVerdict"
+  );
+}
+
 /** The decision is valid at the state it was taken in. */
 export function decisionValid(
   graph: TicketGraph,
@@ -324,6 +374,7 @@ export function decisionValid(
         obligationAgrees(graph, evolved, obligation),
     ) &&
     obligationsUnique(obligations) &&
+    completionFollowsAPass(graph, event) &&
     graphInvariant(evolved)
   );
 }

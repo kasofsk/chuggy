@@ -76,7 +76,12 @@ import type {
   TicketGraph,
   TicketState,
 } from "../domain/generated/modelTypes.ts";
-import { dependableIn, depArtifacts, waitsOn } from "../domain/enablement.ts";
+import {
+  dependableIn,
+  depArtifacts,
+  heldRound,
+  waitsOn,
+} from "../domain/enablement.ts";
 import {
   alwaysPolicy,
   commandTaken,
@@ -89,6 +94,7 @@ import { asTicketId, type TicketId } from "../domain/ids.ts";
 import { ledgerAt, type Ledgers } from "../domain/ledger.ts";
 import { isTerminal, phaseOf } from "../domain/phase.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
+import type { StoredProjectCommand } from "./projectCommand.ts";
 import type {
   DispatchSource,
   ExecutionSourceObservationPort,
@@ -661,7 +667,9 @@ function projectWriterPreflight(
   if (overridesChange !== undefined) return overridesChange;
   const dispatch = operationDispatchTicket(item);
   if (dispatch !== undefined) return { dispatch };
-  const command = item.source.ticketCommand;
+  const command =
+    stackInvalidationCommand(memory.graph, item.source.command) ??
+    item.source.ticketCommand;
   const closed =
     item.source.nativeAction?.open === false ||
     item.source.finalizationRequest?.open === false;
@@ -718,6 +726,22 @@ function executionSourceRefusalCode(
 }
 
 /** The ticket a dispatch command names, absent for every other input. */
+/** The invalidation a finalizer's stack submission asks for, of the evaluation round the ticket holds. */
+function stackInvalidationCommand(
+  graph: TicketGraph,
+  command: StoredProjectCommand,
+): TicketCommand | undefined {
+  if (command.command !== "SubmitStackInvalidation") return undefined;
+  const held = graph.tickets.get(command.ticket);
+  return ticketCommandOf({
+    envelope: "SubmitStackInvalidation",
+    ticket: command.ticket,
+    workCycle: command.workCycle,
+    round: held === undefined ? 1 : heldRound(held),
+    evidence: command.evidence,
+  });
+}
+
 function operationDispatchTicket(item: DecisionInput): TicketId | undefined {
   const command = item.source.command;
   return command.command === "ManualDispatch" ||

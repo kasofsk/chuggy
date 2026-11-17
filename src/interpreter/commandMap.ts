@@ -88,6 +88,8 @@ export type CommandMaterials =
       readonly envelope: "SubmitStackInvalidation";
       readonly ticket: TicketId;
       readonly workCycle: number;
+      /** The round of the evaluation the ticket holds. */
+      readonly round: number;
       /** The journal position the stack was found no longer standing at. */
       readonly evidence: number;
     };
@@ -145,6 +147,7 @@ export function ticketCommandOf(materials: CommandMaterials): TicketCommand {
       return invalidateEvaluationCommand(
         materials.ticket,
         materials.workCycle,
+        materials.round,
         materials.evidence,
       );
     default:

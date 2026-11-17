@@ -24,6 +24,7 @@ import type {
   Escalation,
   EvaluationInstance,
   EvaluationReworkEntry,
+  FinalizationBasis,
   FinalizationOperation,
   ReleasedTicket,
   StageDefinition,
@@ -112,15 +113,34 @@ function ticketEqualsStage(
 }
 
 /** Structural equality on a finalization attempt, field for field. */
+/** Whether two bases are the same arm with the same payload. */
+export function finalizationBasisEquals(
+  left: FinalizationBasis,
+  right: FinalizationBasis,
+): boolean {
+  if (left === "PassedVerdict" || right === "PassedVerdict")
+    return left === right;
+  switch (left.type) {
+    case "FailedVerdict":
+      return (
+        right.type === "FailedVerdict" && instanceEquals(left.value, right.value)
+      );
+    case "WithdrawnVerdict":
+      return right.type === "WithdrawnVerdict" && left.value === right.value;
+  }
+}
+
 export function finalizationOperationEquals(
   left: FinalizationOperation,
   right: FinalizationOperation,
 ): boolean {
   return (
     left.workCycle === right.workCycle &&
+    left.round === right.round &&
     left.generation === right.generation &&
     left.input === right.input &&
-    left.source === right.source
+    left.source === right.source &&
+    finalizationBasisEquals(left.basis, right.basis)
   );
 }
 
@@ -154,8 +174,10 @@ export function workCauseEquals(left: WorkCause, right: WorkCause): boolean {
       );
     case "FinalizationRework":
       return right.type === "FinalizationRework" && left.value === right.value;
-    case "StackInvalidated":
-      return right.type === "StackInvalidated" && left.value === right.value;
+    case "EvaluationInvalidated":
+      return (
+        right.type === "EvaluationInvalidated" && left.value === right.value
+      );
   }
 }
 

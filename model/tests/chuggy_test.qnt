@@ -23,7 +23,7 @@ module chuggy_test {
 
   pure def workOf(cycle: int): TaskIdentity = workTaskIdentity(1, cycle)
   pure def evalOfRun(cycle: int, s: int, generation: int, e: int): TaskIdentity =
-    evaluatorTaskIdentity(1, cycle, s + 1, generation, e)
+    evaluatorTaskIdentity(1, cycle, 1, s + 1, generation, e)
   pure def evalOf(cycle: int, s: int, e: int): TaskIdentity =
     evalOfRun(cycle, s, 1, e)
 
@@ -164,7 +164,8 @@ module chuggy_test {
   pure def finalized(c: World, j: int, result: FinalizationResult): Stepped =
     stepped(c, decideFinalizationResult(graphOf(c), { ticket: j,
       workCycle: c.tickets.get(j).workCyclesStarted,
-      generation: D::attemptGeneration(c.tickets.get(j)), result: result }))
+      generation: D::attemptGeneration(c.tickets.get(j)), result: result },
+      _ => D::unaskedDisposition))
   pure def resumed(c: World, j: int): Stepped =
     stepped(c, decideResume(graphOf(c), j))
   pure def dispatched(c: World, j: int): Stepped =
@@ -333,8 +334,8 @@ module chuggy_test {
     dEval1.obligations == [],
     named(dEval2) == "TicketEvaluationPassed",
     dEval2.obligations == [FinalizeTicket({ ticket: 1,
-      finalization: { workCycle: 1, generation: 1, input: 101,
-        source: srcAccepted },
+      finalization: { workCycle: 1, round: 1, generation: 1, input: 101,
+        source: srcAccepted, basis: PassedVerdict },
       configuration: def1.finalizationConfiguration })],
     named(dComplete) == "TicketFinalizationSucceeded",
     dComplete.event == TicketFinalizationSucceeded({ ticket: 1, workCycle: 1,
@@ -346,8 +347,8 @@ module chuggy_test {
       Work({ input: initialWorkInput(def1), source: srcDispatch }),
     tagOf(c3.tickets.get(1)) == "Evaluation",
     tagOf(c4.tickets.get(1)) == "Evaluation",
-    c5.tickets.get(1).state == Finalization({ workCycle: 1, generation: 1,
-      input: 101, source: srcAccepted }),
+    c5.tickets.get(1).state == Finalization({ workCycle: 1, round: 1,
+      generation: 1, input: 101, source: srcAccepted, basis: PassedVerdict }),
     c6.tickets.get(1).state == Done
   })
 
@@ -868,8 +869,8 @@ module chuggy_test {
     // the artifact the finalizer could not commit stays.
     dFinalizationUnavailable.post.tickets.get(1).state ==
       Escalated(FinalizationUnavailableEscalated({
-        finalization: { workCycle: 1, generation: 1, input: 101,
-          source: srcAccepted },
+        finalization: { workCycle: 1, round: 1, generation: 1, input: 101,
+          source: srcAccepted, basis: PassedVerdict },
         evidence: evidence })),
     liveTasks(dFinalizationUnavailable.post.tickets.get(1)) == Set(),
     D::attemptGeneration(dFinalizationUnavailable.post.tickets.get(1)) == 1,
@@ -1007,8 +1008,8 @@ module chuggy_test {
     tagOf(dResumeFinalizer.post.tickets.get(1)) == "Finalization",
     D::attemptGeneration(dResumeFinalizer.post.tickets.get(1)) == 2,
     dResumeFinalizer.obligations == [FinalizeTicket({ ticket: 1,
-      finalization: { workCycle: 1, generation: 2, input: 101,
-        source: srcAccepted },
+      finalization: { workCycle: 1, round: 1, generation: 2, input: 101,
+        source: srcAccepted, basis: PassedVerdict },
       configuration: def1.finalizationConfiguration })],
     not(hasOpenHumanTask(dResumeFinalizer.post.tickets.get(1))),
     D::retryableIn(graphOf(cEscFinalizer), 1),

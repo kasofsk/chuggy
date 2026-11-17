@@ -171,6 +171,7 @@ export function eventPayloadTicketAgrees(event: TicketEvent): boolean {
     case "TicketEvaluationReworkStarted":
     case "TicketEvaluationFailureEscalated":
     case "TicketEvaluationFailureInvalidated":
+    case "TicketEvaluationFailureReturned":
       return reportTicket(event.value.report) === eventTicket(event);
     case "TicketEvaluationInvalidated":
     case "TicketCreated":
@@ -185,6 +186,11 @@ export function eventPayloadTicketAgrees(event: TicketEvent): boolean {
     case "TicketFinalizationSucceeded":
     case "TicketFinalizationNeedsWork":
     case "TicketFinalizationUnavailable":
+    case "TicketEvaluationWithdrawn":
+    case "TicketFinalizationNeedsEvaluation":
+    case "TicketFinalizationFailureReworked":
+    case "TicketFinalizationFailureEscalated":
+    case "TicketFinalizationFailureInvalidated":
       return true;
   }
 }
