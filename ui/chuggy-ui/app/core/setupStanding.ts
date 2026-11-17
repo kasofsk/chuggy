@@ -58,7 +58,6 @@ import {
 } from "./projectRepositories.ts";
 import { sessionPlacementShort, sessionRunnerShort } from "./sessionRunners.ts";
 import { setupCommandArguments } from "./setupArguments.ts";
-import type { SetupNorthStarAnswer } from "./setupArguments.ts";
 import {
   setupBindingMeant,
   setupBootstrapped,
@@ -133,7 +132,6 @@ export type SetupLack =
       readonly repository: string;
     }
   | { readonly lacks: "Mcp" }
-  | { readonly lacks: "NorthStar" }
   /** `off` where the plugin is installed and not enabled. */
   | { readonly lacks: "Plugin"; readonly off: boolean }
   /** `reach` is what the apps grant the folder's remote, where every read that says so was got. */
@@ -503,29 +501,6 @@ function setupProjectStep(
     };
   }
   return setupDone("project", name);
-}
-
-/** Done where the project's settings carry a North Star, or the step is passed over; never asked of a project that is not there, and unread where its settings were not got, as the project step is. */
-function setupNorthStarStep(
-  reads: SetupReads,
-  none: boolean,
-  skipped: SetupNorthStarAnswer | undefined,
-): SetupStep {
-  if (skipped !== undefined)
-    return setupDone("north-star", { id: "setup-step-north-star-skipped" });
-  const lacking: SetupLack = { lacks: "NorthStar" };
-  if (none) return setupUndone("north-star", "todo", undefined, lacking);
-  const settings = reads.settings;
-  if (settings.read !== "Got")
-    return setupUnread("north-star", "settings", setupFateOf(settings));
-  return settings.value.overrides.northStar === undefined
-    ? setupUndone(
-        "north-star",
-        "todo",
-        { id: "setup-step-north-star-none" },
-        lacking,
-      )
-    : setupDone("north-star", { id: "setup-step-north-star-set" });
 }
 
 /**
@@ -1325,14 +1300,12 @@ function setupMcpStep(
  * itself to do, since a read that was got is what said so. `named`, whether
  * the agent's configuration here names chuggy's server for the project
  * chosen, and `plugin`, how this machine has chuggy's Claude Code plugin, are
- * the machine's to say and no read's; `northStar` is the North Star step
- * passed over, where the run's arguments said so.
+ * the machine's to say and no read's.
  */
 export function setupStanding(
   reads: SetupReads,
   named: boolean,
   plugin: SetupPluginHere,
-  northStar?: SetupNorthStarAnswer,
 ): SetupStanding {
   const workspaces = reads.workspaces.tenants;
   const workspaceNamed = workspaceNamesListed(workspaces);
@@ -1371,7 +1344,6 @@ export function setupStanding(
       setupPluginStep(plugin),
       workspace,
       project,
-      setupNorthStarStep(reads, none, northStar),
       setupMcpStep(partition, none, named, workspaceNamed),
       setupGithubStep(reads, workspace.state === "todo", none),
       setupRepositoryStep(reads, none),

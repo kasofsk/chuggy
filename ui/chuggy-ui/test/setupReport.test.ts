@@ -49,7 +49,6 @@ import type {
   SetupMergeAnswered,
   SetupServeAnswered,
   SetupTicketAnswered,
-  SetupNorthStarAnswered,
   SetupReport,
   SetupSignInEnded,
   SetupStepSaid,
@@ -105,11 +104,6 @@ const steps: readonly SetupStepSaid[] = [
   { step: "plugin", state: "done", detail: { id: "setup-step-plugin-on" } },
   { step: "workspace", state: "done", detail: "acme" },
   { step: "project", state: "done", detail: "acme/widgets" },
-  {
-    step: "north-star",
-    state: "done",
-    detail: { id: "setup-step-north-star-set" },
-  },
   {
     step: "mcp",
     state: "todo",
@@ -434,18 +428,6 @@ const things: {
     workspace: "acme",
     project: "widgets",
   })),
-  NorthStar: (["folder", "question"] as const).map((drawn) => ({
-    thing: "NorthStar",
-    tell: { id: "setup-mend-north-star-tell", args: { drawn } },
-    draft: {
-      id:
-        drawn === "folder"
-          ? "setup-north-star-draft-folder"
-          : "setup-north-star-draft-ask",
-    },
-    workspace: "acme",
-    project: "widgets",
-  })),
   Name: [
     {
       thing: "Name",
@@ -629,13 +611,6 @@ const ticketAnswers: readonly (SetupTicketAnswered | undefined)[] = [
   },
 ];
 
-/** What a run of `north-star` can have had answered: nothing asked, written, and failed. */
-const northStarAnswers: readonly (SetupNorthStarAnswered | undefined)[] = [
-  undefined,
-  { answered: "Written" },
-  { answered: "Failed", failure: { id: "failure-no-connection" } },
-];
-
 /** What a run of `serve` can have had answered: nothing asked, each write written, and each refused. */
 const serveAnswers: readonly (SetupServeAnswered | undefined)[] = [
   undefined,
@@ -732,8 +707,6 @@ const roster: {
     { report: "AskedWrongly", fault: "Test" },
     { report: "AskedWrongly", fault: "Brief" },
     { report: "AskedWrongly", fault: "Opened" },
-    { report: "AskedWrongly", fault: "NorthStar" },
-    { report: "AskedWrongly", fault: "NorthStarText" },
   ],
   SiteUnknown: [{ report: "SiteUnknown" }],
   Busy: [
@@ -933,12 +906,6 @@ const roster: {
     answered,
     checklist: checklist(things.Brief[0] as SetupThing),
   })),
-  NorthStar: northStarAnswers.map((answered) => ({
-    report: "NorthStar",
-    project: answered === undefined ? undefined : "acme/widgets",
-    answered,
-    checklist: checklist(things.Brief[0] as SetupThing),
-  })),
   RunnerOut: pairs.flatMap(({ workspace, project }) =>
     outsOf(project === undefined ? "ChatHost" : "Runner").map((out) => ({
       report: "RunnerOut",
@@ -964,7 +931,6 @@ const configuring: ReadonlySet<SetupReport["report"]> = new Set([
   "Merge",
   "Serve",
   "Ticket",
-  "NorthStar",
 ]);
 
 /** Every report but a checklist and a run of `mcp` or `runner`, which is every report a run that is not signed in can make. */
@@ -1147,8 +1113,7 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
     report.report === "Bind" ||
     report.report === "Merge" ||
     report.report === "Serve" ||
-    report.report === "Ticket" ||
-    report.report === "NorthStar"
+    report.report === "Ticket"
   )
     return carried(report.checklist, answers);
   if (report.report === "Plugin")
@@ -1164,7 +1129,6 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
       thing.thing === "Name" ||
       thing.thing === "Brief" ||
       thing.thing === "First" ||
-      thing.thing === "NorthStar" ||
       thing.thing === "Configure"
       ? project(thing)
       : report.next.carried;
@@ -1328,7 +1292,7 @@ test("a run on a Node too old, on a platform not served, one asked wrongly and o
     roster[kind].map((report) => setupReportExit(report));
   expect(exits("NodeOld")).toEqual([2, 2]);
   expect(exits("Unserved")).toEqual([2]);
-  expect(exits("AskedWrongly")).toEqual(roster.AskedWrongly.map(() => 2));
+  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
   expect(exits("SiteUnknown")).toEqual([2]);
 });
 
@@ -1440,7 +1404,6 @@ test("signed in, the bare command prints what was found, each step in columns, a
     "step: plugin      done     Claude Code here has chuggy's plugin, on",
     "step: workspace   done     acme",
     "step: project     done     acme/widgets",
-    "step: north-star  done     the project has a North Star",
     "step: mcp         todo     Claude Code here has no chuggy MCP server for acme/widgets",
     "step: github      unread   its GitHub accounts were not answered (Fault)",
     "step: repository  todo",
@@ -1516,7 +1479,6 @@ test("no checklist but bind's, merge's and watch's ends on a command: whatever e
       thing.thing === "Done"
         ? 0
         : (thing.thing === "Offer" && thing.command === "Plugin") ||
-            thing.thing === "NorthStar" ||
             imageRecommended
           ? 2
           : 1,

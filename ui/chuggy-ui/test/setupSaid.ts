@@ -94,13 +94,6 @@ export type SaidThing =
       readonly project: string;
     }
   | {
-      readonly thing: "NorthStar";
-      readonly tell: string;
-      readonly draft: string;
-      readonly workspace: string;
-      readonly project: string;
-    }
-  | {
       readonly thing: "Configure";
       readonly tell: string;
       readonly workspace: string;
@@ -134,12 +127,6 @@ export function saidThing(thing: SetupThing): SaidThing {
     case "Name":
     case "Brief":
       return { ...thing, ask: copyTextEn(thing.ask) };
-    case "NorthStar":
-      return {
-        ...thing,
-        tell: copyTextEn(thing.tell),
-        draft: copyTextEn(thing.draft),
-      };
     case "Failed":
       return { ...thing, found: copyTextEn(thing.found) };
   }
@@ -155,8 +142,6 @@ export function saidNext(next: SetupNext): {
 export const saidTodo: Said = ["todo", ""];
 export const saidAcme: Said = ["done", "acme"];
 export const saidWidgets: Said = ["done", "acme/widgets"];
-/** The North Star step where the project's settings carry one. */
-export const saidStarred: Said = ["done", "the project has a North Star"];
 export const saidOrg: Said = ["done", "acme-org"];
 /** The MCP step where the agent's configuration here names chuggy's server for the project. */
 export const saidServed: Said = [
@@ -173,7 +158,6 @@ export const saidLive: Said = ["done", "live"];
 export const saidReady = [
   saidAcme,
   saidWidgets,
-  saidStarred,
   saidServed,
   saidGranted,
   saidRepository,
@@ -196,7 +180,6 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
     saidTodo,
     saidTodo,
     saidTodo,
-    saidTodo,
   ],
   Workspace: [
     saidAcme,
@@ -206,12 +189,10 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
     saidTodo,
     saidTodo,
     saidTodo,
-    saidTodo,
   ],
   Project: [
     saidAcme,
     saidWidgets,
-    saidStarred,
     saidServed,
     saidTodo,
     saidTodo,
@@ -221,7 +202,6 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Portal: [
     saidAcme,
     saidWidgets,
-    saidStarred,
     saidServed,
     ["waiting", "acme-org has the portal app, not the worker app"],
     saidTodo,
@@ -231,7 +211,6 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Apps: [
     saidAcme,
     saidWidgets,
-    saidStarred,
     saidServed,
     saidOrg,
     saidTodo,
@@ -241,7 +220,6 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Added: [
     saidAcme,
     saidWidgets,
-    saidStarred,
     saidServed,
     saidGranted,
     ["waiting", "acme-org/widgets is added, its configuration not read yet"],
@@ -251,7 +229,6 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Configured: [
     saidAcme,
     saidWidgets,
-    saidStarred,
     saidServed,
     saidGranted,
     saidRepository,
@@ -261,7 +238,6 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Offline: [
     saidAcme,
     saidWidgets,
-    saidStarred,
     saidServed,
     saidGranted,
     saidRepository,
@@ -315,26 +291,23 @@ export const saidUnread: Readonly<
 > = {
   inventory: [1, "your projects were"],
   settings: [1, "acme/widgets: its chat settings were"],
-  installations: [4, "its GitHub accounts were"],
-  portalGrant: [4, "what the portal app is granted on GitHub was"],
-  workerGrant: [4, "what the worker app is granted on GitHub was"],
-  repositories: [5, "its repositories were"],
-  work: [6, "where its work runs was"],
-  placement: [6, "its runners were"],
-  landed: [7, "its tickets were"],
-  moving: [7, "its tickets were"],
-  drafts: [7, "its drafts were"],
-  landings: [7, "a ticket's finalizations were"],
+  installations: [3, "its GitHub accounts were"],
+  portalGrant: [3, "what the portal app is granted on GitHub was"],
+  workerGrant: [3, "what the worker app is granted on GitHub was"],
+  repositories: [4, "its repositories were"],
+  work: [5, "where its work runs was"],
+  placement: [5, "its runners were"],
+  landed: [6, "its tickets were"],
+  moving: [6, "its tickets were"],
+  drafts: [6, "its drafts were"],
+  landings: [6, "a ticket's finalizations were"],
 };
 
 /** Where the GitHub step is said, which the project's repositories leave unread as they do their own step: it is held to the account that owns one. */
-const saidGithubAt = 4;
+const saidGithubAt = 3;
 
 /** Where the MCP step is said, which is to do wherever no project is read. */
-const saidMcpAt = 3;
-
-/** Where the North Star step is said, which the project's settings leave unread as they do the project step. */
-const saidNorthStarAt = 2;
+const saidMcpAt = 2;
 
 /** How each way a read fails is said. */
 export const saidFates: Readonly<
@@ -364,18 +337,12 @@ export function saidFated(
   const said = [...saidLanding];
   said[at] = ["unread", `${subject} ${saidFates[fate]}`];
   if (read === "repositories") said[saidGithubAt] = said[at] ?? saidTodo;
-  if (read === "settings")
-    said[saidNorthStarAt] = [
-      "unread",
-      `its chat settings were ${saidFates[fate]}`,
-    ];
   if (read === "inventory")
     for (const [after, hung] of [
-      [saidNorthStarAt, "its chat settings were"],
       [saidGithubAt, "its repositories were"],
-      [5, "its repositories were"],
-      [6, "where its work runs was"],
-      [7, "its tickets were"],
+      [4, "its repositories were"],
+      [5, "where its work runs was"],
+      [6, "its tickets were"],
     ] as const)
       said[after] = ["unread", `${hung} not read`];
   if (read === "inventory") said[saidMcpAt] = saidTodo;
@@ -405,7 +372,6 @@ export const saidMember: readonly Said[] = [
   ["waiting", "acme, where you are a member and not an admin"],
   ["todo", "no project of acme is shown to you"],
   saidTodo,
-  saidTodo,
   saidAccountsUnshown,
   saidTodo,
   saidTodo,
@@ -423,7 +389,6 @@ export function saidViewerSite(): SetupSite {
 export const saidViewer: readonly Said[] = [
   ["waiting", "acme, where you see a project and are not an admin"],
   ["unread", "acme/widgets: its chat settings were not shown to you"],
-  ["unread", "its chat settings were not shown to you"],
   saidServed,
   saidAccountsUnshown,
   saidRepository,

@@ -79,7 +79,6 @@ test("a newcomer with nothing is shown every step to do, and told how a workspac
       pluginOn,
       "step: workspace   todo     you are in no workspace yet",
       "step: project     todo",
-      "step: north-star  todo",
       "step: mcp         todo",
       "step: github      todo",
       "step: repository  todo",
@@ -105,7 +104,6 @@ test("a person part-way is shown what is done, what is waited on and what is to 
       pluginOn,
       "step: workspace   done     acme",
       "step: project     done     acme/widgets",
-      "step: north-star  done     the project has a North Star",
       "step: mcp         done     Claude Code here runs chuggy's MCP server for acme/widgets",
       "step: github      waiting  acme-org has the portal app, not the worker app",
       "step: repository  todo",
@@ -118,6 +116,28 @@ test("a person part-way is shown what is done, what is waited on and what is to 
   });
 });
 
+test("a project whose settings hold a North Star is shown the same checklist as a fresh one, which names no North Star and has mcp next after the project", async () => {
+  const fresh = await printed(await machineSignedIn(setupSiteAt("Project")));
+  const starred = setupSiteAt("Project");
+  for (const project of starred.projects)
+    project.overrides = { northStar: "Widgets for everyone." };
+  expect(await printed(await machineSignedIn(starred))).toEqual(fresh);
+  const steps = fresh.lines
+    .filter((line) => line.startsWith("step: "))
+    .map((line) => line.split(/ +/u)[1]);
+  expect(steps).toEqual([
+    "plugin",
+    "workspace",
+    "project",
+    "mcp",
+    "github",
+    "repository",
+    "runner",
+    "ticket",
+  ]);
+  expect(fresh.lines.join("\n")).not.toMatch(/north.?star/iu);
+});
+
 test("a person fully set up is shown every step done, and nothing is named to run", async () => {
   const machine = await machineSignedIn(setupSiteAt("Landed"));
   expect(await printed(machine)).toEqual({
@@ -127,7 +147,6 @@ test("a person fully set up is shown every step done, and nothing is named to ru
       pluginOn,
       "step: workspace   done     acme",
       "step: project     done     acme/widgets",
-      "step: north-star  done     the project has a North Star",
       "step: mcp         done     Claude Code here runs chuggy's MCP server for acme/widgets",
       "step: github      done     acme-org, both apps granted acme-org/widgets",
       "step: repository  done     acme-org/widgets",
@@ -205,7 +224,7 @@ test("a repository whose own account lacks the worker app holds the GitHub step,
     setupSiteClaim("acme-org", "portal"),
   ]);
   const done = await printed(await machineSignedIn(world));
-  expect(done.lines.slice(6, 8)).toEqual([
+  expect(done.lines.slice(5, 7)).toEqual([
     "step: github      waiting  acme-org, which owns acme-org/widgets, has the portal app, not the worker app",
     "step: repository  done     acme-org/widgets",
   ]);
