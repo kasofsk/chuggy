@@ -171,8 +171,7 @@ runners-fallback-none-about = { -personal-runner(case: "upper", form: "plural") 
 runners-fallback-strict-about = { -role-member(case: "upper", form: "a") }'s { -personal-runner(form: "plural") } take the work they start here, and while they have one serving this { -project } no shared { -runner } does.
 # spells -work-stage: the work in general
 runners-fallback-preferred-about = { -role-member(case: "upper", form: "a") }'s { -personal-runner(form: "plural") } take the work they start here while one is online, and a shared { -runner } takes it while none is.
-runners-writing = Writing
-runners-written = Written
+runners-fallback-saved = { runners-fallback-title } saved
 
 ## The project's placement.
 
@@ -188,5 +187,6 @@ runners-placement-work = { -work-stage(case: "upper") }
 runners-placement-evaluation = { -evaluation(case: "upper") }
 runners-placement-chat = { -thread(case: "upper") }
 runners-placement-lead = { -lead(case: "upper") }
+runners-placement-saved = { -placement(case: "upper") } saved
 runners-placement-landed = { -work-stage(case: "upper") } and { -evaluation } saved
 runners-placement-unhosted = Needs { -hosted-runs }

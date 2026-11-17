@@ -124,8 +124,7 @@ repositories-unbind-line = New { -ticket(form: "plural") } can't name { $reposit
 ## A repository's page: its settings, what it declares, and its last import.
 
 repositories-not-bound = Not bound
-repositories-writing = Writing
-repositories-written = Written
+repositories-saved = { $setting } saved
 repositories-finalization-title = { -finalization(case: "upper") }
 repositories-finalization-about = How a finished { -ticket } is { -finalization(form: "ed") }. { -ticket(case: "upper", form: "a") } may choose otherwise.
 repositories-workflow-files = Workflow files

@@ -167,24 +167,24 @@ test("a refusal on a screen still drawn is its own line and no toast", async () 
   expect(toastLines()).toStrictEqual([]);
 });
 
-test("a screen drawn again while its write is in flight draws it pending, then answered", async () => {
+test("a screen drawn again while its write is in flight draws it pending, then its landing's toast", async () => {
   const held = heldAnswer();
   const page = await drawn(consoleQueryClient(), () => held.answered);
   await saved();
   await page.shown(false);
   await page.shown(true);
 
-  expect(within(sectionOf(sectionTitle)).getByText("Writing")).toBeDefined();
+  expect(within(sectionOf(sectionTitle)).getByText("Saving…")).toBeDefined();
 
   await turned(() => {
     held.release(answer({ fallback: "Preferred", administers: true }));
   });
   await settled();
 
-  expect(within(sectionOf(sectionTitle)).getByText("Written")).toBeDefined();
+  expect(within(sectionOf(sectionTitle)).queryByText("Saving…")).toBeNull();
   expect(within(sectionOf(sectionTitle)).getByText("Preferred")).toBeDefined();
   expect(writesSent(page.sent)).toBe(1);
-  expect(toastLines()).toStrictEqual([]);
+  expect(toastLines()).toStrictEqual(["Personal runners saved"]);
 });
 
 test("a write the server faulted on is sent once", async () => {

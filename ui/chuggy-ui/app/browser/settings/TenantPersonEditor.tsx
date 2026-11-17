@@ -250,9 +250,13 @@ function TenantPersonEditorBody(props: {
   readonly abilities: AccessTenantAbilities | undefined;
   readonly changing: TenantPersonChanging;
 }): ReactNode {
+  const text = useCopyText();
   const { person, abilities, changing } = props;
   return (
     <div className="grid gap-5" aria-busy={changing.sending !== undefined}>
+      <p className="m-0 text-sm text-ink-3">
+        {text({ id: "settings-people-applied" })}
+      </p>
       <TenantPersonWorkspace
         boxes={tenantPersonWorkspaceBoxes(abilities, person)}
         changing={changing}

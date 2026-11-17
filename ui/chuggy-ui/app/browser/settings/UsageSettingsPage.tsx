@@ -65,9 +65,9 @@ import { AgentPause } from "../AgentPause.tsx";
 import { LinePart } from "../ui/LinePart.tsx";
 import { agentAccountsReread, useAgentAccounts } from "../agentAccounts.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
-import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useNowMs } from "../Freshness.tsx";
+import { settingsSectionRefusalOf } from "../settingsSectionRefusal.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
@@ -102,6 +102,10 @@ function usageSettingsWrite(
         apiWriteAgentAccountSettings(ports, agent, settings),
       ),
     refusal: (failure) => failureWords(failure).word,
+    landedUnseen: () => ({
+      id: "usage-saved",
+      args: { agent: accountAgentLabel(agent) },
+    }),
   };
 }
 
@@ -151,25 +155,6 @@ function usageSettingsTurnWrite(
       ),
     refusal: agentAccountTurnOffRefusal,
   };
-}
-
-/** The write's line: under way, landed, or refused in the write's own words. */
-function UsageSettingsNotice(props: {
-  readonly writing: ConsoleWriting<AgentAccountSettings, undefined>;
-}): ReactNode {
-  const text = useCopyText();
-  const writing = props.writing;
-  if (writing.isPending)
-    return <Notice tone="info" inline detail={text({ id: "usage-writing" })} />;
-  if (writing.error === null)
-    return writing.isSuccess ? (
-      <Notice tone="live" inline detail={text({ id: "usage-written" })} />
-    ) : null;
-  return (
-    <Notice tone="danger" inline>
-      <ConsoleWriteRefusedWords refused={writing.error} />
-    </Notice>
-  );
 }
 
 /** One pause as its line, named where it is a credential's, saying which
@@ -591,29 +576,23 @@ function UsageSettingsEditing(props: {
   return (
     <div className="grid gap-3">
       {usageSettingsPercentNames.map((name) => (
-        <label key={name} className="grid gap-1">
-          <span className="text-sm text-ink-3">
-            {text({
-              id: "usage-window-pauses-at",
-              args: { window: usageSettingsPercentLabel(name) },
-            })}
-          </span>
-          <Input
-            numeric
-            label={text(usageSettingsPercentLabel(name))}
-            unit="%"
-            value={draft[name]}
-            invalid={faults?.has(name) === true}
-            onChange={(typed) => {
-              props.onDraft({ ...draft, [name]: typed });
-            }}
-          />
-          {faults?.has(name) === true ? (
-            <span className="text-sm text-tone-fail">
-              {text(agentAccountPercentFault)}
-            </span>
-          ) : null}
-        </label>
+        <Input
+          key={name}
+          numeric
+          labelShown
+          label={text({
+            id: "usage-window-pauses-at",
+            args: { window: usageSettingsPercentLabel(name) },
+          })}
+          unit="%"
+          value={draft[name]}
+          {...(faults?.has(name) === true
+            ? { error: text(agentAccountPercentFault) }
+            : {})}
+          onChange={(typed) => {
+            props.onDraft({ ...draft, [name]: typed });
+          }}
+        />
       ))}
       <Checkbox
         label={text({ id: "usage-threads-pause" })}
@@ -636,7 +615,6 @@ function UsageSettingsAgent(props: {
   const saving = useConsoleWrite(usageSettingsWrite(account.agent), {
     drawn: true,
   });
-  const shown = saving.isPending || saving.error !== null || saving.isSuccess;
   const read = draft === undefined ? undefined : agentAccountDraftRead(draft);
   const credentials = agentAccountCredentialsDrawn(account, nowMs);
   return (
@@ -645,9 +623,13 @@ function UsageSettingsAgent(props: {
       about={text({ id: "usage-agent-about" })}
       editing={draft !== undefined}
       editable
-      savable={!saving.isPending && read?.settings !== undefined}
+      changed={
+        draft !== undefined && !agentAccountDraftSame(draft, account.settings)
+      }
+      ready={read?.settings !== undefined}
+      saving={saving.isPending}
+      refusal={settingsSectionRefusalOf(saving.error)}
       footLead={null}
-      {...(shown ? { notice: <UsageSettingsNotice writing={saving} /> } : {})}
       onEdit={() => {
         saving.reset();
         setDraft(agentAccountDraftOf(account.settings));
@@ -657,14 +639,12 @@ function UsageSettingsAgent(props: {
       }}
       onSave={() => {
         const settings = read?.settings;
-        if (draft === undefined || settings === undefined) return;
-        if (agentAccountDraftSame(draft, account.settings)) setDraft(undefined);
-        else
-          saving.mutate(settings, {
-            onSuccess: () => {
-              setDraft(undefined);
-            },
-          });
+        if (settings === undefined) return;
+        saving.mutate(settings, {
+          onSuccess: () => {
+            setDraft(undefined);
+          },
+        });
       }}
     >
       {account.pause === undefined ? null : (

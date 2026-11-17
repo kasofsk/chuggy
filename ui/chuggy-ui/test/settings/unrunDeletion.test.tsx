@@ -1,11 +1,11 @@
 /**
  * The Delete sections, mounted: drawn only where the deletion would be done,
- * asked in place with the thing deleted named, a deletion landed as a line
+ * asked in a dialog with the thing deleted named, a deletion landed as a line
  * with a way back to the start, and one refused naming what holds it.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -13,7 +13,13 @@ import {
   ProjectDeletion,
   TenantDeletion,
 } from "../../app/browser/settings/UnrunDeletion.tsx";
-import { answer, drawnStrict, press } from "../screenHarness.tsx";
+import {
+  answer,
+  drawnStrict,
+  press,
+  settled,
+  turned,
+} from "../screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
 import { leadPartition } from "../leadFixture.ts";
 
@@ -48,6 +54,28 @@ function deletesSent(drawn: DrawnStrict): readonly string[] {
     .map((request) => request.url);
 }
 
+/** The button of the dialog asking, which shares its word with the one that
+ * opened it. */
+async function pressAsked(name: string): Promise<void> {
+  await turned(() => {
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name }),
+    );
+  });
+  await settled();
+}
+
+test("a deletion is asked in a dialog, and Cancel there sends nothing", async () => {
+  const drawn = await drawnStrict(
+    <TenantDeletion tenant={leadPartition.tenant} />,
+    deletionRoute(() => answer({ held: [] })),
+  );
+  await press("Delete workspace");
+  await pressAsked("Cancel");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(deletesSent(drawn)).toEqual([]);
+});
+
 test("a project nothing holds is deleted once asked, naming it by its name, and offers the way back", async () => {
   let listed = true;
   const deletions = deletionRoute(
@@ -69,12 +97,12 @@ test("a project nothing holds is deleted once asked, naming it by its name, and 
         : deletions(request),
   );
   await press("Delete project");
-  const asked = screen.getByRole("group", {
+  const asked = screen.getByRole("dialog", {
     name: "Delete Atlas Billing?",
   });
   expect(asked.textContent).toContain("cannot be undone");
   expect(deletesSent(drawn)).toEqual([]);
-  await press("Delete project");
+  await pressAsked("Delete project");
   expect(deletesSent(drawn)).toHaveLength(1);
   expect(deletesSent(drawn)[0]).toContain(
     `/projects/${leadPartition.project}/deletion`,
@@ -119,7 +147,7 @@ test("a deletion refused because a ticket was released since names what holds it
     ),
   );
   await press("Delete project");
-  await press("Delete project");
+  await pressAsked("Delete project");
   const refused = screen.getByText(/It cannot be deleted/u);
   expect(refused.textContent).toMatch(/released.*runs/u);
   expect(screen.queryByText(/is deleted/u)).toBeNull();
@@ -132,8 +160,10 @@ test("a workspace holding no project is deleted once asked, naming it", async ()
     deletionRoute(() => answer({ held: [] })),
   );
   await press("Delete workspace");
-  expect(screen.getByRole("group", { name: `Delete ${tenant}?` })).toBeTruthy();
-  await press("Delete workspace");
+  expect(
+    screen.getByRole("dialog", { name: `Delete ${tenant}?` }),
+  ).toBeTruthy();
+  await pressAsked("Delete workspace");
   expect(deletesSent(drawn)).toEqual([
     expect.stringContaining(`/tenants/${tenant}/deletion`),
   ]);

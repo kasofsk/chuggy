@@ -2,8 +2,8 @@
  * A workspace's display name, changed on its People page: drawn only to a
  * reader who administers the workspace, starting on the name the reader's own
  * list answers, sending the trimmed name to the workspace's own address and
- * nothing else, reading the list again so the new name is drawn, and saying a
- * refusal in place.
+ * nothing else, reading the list again so the new name is drawn, saying so
+ * in a success toast, and saying a refusal in place, where focus moves.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 import { accessNotPermittedCode } from "../../../../src/contract/accessPlane.ts";
 import { projectDisplayNameCharsMax } from "../../../../src/contract/requests.ts";
 import { answer, press, settled, turned } from "../screenHarness.tsx";
+import { toastsDrawn } from "../toastsDrawn.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import {
   changesSent,
@@ -57,7 +58,9 @@ function nameBox(): HTMLInputElement {
 }
 
 function saveButton(): HTMLButtonElement {
-  return screen.getByRole<HTMLButtonElement>("button", { name: "Save name" });
+  return screen.getByRole<HTMLButtonElement>("button", {
+    name: "Save changes",
+  });
 }
 
 async function typedName(name: string): Promise<void> {
@@ -95,6 +98,23 @@ test("an administrator is offered the workspace's name, starting on its display 
   expect(saveButton().disabled).toBe(true);
 });
 
+test("the name's box is named by the label drawn over it", async () => {
+  await drawPeople();
+  const label = nameBox().labels?.[0];
+  expect(label?.textContent).toBe("Workspace name");
+  expect(label?.htmlFor).toBe(nameBox().id);
+  expect(nameBox().hasAttribute("aria-label")).toBe(false);
+});
+
+test("a name too long says why beside its box, bound to it", async () => {
+  await drawPeople();
+  await typedName("n".repeat(projectDisplayNameCharsMax + 1));
+  const said = nameBox().getAttribute("aria-describedby") ?? "";
+  const error = document.getElementById(said);
+  expect(error?.classList.contains("form-field-error")).toBe(true);
+  expect(error?.textContent).not.toBe("");
+});
+
 test("a reader who does not administer the workspace is offered no name to change", async () => {
   await drawPeople({ abilities: () => answer(peopleAbilitiesNone) });
   expect(screen.queryByRole("heading", { name: "Name" })).toBeNull();
@@ -109,6 +129,7 @@ test("a reader who does not administer the workspace is offered no name to chang
 test("a name typed is sent trimmed to the workspace's own address, its list is read again, and the box then holds the name the list answers", async () => {
   let name = peopleWorkspaceName;
   const drawn = await drawPeople({
+    toasts: true,
     workspaces: () => workspacesNamed(name)(),
     changed: (request) => {
       if (request.url === renamePath && request.method === "POST")
@@ -121,7 +142,7 @@ test("a name typed is sent trimmed to the workspace's own address, its list is r
   const before = reads();
   await typedName("  Acme Works  ");
   expect(saveButton().disabled).toBe(false);
-  await press("Save name");
+  await press("Save changes");
   await settled();
   expect(changesSent(drawn)).toStrictEqual([
     {
@@ -132,7 +153,10 @@ test("a name typed is sent trimmed to the workspace's own address, its list is r
   ]);
   expect(reads()).toBeGreaterThan(before);
   expect(nameBox().value).toBe("Acme Works");
-  expect(screen.getByText("The name is saved.")).toBeTruthy();
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Workspace name saved" },
+  ]);
+  expect(saveButton().disabled).toBe(true);
 });
 
 test("a name the contract refuses is marked and cannot be saved, and sends nothing", async () => {
@@ -149,11 +173,17 @@ test("a name the contract refuses is marked and cannot be saved, and sends nothi
   expect(changesSent(drawn)).toStrictEqual([]);
 });
 
-test("a refused rename says so in place and keeps what was typed", async () => {
-  await drawPeople({ changed: () => refused(403, accessNotPermittedCode) });
+test("a refused rename says so in place, moves focus there, keeps what was typed, and toasts nothing", async () => {
+  await drawPeople({
+    toasts: true,
+    changed: () => refused(403, accessNotPermittedCode),
+  });
   await typedName("Acme Works");
-  await press("Save name");
+  await press("Save changes");
+  await settled();
   expect(nameBox().value).toBe("Acme Works");
-  expect(screen.queryByText("The name is saved.")).toBeNull();
-  expect(document.querySelector(".notice-danger")).not.toBeNull();
+  expect(toastsDrawn()).toStrictEqual([]);
+  const refusal = document.querySelector(".notice-danger");
+  expect(refusal).not.toBeNull();
+  expect(document.activeElement?.contains(refusal ?? null)).toBe(true);
 });
