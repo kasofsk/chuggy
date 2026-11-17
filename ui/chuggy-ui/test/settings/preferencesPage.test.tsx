@@ -140,9 +140,9 @@ test("Appearance offers projects' banners shown or hidden, shown where nothing i
     name: "Project banners",
   });
   expect(
-    within(banners).getByRole("radio", { name: "Shown" }).getAttribute(
-      "aria-checked",
-    ),
+    within(banners)
+      .getByRole("radio", { name: "Shown" })
+      .getAttribute("aria-checked"),
   ).toBe("true");
   await turned(() => {
     fireEvent.click(within(banners).getByRole("radio", { name: "Hidden" }));

@@ -112,11 +112,10 @@ function PreferencesScheme(): ReactNode {
   );
 }
 
-const preferencesBannersWords: Readonly<Record<ProjectBannersChoice, Copy>> =
-  {
-    Shown: { id: "settings-preferences-banners-shown" },
-    Hidden: { id: "settings-preferences-banners-hidden" },
-  };
+const preferencesBannersWords: Readonly<Record<ProjectBannersChoice, Copy>> = {
+  Shown: { id: "settings-preferences-banners-shown" },
+  Hidden: { id: "settings-preferences-banners-hidden" },
+};
 
 /** Whether projects' banners are drawn, as `projectBanners.ts` keeps it. */
 function PreferencesBanners(): ReactNode {
