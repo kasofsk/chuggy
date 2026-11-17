@@ -10,9 +10,11 @@
  * first section is chosen here by the same width.
  *
  * The site's group is drawn only for a reader the site's abilities give a page
- * of it. That read answers nothing to anyone else, and a read that failed
- * draws the same as one that said no: a group withheld is not a fault of the
- * page beside it.
+ * of it, and a section of the project's that its administrators alone are
+ * shown only for a reader the project's abilities say administers it. Neither
+ * read answers anything to anyone else, and a read that failed draws the same
+ * as one that said no: a section withheld is not a fault of the page beside
+ * it.
  */
 
 import { Link, Navigate, Outlet, useMatchRoute } from "@tanstack/react-router";
@@ -106,6 +108,8 @@ function SettingsLayoutRoot(props: {
 export function SettingsLayout(props: {
   readonly tenant: string;
   readonly project: string | undefined;
+  /** Whether the project's abilities said the reader administers it. */
+  readonly administers: boolean;
 }): ReactNode {
   const text = useCopyText();
   const abilities = useSiteAbilities(props.tenant);
@@ -125,6 +129,7 @@ export function SettingsLayout(props: {
               tenant: props.tenant,
               project: props.project,
             }),
+            administers: props.administers,
           },
     site: settingsNavSiteDrawn(
       abilities.state === "Ready" ? abilities.value : undefined,

@@ -54,6 +54,8 @@ import {
 import {
   agentAccountsResponseSchema,
   projectAppearanceResponseSchema,
+  projectImagesResponseSchema,
+  projectThemeResponseSchema,
   ownedThemesResponseSchema,
   themeChoiceResponseSchema,
   agenticRefusalsResponseSchema,
@@ -623,6 +625,16 @@ const consoleReads: readonly ConsoleRead[] = [
       layer: "BuiltInDefault",
       layers: {},
     }),
+  },
+  {
+    path: consoleReadAt(`${projectPath}/appearance/theme`),
+    schema: projectThemeResponseSchema,
+    body: () => ({ administers: true }),
+  },
+  {
+    path: consoleReadAt(`${projectPath}/appearance/images`),
+    schema: projectImagesResponseSchema,
+    body: () => ({ administers: true }),
   },
   {
     path: consoleReadAt("/api/v1/appearance/choice"),

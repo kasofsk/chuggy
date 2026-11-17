@@ -363,6 +363,8 @@
     --height-theme-swatch: 2.5rem; /* preferences: a theme's colours on its card */
     --size-mark-sm: 1rem; /* a project's mark beside its name */
     --size-mark-md: 1.25rem; /* a project's mark standing for its name */
+    --height-project-banner: 7.5rem; /* a project's banner, the band above its tickets */
+    --width-preview-phone: 22.5rem; /* appearance: a phone's width, which a preview is drawn at */
   }
 
   :root[data-theme="light"] {

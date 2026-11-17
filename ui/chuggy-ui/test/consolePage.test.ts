@@ -255,7 +255,7 @@ test("a settings page is named by the group and the page the side navigation dra
     settingsNav({
       tenant: "acme",
       tenantName: "acme",
-      project: { address: "atlas", name: "atlas" },
+      project: { address: "atlas", name: "atlas", administers: true },
       site: { workspaces: true, permissions: true },
     }).flatMap((group) =>
       group.entries.map((entry) => [
