@@ -38,7 +38,11 @@ import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import ticketSheet from "../app/browser/ticket/ticket.css?raw";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
+import {
+  sheetDeclared,
+  sheetPageNarrowCondition,
+  sheetRules,
+} from "./sheet.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
@@ -387,7 +391,7 @@ test("narrow, the heading's links take their own line, the column names go and a
   if (title === null || columns === null || runs === null)
     throw new Error("no table drawn");
   const desk = sheetRules(ticketSheet, []);
-  const narrow = sheetRules(ticketSheet, [sheetNarrowCondition]);
+  const narrow = sheetRules(ticketSheet, [sheetPageNarrowCondition]);
   expect(sheetDeclared(desk, columns, "display")).toBe("grid");
   expect(sheetDeclared(narrow, columns, "display")).toBe("none");
   expect(sheetDeclared(narrow, runs, "grid-column")).toBe("2 / -1");

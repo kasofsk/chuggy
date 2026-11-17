@@ -31,6 +31,7 @@ import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Table } from "../ui/Table.tsx";
+import type { TableRow } from "../ui/Table.tsx";
 import { TicketDelivery } from "./TicketDelivery.tsx";
 import { readValue } from "../../core/freshness.ts";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
@@ -132,21 +133,21 @@ function TicketUsageTiles(props: {
   );
 }
 
-function TicketUsageStepCells(props: {
-  readonly step: TicketUsageStep;
-}): ReactNode {
-  const { step } = props;
+type TicketUsageStepColumn =
+  "step" | "runs" | "ran" | "waited" | "tokens" | "cost";
+
+function ticketUsageStepRow(
+  step: TicketUsageStep,
+): TableRow<TicketUsageStepColumn> {
   const totals = step.spend.totals;
-  return (
-    <>
-      <td className="num">{step.runs}</td>
-      <td className="num">
-        <Figure figure={step.time.ran} />
-      </td>
-      <td className="num">
-        <Figure figure={step.time.waited} />
-      </td>
-      <td className="num">
+  return {
+    key: step.label,
+    cells: {
+      step: step.label,
+      runs: step.runs,
+      ran: <Figure figure={step.time.ran} />,
+      waited: <Figure figure={step.time.waited} />,
+      tokens: (
         <Figure
           figure={
             totals === undefined
@@ -154,8 +155,8 @@ function TicketUsageStepCells(props: {
               : tokenCountFigure(tokensTotal(totals))
           }
         />
-      </td>
-      <td className="num">
+      ),
+      cost: (
         <Figure
           figure={
             totals === undefined
@@ -163,107 +164,121 @@ function TicketUsageStepCells(props: {
               : costFigure(totals.costUsdMicros, totals.costBasis)
           }
         />
-      </td>
-    </>
-  );
+      ),
+    },
+  };
 }
 
+/** One row a step and the total last, which the sheet sets apart. */
 function TicketUsageBySteps(props: {
   readonly steps: readonly TicketUsageStep[];
   readonly total: TicketUsageStep;
 }): ReactNode {
   const text = useCopyText();
   return (
-    <Table caption={text({ id: "ticket-usage-by-step-caption" })}>
-      <thead>
-        <tr>
-          <th scope="col">{text({ id: "ticket-usage-col-step" })}</th>
-          <th scope="col" className="num">
-            {text({ id: "ticket-usage-col-runs" })}
-          </th>
-          <th scope="col" className="num">
-            {text({ id: "ticket-field-run-time" })}
-          </th>
-          <th scope="col" className="num">
-            {text({ id: "ticket-field-waited" })}
-          </th>
-          <th scope="col" className="num">
-            {text({ id: "ticket-field-tokens" })}
-          </th>
-          <th scope="col" className="num">
-            {text({ id: "ticket-field-cost" })}
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.steps.map((step) => (
-          <tr key={step.label}>
-            <th scope="row">{step.label}</th>
-            <TicketUsageStepCells step={step} />
-          </tr>
-        ))}
-      </tbody>
-      <tfoot>
-        <tr>
-          <th scope="row">{props.total.label}</th>
-          <TicketUsageStepCells step={props.total} />
-        </tr>
-      </tfoot>
-    </Table>
+    <div className="ticket-usage-steps">
+      <Table
+        caption={text({ id: "ticket-usage-by-step-caption" })}
+        stacked={{
+          columns: [
+            {
+              key: "step",
+              label: text({ id: "ticket-usage-col-step" }),
+              rowHeader: true,
+            },
+            {
+              key: "runs",
+              label: text({ id: "ticket-usage-col-runs" }),
+              numeric: true,
+            },
+            {
+              key: "ran",
+              label: text({ id: "ticket-field-run-time" }),
+              numeric: true,
+            },
+            {
+              key: "waited",
+              label: text({ id: "ticket-field-waited" }),
+              numeric: true,
+            },
+            {
+              key: "tokens",
+              label: text({ id: "ticket-field-tokens" }),
+              numeric: true,
+            },
+            {
+              key: "cost",
+              label: text({ id: "ticket-field-cost" }),
+              numeric: true,
+            },
+          ],
+          rows: [...props.steps, props.total].map(ticketUsageStepRow),
+        }}
+      />
+    </div>
   );
 }
 
 function TicketUsageByModel(props: { readonly totals: RunTotals }): ReactNode {
   const text = useCopyText();
+  const { totals } = props;
   return (
-    <Table caption={text({ id: "ticket-usage-by-model-caption" })}>
-      <thead>
-        <tr>
-          <th scope="col">{text({ id: "ticket-field-model" })}</th>
-          <th scope="col" className="num">
-            {text({ id: "ticket-usage-col-input" })}
-          </th>
-          <th scope="col" className="num">
-            {text({ id: "ticket-usage-col-output" })}
-          </th>
-          <th scope="col" className="num">
-            {text({ id: "ticket-usage-col-cache-write" })}
-          </th>
-          <th scope="col" className="num">
-            {text({ id: "ticket-usage-col-cache-read" })}
-          </th>
-          <th scope="col" className="num">
-            {text({ id: "ticket-field-cost" })}
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.totals.models.map((usage) => (
-          <tr key={usage.model}>
-            <th scope="row">
-              <code>{usage.model}</code>
-            </th>
-            <td className="num">
-              <Figure figure={tokenCountFigure(usage.tokensInput)} />
-            </td>
-            <td className="num">
-              <Figure figure={tokenCountFigure(usage.tokensOutput)} />
-            </td>
-            <td className="num">
+    <Table
+      caption={text({ id: "ticket-usage-by-model-caption" })}
+      stacked={{
+        columns: [
+          {
+            key: "model",
+            label: text({ id: "ticket-field-model" }),
+            rowHeader: true,
+          },
+          {
+            key: "input",
+            label: text({ id: "ticket-usage-col-input" }),
+            numeric: true,
+          },
+          {
+            key: "output",
+            label: text({ id: "ticket-usage-col-output" }),
+            numeric: true,
+          },
+          {
+            key: "cacheWrite",
+            label: text({ id: "ticket-usage-col-cache-write" }),
+            numeric: true,
+          },
+          {
+            key: "cacheRead",
+            label: text({ id: "ticket-usage-col-cache-read" }),
+            numeric: true,
+          },
+          {
+            key: "cost",
+            label: text({ id: "ticket-field-cost" }),
+            numeric: true,
+          },
+        ],
+        rows: totals.models.map((usage) => ({
+          key: usage.model,
+          cells: {
+            model: <code>{usage.model}</code>,
+            input: <Figure figure={tokenCountFigure(usage.tokensInput)} />,
+            output: <Figure figure={tokenCountFigure(usage.tokensOutput)} />,
+            cacheWrite: (
               <Figure figure={tokenCountFigure(usage.tokensCacheCreation)} />
-            </td>
-            <td className="num">
+            ),
+            cacheRead: (
               <Figure figure={tokenCountFigure(usage.tokensCacheRead)} />
-            </td>
-            <td className="num">
+            ),
+            cost: (
               <Figure
-                figure={costFigure(usage.costUsdMicros, props.totals.costBasis)}
+                figure={costFigure(usage.costUsdMicros, totals.costBasis)}
               />
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </Table>
+            ),
+          },
+        })),
+      }}
+    />
   );
 }
 
