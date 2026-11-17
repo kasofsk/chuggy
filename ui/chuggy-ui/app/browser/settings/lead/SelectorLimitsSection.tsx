@@ -9,7 +9,6 @@
  */
 
 import type { ReactNode } from "react";
-import { useId } from "react";
 
 import {
   selectorSettingsLimitEdited,
@@ -30,8 +29,11 @@ import type { Copy } from "../../../core/copy.ts";
 import { Button } from "../../ui/Button.tsx";
 import { Figure } from "../../ui/Figure.tsx";
 import { Input } from "../../ui/Input.tsx";
-import { Pill } from "../../ui/Pill.tsx";
-import { SelectorRowsSection } from "./SelectorRowsSection.tsx";
+import { StatusBadge } from "../../ui/StatusBadge.tsx";
+import {
+  SelectorEditedMark,
+  SelectorRowsSection,
+} from "./SelectorRowsSection.tsx";
 import type { SelectorRowsChrome } from "./SelectorRowsSection.tsx";
 
 import "./selector.css";
@@ -51,13 +53,17 @@ interface SelectorLimitRow {
  * back. */
 function SelectorLimitStanding(props: {
   readonly row: SelectorLimitRow;
+  readonly mark: ReactNode;
 }): ReactNode {
   const text = useCopyText();
   const row = props.row;
   if (!selectorSettingsLimitOverridden(row.draft, row.name))
     return (
       <span className="selector-was">
-        <Pill tone="neutral">{text({ id: "lead-settings-default" })}</Pill>
+        {props.mark}
+        <StatusBadge tone="neutral" size="small">
+          {text({ id: "lead-settings-default" })}
+        </StatusBadge>
       </span>
     );
   const installation = selectorSettingsLimitFigure(
@@ -66,6 +72,7 @@ function SelectorLimitStanding(props: {
   );
   return (
     <span className="selector-was">
+      {props.mark}
       {text({ id: "lead-settings-default-lower" })}{" "}
       <Figure figure={installation} />
       {row.editing ? (
@@ -91,22 +98,17 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
   const placeholder = selectorSettingsLimitOverridden(row.draft, row.name)
     ? undefined
     : String(row.installationEffective);
-  const faultId = useId();
   return (
     <div className="selector-limit" data-edited={edited ? "" : undefined}>
-      <span className="selector-limit-key">
-        {edited ? <i className="selector-mark" aria-hidden="true" /> : null}
-        {label}
-      </span>
       {row.editing ? (
         <Input
           numeric
+          labelShown
           label={label}
           unit={text(selectorSettingsLimitUnitWord(row.name))}
           value={row.draft.limits[row.name]}
           {...(placeholder === undefined ? {} : { placeholder })}
-          invalid={row.fault !== undefined}
-          {...(row.fault === undefined ? {} : { describedBy: faultId })}
+          {...(row.fault === undefined ? {} : { error: text(row.fault) })}
           onChange={(digits) => {
             row.onChange(
               selectorSettingsLimitTyped(row.draft, row.name, digits),
@@ -114,14 +116,20 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
           }}
         />
       ) : (
-        <Figure figure={selectorSettingsLimitFigure(row.name, row.effective)} />
+        <>
+          <span className="selector-limit-key">
+            {edited ? <SelectorEditedMark /> : null}
+            {label}
+          </span>
+          <Figure
+            figure={selectorSettingsLimitFigure(row.name, row.effective)}
+          />
+        </>
       )}
-      <SelectorLimitStanding row={row} />
-      {row.fault === undefined ? null : (
-        <span id={faultId} className="selector-fault">
-          {text(row.fault)}
-        </span>
-      )}
+      <SelectorLimitStanding
+        row={row}
+        mark={row.editing && edited ? <SelectorEditedMark /> : null}
+      />
     </div>
   );
 }

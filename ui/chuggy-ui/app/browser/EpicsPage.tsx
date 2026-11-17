@@ -1,21 +1,21 @@
 /**
  * A project's epics: a search, a visibility filter and a sort, each the
- * address's so a link holds the view, and one row an epic with its status
- * and a bar of where its tickets stand, with what the bar says beside it. Each page of rows is
- * read under its own cursor, and "Show more" mounts the next, so a page
- * already read is not read again.
+ * address's so a link holds the view, and one row an epic: its title, its
+ * progress bar with what the bar says beside it and its summary, and its
+ * status. Each page of rows is read under its own cursor into the one list,
+ * and "Show more" adds the next, so a page already read is not read again.
  */
 
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { EpicSummaryResponse } from "../../../../src/contract/responses.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
-import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
   epicSortChoices,
+  epicStatusLook,
   epicVisibilityChoices,
   epicsAskOf,
   epicsQuery,
@@ -25,105 +25,167 @@ import {
 import type { EpicsQuery } from "../core/epics.ts";
 import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
-import { EpicFormPanel } from "./EpicForm.tsx";
-import { EpicProgressRow, EpicStatusChip } from "./epic/EpicProgress.tsx";
-import { useProjectAbilities } from "./projectAbilities.tsx";
+import {
+  ListControls,
+  ListSearch,
+  listFilterGlyph,
+  listSortGlyph,
+} from "./ui/ListControls.tsx";
+import { EpicProgressRow } from "./epic/EpicProgress.tsx";
 import { ScreenTitle } from "./shell/slots.tsx";
-import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
-import { Input } from "./ui/Input.tsx";
-import { Panel } from "./ui/Panel.tsx";
 import { Picker } from "./ui/Picker.tsx";
-import { Pill } from "./ui/Pill.tsx";
+import { RecordList, RecordRow, RecordRowSkeleton } from "./ui/RecordList.tsx";
+import { StatusBadge } from "./ui/StatusBadge.tsx";
 
 import "./Epic.css";
+import { Tooltip } from "./ui/Tooltip.tsx";
+
+/** The status an epic stands at, and Archived beside it where it is. */
+function EpicRowStatus(props: {
+  readonly epic: EpicSummaryResponse;
+}): ReactNode {
+  const text = useCopyText();
+  const look = epicStatusLook(props.epic.status);
+  return (
+    <>
+      <StatusBadge tone={look.tone} size="small">
+        {text(look.word)}
+      </StatusBadge>
+      {props.epic.visibility === "Archived" ? (
+        <StatusBadge tone="retired" size="small">
+          {text({ id: "epics-visibility-archived" })}
+        </StatusBadge>
+      ) : null}
+    </>
+  );
+}
 
 function EpicRow(props: {
   readonly partition: PartitionIdentity;
   readonly epic: EpicSummaryResponse;
 }): ReactNode {
-  const text = useCopyText();
   const { epic } = props;
   return (
-    <li className="epic-row" data-epic={epic.number}>
-      <div className="epic-row-main">
-        <div className="epic-row-head">
-          <h3 className="epic-row-title">
-            <Link
-              to="/$tenant/$project/epics/$epic"
-              params={{ ...props.partition, epic: String(epic.number) }}
-            >
-              {epic.title}
-            </Link>
-          </h3>
-          <span className="text-ink-3 text-sm">{`#${String(epic.number)}`}</span>
-          <EpicStatusChip status={epic.status} />
-          {epic.visibility === "Archived" ? (
-            <Pill tone="retired">
-              {text({ id: "epics-visibility-archived" })}
-            </Pill>
-          ) : null}
-        </div>
-        {epic.summary === undefined ? null : (
-          <p className="epic-row-summary" title={epic.summary}>
-            {epic.summary}
-          </p>
-        )}
-      </div>
-      <EpicProgressRow progress={epic.progress} />
-    </li>
+    <RecordRow
+      title={epic.title}
+      link={{
+        to: "/$tenant/$project/epics/$epic",
+        params: { ...props.partition, epic: String(epic.number) },
+      }}
+      level={3}
+      meta={
+        <>
+          <EpicProgressRow progress={epic.progress} />
+          {epic.summary === undefined ? null : (
+            <Tooltip trigger="abbreviation" text={epic.summary}>
+              <span className="epic-list-summary">{epic.summary}</span>
+            </Tooltip>
+          )}
+        </>
+      }
+      trailing={<EpicRowStatus epic={epic} />}
+    />
   );
 }
 
-/** One page of the rows, and under it the next once it is asked for. */
+/** One page's rows, read under its own cursor; the list it stands in draws
+ * what a page not yet read says. */
 function EpicRowsPage(props: {
   readonly partition: PartitionIdentity;
   readonly query: EpicsQuery;
   readonly after: number | undefined;
-  readonly first: boolean;
 }): ReactNode {
-  const text = useCopyText();
-  const [more, setMore] = useState(false);
   const state = usePanelState(
     epicsQuery(props.partition, {
       ...epicsAskOf(props.query),
       after: props.after,
     }),
   );
-  if (state.state !== "Ready") return <PanelUnready state={state} />;
-  const { epics, nextAfter } = state.value;
+  if (state.state !== "Ready") return null;
+  return state.value.epics.map((epic) => (
+    <EpicRow key={epic.number} partition={props.partition} epic={epic} />
+  ));
+}
+
+/** Whether an empty page under the address is no match rather than no epic:
+ * a search, or the archived epics alone. The default view and every epic are
+ * empty only where the project has no epic to show. */
+function epicsQueryNarrows(query: EpicsQuery): boolean {
+  return query.q !== undefined || query.visibility === "Archived";
+}
+
+const epicsSkeletonRowsCount = 3;
+
+/** Rows standing where a page's rows will be, until it is read. */
+function EpicRowsSkeleton(): ReactNode {
+  return Array.from({ length: epicsSkeletonRowsCount }, (_, index) => (
+    <RecordRowSkeleton key={index} />
+  ));
+}
+
+/** Every page read so far as one list: the newest, while it is read, as
+ * skeleton rows at the list's end, a newest that failed under the list, and
+ * the way to the next once it is read. */
+function EpicRows(props: {
+  readonly partition: PartitionIdentity;
+  readonly query: EpicsQuery;
+}): ReactNode {
+  const text = useCopyText();
+  const [afters, setAfters] = useState<readonly (number | undefined)[]>([
+    undefined,
+  ]);
+  const newest = usePanelState(
+    epicsQuery(props.partition, {
+      ...epicsAskOf(props.query),
+      after: afters.at(-1),
+    }),
+  );
+  const first = afters.length === 1;
+  const pending = newest.state === "Pending";
+  if (first && !pending && newest.state !== "Ready")
+    return <PanelUnready state={newest} />;
+  if (first && newest.state === "Ready" && newest.value.epics.length === 0)
+    return (
+      <EmptyState
+        label={text({
+          id: epicsQueryNarrows(props.query)
+            ? "epics-none-matching"
+            : "epics-none",
+        })}
+      />
+    );
+  const nextAfter =
+    newest.state === "Ready" ? newest.value.nextAfter : undefined;
   return (
     <>
-      {epics.length === 0 && props.first ? (
-        <EmptyState label={text({ id: "epics-none" })} />
-      ) : (
-        <ul className="epic-list" aria-label={text({ id: "epics-title" })}>
-          {epics.map((epic) => (
-            <EpicRow
-              key={epic.number}
-              partition={props.partition}
-              epic={epic}
-            />
-          ))}
-        </ul>
-      )}
-      {nextAfter === undefined ? null : more ? (
-        <EpicRowsPage
-          partition={props.partition}
-          query={props.query}
-          after={nextAfter}
-          first={false}
-        />
-      ) : (
-        <div>
-          <Button
-            onClick={() => {
-              setMore(true);
-            }}
-          >
-            {text({ id: "epics-show-more" })}
-          </Button>
-        </div>
+      <RecordList
+        label={text({
+          id: first && pending ? "panel-loading" : "epics-title",
+        })}
+        more={
+          nextAfter === undefined
+            ? undefined
+            : {
+                label: text({ id: "epics-show-more" }),
+                onMore: () => {
+                  setAfters([...afters, nextAfter]);
+                },
+              }
+        }
+      >
+        {afters.map((after) => (
+          <EpicRowsPage
+            key={String(after)}
+            partition={props.partition}
+            query={props.query}
+            after={after}
+          />
+        ))}
+        {pending ? <EpicRowsSkeleton /> : null}
+      </RecordList>
+      {pending || newest.state === "Ready" ? null : (
+        <PanelUnready state={newest} />
       )}
     </>
   );
@@ -169,26 +231,17 @@ function EpicsControls(props: {
   const { query, onQuery } = props;
   const [typed, setTyped] = useEpicsTyped(query, onQuery);
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Input
+    <ListControls>
+      <ListSearch
         label={text({ id: "epics-search" })}
         placeholder={text({ id: "epics-search-placeholder" })}
-        value={typed}
-        onChange={setTyped}
-      />
-      <Picker
-        label={text({ id: "epics-visibility" })}
-        value={query.visibility ?? "Active"}
-        options={epicVisibilityChoices.map((choice) => ({
-          value: choice.value,
-          text: text(choice.text),
-        }))}
-        onChoose={(visibility) => {
-          onQuery(epicsQueryWith(query, { visibility }));
-        }}
+        search={typed}
+        onSearch={setTyped}
       />
       <Picker
         label={text({ id: "epics-sort" })}
+        iconOnly
+        glyph={listSortGlyph}
         value={query.sort ?? "newest"}
         options={epicSortChoices.map((choice) => ({
           value: choice.value,
@@ -197,30 +250,23 @@ function EpicsControls(props: {
         onChoose={(sort) => {
           onQuery(epicsQueryWith(query, { sort }));
         }}
+        align="end"
       />
-    </div>
-  );
-}
-
-function EpicCreation(props: {
-  readonly partition: PartitionIdentity;
-}): ReactNode {
-  const text = useCopyText();
-  const navigate = useNavigate();
-  return (
-    <Panel title={text({ id: "epics-new" })} collapsible={{ open: false }}>
-      <EpicFormPanel
-        partition={props.partition}
-        held={undefined}
-        submit={text({ id: "epics-create" })}
-        onSaved={(saved) => {
-          void navigate({
-            to: "/$tenant/$project/epics/$epic",
-            params: { ...props.partition, epic: String(saved.epic) },
-          });
+      <Picker
+        label={text({ id: "epics-visibility" })}
+        iconOnly
+        glyph={listFilterGlyph}
+        value={query.visibility ?? "Active"}
+        options={epicVisibilityChoices.map((choice) => ({
+          value: choice.value,
+          text: text(choice.text),
+        }))}
+        onChoose={(visibility) => {
+          onQuery(epicsQueryWith(query, { visibility }));
         }}
+        align="end"
       />
-    </Panel>
+    </ListControls>
   );
 }
 
@@ -230,25 +276,18 @@ export function EpicsPage(props: {
 }): ReactNode {
   const text = useCopyText();
   const partition = useParams({ from: "/$tenant/$project" });
-  const writing = !projectAbilityRefused(
-    useProjectAbilities(partition),
-    "writeEpic",
-  );
   return (
     <section
-      className="grid min-w-0 gap-3"
+      className="epic-list-page"
       aria-label={text({ id: "epics-title" })}
       data-fills-width
     >
       <ScreenTitle>{text({ id: "epics-title" })}</ScreenTitle>
       <EpicsControls query={props.query} onQuery={props.onQuery} />
-      {writing ? <EpicCreation partition={partition} /> : null}
-      <EpicRowsPage
+      <EpicRows
         key={JSON.stringify(props.query)}
         partition={partition}
         query={props.query}
-        after={undefined}
-        first
       />
     </section>
   );

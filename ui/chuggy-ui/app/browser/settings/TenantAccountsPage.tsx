@@ -56,12 +56,12 @@ import { InstallLink } from "../repositories/InstallLink.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { Table } from "../ui/Table.tsx";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 
-/** Whether an app is on an account, as its pill says it. */
+/** Whether an app is on an account, as its badge says it. */
 function forgeAppStandingLabel(standing: ForgeAppStanding): Copy {
   switch (standing) {
     case "Installed":
@@ -93,15 +93,18 @@ function InstalledApp(props: {
   );
   if (read.state !== "Ready" || read.value.permissions !== "Behind")
     return (
-      <Pill tone={forgeAppStandingTone("Installed")}>
+      <StatusBadge tone={forgeAppStandingTone("Installed")} size="small">
         {text(forgeAppStandingLabel("Installed"))}
-      </Pill>
+      </StatusBadge>
     );
   return (
     <>
-      <Pill tone={forgeInstallationPermissionsTone(read.value.permissions)}>
+      <StatusBadge
+        tone={forgeInstallationPermissionsTone(read.value.permissions)}
+        size="small"
+      >
         {text({ id: "settings-accounts-update-pending" })}
-      </Pill>
+      </StatusBadge>
       <a
         href={read.value.settingsUrl}
         className={buttonLookClassName({ size: "sm" })}
@@ -129,55 +132,11 @@ function AppStanding(props: {
   );
   if (installationId === undefined)
     return (
-      <Pill tone={forgeAppStandingTone(props.standing)}>
+      <StatusBadge tone={forgeAppStandingTone(props.standing)} size="small">
         {text(forgeAppStandingLabel(props.standing))}
-      </Pill>
+      </StatusBadge>
     );
   return <InstalledApp tenant={props.tenant} installationId={installationId} />;
-}
-
-function AccountRow(props: {
-  readonly tenant: string;
-  readonly installations: readonly ForgeInstallationResponse[];
-  readonly row: ForgeAccountRow;
-}): ReactNode {
-  const text = useCopyText();
-  const row = props.row;
-  return (
-    <tr>
-      <th scope="row">{row.account}</th>
-      <td>{text(forgeAccountKindLabel(row.kind))}</td>
-      <td>
-        <span className="flex items-center gap-2">
-          <AppStanding
-            tenant={props.tenant}
-            installations={props.installations}
-            account={row.account}
-            app="portal"
-            standing={row.portal}
-          />
-        </span>
-      </td>
-      <td>
-        <span className="flex items-center gap-2">
-          <AppStanding
-            tenant={props.tenant}
-            installations={props.installations}
-            account={row.account}
-            app="worker"
-            standing={row.worker}
-          />
-          {row.worker === "Missing" ? (
-            <InstallLink
-              tenant={props.tenant}
-              returnPath={currentPath()}
-              app="worker"
-            />
-          ) : null}
-        </span>
-      </td>
-    </tr>
-  );
 }
 
 function AccountTable(props: {
@@ -188,27 +147,63 @@ function AccountTable(props: {
   const rows = forgeAccountRows(props.installations);
   if (rows.length === 0)
     return <EmptyState label={text({ id: "settings-accounts-none" })} />;
+  const standing = (row: ForgeAccountRow, app: ForgeAppName): ReactNode => (
+    <AppStanding
+      tenant={props.tenant}
+      installations={props.installations}
+      account={row.account}
+      app={app}
+      standing={app === "portal" ? row.portal : row.worker}
+    />
+  );
   return (
-    <Table caption={text({ id: "settings-accounts-table" })}>
-      <thead>
-        <tr>
-          <th scope="col">{text({ id: "settings-accounts-account" })}</th>
-          <th scope="col">{text({ id: "settings-accounts-kind" })}</th>
-          <th scope="col">{text({ id: "settings-accounts-portal" })}</th>
-          <th scope="col">{text({ id: "settings-accounts-worker" })}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <AccountRow
-            key={row.account}
-            tenant={props.tenant}
-            installations={props.installations}
-            row={row}
-          />
-        ))}
-      </tbody>
-    </Table>
+    <Table
+      caption={text({ id: "settings-accounts-table" })}
+      stacked={{
+        columns: [
+          {
+            key: "account",
+            label: text({ id: "settings-accounts-account" }),
+            rowHeader: true,
+          },
+          { key: "kind", label: text({ id: "settings-accounts-kind" }) },
+          {
+            key: "portal",
+            label: text({ id: "settings-accounts-portal" }),
+            wide: true,
+          },
+          {
+            key: "worker",
+            label: text({ id: "settings-accounts-worker" }),
+            wide: true,
+          },
+        ],
+        rows: rows.map((row) => ({
+          key: row.account,
+          cells: {
+            account: row.account,
+            kind: text(forgeAccountKindLabel(row.kind)),
+            portal: (
+              <span className="flex flex-wrap items-center gap-2">
+                {standing(row, "portal")}
+              </span>
+            ),
+            worker: (
+              <span className="flex flex-wrap items-center gap-2">
+                {standing(row, "worker")}
+                {row.worker === "Missing" ? (
+                  <InstallLink
+                    tenant={props.tenant}
+                    returnPath={currentPath()}
+                    app="worker"
+                  />
+                ) : null}
+              </span>
+            ),
+          },
+        })),
+      }}
+    />
   );
 }
 

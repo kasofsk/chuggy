@@ -471,6 +471,7 @@ function fixtureBinding(store: OnboardingStore): ProjectRepositoryBindingWrite {
           boundAt: "2026-09-11T01:00:00Z",
           landing: gitPush,
           pipelinesWritable: false,
+          pipelinesRunnable: false,
         });
         return Promise.resolve("Bound" as const);
       }
@@ -481,6 +482,7 @@ function fixtureBinding(store: OnboardingStore): ProjectRepositoryBindingWrite {
         boundAt: standing.boundAt,
         landing: standing.landing,
         pipelinesWritable: standing.pipelinesWritable,
+        pipelinesRunnable: standing.pipelinesRunnable,
       };
       return Promise.resolve("Bound" as const);
     },
@@ -505,7 +507,10 @@ function fixtureLanding(store: OnboardingStore): ProjectRepositoryLandingStore {
         (!isDeepStrictEqual(standing.landing, command.expected) &&
           !isDeepStrictEqual(standing.landing, command.landing)) ||
         (standing.pipelinesWritable !== command.pipelinesWritable.expected &&
-          standing.pipelinesWritable !== command.pipelinesWritable.wanted)
+          standing.pipelinesWritable !== command.pipelinesWritable.wanted) ||
+        (command.pipelinesRunnable !== undefined &&
+          standing.pipelinesRunnable !== command.pipelinesRunnable.expected &&
+          standing.pipelinesRunnable !== command.pipelinesRunnable.wanted)
       )
         return Promise.resolve({
           outcome: "LandingMoved",
@@ -515,6 +520,8 @@ function fixtureLanding(store: OnboardingStore): ProjectRepositoryLandingStore {
         ...standing,
         landing: command.landing,
         pipelinesWritable: command.pipelinesWritable.wanted,
+        pipelinesRunnable:
+          command.pipelinesRunnable?.wanted ?? standing.pipelinesRunnable,
       };
       store.bound[at] = written;
       return Promise.resolve({ outcome: "Written", binding: written } as const);
@@ -1348,6 +1355,7 @@ test("a bind is created at its own address and read back by the listing", async 
         landing: { mode: "Push" },
         finalization: gitPush,
         pipelinesWritable: false,
+        pipelinesRunnable: false,
         configured: false,
         workerReach: unclaimedReach,
       },
@@ -1368,6 +1376,7 @@ test("the listing asks the forge for reach unless reach=false, and refuses any o
     boundAt: "2026-09-11T01:00:00Z",
     landing: gitPush,
     pipelinesWritable: false,
+    pipelinesRunnable: false,
   });
   const listing = fixtureCase(t, { granted: ["Read"], store });
   const listed = {
@@ -1376,6 +1385,7 @@ test("the listing asks the forge for reach unless reach=false, and refuses any o
     landing: { mode: "Push" },
     finalization: gitPush,
     pipelinesWritable: false,
+    pipelinesRunnable: false,
     configured: false,
   };
   const unasked = await listing.app.inject({
@@ -1415,12 +1425,14 @@ test("the listing answers a binding's last import attempted, and nothing of one 
       boundAt: "2026-09-11T01:00:00Z",
       landing: gitPush,
       pipelinesWritable: false,
+      pipelinesRunnable: false,
     },
     {
       repository: other,
       boundAt: "2026-09-12T01:00:00Z",
       landing: gitPush,
       pipelinesWritable: false,
+      pipelinesRunnable: false,
     },
   );
   const lastImport = {
@@ -1643,6 +1655,7 @@ function landingMovedAsserted(
     readonly mode: string;
     readonly finalization: RepositoryFinalization;
     readonly pipelinesWritable: boolean;
+    readonly pipelinesRunnable?: boolean;
   },
 ): void {
   assert.equal(served.statusCode, 409);
@@ -1656,6 +1669,7 @@ function landingMovedAsserted(
     landing: { mode: standing.mode },
     finalization: standing.finalization,
     pipelinesWritable: standing.pipelinesWritable,
+    pipelinesRunnable: standing.pipelinesRunnable ?? false,
   });
 }
 
@@ -1705,6 +1719,7 @@ test("moving where a repository lands answers the row and the listing agrees", a
       landing: { mode: "PullRequest" },
       finalization: pullRequest,
       pipelinesWritable: false,
+      pipelinesRunnable: false,
     },
   });
   const listed = await landed.app.inject({
@@ -1719,6 +1734,7 @@ test("moving where a repository lands answers the row and the listing agrees", a
         landing: { mode: "PullRequest" },
         finalization: pullRequest,
         pipelinesWritable: false,
+        pipelinesRunnable: false,
         configured: false,
         workerReach: unclaimedReach,
       },
@@ -1749,6 +1765,7 @@ test("a landing written by its kind carries its policy, and a write by mode alon
       landing: { mode: "Push" },
       finalization: serialized,
       pipelinesWritable: false,
+      pipelinesRunnable: false,
     },
   });
   assert.deepEqual(landed.store.bound[0]?.landing, serialized);
@@ -1942,6 +1959,136 @@ test("a landing no roster names, or a write missing either setting, is refused b
   assert.equal(landed.store.bound[0]?.pipelinesWritable, false);
 });
 
+/** A project holding one binding whose pipeline runs a write through the route has allowed. */
+async function fixtureRunsAllowed(t: TestContext) {
+  const landed = await fixtureLanded(t);
+  const allowed = await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: { expected: false, wanted: false },
+      pipelinesRunnable: { expected: false, wanted: true },
+    }),
+  );
+  assert.equal(allowed.statusCode, 200);
+  return landed;
+}
+
+test("allowing a repository's pipeline runs answers the row and the listing agrees", async (t) => {
+  const landed = await fixtureLanded(t);
+  const served = await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: { expected: false, wanted: false },
+      pipelinesRunnable: { expected: false, wanted: true },
+    }),
+  );
+  assert.equal(served.statusCode, 200);
+  assert.deepEqual(
+    served.json<{
+      repository: { pipelinesWritable: unknown; pipelinesRunnable: unknown };
+    }>().repository,
+    {
+      repository,
+      boundAt: "2026-09-11T01:00:00Z",
+      landing: { mode: "Push" },
+      finalization: gitPush,
+      pipelinesWritable: false,
+      pipelinesRunnable: true,
+    },
+  );
+  const listed = await landed.app.inject({
+    url: repositoriesRoot,
+    headers: authorized,
+  });
+  assert.deepEqual(
+    listed
+      .json<{ repositories: { pipelinesRunnable: unknown }[] }>()
+      .repositories.map((row) => row.pipelinesRunnable),
+    [true],
+  );
+});
+
+test("a settings write naming no pipeline runs leaves them as they stand", async (t) => {
+  const landed = await fixtureRunsAllowed(t);
+  const served = await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: true },
+    }),
+  );
+  assert.equal(served.statusCode, 200);
+  assert.deepEqual(
+    {
+      landing: landed.store.bound[0]?.landing,
+      pipelinesWritable: landed.store.bound[0]?.pipelinesWritable,
+      pipelinesRunnable: landed.store.bound[0]?.pipelinesRunnable,
+    },
+    { landing: pullRequest, pipelinesWritable: true, pipelinesRunnable: true },
+  );
+});
+
+test("pipeline runs allowed under the writer are a conflict carrying the row that stands", async (t) => {
+  const landed = await fixtureRunsAllowed(t);
+  const served = await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: { expected: false, wanted: false },
+      pipelinesRunnable: { expected: false, wanted: false },
+    }),
+  );
+  landingMovedAsserted(served, {
+    mode: "Push",
+    finalization: gitPush,
+    pipelinesWritable: false,
+    pipelinesRunnable: true,
+  });
+});
+
+test("allowing pipeline runs without the project permit is not found and writes nothing", async (t) => {
+  const landed = await fixtureLanded(t, ["Administer", "Read"]);
+  const reader = fixtureCase(t, { granted: ["Read"], store: landed.store });
+  const served = await reader.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: { expected: false, wanted: false },
+      pipelinesRunnable: { expected: false, wanted: true },
+    }),
+  );
+  assert.equal(served.statusCode, 404);
+  assert.equal(landed.store.bound[0]?.pipelinesRunnable, false);
+});
+
+test("pipeline runs named without both values are refused before the durable side is asked", async (t) => {
+  const landed = await fixtureLanded(t);
+  for (const pipelinesRunnable of [
+    { wanted: true },
+    { expected: false },
+    true,
+  ]) {
+    const served = await landed.app.inject(
+      landingRequest({
+        repository,
+        expected: { mode: "Push" },
+        landing: { mode: "Push" },
+        pipelinesWritable: { expected: false, wanted: false },
+        pipelinesRunnable,
+      }),
+    );
+    assert.equal(served.statusCode, 400, JSON.stringify(pipelinesRunnable));
+  }
+  assert.equal(landed.store.bound[0]?.pipelinesRunnable, false);
+});
+
 /** The retirement route, as an administrator sends the end of one binding. */
 function retirementRequest(body: Record<string, unknown>) {
   return {
@@ -1962,6 +2109,7 @@ test("retiring a binding answers the row it left and the listing agrees", async 
     landing: { mode: "Push" },
     finalization: gitPush,
     pipelinesWritable: false,
+    pipelinesRunnable: false,
     retiredAt: fixtureRetiredAt,
   };
   assert.deepEqual(served.json(), { repository: retired });
@@ -2022,6 +2170,7 @@ test("binding a retired repository again reinstates it and answers as a bind", a
           landing: { mode: "Push" },
           finalization: gitPush,
           pipelinesWritable: false,
+          pipelinesRunnable: false,
           configured: false,
           workerReach: unclaimedReach,
         },

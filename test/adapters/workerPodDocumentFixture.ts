@@ -38,6 +38,7 @@ const pinnedConfiguration: PinnedTaskConfiguration = {
   practices: ["AcceptanceCriteria"],
   work: { instructions: ["Render the document and submit nothing beside it."] },
   review: { instructions: ["Read the document, not the renderer."] },
+  authority: { credentials: ["forge", "workspace"] },
 };
 
 function goldenInvocation(): AttemptPlacement["invocation"] {
@@ -164,6 +165,11 @@ export const goldenPlacement: AttemptPlacement = {
   requirementDigest: "requirement-digest",
   profile: { profile: "standard", runtimeVersion: "1" },
   invocation: goldenInvocation(),
+  targetMerge: {
+    ref: "refs/heads/golden-base",
+    pipelinesWritable: false,
+    change: "e".repeat(40),
+  },
   capability: {
     id: asAttemptCapabilityId("golden-capability"),
     secret: asAttemptCapabilitySecret("golden-capability-secret"),

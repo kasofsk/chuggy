@@ -11,9 +11,8 @@
  * evidence is that proof itself, and a create nobody heard back from is read
  * back by its marker under the ceilings this step is given. Under
  * `PullRequestMerge` the finalizer then asks the forge to merge that proposal
- * and the ticket concludes on proof of the merge instead — the approval that
- * gated the promotion being the only human gate either landing has, and the
- * forge's own rules still refusing whatever this step asks, so `model/` sees
+ * and the ticket concludes on proof of the merge instead — the forge's own
+ * rules still refusing whatever this step asks, so `model/` sees
  * the same four outcomes it always did.
  *
  * WHICH ANSWERS ARE WRITTEN DOWN IS DECIDED HERE AND NOWHERE ELSE. A forge that

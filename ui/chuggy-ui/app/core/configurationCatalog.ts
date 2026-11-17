@@ -27,6 +27,10 @@ import {
   type ConfigurationFollowing,
   workloadConfigurationVersion,
 } from "../../../../src/contract/configurationDocument.ts";
+import {
+  configurationWithOverrides,
+  type ConfigurationOverrides,
+} from "../../../../src/contract/configurationOverrides.ts";
 import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
 import {
   approvalRoles,
@@ -36,6 +40,7 @@ import {
   type WorkloadRunner,
 } from "../../../../src/contract/rosters.ts";
 import type { DraftInitializationResponse } from "../../../../src/contract/responses.ts";
+import { finalizationMethodLabel } from "./codeLabels.ts";
 import type { Copy, CopyOrData, CopyText } from "./copy.ts";
 import { configurationModelLabelOf } from "./configurationView.ts";
 import { creatorLabel } from "./labels.ts";
@@ -82,7 +87,6 @@ const catalogSchema = z.looseObject({
     .record(
       z.string(),
       z.looseObject({
-        approvalRequired: z.boolean().optional().catch(undefined),
         landing: z
           .looseObject({
             mode: z.enum(briefFinalizationModes),
@@ -208,7 +212,6 @@ export interface CatalogPlanStage {
 
 export interface CatalogFinalizer {
   readonly name: string;
-  readonly approvalRequired: boolean;
   /** The finalization a ticket it lands takes where its brief names none. */
   readonly finalization?: BriefFinalizationOf<string | undefined>;
 }
@@ -307,7 +310,6 @@ export function configurationCatalogOf(
         );
         return {
           name,
-          approvalRequired: finalizer.approvalRequired ?? false,
           ...(finalization === undefined ? {} : { finalization }),
         };
       },
@@ -378,9 +380,38 @@ export function configurationCatalogSelection(
   };
 }
 
+/** What of a catalog one ticket overrides: the workloads it replaces or adds, and the plans. */
+export type CatalogOverrides = Pick<
+  ConfigurationOverrides,
+  "workloads" | "plans"
+>;
+
+/** The catalog these bytes are with a ticket's overrides applied by the contract's own function, which is the catalog that ticket runs. */
+export function configurationCatalogOverridden(
+  canonical: string,
+  overrides: CatalogOverrides | undefined,
+): ConfigurationCatalog | undefined {
+  if (overrides?.workloads === undefined && overrides?.plans === undefined)
+    return configurationCatalogOf(canonical);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(canonical);
+  } catch {
+    return undefined;
+  }
+  return configurationCatalogOf(
+    JSON.stringify(
+      configurationWithOverrides(parsed, {
+        workloads: overrides.workloads,
+        plans: overrides.plans,
+      }),
+    ),
+  );
+}
+
 /**
  * An initialization read under the catalog's defaults, as it reads under this
- * selection instead: the selected plan's program, its stage count as the most
+ * selection and these overrides instead: the selected plan's program, its stage count as the most
  * a program holds, and the key of the first stage a commands workload runs in,
  * counted from one as the program's are, without the note the server wrote of
  * the plan it read. A plan the catalog does not hold
@@ -389,9 +420,11 @@ export function configurationCatalogSelection(
 export function configurationCatalogInitialization(
   initialization: DraftInitializationResponse,
   selection: ConfigurationSelection | undefined,
+  overrides?: CatalogOverrides,
 ): DraftInitializationResponse {
-  const catalog = configurationCatalogOf(
+  const catalog = configurationCatalogOverridden(
     initialization.configuration.canonical,
+    overrides,
   );
   if (catalog === undefined) return initialization;
   const plan = catalog.plans.get(
@@ -429,11 +462,11 @@ export interface CatalogChoice {
   readonly text: string;
 }
 
-/** What a landing asks before it proceeds, as the line beside its name. */
-export function catalogFinalizerApproval(finalizer: CatalogFinalizer): Copy {
-  return finalizer.approvalRequired
-    ? { id: "configuration-catalog-approved-first" }
-    : { id: "configuration-catalog-lands-unapproved" };
+/** How a finalizer lands, as the line beside its name: its own method, or the repository's landing where it names none. */
+export function catalogFinalizerLabel(finalizer: CatalogFinalizer): Copy {
+  return finalizer.finalization === undefined
+    ? { id: "configuration-catalog-repository-finalization" }
+    : finalizationMethodLabel(finalizer.finalization);
 }
 
 /** What each field of a selection chooses among, the catalog's default marked as one. */
@@ -487,11 +520,7 @@ export function configurationCatalogChoices(
       configurationCatalogChoice(
         text,
         finalizer.name,
-        {
-          id: finalizer.approvalRequired
-            ? "configuration-catalog-choice-approved-first"
-            : "configuration-catalog-choice-unapproved",
-        },
+        catalogFinalizerLabel(finalizer),
         defaults.finalization,
       ),
     ),

@@ -21,6 +21,7 @@ import { groupedDigits } from "../../core/figures.ts";
 import type { Figure as FigureValue } from "../../core/figures.ts";
 import { Figure } from "../ui/Figure.tsx";
 import { Table } from "../ui/Table.tsx";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 function ContextMeter(props: {
   readonly share: FigureValue | undefined;
@@ -239,9 +240,11 @@ function ContextLargest(props: {
             <li key={row.call} data-series={row.series}>
               <ContextLargestCall row={row} callLink={props.callLink} />
               <span className="context-largest-tool">{row.asked?.tool}</span>
-              <span className="context-largest-input" title={row.asked?.input}>
-                {row.asked?.input}
-              </span>
+              <Tooltip trigger="abbreviation" text={row.asked?.input}>
+                <span className="context-largest-input">
+                  {row.asked?.input}
+                </span>
+              </Tooltip>
               <span className="num context-largest-bytes">
                 {bytes === undefined ? null : (
                   <>

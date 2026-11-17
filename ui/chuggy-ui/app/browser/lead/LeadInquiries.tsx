@@ -112,8 +112,8 @@ import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
-import { Pill } from "../ui/Pill.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
+import { WordDetail } from "../ui/WordDetail.tsx";
 
 import "./LeadInquiries.css";
 
@@ -211,9 +211,10 @@ function LeadAskNotice(props: {
     case "Failed":
       return (
         <Notice tone="danger" inline>
-          <Tooltip text={ask.words.detail}>
-            <span>{inquiryAskRefusalSentence(ask, text)}</span>
-          </Tooltip>
+          <WordDetail
+            word={inquiryAskRefusalSentence(ask, text)}
+            detail={ask.words.detail}
+          />
         </Notice>
       );
   }
@@ -300,7 +301,11 @@ function LeadAsk(props: { readonly partition: PartitionIdentity }): ReactNode {
             onBlur={left}
           />
           <span className="num">{`${String(question.length)} / ${String(inquiryQuestionCharsMax)}`}</span>
-          {shown === undefined ? null : <Pill tone="fail">{text(shown)}</Pill>}
+          {shown === undefined ? null : (
+            <StatusBadge tone="fail" size="small">
+              {text(shown)}
+            </StatusBadge>
+          )}
         </Field>
       </Fields>
       <div className="justify-self-start">
@@ -359,21 +364,27 @@ function LeadInquiryRow(props: {
           {copyOrDataText(text, inquiryAskerNamed(inquiry.asker))}
         </span>
         {inquiry.mine ? (
-          <Pill tone="neutral">{text({ id: "lead-inquiry-mine" })}</Pill>
+          <StatusBadge tone="neutral" size="small">
+            {text({ id: "lead-inquiry-mine" })}
+          </StatusBadge>
         ) : null}
-        <Tooltip
-          text={
-            inquiry.failure === undefined
-              ? undefined
-              : text(leadTurnFailureLabel(inquiry.failure))
-          }
-        >
-          <span>
-            <Pill tone={sessionTurnStateTone(inquiry.turnState)}>
-              {text(leadTurnStateLabel(inquiry.turnState))}
-            </Pill>
-          </span>
-        </Tooltip>
+        <span>
+          <WordDetail
+            word={
+              <StatusBadge
+                tone={sessionTurnStateTone(inquiry.turnState)}
+                size="small"
+              >
+                {text(leadTurnStateLabel(inquiry.turnState))}
+              </StatusBadge>
+            }
+            detail={
+              inquiry.failure === undefined
+                ? undefined
+                : leadTurnFailureLabel(inquiry.failure)
+            }
+          />
+        </span>
         <Figure figure={instantFigure(inquiry.askedAt, props.nowMs)} />
         <LeadInquiryRollup inquiry={inquiry} />
       </div>

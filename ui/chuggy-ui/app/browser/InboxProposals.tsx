@@ -1,12 +1,12 @@
 /**
- * The lead's held decisions in the inbox: the read, the pill a row says it
- * with, Approve and Reject, and the line an answer leaves behind once its row
+ * The lead's held decisions in the inbox: the read, the line an item says it
+ * with, Approve and Reject, and the line an answer leaves behind once its item
  * has gone.
  *
- * AN ANSWER NEVER REMOVES ITS ROW. It asks for the inbox again, and the row
+ * AN ANSWER NEVER REMOVES ITS ITEM. It asks for the inbox again, and the item
  * leaves because that read no longer names it, answering nothing more until
  * then — so a decision someone else answered first, or whose ticket moved,
- * reads as stale here, and its row leaves the same way.
+ * reads as stale here, and its item leaves the same way.
  */
 
 import {
@@ -59,8 +59,6 @@ import { Confirm } from "./ui/Confirm.tsx";
 import { Input } from "./ui/Input.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import type { NoticeTone } from "./ui/Notice.tsx";
-import { Pill } from "./ui/Pill.tsx";
-import { Tooltip } from "./ui/Tooltip.tsx";
 
 /** One press of Approve or Reject. */
 interface InboxProposalPressed {
@@ -92,7 +90,7 @@ function inboxProposalReviewReread(
 /**
  * One decision answered whole, its answer reported to the store as soon as the
  * server gives it. A refusal reads the inbox again before it is told too, since
- * a decision no longer held is a row that has to leave.
+ * a decision no longer held is an item that has to leave.
  */
 function inboxProposalReviewWrite(
   partition: PartitionIdentity,
@@ -133,7 +131,7 @@ function inboxProposalReviewWrite(
 
 export interface InboxProposalAnswers {
   readonly partition: PartitionIdentity;
-  /** The answer given last, which outlives the row it was given on. */
+  /** The answer given last, which outlives the item it was given on. */
   readonly last: InboxProposalAnswer | undefined;
 }
 
@@ -216,21 +214,14 @@ export function InboxProposalWhy(props: {
   return props.proposals.map((proposal) => {
     const others = inboxProposalOthers(proposal, props.ticket);
     return (
-      <Tooltip
-        key={proposal.decision}
-        text={
-          others.length === 0
-            ? text({ id: "inbox-proposal-why" })
-            : text({
-                id: "inbox-proposal-why-others",
-                args: { others: others.join(", ") },
-              })
-        }
-      >
-        <span>
-          <Pill tone="parked">{text({ id: "inbox-proposal-pill" })}</Pill>
-        </span>
-      </Tooltip>
+      <p className="inbox-item-said" key={proposal.decision}>
+        {others.length === 0
+          ? text({ id: "inbox-proposal-why" })
+          : text({
+              id: "inbox-proposal-why-others",
+              args: { others: others.join(", ") },
+            })}
+      </p>
     );
   });
 }
@@ -266,11 +257,13 @@ function InboxProposalReject(props: {
 }
 
 /** Approve and Reject for one decision, each press its own review of it, and
- * neither pressable while any row's review of the decision is out; a refusal
- * is the inbox's notice. */
+ * neither pressable while any item's review of the decision is out; a refusal
+ * is the inbox's notice. Approve is the item's primary answer where `primary`
+ * says this decision's answers are. */
 function InboxProposalAction(props: {
   readonly answers: InboxProposalAnswers;
   readonly proposal: SelectorProposalResponse;
+  readonly primary: boolean;
   readonly rejecting: boolean;
   readonly onRejecting: (rejecting: boolean) => void;
 }): ReactNode {
@@ -297,10 +290,10 @@ function InboxProposalAction(props: {
     });
   };
   return (
-    <div className="grid gap-2">
-      <div className="flex gap-2 items-baseline">
+    <>
+      <div className="inbox-item-answers">
         <Button
-          variant="quiet"
+          variant={props.primary ? "primary" : "quiet"}
           size="sm"
           disabled={sending}
           onClick={() => {
@@ -332,21 +325,24 @@ function InboxProposalAction(props: {
           }}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
-/** Approve and Reject for each decision proposing this row's ticket. */
+/** Approve and Reject for each decision proposing this item's ticket, the
+ * first decision's Approve the item's primary answer where `primary` says. */
 export function InboxProposalActions(props: {
   readonly proposals: readonly SelectorProposalResponse[];
   readonly answers: InboxProposalAnswers;
+  readonly primary: boolean;
 }): ReactNode {
   const [rejecting, setRejecting] = useState<string | undefined>(undefined);
-  return props.proposals.map((proposal) => (
+  return props.proposals.map((proposal, at) => (
     <InboxProposalAction
       key={proposal.decision}
       answers={props.answers}
       proposal={proposal}
+      primary={props.primary && at === 0}
       rejecting={rejecting === proposal.decision}
       onRejecting={(opened) => {
         setRejecting(opened ? proposal.decision : undefined);
@@ -366,7 +362,7 @@ function inboxProposalTone(step: InboxProposalStep): NoticeTone {
   }
 }
 
-/** The answer given last, said once its row may have left: tickets, then the word. */
+/** The answer given last, said once its item may have left: tickets, then the word. */
 export function InboxProposalNotice(props: {
   readonly answers: InboxProposalAnswers;
 }): ReactNode {

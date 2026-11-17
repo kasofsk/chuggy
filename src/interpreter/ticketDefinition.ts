@@ -59,7 +59,7 @@ import {
   materializeWorkloadExecutionRequirement,
   type ExecutionTaskKindKey,
   type MaterializedExecutionRequirement,
-} from "./executionRequirement.ts";
+} from "../contract/executionRequirement.ts";
 import { digestFold } from "./resultManifest.ts";
 import {
   asStoredDraftBrief,
@@ -68,7 +68,7 @@ import {
   type DraftBrief,
   type DraftBriefByMode,
 } from "./ticketBrief.ts";
-import type { StageBlock } from "./taskConfiguration.ts";
+import type { StageBlock } from "../contract/taskConfiguration.ts";
 import {
   asTaskResources,
   materializeTaskResources,
@@ -81,7 +81,7 @@ import {
   type ApprovalApprovers,
   type ApprovalWorkload,
   type SelectedWorkload,
-} from "./workloadConfiguration.ts";
+} from "../contract/workloadConfiguration.ts";
 
 /** The key one task's material is stored under: a stage's, or one evaluator's of it. */
 export type TicketTaskKey =

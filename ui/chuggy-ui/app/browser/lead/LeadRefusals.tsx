@@ -27,7 +27,7 @@ import { usePanelState } from "../api.ts";
 import { DataPanel } from "../DataPanel.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { Table } from "../ui/Table.tsx";
 
 function LeadRefusalRow(props: {
@@ -42,9 +42,9 @@ function LeadRefusalRow(props: {
       <td className="num">{refusal.ticket}</td>
       <td className="num">{refusal.ticketVersion}</td>
       <td>
-        <Pill tone={agenticRefusalStandingTone(standing)}>
+        <StatusBadge tone={agenticRefusalStandingTone(standing)} size="small">
           {text(agenticRefusalStandingLabel(standing))}
-        </Pill>
+        </StatusBadge>
       </td>
       <td>
         <Figure figure={instantFigure(refusal.recordedAt, props.nowMs)} />

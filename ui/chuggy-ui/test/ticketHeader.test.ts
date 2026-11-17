@@ -16,17 +16,17 @@ import {
   ticketHeaderFragment,
   ticketStateLabelOf,
   ticketStateStandings,
-  ticketStateWords,
 } from "../app/core/ticketHeader.ts";
 import type { TicketHeaderFragmentReads } from "../app/core/ticketHeader.ts";
 import { ticketLandingOf } from "../app/core/ticketLandings.ts";
 import { ticketListStandingOf } from "../app/core/ticketListView.ts";
+import { phaseTone } from "../app/core/tones.ts";
 import type { TicketOffers } from "../app/core/ticketOffers.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { ledgerExecution, workIdentity } from "./ticketLedgerFixture.ts";
 import { landingConflicted, landingLanded } from "./ticketLandingsFixture.ts";
 
-test("every state is a word, a tone, a form and a mark, the moving ones filled and spinning", () => {
+test("every state is a word and a tone, a phase's tone the one every phase is drawn in", () => {
   expect(
     (
       [
@@ -41,27 +41,29 @@ test("every state is a word, a tone, a form and a mark, the moving ones filled a
       ] as const
     ).map((standing) => {
       const label = ticketStateLabelOf(standing);
-      return [copyTextEn(label.word), label.tone, label.form, label.mark];
+      return [copyTextEn(label.word), label.tone];
     }),
   ).toStrictEqual([
-    ["Ready", "pass", "Tinted", "Dot"],
-    ["Blocked", "queued", "Tinted", "Slash"],
-    ["Working", "live", "Filled", "Spin"],
-    ["Evaluating", "evaluation", "Filled", "Spin"],
-    ["Landing", "finalization", "Filled", "Spin"],
-    ["Escalated", "parked", "Filled", "Alert"],
-    ["Done", "pass", "Filled", "Check"],
-    ["Revoked", "retired", "Filled", "Cross"],
+    ["Ready", "pass"],
+    ["Blocked", "queued"],
+    ["Working", "live"],
+    ["Evaluating", "evaluation"],
+    ["Finalizing", "finalization"],
+    ["Escalated", "parked"],
+    ["Done", "pass"],
+    ["Revoked", "retired"],
   ]);
+  for (const phase of phaseRoster)
+    if (phase !== "Pending")
+      expect(ticketStateLabelOf(phase).tone, phase).toBe(phaseTone(phase));
 });
 
-test("a draft never released is labelled Draft, outlined and marked with a pencil", () => {
+test("a draft never released is labelled Draft, in the queued tone", () => {
   const label = ticketStateLabelOf("Draft");
   expect(label.word).toStrictEqual({ id: "standing-draft" });
-  expect([copyTextEn(label.word), label.form, label.mark]).toStrictEqual([
+  expect([copyTextEn(label.word), label.tone]).toStrictEqual([
     "Draft",
-    "Outlined",
-    "Pencil",
+    "queued",
   ]);
 });
 
@@ -249,7 +251,7 @@ function laid(
   };
 }
 
-test("the header leads with Dispatch, Resume, or Approve with Decline beside it, and keeps Revoke for its menu", () => {
+test("the header leads with Dispatch, Resume, or Approve with Reject beside it, and keeps Revoke for its menu", () => {
   expect(laid(offered(["Dispatch", "Revoke"], true), "Pending")).toStrictEqual({
     main: ["Dispatch"],
     revoke: true,
@@ -263,8 +265,8 @@ test("the header leads with Dispatch, Resume, or Approve with Decline beside it,
     duplicate: "Menu",
   });
   expect(
-    laid(offered(["Decline", "Approve"]), "Finalization").main,
-  ).toStrictEqual(["Approve", "Decline"]);
+    laid(offered(["Reject", "ApproveEvaluation"]), "Evaluation").main,
+  ).toStrictEqual(["ApproveEvaluation", "Reject"]);
 });
 
 test("a Resume the page holds back is not offered, and the header still offers the rest", () => {
@@ -295,7 +297,7 @@ test("an unread offer leads with nothing and offers no edit", () => {
   });
 });
 
-test("the words a small label is sized by are every standing's word, each once", () => {
+test("the standings a state label is drawn for are each standing once", () => {
   expect(ticketStateStandings).toHaveLength(new Set(ticketStateStandings).size);
   expect(new Set(ticketStateStandings)).toStrictEqual(
     new Set([
@@ -308,8 +310,5 @@ test("the words a small label is sized by are every standing's word, each once",
       "Done",
       "Revoked",
     ]),
-  );
-  expect(ticketStateWords).toStrictEqual(
-    ticketStateStandings.map((standing) => ticketStateLabelOf(standing).word),
   );
 });

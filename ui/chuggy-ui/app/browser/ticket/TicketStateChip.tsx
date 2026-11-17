@@ -1,78 +1,57 @@
 /**
- * A ticket's state where the ticket list draws it: the row's state label, a
- * dependency's number in its state's colours, and each state's count. Where a
- * dispatch is offered the row's label is the button that asks for it, which
- * cannot be pressed while one is going or this tab is offline.
+ * A ticket's state where the ticket list draws it: the row's state as its
+ * status badge, and a dependency's number on the badge of the state it stands
+ * in. Where a dispatch is offered the row's state is the button that asks for
+ * it, which cannot be pressed while one is going or this tab is offline.
  */
 
 import type { ReactNode } from "react";
 
-import { phaseLabel } from "../../core/codeLabels.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
-import type { CopyText } from "../../core/copy.ts";
 import type { TicketPhase } from "../../../../../src/contract/rosters.ts";
+import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketListStanding } from "../../core/ticketListView.ts";
-import { phaseTone } from "../../core/tones.ts";
-import type { Tone } from "../../core/tones.ts";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
 import { TicketStateLabel } from "./TicketStateLabel.tsx";
 
 import "../ProjectTable.css";
 
-/** What a dependency's chip is drawn as. */
-function standingTone(standing: TicketListStanding): Tone {
-  if (standing === "Ready") return "pass";
-  return standing === "Blocked" ? "queued" : phaseTone(standing);
-}
-
-function standingWord(standing: TicketListStanding, text: CopyText): string {
-  if (standing === "Ready") return text({ id: "ticket-standing-ready" });
-  if (standing === "Blocked") return text({ id: "ticket-verdict-blocked" });
-  return text(phaseLabel(standing));
-}
-
 export interface TicketStateDispatch {
   readonly busy: boolean;
   readonly offline: boolean;
-  readonly effect: string;
   readonly press: () => void;
 }
 
 export function TicketStateChip(props: {
   readonly ticket: number;
   readonly standing: TicketListStanding;
-  /** What holds the ticket in this state, on hover. */
-  readonly hint: string | undefined;
   readonly dispatch?: TicketStateDispatch | undefined;
 }): ReactNode {
   const { standing, dispatch } = props;
   const text = useCopyText();
-  const label = <TicketStateLabel standing={standing} size="small" />;
+  const label = <TicketStateLabel standing={standing} size="regular" />;
   if (dispatch !== undefined)
     return (
-      <Tooltip text={dispatch.effect}>
-        <button
-          type="button"
-          className="ticket-list-standing"
-          data-standing={standing}
-          aria-label={text({
-            id: "ticket-dispatch-aria-label",
-            args: { number: String(props.ticket) },
-          })}
-          aria-busy={dispatch.busy || undefined}
-          disabled={dispatch.busy || dispatch.offline}
-          onClick={dispatch.press}
-        >
-          {label}
-        </button>
-      </Tooltip>
+      <button
+        type="button"
+        className="ticket-list-standing"
+        data-standing={standing}
+        aria-label={text({
+          id: "ticket-dispatch-aria-label",
+          args: { number: String(props.ticket) },
+        })}
+        aria-busy={dispatch.busy || undefined}
+        disabled={dispatch.busy || dispatch.offline}
+        onClick={dispatch.press}
+      >
+        {label}
+      </button>
     );
   return (
-    <Tooltip text={props.hint}>
-      <span className="ticket-list-standing" data-standing={standing}>
-        {label}
-      </span>
-    </Tooltip>
+    <span className="ticket-list-standing" data-standing={standing}>
+      {label}
+    </span>
   );
 }
 
@@ -86,59 +65,21 @@ export function dependencyStandingOf(
   return phase === "Pending" ? (pending ?? "Blocked") : phase;
 }
 
-/** A dependency as its number in the colours of the state it stands in. */
+/** A dependency as its number on the badge of the state it stands in, the
+ * state's word on hover or press and as the number's description. */
 export function TicketDependencyChip(props: {
   readonly ticket: number;
   readonly standing: TicketListStanding;
 }): ReactNode {
   const text = useCopyText();
+  const label = ticketStateLabelOf(props.standing);
   return (
-    <span
-      className="ticket-list-state ticket-dependency"
-      data-tone={standingTone(props.standing)}
-      data-standing={props.standing}
-      title={standingWord(props.standing, text)}
-    >
-      {`#${String(props.ticket)}`}
-    </span>
-  );
-}
-
-/** A state's label holding how many tickets stand in it, as the button that
- * filters the list to it; pressed while it is the filter, dimmed while another
- * filter is, and its number as wide as the widest count beside it. */
-export function TicketStateCount(props: {
-  readonly standing: TicketListStanding;
-  readonly count: number;
-  readonly pressed: boolean;
-  readonly dimmed?: boolean | undefined;
-  /** The widest count drawn beside this one. */
-  readonly countWidest?: number | undefined;
-  readonly onPress: () => void;
-}): ReactNode {
-  const text = useCopyText();
-  return (
-    <button
-      type="button"
-      className="ticket-state-count"
-      data-standing={props.standing}
-      data-dimmed={props.dimmed === true || undefined}
-      title={standingWord(props.standing, text)}
-      aria-pressed={props.pressed}
-      onClick={props.onPress}
-    >
-      <TicketStateLabel standing={props.standing} size="small">
-        <b
-          className="num"
-          data-widest={
-            props.countWidest === undefined
-              ? undefined
-              : String(props.countWidest)
-          }
-        >
-          {props.count}
-        </b>
-      </TicketStateLabel>
-    </button>
+    <Tooltip trigger="abbreviation" text={text(label.word)}>
+      <span className="ticket-dependency" data-standing={props.standing}>
+        <StatusBadge tone={label.tone} size="small">
+          {`#${String(props.ticket)}`}
+        </StatusBadge>
+      </span>
+    </Tooltip>
   );
 }

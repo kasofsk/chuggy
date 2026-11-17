@@ -115,13 +115,15 @@ export interface TicketLandingDetail {
 /**
  * The hold a landing waits on or escalated from, and since when, with the
  * forge's reason and who removed its pull request where it escalates a removal
- * from a merge queue.
+ * from a merge queue, and the files no run may push that the target changed
+ * where it names them, a cut list ending in an ellipsis.
  */
 export interface TicketLandingHold {
   readonly kind: FinalizationUnavailableKind;
   readonly label: string;
   readonly since: string;
   readonly removal: string | undefined;
+  readonly refused: readonly string[] | undefined;
 }
 
 /**
@@ -239,7 +241,7 @@ function ticketLandingRemovalText(
   return removal.actor === undefined
     ? removal.reason
     : text({
-        id: "ticket-landing-removal-by",
+        id: "ticket-finalization-removal-by",
         args: { reason: removal.reason, actor: removal.actor },
       });
 }
@@ -271,10 +273,17 @@ function ticketLandingHoldOf(
     label: text(
       removal === undefined
         ? label
-        : { id: "ticket-landing-hold-removal", args: { hold: label, removal } },
+        : {
+            id: "ticket-finalization-hold-removal",
+            args: { hold: label, removal },
+          },
     ),
     since: hold.since,
     removal,
+    refused:
+      hold.refused === undefined
+        ? undefined
+        : [...hold.refused.paths, ...(hold.refused.truncated ? ["…"] : [])],
   };
 }
 
@@ -307,7 +316,7 @@ function ticketLandingFailureOf(
   return attempt.failureKind === "RecheckRequired" &&
     attempt.recheck !== undefined
     ? text({
-        id: "ticket-landing-recheck-required",
+        id: "ticket-finalization-recheck-required",
         args: {
           reason: finalizationRecheckReasonLabel(attempt.recheck.reason),
         },
@@ -458,10 +467,10 @@ function ticketLandingHeldFor(hold: TicketLandingHold, nowMs: number): Copy {
   const sinceMs = Date.parse(hold.since);
   return Number.isFinite(sinceMs)
     ? {
-        id: "ticket-landing-held-for",
+        id: "ticket-finalization-held-for",
         args: { age: agoText(nowMs, sinceMs), hold: hold.label },
       }
-    : { id: "ticket-landing-held", args: { hold: hold.label } };
+    : { id: "ticket-finalization-held", args: { hold: hold.label } };
 }
 
 /**
@@ -478,12 +487,12 @@ function ticketLandingWaitText(
     wait.mergeState.toLowerCase() === wait.label.toLowerCase()
       ? wait.label
       : {
-          id: "ticket-landing-wait-state",
+          id: "ticket-finalization-wait-state",
           args: { wait: wait.label, state: wait.mergeState },
         };
   return Number.isFinite(checkedMs)
     ? {
-        id: "ticket-landing-wait-checked",
+        id: "ticket-finalization-wait-checked",
         args: {
           wait: waits,
           checked: {
@@ -502,7 +511,7 @@ export interface TicketLandingCommit {
 }
 
 /**
- * What a landing's row says beside its pill: text, a link, the commit it
+ * What a landing's row says beside its badge: text, a link, the commit it
  * landed at, and what a reader must not miss about that commit.
  */
 export interface TicketLandingFragment {
@@ -529,10 +538,10 @@ function ticketLandingLandedAt(
       }
     : {
         commit: {
-          name: { id: "ticket-landing-merged" },
+          name: { id: "ticket-finalization-merged" },
           label: landing.landedCommit,
         },
-        caveat: { id: "ticket-landing-unevaluated-head" },
+        caveat: { id: "ticket-finalization-unevaluated-head" },
       };
 }
 
@@ -548,7 +557,7 @@ export function ticketLandingFragment(
           landing.failure === undefined || landing.conflictCount === 0
             ? landing.failure
             : {
-                id: "ticket-landing-failure-files",
+                id: "ticket-finalization-failure-files",
                 args: {
                   failure: landing.failure,
                   files: {
@@ -582,7 +591,6 @@ export function ticketLandingFragment(
         caveat: undefined,
       };
     case "Running":
-    case "AwaitingApproval":
     case "Proposed":
     case "Landed":
       return {
@@ -626,22 +634,21 @@ export function ticketLandingSummary(landing: TicketLanding): string {
 function ticketLandingSummaryLabel(state: TicketLandingState): Copy {
   switch (state) {
     case "Running":
-      return { id: "ticket-landing-summary-running" };
+      return { id: "ticket-finalization-summary-running" };
     case "Held":
-      return { id: "ticket-landing-summary-held" };
-    case "AwaitingApproval":
+      return { id: "ticket-finalization-summary-held" };
     case "AwaitingMerge":
-      return { id: "ticket-landing-summary-waiting" };
+      return { id: "ticket-finalization-summary-waiting" };
     case "Failed":
-      return { id: "ticket-landing-summary-failed" };
+      return { id: "ticket-finalization-summary-failed" };
     case "Unavailable":
-      return { id: "ticket-landing-summary-escalated" };
+      return { id: "ticket-finalization-summary-escalated" };
     case "Landed":
       return ticketLandingStateLabel(state);
     case "Proposed":
-      return { id: "ticket-landing-summary-proposed" };
+      return { id: "ticket-finalization-summary-proposed" };
     case "Invalidated":
-      return { id: "ticket-landing-summary-invalidated" };
+      return { id: "ticket-finalization-summary-invalidated" };
   }
 }
 
@@ -658,7 +665,29 @@ export function ticketLandingEscalatedRemoval(
   const hold = newest?.state === "Unavailable" ? newest.hold : undefined;
   return hold?.removal === undefined || hold.kind !== evidence
     ? undefined
-    : { id: "ticket-landing-queue-removal", args: { removal: hold.removal } };
+    : {
+        id: "ticket-finalization-queue-removal",
+        args: { removal: hold.removal },
+      };
+}
+
+/**
+ * The files no run may push that the target changed, and the landing by hand
+ * a resume finds, for an escalation at the hold the newest landing escalated
+ * from where that hold names them.
+ */
+export function ticketLandingEscalatedRefused(
+  landings: readonly TicketLanding[],
+  evidence: TicketEscalation["evidence"],
+): Copy | undefined {
+  const newest = landings.at(-1);
+  const hold = newest?.state === "Unavailable" ? newest.hold : undefined;
+  return hold?.refused === undefined || hold.kind !== evidence
+    ? undefined
+    : {
+        id: "ticket-finalization-target-paths-refused",
+        args: { paths: hold.refused.join(", ") },
+      };
 }
 
 /** The landings joined to the cycles the ledger holds, and those it does not. */
@@ -693,7 +722,6 @@ function ticketLandingLive(state: TicketLandingState): boolean {
   switch (state) {
     case "Running":
     case "Held":
-    case "AwaitingApproval":
     case "AwaitingMerge":
       return true;
     case "Failed":
@@ -715,7 +743,7 @@ export function ticketLandingPullLabel(
   return numbered === null
     ? link.host
     : text({
-        id: "ticket-landing-pull-number",
+        id: "ticket-finalization-pull-number",
         args: { number: numbered[1] ?? "" },
       });
 }

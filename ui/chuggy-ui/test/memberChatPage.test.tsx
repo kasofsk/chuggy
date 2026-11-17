@@ -80,6 +80,8 @@ interface ChatServed {
   readonly host?: { readonly live: boolean } | undefined;
   /** What an open answers. */
   readonly open?: () => Response;
+  /** The standing the reader's own thread is read at. */
+  readonly standing?: "Open" | "Closed";
 }
 
 /** The chat's doors as the case scripts them, every post recorded. */
@@ -131,7 +133,12 @@ function chatServed(served: ChatServed, posts: string[]): typeof fetch {
       if (url.endsWith(`/chat/threads/${session}`))
         return Promise.resolve(
           answer({
-            ...threadBody({ session, mine: true, owner: "geoff" }),
+            ...threadBody({
+              session,
+              mine: true,
+              owner: "geoff",
+              state: served.standing ?? "Open",
+            }),
             title: session === ownSession ? "my own" : undefined,
           }),
         );
@@ -225,6 +232,60 @@ test("a thread of the reader's own chat is the page, with its project threads of
   styleless();
 });
 
+test("a thread's page heads itself with its title as its one heading, the chat host it runs on linked under it, and the pane's controls by their names", async () => {
+  await mountedAt(`/tenants/${tenant}/chat/${ownSession}`);
+  const head = document.querySelector<HTMLElement>("header.page-header");
+  if (head === null) throw new Error("the page draws no head");
+  expect(
+    screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent),
+  ).toStrictEqual(["my own"]);
+  const host = within(head).getByRole("link", { name: "Your chat host" });
+  expect(host.closest(".page-header-meta")).not.toBeNull();
+  expect(host.getAttribute("href")).toBe(`/tenants/${tenant}/settings/runner`);
+  expect(
+    within(head)
+      .getAllByRole("link")
+      .concat(within(head).getAllByRole("button"))
+      .map(
+        (control) =>
+          control.getAttribute("aria-label") ??
+          control.querySelector("[aria-label]")?.getAttribute("aria-label") ??
+          control.textContent,
+      ),
+  ).toStrictEqual([
+    "Your chat host",
+    "New chat",
+    "Context",
+    "History",
+    "Chat menu",
+  ]);
+  fireEvent.keyDown(screen.getByRole("button", { name: "Chat menu" }), {
+    key: "ArrowDown",
+  });
+  expect(
+    within(await screen.findByRole("menu"))
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent),
+  ).toStrictEqual(["Copy link", "Rename", "Close"]);
+  expect(screen.getAllByRole("log")).toHaveLength(1);
+  styleless();
+});
+
+test("a thread that takes no more messages says its standing in the composer's place, with the way to a new chat", async () => {
+  await mountedAt(`/tenants/${tenant}/chat/${ownSession}`, {
+    standing: "Closed",
+  });
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  const forward = within(
+    screen.getByRole("region", { name: "Conversation" }),
+  ).getByRole("link", { name: "New chat" });
+  expect(forward.getAttribute("href")).toBe(`/tenants/${tenant}/chat`);
+  expect(forward.parentElement?.querySelector("span")?.textContent).toBe(
+    "Closed · Takes no more messages",
+  );
+  styleless();
+});
+
 test("a thread's bar opens its context beside the conversation, read at the chat, and its close takes it away", async () => {
   const reads: string[] = [];
   await mountedAt(`/tenants/${tenant}/chat/${ownSession}`);
@@ -277,7 +338,9 @@ test("abilities not read yet draw the page as loading, and no composer", async (
 
 test("abilities whose read failed say so, and draw no composer", async () => {
   await mountedAt(`/tenants/${tenant}/chat`, { abilities: "Failed" });
-  expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
+  expect(readFailedLines()).toStrictEqual([
+    "Not read · Server error · Internal",
+  ]);
   expect(screen.queryByText(copyTextEn(memberChatWithheld))).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   styleless();
@@ -293,11 +356,14 @@ test("a reader with no chat host is told so, with where one is registered", asyn
   styleless();
 });
 
-test("a chat host that is not live is said as offline", async () => {
+test("a chat host that is not live is said as offline, with where one is registered", async () => {
   await mountedAt(`/tenants/${tenant}/chat/${ownSession}`, {
     host: { live: false },
   });
   expect(screen.getByText("Chat host offline")).toBeDefined();
+  expect(
+    screen.getByRole("link", { name: "Personal runners" }).getAttribute("href"),
+  ).toBe(`/tenants/${tenant}/settings/runner`);
   styleless();
 });
 

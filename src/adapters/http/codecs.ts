@@ -33,6 +33,7 @@ import {
   encodeRefusalValue,
   parseRefusalValue,
 } from "../../interpreter/wire.ts";
+import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import { asConfigurationVersion } from "../../interpreter/repositoryConfigurationIdentity.ts";
 import { parseInventoryCursor } from "./contract.ts";
@@ -44,6 +45,10 @@ export const projectInventoryResponseSchema =
     projects: value.projects.map((project) => ({
       tenant: asTenantId(project.tenant),
       project: asProjectId(project.project),
+      name: project.name,
+      ...(project.icon === undefined
+        ? {}
+        : { icon: asProjectArtifactId(project.icon) }),
     })),
     ...(value.nextCursor === undefined
       ? {}

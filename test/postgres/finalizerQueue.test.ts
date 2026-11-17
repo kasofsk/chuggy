@@ -385,7 +385,6 @@ test("the view is gathered from the rows, and a finalization needing git holds",
   assert.equal(bare.repository?.repository, project.repository);
   assert.equal(bare.attempt, undefined);
   assert.equal(bare.attemptsMade, 0);
-  assert.equal(bare.approval, "Pending");
   assert.deepEqual(finalizationNext(finalizerDefaults, bare), {
     decide: "Hold",
     hold: "TargetUnreadable",

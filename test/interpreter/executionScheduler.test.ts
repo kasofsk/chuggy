@@ -37,7 +37,7 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
 import { allBriefingFaults } from "../../src/interpreter/taskBriefing.ts";
-import { allTaskConfigurationReadFaults } from "../../src/interpreter/taskConfiguration.ts";
+import { allTaskConfigurationReadFaults } from "../../src/contract/taskConfiguration.ts";
 import {
   mailboxCompletionRoom,
   ticketServiceDefaults,

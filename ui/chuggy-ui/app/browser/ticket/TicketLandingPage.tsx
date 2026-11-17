@@ -23,7 +23,7 @@ import { EmptyState } from "../ui/EmptyState.tsx";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { useTicketPageHeld } from "./TicketPageHeld.tsx";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
@@ -33,6 +33,7 @@ import { useTicketRuns } from "./TicketRuns.tsx";
 import { TicketRunsFrame } from "./TicketRunPage.tsx";
 
 import "./ticket.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 function TicketLandingHead(props: {
   readonly landing: TicketLanding;
@@ -46,11 +47,13 @@ function TicketLandingHead(props: {
     <div className="ticket-run-head">
       <div className="ticket-run-heading">
         <TicketRunMarkDrawn mark={marked.mark} tone={marked.tone} />
-        <h2>{text({ id: "ticket-landing-heading" })}</h2>
+        <h2>{text({ id: "ticket-finalization-heading" })}</h2>
         <span className="ticket-run-cycle">
           {text(cycleLabel(landing.cycle))}
         </span>
-        <Pill tone={landing.tone}>{landing.word}</Pill>
+        <StatusBadge tone={landing.tone} size="small">
+          {landing.word}
+        </StatusBadge>
       </div>
       {prepared === undefined ? null : (
         <p className="ticket-run-meta">
@@ -75,7 +78,7 @@ function TicketLandingFields(props: {
   return (
     <Fields>
       <Field
-        name={text({ id: "ticket-landing-pull-request-field" })}
+        name={text({ id: "ticket-finalization-pull-request-field" })}
         absent={landing.link === undefined}
       >
         {landing.link === undefined ? (
@@ -95,25 +98,29 @@ function TicketLandingFields(props: {
       </Field>
       {proposal === undefined ? null : (
         <>
-          <Field name={text({ id: "ticket-landing-from" })}>
-            <code title={proposal.head}>{branchName(proposal.head)}</code>
+          <Field name={text({ id: "ticket-finalization-from" })}>
+            <Tooltip trigger="abbreviation" text={proposal.head}>
+              <code>{branchName(proposal.head)}</code>
+            </Tooltip>
           </Field>
-          <Field name={text({ id: "ticket-landing-into" })}>
-            <code title={proposal.base}>{branchName(proposal.base)}</code>
+          <Field name={text({ id: "ticket-finalization-into" })}>
+            <Tooltip trigger="abbreviation" text={proposal.base}>
+              <code>{branchName(proposal.base)}</code>
+            </Tooltip>
           </Field>
         </>
       )}
       {landing.detail.candidateCommit === undefined ? null : (
-        <Field name={text({ id: "ticket-landing-head" })}>
+        <Field name={text({ id: "ticket-finalization-head" })}>
           <Identity label={landing.detail.candidateCommit} />
         </Field>
       )}
       {merge === undefined ? null : (
-        <Field name={text({ id: "ticket-landing-merge-commit" })}>
+        <Field name={text({ id: "ticket-finalization-merge-commit" })}>
           <Identity label={merge} />
         </Field>
       )}
-      <Field name={text({ id: "ticket-landing-attempts" })}>
+      <Field name={text({ id: "ticket-finalization-attempts" })}>
         {landing.detail.attempts}
       </Field>
       <LandingRecheckField recheck={landing.detail.recheck} />
@@ -131,7 +138,7 @@ function TicketLandingOf(props: {
   const landings = props.state.value;
   const landing = landings.at(-1);
   if (landing === undefined)
-    return <EmptyState label={text({ id: "ticket-landing-none" })} />;
+    return <EmptyState label={text({ id: "ticket-finalization-none" })} />;
   return (
     <>
       <TicketLandingHead landing={landing} nowMs={props.held.nowMs} />

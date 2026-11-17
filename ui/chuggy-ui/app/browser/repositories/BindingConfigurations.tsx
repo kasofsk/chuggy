@@ -26,7 +26,7 @@ import {
 import { useConsoleWrite } from "../consoleWrite.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Button } from "../ui/Button.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 
 /** What the row draws before any retry has answered. */
 const bindingConfigurationsDeferred: RepositoryStepStatus = {
@@ -104,7 +104,9 @@ export function BindingConfigurations(props: {
   return (
     <>
       <span role="status">
-        <Pill tone="parked">{copyOrDataText(text, step.status.status)}</Pill>
+        <StatusBadge tone="parked" size="small">
+          {copyOrDataText(text, step.status.status)}
+        </StatusBadge>
       </span>
       {step.status.retry && !projectAbilityRefused(abilities, "administer") ? (
         <Button

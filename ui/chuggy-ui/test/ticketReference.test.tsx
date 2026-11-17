@@ -61,7 +61,9 @@ test("a reference draws the ticket's title and phase, and links to its screen", 
   expect(link.textContent).toContain("#15");
   expect(link.textContent).toContain("Fix the thing");
   expect(link.textContent).toContain("Working");
-  expect(link.className).toContain("pill-live");
+  expect(link.querySelector(".status-badge")?.getAttribute("data-tone")).toBe(
+    "live",
+  );
 });
 
 test("a ticket the project has not read is still the number, and still follows", () => {
@@ -70,7 +72,9 @@ test("a ticket the project has not read is still the number, and still follows",
   const link = screen.getByRole("link");
   expect(link.getAttribute("href")).toBe("/acme/atlas/tickets/15");
   expect(link.textContent).toContain("#15");
-  expect(link.className).toContain("pill-neutral");
+  expect(link.querySelector(".status-badge")?.getAttribute("data-tone")).toBe(
+    "neutral",
+  );
 });
 
 test("a plain press is the shell's navigation, not the browser's", () => {

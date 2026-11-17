@@ -86,12 +86,11 @@ function recorded(
     generation: 1,
     request: "Registered",
     attempts: 0,
-    approvalOpen: false,
     ...fields,
   };
 }
 
-test("a live landing is awaiting its approval, else held at its recorded hold, else running", () => {
+test("a live landing is held at its recorded hold, else running, its prepared attempt awaiting nothing", () => {
   for (const request of ["Open", "Registered"] as const) {
     assert.deepEqual(ticketLandingState(recorded({ request })), {
       state: "Running",
@@ -101,11 +100,9 @@ test("a live landing is awaiting its approval, else held at its recorded hold, e
       hold,
     });
     assert.deepEqual(
-      ticketLandingState(
-        recorded({ request, hold, approvalOpen: true, attempt: prepared }),
-      ),
-      { state: "AwaitingApproval" },
-      "an open approval is answered over a hold recorded beside it",
+      ticketLandingState(recorded({ request, attempt: prepared })),
+      { state: "Running" },
+      "a prepared attempt is a landing still running",
     );
   }
 });

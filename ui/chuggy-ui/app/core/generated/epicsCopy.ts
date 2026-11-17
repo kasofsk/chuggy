@@ -6,9 +6,8 @@ export interface EpicsCopy {
   readonly "epics-title": Record<never, never>;
   readonly "epics-page-title": Record<never, never>;
   readonly "epics-none": Record<never, never>;
+  readonly "epics-none-matching": Record<never, never>;
   readonly "epics-not-found": Record<never, never>;
-  readonly "epics-new": Record<never, never>;
-  readonly "epics-create": Record<never, never>;
   readonly "epics-search": Record<never, never>;
   readonly "epics-search-placeholder": Record<never, never>;
   readonly "epics-show-more": Record<never, never>;
@@ -53,8 +52,6 @@ export interface EpicsCopy {
   };
   readonly "epics-field-description": Record<never, never>;
   readonly "epics-field-description-format": Record<never, never>;
-  readonly "epics-field-tickets": Record<never, never>;
-  readonly "epics-field-tickets-placeholder": Record<never, never>;
   readonly "epics-faults-label": Record<never, never>;
   readonly "epics-tabs-label": Record<never, never>;
   readonly "epics-tab-overview": Record<never, never>;
@@ -71,6 +68,12 @@ export interface EpicsCopy {
   readonly "epics-reactivate": Record<never, never>;
   readonly "epics-reactivate-title": Record<never, never>;
   readonly "epics-reactivate-body": Record<never, never>;
+  readonly "epics-archived-toast": {
+    readonly epic: unknown;
+  };
+  readonly "epics-reactivated-toast": {
+    readonly epic: unknown;
+  };
   readonly "epics-note-attention": Record<never, never>;
   readonly "epics-note-attention-escalated": Record<never, never>;
   readonly "epics-overview-description": Record<never, never>;
@@ -95,6 +98,9 @@ export interface EpicsCopy {
     readonly word: unknown;
     readonly count: unknown;
   };
+  readonly "epics-tickets-group-count": {
+    readonly count: unknown;
+  };
   readonly "epics-tickets-after": Record<never, never>;
   readonly "epics-tickets-blocks": {
     readonly count: unknown;
@@ -113,6 +119,7 @@ export interface EpicsCopy {
   readonly "epics-graph-empty": Record<never, never>;
   readonly "epics-graph-loading": Record<never, never>;
   readonly "epics-graph-failed": Record<never, never>;
+  readonly "epics-graph-as-list": Record<never, never>;
   readonly "epics-graph-outside-shown": {
     readonly count: unknown;
   };
@@ -123,25 +130,52 @@ export interface EpicsCopy {
   readonly "epics-graph-key-ready": Record<never, never>;
   readonly "epics-graph-key-blocked": Record<never, never>;
   readonly "epics-graph-key-escalated": Record<never, never>;
-  readonly "epics-graph-arrows": Record<never, never>;
-  readonly "epics-graph-unconnected": Record<never, never>;
+  readonly "epics-graph-chain": Record<never, never>;
+  readonly "epics-graph-layer": {
+    readonly layer: unknown;
+    readonly done: unknown;
+    readonly count: unknown;
+  };
+  readonly "epics-graph-done": {
+    readonly done: unknown;
+    readonly count: unknown;
+  };
   readonly "epics-card-untitled": Record<never, never>;
+  readonly "epics-card-outside-tag": Record<never, never>;
   readonly "epics-card": {
     readonly ticket: unknown;
     readonly title: unknown;
     readonly state: unknown;
+    readonly count: unknown;
+    readonly done: unknown;
   };
   readonly "epics-card-outside": {
     readonly ticket: unknown;
     readonly title: unknown;
     readonly state: unknown;
+    readonly count: unknown;
+    readonly done: unknown;
   };
   readonly "epics-side-label": Record<never, never>;
+  readonly "epics-side-summary": Record<never, never>;
+  readonly "epics-side-layer": {
+    readonly layer: unknown;
+    readonly layers: unknown;
+  };
+  readonly "epics-side-step": {
+    readonly step: unknown;
+    readonly steps: unknown;
+  };
   readonly "epics-side-depends-on": Record<never, never>;
   readonly "epics-side-blocks": Record<never, never>;
   readonly "epics-side-none": Record<never, never>;
   readonly "epics-side-open": Record<never, never>;
   readonly "epics-side-dispatch": Record<never, never>;
+  readonly "epics-sheet-ticket": {
+    readonly ticket: unknown;
+    readonly title: unknown;
+    readonly state: unknown;
+  };
   readonly "epics-show-older": Record<never, never>;
   readonly "epics-revisions-label": Record<never, never>;
   readonly "epics-revision": {
@@ -185,6 +219,10 @@ export interface EpicsCopy {
   };
   readonly "epics-edit": Record<never, never>;
   readonly "epics-edit-save": Record<never, never>;
+  readonly "epics-saved-toast": {
+    readonly epic: unknown;
+  };
+  readonly "epics-leave-question": Record<never, never>;
   readonly "epics-fault-title-empty": Record<never, never>;
   readonly "epics-fault-title-long": Record<never, never>;
   readonly "epics-fault-summary-long": Record<never, never>;

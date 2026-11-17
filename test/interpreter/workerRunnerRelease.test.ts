@@ -8,6 +8,7 @@ import {
   workerRunnerReleaseAnswered,
   workerRunnerReleasesRead,
 } from "../../src/interpreter/workerRunnerRelease.ts";
+import { workerContractPeerNaming } from "./workerContractPeerFixture.ts";
 
 const integrity = `sha512-${"A".repeat(85)}g==`;
 const pin = {
@@ -61,14 +62,18 @@ test("a pin that is not a release of the package it is kept under is refused, ne
 test("a poll is answered with its runner's pin only where it named a pinned package and its release reads one", () => {
   const pinned = releases.get("chuggy-linux");
   assert.deepEqual(
-    workerRunnerReleaseAnswered(releases, runner, workerContractRelease),
+    workerRunnerReleaseAnswered(
+      releases,
+      runner,
+      workerContractPeerNaming(workerContractRelease),
+    ),
     pinned,
   );
   assert.deepEqual(
     workerRunnerReleaseAnswered(
       releases,
       { ...runner, version: "0.15.0" },
-      workerContractRelease,
+      workerContractPeerNaming(workerContractRelease),
     ),
     pinned,
     "the pin is named whatever version the runner runs",
@@ -81,10 +86,31 @@ test("a poll is answered with its runner's pin only where it named a pinned pack
     [{ package: "chuggy-darwin", version: "0.1.0" }, workerContractRelease],
   ] as const)
     assert.equal(
-      workerRunnerReleaseAnswered(releases, named, offered),
+      workerRunnerReleaseAnswered(
+        releases,
+        named,
+        workerContractPeerNaming(offered),
+      ),
       undefined,
       `${JSON.stringify(named)} ${String(offered)}`,
     );
+});
+
+test("a poll listing its features is answered with its runner's pin only where it lists RunnerReleases, whatever release it names", () => {
+  assert.deepEqual(
+    workerRunnerReleaseAnswered(releases, runner, {
+      release: "1.10.0",
+      features: ["RunnerReleases"],
+    }),
+    releases.get("chuggy-linux"),
+  );
+  assert.equal(
+    workerRunnerReleaseAnswered(releases, runner, {
+      release: workerContractRelease,
+      features: ["RunnerProjects"],
+    }),
+    undefined,
+  );
 });
 
 test("a runner is shown with its package's pinned version where one is pinned, and alone where none is", () => {

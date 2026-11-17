@@ -75,7 +75,9 @@ async function drawProbe(probe: Probe): Promise<QueryClient> {
 async function drawnFailed(): Promise<Probe> {
   const probe: Probe = { failing: true, reads: 0, answered: "answered" };
   await drawProbe(probe);
-  expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
+  expect(readFailedLines()).toStrictEqual([
+    "Not read · Server error · InternalError",
+  ]);
   probe.failing = false;
   return probe;
 }
