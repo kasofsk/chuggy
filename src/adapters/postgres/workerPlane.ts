@@ -112,6 +112,17 @@ function workerInput(
   };
 }
 
+/** An attempt's input references as a read answers them, refused past their bound. */
+function workerInputs(inputs: unknown): readonly WorkerInputReference[] {
+  if (!Array.isArray(inputs) || inputs.length > inputBundleReferencesMax)
+    throw new Error(
+      "postgres worker plane: input references exceed their bound",
+    );
+  return inputs.map((input) =>
+    workerInput(input as Readonly<Record<string, unknown>>),
+  );
+}
+
 async function workerAuthenticate(
   pool: pg.Pool,
   secret: AttemptCapabilitySecret,
@@ -137,11 +148,6 @@ async function workerAuthenticate(
     row.live === null
   )
     throw new Error("postgres worker plane: authority has an invalid shape");
-  const inputs = row.inputs;
-  if (!Array.isArray(inputs) || inputs.length > inputBundleReferencesMax)
-    throw new Error(
-      "postgres worker plane: input references exceed their bound",
-    );
   return {
     partition: {
       tenant: asTenantId(row.tenant),
@@ -155,9 +161,7 @@ async function workerAuthenticate(
     manifest: asResultManifestId(row.manifest),
     inputBundle: row.input_bundle,
     inputBundleDigest: row.input_bundle_digest,
-    inputs: inputs.map((input) =>
-      workerInput(input as Readonly<Record<string, unknown>>),
-    ),
+    inputs: workerInputs(row.inputs),
   };
 }
 
@@ -186,6 +190,7 @@ interface WorkerTaskRow {
   readonly requirement_digest: string | null;
   readonly live: boolean | null;
   readonly invocation: unknown;
+  readonly inputs: unknown;
 }
 
 /** A recorded invocation, which the scheduler wrote in the shape of the pod document it came from. */
@@ -194,8 +199,11 @@ const workerTaskInvocationSchema = workTaskDocumentSchema
     profile: true,
     briefing: true,
     authority: true,
+    credentialsListed: true,
     worker: true,
     targetRef: true,
+    targetMerge: true,
+    pushPathsRefused: true,
   })
   .strict();
 
@@ -208,7 +216,7 @@ async function workerTask(
                ticket::text AS ticket,task::text AS task,task_kind,
                stage::text AS stage,source_request,input_bundle,input_bundle_digest,
                configuration_revision,configuration_digest,
-               requirement_identity,requirement_digest,live,invocation
+               requirement_identity,requirement_digest,live,invocation,inputs
           FROM read_worker_task(${workerSecretDigest(secret)})`,
   );
   const row = found.rows[0];
@@ -257,6 +265,7 @@ async function workerTask(
     ...(row.invocation === null
       ? {}
       : { invocation: workerTaskInvocationSchema.parse(row.invocation) }),
+    inputs: workerInputs(row.inputs),
   };
 }
 
@@ -464,10 +473,10 @@ export function postgresWorkerRunContext(pool: pg.Pool): WorkerRunContextPort {
 }
 
 /**
- * A run's totals, and in the same transaction the account usage they arrived
- * with wherever the totals are stored or already were, so a repeated post
- * offers its readings again and the boundary keeps whichever was observed
- * later.
+ * A run's totals with the credential the run named, and in the same
+ * transaction the account usage they arrived with under that credential,
+ * wherever the totals are stored or already were, so a repeated post offers
+ * its readings again and the boundary keeps whichever was observed later.
  */
 export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
   return {
@@ -483,7 +492,8 @@ export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
             ${totals.tokensCacheRead},${totals.costUsdMicros},${totals.costBasis},
             ${totals.permissionDenials},${totals.resultSubtype ?? null},
             ${totals.stopReason ?? null},
-            ${JSON.stringify(totals.models)}::jsonb)::text AS stored`,
+            ${JSON.stringify(totals.models)}::jsonb,
+            ${totals.credential ?? null})::text AS stored`,
         );
         const stored = workerRunStored(found.rows[0]?.stored, "a run total");
         if (
@@ -492,7 +502,8 @@ export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
         )
           await client.query<{ recorded: string | null }>(
             sql`SELECT record_worker_run_usage(${digest},${input.generation},
-              ${JSON.stringify(input.usage)}::jsonb)::text AS recorded`,
+              ${JSON.stringify(input.usage)}::jsonb,
+              ${totals.credential ?? null})::text AS recorded`,
           );
         return stored;
       }),
@@ -500,8 +511,9 @@ export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
 }
 
 /**
- * Narrowing a live attempt to the label its own run ended under, through the
- * boundary that already ends one; the lease sweep ends it either way.
+ * Narrowing a live attempt to the label its own run ended under, and to the
+ * credential not delivered and why where it names one, through the boundary
+ * that already ends one; the lease sweep ends it either way.
  *
  * Which of the two boundaries is `runEndedLoss`'s answer to the label rather
  * than the pod's: `lose_worker_attempt` spends a retry because the attempt ran,
@@ -518,7 +530,9 @@ export function postgresWorkerRunEnded(pool: pg.Pool): WorkerRunEndedPort {
         );
       const ended = await pool.query<{ ended: boolean | null }>(
         sql`SELECT lose_worker_attempt(${digest},
-          ${input.generation},${input.evidence})::boolean AS ended`,
+          ${input.generation},${input.evidence},
+          ${input.absent?.credential ?? null},
+          ${input.absent?.reason ?? null})::boolean AS ended`,
       );
       return ended.rows[0]?.ended === true;
     },
@@ -543,7 +557,8 @@ async function postgresWorkerRunEndedWithdrawn(
   if (withdrawn && input.evidence === "RunRateLimited")
     await client.query<{ recorded: string | null }>(
       sql`SELECT record_worker_run_limit(${digest},${input.generation},
-        ${input.limit?.window ?? null},${input.limit?.resetsAt ?? null})::text AS recorded`,
+        ${input.limit?.window ?? null},${input.limit?.resetsAt ?? null},
+        ${input.limit?.credential ?? null})::text AS recorded`,
     );
   return withdrawn;
 }

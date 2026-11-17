@@ -73,7 +73,7 @@ export function TicketTitleCell(props: {
       {props.title === undefined ? (
         <TicketTitleWords {...props} />
       ) : (
-        <Tooltip text={props.title}>
+        <Tooltip trigger="abbreviation" text={props.title}>
           <span className="max-w-aside inline-block truncate align-bottom">
             <TicketTitleWords {...props} />
           </span>

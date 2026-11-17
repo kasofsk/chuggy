@@ -1,8 +1,7 @@
 /**
  * The reader's own agent accounts, derived: a pause in words and whether a
- * press is offered, which agents a pause holds, whether a reading still counts,
- * a reading's share, and a draft of one agent's settings held to the bounds
- * the wire takes.
+ * press is offered, whether a reading still counts, a reading's share, and a
+ * draft of one agent's settings held to the bounds the wire takes.
  */
 
 import { expect, test } from "vitest";
@@ -11,6 +10,7 @@ import { copyTextEn } from "../app/copy/catalog.ts";
 import type { AgentAccount } from "../../../src/contract/responses.ts";
 import { agentPauseReasons } from "../../../src/contract/rosters.ts";
 import {
+  agentAccountCredentialsDrawn,
   agentAccountDraftOf,
   agentAccountDraftRead,
   agentAccountDraftSame,
@@ -18,8 +18,8 @@ import {
   agentAccountPressRefusal,
   agentAccountReading,
   agentAccountReadingStale,
-  agentAccountsPaused,
-  agentPauseLine,
+  agentAccountTurnOffRefusal,
+  agentPauseParts,
   agentPausePressable,
   agentPauseReasonLabel,
 } from "../app/core/agentAccounts.ts";
@@ -49,16 +49,24 @@ test("every reason a pause gives is a noun, and a pause reads as its status and 
     agentPauseReasons.map((reason) =>
       copyTextEn(agentPauseReasonLabel(reason)),
     ),
-  ).toStrictEqual(["Five-hour window", "Weekly window", "Provider limit"]);
+  ).toStrictEqual([
+    "Five-hour window",
+    "Weekly window",
+    "Provider limit",
+    "Off",
+  ]);
   expect(
-    copyTextEn(
-      agentPauseLine({
-        until: "2026-10-03T14:00:00Z",
-        reasons: ["seven_day", "limit"],
-        pressed: false,
-      }),
+    agentPauseParts({
+      until: "2026-10-03T14:00:00Z",
+      reasons: ["seven_day", "limit"],
+      pressed: false,
+    }).map(copyTextEn),
+  ).toStrictEqual(["Paused", "Weekly window", "Provider limit"]);
+  expect(
+    agentPauseParts({ off: true, reasons: ["off"], pressed: false }).map(
+      copyTextEn,
     ),
-  ).toBe("Paused · Weekly window · Provider limit");
+  ).toStrictEqual(["Paused", "Off"]);
 });
 
 test("a press is offered only where a provider's limit holds the agent and no press is waiting to try it", () => {
@@ -75,21 +83,6 @@ test("a press is offered only where a provider's limit holds the agent and no pr
   expect(agentPausePressable(undefined)).toBe(false);
 });
 
-test("only the agents a pause holds are said, in roster order", () => {
-  const pause = {
-    until: "2026-10-03T14:00:00Z",
-    reasons: ["limit" as const],
-    pressed: false,
-  };
-  const codex: AgentAccount = { ...claude, agent: "Codex", pause };
-  expect(
-    agentAccountsPaused({ accounts: [claude, codex] }).map(
-      (account) => account.agent,
-    ),
-  ).toStrictEqual(["Codex"]);
-  expect(agentAccountsPaused({ accounts: [claude, claude] })).toStrictEqual([]);
-});
-
 /** The pause rule counts a reading only while its reset is ahead. */
 test("a reading is stale once its window has reset, and a window never read has no reading", () => {
   const reading = agentAccountReading(claude, "five_hour");
@@ -101,6 +94,76 @@ test("a reading is stale once its window has reset, and a window never read has 
     agentAccountReadingStale({ ...reading, resetsAt: "never" }, resetsAtMs),
   ).toBe(true);
   expect(agentAccountReading(claude, "seven_day")).toBeUndefined();
+});
+
+test("an agent holding one credential or none, or read without the field, is drawn by its own; one holding several by each current one, in the wire's order", () => {
+  const nowMs = Date.parse("2026-10-03T10:00:00Z");
+  const fresh = claude.readings;
+  const stale: AgentAccount["readings"] = [
+    {
+      window: "seven_day",
+      utilization: 0.95,
+      resetsAt: "2026-10-03T09:00:00Z",
+      observedAt: "2026-09-26T00:00:00Z",
+    },
+  ];
+  const pause = {
+    until: "2026-10-03T14:00:00Z",
+    reasons: ["limit" as const],
+    pressed: false,
+  };
+  expect(agentAccountCredentialsDrawn(claude, nowMs)).toBeUndefined();
+  expect(
+    agentAccountCredentialsDrawn({ ...claude, credentials: [] }, nowMs),
+  ).toBeUndefined();
+  expect(
+    agentAccountCredentialsDrawn(
+      { ...claude, credentials: [{ name: "home", readings: fresh }] },
+      nowMs,
+    ),
+  ).toBeUndefined();
+  const held = (
+    credentials: NonNullable<AgentAccount["credentials"]>,
+  ): readonly string[] | undefined =>
+    agentAccountCredentialsDrawn({ ...claude, credentials }, nowMs)?.map(
+      (credential) => credential.name,
+    );
+  expect(
+    held([
+      { name: "home", readings: fresh },
+      { name: "old", readings: stale },
+      { name: "spare", readings: [], pause },
+      { name: "work", readings: stale, pause },
+    ]),
+  ).toStrictEqual(["home", "spare", "work"]);
+  expect(
+    held([
+      { name: "old", readings: stale },
+      { name: "unread", readings: [] },
+    ]),
+  ).toStrictEqual([]);
+});
+
+test("an agent holding a credential turned off is drawn by each current one, the one off always among them, and a lone one on is drawn by its own", () => {
+  const nowMs = Date.parse("2026-10-03T10:00:00Z");
+  const off = { off: true as const, reasons: ["off" as const], pressed: false };
+  const drawn = (
+    credentials: NonNullable<AgentAccount["credentials"]>,
+  ): readonly string[] | undefined =>
+    agentAccountCredentialsDrawn({ ...claude, credentials }, nowMs)?.map(
+      (credential) => credential.name,
+    );
+  expect(drawn([{ name: "home", readings: claude.readings }])).toBeUndefined();
+  expect(drawn([{ name: "work", readings: [], pause: off }])).toStrictEqual([
+    "work",
+  ]);
+  expect(
+    drawn([
+      { name: "home", readings: claude.readings },
+      { name: "unread", readings: [] },
+      { name: "work", readings: [], pause: off },
+    ]),
+  ).toStrictEqual(["home", "work"]);
 });
 
 test("a share is read in whole percent, rounded down past the float's noise", () => {
@@ -166,6 +229,21 @@ test("a press refused because no limit holds the agent says so, and any other re
     ),
   ).toBe("No limit holds it");
   expect(copyTextEn(agentAccountPressRefusal({ outcome: "Absent" }))).toBe(
+    "Not found",
+  );
+});
+
+test("a turning off refused because as many credentials as the account holds off are off says so, and any other refusal is its word", () => {
+  expect(
+    copyTextEn(
+      agentAccountTurnOffRefusal({
+        outcome: "Conflict",
+        code: "OffFull",
+        body: undefined,
+      }),
+    ),
+  ).toBe("No more credentials can be off");
+  expect(copyTextEn(agentAccountTurnOffRefusal({ outcome: "Absent" }))).toBe(
     "Not found",
   );
 });

@@ -61,6 +61,8 @@ import type {
   GitPromotionPort,
   HeadAdoption,
   HeadAdoptionQuestion,
+  PathsDiffering,
+  PathsDifferingQuestion,
   RepositoryBinding,
   RepositoryCredential,
   RepositoryCredentialPort,
@@ -77,6 +79,7 @@ import {
   candidateContains,
   candidateHeld,
   candidateIntegrate,
+  candidatePathsDiffering,
   candidatePrepare,
 } from "./gitCandidate.ts";
 import { stackMint, stackRemove, stackRemoveUnrecorded } from "./gitStack.ts";
@@ -523,6 +526,16 @@ async function gitPromotionAdoptable(
   return candidateAdoptable(own.scratch, authorized.credential, question);
 }
 
+/** Reads which files under some paths a target differs from a candidate in, a credential refused being no answer. */
+async function gitPromotionPathsDiffering(
+  own: GitPromotionState,
+  question: PathsDifferingQuestion,
+): Promise<PathsDiffering> {
+  const authorized = await gitPromotionCredentialOf(own, question.repository);
+  if (authorized.authorized === "Refused") return { read: "Unread" };
+  return candidatePathsDiffering(own.scratch, authorized.credential, question);
+}
+
 /** Reads the tree one commit records, a credential refused being no answer. */
 async function gitPromotionCommitTree(
   own: GitPromotionState,
@@ -566,6 +579,7 @@ export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
     prepareSource: (preparation) => gitPromotionPrepareSource(own, preparation),
     proveCandidateHeld: (question) => gitPromotionHeld(own, question),
     proveTargetContained: (question) => gitPromotionContained(own, question),
+    readPathsDiffering: (question) => gitPromotionPathsDiffering(own, question),
     integrateCandidate: (integration) =>
       gitPromotionIntegrate(own, integration),
     mintStack: (minting) => gitPromotionMintStack(own, minting),

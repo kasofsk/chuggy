@@ -87,7 +87,7 @@ export function ConversationSystemLine(props: {
   return (
     <p className="text-ink-3 flex items-center justify-center gap-3 text-xs">
       {rule}
-      <Tooltip text={props.detail}>
+      <Tooltip trigger="abbreviation" text={props.detail}>
         <span>{copyOrDataText(text, props.words)}</span>
       </Tooltip>
       {rule}

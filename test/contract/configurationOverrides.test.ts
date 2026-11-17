@@ -174,11 +174,45 @@ test("a prompt named by path is the text the catalog's import stored beside it",
   });
 });
 
-test("a workload the catalog does not hold is left for its reader to refuse, not added", () => {
+test("a workload the catalog does not hold is added as the override writes it, a prompt path read as the text stored beside it", () => {
   const effective = configurationWithOverrides(catalog, {
-    workloads: { absent: { practices: [] } },
+    workloads: {
+      gate: { runner: "Approval", approvers: "Admin" },
+      second: { runner: "Agent", prompt: { path: "prompts/review.md" } },
+    },
   }) as { workloads: Record<string, unknown> };
-  assert.deepEqual(Object.keys(effective.workloads), ["build", "review"]);
+  assert.deepEqual(effective.workloads, {
+    ...catalog.workloads,
+    gate: { runner: "Approval", approvers: "Admin" },
+    second: {
+      runner: "Agent",
+      prompt: { path: "prompts/review.md", text: "Review it." },
+    },
+  });
+});
+
+test("a plan an override names replaces the catalog's whole or is added, and the catalog's others are kept", () => {
+  const plans = {
+    standard: [{ name: "review", evaluators: ["review"] }],
+    light: [{ name: "build", evaluators: ["build"] }],
+  };
+  const replaced = [{ name: "both", evaluators: ["build", "review"] }];
+  const gate = [{ name: "gate", evaluators: ["review"] }];
+  const overrides = { plans: { standard: replaced, gate } };
+  assert.deepEqual(configurationOverridesSchema.parse(overrides), overrides);
+  assert.deepEqual(
+    (
+      configurationWithOverrides({ ...catalog, plans }, overrides) as {
+        plans: unknown;
+      }
+    ).plans,
+    { standard: replaced, light: plans.light, gate },
+  );
+  assert.equal(
+    configurationOverridesSchema.safeParse({ plans: { gate: [] } }).success,
+    false,
+    "a plan holds a stage, as the catalog's do",
+  );
 });
 
 test("a workload override may name when it is run again as an evaluator, and only as the catalog may", () => {

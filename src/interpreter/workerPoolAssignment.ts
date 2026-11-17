@@ -70,7 +70,10 @@ import type {
   ExecutionStatus,
   LogicalExecution,
 } from "./executionScheduler.ts";
-import type { ExecutionRequirement, Platform } from "./executionRequirement.ts";
+import type {
+  ExecutionRequirement,
+  Platform,
+} from "../contract/executionRequirement.ts";
 import type { Principal } from "./principal.ts";
 import type { WorkerPoolOwnerFallback } from "./projectOwnerFallback.ts";
 import type { Partition } from "./projectStore.ts";

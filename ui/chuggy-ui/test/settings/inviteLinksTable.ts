@@ -10,9 +10,10 @@ import { copyTextEn } from "../../app/copy/catalog.ts";
 import { copyOrDataText } from "../../app/core/copy.ts";
 import { instantText } from "../../app/core/figures.ts";
 import { turned } from "../screenHarness.tsx";
+import { tableText } from "../tableText.ts";
 
 export function linksTable(): HTMLElement {
-  return screen.getByRole("table", { name: "Invite links" });
+  return screen.getByRole("table", { name: /^(Invite|Signup) links$/u });
 }
 
 /** The table's rows under its head, a link each and under one the row its revocation asks in. */
@@ -40,9 +41,12 @@ export function linkCells(
   );
 }
 
-/** What one column draws down the table, a row a link. */
+/** What one column draws down the table, a row a link, less the label a card draws. */
 export function linkColumn(heading: string): readonly (string | undefined)[] {
-  return linkRows().map((row) => linkCells(row)[heading]?.textContent);
+  return linkRows().map((row) => {
+    const cell = linkCells(row)[heading];
+    return cell === undefined ? undefined : tableText(cell);
+  });
 }
 
 export function linkStatuses(): readonly (string | undefined)[] {
@@ -63,10 +67,10 @@ export function linkRevocations(): readonly (string | null)[] {
     .map((button) => button.closest("tr")?.textContent ?? null);
 }
 
-/** The words each row carries for when it is stacked, in the row's order. */
+/** The labels each row's card draws, in the row's order. */
 export function linkStackedLabels(): readonly (readonly string[])[] {
   return linkRows().map((row) =>
-    Array.from(row.querySelectorAll(".people-stacked-label")).map(
+    Array.from(row.querySelectorAll(".tabular-label")).map(
       (label) => label.textContent,
     ),
   );

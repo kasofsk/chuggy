@@ -24,11 +24,25 @@
  * workspace lets them register one, the mint of a token for one, which only a
  * caller it lets is answered, and its redemption, which makes a new host
  * theirs in place of any they held. Where their chats in a project run on
- * runners, the session placement says their chat host as it stands.
+ * runners, the session placement says their chat host as it stands. Their
+ * personal runners in a workspace are held apart from it, with the projects
+ * they serve, and are not found where they hold none.
+ *
+ * It imports a repository's configuration as the server does: from what was
+ * pushed to the repository's default branch, judged by the contract's own
+ * judgment of a configuration directory, kept as the binding's last import,
+ * and refused with the files it refused.
  */
 
 import type { AccessCallerTenant } from "../../../src/contract/accessPlane.ts";
 import { projectRepositoriesAnsweredMax } from "../../../src/contract/http.ts";
+import { repositoryConfigurationRoot } from "../../../src/contract/configurationDocument.ts";
+import { projectDisplayNameSchema } from "../../../src/contract/requests.ts";
+import {
+  repositoryConfigurationFilesReadiness,
+  repositoryConfigurationImportReferences,
+} from "../../../src/contract/repositoryConfigurationReadiness.ts";
+import type { RepositoryConfigurationReferenced } from "../../../src/contract/repositoryConfigurationReference.ts";
 import type {
   DraftResponse,
   ExecutionPlacementResponse,
@@ -36,6 +50,7 @@ import type {
   ForgeRepositoryResponse,
   ProjectRepositoryConfigurationsHeldResponse,
   ProjectRepositoryListedResponse,
+  RepositoryConfigurationImportAttemptResponse,
   SelectorProjectSettingsResponse,
   SessionPlacementResponse,
   TicketLandingResponse,
@@ -43,6 +58,7 @@ import type {
 } from "../../../src/contract/responses.ts";
 import type {
   ForgeAppName,
+  OwnerFallback,
   PlacementRoute,
   SessionRunnerStanding,
 } from "../../../src/contract/rosters.ts";
@@ -53,6 +69,8 @@ export interface SetupSiteRepository {
   readonly configured: boolean;
   readonly retired?: boolean;
   readonly bootstrapped?: boolean;
+  /** The import of it that finished last, where one did. */
+  readonly lastImport?: RepositoryConfigurationImportAttemptResponse;
 }
 
 export interface SetupSiteTicket {
@@ -75,6 +93,8 @@ export interface SetupSiteProject {
   work: PlacementRoute;
   threads: PlacementRoute;
   runner: SessionRunnerStanding;
+  /** The owner fallback the project names, where it names one. */
+  fallback: OwnerFallback | undefined;
   /** Most lately moved first. */
   tickets: SetupSiteTicket[];
   drafts: number[];
@@ -84,6 +104,9 @@ export interface SetupSiteProject {
   /** The pools registered for the project, by name, and the registration tokens minted for it that nobody has redeemed. */
   pools: string[];
   tokens: string[];
+  /** What the project is called, where it is other than its address, and whether the caller made it. */
+  name?: string;
+  made?: true;
 }
 
 /** The reads of the bare command a case can move to another fate, by what each is of. */
@@ -97,6 +120,8 @@ export type SetupSiteRead =
   | "repositories"
   | "work"
   | "placement"
+  | "fallback"
+  | "personal"
   | "landed"
   | "moving"
   | "drafts"
@@ -114,6 +139,12 @@ export type SetupSiteRunnerAsk =
 export interface SetupSiteChatHost {
   readonly id: string;
   live: boolean;
+}
+
+/** The caller's personal runners in a workspace: whether each has polled lately, and the projects every one serves. */
+export interface SetupSitePersonalRunners {
+  live: boolean[];
+  projects: string[];
 }
 
 /** How a read is answered where a case says other than what the site holds. */
@@ -140,8 +171,12 @@ export interface SetupSite {
   readonly chat: Map<string, SetupSiteChatHost>;
   readonly chatTokens: Map<string, string>;
   chatMade: number;
+  /** The caller's personal runners, by workspace, where they hold any. */
+  readonly personal: Map<string, SetupSitePersonalRunners>;
   /** What each mint that was answered asked for. */
   readonly mints: SetupSiteMint[];
+  /** What each repository's default branch holds at its head, by repository and then path, where something was pushed to it. */
+  readonly pushed: Map<string, ReadonlyMap<string, string>>;
   /** The letters the site draws a token from, which a case changes to draw one nothing knows by its shape, or one no command line carries whole. */
   letters: string;
 }
@@ -176,6 +211,7 @@ export function setupSiteProject(
     work: "Pool",
     threads: "Pool",
     runner: "Unregistered",
+    fallback: undefined,
     tickets: [],
     drafts: [],
     landings: new Map(),
@@ -200,7 +236,9 @@ export function setupSiteEmpty(): SetupSite {
     chat: new Map(),
     chatTokens: new Map(),
     chatMade: 0,
+    personal: new Map(),
     mints: [],
+    pushed: new Map(),
     letters: "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_",
   };
 }
@@ -294,6 +332,7 @@ export function setupSiteAt(stage: SetupSiteStage): SetupSite {
   if (!reached("Workspace")) return site;
   site.tenants.push({
     tenant: setupSiteWorkspace,
+    displayName: setupSiteWorkspace,
     roles: ["Admin"],
     administer: true,
   });
@@ -441,6 +480,7 @@ function binding(
     landing: { mode: "Push" },
     finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     pipelinesWritable: false,
+    pipelinesRunnable: false,
     ...(repository.retired === true
       ? { retiredAt: "2026-08-27T00:00:00Z" }
       : {}),
@@ -448,6 +488,9 @@ function binding(
     ...(repository.configured
       ? { configurationsHeld: configurations(repository) }
       : {}),
+    ...(repository.lastImport === undefined
+      ? {}
+      : { lastImport: repository.lastImport }),
   };
 }
 
@@ -667,6 +710,34 @@ function chatAnswered(site: SetupSite, tenant: string): SetupSiteAnswer {
   );
 }
 
+/** The caller's personal runners in a workspace as their read answers them, or not found where they hold none. */
+function personalAnswered(site: SetupSite, tenant: string): SetupSiteAnswer {
+  const held = site.personal.get(tenant);
+  return (
+    fated(site, "personal") ??
+    (held === undefined || held.live.length === 0
+      ? refused()
+      : answered({
+          runners: held.live.map((live, at) => ({
+            id: `chuggy-runner-${String(at + 1)}`,
+            capabilities: ["Platform:Linux:Amd64"],
+            registeredAt: "2026-10-09T00:00:00Z",
+            ...(live ? { polledAt: "2026-10-09T00:01:00Z" } : {}),
+            live,
+            executionsLive: live,
+            held: [],
+            heldTruncated: false,
+          })),
+          projects: held.projects.map((project) => ({
+            project,
+            priority: "Normal",
+            waiting: 0,
+            waitingTruncated: false,
+          })),
+        }))
+  );
+}
+
 /** The pools as the roster read answers them, padded past what one read holds where a case cut it. */
 function pools(site: SetupSite, project: SetupSiteProject): SetupSiteAnswer {
   return (
@@ -771,6 +842,16 @@ function projectAnswered(
       return fated(site, "work") ?? answered(work(project));
     case "/session-placement":
       return fated(site, "placement") ?? answered(placement(site, project));
+    case "/owner-fallback":
+      return (
+        fated(site, "fallback") ??
+        answered({
+          ...(project.fallback === undefined
+            ? {}
+            : { fallback: project.fallback }),
+          administers: project.administer,
+        })
+      );
     case "/abilities":
       return abilities(site, project);
     case "/worker-pools":
@@ -826,6 +907,97 @@ function grant(
   );
 }
 
+const importsPath = "/configurations/imports";
+
+/** The import of a repository at the head of what was pushed to it, each file its catalogs name read as the server reads them, then judged by the contract's judgment. */
+function importedAt(
+  site: SetupSite,
+  repository: SetupSiteRepository,
+): RepositoryConfigurationImportAttemptResponse["outcome"] {
+  const tree =
+    site.pushed.get(repository.repository) ?? new Map<string, string>();
+  const files = [...tree.keys()]
+    .filter(
+      (path) =>
+        path.startsWith(repositoryConfigurationRoot) && path.endsWith(".json"),
+    )
+    .map((path) => ({
+      path,
+      kind: "File" as const,
+      content: tree.get(path) ?? "",
+    }));
+  if (files.length === 0)
+    return { result: "SnapshotAbsent", absent: "ConfigurationDirectory" };
+  const referenced = new Map<string, RepositoryConfigurationReferenced>();
+  const unread = () =>
+    repositoryConfigurationImportReferences(files, referenced).filter(
+      (path) => !referenced.has(path),
+    );
+  for (let paths = unread(); paths.length > 0; paths = unread())
+    for (const path of paths) {
+      const content = tree.get(path);
+      referenced.set(
+        path,
+        content === undefined
+          ? { path, found: "Absent" }
+          : { path, found: "File", content },
+      );
+    }
+  const readiness = repositoryConfigurationFilesReadiness({
+    files,
+    referenced,
+  });
+  return readiness.readiness === "Ready"
+    ? { result: "Imported" }
+    : {
+        result: "DeclarationsRefused",
+        refusals: readiness.faults.map((fault) => fault.refusal),
+        refusalCount: readiness.faults.length,
+      };
+}
+
+/** What the site answers an import: the outcome kept on the binding, and the refusal the server answers it with. */
+function imported(
+  site: SetupSite,
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const asked = (JSON.parse(body ?? "{}") as { readonly repository?: string })
+    .repository;
+  const at = project.repositories.findIndex(
+    (held) => held.repository.toLowerCase() === asked?.toLowerCase(),
+  );
+  const repository = project.repositories[at];
+  if (repository === undefined) return refused();
+  const outcome = importedAt(site, repository);
+  project.repositories[at] = {
+    ...repository,
+    configured: repository.configured || outcome.result === "Imported",
+    lastImport: { attemptedAt: "2026-11-15T00:00:00Z", outcome },
+  };
+  if (outcome.result === "Imported") return answered({ imported: true });
+  return outcome.result === "DeclarationsRefused"
+    ? {
+        status: 422,
+        body: {
+          error: {
+            code: "RepositoryConfigurationsRefused",
+            message: "The repository configurations were refused.",
+          },
+          faults: outcome.refusals,
+        },
+      }
+    : {
+        status: 422,
+        body: {
+          error: {
+            code: "RepositoryConfigurationsAbsent",
+            message: "The commit declares no configurations.",
+          },
+        },
+      };
+}
+
 function projectOf(
   site: SetupSite,
   tenant: string,
@@ -848,6 +1020,12 @@ function tenantWritten(
   if (sent.method === "POST" && rest === chatMintPath)
     return chatMinted(site, tenant, sent.body);
   const within = /^\/projects\/([^/]+)(\/.*)$/u.exec(rest);
+  if (sent.method === "POST" && within?.[2] === importsPath) {
+    const project = projectOf(site, tenant, within[1]);
+    return project === undefined
+      ? refused()
+      : imported(site, project, sent.body);
+  }
   if (sent.method !== "POST" || within?.[2] !== mintPath) return undefined;
   const project = projectOf(site, tenant, within[1]);
   return project === undefined ? refused() : minted(site, project, sent.body);
@@ -867,6 +1045,7 @@ function tenantAnswered(
       fated(site, "permit") ?? answered({ granted: !site.withheld.has(tenant) })
     );
   if (rest === "/chat-host") return chatAnswered(site, tenant);
+  if (rest === "/personal-runner") return personalAnswered(site, tenant);
   const listing = /^\/forge-installations\/([^/]+)\/repositories$/u.exec(rest);
   if (listing !== null)
     return administers
@@ -912,12 +1091,62 @@ function inventory(site: SetupSite, cursor: string | null): SetupSiteAnswer {
     answered({
       projects: site.projects
         .filter((held) => held.page === at)
-        .map((held) => ({ tenant: held.tenant, project: held.project })),
+        .map((held) => ({
+          tenant: held.tenant,
+          project: held.project,
+          name: held.name ?? held.project,
+        })),
       ...(at < last || cut(site, "inventory")
         ? { nextCursor: String(at + 1) }
         : {}),
     })
   );
+}
+
+function conflict(code: string): SetupSiteAnswer {
+  return { status: 409, body: { error: { code, message: "Conflict." } } };
+}
+
+/** Whether a name is one the site takes as what a project is called. */
+const calledWhole = (name: string): boolean =>
+  projectDisplayNameSchema.safeParse(name).success;
+
+/**
+ * A creation, as the site answers it: a project made in a workspace the caller
+ * administers, the same project answered to the caller who made it asking
+ * again under any operation, one another made refused as there, and a
+ * workspace the caller does not administer refused as taken.
+ */
+function projectCreated(
+  site: SetupSite,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const asked = JSON.parse(body ?? "{}") as {
+    readonly tenant: string;
+    readonly project: string;
+    readonly name: string;
+  };
+  const { tenant, project, name } = asked;
+  if (!calledWhole(name))
+    return {
+      status: 400,
+      body: { error: { code: "ProjectDisplayNameInvalid", message: "No." } },
+    };
+  if (!site.tenants.some((held) => held.tenant === tenant && held.administer))
+    return conflict("TenantTaken");
+  const held = site.projects.find(
+    (one) => one.tenant === tenant && one.project === project,
+  );
+  if (held !== undefined)
+    return held.made === true
+      ? answered({ tenant, project, name: held.name ?? project })
+      : conflict("ProjectExists");
+  site.projects.push({
+    ...setupSiteProject(tenant, project),
+    name: name.trim(),
+    made: true,
+  });
+  return answered({ tenant, project, name: name.trim() });
 }
 
 /**
@@ -934,6 +1163,8 @@ export function setupSiteAnswered(
   const url = new URL(target, "http://site.invalid");
   if (sent.method === "POST" && url.pathname === redeemPath)
     return redeemed(site, sent.body);
+  if (sent.method === "POST" && url.pathname === "/api/v1/projects")
+    return projectCreated(site, sent.body);
   if (sent.method === "POST" && url.pathname === chatRedeemPath)
     return setupSiteChatRedeemed(
       site,

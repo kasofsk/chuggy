@@ -16,6 +16,7 @@ import { draftFollowBehindSentence } from "../app/core/draftFollow.ts";
 import { settled, turned } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
+import { disclosed } from "./creationMore.ts";
 
 /** The agent's revision arriving as the stream's frame for it. */
 export async function followArrives(
@@ -35,8 +36,8 @@ export async function followArrives(
 }
 
 export function followTitle(): HTMLInputElement {
-  return screen.getByPlaceholderText<HTMLInputElement>(
-    "what this ticket is called",
+  return disclosed(() =>
+    screen.getByPlaceholderText<HTMLInputElement>("what this ticket is called"),
   );
 }
 

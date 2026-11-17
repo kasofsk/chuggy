@@ -14,10 +14,7 @@ import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import {
-  Conversation,
-  conversationStopBeatMs,
-} from "../app/browser/conversation/Conversation.tsx";
+import { Conversation } from "../app/browser/conversation/Conversation.tsx";
 import type { ConversationSent } from "../app/browser/conversation/Conversation.tsx";
 import { copySaidMilliseconds } from "../app/browser/ui/CopyButton.tsx";
 import { CopyProvider } from "../app/browser/ui/copyHeld.tsx";
@@ -299,7 +296,7 @@ function message(): HTMLTextAreaElement {
 }
 
 describe("the composer's controls", () => {
-  test("stand in a row under the box, the paperclip first and the button last, with the images over the box and the box holding the text alone", async () => {
+  test("stand in a row under the box, the paperclip first and Send last, with the images over the box and the box holding the text alone", async () => {
     const view = renderCopied(composing({ standing: "Answered" }));
     fireEvent.paste(message(), {
       clipboardData: {
@@ -347,39 +344,59 @@ describe("the composer's controls", () => {
   });
 });
 
-describe("the composer's button in its row", () => {
-  test("a press the surface ignores still does nothing", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+describe("Stop and Send in their row", () => {
+  test("while a turn can be stopped Stop stands immediately before Send, Send last, and Send is the one element throughout", () => {
     const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
     const onStop = vi.fn(() => Promise.resolve());
     const view = renderCopied(
-      composing({ standing: "Running", state: "Claimed" }, onSend, onStop),
+      composing({ standing: "Answered" }, onSend, onStop),
     );
     const controls = view.container.querySelector(".conversation-controls");
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(controls?.lastElementChild).toBe(send);
+
+    view.rerender(
+      composing({ standing: "Running", state: "Claimed" }, onSend, onStop),
+    );
+    const stop = screen.getByRole("button", { name: "Stop" });
+    expect(screen.getByRole("button", { name: "Send" })).toBe(send);
     expect(
-      controls?.contains(screen.getByRole("button", { name: "Stop" })),
-    ).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-    expect(onStop).toHaveBeenCalledTimes(1);
+      Array.from(
+        controls?.querySelectorAll("button") ?? [],
+        (button) => button.textContent || button.getAttribute("aria-label"),
+      ),
+    ).toStrictEqual(["Attach image", "Stop", "Send"]);
+    expect(stop.nextElementSibling).toBe(send);
+    expect(controls?.lastElementChild).toBe(send);
+    expect(stop.className).not.toBe(send.className);
+
     view.rerender(composing({ standing: "Stopped" }, onSend, onStop));
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Send" })).toBe(send);
+    styleless();
+  });
+
+  test("a second press of Stop within its beat does nothing, and Send beside it takes a click at once", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+    const onStop = vi.fn(() => Promise.resolve());
+    renderCopied(
+      composing({ standing: "Running", state: "Claimed" }, onSend, onStop),
+    );
     fireEvent.change(message(), { target: { value: "one more thing" } });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(onSend).not.toHaveBeenCalled();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(conversationStopBeatMs);
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(onStop).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend).toHaveBeenCalledWith("one more thing", []);
     styleless();
   });
 });

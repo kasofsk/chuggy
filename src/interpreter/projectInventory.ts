@@ -3,13 +3,13 @@ import type {
   ProjectAccess,
   ProjectInventory,
 } from "./nativeWeb.ts";
-import type { Partition } from "./projectStore.ts";
+import type { NamedPartition, Partition } from "./projectStore.ts";
 
 export interface ProjectInventoryStore {
   projects(
     after: Partition | undefined,
     limit: number,
-  ): Promise<readonly Partition[]>;
+  ): Promise<readonly NamedPartition[]>;
 }
 
 const inventoryScanPagesMax = 4;
@@ -20,8 +20,8 @@ export function authorizedProjectInventory(
 ): ProjectInventory {
   return {
     projects: async (principal: Principal, after, limit) => {
-      const visible: Partition[] = [];
-      let cursor = after;
+      const visible: NamedPartition[] = [];
+      let cursor: Partition | undefined = after;
       let exhausted = false;
       for (let page = 0; page < inventoryScanPagesMax; page += 1) {
         const batch = await store.projects(cursor, limit);
@@ -29,12 +29,10 @@ export function authorizedProjectInventory(
           exhausted = true;
           break;
         }
-        for (const partition of batch) {
-          cursor = partition;
-          if (
-            (await access.authorize(principal, partition, "Read")) !== undefined
-          )
-            visible.push(partition);
+        for (const named of batch) {
+          cursor = { tenant: named.tenant, project: named.project };
+          if ((await access.authorize(principal, cursor, "Read")) !== undefined)
+            visible.push(named);
           if (visible.length === limit) break;
         }
         exhausted = batch.length < limit;

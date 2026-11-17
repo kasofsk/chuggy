@@ -1,7 +1,7 @@
 /**
  * The ticket header as drawn: a label for every state that is never only a
- * colour, the bar that stands in for the header once it scrolls away, the
- * epics under the title, and the Runs tab's count.
+ * colour, the bar that stands in for the header once it scrolls away, and the
+ * epics under the title.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -10,19 +10,17 @@ import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import {
-  TicketHeader,
-  TicketTabs,
-} from "../app/browser/ticket/TicketHeader.tsx";
+import { TicketHeader } from "../app/browser/ticket/TicketHeader.tsx";
 import { TicketStateLabel } from "../app/browser/ticket/TicketStateLabel.tsx";
 import type { TicketListStanding } from "../app/core/ticketListView.ts";
 import { intersectionObserverStubbed } from "./intersectionObserver.ts";
 
-vi.mock("@tanstack/react-router", () => ({
-  Link: (props: { readonly children?: ReactNode }) => (
+vi.mock("@tanstack/react-router", () => {
+  const stub = (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
-  ),
-}));
+  );
+  return { createLink: () => stub, Link: stub };
+});
 // jscpd:ignore-end -- the case's own doubles resume here
 
 afterEach(() => {
@@ -84,7 +82,7 @@ function headerDrawn(): void {
 test("the bar holding the small label and the title shows once the header has scrolled out of view, and goes when it is back", () => {
   const report = intersectionObserverStubbed();
   headerDrawn();
-  const bar = document.querySelector<HTMLElement>(".ticket-sticky-bar");
+  const bar = document.querySelector<HTMLElement>(".page-header-sticky-bar");
   expect(bar?.hidden).toBe(true);
   act(() => {
     report(false);
@@ -108,7 +106,7 @@ test("a browser without the observer never shows the bar", () => {
   vi.stubGlobal("IntersectionObserver", undefined);
   headerDrawn();
   expect(
-    document.querySelector<HTMLElement>(".ticket-sticky-bar")?.hidden,
+    document.querySelector<HTMLElement>(".page-header-sticky-bar")?.hidden,
   ).toBe(true);
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
     "Lock the contract #335",
@@ -129,57 +127,10 @@ test("the epics the header is given are drawn in it, after the title", () => {
       notes={null}
     />,
   );
-  const header = document.querySelector<HTMLElement>(".ticket-header");
+  const header = document.querySelector<HTMLElement>("header.page-header");
   const epics = within(header as HTMLElement).getByText("Billing");
   expect(
     screen.getByRole("heading", { level: 1 }).compareDocumentPosition(epics) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-});
-
-test("Runs carries its count once the page holds a run, and the tabs are the same either way", () => {
-  const partition = { tenant: "acme", project: "atlas" };
-  const drawn = (
-    runCount: number | undefined,
-    runCountCut = false,
-  ): readonly string[] => {
-    renderCopied(
-      <TicketTabs
-        partition={partition}
-        ticket={335}
-        runCount={runCount}
-        runCountCut={runCountCut}
-        runsWithin={false}
-      />,
-    );
-    const names = screen
-      .getAllByRole("link")
-      .map((link) => link.textContent ?? "");
-    cleanup();
-    return names;
-  };
-  expect(drawn(undefined)).toStrictEqual([
-    "Overview",
-    "Runs",
-    "Configuration",
-    "Usage",
-  ]);
-  expect(drawn(0)).toStrictEqual([
-    "Overview",
-    "Runs",
-    "Configuration",
-    "Usage",
-  ]);
-  expect(drawn(6)).toStrictEqual([
-    "Overview",
-    "Runs6",
-    "Configuration",
-    "Usage",
-  ]);
-  expect(drawn(50, true)).toStrictEqual([
-    "Overview",
-    "Runs50+",
-    "Configuration",
-    "Usage",
-  ]);
 });

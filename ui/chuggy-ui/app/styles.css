@@ -47,14 +47,3 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
-
-.session-card {
-  max-width: 34rem;
-  margin: 12vh auto;
-  padding: var(--space-4);
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-2);
-  background: var(--surface-1);
-  display: grid;
-  gap: var(--space-4);
-}
