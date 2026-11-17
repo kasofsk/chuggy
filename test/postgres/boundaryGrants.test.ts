@@ -15,6 +15,8 @@ import {
   agentAccountCredentialStandingFunction,
   agentAccountCredentialPauseFunction,
   agentAccountFunction,
+  executionAttemptStartedFunction,
+  executionTicketRegisteredFunction,
   agentAccountNamedCredentialPausesFunction,
   agentAccountNamedPauseFunction,
   agentAccountPauseFunction,
@@ -717,6 +719,18 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [apiRole],
     [finalizerRole, ticketServiceRole, schedulerRole],
   ),
+  {
+    signature: `${executionAttemptStartedFunction}(text,text,text,text)`,
+    definer: false,
+    callers: [poolPlaneRole, schedulerRole],
+    strangers: [apiRole, workerPlaneRole],
+  },
+  {
+    signature: `${executionTicketRegisteredFunction}(text,text,bigint)`,
+    definer: false,
+    callers: [poolPlaneRole, schedulerRole],
+    strangers: [apiRole, workerPlaneRole],
+  },
   {
     signature: `${agentAccountFunction}(text,text,text,text)`,
     definer: false,
