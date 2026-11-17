@@ -61,6 +61,7 @@ import {
   personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
   projectAppearanceResponseSchema,
+  projectImagesResponseSchema,
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
   sessionPlacementResponseSchema,
@@ -515,6 +516,9 @@ export const stubApiReads: readonly StubApiRead[] = [
     theme: builtInThemes[builtInThemeDefault],
     layer: "BuiltInDefault",
     layers: {},
+  }),
+  stubApiRead(`${projectPath}/appearance/images`, projectImagesResponseSchema, {
+    administers: false,
   }),
   stubApiRead("/api/v1/appearance/choice", themeChoiceResponseSchema, {}),
   stubApiRead("/api/v1/appearance/themes", ownedThemesResponseSchema, {
