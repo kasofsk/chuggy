@@ -887,9 +887,9 @@ const evaluatedAfterWaiting: ExecutionShape = {
   terminalAt: "2026-11-07T10:33:00Z",
 };
 
-/** A Usage row's Run time and Waited cells. */
+/** A Usage row's Run time and Waited values. */
 function usageStepTimes(row: Element | null | undefined): readonly unknown[] {
-  const cells = row?.querySelectorAll("td");
+  const cells = row?.querySelectorAll("td .tabular-value");
   return [cells?.[1]?.textContent, cells?.[2]?.textContent];
 }
 
@@ -912,12 +912,13 @@ test("each step's run time and wait are its runs' on Runs, and the Total's are t
   expect(bodyRows.map((row) => row.querySelector("th")?.textContent)).toEqual([
     "Work",
     "Stage 1",
+    "Total",
   ]);
-  expect(bodyRows.map(usageStepTimes)).toEqual([
+  expect(bodyRows.slice(0, 2).map(usageStepTimes)).toEqual([
     ["2m", "23m"],
     ["3m", "4m"],
   ]);
-  expect(usageStepTimes(table.querySelector("tfoot tr"))).toEqual([
+  expect(usageStepTimes(bodyRows[2])).toEqual([
     sidebarField("Run time")?.textContent,
     sidebarField("Waited")?.textContent,
   ]);
@@ -1001,7 +1002,7 @@ test("the run time tile counts every run read, running or not", async () => {
   expect(usage().textContent).toContain("8 runs");
 });
 
-test("the by-step table is work first and then the program's own order", async () => {
+test("the by-step table is work first, then the program's own order, and its total last", async () => {
   await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
@@ -1011,7 +1012,7 @@ test("the by-step table is work first and then the program's own order", async (
   });
   expect(
     [...table.querySelectorAll("tbody th")].map((cell) => cell.textContent),
-  ).toEqual(["Work", "Stage 1", "Stage 2"]);
+  ).toEqual(["Work", "Stage 1", "Stage 2", "Total"]);
 });
 
 /** A stage authored three evaluators wide, two of them on the page and both
