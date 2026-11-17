@@ -241,21 +241,37 @@ answers 503 to a scrape it cannot answer whole.
 | `CHUG_METRICS_PLANE_HOST` | | the default is loopback |
 | `CHUG_METRICS_PLANE_PORT` | 3004 | |
 
-## Configuring the worker plane's minting
+## Configuring the worker plane
 
-`src/roots/workerPlane.ts` reads the variables below beside the plane's own
-database, artifact-root and session variables.
+Every variable here is read by `src/roots/workerPlane.ts`, and the process
+refuses to start without the required ones, or with a bound that is not a
+positive whole number.
 
 | Variable | | |
 |---|---|---|
+| `CHUG_WORKER_PLANE_DATABASE_URL` | required | the PostgreSQL the plane serves, connecting as a login of `chuggy_worker_plane`; the plane is ready only when `current_user` is that role |
+| `CHUG_WORKER_PLANE_ARTIFACT_ROOT` | required | the artifact store's root, which every upload is written under |
+| `CHUG_WORKER_PLANE_UPLOAD_BYTES_MAX` | `workerPlaneUploadBytesMax` in `src/contract/http.ts` | the largest body one upload carries, which the artifact store's own write ceiling is set to as well |
+| `CHUG_WORKER_PLANE_HEARTBEAT_LEASE_SECS` | 300 | how long one work attempt's heartbeat holds its lease |
+| `CHUG_WORKER_PLANE_KETO_READ_URL` | optional | the read API of the authority that answers project access, HTTP or HTTPS and carrying no credentials, or the plane refuses to start; without it, every wake a chat host offers for one of its threads — a job exited, a watch matched, a timer due, an attempt ended — is answered 404 `NotConfigured` and becomes no turn |
+| `CHUG_WORKER_PLANE_KETO_TIMEOUT_MS` | `projectAccessTimeoutMsDefault` in `src/interpreter/projectAccess.ts` | how long one project access question a wake asks may take before it is undecided, which the wake is answered 503 to retry; read only where the read URL is named |
+| `CHUG_WORKER_PLANE_SESSION_HEARTBEAT_LEASE_SECS` | `sessionSchedulerDefaults.attemptLeaseSecs` in `src/interpreter/sessionScheduler.ts` | how long one session's heartbeat holds its lease; the default is what the scheduler opens a session attempt's lease under, so a deployment that moves one moves both |
+| `CHUG_WORKER_PLANE_SESSION_TURN_POLL_INTERVAL_MS` | 1000 | how often a waiting mailbox or a watch on a turn asks again |
+| `CHUG_WORKER_PLANE_SESSION_TURN_POLL_SECS_MAX` | 25 | how long one such request waits |
+| `CHUG_WORKER_PLANE_SESSION_POLLS_MAX` | 64 | how many of those waits are held at once, above which a caller is answered empty |
+| `CHUG_WORKER_PLANE_SESSION_LIVE_EVENTS_PER_SEC_MAX` | `sessionLiveAllowanceLimitsDefault` in `src/interpreter/sessionLiveAllowance.ts`, as are the two below | the live events a session's allowance regains each second |
+| `CHUG_WORKER_PLANE_SESSION_LIVE_EVENTS_BURST_MAX` | | the live events a session that has said nothing for a while may publish at once; one smaller than the events of one post refuses the start |
+| `CHUG_WORKER_PLANE_SESSION_LIVE_SESSIONS_TRACKED_MAX` | | the sessions whose allowances are remembered, the least recently seen forgotten first |
 | `CHUG_WORKER_PLANE_FORGE_APP_ID` | with the key file, or neither | the id of the worker App, which is the one a pod's git credential and its workflow runs credential are minted under |
 | `CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding the worker App's RSA private key, in either PEM encoding; the plane refuses to start unless it can be read and used |
 | `CHUG_WORKER_PLANE_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
 | `CHUG_WORKER_PLANE_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
 | `CHUG_WORKER_PLANE_HELD_CREDENTIALS` | none held | a JSON list of `{credential, tenant, project, variable, file}`, the credentials this deployment holds as files; the plane refuses to start unless the list is well formed, names no credential starting `chuggy.`, and each file can be read |
+| `CHUG_WORKER_PLANE_HOST` | | the default is loopback |
+| `CHUG_WORKER_PLANE_PORT` | 3001 | |
 
-**A plane naming neither mints nothing, and no pod stops working.** Both
-credential routes answer not found, and a pod resolves `CHUG_WORKER_REPOSITORIES`
+**A plane naming neither the app id nor the key file mints nothing, and no
+pod stops working.** Both credential routes answer not found, and a pod resolves `CHUG_WORKER_REPOSITORIES`
 and `CHUG_WORKER_CREDENTIAL_FILES` exactly as it did before the plane minted
 anything. The same not-found is what a pod gets for a repository whose owner this
 pod's own tenant has not claimed — a claim by some other tenant is a not-found
