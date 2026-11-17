@@ -179,10 +179,10 @@ const renderedAuditedClean = new Set<string>();
 
 /** `opening`'s route at the phone and the desk, light and then dark, with
  * motion reduced, which takes every duration to zero, so what axe measures is
- * each colour as it stands. What a case waits for can be its own width's, so
- * at the other width the page is waited for by its `main`. In each scheme
- * the page is waited for to fall still before axe reads it, since a screen
- * may answer the scheme in script as well as in its sheets. */
+ * each colour as it stands. A case's `ready` can be its own width's alone, so
+ * at the other width the page is waited for by its `main`, and in each scheme
+ * it is waited for to fall still, since a screen may answer the scheme in
+ * script as well as in its sheets. */
 async function renderedAudited(
   browser: Browser,
   origin: string,

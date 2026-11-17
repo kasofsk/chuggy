@@ -1,7 +1,7 @@
 /**
  * axe over a painted page: every rule axe runs by default, the contrast rule
- * among them, with the findings `test/accessibilityExceptions.ts` lists let
- * pass and every other one returned.
+ * among them, with the findings `ui/chuggy-ui/test/accessibilityExceptions.ts`
+ * lists let pass and every other one returned.
  *
  * axe is evaluated into the page rather than loaded by it, so the served
  * policy sees no script of its own and nothing the console ships carries it.
