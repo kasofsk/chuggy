@@ -62,7 +62,6 @@ import {
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   accountIdentityFunction,
-  approvalRequestFunction,
   finalizerRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { artifactStore } from "../../src/adapters/artifacts/artifactStore.ts";
@@ -106,6 +105,7 @@ import {
   type FinalizationClaim,
   type GitPromotionPort,
   type ObservedTarget,
+  type PathsDiffering,
   type TargetContained,
   type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
@@ -991,14 +991,18 @@ export interface FinalizerAttempt {
   readonly outcome?: FinalizationAttemptOutcome;
   readonly candidate?: string | null;
   readonly failureKind?: string | null;
-  readonly approvalRequired?: boolean;
   /** The conflict manifest a failed attempt names, and the digest it is recorded under. */
   readonly conflictManifest?: {
     readonly artifact: string;
     readonly digest: string;
   };
-  /** The accepted commit a `RecheckRequired` failure re-reports, and no other failure keeps one. */
+  /** The accepted commit a `RecheckRequired` or `Restack` failure re-reports, and no other failure keeps one. */
   readonly recheckCommit?: string;
+  /** The line a `Restack` failure was sent back over, as its tickets and commits. */
+  readonly restack?: {
+    readonly tickets: readonly number[];
+    readonly commits: readonly string[];
+  };
   /** Why a `RecheckRequired` failure was sent back. */
   readonly recheckReason?: string;
   /** The base a re-check was read against, where it records one. */
@@ -1049,10 +1053,11 @@ export async function finalizerPrepare(
        (tenant, project, attempt, request, ticket, repository, input_bundle,
         input_bundle_digest, target_ref,
         target_commit, strategy, configuration_revision, configuration_digest,
-        approval_required, outcome, candidate_commit, failure_kind, attempt_digest,
+        outcome, candidate_commit, failure_kind, attempt_digest,
         conflict_manifest, conflict_manifest_digest, proposal_base_ref,
-        proposal_base_commit, recheck_commit, recheck_reason, recheck_base_ref)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$22,$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$23,$24)`,
+        proposal_base_commit, recheck_commit, recheck_reason, recheck_base_ref,
+        restack_tickets, restack_commits)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$21,$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$22,$23,$24,$25)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -1065,7 +1070,6 @@ export async function finalizerPrepare(
       attempt.target ?? finalizerCommit(),
       project.configurationRevision,
       project.configurationDigest,
-      attempt.approvalRequired ?? false,
       outcome,
       outcome === "Failed" ? null : (attempt.candidate ?? finalizerCommit()),
       outcome === "Failed" ? (attempt.failureKind ?? "MergeConflict") : null,
@@ -1078,6 +1082,8 @@ export async function finalizerPrepare(
       attempt.targetRef ?? "refs/heads/main",
       attempt.recheckReason ?? null,
       attempt.recheckBaseRef ?? null,
+      attempt.restack?.tickets ?? null,
+      attempt.restack?.commits ?? null,
     ],
   );
   return identity;
@@ -1147,27 +1153,6 @@ export async function finalizerPromote(
   return attempt;
 }
 
-/** Asks for the approval of one prepared attempt, through the one door that may open it. */
-export async function finalizerRequestApproval(
-  rig: FinalizerRig,
-  project: FinalizerProject,
-  attempt: string,
-  action: string,
-  epoch: string = project.epoch,
-): Promise<Record<string, unknown>> {
-  const asked = await rig.as(
-    `SELECT result, action FROM ${approvalRequestFunction}($1,$2,$3,$4,$5)`,
-    [
-      project.partition.tenant,
-      project.partition.project,
-      attempt,
-      action,
-      epoch,
-    ],
-  );
-  return asked[0] ?? { result: "no row" };
-}
-
 /**
  * The Git port a pass calls out through, answering whatever the case last told
  * it to and recording the acts it was asked for. Preparation and integration
@@ -1183,6 +1168,7 @@ export interface FinalizerGitFake extends GitPromotionPort {
   integration?: CandidateIntegrated;
   held: CandidateHeld;
   contained: TargetContained;
+  differing: PathsDiffering;
   beforePromotion?: (promotion: CandidatePromotion) => Promise<void>;
 }
 
@@ -1195,6 +1181,11 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
     ancestry: { proved: "Ancestor", observed: target.commit },
     held: "Unheld",
     contained: "Contained",
+    differing: { read: "Paths", differing: { paths: [], truncated: false } },
+    readPathsDiffering: () => {
+      fake.acts.push("differing");
+      return Promise.resolve(fake.differing);
+    },
     observeTarget: () => {
       fake.acts.push("observe");
       return Promise.resolve(fake.target);
@@ -1288,6 +1279,7 @@ export function finalizerService(
     stacks: postgresEvaluationStack(rig.pool),
     handoffs: artifacts,
     artifacts,
+    pipelinePaths: [".github/workflows/"],
     identities: finalizerIdentities(),
     digestOf: finalizerDigestOf,
     config: checkedFinalizerConfig(finalizerDefaults),

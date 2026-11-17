@@ -41,6 +41,7 @@ import {
   accessGiven,
   accessMemory,
   accessMemorySiteTenants,
+  tenantNameMemory,
   type AccessMemory,
 } from "./accessPlaneFixture.ts";
 
@@ -97,12 +98,14 @@ test("tenants are answered in name order, each with its administrator, and only 
     tenants: [
       {
         tenant: "acme",
+        displayName: "acme",
         administrators: [{ subject: "alice", mine: false }],
         unnamed: 0,
         createAccounts: false,
       },
       {
         tenant: "owned",
+        displayName: "owned",
         administrators: [{ subject: "bo", mine: false }],
         unnamed: 0,
         createAccounts: true,
@@ -128,6 +131,7 @@ test("a tenant carrying its site link alone is listed with no administrators, an
     tenants: [
       {
         tenant: "linked",
+        displayName: "linked",
         administrators: [],
         unnamed: 0,
         createAccounts: false,
@@ -301,4 +305,26 @@ test("an authority that cannot answer fails the list as every list fails", async
   const memory = await sited([heldBy("alice", "acme")]);
   memory.unavailable = true;
   await assert.rejects(listed(memory), ProjectAccessUnavailable);
+});
+
+test("each of the site's tenants is named as the store names it and one it names none of by its id, in one question of the tenants listed", async () => {
+  const memory = await sited([
+    ...invited("bo", "owned"),
+    heldBy("alice", "acme"),
+  ]);
+  const names = tenantNameMemory({ owned: "Bo's Works", other: "Unlisted" });
+  const answer = await accessMemorySiteTenants(
+    memory,
+    accessPlaneBoundsDefault,
+    undefined,
+    names,
+  ).siteTenants(sita);
+  assert.deepEqual(
+    answer?.tenants.map((one) => [one.tenant, one.displayName]),
+    [
+      ["acme", "acme"],
+      ["owned", "Bo's Works"],
+    ],
+  );
+  assert.deepEqual(names.asked, [["acme", "owned"]]);
 });

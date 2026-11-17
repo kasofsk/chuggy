@@ -5,9 +5,11 @@
  */
 
 import type {
+  SessionBounds,
   SessionTaskAnswer,
   SessionTaskDocument,
   WorkTaskDocument,
+  WorkTaskTargetMerge,
 } from "../contract/workerTask.ts";
 import type {
   AttemptPlacement,
@@ -18,7 +20,6 @@ import type {
   SessionPlacement,
   SessionTaskInvocation,
 } from "./sessionScheduler.ts";
-import type { GitRefName } from "./finalizer.ts";
 import { taskAuthorityGrant } from "./taskAuthority.ts";
 import type { TaskInvocation } from "./taskBriefing.ts";
 
@@ -49,9 +50,10 @@ export type WorkTask = Omit<WorkTaskDocument, "workerPlane">;
 export function workTaskInvocation(launch: {
   readonly profile: ExecutionProfile;
   readonly invocation: TaskInvocation;
-  readonly targetRef?: GitRefName;
+  readonly targetMerge?: WorkTaskTargetMerge;
+  readonly pushPathsRefused?: readonly string[];
 }): WorkTaskInvocation {
-  const { briefing, authority, worker } = launch.invocation;
+  const { briefing, authority, credentialsListed, worker } = launch.invocation;
   return {
     profile: {
       profile: launch.profile.profile,
@@ -63,8 +65,14 @@ export function workTaskInvocation(launch: {
       text: briefing.text,
     },
     authority: taskAuthorityGrant(authority),
+    credentialsListed,
     ...(worker === undefined ? {} : { worker }),
-    ...(launch.targetRef === undefined ? {} : { targetRef: launch.targetRef }),
+    ...(launch.targetMerge === undefined
+      ? {}
+      : { targetMerge: launch.targetMerge }),
+    ...(launch.pushPathsRefused === undefined
+      ? {}
+      : { pushPathsRefused: [...launch.pushPathsRefused] }),
   };
 }
 
@@ -93,10 +101,19 @@ export function workTask(
     requirementDigest: identity.requirementDigest,
     briefing: invocation.briefing,
     authority: invocation.authority,
+    ...(invocation.credentialsListed === undefined
+      ? {}
+      : { credentialsListed: invocation.credentialsListed }),
     ...(invocation.worker === undefined ? {} : { worker: invocation.worker }),
     ...(invocation.targetRef === undefined
       ? {}
       : { targetRef: invocation.targetRef }),
+    ...(invocation.targetMerge === undefined
+      ? {}
+      : { targetMerge: invocation.targetMerge }),
+    ...(invocation.pushPathsRefused === undefined
+      ? {}
+      : { pushPathsRefused: invocation.pushPathsRefused }),
   };
 }
 
@@ -111,6 +128,9 @@ export type SessionTask = Omit<
   SessionTaskDocument,
   "workerPlane" | "api" | "bounds"
 >;
+
+/** The bounds a site launches its sessions under, which name an idle limit where a launched document may name none. */
+export type SessionSiteBounds = Required<SessionBounds>;
 
 /** What a pool's harness is told of its site, which a pod is launched with beside its task instead. */
 export type SessionTaskLaunch = Required<

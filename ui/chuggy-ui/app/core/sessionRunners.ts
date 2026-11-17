@@ -55,11 +55,11 @@ export function sessionRefusedNoRunner(result: ApiResult<unknown>): boolean {
 export type SessionRunnerSession = "Thread" | "Inquiry" | "Lead" | "Chat";
 
 /** Where a reader adds the runner a session's turn waits on. */
-export type SessionRunnerAdded = "MyRunner" | "Runners";
+export type SessionRunnerAdded = "MyRunner" | "Pools";
 
 /** A thread, an inquiry and a member's own chat run only on their member's own
  * machines, so one is added on their own page; the lead runs on a project's
- * pools. */
+ * pools, which its Pools page lists. */
 export function sessionRunnerAdded(
   session: SessionRunnerSession,
 ): SessionRunnerAdded {
@@ -69,7 +69,7 @@ export function sessionRunnerAdded(
     case "Chat":
       return "MyRunner";
     case "Lead":
-      return "Runners";
+      return "Pools";
   }
 }
 

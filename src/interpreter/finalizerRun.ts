@@ -46,6 +46,11 @@
  * exactly where it found it — a hold the view decided, a ref it could not read,
  * a permit it was refused, and a request the pass had no budget left for.
  *
+ * A REQUEST WAITING ON THE HOLDER IS CLAIMED ONLY TO BE SENT BACK. A Stacked
+ * ticket pending unstacked that could now stack over the queue ahead of it has
+ * its waiting request claimed and a `Restack` failure recorded on it, and the
+ * request's next claim concludes it; nothing else is done under that claim.
+ *
  * A PASS FENCES BEFORE IT MOVES ANYTHING ELSE. Claims held under a superseded
  * epoch and claims past their expiry are reopened first, because a lease that
  * lapsed is not self-healing and nothing claimable can be drawn until those rows
@@ -199,7 +204,8 @@
  * that list is left alone in both directions: it neither counts toward a result
  * nor wipes a count some other kind is keeping, because a reviewer who has not
  * merged a proposal says nothing about whether the target became readable.
- * Once the count reaches `holdPassesMax` the pass reports
+ * Once the count reaches `holdPassesMax`, or the first pass for a kind in
+ * `finalizationHoldsUnwaited`, the pass reports
  * `FinalizationResultUnavailable` at that kind, the machine escalates on it and
  * the operator's resume runs the operation again against a request that counts
  * from nothing — after asking its base's merge queue to give up a proposal that
@@ -255,14 +261,15 @@ import {
 } from "./finalizationProposal.ts";
 import {
   checkedFinalizerConfig,
+  finalizationHoldPassesMax,
   finalizationNext,
   promotionDeclineOf,
   type AncestryProved,
   type CandidateFile,
   type CandidateIntegrated,
   type CommitPermitId,
+  type ConflictSummary,
   type FinalizationAttempt,
-  type FinalizationAttemptId,
   type FinalizationClaim,
   type FinalizationConclusion,
   type FinalizationOffer,
@@ -321,6 +328,8 @@ import {
 } from "./evaluationStack.ts";
 import { stackPrepared } from "./evaluationStacking.ts";
 import { stackInvalidations } from "./stackInvalidation.ts";
+import { restackLine } from "./stackRestack.ts";
+import type { StackMember } from "./stackChoice.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import {
   finalizerLandingOf,
@@ -355,9 +364,12 @@ export interface FinalizerService {
     | "stackFailures"
     | "evaluating"
     | "invalidate"
+    | "restackable"
   >;
   readonly handoffs: HandoffContentPort;
   readonly artifacts: ProjectArtifactPort;
+  /** The paths the forge says a job's push may not change where its repository's binding withholds pipelines. */
+  readonly pipelinePaths: readonly string[];
   readonly identities: FinalizerIdentityFactory;
   readonly digestOf: FinalizationDigestFunction;
   readonly config: FinalizerConfig;
@@ -369,7 +381,6 @@ export interface FinalizerPassReport {
   readonly reopened: number;
   readonly rereadings: number;
   readonly preparations: number;
-  readonly approvals: number;
   readonly promotions: number;
   readonly reconciliations: number;
   readonly proposals: number;
@@ -386,7 +397,6 @@ export interface FinalizerPassReport {
 interface FinalizerTally {
   rereadings: number;
   preparations: number;
-  approvals: number;
   promotions: number;
   reconciliations: number;
   proposals: number;
@@ -400,10 +410,15 @@ interface FinalizerTally {
    * before each request, so it never answers for the one before.
    */
   heldReason: FinalizerHoldReason | undefined;
+  /** The files a `TargetPathsRefused` hold is over, travelling beside `heldReason` and cleared with it. */
+  heldRefused: ConflictSummary | undefined;
 }
 
 /** Every count a pass prices a move against, which is every count it keeps. */
-type FinalizerCeiling = Exclude<keyof FinalizerTally, "heldReason">;
+type FinalizerCeiling = Exclude<
+  keyof FinalizerTally,
+  "heldReason" | "heldRefused"
+>;
 
 /**
  * The one strategy a preparation integrates with. `merge-tree --write-tree` is
@@ -446,6 +461,7 @@ function finalizerHold(
 ): void {
   tally.holds += 1;
   tally.heldReason = reason;
+  tally.heldRefused = undefined;
   recordFinalizer(service.metrics, (metrics) => {
     metrics.holding(reason);
   });
@@ -618,6 +634,24 @@ async function finalizerGatherProposalBase(
 }
 
 /**
+ * The binding a branch the remote does not hold yet is read over: for a
+ * proposing brief the base it opens into, which is what its head is promoted
+ * onto and what its landing is proved against, and otherwise the binding.
+ */
+function finalizerGatherFallbackBinding(
+  binding: RepositoryBinding,
+  branches: FinalizerBranches,
+): RepositoryBinding {
+  const finalization = branches.brief?.finalization;
+  return briefFinalizationOpensProposal(finalization)
+    ? finalizerProposalBaseBinding(
+        binding,
+        briefFinalizationTarget(finalization),
+      )
+    : binding;
+}
+
+/**
  * What one gathering came to: the view a decision is made from, or the reason
  * one could not be made from what was read. A request nothing durable answers
  * for at all is neither, and is left to the sweep that reopens it.
@@ -666,7 +700,7 @@ async function finalizerGatherLanding(
   const base = await finalizerGatherProposalBase(service, binding, branches);
   const observed = await repositoryTargetObserved(
     service.git,
-    binding,
+    finalizerGatherFallbackBinding(binding, branches),
     branches.target,
   );
   const view: FinalizationView = {
@@ -824,7 +858,8 @@ interface FinalizerPreparation {
   readonly bundle: InputBundle;
   readonly target: ObservedTarget;
   readonly configuration: PinnedConfiguration;
-  readonly approvalRequired: boolean;
+  /** Whether the candidate is the commit a job pushed, rather than one built here from its artifacts. */
+  readonly jobPushed: boolean;
 }
 
 /**
@@ -881,7 +916,6 @@ function finalizerAttemptBase(
     target,
     strategy: finalizerStrategy,
     configuration: subject.configuration,
-    approvalRequired: subject.approvalRequired,
   };
 }
 
@@ -930,6 +964,47 @@ async function finalizerPreparationFailed(
   );
 }
 
+/** The paths a job's push may not change in the view's repository, none where its binding lets jobs write pipelines. */
+function finalizerPathsRefused(
+  service: FinalizerService,
+  view: FinalizationView,
+): readonly string[] {
+  return view.pipelinesWritable === false ? service.pipelinePaths : [];
+}
+
+/**
+ * Holds a conflict no job could resolve, which is one with a target that
+ * differs from the job's candidate in paths the job may not push, at
+ * `TargetPathsRefused` naming those files, and answers whether it held. A
+ * comparison git could not make holds too, since a conflict sent back to work
+ * on a guess may be the one no round can clear.
+ */
+async function finalizerConflictRefused(
+  service: FinalizerService,
+  view: FinalizationView,
+  repository: RepositoryBinding,
+  target: ObservedTarget,
+  candidate: GitObjectId,
+  tally: FinalizerTally,
+): Promise<boolean> {
+  const paths = finalizerPathsRefused(service, view);
+  if (paths.length === 0) return false;
+  const read = await service.git.readPathsDiffering({
+    repository,
+    target,
+    candidate,
+    paths,
+  });
+  if (read.read === "Unread") {
+    finalizerHold(service, tally, "IntegrationUnanswered");
+    return true;
+  }
+  if (read.differing.paths.length === 0) return false;
+  finalizerHold(service, tally, "TargetPathsRefused");
+  tally.heldRefused = read.differing;
+  return true;
+}
+
 /** Writes the conflict manifest one failed integration leaves, and records the attempt naming it. */
 async function finalizerConflicted(
   service: FinalizerService,
@@ -939,6 +1014,18 @@ async function finalizerConflicted(
   integrated: Extract<CandidateIntegrated, { integrated: "Conflicted" }>,
   tally: FinalizerTally,
 ): Promise<void> {
+  if (
+    subject.jobPushed &&
+    (await finalizerConflictRefused(
+      service,
+      subject.view,
+      subject.repository,
+      target,
+      candidate,
+      tally,
+    ))
+  )
+    return;
   const written = await service.artifacts.writeArtifact({
     partition: subject.view.claim.partition,
     artifact: subject.identity.conflict,
@@ -1397,7 +1484,7 @@ async function finalizerBuildSource(
       const { finalization } = subject.view;
       await finalizerPreparedBy(finalization)(
         service,
-        subject,
+        { ...subject, jobPushed: true },
         prepared.candidate,
         tally,
       );
@@ -1494,7 +1581,7 @@ async function finalizerGathered(
       ),
       target,
       configuration,
-      approvalRequired: handoff?.approvalRequired ?? false,
+      jobPushed: false,
     },
     ...(handoff === undefined ? {} : { handoff }),
   };
@@ -1550,24 +1637,6 @@ async function finalizerPrepare(
     return;
   }
   await finalizerBuild(service, subject, read.files, tally);
-}
-
-/** Opens the approval one prepared attempt needs, leaving the finalization where it stood. */
-async function finalizerAwaitApproval(
-  service: FinalizerService,
-  view: FinalizationView,
-  attempt: FinalizationAttemptId,
-  tally: FinalizerTally,
-): Promise<void> {
-  const asked = await service.store.requestApproval({
-    claim: view.claim,
-    attempt,
-  });
-  recordFinalizer(service.metrics, (metrics) => {
-    metrics.approval(asked.asked);
-  });
-  if (asked.asked === "Requested") tally.approvals += 1;
-  else finalizerHold(service, tally, "ApprovalUnopened");
 }
 
 /**
@@ -2284,10 +2353,22 @@ async function finalizerProposalFailed(
   );
 }
 
+/** Whether the work a request lands is a source a job pushed, read from the handoff its preparation accepted. */
+async function finalizerJobPushed(
+  service: FinalizerService,
+  view: FinalizationView,
+): Promise<boolean> {
+  const accepted = handoffAccepted(
+    handoffSuperseded(await service.store.handoffGathering(view.claim)),
+  );
+  return accepted.accepted === "Handoff" && accepted.handoff.kind === "Source";
+}
+
 /**
  * Records the conflict the forge refused the merge for, holding until the base
- * can be read. No manifest is written beside it: the forge named no paths, and
- * an empty one would be evidence of nothing.
+ * can be read, or at `TargetPathsRefused` where no job could resolve it. No
+ * manifest is written beside it: the forge named no paths, and an empty one
+ * would be evidence of nothing.
  */
 async function finalizerMergeConflicted(
   service: FinalizerService,
@@ -2298,12 +2379,24 @@ async function finalizerMergeConflicted(
   >,
   tally: FinalizerTally,
 ): Promise<void> {
-  const { repository } = finalizerCandidateOf(view);
+  const { repository, candidate } = finalizerCandidateOf(view);
   const base = await finalizerProposalBase(service, repository, decision.base);
   if (base === undefined) {
     finalizerHold(service, tally, "ProposalBaseUnreadable");
     return;
   }
+  if (
+    (await finalizerJobPushed(service, view)) &&
+    (await finalizerConflictRefused(
+      service,
+      view,
+      repository,
+      base,
+      candidate,
+      tally,
+    ))
+  )
+    return;
   await finalizerProposalFailed(
     service,
     view,
@@ -2704,15 +2797,21 @@ async function finalizerRecordHold(
   const reason = tally.heldReason;
   const kind = finalizerUnavailableKind(reason);
   if (reason !== undefined && kind === undefined) return;
+  const refused = kind === "TargetPathsRefused" ? tally.heldRefused : undefined;
+  if ((kind === "TargetPathsRefused") !== (refused !== undefined))
+    throw new Error(
+      "finalizer pass: a refused-paths hold and the files it is over travel together",
+    );
   const held = await service.store.recordHold({
     claim,
     ...(kind === undefined ? {} : { kind }),
+    ...(refused === undefined ? {} : { refused }),
   });
   const config = checkedFinalizerConfig(service.config);
   if (
     kind === undefined ||
     held.held !== "Recorded" ||
-    held.passes < config.holdPassesMax
+    held.passes < finalizationHoldPassesMax(config, kind)
   )
     return;
   if (view !== undefined) await finalizerDequeueEscalated(service, view, tally);
@@ -2736,6 +2835,7 @@ async function finalizerAdvance(
   tally: FinalizerTally,
 ): Promise<void> {
   tally.heldReason = undefined;
+  tally.heldRefused = undefined;
   const gathered = await finalizerGather(service, claim);
   if (gathered === undefined) return;
   const spent = tally.conclusions;
@@ -2785,9 +2885,6 @@ async function finalizerAdvanceDecided(
       if (!finalizerPreparationPriced(service, tally)) return;
       await finalizerAbort(service, view, decision.target, tally);
       return;
-    case "AwaitApproval":
-      await finalizerAwaitApproval(service, view, decision.attempt, tally);
-      return;
     case "Promote":
       if (ceilingReached("promotions", config.promotionsPerPassMax)) return;
       tally.promotions += 1;
@@ -2819,6 +2916,9 @@ const stackPreparationsPerPassMax = 8;
 
 /** The most evaluations over a stack one pass looks at. */
 const stackEvaluatingPerPassMax = 16;
+
+/** The most tickets pending unstacked one pass looks at for a re-stack. */
+const stackRestacksPerPassMax = 8;
 
 /**
  * Offers the invalidation of every evaluation whose stack stopped standing,
@@ -2854,6 +2954,90 @@ async function finalizerInvalidateStacks(
     for (const dead of stackInvalidations(group, queue))
       await stacks.invalidate(dead.partition, dead.ticket, dead.cycle, epoch);
   }
+}
+
+/**
+ * Sends back to Work every Stacked ticket pending unstacked that `restackLine`
+ * finds could now stack over the queue ahead of it, by claiming its waiting
+ * request and recording a `Restack` failure naming the accepted commit and the
+ * line, which the request's next claim concludes as `FinalizationNeedsWork`.
+ * A queue that cannot be read and a request someone else holds are left for
+ * the next pass.
+ */
+async function finalizerRestackStacks(
+  service: FinalizerService,
+  owner: FinalizerOwnerId,
+  epoch: RecoveryEpoch,
+  tally: FinalizerTally,
+): Promise<void> {
+  const stacks = service.stacks;
+  if (stacks === undefined) return;
+  const config = checkedFinalizerConfig(service.config);
+  const restackable = await stacks
+    .restackable(stackRestacksPerPassMax)
+    .catch((): readonly [] => []);
+  for (const due of restackable) {
+    const read = await Promise.all([
+      stacks.queue(due.partition, due.repository, due.target),
+      stacks.stackFailures(due.partition, due.ticket),
+    ]).catch((): undefined => undefined);
+    if (read === undefined) continue;
+    const [queue, stackFailures] = read;
+    const line = restackLine(
+      { ticket: due.ticket, stackFailures, restackedOver: due.restackedOver },
+      queue,
+    );
+    const accepted = queue.find((entry) => entry.ticket === due.ticket);
+    if (line === undefined || accepted === undefined) continue;
+    const claim = await service.store.claimUnattempted(
+      owner,
+      epoch,
+      due.partition,
+      due.ticket,
+      config.requestClaimLeaseSecs,
+    );
+    if (claim === undefined) continue;
+    await finalizerRestack(service, claim, accepted.commit, line, tally);
+  }
+}
+
+/** Records the `Restack` failure one claimed, waiting request is sent back to Work with. */
+async function finalizerRestack(
+  service: FinalizerService,
+  claim: FinalizationClaim,
+  accepted: GitObjectId,
+  line: readonly StackMember[],
+  tally: FinalizerTally,
+): Promise<void> {
+  const gathered = await finalizerGather(service, claim);
+  if (gathered === undefined) return;
+  if (gathered.gathered === "Held") {
+    finalizerHold(service, tally, gathered.hold);
+    return;
+  }
+  const target = gathered.view.observedTarget;
+  if (target === undefined) {
+    finalizerHold(service, tally, "TargetUnobserved");
+    return;
+  }
+  const prepared = await finalizerGathered(
+    service,
+    gathered.view,
+    target,
+    tally,
+  );
+  if (prepared === undefined) return;
+  await finalizerRecordAttempt(
+    service,
+    finalizerAttemptOf(service, {
+      ...finalizerAttemptBase(prepared.subject, target),
+      outcome: "Failed",
+      failureKind: "Restack",
+      recheckCommit: accepted,
+      restackBeneath: line,
+    }),
+    tally,
+  );
 }
 
 /**
@@ -2959,13 +3143,13 @@ export async function finalizerPass(
   const tally: FinalizerTally = {
     rereadings: 0,
     preparations: 0,
-    approvals: 0,
     promotions: 0,
     reconciliations: 0,
     proposals: 0,
     conclusions: 0,
     holds: 0,
     heldReason: undefined,
+    heldRefused: undefined,
   };
   await finalizerReadHolds(service, epoch, tally);
   const claims = await service.store.claimRequests(
@@ -2979,13 +3163,13 @@ export async function finalizerPass(
   });
   for (const claim of claims) await finalizerAdvance(service, claim, tally);
   await finalizerInvalidateStacks(service, epoch);
+  await finalizerRestackStacks(service, owner, epoch, tally);
   await finalizerPrepareStacks(service, epoch);
   await finalizerSweepStacks(service, epoch);
   return {
     reopened,
     rereadings: tally.rereadings,
     preparations: tally.preparations,
-    approvals: tally.approvals,
     promotions: tally.promotions,
     reconciliations: tally.reconciliations,
     proposals: tally.proposals,

@@ -1,19 +1,13 @@
 /**
  * What the invite page holds for the life of the page and not of a component:
- * the token this tab was opened with, and the one send made for it without a
- * name.
+ * the token this tab was opened with, and the one send made for it.
  *
  * A component mounts twice under React's strict mode and again whenever what
  * is above it redraws it, and a mount is not a press: no person asked for the
- * send a second mount would make. So the send without a name is held here, by
- * token, and every mount is handed the same answer. What an answer decides —
+ * send a second mount would make. So the send is held here, by token, and
+ * every mount is handed the same answer. What an answer decides —
  * the cookie cleared, the reader sent on — is performed here too, once, when
  * it arrives.
- *
- * A link that makes a workspace answers that send by asking for the
- * workspace's name. The send that carries one is no part of what is held: a
- * press makes it, each press makes one, and the held answer stays as it was,
- * so the page goes on knowing the link asked.
  *
  * A token is kept from wherever it was first read, the cookie as much as the
  * fragment, because the page that clears the cookie still has that token's
@@ -36,16 +30,11 @@ import {
   inviteCookieWritten,
   inviteElsewherePath,
   inviteFlowCarried,
-  inviteNaming,
   invitePageDecided,
   inviteRedemption,
   inviteTokenRead,
 } from "./invitePage.ts";
-import type {
-  InviteNaming,
-  InvitePage,
-  InviteRedemption,
-} from "./invitePage.ts";
+import type { InvitePage, InviteRedemption } from "./invitePage.ts";
 import type { SessionLocation } from "./sessionHolder.ts";
 
 /** The address bar and the cookies, as the page reaches them. */
@@ -71,21 +60,14 @@ export interface InviteHolder {
   /** Writes the cookie the token crosses a sign-in in, which is all that outlives this page. */
   readonly leave: (token: string, domain: string | undefined) => void;
   readonly elsewhere: () => void;
-  /** The one send of a token without a name, made by the first call that names it. */
+  /** The one send of a token, made by the first call that names it. */
   readonly redeem: (
     token: string,
     domain: string | undefined,
     send: (token: string) => InviteAnswer,
   ) => Promise<InviteRedemption>;
-  /** Forgets a send without a name that failed, so the next call makes one again. */
+  /** Forgets a send that failed, so the next call makes one again. */
   readonly retry: () => void;
-  /** One send of a token with the name of the workspace it makes, made by every call and so asked for by nothing but a press. */
-  readonly named: (
-    token: string,
-    domain: string | undefined,
-    workspace: string,
-    send: (token: string, workspace: string) => InviteAnswer,
-  ) => Promise<InviteNaming>;
 }
 
 interface InviteRedemptionHeld {
@@ -118,10 +100,10 @@ export function createInviteHolder(ports: InvitePorts): InviteHolder {
   const cookieClear = (domain: string | undefined): void => {
     ports.cookieWrite(inviteCookieCleared(domain));
   };
-  const performed = <Came extends InviteRedemption | InviteNaming>(
-    came: Came,
+  const performed = (
+    came: InviteRedemption,
     domain: string | undefined,
-  ): Came => {
+  ): InviteRedemption => {
     if (came.cookieCleared) cookieClear(domain);
     if (came.outcome === "Redeemed") ports.replaceLocation(came.path);
     return came;
@@ -158,9 +140,5 @@ export function createInviteHolder(ports: InvitePorts): InviteHolder {
     retry: () => {
       redemption = undefined;
     },
-    named: (token, domain, workspace, send) =>
-      send(token, workspace).then((result) =>
-        performed(inviteNaming(result), domain),
-      ),
   };
 }

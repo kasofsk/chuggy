@@ -7,9 +7,9 @@
  * `project_notification` publishes bridges into it unchanged, and `Execution`,
  * `NativeAction`, `AgenticRefusal` and `Session` are the kinds with no
  * publication behind them: an execution moves without a project ordinal being
- * allocated for it, a finalization approval is opened from the finalizer's own
- * boundary, which takes no project row lock and may not begin taking one to
- * publish, and the last two are the selector's own output — a publication of
+ * allocated for it, an evaluation approval is opened by the scheduler's
+ * registration of its execution, which takes no project row lock and may not
+ * begin taking one to publish, and the last two are the selector's own output — a publication of
  * either would wake the selector on what it had just decided.
  *
  * THE DURABLE CHECK ON THIS ROSTER IS GENERATED FROM IT, at the migration that

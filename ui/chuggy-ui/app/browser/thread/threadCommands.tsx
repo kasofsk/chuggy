@@ -172,7 +172,7 @@ function ThreadCommandSaid(props: {
       return (
         <ThreadCommandLine name="clear">
           {[
-            <Tooltip key="why" text={saying.why.detail}>
+            <Tooltip trigger="abbreviation" key="why" text={saying.why.detail}>
               <span>{copyOrDataText(text, saying.why.word)}</span>
             </Tooltip>,
           ]}

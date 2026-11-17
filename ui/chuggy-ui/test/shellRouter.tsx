@@ -16,13 +16,15 @@ export function portsDouble(original: typeof BrowserPorts) {
 
 export const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
-/** The router with the route taken from a case: `outlet` draws the page and
- * `params` names the route's parameters. */
+/** The router with the route taken from a case: `outlet` draws the page,
+ * `params` names the route's parameters, and `pathname`, where a case moves
+ * between pages, is the address the router is at. */
 export function routerDouble(
   original: typeof RouterModule,
   route: {
     readonly outlet: () => ReactNode;
     readonly params: () => PartitionIdentity & { readonly session?: string };
+    readonly pathname?: () => string;
   },
 ) {
   return {
@@ -64,7 +66,7 @@ export function routerDouble(
       }) => unknown;
     }) =>
       options.select({
-        location: { pathname: "/acme/atlas", search: {} },
+        location: { pathname: route.pathname?.() ?? "/acme/atlas", search: {} },
         matches: [{ routeId: "/$tenant/$project/", params: atlas }],
       }),
   };

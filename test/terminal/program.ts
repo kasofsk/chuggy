@@ -46,6 +46,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -106,8 +107,10 @@ export interface Ran extends Finished {
 export interface Home {
   /** The directory the program is told is the person's home, which only it writes in. */
   readonly home: string;
-  /** The program's own directory under this home. */
+  /** The program's own directory under this home, which remembers the site. */
   readonly directory: string;
+  /** The shared sign-in store under this home, where the sign-in and the lock are kept. */
+  readonly store: string;
   /** A directory beside the home for what a case makes itself. */
   readonly beside: string;
   /** The one directory a run finds programs in by name, unless its case names another. */
@@ -116,6 +119,8 @@ export interface Home {
   readonly folder: string;
   /** Everything every run under this home wrote to either stream. */
   readonly written: string[];
+  /** Has Claude Code's configuration under this home name chuggy's MCP server for acme/widgets at `site` in the folder, as `mcp` leaves it. */
+  readonly served: (site: string) => void;
   /** Makes the folder a git checkout whose `origin` is the address given, or one with no remote where none is. */
   readonly checkout: (origin?: string) => Promise<void>;
   readonly run: (
@@ -126,7 +131,9 @@ export interface Home {
   readonly opened: () => Promise<string>;
   /** A file of the program's as text, or nothing where there is none. */
   readonly file: (name: string) => string | undefined;
-  /** What the program's lock says: its holder's word, or nothing where nobody holds it. */
+  /** The sign-in the shared store holds for a site, or nothing where it holds none. */
+  readonly held: (site: string) => string | undefined;
+  /** What the store's lock says: its holder's word, or nothing where nobody holds it. */
   readonly lock: () => string | undefined;
   /** Ends every process started under this home and removes it; a home already ended is left be. */
   readonly dispose: () => Promise<void>;
@@ -321,6 +328,42 @@ async function checkedOut(
     await helped(["git", "config", "remote.origin.url", origin], folder, quiet);
 }
 
+/** The arguments `mcp` names chuggy's MCP server with for acme/widgets at `site`. */
+export function servedArguments(site: string): readonly string[] {
+  return ["mcp", "--site", site, "--workspace", "acme", "--project", "widgets"];
+}
+
+/** Writes Claude Code's configuration under `kept` as `claude mcp add` leaves it for `folder`, run by the runner package's program found by name. */
+function servedIn(kept: string, folder: string, site: string): void {
+  const server = {
+    type: "stdio",
+    command: "chuggy-linux",
+    args: servedArguments(site),
+    env: {},
+  };
+  writeFileSync(
+    join(kept, ".claude.json"),
+    JSON.stringify({
+      projects: { [realpathSync(folder)]: { mcpServers: { chuggy: server } } },
+    }),
+  );
+}
+
+/** The sign-in the store holds for a site, or nothing. */
+function heldIn(store: string, site: string): string | undefined {
+  const path = join(store, encodeURIComponent(site));
+  return existsSync(path)
+    ? readFileSync(path, "utf8").replace(/\n$/u, "")
+    : undefined;
+}
+
+/** What the store's lock says: its holder's word, or nothing where nobody holds it. */
+function lockIn(store: string): string | undefined {
+  if (!existsSync(join(store, "lock"))) return undefined;
+  const said = readdirSync(join(store, "lock"));
+  return said.length === 1 && said[0] === "free" ? undefined : said.join();
+}
+
 function home(): Home {
   const root = mkdtempSync(join(tmpdir(), "chuggy-setup-"));
   const kept = join(root, "home");
@@ -329,6 +372,7 @@ function home(): Home {
   const running = join(root, "running");
   const bin = join(root, "bin");
   const directory = join(kept, ".chuggy-setup");
+  const store = join(kept, ".config", "chuggy", "sign-ins");
   const record = join(beside, "opened");
   const opener = join(beside, "opener.sh");
   for (const made of [kept, beside, folder, running, bin]) mkdirSync(made);
@@ -348,17 +392,18 @@ function home(): Home {
   return {
     home: kept,
     directory,
+    store,
     beside,
     bin,
     folder,
     written,
     file,
-    checkout: (origin) => checkedOut(folder, kept, origin),
-    lock: () => {
-      if (!existsSync(join(directory, "lock"))) return undefined;
-      const said = readdirSync(join(directory, "lock"));
-      return said.length === 1 && said[0] === "free" ? undefined : said.join();
+    served: (site) => {
+      servedIn(kept, folder, site);
     },
+    checkout: (origin) => checkedOut(folder, kept, origin),
+    held: (site) => heldIn(store, site),
+    lock: () => lockIn(store),
     run: async (argv, environment = {}) => {
       const surroundings = {
         HOME: kept,

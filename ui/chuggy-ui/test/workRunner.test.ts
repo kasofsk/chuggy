@@ -2,18 +2,24 @@
  * Whether a project's work has a runner to go to, over every answer its reads
  * can give: no runner is said only where every one says so, a read that
  * settles the question alone is not waited on, and a read that failed decides
- * nothing.
+ * nothing. The reader's own runner is a personal runner that serves the
+ * project, and never their chat host.
  */
 
 import { expect, test } from "vitest";
 
 import type {
   ExecutionPlacementResponse,
+  PersonalRunnerResponse,
   ProjectOwnerFallbackResponse,
   SessionPlacementResponse,
 } from "../../../src/contract/responses.ts";
 import type { SessionRunnerStanding } from "../../../src/contract/rosters.ts";
-import { workRunner } from "../app/core/workRunner.ts";
+import {
+  workRunner,
+  workRunnerPersonal,
+  workRunnerPersonalRead,
+} from "../app/core/workRunner.ts";
 import type {
   WorkRunner,
   WorkRunnerOwner,
@@ -24,6 +30,7 @@ import {
   executionPlacementBody,
   workRunnerAnswered,
   workRunnerFailed,
+  workRunnerNoPersonal,
   workRunnerRetried,
   workRunnerUnnamed,
   workRunnerUnread,
@@ -42,6 +49,7 @@ const live = workRunnerAnswered(sessionPlacementBody({ project: "Live" }));
 type Placement = WorkRunnerRead<ExecutionPlacementResponse>;
 type Runners = WorkRunnerRead<SessionPlacementResponse>;
 type Fallback = WorkRunnerRead<ProjectOwnerFallbackResponse>;
+type Personal = WorkRunnerRead<SessionRunnerStanding>;
 
 const strict: Fallback = workRunnerAnswered({
   fallback: "Strict",
@@ -54,13 +62,21 @@ const preferred: Fallback = workRunnerAnswered({
 
 /** A project that names no fallback, for work the reader starts. */
 function decided(placement: Placement, runners: Runners): WorkRunner {
-  return workRunner(placement, runners, workRunnerUnnamed, "Reader");
+  return workRunner(
+    placement,
+    runners,
+    workRunnerUnnamed,
+    workRunnerNoPersonal,
+    "Reader",
+  );
 }
 
-function noPoolMine(mine: SessionRunnerStanding): Runners {
-  return workRunnerAnswered(
-    sessionPlacementBody({ mine, project: "Unregistered" }),
-  );
+const noPool: Runners = workRunnerAnswered(
+  sessionPlacementBody({ mine: "Unregistered", project: "Unregistered" }),
+);
+
+function personal(standing: SessionRunnerStanding): Personal {
+  return workRunnerAnswered(standing);
 }
 
 const owners: readonly WorkRunnerOwner[] = ["Reader", "Unknown"];
@@ -69,7 +85,7 @@ test.each(owners)(
   "a project naming no fallback reads no owner's runner, for work of %s",
   (owner) => {
     expect(
-      workRunner(toRunners, noPoolMine("Live"), workRunnerUnnamed, owner),
+      workRunner(toRunners, noPool, workRunnerUnnamed, personal("Live"), owner),
     ).toBe("NoRunner");
   },
 );
@@ -80,18 +96,126 @@ const named: readonly (readonly [string, Fallback])[] = [
 ];
 
 /** The owner's runner takes the work a named fallback routes to it, so the
- * reader's own registered runner clears their work as a pool's does. */
+ * reader's own registered personal runner clears their work as a pool's does. */
 test.each(named)(
-  "a project naming %s with no pool clears the reader's work on their own runner, live or not",
+  "a project naming %s with no pool clears the reader's work on their own personal runner, live or not",
   (_named, fallback) => {
-    expect(workRunner(toRunners, noPoolMine("Live"), fallback, "Reader")).toBe(
-      "Clear",
-    );
-    expect(
-      workRunner(toRunners, noPoolMine("Offline"), fallback, "Reader"),
-    ).toBe("Clear");
+    for (const standing of ["Live", "Offline"] as const)
+      expect(
+        workRunner(toRunners, noPool, fallback, personal(standing), "Reader"),
+      ).toBe("Clear");
   },
 );
+
+/** A chat host runs the person's threads and takes no work, so it is no
+ * owner's runner however it stands. */
+test.each(named)(
+  "a project naming %s with no pool does not take the reader's chat host as their runner",
+  (_named, fallback) => {
+    for (const mine of ["Live", "Offline"] as const)
+      expect(
+        workRunner(
+          toRunners,
+          workRunnerAnswered(
+            sessionPlacementBody({ mine, project: "Unregistered" }),
+          ),
+          fallback,
+          workRunnerNoPersonal,
+          "Reader",
+        ),
+      ).toBe("NoRunner");
+  },
+);
+
+test("the reader's work is held while their personal runners are unread and a named fallback could still say no runner, and cleared where that read failed", () => {
+  expect(
+    workRunner(toRunners, noPool, strict, workRunnerUnread, "Reader"),
+  ).toBe("Held");
+  expect(
+    workRunner(toRunners, noPool, strict, workRunnerFailed, "Reader"),
+  ).toBe("Clear");
+  expect(
+    workRunner(
+      toRunners,
+      noPool,
+      workRunnerUnnamed,
+      workRunnerUnread,
+      "Reader",
+    ),
+  ).toBe("NoRunner");
+});
+
+/** Another owner's runners are not the reader's to read, so the reader's own
+ * read failing says nothing of their work. */
+test("an owner's work in a project naming no fallback has no runner whatever came of the reader's personal runners", () => {
+  expect(
+    workRunner(
+      toRunners,
+      noPool,
+      workRunnerUnnamed,
+      workRunnerFailed,
+      "Unknown",
+    ),
+  ).toBe("NoRunner");
+});
+
+const runnerListed: PersonalRunnerResponse["runners"][number] = {
+  id: "runner-1",
+  capabilities: ["Platform:Linux:Amd64"],
+  registeredAt: "2026-10-09T00:00:00Z",
+  live: false,
+  executionsLive: false,
+  held: [],
+  heldTruncated: false,
+};
+
+function personalBody(
+  live: readonly boolean[],
+  projects: readonly string[],
+): PersonalRunnerResponse {
+  return {
+    runners: live.map((each, at) => ({
+      ...runnerListed,
+      id: `runner-${String(at)}`,
+      live: each,
+    })),
+    projects: projects.map((project) => ({
+      project,
+      priority: "Normal",
+      waiting: 0,
+      waitingTruncated: false,
+    })),
+  };
+}
+
+test("the reader's personal runners stand for a project only where they serve it, live where any one is", () => {
+  expect(workRunnerPersonal(undefined, "web")).toBe("Unregistered");
+  expect(workRunnerPersonal(personalBody([true], ["api"]), "web")).toBe(
+    "Unregistered",
+  );
+  expect(workRunnerPersonal(personalBody([false], ["web"]), "web")).toBe(
+    "Offline",
+  );
+  expect(
+    workRunnerPersonal(personalBody([false, true], ["api", "web"]), "web"),
+  ).toBe("Live");
+});
+
+test("a reader holding no personal runner is answered absent, which reads as none and not as a failure", () => {
+  expect(
+    workRunnerPersonalRead({ state: { state: "Absent" }, settled: true }, "web")
+      .state,
+  ).toEqual({ state: "Ready", value: "Unregistered", observedAtMs: undefined });
+  expect(
+    workRunnerPersonalRead(
+      workRunnerAnswered(personalBody([true], ["web"])),
+      "web",
+    ).state,
+  ).toEqual({ state: "Ready", value: "Live", observedAtMs: undefined });
+  expect(workRunnerPersonalRead(workRunnerFailed, "web")).toEqual(
+    workRunnerFailed,
+  );
+});
 
 /** With no pool there is nothing for Preferred to fall back to, so the
  * reader's work has no runner whichever is named. */
@@ -99,7 +223,7 @@ test.each(named)(
   "a project naming %s with no pool has no runner for a reader with none of their own",
   (_named, fallback) => {
     expect(
-      workRunner(toRunners, noPoolMine("Unregistered"), fallback, "Reader"),
+      workRunner(toRunners, noPool, fallback, workRunnerNoPersonal, "Reader"),
     ).toBe("NoRunner");
   },
 );
@@ -110,21 +234,22 @@ test.each(named)(
   "a project naming %s with no pool clears an owner's work whatever the reader's own runner",
   (_named, fallback) => {
     expect(
-      workRunner(toRunners, noPoolMine("Unregistered"), fallback, "Unknown"),
+      workRunner(toRunners, noPool, fallback, workRunnerNoPersonal, "Unknown"),
     ).toBe("Clear");
   },
 );
 
 test("the question is held while the fallback is unread and could still say no runner", () => {
-  expect(workRunner(toRunners, unregistered, workRunnerUnread, "Unknown")).toBe(
-    "Held",
-  );
-  expect(workRunner(toRunners, live, workRunnerUnread, "Unknown")).toBe(
+  const none = workRunnerNoPersonal;
+  expect(
+    workRunner(toRunners, unregistered, workRunnerUnread, none, "Unknown"),
+  ).toBe("Held");
+  expect(workRunner(toRunners, live, workRunnerUnread, none, "Unknown")).toBe(
     "Clear",
   );
-  expect(workRunner(toRunners, unregistered, workRunnerFailed, "Reader")).toBe(
-    "Clear",
-  );
+  expect(
+    workRunner(toRunners, unregistered, workRunnerFailed, none, "Reader"),
+  ).toBe("Clear");
 });
 
 test("work that goes to runners in a project with none registered has no runner", () => {
