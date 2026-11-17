@@ -330,7 +330,7 @@ const ticketPageRanReads = [
         ...landingConflicted(3),
         conflict: {
           paths: [
-            "ui/chuggy-ui/app/browser/ticket/a-path-that-runs-past-a-phone-without-a-break.tsx",
+            "services/billing/src/invoices/a-module-whose-path-runs-past-a-phone-unbroken.ts",
           ],
           truncated: false,
         },
