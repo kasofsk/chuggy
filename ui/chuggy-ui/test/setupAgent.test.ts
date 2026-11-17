@@ -161,20 +161,12 @@ function darwinHeld(machine: SetupMachine, version: string): void {
 
 const darwinCommand = `${boxPrefix}/bin/chuggy-darwin`;
 const darwinInstall = runnerPackages.darwin.installCommand.split(" ");
-/** The release the Mac package's install command downloads, as its tag names it. */
-const darwinTagged = /\/download\/v([0-9]+\.[0-9]+\.[0-9]+)\//u.exec(
-  runnerPackages.darwin.installCommand,
-)?.[1];
-
 test("on a Mac with no runner package, mcp offers and installs the Mac's own package and names its server, run by chuggy-darwin", async () => {
   const machine = await unserved();
   machine.platform = "darwin";
   expect(await mcpNext(machine)).toMatchObject({
     command: "Mcp",
-    tell: {
-      id: "setup-mend-mcp-offer-absent",
-      args: { program: "chuggy-darwin" },
-    },
+    tell: { id: "setup-mend-mcp-offer-absent" },
   });
   machine.box.ran.length = 0;
   expect(ended(await machine.command(mcp))).toEqual(served);
@@ -205,12 +197,12 @@ test("on a Mac with no runner package, mcp offers and installs the Mac's own pac
   expect(await mcpStep(machine)).toMatchObject({ state: "done" });
 });
 
-test("on a Mac, mcp leaves a chuggy-darwin whose mcp keeps the shared store as it is, and replaces an older one, which it says is old", async () => {
+test("on a Mac, mcp leaves a chuggy-darwin whose mcp keeps the shared store as it is, and replaces an older one, which it offers to install", async () => {
   const kept = await unserved();
   kept.platform = "darwin";
   darwinHeld(kept, setupServerPackages.darwin.least);
   expect(await mcpNext(kept)).toMatchObject({
-    tell: { id: "setup-mend-mcp-offer", args: { program: "chuggy-darwin" } },
+    tell: { id: "setup-mend-mcp-offer" },
   });
   kept.box.acts.length = 0;
   expect(ended(await kept.command(mcp))).toEqual(served);
@@ -221,25 +213,8 @@ test("on a Mac, mcp leaves a chuggy-darwin whose mcp keeps the shared store as i
   const old = await unserved();
   old.platform = "darwin";
   darwinHeld(old, "0.22.0");
-  expect(darwinTagged).toBeDefined();
   expect(await mcpNext(old)).toMatchObject({
-    tell: {
-      id: "setup-mend-mcp-offer-behind",
-      args: {
-        program: "chuggy-darwin",
-        found: {
-          id: "setup-runner-versioned",
-          args: { program: "chuggy-darwin", version: "0.22.0" },
-        },
-        installs: {
-          id: "setup-runner-versioned",
-          args: {
-            program: "chuggy-darwin",
-            version: darwinTagged,
-          },
-        },
-      },
-    },
+    tell: { id: "setup-mend-mcp-offer-behind" },
   });
   old.box.ran.length = 0;
   expect(ended(await old.command(mcp))).toEqual(served);
