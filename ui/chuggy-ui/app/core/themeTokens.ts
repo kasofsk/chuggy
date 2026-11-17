@@ -84,6 +84,15 @@ function themeAssignmentsSide(
   return sheet;
 }
 
+/** The colours a theme draws in `scheme`: its own where it carries the
+ * scheme, the sheet's where it does not. */
+export function themeColoursOf(
+  theme: ThemeDocument,
+  scheme: ThemeScheme,
+): ThemeColours {
+  return themeAssignmentsSide(themePaletteSchemes(theme.palette), scheme);
+}
+
 /** Whether a theme looks as the built-in default does, whatever its name. */
 function themeAssignmentsDefault(theme: ThemeDocument): boolean {
   const sheet = builtInThemes[builtInThemeDefault];
@@ -105,9 +114,8 @@ function themeAssignmentsDefault(theme: ThemeDocument): boolean {
 export function themeColourAssignmentsOf(
   theme: ThemeDocument,
 ): readonly ThemeAssignment[] {
-  const schemes = themePaletteSchemes(theme.palette);
-  const light = themeAssignmentsSide(schemes, "Light");
-  const dark = themeAssignmentsSide(schemes, "Dark");
+  const light = themeColoursOf(theme, "Light");
+  const dark = themeColoursOf(theme, "Dark");
   return themeRoles.flatMap((role) =>
     themeRoleTokens[role].map((property) => ({
       property,

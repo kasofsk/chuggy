@@ -55,6 +55,73 @@ export interface SettingsCopy {
   >;
   readonly "settings-preferences-theme-unsaved": Record<never, never>;
   readonly "settings-preferences-theme-not-found": Record<never, never>;
+  readonly "settings-preferences-theme-new": Record<never, never>;
+  readonly "settings-preferences-theme-edit": Record<never, never>;
+  readonly "settings-preferences-theme-edit-named": {
+    readonly name: unknown;
+  };
+  readonly "settings-theme-editor-copy-name": {
+    readonly name: unknown;
+  };
+  readonly "settings-theme-editor-name": Record<never, never>;
+  readonly "settings-theme-editor-name-refused": {
+    readonly most: unknown;
+  };
+  readonly "settings-theme-editor-scheme": Record<never, never>;
+  readonly "settings-theme-editor-group": {
+    readonly group: unknown;
+  };
+  readonly "settings-theme-editor-more": Record<never, never>;
+  readonly "settings-theme-editor-colour": {
+    readonly colour: unknown;
+  };
+  readonly "settings-theme-editor-colour-pick": {
+    readonly name: unknown;
+  };
+  readonly "settings-theme-editor-colour-unread": Record<never, never>;
+  readonly "settings-theme-editor-font": Record<never, never>;
+  readonly "settings-theme-editor-font-choice": {
+    readonly font: unknown;
+  };
+  readonly "settings-theme-editor-size": Record<never, never>;
+  readonly "settings-theme-editor-size-choice": {
+    readonly size: unknown;
+  };
+  readonly "settings-theme-editor-contrast": {
+    readonly foreground: unknown;
+    readonly background: unknown;
+  };
+  readonly "settings-theme-editor-ratio": {
+    readonly ratio: unknown;
+  };
+  readonly "settings-theme-editor-passes": Record<never, never>;
+  readonly "settings-theme-editor-fails": {
+    readonly least: unknown;
+  };
+  readonly "settings-theme-editor-failing": Record<never, never>;
+  readonly "settings-theme-editor-failing-role": {
+    readonly name: unknown;
+    readonly scheme: unknown;
+  };
+  readonly "settings-theme-editor-nearest": {
+    readonly colour: unknown;
+  };
+  readonly "settings-theme-editor-nearest-none": Record<never, never>;
+  readonly "settings-theme-editor-unread": Record<never, never>;
+  readonly "settings-theme-editor-preview": Record<never, never>;
+  readonly "settings-theme-editor-preview-title": Record<never, never>;
+  readonly "settings-theme-editor-preview-surface": {
+    readonly surface: unknown;
+  };
+  readonly "settings-theme-editor-preview-button": {
+    readonly variant: unknown;
+  };
+  readonly "settings-theme-editor-save": Record<never, never>;
+  readonly "settings-theme-editor-delete": Record<never, never>;
+  readonly "settings-theme-editor-delete-title": {
+    readonly name: unknown;
+  };
+  readonly "settings-theme-editor-delete-about": Record<never, never>;
   readonly "settings-preferences-wording": Record<never, never>;
   readonly "settings-preferences-wording-standard": Record<never, never>;
   readonly "settings-preferences-wording-pseudo": Record<never, never>;
