@@ -14,9 +14,9 @@
  * names `bind` to run at once while the person makes it: `bind` waits for
  * GitHub to let both apps into the folder's repository and then adds it,
  * which the project's `Administer` permit already guards, so where both apps
- * are granted it the next thing is `bind` and nothing is asked. Where an app
- * is not granted it, the tell names that app's page on the forge and no page
- * of the console. Where the project has
+ * are granted it the next thing is `bind` and nothing is asked. Its tell
+ * names both apps, what each is for and each one's page on the forge, with
+ * whether it is granted the repository already. Where the project has
  * no ticket yet and what a ticket may be drawn under was read, the person is
  * asked what they want done first, and `ticket` files it, with the
  * configuration they choose where there is a choice; where that read came to
@@ -98,7 +98,7 @@ import {
 } from "./setupRunnerSaid.ts";
 import { setupAppNames, setupPhaseSaid } from "./setupStanding.ts";
 import type {
-  SetupAppPage,
+  SetupAppReached,
   SetupLack,
   SetupRunnerWait,
   SetupStanding,
@@ -154,8 +154,8 @@ function setupHand(tell: Copy, when: Copy): SetupThing {
   return { thing: "Hand", tell, when };
 }
 
-/** `bind` run at once for the checklist's project, while the person does what `tell` says on GitHub, where it says anything. */
-function setupBindRun(at: SetupAt, tell: Copy | undefined): SetupThing {
+/** `bind` run at once for the checklist's project, with what `tell` says of GitHub. */
+function setupBindRun(at: SetupAt, tell: Copy): SetupThing {
   return {
     thing: "Run",
     command: "Bind",
@@ -266,6 +266,10 @@ function setupGithubMend(
     return setupBindRun(at, {
       id: "setup-mend-account-tell",
       args: {
+        explained: {
+          id: "setup-mend-apps-explained",
+          args: { repository: setupMendBindingSaid(mine) },
+        },
         page: setupConnectPage(at),
         connect: setupPressed.connect,
         repository: setupMendBindingSaid(mine),
@@ -292,31 +296,47 @@ function setupGithubMend(
 }
 
 /**
- * An app as a line of the tell names it: with its settings page on the forge,
- * or with the press on the workspace's accounts page that installs it. The
- * worker app's install is on the row of an account holding the portal app, so
- * where the portal app is to be installed there too, its row is waited on.
+ * An app as a line of the tell names it: granted the repository, with its
+ * settings page on the forge where that was read; or not, with that page, or
+ * with the press on the workspace's accounts page that installs it. The
+ * worker app's install is on the row of an account holding the portal app,
+ * so where the portal app is to be installed there too, its row is waited on.
  */
-function setupAppPageSaid(
-  page: SetupAppPage,
-  pages: readonly SetupAppPage[],
+function setupAppReachedSaid(
+  reached: SetupAppReached,
+  apps: readonly SetupAppReached[],
   at: SetupAt,
+  repository: string,
 ): Copy {
-  const app = setupAppNames[page.app];
+  if (reached.reached === "Granted")
+    return reached.settings === undefined
+      ? {
+          id: "setup-mend-reach-granted-unread",
+          args: { app: reached.app, repository },
+        }
+      : {
+          id: "setup-mend-reach-granted",
+          args: { app: reached.app, page: reached.settings, repository },
+        };
+  const page = reached.page;
+  const { app } = page;
   if (page.page === "Settings")
     return {
       id: "setup-mend-reach-settings",
-      args: { app, page: page.settings },
+      args: { app, page: page.settings, repository },
     };
   const accounts = setupPage(at, settingsRoutes.workspace.accounts);
   const { account } = page;
-  if (page.app === "portal")
+  if (app === "portal")
     return {
       id: "setup-mend-reach-install-portal",
       args: { app, page: accounts, press: setupPressed.addAccount, account },
     };
-  const after = pages.some(
-    (other) => other.app === "portal" && other.page === "Install",
+  const after = apps.some(
+    (other) =>
+      other.reached === "Lacking" &&
+      other.page.app === "portal" &&
+      other.page.page === "Install",
   );
   const press = forgeInstallLabel("worker");
   return after
@@ -330,12 +350,22 @@ function setupAppPageSaid(
       };
 }
 
+/** The accounts other than the repository's owner the workspace holds both apps on, said before the apps are, since they are why their repositories are shown. */
+function setupReachInstalledSaid(installed: readonly string[]): Copy {
+  return installed.length === 0
+    ? { id: "setup-mend-reach-installed-none" }
+    : {
+        id: "setup-mend-reach-installed",
+        args: { accounts: installed.join(", "), count: installed.length },
+      };
+}
+
 /**
- * The folder's repository before it is added: where both apps are granted it,
- * `bind` adds it at once, as the console's Add does; where an app is not,
- * every such app is named in the one tell with where it is given it, and
- * `bind` waits while the person gives it. Where what the apps grant was not
- * read, the console's Add is the way.
+ * The folder's repository before it is added, where what the apps grant it
+ * was read: one tell says the repository, what each app is for, and each
+ * app's page with whether it is granted it already, and `bind` waits while
+ * the person gives an app what it is not, and adds the repository once both
+ * are. Where what the apps grant was not read, the console's Add is the way.
  */
 function setupBindingMend(
   lack: Extract<SetupLack, { readonly lacks: "Binding" }>,
@@ -343,20 +373,22 @@ function setupBindingMend(
   mine: string | undefined,
 ): SetupThing {
   const reach = lack.reach;
-  if (reach?.reach === "Granted") return setupBindRun(at, undefined);
-  if (reach?.reach === "Ungranted") {
-    if (reach.apps.length < 1 || reach.apps.length > forgeApps.length)
-      throw new Error("a tell of the apps not granted names one or both");
-    const [first, second] = reach.apps.map((page) =>
-      setupAppPageSaid(page, reach.apps, at),
+  if (reach !== undefined) {
+    if (reach.apps.length !== forgeApps.length)
+      throw new Error("a tell of the apps names each app once");
+    const { repository } = reach;
+    const [portal, worker] = reach.apps.map((reached) =>
+      setupAppReachedSaid(reached, reach.apps, at, repository),
     );
     return setupBindRun(at, {
       id: "setup-mend-reach-tell",
       args: {
-        repository: reach.repository,
-        count: second === undefined ? "one" : "two",
-        first: first ?? "",
-        second: second ?? "",
+        installed: setupReachInstalledSaid(reach.installed),
+        repository,
+        explained: { id: "setup-mend-apps-explained", args: { repository } },
+        portal: portal ?? "",
+        worker: worker ?? "",
+        granted: reach.reach === "Granted" ? "both" : "lacking",
       },
     });
   }

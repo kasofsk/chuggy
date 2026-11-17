@@ -13,8 +13,8 @@
  * What an installation grants is read only for the apps on the account that
  * owns the project's repository, or where the project has none, the folder's
  * remote, since each listing costs the site a request to the forge; the
- * settings page of an installation there only where its listing does not
- * name the folder's remote; and the deployment's apps, which say where each
+ * settings page of each installation there, where it is the folder's remote
+ * the apps are held to; and the deployment's apps, which say where each
  * is installed from, only where that account holds no claim of one of them.
  * The landings of a ticket that is done are read only where the repository
  * meant holds nothing but the bootstrap, since only there is its pull request
@@ -195,7 +195,7 @@ export type SetupProposal =
 export interface SetupGrant {
   readonly app: ForgeAppName;
   readonly listed: SetupRead<readonly ForgeRepositoryResponse[]>;
-  /** The installation's settings page on the forge, asked only for the folder's remote, and only where the listing got does not name it. */
+  /** The installation's settings page on the forge, asked only for the folder's remote, where the listing was got. */
   readonly settings: SetupRead<string>;
 }
 
@@ -795,25 +795,12 @@ function setupOwnerClaims(
   });
 }
 
-/** Whether a listing that was got names the repository an address does, by what two addresses of one repository have in common. */
-function setupListedNames(
-  listed: SetupGrant["listed"],
-  address: SetupRemote,
-): boolean {
-  return (
-    listed.read === "Got" &&
-    listed.value.some(
-      (held) => setupRepositoryRead(held.url)?.key === address.key,
-    )
-  );
-}
-
-/** One installation's listing, and its settings page where `remote` is one the listing got does not name. */
+/** One installation's listing, and its settings page where the listing was got and `remote` is that the apps are held to the folder's remote. */
 async function setupGrantRead(
   ports: ApiPorts,
   workspace: string,
   claim: ForgeInstallationResponse,
-  remote: SetupRemote | undefined,
+  remote: boolean,
 ): Promise<SetupGrant> {
   const listed = setupGot(
     await apiForgeInstallationRepositories(
@@ -824,10 +811,7 @@ async function setupGrantRead(
     (answered) => answered.repositories,
     (answered) => !answered.truncated,
   );
-  const asked =
-    remote !== undefined &&
-    listed.read === "Got" &&
-    !setupListedNames(listed, remote);
+  const asked = remote && listed.read === "Got";
   return {
     app: claim.app,
     listed,
@@ -868,7 +852,7 @@ async function setupGrantsRead(
         ports,
         workspace,
         claim,
-        account.both ? undefined : remote,
+        !account.both && remote !== undefined,
       ),
     ),
   );

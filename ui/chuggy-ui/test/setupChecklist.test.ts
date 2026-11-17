@@ -94,7 +94,7 @@ test("a newcomer with nothing is shown every step to do, and told how a workspac
 
 /** The rule a trip to GitHub names `bind` under, to run at once while the person makes it. */
 const bindNow =
-  "rule: Run the command on the next: line now, without asking the person, while they do what the tell: line says. It waits until GitHub lets both apps into this folder's repository, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.";
+  "rule: Run the command on the next: line now, without asking the person, and tell them what the tell: line says. It waits until GitHub lets both apps into this folder's repository, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.";
 
 test("a person part-way is shown what is done, what is waited on and what is to do, and the first of them that is not done is what is next", async () => {
   const machine = await machineSignedIn(setupSiteAt("Portal"));

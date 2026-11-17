@@ -325,7 +325,26 @@ const things: {
     {
       thing: "Run",
       command: "Bind",
-      tell: undefined,
+      tell: {
+        id: "setup-mend-reach-tell",
+        args: {
+          installed: { id: "setup-mend-reach-installed-none" },
+          repository: "acme-org/widgets",
+          explained: {
+            id: "setup-mend-apps-explained",
+            args: { repository: "acme-org/widgets" },
+          },
+          portal: {
+            id: "setup-mend-reach-granted-unread",
+            args: { app: "portal", repository: "acme-org/widgets" },
+          },
+          worker: {
+            id: "setup-mend-reach-granted-unread",
+            args: { app: "worker", repository: "acme-org/widgets" },
+          },
+          granted: "both",
+        },
+      },
       workspace: "acme",
       project: "widgets",
     },
@@ -615,6 +634,7 @@ const bindAnswers: readonly (SetupBindAnswered | undefined)[] = [
         status: { id: "repositories-configuration-added" },
       },
     },
+    project: "widgets",
   },
   { answered: "Refused", refusal: { id: "repositories-not-installed" } },
 ];
@@ -2649,16 +2669,16 @@ const bindRule =
 const bindRuleRest =
   ". It waits until GitHub lets both apps into this folder's repository, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.";
 
-test("bind is named to run at once for the project, asking nothing of the person, and beside what a tell has them do on GitHub", () => {
+test("bind is named to run at once for the project, asking nothing of the person, beside its tell of GitHub", () => {
   const [granted, trip] = things.Run;
-  expect(ended(granted as SetupThing)).toEqual([
-    `${bindRule}${bindRuleRest}`,
-    `next: node ${machineScript} bind ${flags}`,
-  ]);
-  expect(ended(trip as SetupThing).slice(1)).toEqual([
-    `${bindRule}, while they do what the tell: line says${bindRuleRest}`,
-    `next: node ${machineScript} bind ${flags}`,
-  ]);
+  expect(ended(granted as SetupThing)[0]).toMatch(
+    /^tell: Which repository is this project for\? .* 1\. Portal: already granted acme-org\/widgets 2\. Worker: already granted acme-org\/widgets\. Both are granted it, so I add it now\.$/u,
+  );
+  for (const run of [granted, trip])
+    expect(ended(run as SetupThing).slice(1)).toEqual([
+      `${bindRule}, and tell them what the tell: line says${bindRuleRest}`,
+      `next: node ${machineScript} bind ${flags}`,
+    ]);
   expect(setupReportExit(checklist(trip as SetupThing))).toBe(0);
 });
 
@@ -2742,7 +2762,7 @@ test("a bind run again as having opened the page says no page opened and goes on
   );
 });
 
-test("a run of bind says what it asked and what the site answered under the site's line, then the checklist read after it, and exits as that checklist does", () => {
+test("a run of bind says what it asked and what the site answered under the site's line, and where it added the repository that both apps reach it in the project, then the checklist read after it, and exits as that checklist does", () => {
   const [none, bound, refused] = roster.Bind;
   const [, after] = (none && printed(none)) ?? [];
   expect(after).toBe(
@@ -2753,6 +2773,7 @@ test("a run of bind says what it asked and what the site answered under the site
       bound,
       [
         "did: asked chuggy to add acme-org/widgets, and it answered acme-org/widgets · Default configuration added",
+        "tell: Both apps can reach acme-org/widgets. It is connected to widgets.",
       ],
     ],
     [refused, ["found: chuggy did not add acme-org/widgets: Not installed"]],

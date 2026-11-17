@@ -266,7 +266,7 @@ const trips: {
   Account: [
     { lacks: "Account" },
     bindRun(
-      `Open ${pages}/repositories?connect=github, and press Connect GitHub if the page does not go on to GitHub by itself. GitHub then asks for two installs, the portal app and then the worker app, each on the GitHub account that owns your repository. On the first, choose "All repositories", or "Only select repositories" and pick your repository. Either is fine: with All, a later project needs no trip to GitHub. The second comes with that choice already made.`,
+      `chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to your repository. Open ${pages}/repositories?connect=github, and press Connect GitHub if the page does not go on to GitHub by itself. GitHub then asks for two installs, the portal app and then the worker app, each on the GitHub account that owns your repository. On the first, choose "All repositories", or "Only select repositories" and pick your repository. Either is fine: with All, a later project needs no trip to GitHub. The second comes with that choice already made.`,
     ),
   ],
   App: [
@@ -1388,16 +1388,27 @@ test("a project that was named or proposed is carried by name with its workspace
   expect(only.carried).toEqual({ workspace: "acme", project: "widgets" });
 });
 
-test("the folder's repository both apps are granted has bind run at once for the project, with nothing asked of the person, and is what bind is due to add", () => {
+const reachSaid = `Which repository is this project for? This folder's is acme-org/widgets, so that is the one I connect; for another, start me in the folder of its clone. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to acme-org/widgets.`;
+
+test("the folder's repository both apps are granted has bind run at once for the project, told with both apps' pages as granted, and is what bind is due to add", () => {
   const lack: SetupLack = {
     lacks: "Binding",
     reach: {
       reach: "Granted",
       repository: "acme-org/widgets",
       url: "https://github.com/acme-org/widgets",
+      apps: [
+        { reached: "Granted", app: "portal", settings: "https://forge/p" },
+        { reached: "Granted", app: "worker", settings: undefined },
+      ],
+      installed: [],
     },
   };
-  expect(thing(lack)).toEqual(bindRun(undefined));
+  expect(thing(lack)).toEqual(
+    bindRun(
+      `${reachSaid} 1. Portal: https://forge/p, already granted acme-org/widgets 2. Worker: already granted acme-org/widgets. Both are granted it, so I add it now.`,
+    ),
+  );
   expect(setupBindDue(lacking(lack))).toEqual({
     partition: { tenant: "acme", project: "widgets" },
     repository: "acme-org/widgets",
@@ -1405,21 +1416,32 @@ test("the folder's repository both apps are granted has bind run at once for the
   });
 });
 
-test("every app the folder's repository is not granted to is named in one tell, each with its own page, with bind run at once to wait for them and nothing yet due to bind", () => {
+test("both apps are named in one tell, each with its own page and whether it is granted the folder's repository, with bind run at once to wait for them and nothing yet due to bind", () => {
   const lack: SetupLack = {
     lacks: "Binding",
     reach: {
       reach: "Ungranted",
       repository: "acme-org/widgets",
       apps: [
-        { app: "portal", page: "Settings", settings: "https://forge/settings" },
-        { app: "worker", page: "Install", account: "acme-org" },
+        {
+          reached: "Lacking",
+          page: {
+            app: "portal",
+            page: "Settings",
+            settings: "https://forge/settings",
+          },
+        },
+        {
+          reached: "Lacking",
+          page: { app: "worker", page: "Install", account: "acme-org" },
+        },
       ],
+      installed: [],
     },
   };
   expect(thing(lack)).toEqual(
     bindRun(
-      `GitHub does not let these apps into acme-org/widgets, this folder's repository: the portal app, on its settings page https://forge/settings; and the worker app, which is not installed there yet: on ${stoodSite}/tenants/acme/settings/accounts press Install worker on the row of acme-org. On GitHub, choose "All repositories", or "Only select repositories" and pick acme-org/widgets, and save. Either is fine: with All, a later project needs no trip to GitHub. GitHub may ask you to confirm access first, with a code it emails you.`,
+      `${reachSaid} 1. Portal: https://forge/settings, not granted acme-org/widgets yet 2. Worker: not installed on acme-org yet; on ${stoodSite}/tenants/acme/settings/accounts press Install worker on the row of acme-org. I'll wait here. On GitHub, choose "All repositories", or "Only select repositories" and pick acme-org/widgets, and save. Either is fine: with All, a later project needs no trip to GitHub. GitHub may ask you to confirm access first, with a code it emails you.`,
     ),
   );
   expect(setupBindDue(lacking(lack))).toBeUndefined();
@@ -1428,13 +1450,51 @@ test("every app the folder's repository is not granted to is named in one tell, 
   ).toBeUndefined();
 });
 
+test("accounts the workspace holds both apps on beside the repository's owner are said first, as why their repositories are shown", () => {
+  const reach = (installed: readonly string[]): SetupLack => ({
+    lacks: "Binding",
+    reach: {
+      reach: "Granted",
+      repository: "acme-org/widgets",
+      url: "https://github.com/acme-org/widgets",
+      apps: [
+        { reached: "Granted", app: "portal", settings: undefined },
+        { reached: "Granted", app: "worker", settings: undefined },
+      ],
+      installed,
+    },
+  });
+  const told = (installed: readonly string[]): string => {
+    const run = thing(reach(installed));
+    return run.thing === "Run" ? (run.tell ?? "") : "";
+  };
+  expect(told(["elsewhere"])).toMatch(
+    /^elsewhere already has chuggy's apps installed, so I can see its repositories\. Another workspace can only where one of its admins owns elsewhere on GitHub\. Which repository /u,
+  );
+  expect(told(["one", "two"])).toMatch(
+    /^one, two already have chuggy's apps installed, so I can see their repositories\. /u,
+  );
+  expect(told([])).toMatch(/^Which repository /u);
+});
+
 test("bind waits while the next thing is a trip to GitHub, and on nothing else", () => {
   const ungranted: SetupLack = {
     lacks: "Binding",
     reach: {
       reach: "Ungranted",
       repository: "acme-org/widgets",
-      apps: [{ app: "worker", page: "Settings", settings: "https://forge/s" }],
+      apps: [
+        { reached: "Granted", app: "portal", settings: undefined },
+        {
+          reached: "Lacking",
+          page: {
+            app: "worker",
+            page: "Settings",
+            settings: "https://forge/s",
+          },
+        },
+      ],
+      installed: [],
     },
   };
   for (const [lack] of Object.values(trips))

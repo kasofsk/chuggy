@@ -201,21 +201,35 @@ export type SetupAppPage =
       readonly account: string;
     };
 
+/** One app as it stands on the folder's repository: granted it, with its installation's settings page where that was read; or not, with the page it is given it on. */
+export type SetupAppReached =
+  | {
+      readonly reached: "Granted";
+      readonly app: ForgeAppName;
+      readonly settings: string | undefined;
+    }
+  | { readonly reached: "Lacking"; readonly page: SetupAppPage };
+
 /**
- * What both apps grant the folder's repository before any is added: both
- * granted it, with the address the portal app lists it by, which is what a
- * bind names; or the apps that are not, each with its page.
+ * What both apps grant the folder's repository before any is added, each app
+ * in the roster's order: both granted it, with the address the portal app
+ * lists it by, which is what a bind names; or not both. `installed` is every
+ * other account the workspace holds both apps on, whose repositories the
+ * workspace is shown for that reason.
  */
 export type SetupReach =
   | {
       readonly reach: "Granted";
       readonly repository: string;
       readonly url: string;
+      readonly apps: readonly SetupAppReached[];
+      readonly installed: readonly string[];
     }
   | {
       readonly reach: "Ungranted";
       readonly repository: string;
-      readonly apps: readonly SetupAppPage[];
+      readonly apps: readonly SetupAppReached[];
+      readonly installed: readonly string[];
     };
 
 export interface SetupStep extends SetupStepSaid {
@@ -709,10 +723,12 @@ function setupGithubStep(
   }
 }
 
-/** One app as it stands on the remote's owner: granted it, the page it is given it on, or nothing where a read that would say was not got or was cut short. */
+/** One app as it stands on the remote's owner, with the portal app's entry for the repository where it is granted it; or nothing where a read that would say was not got or was cut short. */
 type SetupAppReach =
-  | { readonly app: "Granted"; readonly entry: ForgeRepositoryResponse }
-  | { readonly app: "Lacking"; readonly page: SetupAppPage }
+  | {
+      readonly reached: SetupAppReached;
+      readonly entry: ForgeRepositoryResponse | undefined;
+    }
   | undefined;
 
 /**
@@ -769,7 +785,13 @@ function setupAppReach(
     return installations.whole &&
       offered !== undefined &&
       setupInstallDrawn(installations.value, app)
-      ? { app: "Lacking", page: { app, page: "Install", account: owner } }
+      ? {
+          reached: {
+            reached: "Lacking",
+            page: { app, page: "Install", account: owner },
+          },
+          entry: undefined,
+        }
       : undefined;
   }
   const grant = reads.grants.find((held) => held.app === app);
@@ -782,14 +804,31 @@ function setupAppReach(
         (listed.whole ? "Lacking" : undefined))
       : setupWorkerEntry(owner, listed.value, listed.whole, portal, address);
   if (entry === undefined) return undefined;
-  if (entry !== "Lacking") return { app: "Granted", entry };
   const settings = grant?.settings;
-  return settings?.read === "Got"
-    ? {
-        app: "Lacking",
-        page: { app, page: "Settings", settings: settings.value },
-      }
-    : undefined;
+  const page = settings?.read === "Got" ? settings.value : undefined;
+  if (entry !== "Lacking")
+    return { reached: { reached: "Granted", app, settings: page }, entry };
+  return page === undefined
+    ? undefined
+    : {
+        reached: {
+          reached: "Lacking",
+          page: { app, page: "Settings", settings: page },
+        },
+        entry: undefined,
+      };
+}
+
+/** Every account but `owner` the workspace's claims show holding both apps. */
+function setupReachInstalled(
+  reads: SetupReads,
+  owner: string,
+): readonly string[] {
+  const installations = reads.installations;
+  if (installations.read !== "Got") return [];
+  return forgeAccountRows(installations.value)
+    .filter((row) => row.account !== owner && setupBoth(row))
+    .map((row) => row.account);
 }
 
 /** What both apps grant the folder's remote, where it names a repository of one owner and every read that says so was got. */
@@ -798,18 +837,20 @@ function setupReachOf(reads: SetupReads): SetupReach | undefined {
   const owner = remote === undefined ? undefined : setupRemoteOwner(remote);
   if (remote === undefined || owner === undefined) return undefined;
   const repository = repositoryLabel(`https://${remote.said}`);
-  const pages: SetupAppPage[] = [];
+  const apps: SetupAppReached[] = [];
   let portal: ForgeRepositoryResponse | undefined;
   for (const app of forgeApps) {
     const one = setupAppReach(reads, remote, owner, app, portal);
     if (one === undefined) return undefined;
-    if (one.app === "Lacking") pages.push(one.page);
-    else portal ??= one.entry;
+    apps.push(one.reached);
+    portal ??= one.entry;
   }
-  if (pages.length > 0) return { reach: "Ungranted", repository, apps: pages };
+  const installed = setupReachInstalled(reads, owner);
+  if (apps.some((one) => one.reached === "Lacking"))
+    return { reach: "Ungranted", repository, apps, installed };
   return portal === undefined
     ? undefined
-    : { reach: "Granted", repository, url: portal.url };
+    : { reach: "Granted", repository, url: portal.url, apps, installed };
 }
 
 /** Done where the repository meant is configured; waiting where it is added and is not; to do where none is, with what the apps grant the folder's remote. */

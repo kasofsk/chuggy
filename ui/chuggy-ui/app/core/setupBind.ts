@@ -5,7 +5,8 @@
  * It is asked only where the checklist's next thing is that repository, which
  * the checklist names only where both apps are granted it, and it lets no
  * other write out. What the site answered is said in the Add dialog's own
- * words, and whether the step is done is the checklist's to say, read after.
+ * words, with the project it was added to; whether the step is done is the
+ * checklist's to say, read after.
  * Until both apps are granted it, the checklist is read again at
  * `setupBindPollMs`.
  */
@@ -52,5 +53,5 @@ export async function setupBindAsked(
   const said = repositoryBindNote(outcome).status;
   return outcome.outcome === "Refused"
     ? { answered: "Refused", refusal: said }
-    : { answered: "Bound", said };
+    : { answered: "Bound", said, project: partition.project };
 }
