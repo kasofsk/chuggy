@@ -143,11 +143,12 @@ async function allowlistViewed(
   return viewed;
 }
 
-/** The registry a case drives, its rows and allowlists in sight, failing its next registration where `failNext` is set. */
+/** The registry a case drives, its rows and allowlists in sight, failing its next registration where `failNext` is set and answering `pauses` of every member's runners. */
 type FakeRegistry = PersonalRunnerRegistry & {
   readonly rows: Map<string, Row[]>;
   readonly allowed: Map<string, Map<string, PersonalRunnerPriority>>;
   failNext?: Error;
+  pauses: PersonalRunnerOwnerView["pauses"];
 };
 
 /**
@@ -161,6 +162,7 @@ function registry(): FakeRegistry {
   const fake: FakeRegistry = {
     rows,
     allowed,
+    pauses: [],
     clientsOf: (key) =>
       Promise.resolve(
         (rows.get(memberAt(key)) ?? []).map((row) => row.clientId),
@@ -203,6 +205,7 @@ function registry(): FakeRegistry {
               allowed.get(memberAt(key)),
               readable,
             ),
+            pauses: fake.pauses,
           }
         : undefined,
     allow: (key, named, priority) => {
@@ -539,6 +542,7 @@ test("a redemption registers the minter's runner in the tenant, naming no projec
           },
         ],
         projects: [],
+        pauses: [],
       },
     },
     "a new runner serves no project",
@@ -592,6 +596,27 @@ test("a member's read counts what waits only in a project they may still read, a
     { project, priority: "Normal", waiting: 0, waitingTruncated: false },
   ]);
   assert.deepEqual(asked, [["project", member, { tenant, project }, "Read"]]);
+});
+
+test("a member's read carries each agent their runners are paused for, with its pause", async () => {
+  const composed = service();
+  await registered(composed);
+  const pauses = [
+    {
+      agent: "Claude",
+      pause: {
+        until: "2026-10-09T05:00:00.000Z",
+        reasons: ["limit"],
+        pressed: true,
+      },
+    },
+  ] as const;
+  composed.ports.store.pauses = pauses;
+  const read = await composed.runners.runners(member, tenant);
+  assert.deepEqual(
+    read.result === "Found" ? read.value.pauses : undefined,
+    pauses,
+  );
 });
 
 test("a member's runner is read with the runner its poll named and the version pinned for that package", async () => {

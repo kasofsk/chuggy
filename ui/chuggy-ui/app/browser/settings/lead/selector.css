@@ -54,21 +54,6 @@
     font-weight: var(--weight-medium);
   }
 
-  .selector-dot {
-    width: 0.5em;
-    height: 0.5em;
-    border-radius: var(--radius-circle);
-    flex: none;
-  }
-
-  .selector-dot[data-tone="live"] {
-    background: var(--tone-live);
-  }
-
-  .selector-dot[data-tone="parked"] {
-    background: var(--tone-parked);
-  }
-
   .selector-prose {
     white-space: pre-wrap;
     max-width: var(--measure);
@@ -124,13 +109,15 @@
     font-weight: var(--weight-medium);
   }
 
-  .selector-mark {
-    display: inline-block;
-    width: 0.4em;
-    height: 0.4em;
-    border-radius: var(--radius-circle);
-    background: var(--tone-live);
-    flex: none;
+  /* An open row is its field, over the key's column and the value's, beside
+     the alias menu where it has one. */
+  .selector-limit > .form-field,
+  .selector-limit > .selector-pinned {
+    grid-column: 1 / span 2;
+  }
+
+  .selector-limit[data-aliased] > .form-field {
+    grid-column: auto;
   }
 
   .selector-pinned {
@@ -146,13 +133,6 @@
     justify-content: flex-end;
     font-size: var(--text-sm);
     color: var(--ink-3);
-  }
-
-  .selector-fault {
-    grid-column: 1 / -1;
-    text-align: right;
-    font-size: var(--text-xs);
-    color: var(--tone-fail);
   }
 
   .selector-revision {

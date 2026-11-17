@@ -111,7 +111,7 @@ test("the project's read loading or failed is its unready line, and a cut list s
   cleanup();
   await drawProjectPermissions({ authorities: () => answer({}, 500) });
   expect(readFailedLines(sectionOf("Project"))).toStrictEqual([
-    "Not read · Server error",
+    "Not read · Server error · InternalError",
   ]);
   cleanup();
   await drawProjectPermissions({

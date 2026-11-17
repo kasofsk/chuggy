@@ -22,14 +22,53 @@ import type {
 import type { SelectorProjectOverrides } from "../../core/selectorSettingsForm.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { Button } from "../ui/Button.tsx";
-import { Pill } from "../ui/Pill.tsx";
-import {
-  SelectorSettingsSavedNotice,
-  selectorSettingsNoticed,
-} from "../settings/lead/SelectorSection.tsx";
+import { Notice } from "../ui/Notice.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
+import { SelectorSettingsRefusedLine } from "../settings/lead/SelectorSection.tsx";
 import type { SelectorSettingsShown } from "../selectorSettingsWriting.ts";
 
 import "../settings/lead/selector.css";
+
+/** What the strip's last press did, in the one line it says it in. */
+function SelectorStripSaved(props: {
+  readonly saved: SelectorSettingsShown | undefined;
+}): ReactNode {
+  const text = useCopyText();
+  const saved = props.saved;
+  if (saved === undefined) return null;
+  if (saved.isPending)
+    return (
+      <Notice
+        tone="info"
+        inline
+        detail={text({ id: "lead-settings-writing" })}
+      />
+    );
+  if (saved.error !== null)
+    return <SelectorSettingsRefusedLine refused={saved.error} />;
+  if (saved.isSuccess && saved.data !== undefined)
+    return (
+      <Notice
+        tone="live"
+        inline
+        detail={text({
+          id: "lead-settings-written",
+          args: { revision: String(saved.data.revision) },
+        })}
+      />
+    );
+  return null;
+}
+
+/** Whether there is a line to draw for the strip's last press at all. */
+function selectorStripNoticed(
+  saved: SelectorSettingsShown | undefined,
+): boolean {
+  return (
+    saved !== undefined &&
+    (saved.isPending || saved.error !== null || saved.isSuccess)
+  );
+}
 
 function SelectorStripCell(props: {
   readonly cell: SelectorSettingsStripCell;
@@ -44,16 +83,17 @@ function SelectorStripCell(props: {
     <div className="selector-cell">
       <span className="selector-key">{text(cell.name)}</span>
       <span className="selector-standing">
-        {cell.tone === undefined ? null : (
-          <i
-            className="selector-dot"
-            data-tone={cell.tone}
-            aria-hidden="true"
-          />
+        {cell.tone === undefined ? (
+          text(cell.value)
+        ) : (
+          <StatusBadge tone={cell.tone} size="small">
+            {text(cell.value)}
+          </StatusBadge>
         )}
-        {text(cell.value)}
         {cell.inherited ? (
-          <Pill tone="neutral">{text({ id: "lead-settings-default" })}</Pill>
+          <StatusBadge tone="neutral" size="small">
+            {text({ id: "lead-settings-default" })}
+          </StatusBadge>
         ) : null}
       </span>
       <Button
@@ -94,9 +134,9 @@ export function SelectorStrip(props: {
           onPress={props.onPress}
         />
       </div>
-      {selectorSettingsNoticed(props.saved) ? (
+      {selectorStripNoticed(props.saved) ? (
         <div className="flex items-center gap-2">
-          <SelectorSettingsSavedNotice saved={props.saved} />
+          <SelectorStripSaved saved={props.saved} />
         </div>
       ) : null}
     </>

@@ -29,9 +29,18 @@
  * whether they administer it. It names nobody else, so there is nobody it is
  * hidden from, and a caller written into none is answered an empty list.
  *
+ * THE CALLER'S OWN ACCOUNT IS ANSWERED THE SAME WAY: their subject, their
+ * principal, and who the directory says they are, as a people list names them.
+ *
+ * A TENANT IS NAMED TO A READER BY ITS DISPLAY NAME, which every answer naming
+ * a tenant to a reader carries beside its id, and which its administrators
+ * change. The id is what every path and every role names, and nothing changes
+ * it.
+ *
  * A WORKSPACE LINK IS THE SITE'S INVITATION MADE IN ADVANCE, naming nobody and
- * no workspace: whoever presents it signed in names the workspace they will
- * administer, at the route every invite link is redeemed at.
+ * no workspace: whoever presents it signed in, at the route every invite link
+ * is redeemed at, is made the administrator of a workspace the plane draws the
+ * id of and names after them.
  *
  * WHAT A CALLER MAY DO IS ANSWERED ABOUT THEM ALONE, at the site, a tenant or
  * a project: each ability is whether they hold the kind it needs there, so a
@@ -46,7 +55,7 @@ import { z } from "zod";
 
 import { identitySchema, textCodePointsCount } from "./http.ts";
 import {
-  projectNameCharsMax,
+  projectDisplayNameSchema,
   projectNameSchema,
   tenantNameReserved,
 } from "./requests.ts";
@@ -244,6 +253,10 @@ export const accessPlaneRoutes = {
     path: `${accessPlaneBasePath}/invite-links/redemptions`,
   },
   tenantAbilities: { method: "GET", path: `${accessTenantPath}/abilities` },
+  tenantDisplayNameChange: {
+    method: "POST",
+    path: `${accessTenantPath}/display-name`,
+  },
   projectPeople: { method: "GET", path: `${accessProjectPath}/people` },
   projectRoleGrant: {
     method: "POST",
@@ -273,6 +286,7 @@ export const accessPlaneRoutes = {
   },
   siteTenants: { method: "GET", path: `${accessSitePath}/workspaces` },
   callerTenants: { method: "GET", path: `${accessPlaneBasePath}/workspaces` },
+  callerAccount: { method: "GET", path: `${accessPlaneBasePath}/account` },
   siteWorkspaceLinkCreation: {
     method: "POST",
     path: `${accessSitePath}/workspace-links`,
@@ -383,6 +397,24 @@ export const accessTenantRoleGrantSchema = z.strictObject({
 export const accessProjectRoleGrantSchema = z.strictObject({
   role: accessProjectRoleSchema,
 });
+
+/**
+ * What a tenant is named to a reader: the display name it was given, or its id,
+ * which is what it is named until it is given one and may be longer than a
+ * display name is.
+ */
+export const accessTenantDisplayNameSchema = z.union([
+  projectDisplayNameSchema,
+  identitySchema,
+]);
+
+/** What a tenant's display name is changed to. */
+export const accessTenantDisplayNameChangeSchema = z.strictObject({
+  displayName: projectDisplayNameSchema,
+});
+
+/** The refusal of a display name's change on a plane composed with no store. */
+export const accessTenantNamesNotConfiguredCode = "TenantNamesNotConfigured";
 
 /** The conflict a removal is refused with when it would leave a tenant no administrator. */
 export const accessLastTenantAdministratorCode = "LastTenantAdministrator";
@@ -664,11 +696,13 @@ export const accessProjectAuthoritiesSchema = z.strictObject({
 });
 
 /**
- * One of the site's tenants: the people administering it, how many of its
- * administrators no person names, and whether they may make accounts.
+ * One of the site's tenants: its display name, the people administering it,
+ * how many of its administrators no person names, and whether they may make
+ * accounts.
  */
 export const accessSiteTenantSchema = z.strictObject({
   tenant: identitySchema,
+  displayName: accessTenantDisplayNameSchema,
   administrators: z.array(accessAuthorityPersonSchema),
   unnamed: z.number().int().nonnegative(),
   createAccounts: z.boolean(),
@@ -681,12 +715,13 @@ export const accessSiteTenantsSchema = z.strictObject({
 });
 
 /**
- * One tenant a role names the caller in: the roles their own tuples give, and
- * whether they hold `AdministerTenant` there, which the authority answers and
- * no role decides.
+ * One tenant a role names the caller in: its display name, the roles their own
+ * tuples give, and whether they hold `AdministerTenant` there, which the
+ * authority answers and no role decides.
  */
 export const accessCallerTenantSchema = z.strictObject({
   tenant: identitySchema,
+  displayName: accessTenantDisplayNameSchema,
   roles: z.array(accessTenantRoleSchema),
   administer: z.boolean(),
 });
@@ -695,6 +730,13 @@ export const accessCallerTenantSchema = z.strictObject({
 export const accessCallerTenantsSchema = z.strictObject({
   tenants: z.array(accessCallerTenantSchema),
   truncated: z.boolean(),
+});
+
+/** What the caller's own account answers: their subject, their principal encoded as a ticket's `creator` is, and the directory's fields. */
+export const accessCallerAccountSchema = z.strictObject({
+  subject: z.string().min(1),
+  principal: identitySchema,
+  ...accessAccountFields,
 });
 
 /** How long an invite link stands once made. */
@@ -788,7 +830,7 @@ export const accessWorkspaceLinkNoteSchema = z
 /**
  * What a workspace link is sent: whether the workspace's administrators may
  * make accounts, and a note the site's list alone shows. It names nobody and
- * no workspace: whoever uses it names the workspace then.
+ * no workspace: the workspace is made when it is used.
  */
 export const accessWorkspaceLinkCreationSchema = z.strictObject({
   createAccounts: z.boolean(),
@@ -825,18 +867,23 @@ export const accessWorkspaceLinksSchema = z.strictObject({
   links: z.array(accessWorkspaceLinkSchema),
 });
 
-/**
- * What a redemption is sent: the token, and the name of the workspace a
- * workspace link is to make. The name is bounded and nothing more here,
- * because what it must be depends on the link the token names.
- */
+/** What a redemption is sent: the token, and nothing a workspace link's new workspace is to be called. */
 export const accessInviteLinkRedemptionSchema = z.strictObject({
   token: z.string().min(1).max(accessInviteLinkTokenCharsMax),
-  workspace: z.string().max(projectNameCharsMax).optional(),
 });
 
-/** The conflict a workspace link presented without a workspace's name is refused with. */
-export const accessWorkspaceLinkNameWantedCode = "WorkspaceLinkNameWanted";
+/**
+ * The display name a workspace link's new workspace is given: after the
+ * GitHub login the directory records for the person who used it, or a name
+ * of no one where it records none. Each is a display name as a rename takes.
+ */
+export function accessWorkspaceLinkDisplayName(
+  githubLogin: string | undefined,
+): string {
+  return githubLogin === undefined
+    ? "My Workspace"
+    : `${accessGithubLoginSchema.parse(githubLogin)}'s Workspace`;
+}
 
 /**
  * Where the directory asks, before it makes an account, whether to make it.
@@ -916,6 +963,10 @@ export type AccessSiteTenant = z.infer<typeof accessSiteTenantSchema>;
 export type AccessSiteTenants = z.infer<typeof accessSiteTenantsSchema>;
 export type AccessCallerTenant = z.infer<typeof accessCallerTenantSchema>;
 export type AccessCallerTenants = z.infer<typeof accessCallerTenantsSchema>;
+export type AccessTenantDisplayNameChange = z.infer<
+  typeof accessTenantDisplayNameChangeSchema
+>;
+export type AccessCallerAccount = z.infer<typeof accessCallerAccountSchema>;
 export type AccessSiteAuthorities = z.infer<typeof accessSiteAuthoritiesSchema>;
 export type AccessTenantAuthorities = z.infer<
   typeof accessTenantAuthoritiesSchema

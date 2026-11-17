@@ -61,18 +61,19 @@ import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import {
   TicketRunApprovalLine,
   TicketRunApprovalTime,
 } from "./TicketRunApproval.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
-import { readValue } from "./TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 /**
  * The page of executions this ticket's route answers with, read once by the
@@ -189,7 +190,7 @@ function ticketRunsRowWords(
 ): string {
   if (row.kind === "Gap") return row.words;
   if (!row.lands) return text({ id: "ticket-value-none" });
-  return row.landing?.word ?? text({ id: "ticket-landing-not-reached" });
+  return row.landing?.word ?? text({ id: "ticket-finalization-not-reached" });
 }
 
 type TicketRunsParams = PartitionIdentity & { readonly ticket: string };
@@ -332,7 +333,9 @@ function TicketRunsStackDrawn(props: {
         </ol>
       </Field>
       <Field name={text({ id: "ticket-runs-stack-built-on" })}>
-        <code title={stack.reference}>{branchName(stack.reference)}</code>{" "}
+        <Tooltip trigger="abbreviation" text={stack.reference}>
+          <code>{branchName(stack.reference)}</code>
+        </Tooltip>{" "}
         <Identity label={stack.tip} />
       </Field>
     </Fields>
@@ -357,7 +360,9 @@ function TicketRunsCycleDrawn(props: {
       <header className="ticket-runs-head">
         <h3>{text(cycleLabel(cycle.ordinal))}</h3>
         {standingLabel === undefined ? null : (
-          <Pill tone="neutral">{text(standingLabel)}</Pill>
+          <StatusBadge tone="neutral" size="small">
+            {text(standingLabel)}
+          </StatusBadge>
         )}
         <span className="ticket-runs-outcome">{cycle.outcome}</span>
         <span className="ticket-runs-rollup">

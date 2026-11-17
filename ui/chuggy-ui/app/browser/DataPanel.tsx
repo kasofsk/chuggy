@@ -21,7 +21,8 @@ import { Freshness } from "./Freshness.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Panel } from "./ui/Panel.tsx";
-import { Tooltip } from "./ui/Tooltip.tsx";
+import { Skeleton, type SkeletonShape } from "./ui/Skeleton.tsx";
+import { WordDetail } from "./ui/WordDetail.tsx";
 
 /** Retry for a failed read, or nothing when the read carries no retry. */
 function PanelRetry(props: {
@@ -38,8 +39,7 @@ function PanelRetry(props: {
 
 /**
  * A read that did not answer, as one line: what was not read, where the place
- * names it, and the failure's word, whose detail is on hover of the word and
- * never in the line. An absence is the parked tone, since it is an answer.
+ * names it, and the failure's word, its detail after it. An absence is the parked tone, since it is an answer.
  */
 export function ReadFailed(props: {
   readonly subject?: string | undefined;
@@ -56,9 +56,7 @@ export function ReadFailed(props: {
         inline
       >
         {lead.map((part) => `${copyOrDataText(text, part)} · `).join("")}
-        <Tooltip text={words.detail}>
-          <span>{text(words.word)}</span>
-        </Tooltip>
+        <WordDetail word={text(words.word)} detail={words.detail} />
       </Notice>
       <PanelRetry retry={props.retry} />
     </div>
@@ -66,19 +64,26 @@ export function ReadFailed(props: {
 }
 
 /**
- * A read that is not ready, as the one line it is drawn as. Said here once
+ * A read that is not ready, as the one line it is drawn as, or while pending
+ * as the `skeleton` of what it will be where one is given. Said here once
  * because a panel is not the only place a read is waited on: a part of a ready
  * panel may be waiting on a read of its own, and it says so in these words.
  */
 export function PanelUnready<T>(props: {
   readonly state: PanelState<T>;
+  readonly skeleton?: SkeletonShape;
 }): ReactNode {
   const text = useCopyText();
   const state = props.state;
   switch (state.state) {
     case "Pending":
-      return (
+      return props.skeleton === undefined ? (
         <Notice tone="info" inline detail={text({ id: "panel-loading" })} />
+      ) : (
+        <Skeleton
+          shape={props.skeleton}
+          label={text({ id: "panel-loading" })}
+        />
       );
     case "Absent":
       return <ReadFailed failure={{ outcome: "Absent" }} />;

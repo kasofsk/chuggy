@@ -135,7 +135,7 @@ export async function postgresOwnershipCreate(
 ): Promise<ProjectStanding> {
   return postgresTransaction(pool, async (client) => {
     await client.query(
-      sql`INSERT INTO tenant (tenant) VALUES (${partition.tenant}) ON CONFLICT (tenant) DO NOTHING`,
+      sql`INSERT INTO tenant (tenant, display_name) VALUES (${partition.tenant}, ${partition.tenant}) ON CONFLICT (tenant) DO NOTHING`,
     );
     await client.query(
       sql`INSERT INTO project (tenant, project, lifecycle) VALUES (${partition.tenant}, ${partition.project}, 'Active') ON CONFLICT (tenant, project) DO NOTHING`,

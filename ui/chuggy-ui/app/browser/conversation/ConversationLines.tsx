@@ -23,8 +23,9 @@
  * that the turn is working nor how it ended; what it took arrives beside the
  * control when the mailbox says.
  *
- * THE WORD IS A STATUS. A reader who cannot see the text arriving is told when
- * the turn begins to work and when it is answered, and of no word in between.
+ * THE WORD IS NOT A STATUS. What a reader who cannot see the text arriving is
+ * told is the conversation's log, `conversationAnnounced`: the reply as it
+ * begins and whole as it settles, which a word said beside it would repeat.
  */
 
 import { Fragment, useEffect, useState } from "react";
@@ -56,7 +57,7 @@ import { conversationStandingArm } from "../../core/tones.ts";
 import { CopyButton } from "../ui/CopyButton.tsx";
 import { useCopyHeld } from "../ui/copyHeld.tsx";
 import { Figure } from "../ui/Figure.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
+import { WordDetail } from "../ui/WordDetail.tsx";
 import { ConversationGlyph } from "./ConversationCard.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
@@ -72,7 +73,7 @@ export type ConversationStandingDrawn = Exclude<
 /**
  * A centred line that belongs to neither speaker. `ruled` draws a hairline
  * through it, which is what separates a fact about the record from a turn the
- * runtime opened, and `detail` is on hover of the words.
+ * runtime opened, and `detail` follows the words.
  */
 export function ConversationSystemLine(props: {
   readonly words: CopyOrData;
@@ -87,9 +88,12 @@ export function ConversationSystemLine(props: {
   return (
     <p className="text-ink-3 flex items-center justify-center gap-3 text-xs">
       {rule}
-      <Tooltip text={props.detail}>
-        <span>{copyOrDataText(text, props.words)}</span>
-      </Tooltip>
+      <span>
+        <WordDetail
+          word={copyOrDataText(text, props.words)}
+          detail={props.detail}
+        />
+      </span>
       {rule}
     </p>
   );
@@ -321,7 +325,7 @@ export function ConversationMetaLine(props: {
       </span>
       <p className="flex flex-wrap items-baseline gap-2">
         <span
-          role="status"
+          data-word
           className={
             drawn.worded ? conversationStandingInk(standing) : "visually-hidden"
           }

@@ -15,6 +15,7 @@ import type {
   SetupRunnerStop,
 } from "../app/core/setupRunnerSaid.ts";
 import {
+  boxClaudeConfig,
   boxLogin,
   boxChatFile,
   boxChatUnitName,
@@ -74,6 +75,8 @@ const acts: readonly SetupRunnerAct[] = [
   "Reload",
   "Start",
   "Restart",
+  "ServerRemoved",
+  "ServerAdded",
 ];
 
 export const runnerStops: {
@@ -82,6 +85,14 @@ export const runnerStops: {
   })[];
 } = {
   Mac: [{ stop: "Mac" }],
+  Unpackaged: [
+    { stop: "Unpackaged", found: undefined, least: "0.14.0" },
+    {
+      stop: "Unpackaged",
+      found: { command: rosterCommand, version: "0.13.0" },
+      least: "0.14.0",
+    },
+  ],
   Unread: [
     { stop: "Unread", read: "work", outcome: "Refused" },
     { stop: "Unread", read: "placement", outcome: "Fault" },
@@ -184,6 +195,7 @@ export const runnerStops: {
       act: "ServiceChat",
       path: `${boxUnits}/${rosterChatUnit}`,
     },
+    { stop: "Unseen", act: "ServerAdded", path: boxClaudeConfig },
   ],
   ServiceRefused: [
     {
@@ -272,6 +284,7 @@ export const runnerStops: {
   PermitWithheld: [
     { stop: "PermitWithheld", people: rosterPeople, work: "Runner" },
     { stop: "PermitWithheld", people: rosterPeople, work: "Cluster" },
+    { stop: "PermitWithheld", people: rosterPeople, work: undefined },
   ],
   ChatMintRefused: [
     { stop: "ChatMintRefused", outcome: "Absent", lapseMins: 60 },
@@ -296,7 +309,33 @@ export const runnerStops: {
     },
   ],
   ChatHostNotLive: [{ stop: "ChatHostNotLive", waitedSecs: 90 }],
+  ChatHostHeld: [
+    { stop: "ChatHostHeld", short: "0f3a9c21", live: true },
+    { stop: "ChatHostHeld", short: "0f3a9c21", live: false },
+  ],
+  ReplaceMismatched: [
+    { stop: "ReplaceMismatched", short: "0f3a9c21", live: true },
+    { stop: "ReplaceMismatched", short: "0f3a9c21", live: false },
+  ],
+  MacChatHost: [
+    {
+      stop: "MacChatHost",
+      page: rosterMyRunners,
+    },
+  ],
 };
+
+/** The stops only `chat-host` makes, whose rule may name `--replace`, which `runner` does not read. */
+export const rosterChatHostStops: readonly SetupRunnerStop["stop"][] = [
+  "ChatHostHeld",
+  "ReplaceMismatched",
+  "MacChatHost",
+];
+
+/** The stops only `runner` makes, which `chat-host` does not since it installs the package itself. */
+export const rosterRunnerStops: readonly SetupRunnerStop["stop"][] = [
+  "Unpackaged",
+];
 
 export const runnerNotes: {
   readonly [Kind in SetupRunnerNote["note"]]: readonly (SetupRunnerNote & {
@@ -342,6 +381,8 @@ export const runnerNotes: {
     credential,
   })),
   Pool: [{ note: "Pool", path: rosterPool }],
+  ServerFound: [{ note: "ServerFound", path: boxClaudeConfig }],
+  ServerAdded: [{ note: "ServerAdded", path: boxClaudeConfig }],
   PoolGone: [{ note: "PoolGone", path: rosterPool, pool: boxPoolName }],
   Registered: [{ note: "Registered", path: rosterPool }],
   Checked: [
@@ -355,6 +396,9 @@ export const runnerNotes: {
   ChatHost: [{ note: "ChatHost", path: rosterChat }],
   ChatHostGone: [{ note: "ChatHostGone", path: rosterChat }],
   ChatHostRegistered: [{ note: "ChatHostRegistered", path: rosterChat }],
+  ChatHostReplaced: [
+    { note: "ChatHostReplaced", path: rosterChat, short: "0f3a9c21" },
+  ],
   ChatChecked: [
     { note: "ChatChecked", warned: undefined },
     { note: "ChatChecked", warned: "warn  chat image: it is old" },

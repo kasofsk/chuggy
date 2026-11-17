@@ -1,14 +1,10 @@
-/* The ticket list: the controls, then the rows joined into one column with
-   the outer corners rounded, each row the same height so the state labels line
-   up down the right edge. The row reads as two lines — the title, then the
-   number, the meta and what it waits on — over a foot of its state, which on
-   a ready row is the button that dispatches it, and each count above the rows
-   is the button that filters them to its state, ringed while it is the
-   filter; where the list is wide the foot moves beside them and the title
-   keeps to one line. Where it is narrow
-   the meta keeps its activity, what it is running and its repository, and the
-   creator moves to the start of the foot, opposite the state; on a phone the
-   rows run edge to edge with the controls stacked full width. */
+/* The ticket list's own parts on the shared record list: the number and the
+   meta in each row's line, and what it waits on at its end; and the foot,
+   whose state stands in a slot as wide on every row, which on a ready row is
+   the button that dispatches it. Where the list is narrow the creator and an
+   owner beside the meta move to the start of the foot, opposite the state,
+   each name shortened on its own so neither is cut away; on a phone the
+   controls stack full width and what a row waits on wraps at its line's end. */
 
 @layer page {
   .ticket-list-page {
@@ -18,309 +14,27 @@
     min-width: 0;
   }
 
-  .ticket-list-controls {
-    --control-height: calc(var(--space-5) + var(--space-1));
-    min-width: 0;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    margin-top: calc(-1 * var(--space-4));
-    margin-bottom: calc(var(--space-2) - var(--space-3));
-    box-sizing: border-box;
-    min-block-size: calc(var(--height-icon) + var(--space-2) + var(--hairline));
-    padding-block: var(--space-2) var(--space-1);
-    border-bottom: var(--hairline) solid var(--edge);
-    background: var(--surface-0);
-    transition:
-      transform var(--duration-2) var(--ease-out),
-      opacity var(--duration-2) var(--ease-out);
-  }
-
-  .ticket-list-controls[data-hidden] {
-    opacity: 0;
-    transform: translateY(-100%);
-    pointer-events: none;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .ticket-list-controls {
-      transition: none;
-    }
-  }
-
-  .ticket-list-counts {
-    display: flex;
-    flex: 1 1 0;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-    min-width: 0;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  /* A count is its state's label holding the number, as tall as the controls
-     beside it and its number as wide as the widest count's, ringed in its tone
-     while it is the filter and faded while another is, until it is hovered. */
-  button.ticket-state-count {
-    display: inline-flex;
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-3);
-    background: transparent;
-    cursor: pointer;
-  }
-
-  button.ticket-state-count > .ticket-state {
-    height: var(--control-height);
-    transition:
-      border-color var(--duration-1) var(--ease-out),
-      opacity var(--duration-1) var(--ease-out);
-  }
-
-  button.ticket-state-count > .ticket-state > .num {
-    margin-inline-start: auto;
-    text-align: end;
-  }
-
-  button.ticket-state-count .num[data-widest]::before {
-    content: attr(data-widest);
-    content: attr(data-widest) / "";
-    display: block;
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
-  }
-
-  button.ticket-state-count[data-dimmed] > .ticket-state {
-    opacity: 0.55;
-  }
-
-  button.ticket-state-count[data-dimmed]:is(:hover, :focus-visible)
-    > .ticket-state {
-    opacity: 1;
-  }
-
-  button.ticket-state-count:hover > .ticket-state {
-    border-color: var(--edge-strong);
-  }
-
-  button.ticket-state-count:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
-  }
-
-  button.ticket-state-count[aria-pressed="true"] > .ticket-state {
-    box-shadow:
-      0 0 0 var(--hairline) var(--surface-0),
-      0 0 0 calc(3 * var(--hairline)) var(--state-tone);
-  }
-
-  .ticket-list-search {
-    display: flex;
-    flex: none;
-    align-items: center;
-    max-width: 100%;
-    min-width: 0;
-    overflow: hidden;
-    background: var(--surface-1);
-    border: var(--hairline) solid var(--edge-control);
-    border-radius: calc(var(--control-height) / 2);
-  }
-
-  .ticket-list-search:has(:focus-visible) {
-    box-shadow: var(--ring-focus);
-  }
-
-  .ticket-list-search > .ticket-list-search-toggle {
-    flex: none;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-
-  .ticket-list-search > .ticket-list-search-toggle:focus-visible {
-    outline: none;
-  }
-
-  .ticket-list-search > .ticket-list-search-toggle[data-active] {
-    color: var(--tone-live);
-  }
-
-  .ticket-list-search-field {
-    display: flex;
-    width: 0;
-    min-width: 0;
-    overflow: hidden;
-    transition: width var(--duration-2) var(--ease-out);
-  }
-
-  .ticket-list-search[data-expanded] .ticket-list-search-field {
-    width: var(--width-aside);
-  }
-
-  .ticket-list-search-field > .input {
-    flex: 1;
-    min-width: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-
-  .ticket-list-search-field .input-box:focus-visible {
-    outline: none;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .ticket-list-search-field {
-      transition: none;
-    }
-  }
-
-  .ticket-list-selects > * {
-    flex: none;
-    box-sizing: border-box;
-    height: var(--control-height);
-  }
-
-  .ticket-list-selects > button,
-  .ticket-list-search > .ticket-list-search-toggle {
-    justify-content: center;
-    width: var(--control-height);
-    min-width: var(--control-height);
-    padding: 0;
-    border-radius: var(--radius-circle);
-  }
-
-  .ticket-list-selects > button svg,
-  .ticket-list-search-toggle svg {
-    flex: none;
-    width: var(--space-4);
-    height: var(--space-4);
-  }
-
-  .ticket-list-search > .ticket-list-search-toggle {
-    height: 100%;
-  }
-
-  .ticket-list-selects {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin-inline-start: auto;
-    max-width: 100%;
-    min-width: 0;
-  }
-
   .ticket-list-status {
-    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
     color: var(--ink-3);
     font-size: var(--text-sm);
   }
 
-  .ticket-list {
-    display: grid;
+  .ticket-list-status > p {
     margin: 0;
-    padding: 0;
-    list-style: none;
   }
 
-  .ticket-list-row {
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
-    gap: var(--space-1);
-    min-height: 0;
-    padding: var(--space-3);
-    background: var(--surface-1);
-    border: var(--hairline) solid var(--edge);
-    border-bottom: 0;
-  }
-
-  .ticket-list-item:first-child .ticket-list-row {
-    border-top: 0;
-  }
-
-  .ticket-list-item:last-child .ticket-list-row {
-    border-bottom: var(--hairline) solid var(--edge);
-    border-end-start-radius: var(--radius-3);
-    border-end-end-radius: var(--radius-3);
-  }
-
-  .ticket-list-head {
-    display: grid;
-    grid-template-rows: auto auto;
-    align-content: center;
-    align-items: center;
-    gap: var(--space-2);
-    min-width: 0;
-  }
-
-  .ticket-list-title {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    margin: 0;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-    color: var(--ink-1);
-    font-size: var(--text-lg);
-    font-weight: var(--weight-strong);
-    line-height: var(--leading-tight);
-  }
-
-  .ticket-list-title a {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  .ticket-list-title a:hover {
-    text-decoration: underline;
-  }
-
-  .ticket-list-info {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    min-width: 0;
-    overflow: hidden;
-  }
-
+  /* A step further from the meta than the meta's parts are from each other. */
   .ticket-list-number {
     flex: none;
+    margin-inline-end: var(--space-1);
     color: var(--ink-3);
     font: var(--weight-strong) var(--text-lg) var(--font-mono);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-  }
-
-  .ticket-list-number a {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  .ticket-list-number a::before {
-    content: "#";
-  }
-
-  .ticket-list-meta {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    min-width: 0;
-    color: var(--ink-3);
-    font-size: var(--text-sm);
-    white-space: nowrap;
-  }
-
-  .ticket-list-meta > * {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .ticket-list-repository {
@@ -331,31 +45,20 @@
     vertical-align: bottom;
   }
 
+  /* What the row waits on and its epics, at the end of its line. */
+  .ticket-list-trail,
   .ticket-list-dependencies {
     display: flex;
-    flex: none;
     align-items: center;
     gap: var(--space-1);
-    max-width: 45%;
-    min-width: 0;
-    overflow-x: auto;
-    font-size: var(--text-sm);
   }
 
-  .ticket-list-dependencies > * {
-    flex: none;
+  .ticket-list-trail {
+    column-gap: var(--space-3);
   }
 
   .ticket-list-waits {
     color: var(--ink-3);
-  }
-
-  .ticket-list-foot {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    min-width: 0;
   }
 
   .ticket-list-foot-creator {
@@ -385,7 +88,8 @@
 
   /* The row's state label sits at the end of a slot as wide and as tall on
      every row whatever it says, so the column lines up and the row keeps its
-     height; a ready row's slot is the button that dispatches it. */
+     height, which the foot holds where a row has no slot; a ready row's slot
+     is the button that dispatches it. */
   .ticket-list-standing {
     display: inline-flex;
     flex: none;
@@ -404,21 +108,22 @@
     cursor: pointer;
   }
 
-  button.ticket-list-standing > .ticket-state {
+  button.ticket-list-standing > .status-badge {
     box-shadow: 0 var(--hairline) var(--space-1) var(--wash-pass);
     transition: box-shadow var(--duration-1) var(--ease-out);
   }
 
-  button.ticket-list-standing:hover:not(:disabled) > .ticket-state {
+  button.ticket-list-standing:hover:not(:disabled) > .status-badge {
     box-shadow: 0 var(--space-1) var(--space-3) var(--wash-pass);
   }
 
   .ticket-list-standing:focus-visible {
-    box-shadow: none;
+    outline: none;
   }
 
-  .ticket-list-standing:focus-visible > .ticket-state {
-    box-shadow: var(--ring-focus);
+  .ticket-list-standing:focus-visible > .status-badge {
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: var(--focus-offset);
   }
 
   button.ticket-list-standing:disabled {
@@ -426,67 +131,9 @@
     opacity: 0.6;
   }
 
-  /* A dependency is its number in the colours of the state it stands in: an
-     outline for what can start, a wash for what is moving, parked or
-     finished, and the inset for what waits or was stopped. */
-  .ticket-list-state {
+  .ticket-dependency {
     display: inline-flex;
     flex: none;
-    align-items: center;
-    padding: var(--space-1) var(--space-3);
-    border: var(--hairline) solid transparent;
-    border-radius: var(--radius-3);
-    background: var(--surface-2);
-    color: var(--ink-2);
-    font-size: var(--text-sm);
-    font-weight: var(--weight-strong);
-    white-space: nowrap;
-  }
-
-  .ticket-list-state[data-tone="pass"] {
-    border-color: var(--tone-pass);
-    background: var(--surface-1);
-    color: var(--tone-pass);
-  }
-
-  .ticket-list-state[data-standing="Done"] {
-    border-color: transparent;
-    background: var(--wash-pass);
-    font-weight: var(--weight-medium);
-  }
-
-  .ticket-list-state[data-tone="live"] {
-    background: var(--wash-live);
-    color: var(--tone-live);
-  }
-
-  .ticket-list-state[data-tone="evaluation"] {
-    background: var(--wash-evaluation);
-    color: var(--tone-evaluation);
-  }
-
-  .ticket-list-state[data-tone="finalization"] {
-    background: var(--wash-finalization);
-    color: var(--tone-finalization);
-  }
-
-  .ticket-list-state[data-tone="parked"] {
-    background: var(--wash-parked);
-    color: var(--tone-parked);
-  }
-
-  .ticket-list-state[data-tone="queued"] {
-    color: var(--tone-parked);
-  }
-
-  .ticket-list-state[data-tone="retired"] {
-    color: var(--ink-3);
-  }
-
-  .ticket-list-more {
-    display: flex;
-    justify-content: center;
-    padding-top: var(--space-2);
   }
 
   @container (max-width: 53em) {
@@ -495,107 +142,64 @@
     }
 
     .ticket-list-foot-creator {
-      display: block;
-    }
-  }
-
-  @container (min-width: 53em) {
-    .ticket-list-row {
-      grid-template-columns: minmax(0, 1fr) auto;
-      grid-template-rows: minmax(0, 1fr);
-      gap: var(--space-5);
-      min-height: 0;
+      display: flex;
+      align-items: baseline;
+      gap: var(--space-1);
     }
 
-    .ticket-list-title {
-      -webkit-line-clamp: 1;
-    }
-
-    .ticket-list-foot {
-      gap: var(--space-5);
+    .ticket-list-foot-creator > .identity {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
   }
 
   @container (max-width: 40em) {
-    .ticket-list {
-      margin-inline: calc(-1 * var(--space-4));
+    /* On a phone every control a row draws is a finger's height, and the
+       mark for what it waits on as wide; the text of each keeps its line,
+       centred in that height. */
+    .ticket-list-repository,
+    .ticket-list-foot-creator > .identity {
+      line-height: var(--height-touch);
     }
 
-    button.ticket-state-count,
-    button.ticket-state-count > .ticket-state {
-      border-radius: var(--radius-circle);
-    }
-
-    button.ticket-state-count > .ticket-state {
+    .ticket-list-waits {
+      display: inline-flex;
+      align-items: center;
       justify-content: center;
-      width: var(--control-height);
-      padding: 0;
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
     }
 
-    button.ticket-state-count > .ticket-state > .num {
-      margin-inline-start: 0;
-      text-align: center;
+    .ticket-list-standing {
+      height: var(--height-touch);
     }
 
-    .ticket-state-count .ticket-state-mark,
-    .ticket-state-count .ticket-state-word {
-      display: none;
+    /* A dependency keeps its drawn size and is pressed through a box a
+       finger's height, centred on it, as a checkbox is. */
+    .ticket-dependency {
+      position: relative;
     }
 
-    .ticket-list-controls {
-      margin-inline: calc(-1 * var(--space-4));
-      padding: var(--space-3) var(--space-4) var(--space-2);
+    .ticket-dependency::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, var(--height-touch));
+      height: var(--height-touch);
+      translate: -50% -50%;
     }
 
-    .ticket-list-row {
-      border-inline: 0;
-      padding: var(--space-3) max(var(--space-3), env(safe-area-inset-right))
-        var(--space-3) max(var(--space-3), env(safe-area-inset-left));
-    }
-
-    .ticket-list-item:first-child .ticket-list-row,
-    .ticket-list-item:last-child .ticket-list-row {
-      border-radius: 0;
-    }
-
-    .ticket-list-foot {
-      gap: var(--space-2);
-    }
-
-    .ticket-list-controls:has([data-open]) .ticket-list-counts {
-      display: none;
-    }
-
-    .ticket-list-counts {
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      scrollbar-width: none;
-    }
-
-    .ticket-list-counts > li {
-      flex: none;
-    }
-
-    .ticket-list-selects:has([data-open]) {
-      width: 100%;
-    }
-
-    .ticket-list-selects > [data-open] {
-      flex: 1;
-    }
-
-    /* Important, because a picker's trigger states its display in a utility
-       that would otherwise win over this layer. */
-    .ticket-list-selects:has([data-open]) > :not([data-open]) {
-      display: none !important;
-    }
-
-    .ticket-list-search[data-expanded] .ticket-list-search-field {
-      width: 100cqi;
-    }
-
-    .ticket-list-search-field .input-box {
-      font-size: var(--text-unzoomed);
+    /* On a phone what a row waits on wraps within the end of its line rather
+       than running past the screen's edge. */
+    .ticket-list-trail,
+    .ticket-list-dependencies {
+      flex: 0 1 auto;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      min-width: 0;
     }
   }
 }

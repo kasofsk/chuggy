@@ -20,7 +20,7 @@ import { actionReachArm } from "../../core/tones.ts";
 import { usePanelState } from "../api.ts";
 import { DataSection } from "../DataPanel.tsx";
 import { Identity } from "../ui/Identity.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
@@ -43,7 +43,9 @@ function DeliveryLine(props: { readonly line: TicketDeliveryLine }): ReactNode {
     <li className="ticket-delivery-line">
       <span className="ticket-delivery-name">{line.name}</span>
       <span className="ticket-delivery-mark">
-        <Pill tone={arm.tone}>{text(arm.word)}</Pill>
+        <StatusBadge tone={arm.tone} size="small">
+          {text(arm.word)}
+        </StatusBadge>
       </span>
       <span className="ticket-delivery-report">
         {line.commit === undefined ? null : <Identity label={line.commit} />}

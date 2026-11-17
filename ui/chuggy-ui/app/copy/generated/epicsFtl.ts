@@ -7,10 +7,9 @@ export const epicsFtl = `## A project's epics, one epic's page, its graph and it
 
 epics-title = { -epic(case: "upper", form: "plural") }
 epics-page-title = { -epic(case: "upper") }
-epics-none = No { -epic(form: "plural") }
+epics-none = No { -epic(form: "plural") } yet. Ask in a { -thread } to make one.
+epics-none-matching = No { -epic } matches this search or filter.
 epics-not-found = No such { -epic }
-epics-new = New { -epic }
-epics-create = Create { -epic }
 epics-search = Search { -epic(form: "plural") }
 epics-search-placeholder = Search titles and summaries…
 epics-show-more = Show more
@@ -49,8 +48,6 @@ epics-field-summary = Summary
 epics-field-summary-count = { $count } / { $most }
 epics-field-description = Description
 epics-field-description-format = Markdown
-epics-field-tickets = { -ticket(case: "upper", form: "plural") }
-epics-field-tickets-placeholder = { -ticket(case: "upper") } numbers, such as 12, 14
 epics-faults-label = Faults
 
 ## The page's header and its tabs.
@@ -70,6 +67,9 @@ epics-archive-body = An archived { -epic } takes no new { -ticket(form: "plural"
 epics-reactivate = Reactivate
 epics-reactivate-title = Reactivate this { -epic }?
 epics-reactivate-body = The { -epic } is active again and takes new { -ticket(form: "plural") }.
+# The toast once an archive or a reactivation has landed.
+epics-archived-toast = { -epic(case: "upper") } { $epic } archived
+epics-reactivated-toast = { -epic(case: "upper") } { $epic } reactivated
 epics-note-attention = Needs attention:
 epics-note-attention-escalated = is { -escalation }
 
@@ -95,6 +95,10 @@ epics-tickets-filter = Filter { -ticket(form: "plural") }
 epics-tickets-no-match = No { -ticket(form: "plural") } match
 epics-tickets-running = Running
 epics-tickets-group = { $word }, { $count }
+epics-tickets-group-count = { $count ->
+    [one] { $count } { -ticket }
+   *[other] { $count } { -ticket(form: "plural") }
+}
 epics-tickets-after = after
 epics-tickets-blocks = blocks { $count }
 epics-tickets-menu = More actions for #{ $ticket }
@@ -114,6 +118,7 @@ epics-tickets-add-chosen = Add { $count ->
 epics-graph-empty = This { -epic } has no { -ticket(form: "plural") } to draw
 epics-graph-loading = Drawing the graph…
 epics-graph-failed = The graph could not be read.
+epics-graph-as-list = Read these { -ticket(form: "plural") } as a list
 epics-graph-outside-shown = Show { -ticket(form: "plural") } outside the { -epic } ({ $count })
 epics-graph-label = { -ticket(case: "upper", form: "plural") } of the { -epic } and what they wait on
 epics-graph-key = Key
@@ -122,18 +127,31 @@ epics-graph-key-running = Running
 epics-graph-key-ready = Ready
 epics-graph-key-blocked = Blocked
 epics-graph-key-escalated = { -escalation(case: "upper") }
-# spells -run: to run is a verb here
-epics-graph-arrows = Arrows run from a { -ticket } to what waits on it
-epics-graph-unconnected = Unlinked { -ticket(form: "plural") }
+epics-graph-chain = Longest chain
+epics-graph-layer = Layer { $layer }: { $done } of { $count } done
+epics-graph-done = { $done } of { $count } done
 epics-card-untitled = Untitled
-epics-card = #{ $ticket } { $title }: { $state }
-epics-card-outside = #{ $ticket } { $title }: { $state }, outside the { -epic }
+epics-card-outside-tag = outside
+epics-card = #{ $ticket } { $title }: { $state }{ $count ->
+    [0] {""}
+    [one] , { $done } of 1 { -dependency } done
+   *[other] , { $done } of { $count } { -dependency(form: "plural") } done
+}
+epics-card-outside = #{ $ticket } { $title }: { $state }, outside the { -epic }{ $count ->
+    [0] {""}
+    [one] , { $done } of 1 { -dependency } done
+   *[other] , { $done } of { $count } { -dependency(form: "plural") } done
+}
 epics-side-label = Selected { -ticket }
+epics-side-summary = { -epic(case: "upper") } at a glance
+epics-side-layer = Layer { $layer } of { $layers }
+epics-side-step = Step { $step } of { $steps }
 epics-side-depends-on = Depends on
 epics-side-blocks = Blocks
 epics-side-none = None
 epics-side-open = Open { -ticket }
 epics-side-dispatch = { -dispatch(case: "upper") }
+epics-sheet-ticket = #{ $ticket } { $title }: { $state }
 
 ## The History tab.
 
@@ -164,6 +182,9 @@ epics-history-also = { $first } · { $rest }
 
 epics-edit = Edit the { -epic }
 epics-edit-save = Save
+# The toast once a revision has landed and the edit page has been left.
+epics-saved-toast = { -epic(case: "upper") } { $epic } saved
+epics-leave-question = Discard the unsaved changes to the { -epic } and leave?
 
 ## What a form has wrong before it is sent, and what a refused write says.
 

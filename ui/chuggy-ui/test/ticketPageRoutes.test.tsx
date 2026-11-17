@@ -64,10 +64,32 @@ async function mountedAt(path: string): Promise<void> {
   await consoleAdvanced(ticketPageSettleMs);
 }
 
+/** The headings in the page's main landmark, in document order, each as its
+ * level and its words. */
+function headingsInMain(): readonly (readonly [number, string])[] {
+  return [
+    ...screen.getByRole("main").querySelectorAll("h1, h2, h3, h4, h5, h6"),
+  ].map((heading) => [
+    Number(heading.tagName.slice(1)),
+    heading.textContent ?? "",
+  ]);
+}
+
+/** That the page's headings open with its title and then the tab's own, a
+ * level under it, and that no heading after them skips a level. */
+function headingsOpenWithTab(tab: string): void {
+  const headings = headingsInMain();
+  expect(headings.slice(0, 2).map(([level]) => level)).toStrictEqual([1, 2]);
+  expect(headings[1]?.[1]).toBe(tab);
+  for (const [index, [level]] of headings.entries())
+    if (index > 0)
+      expect(level).toBeLessThanOrEqual((headings[index - 1]?.[0] ?? 0) + 1);
+}
+
 test("the ticket's address draws the header, marks Overview current, and draws Instructions", async () => {
   await mountedAt(ticketPath);
   expect(tabCurrent()).toBe("Overview");
-  expect(document.querySelector("header.ticket-header")).not.toBeNull();
+  expect(document.querySelector("header.page-header")).not.toBeNull();
   expect(screen.getByRole("heading", { name: /^Instructions/u })).toBeDefined();
   consoleSiteClean(site);
 });
@@ -75,7 +97,7 @@ test("the ticket's address draws the header, marks Overview current, and draws I
 test("a ticket with no run says so on its Usage tab", async () => {
   await mountedAt(`${ticketPath}/usage`);
   expect(tabCurrent()).toBe("Usage");
-  expect(document.querySelector("header.ticket-header")).not.toBeNull();
+  expect(document.querySelector("header.page-header")).not.toBeNull();
   expect(screen.getByText("Nothing has run")).toBeDefined();
   consoleSiteClean(site);
 });
@@ -122,7 +144,7 @@ test("switching tabs reads nothing the page has already read", async () => {
 test("the edit screen is its own page, without the header or the tabs", async () => {
   await mountedAt(`${ticketPath}/edit`);
   expect(screen.queryByRole("navigation", { name: "Ticket" })).toBeNull();
-  expect(document.querySelector("header.ticket-header")).toBeNull();
+  expect(document.querySelector("header.page-header")).toBeNull();
 });
 
 test("the Runs tab of a ticket nothing has run for says so", async () => {
@@ -266,7 +288,7 @@ test("the landing's address draws under the Runs tab, and says when the ticket h
   runServed();
   await mountedAt(`${ticketPath}/landing`);
   expect(tabCurrent()).toMatch(/^Runs/u);
-  expect(screen.getByText("No landing")).toBeDefined();
+  expect(screen.getByText("No finalization")).toBeDefined();
   const rail = screen.getByRole("navigation", { name: "Runs" });
   expect(
     within(rail)
@@ -289,7 +311,7 @@ test("the landing's address says its read has not answered rather than that the 
   landingsServed(() => new Promise(() => undefined));
   await mountedAt(`${ticketPath}/landing`);
   expect(screen.getByText("Loading…")).toBeDefined();
-  expect(screen.queryByText("No landing")).toBeNull();
+  expect(screen.queryByText("No finalization")).toBeNull();
 });
 
 test("the landing's address says its read failed rather than that the ticket has no landing", async () => {
@@ -300,5 +322,22 @@ test("the landing's address says its read failed rather than that the ticket has
   );
   await mountedAt(`${ticketPath}/landing`);
   expect(document.querySelector(".read-failed")).not.toBeNull();
-  expect(screen.queryByText("No landing")).toBeNull();
+  expect(screen.queryByText("No finalization")).toBeNull();
+});
+
+test("every tab's content opens with a heading naming its tab, a level under the title, and no heading skips one", async () => {
+  runServed();
+  for (const [path, tab] of [
+    ["", "Overview"],
+    ["/runs", "Runs"],
+    ["/runs/1", "Runs"],
+    ["/landing", "Runs"],
+    ["/configuration", "Configuration"],
+    ["/usage", "Usage"],
+  ] as const) {
+    await mountedAt(`${ticketPath}${path}`);
+    expect(tabCurrent()?.startsWith(tab)).toBe(true);
+    headingsOpenWithTab(tab);
+    cleanup();
+  }
 });

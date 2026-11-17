@@ -99,7 +99,8 @@ const catalogHeadUnreadTexts: Readonly<
   SnapshotRefused: { id: "configuration-catalog-head-snapshot-refused" },
 };
 
-/** What the head says of the configuration, in the one line the page draws it as. */
+/** What the head says of the configuration, in the one line the page draws
+ * while the head's version stands in the import's place. */
 export function catalogHeadText(
   standing: CatalogHeadStanding,
   name: string,
@@ -112,7 +113,7 @@ export function catalogHeadText(
       };
     case "Differs":
       return {
-        id: "configuration-catalog-head-differs",
+        id: "configuration-catalog-head-showing",
         args: { ...catalogHeadAtArgs(standing.at), name },
       };
     case "Undeclared":
@@ -128,14 +129,6 @@ export function catalogHeadText(
     case "Unread":
       return catalogHeadUnreadTexts[standing.why];
   }
-}
-
-/** What the page says while it draws the head's version in the import's place. */
-export function catalogHeadShowingText(at: CatalogHeadAt, name: string): Copy {
-  return {
-    id: "configuration-catalog-head-showing",
-    args: { ...catalogHeadAtArgs(at), name },
-  };
 }
 
 /** One fault an import of the head would be refused with, as the page lists it. */

@@ -47,8 +47,11 @@ test("a catalog reads as its workloads, plans, finalizers and defaults", () => {
   });
   expect([...read.plans.keys()]).toStrictEqual(["review", "gated"]);
   expect(read.finalizers).toStrictEqual([
-    { name: "land", approvalRequired: false },
-    { name: "approved", approvalRequired: true },
+    { name: "land" },
+    {
+      name: "proposed",
+      finalization: { kind: "PullRequest" },
+    },
   ]);
   expect(read.defaults).toStrictEqual({
     work: "build",
@@ -75,7 +78,6 @@ test("a version 3 catalog reads each finalizer's finalization whole, policy and 
           },
         },
         proposal: {
-          approvalRequired: true,
           finalization: { kind: "PullRequest", target: "refs/heads/main" },
         },
         nothing: { finalization: { kind: "None" } },
@@ -87,7 +89,6 @@ test("a version 3 catalog reads each finalizer's finalization whole, policy and 
   expect(read?.finalizers).toStrictEqual([
     {
       name: "merge",
-      approvalRequired: false,
       finalization: {
         kind: "GitMerge",
         mode: "PullRequestMerge",
@@ -97,15 +98,13 @@ test("a version 3 catalog reads each finalizer's finalization whole, policy and 
     },
     {
       name: "proposal",
-      approvalRequired: true,
       finalization: { kind: "PullRequest", target: "refs/heads/main" },
     },
     {
       name: "nothing",
-      approvalRequired: false,
       finalization: { kind: "None" },
     },
-    { name: "written", approvalRequired: false },
+    { name: "written" },
   ]);
 });
 
@@ -125,7 +124,6 @@ test("a version 2 catalog's landing reads forward to its kind, a git merge order
   ).toStrictEqual([
     {
       name: "landed",
-      approvalRequired: false,
       finalization: {
         kind: "GitMerge",
         mode: "Push",
@@ -135,15 +133,13 @@ test("a version 2 catalog's landing reads forward to its kind, a git merge order
     },
     {
       name: "proposed",
-      approvalRequired: false,
       finalization: { kind: "PullRequest" },
     },
     {
       name: "nothing",
-      approvalRequired: false,
       finalization: { kind: "None" },
     },
-    { name: "written", approvalRequired: false },
+    { name: "written" },
   ]);
 });
 
@@ -275,10 +271,10 @@ test("each choice marks the catalog's default", () => {
   ]);
   expect(choices.finalization.map((choice) => choice.value)).toStrictEqual([
     "land",
-    "approved",
+    "proposed",
   ]);
   expect(choices.finalization.map((choice) => choice.text)).toStrictEqual([
-    "land (default) · lands unapproved",
-    "approved · approved first",
+    "land (default) · The repository's finalization",
+    "proposed · Pull request",
   ]);
 });

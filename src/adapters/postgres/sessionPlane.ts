@@ -49,6 +49,8 @@ import type {
   SessionPlaneIdentity,
   SessionReferenceBound,
   SessionReferencePort,
+  SessionStandingPort,
+  SessionStandingRecorded,
   SessionStoreBatchWritten,
   SessionStoreQueryPort,
   SessionStoreRecordPort,
@@ -80,6 +82,7 @@ export type SessionPlaneStore = SessionPlaneAuthority &
   SessionAttemptLossPort &
   SessionHeartbeatPort &
   SessionReferencePort &
+  SessionStandingPort &
   SessionTurnClaimPort &
   SessionTurnSettlePort &
   SessionTurnWatchPort &
@@ -87,7 +90,7 @@ export type SessionPlaneStore = SessionPlaneAuthority &
   SessionStoreQueryPort;
 
 /** The digest a session bearer is keyed by, which is all the database holds of it. */
-function sessionSecretDigest(secret: SessionBearerSecret): string {
+export function sessionSecretDigest(secret: SessionBearerSecret): string {
   return createHash("sha256").update(secret, "utf8").digest("hex");
 }
 
@@ -100,9 +103,10 @@ interface SessionIdentityRow {
   readonly principal: string | null;
 }
 
-/** One `authenticate_session_bearer` row, which names its session's scope as well. */
+/** One `authenticate_session_bearer` row, which names its session's scope and capabilities as well. */
 interface SessionBearerRow extends SessionIdentityRow {
   readonly scope: string | null;
+  readonly capabilities: string[] | null;
 }
 
 /** One `read_session_attempt` row, with the liveness the server computed. */
@@ -118,6 +122,7 @@ interface SessionAuthorityRow extends SessionIdentityRow {
   readonly effort: string | null;
   readonly fork_from: string | null;
   readonly system_prompt_own: boolean | null;
+  readonly shell_credential_handed: boolean | null;
   readonly live: boolean | null;
 }
 
@@ -139,7 +144,7 @@ function sessionPartitionOf(row: SessionIdentityRow): Partition {
 /** The roster columns a session identity carries, refused when the join lost one. */
 function sessionIdentityOf(
   row: SessionIdentityRow,
-): Omit<SessionBearerIdentity, "scope"> {
+): Omit<SessionBearerIdentity, "scope" | "capabilities"> {
   return {
     partition: sessionPartitionOf(row),
     session: asSessionId(sessionRowText(row.session, "session")),
@@ -184,6 +189,9 @@ function sessionAuthorityOf(row: SessionAuthorityRow): SessionPlaneIdentity {
         }),
     ...(row.fork_from === null ? {} : { forkFrom: row.fork_from }),
     ...(row.system_prompt_own === true ? { systemPromptOwn: true } : {}),
+    ...(row.shell_credential_handed === true
+      ? { shellCredentialHanded: true }
+      : {}),
     live: row.live === true,
   };
 }
@@ -208,6 +216,12 @@ const referenceArms = [
   "Conflict",
   "Fenced",
 ] as const satisfies readonly SessionReferenceBound[];
+
+const standingArms = [
+  "Recorded",
+  "Fenced",
+  "NotChatHostThread",
+] as const satisfies readonly SessionStandingRecorded[];
 
 const answerArms = [
   "Answered",
@@ -247,7 +261,8 @@ async function sessionPlaneAuthenticate(
     sql`SELECT tenant,project,session,attempt,generation::text AS generation,
                kind,principal,capabilities,credential_slot,agent_reference,
                system_prompt,auto_compact_window::text AS auto_compact_window,
-               model,effort,fork_from,system_prompt_own,live
+               model,effort,fork_from,system_prompt_own,
+               shell_credential_handed,live
           FROM read_session_attempt(${sessionSecretDigest(secret)})`,
   );
   const row = found.rows[0];
@@ -258,7 +273,7 @@ async function sessionPlaneBinding(
   pool: pg.Pool,
   secret: SessionBearerSecret,
   generation: number,
-): Promise<Omit<SessionBearerIdentity, "scope"> | undefined> {
+): Promise<Omit<SessionBearerIdentity, "scope" | "capabilities"> | undefined> {
   const found = await pool.query<SessionIdentityRow>(
     sql`SELECT tenant,project,session,kind,principal
           FROM session_attempt_binding(
@@ -413,6 +428,21 @@ async function sessionPlaneRecord(
   return sessionVerdict(recordedArms, stored.rows[0]?.stored, "a store batch");
 }
 
+async function sessionPlaneStand(
+  pool: pg.Pool,
+  input: Parameters<SessionStandingPort["stand"]>[0],
+): Promise<SessionStandingRecorded> {
+  const stood = await pool.query<{ stood: string | null }>(
+    sql`SELECT report_session_standing(${sessionSecretDigest(input.secret)},
+      ${input.generation},${input.standing})::text AS stood`,
+  );
+  return sessionVerdict(
+    standingArms,
+    stood.rows[0]?.stood,
+    "recording a thread's standing",
+  );
+}
+
 /** Everything a session pod may ask of the durable side, over the plane's own pool. */
 export function postgresSessionPlane(pool: pg.Pool): SessionPlaneStore {
   return {
@@ -468,6 +498,8 @@ export function postgresSessionPlane(pool: pg.Pool): SessionPlaneStore {
       );
     },
 
+    stand: (input) => sessionPlaneStand(pool, input),
+
     claim: (input) => sessionPlaneClaim(pool, input.secret, input.generation),
 
     answer: (input) => sessionPlaneAnswer(pool, input),
@@ -502,7 +534,7 @@ export function postgresSessionBearerAuthority(
   return {
     authenticate: async (secret) => {
       const found = await pool.query<SessionBearerRow>(
-        sql`SELECT tenant,project,session,kind,principal,scope
+        sql`SELECT tenant,project,session,kind,principal,scope,capabilities
               FROM authenticate_session_bearer(${sessionSecretDigest(secret)})`,
       );
       const row = found.rows[0];
@@ -515,6 +547,7 @@ export function postgresSessionBearerAuthority(
               row.scope,
               "session scope",
             ),
+            capabilities: sessionRowCapabilities(row.capabilities),
           };
     },
   };

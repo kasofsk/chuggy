@@ -880,6 +880,42 @@ function scratchConflictedPaths(stdout: string): ScratchMerged {
   return { merged: "Conflicted", paths, truncated: false };
 }
 
+/**
+ * The files under `paths` two commits differ in, as many as one conflict
+ * summary carries, each path given literally so none is read as a pattern, and
+ * `undefined` where git could not answer. A rename is two files here.
+ */
+export async function scratchDiffPaths(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  from: GitObjectId,
+  to: GitObjectId,
+  paths: readonly string[],
+): Promise<
+  { readonly paths: readonly string[]; readonly truncated: boolean } | undefined
+> {
+  const ran = await scratchRun(scratch, {
+    repository,
+    timeoutMsMax: scratch.options.localTimeoutMsMax,
+    argv: [
+      "diff",
+      "--name-only",
+      "--no-renames",
+      "-z",
+      from,
+      to,
+      "--",
+      ...paths.map((path) => `:(literal)${path}`),
+    ],
+  });
+  if (ran.ran === "Stopped" || ran.code !== 0) return undefined;
+  const named = ran.stdout.split("\0").filter((field) => field !== "");
+  return {
+    paths: named.slice(0, conflictPathsMax),
+    truncated: named.length > conflictPathsMax,
+  };
+}
+
 /** Merges two commits into a tree object, reading clean and conflicted off the exit code. */
 export async function scratchMergeTree(
   scratch: GitScratch,

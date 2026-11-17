@@ -1,0 +1,495 @@
+/**
+ * The reader's theme, chosen in the Appearance section: their global theme,
+ * and inside a project the row saying which theme applies there and why, with
+ * their own choice for the project.
+ *
+ * A CHOICE IS WORN AS IT IS PRESSED. The reads the worn theme follows are
+ * written with what the choice resolves to before the write is sent, so the
+ * page repaints and the picker moves at once; a refused write puts back what
+ * they held, which puts the picker and the page back, and its sentence is
+ * drawn under the picker. A landed write reads them all again.
+ *
+ * THE LAST PRESS IS THE ONE KEPT. Theme writes, from either picker, are sent
+ * one at a time in the order pressed, so the server keeps the last; a press
+ * whose turn comes after a later one to the same write was made is not sent,
+ * so one write is in flight and one waits for each of the two, however fast
+ * the presses come.
+ * Only the last press's answer reads again or puts back, and what it puts back
+ * is what the server holds: the reads as the first press found them, with each
+ * landed write's choice resolved on them in turn.
+ */
+
+import type { QueryClient } from "@tanstack/react-query";
+import { useParams } from "@tanstack/react-router";
+import { useId, useState } from "react";
+import type { ReactNode } from "react";
+
+import type { ThemeChoice } from "../../../../../src/contract/appearance.ts";
+import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import type {
+  OwnedThemeResponse,
+  ProjectAppearanceResponse,
+  ThemeChoiceResponse,
+} from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import {
+  apiWriteProjectThemeOverride,
+  apiWriteThemeChoice,
+} from "../../core/apiRoutes.ts";
+import type { ApiResult } from "../../core/apiRequest.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type {
+  ConsoleWrite,
+  ConsoleWriteRefused,
+} from "../../core/consoleWrite.ts";
+import type { Copy } from "../../core/copy.ts";
+import {
+  ownedThemeQuery,
+  ownedThemesQuery,
+  projectAppearanceQuery,
+  themeChoiceQuery,
+} from "../../core/themeQueries.ts";
+import {
+  themeGlobalChosen,
+  themeInUseOf,
+  themeOverrideChosen,
+  themePickerOptions,
+  themePickerProjectDefault,
+  themePreferencesOf,
+  themeRefusalOf,
+} from "../../core/themePreferences.ts";
+import type { ThemePickerOption } from "../../core/themePreferences.ts";
+import { themeScopeOf } from "../../core/themeTokens.ts";
+import { usePanelState } from "../api.ts";
+import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
+import { Button } from "../ui/Button.tsx";
+import { Notice } from "../ui/Notice.tsx";
+import { ThemeEditor } from "./ThemeEditor.tsx";
+import type { ThemeEditorOpening } from "./ThemeEditor.tsx";
+import { ThemePicker } from "./ThemePicker.tsx";
+import type { ThemePickerCard } from "./ThemePicker.tsx";
+
+/** What the worn theme is read from, as it stood before a choice was worn. */
+interface ThemeHeld {
+  readonly choice: ThemeChoiceResponse | undefined;
+  readonly appearance: ProjectAppearanceResponse | undefined;
+}
+
+function themeHeldOf(
+  client: QueryClient,
+  partition: PartitionIdentity | undefined,
+): ThemeHeld {
+  return {
+    choice: client.getQueryData(themeChoiceQuery().queryKey),
+    appearance:
+      partition === undefined
+        ? undefined
+        : client.getQueryData(projectAppearanceQuery(partition).queryKey),
+  };
+}
+
+function themeHeldPut(
+  client: QueryClient,
+  partition: PartitionIdentity | undefined,
+  held: ThemeHeld,
+): void {
+  if (held.choice !== undefined)
+    client.setQueryData(themeChoiceQuery().queryKey, held.choice);
+  if (partition !== undefined && held.appearance !== undefined)
+    client.setQueryData(
+      projectAppearanceQuery(partition).queryKey,
+      held.appearance,
+    );
+}
+
+/** The theme writes of one client: the presses not yet answered, chained in
+ * the order pressed, the last press to each write not yet answered, and what
+ * the server held as the last answered left it. */
+interface ThemeTurn {
+  pressed: number;
+  readonly pressedLast: Map<string, number>;
+  unanswered: number;
+  worn: Promise<unknown>;
+  written: Promise<unknown>;
+  kept: ThemeHeld | undefined;
+}
+
+const themeTurns = new WeakMap<QueryClient, ThemeTurn>();
+
+function themeTurnOf(client: QueryClient): ThemeTurn {
+  const held = themeTurns.get(client);
+  if (held !== undefined) return held;
+  const turn: ThemeTurn = {
+    pressed: 0,
+    pressedLast: new Map(),
+    unanswered: 0,
+    worn: Promise.resolve(),
+    written: Promise.resolve(),
+    kept: undefined,
+  };
+  themeTurns.set(client, turn);
+  return turn;
+}
+
+function themeReadKeys(
+  partition: PartitionIdentity | undefined,
+): readonly (readonly unknown[])[] {
+  return [
+    themeChoiceQuery().queryKey,
+    ...(partition === undefined
+      ? []
+      : [projectAppearanceQuery(partition).queryKey]),
+  ];
+}
+
+/** A press's answer where a later press to the same write replaced it before
+ * it was sent: that one's answer reads again or puts back, so this one does
+ * neither. */
+const themeReplaced: ApiResult<undefined> = { outcome: "Ok", value: undefined };
+
+/** The write under `mutationKey` sent with the reads `chosen` resolves put on
+ * them first, after every earlier press's write has answered, and not sent
+ * where a later press to the same write was made by then; where it is refused
+ * and no press followed it, the reads are put back to what the server holds. */
+async function themeHeldWhile(
+  client: QueryClient,
+  partition: PartitionIdentity | undefined,
+  mutationKey: readonly unknown[],
+  chosen: (held: ThemeHeld) => ThemeHeld,
+  write: () => Promise<ApiResult<undefined>>,
+): Promise<ApiResult<undefined>> {
+  const turn = themeTurnOf(client);
+  const press = (turn.pressed += 1);
+  const target = JSON.stringify(mutationKey);
+  turn.pressedLast.set(target, press);
+  const first = turn.unanswered === 0;
+  turn.unanswered += 1;
+  const wearing = turn.worn.then(async () => {
+    await Promise.all(
+      themeReadKeys(partition).map((queryKey) =>
+        client.cancelQueries({ queryKey }),
+      ),
+    );
+    const held = themeHeldOf(client, partition);
+    if (first) turn.kept = held;
+    themeHeldPut(client, partition, chosen(held));
+  });
+  turn.worn = wearing.catch(() => undefined);
+  let replaced = false;
+  const writing = Promise.all([wearing, turn.written]).then(async () => {
+    replaced = press !== turn.pressedLast.get(target);
+    return replaced ? themeReplaced : write();
+  });
+  turn.written = writing.catch(() => undefined);
+  let answered: ApiResult<undefined> | undefined;
+  try {
+    answered = await writing;
+    return answered;
+  } finally {
+    turn.unanswered -= 1;
+    if (turn.pressedLast.get(target) === press) turn.pressedLast.delete(target);
+    if (answered?.outcome === "Ok" && !replaced && turn.kept !== undefined)
+      turn.kept = chosen(turn.kept);
+    else if (press === turn.pressed && turn.kept !== undefined)
+      themeHeldPut(client, partition, turn.kept);
+  }
+}
+
+/** The reads again, once no later press is still unanswered: that press's
+ * answer reads them again, and a read of this one would undo its wearing. */
+async function themeReread(
+  client: QueryClient,
+  partition: PartitionIdentity | undefined,
+): Promise<void> {
+  if (themeTurnOf(client).unanswered > 0) return;
+  await Promise.all(
+    themeReadKeys(partition).map((queryKey) =>
+      client.invalidateQueries({ queryKey }),
+    ),
+  );
+}
+
+function themeGlobalWrite(
+  partition: PartitionIdentity | undefined,
+  owned: readonly OwnedThemeResponse[],
+): ConsoleWrite<ThemeChoice, undefined> {
+  const mutationKey = consoleWriteKey("theme-choice");
+  return {
+    mutationKey,
+    write: (ports, choice, client) => {
+      const document =
+        choice.kind === "Owned"
+          ? owned.find((theme) => theme.theme === choice.theme)
+          : undefined;
+      if (document !== undefined)
+        client.setQueryData(ownedThemeQuery(document.theme).queryKey, document);
+      return themeHeldWhile(
+        client,
+        partition,
+        mutationKey,
+        (held) => ({
+          choice: { choice },
+          appearance:
+            held.appearance === undefined
+              ? undefined
+              : themeGlobalChosen(held.appearance, choice, owned),
+        }),
+        () => apiWriteThemeChoice(ports, choice),
+      );
+    },
+    refusal: themeRefusalOf,
+    landed: (client) => themeReread(client, partition),
+  };
+}
+
+function themeOverrideWrite(
+  partition: PartitionIdentity,
+  owned: readonly OwnedThemeResponse[],
+): ConsoleWrite<ThemeChoice | undefined, undefined> {
+  const mutationKey = consoleWriteKey(
+    "theme-override",
+    partition.tenant,
+    partition.project,
+  );
+  return {
+    mutationKey,
+    write: (ports, choice, client) =>
+      themeHeldWhile(
+        client,
+        partition,
+        mutationKey,
+        (held) => ({
+          choice: held.choice,
+          appearance:
+            held.appearance === undefined
+              ? undefined
+              : themeOverrideChosen(held.appearance, choice, owned),
+        }),
+        () => apiWriteProjectThemeOverride(ports, partition, choice),
+      ),
+    refusal: themeRefusalOf,
+    landed: (client) => themeReread(client, partition),
+  };
+}
+
+function themeCards(
+  options: readonly ThemePickerOption[],
+): readonly ThemePickerCard[] {
+  return options.map((option) => ({
+    key: option.key,
+    name: option.theme.name,
+    data: true,
+    theme: option.theme,
+  }));
+}
+
+function ThemeRefused(props: {
+  readonly refused: ConsoleWriteRefused | null;
+}): ReactNode {
+  return props.refused === null ? null : (
+    <Notice tone="danger" inline>
+      <ConsoleWriteRefusedWords refused={props.refused} />
+    </Notice>
+  );
+}
+
+/** The row for the project the reader is in: which theme applies and why,
+ * and their own choice for it, or the project's default. */
+function PreferencesThemeHere(props: {
+  readonly partition: PartitionIdentity;
+  readonly chosen: string;
+  readonly applies: string;
+  readonly because: Copy;
+  readonly options: readonly ThemePickerOption[];
+  readonly owned: readonly OwnedThemeResponse[];
+}): ReactNode {
+  const text = useCopyText();
+  const said = useId();
+  const writing = useConsoleWrite(
+    themeOverrideWrite(props.partition, props.owned),
+    { drawn: true },
+  );
+  const label = text({ id: "settings-preferences-theme-here" });
+  return (
+    <div className="preferences-theme">
+      <p className="font-strong text-ink-1">{label}</p>
+      <p id={said} className="preferences-theme-applies text-sm">
+        <span className="font-strong text-ink-1" translate="no">
+          {props.applies}
+        </span>
+        <span className="text-ink-3">{text(props.because)}</span>
+      </p>
+      <ThemePicker
+        label={label}
+        value={props.chosen}
+        describedBy={said}
+        cards={[
+          {
+            key: themePickerProjectDefault,
+            name: text({
+              id: "settings-preferences-theme-here-project-default",
+            }),
+            data: false,
+            theme: undefined,
+          },
+          ...themeCards(props.options),
+        ]}
+        onChoose={(key) => {
+          if (key === themePickerProjectDefault) {
+            writing.mutate(undefined);
+            return;
+          }
+          const option = props.options.find((held) => held.key === key);
+          if (option !== undefined) writing.mutate(option.choice);
+        }}
+      />
+      <ThemeRefused refused={writing.error} />
+    </div>
+  );
+}
+
+function PreferencesThemeGlobal(props: {
+  readonly partition: PartitionIdentity | undefined;
+  readonly chosen: string;
+  readonly covered: Copy | undefined;
+  readonly options: readonly ThemePickerOption[];
+  readonly owned: readonly OwnedThemeResponse[];
+  readonly actions: ReactNode;
+}): ReactNode {
+  const text = useCopyText();
+  const covered = useId();
+  const writing = useConsoleWrite(
+    themeGlobalWrite(props.partition, props.owned),
+    { drawn: true },
+  );
+  const label = text({ id: "settings-preferences-theme" });
+  return (
+    <div className="preferences-theme">
+      <p className="font-strong text-ink-1">{label}</p>
+      {props.covered === undefined ? null : (
+        <p id={covered} className="text-sm text-ink-3">
+          {text(props.covered)}
+        </p>
+      )}
+      <ThemePicker
+        label={label}
+        value={props.chosen}
+        describedBy={props.covered === undefined ? undefined : covered}
+        cards={themeCards(props.options)}
+        onChoose={(key) => {
+          const option = props.options.find((held) => held.key === key);
+          if (option !== undefined) writing.mutate(option.choice);
+        }}
+      />
+      {props.actions}
+      <ThemeRefused refused={writing.error} />
+    </div>
+  );
+}
+
+/** The quiet actions beside the picker: a new theme from the one in use, and
+ * that one changed where it is the reader's own. */
+function PreferencesThemeMaking(props: {
+  readonly partition: PartitionIdentity | undefined;
+  readonly inUse: ReturnType<typeof themeInUseOf>;
+}): ReactNode {
+  const text = useCopyText();
+  const [opening, setOpening] = useState<ThemeEditorOpening | undefined>();
+  const own = props.inUse.own;
+  return (
+    <div className="preferences-theme-making">
+      <Button
+        variant="quiet"
+        size="sm"
+        onClick={() => {
+          setOpening({ kind: "Create", from: props.inUse.theme });
+        }}
+      >
+        {text({ id: "settings-preferences-theme-new" })}
+      </Button>
+      {own === undefined ? null : (
+        <Button
+          variant="quiet"
+          size="sm"
+          named={text({
+            id: "settings-preferences-theme-edit-named",
+            args: { name: own.document.name },
+          })}
+          onClick={() => {
+            setOpening({ kind: "Edit", theme: own });
+          }}
+        >
+          {text({ id: "settings-preferences-theme-edit" })}
+        </Button>
+      )}
+      <ThemeEditor
+        opening={opening}
+        partition={props.partition}
+        onClose={() => {
+          setOpening(undefined);
+        }}
+      />
+    </div>
+  );
+}
+
+function PreferencesThemeRead(props: {
+  readonly partition: PartitionIdentity | undefined;
+  readonly appearance: ProjectAppearanceResponse | undefined;
+}): ReactNode {
+  const choice = usePanelState(themeChoiceQuery());
+  const ownedState = usePanelState(ownedThemesQuery());
+  if (choice.state !== "Ready") return null;
+  const owned = ownedState.state === "Ready" ? ownedState.value.themes : [];
+  const options = themePickerOptions(owned);
+  const said = themePreferencesOf(choice.value.choice, props.appearance);
+  return (
+    <>
+      <PreferencesThemeGlobal
+        partition={props.partition}
+        chosen={said.global.chosen}
+        covered={said.global.covered}
+        options={options}
+        owned={owned}
+        actions={
+          <PreferencesThemeMaking
+            partition={props.partition}
+            inUse={themeInUseOf(choice.value.choice, props.appearance, owned)}
+          />
+        }
+      />
+      {props.partition === undefined || said.project === undefined ? null : (
+        <PreferencesThemeHere
+          partition={props.partition}
+          chosen={said.project.chosen}
+          applies={said.project.applies}
+          because={said.project.because}
+          options={options}
+          owned={owned}
+        />
+      )}
+    </>
+  );
+}
+
+function PreferencesThemeOfProject(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  const appearance = usePanelState(projectAppearanceQuery(props.partition));
+  return (
+    <PreferencesThemeRead
+      partition={props.partition}
+      appearance={appearance.state === "Ready" ? appearance.value : undefined}
+    />
+  );
+}
+
+/** The global picker everywhere, and the project's row while one is open. */
+export function PreferencesTheme(): ReactNode {
+  const partition = themeScopeOf(useParams({ strict: false }));
+  return partition === undefined ? (
+    <PreferencesThemeRead partition={undefined} appearance={undefined} />
+  ) : (
+    <PreferencesThemeOfProject partition={partition} />
+  );
+}

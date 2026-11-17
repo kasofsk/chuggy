@@ -80,6 +80,7 @@ interface ProjectRepositoryBoundRow {
   readonly landing_mode: string | null;
   readonly landing_policy: string | null;
   readonly pipelines_writable: boolean | null;
+  readonly pipelines_runnable: boolean | null;
   readonly retired_at: string | null;
 }
 
@@ -90,7 +91,8 @@ function projectRepositoryBoundOf(
     row.repository === null ||
     row.bound_at === null ||
     row.landing_kind === null ||
-    row.pipelines_writable === null
+    row.pipelines_writable === null ||
+    row.pipelines_runnable === null
   )
     throw new Error("repository binding: a binding is half a row");
   return {
@@ -102,6 +104,7 @@ function projectRepositoryBoundOf(
       policy: row.landing_policy ?? undefined,
     }),
     pipelinesWritable: row.pipelines_writable,
+    pipelinesRunnable: row.pipelines_runnable,
     ...(row.retired_at === null ? {} : { retiredAt: row.retired_at }),
   };
 }
@@ -122,7 +125,7 @@ export function postgresProjectRepositoryBindings(
     ): Promise<readonly ProjectRepositoryBound[]> => {
       const found = await pool.query<ProjectRepositoryBoundRow>(
         sql`SELECT repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_kind,landing_mode,landing_policy,
-                   pipelines_writable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
+                   pipelines_writable,pipelines_runnable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
               FROM list_project_repository_bindings(
                 ${partition.tenant},${partition.project},
                 ${projectRepositoriesAnsweredMax})`,
@@ -355,7 +358,7 @@ export function postgresProjectRepositoryLanding(
     landing: async (partition, repository) => {
       const found = await pool.query<ProjectRepositoryBoundRow>(
         sql`SELECT repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_kind,landing_mode,landing_policy,
-                   pipelines_writable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
+                   pipelines_writable,pipelines_runnable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
               FROM read_project_repository_landing(
                 ${partition.tenant},${partition.project},${repository})`,
       );
@@ -367,7 +370,7 @@ export function postgresProjectRepositoryLanding(
       try {
         found = await pool.query<ProjectRepositoryWrittenRow>(
           sql`SELECT outcome,repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_kind,landing_mode,landing_policy,
-                     pipelines_writable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
+                     pipelines_writable,pipelines_runnable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
                 FROM set_project_repository_landing(
                   ${command.partition.tenant},${command.partition.project},
                   ${command.repository},
@@ -376,7 +379,9 @@ export function postgresProjectRepositoryLanding(
                   ${command.landing.kind},${repositoryFinalizationMode(command.landing)},
                   ${repositoryFinalizationPolicy(command.landing)},
                   ${command.pipelinesWritable.expected},
-                  ${command.pipelinesWritable.wanted})`,
+                  ${command.pipelinesWritable.wanted},
+                  ${command.pipelinesRunnable?.expected ?? null}::boolean,
+                  ${command.pipelinesRunnable?.wanted ?? null}::boolean)`,
         );
       } catch (failure) {
         if (repositoryBindingWriteIncomplete(failure))
@@ -416,7 +421,7 @@ export function postgresProjectRepositoryRetirement(
       try {
         found = await pool.query<ProjectRepositoryWrittenRow>(
           sql`SELECT outcome,repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_kind,landing_mode,landing_policy,
-                     pipelines_writable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
+                     pipelines_writable,pipelines_runnable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
                 FROM retire_project_repository(
                   ${command.partition.tenant},${command.partition.project},
                   ${command.repository})`,

@@ -2,7 +2,7 @@
  * The tones the console draws the machine's states in, and the exhaustive maps
  * from the wire's own words onto them.
  *
- * Total over `pillTones`, and over each roster the maps below speak for. A tone
+ * Total over `toneRoster`, and over each roster the maps below speak for. A tone
  * is chosen here rather than at a call site so that a roster the wire grows
  * stops compiling in one module instead of reaching a reader as `neutral`, and
  * so that one meaning is never drawn in two hues on two pages. Hue carries the
@@ -44,7 +44,7 @@ import type { Copy } from "./copy.ts";
 
 type EpicStatus = EpicSummaryResponse["status"];
 
-export const pillTones = [
+export const toneRoster = [
   "pass",
   "fail",
   "live",
@@ -56,7 +56,7 @@ export const pillTones = [
   "neutral",
 ] as const;
 
-export type Tone = (typeof pillTones)[number];
+export type Tone = (typeof toneRoster)[number];
 
 /** Where the ticket is, drawn as what the operator can do about it. */
 export function phaseTone(phase: TicketPhase): Tone {
@@ -124,13 +124,12 @@ export function runCommandTone(end: RunCommandEnd): Tone {
   }
 }
 
-/** Where one landing stands: moving, waiting on a hold or a person, or settled. */
+/** Where one landing stands: moving, held or waiting, or settled. */
 export function ticketLandingTone(state: TicketLandingState): Tone {
   switch (state) {
     case "Running":
       return "live";
     case "Held":
-    case "AwaitingApproval":
     case "AwaitingMerge":
     case "Unavailable":
       return "parked";
@@ -293,7 +292,7 @@ export interface LeadDispatchArm {
 }
 
 /** A settled dispatch whose outcome this console cannot read. The delivery
- * record says it is over and does not say how it went, and a pill saying
+ * record says it is over and does not say how it went, and a badge saying
  * nothing would read as one that had not settled at all. */
 const leadDispatchUnread: Copy = { id: "tones-dispatch-unread" };
 
@@ -409,7 +408,7 @@ function conversationRunningWord(
  * the arm the mailbox has no word for — a transcript exchange no turn speaks
  * for — and takes the live hue because what it describes is a conversation
  * still being written. `Markers` has no arm: the surface draws that exchange
- * as its markers alone and never reaches a pill for it.
+ * as its markers alone and never reaches a badge for it.
  */
 export function conversationStandingArm(
   standing: Exclude<ConversationStanding, { readonly standing: "Markers" }>,

@@ -56,12 +56,15 @@ import {
   type HeadAdoption,
   type HeadAdoptionQuestion,
   type ObservedTarget,
+  type PathsDiffering,
+  type PathsDifferingQuestion,
   type RepositoryCredential,
   type TargetContained,
 } from "../../interpreter/finalizer.ts";
 import {
   scratchCommitShape,
   scratchCommitTree,
+  scratchDiffPaths,
   scratchFetchHistory,
   scratchFetchRef,
   scratchHasCommit,
@@ -427,6 +430,45 @@ async function candidateAdoptableBase(
   return (await scratchHasCommit(scratch, repository, base.value))
     ? base.value
     : undefined;
+}
+
+/**
+ * Which files under the question's paths the target differs from the
+ * candidate in, the candidate brought into the scratch by its hash and the
+ * target by its ref where either is not there, since a scratch may not outlive
+ * the process that integrated them.
+ */
+export async function candidatePathsDiffering(
+  scratch: GitScratch,
+  credential: RepositoryCredential,
+  question: PathsDifferingQuestion,
+): Promise<PathsDiffering> {
+  if (question.paths.length === 0)
+    throw new RangeError("paths differing: no path was asked about");
+  const repository = question.repository.repository;
+  if (!(await scratchHasCommit(scratch, repository, question.candidate)))
+    await scratchFetchHistory(
+      scratch,
+      repository,
+      credential,
+      question.candidate,
+      scratch.options.remoteTimeoutMsMax,
+    );
+  if (
+    !(await scratchHasCommit(scratch, repository, question.candidate)) ||
+    !(await candidateHasTarget(scratch, credential, question))
+  )
+    return { read: "Unread" };
+  const differing = await scratchDiffPaths(
+    scratch,
+    repository,
+    question.candidate,
+    question.target.commit,
+    question.paths,
+  );
+  return differing === undefined
+    ? { read: "Unread" }
+    : { read: "Paths", differing };
 }
 
 /** The tree a commit records, brought into the scratch by its hash where it is not there, and nothing where either could not be read. */

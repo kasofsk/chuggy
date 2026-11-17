@@ -42,6 +42,7 @@ import {
 } from "../../core/ticketOverview.ts";
 import type { TicketOverviewBranch } from "../../core/ticketOverview.ts";
 import { ticketLedger } from "../../core/ticketLedger.ts";
+import { ticketTaker } from "../../core/ticketOffers.ts";
 import { phaseIsRunning } from "../../core/ticketPageFacts.ts";
 import { ticketStepsOf } from "../../core/ticketSteps.ts";
 import { useCreatorEmails } from "../creatorEmails.ts";
@@ -50,7 +51,8 @@ import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { TicketInstructions } from "./TicketInstructions.tsx";
-import { readValue, useTicketPageHeld } from "./TicketPageHeld.tsx";
+import { useTicketPageHeld } from "./TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 import { TicketSlot } from "./TicketSlot.tsx";
 import { dependencyStandingOf } from "./TicketStateChip.tsx";
@@ -59,10 +61,11 @@ import { TicketStepsDrawn } from "./TicketSteps.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 type TicketOverviewParams = PartitionIdentity & { readonly ticket: string };
 
-/** The member who filed the ticket, drawn only where the wire names one. */
+/** A member who filed or owns the ticket, drawn only where the wire names one. */
 function TicketFiledBy(props: {
   readonly partition: PartitionIdentity;
   readonly creator: string;
@@ -112,12 +115,19 @@ function TicketSidebarRepository(props: {
   const { repository } = props;
   const label = repositoryLabel(repository);
   const page = repositoryPage(repository);
-  return page === undefined ? (
-    <span title={repository}>{label}</span>
-  ) : (
-    <a href={page} rel="noopener noreferrer" target="_blank" title={repository}>
-      {label}
-    </a>
+  return (
+    <Tooltip
+      trigger={page === undefined ? "abbreviation" : "control"}
+      text={repository}
+    >
+      {page === undefined ? (
+        <span>{label}</span>
+      ) : (
+        <a href={page} rel="noopener noreferrer" target="_blank">
+          {label}
+        </a>
+      )}
+    </Tooltip>
   );
 }
 
@@ -177,6 +187,8 @@ interface TicketSidebarFacts {
   readonly repository: string | undefined;
   readonly branch: TicketOverviewBranch | undefined;
   readonly creator: string | undefined;
+  /** The owner where it is not the creator. */
+  readonly owner: string | undefined;
   readonly dependencies: readonly {
     readonly ticket: number;
     readonly phase?: TicketPhase;
@@ -216,7 +228,7 @@ function TicketSidebarDrawn(props: {
   readonly children?: ReactNode;
 }): ReactNode {
   const { held, facts } = props;
-  const { repository, branch, creator, revision } = facts;
+  const { repository, branch, creator, owner, revision } = facts;
   const params = { ...held.partition, ticket: String(held.ticket) };
   const text = useCopyText();
   const configuration =
@@ -245,6 +257,11 @@ function TicketSidebarDrawn(props: {
             <TicketFiledBy partition={held.partition} creator={creator} />
           </Field>
         )}
+        {owner === undefined ? null : (
+          <Field name={text({ id: "ticket-overview-owner" })}>
+            <TicketFiledBy partition={held.partition} creator={owner} />
+          </Field>
+        )}
         <Field name={text({ id: "ticket-overview-depends-on" })}>
           <TicketDependencies
             partition={held.partition}
@@ -253,12 +270,14 @@ function TicketSidebarDrawn(props: {
         </Field>
         {configuration === undefined ? null : (
           <Field name={text({ id: "ticket-overview-configuration" })}>
-            <Link
-              to="/$tenant/$project/tickets/$ticket/configuration"
-              params={params}
-            >
-              <span title={configuration.title}>{configuration.text}</span>
-            </Link>
+            <Tooltip trigger="control" text={configuration.title}>
+              <Link
+                to="/$tenant/$project/tickets/$ticket/configuration"
+                params={params}
+              >
+                {configuration.text}
+              </Link>
+            </Tooltip>
           </Field>
         )}
         {props.children}
@@ -284,6 +303,7 @@ function TicketSidebar(props: {
           ticketLandingsHeld(held.reads.landingsState),
         ),
         creator: ticket.creator,
+        owner: ticketTaker(ticket),
         dependencies: ticketOverviewDependenciesOf(ticket),
         revision: ticket.configurationRevision,
         version: ticket.configurationVersion,
@@ -420,6 +440,7 @@ function TicketDraftOverview(props: {
           repository: draft.brief?.repository,
           branch: ticketOverviewBranchOf(draft, []),
           creator: undefined,
+          owner: undefined,
           dependencies: draft.authoring.dependencies.map((ticket) => ({
             ticket,
           })),
@@ -431,7 +452,7 @@ function TicketDraftOverview(props: {
   );
 }
 
-export function TicketOverviewTab(): ReactNode {
+export function TicketOverview(): ReactNode {
   const held = useTicketPageHeld();
   if (held.draft !== undefined)
     return <TicketDraftOverview held={held} draft={held.draft} />;

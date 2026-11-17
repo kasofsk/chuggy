@@ -144,7 +144,7 @@ export function setupSessionOpened(
     tokenAsked: "Unasked",
     authorize: undefined,
   };
-  const store = setupTokenStore(ports.files, site, held);
+  const store = setupTokenStore(ports.store, site, held);
   const holder = createSessionHolder({
     nowMs: ports.nowMs,
     sleepMs: (ms) => ports.sleepMs(ms),

@@ -3,6 +3,9 @@ import test from "node:test";
 
 import { workerErrorPath } from "../../src/contract/http.ts";
 import {
+  workerContractFeatures,
+  workerContractFeaturesHeader,
+  workerContractFeaturesOf,
   workerContractHeader,
   workerContractRelease,
 } from "../../src/contract/workerContract.ts";
@@ -31,6 +34,7 @@ interface Sent {
   readonly authorization: string | null;
   readonly contentType: string | null;
   readonly release: string | null;
+  readonly features: readonly string[] | undefined;
   readonly body: string;
 }
 
@@ -51,6 +55,9 @@ function plane(
         authorization: headers.get("authorization"),
         contentType: headers.get("content-type"),
         release: headers.get(workerContractHeader),
+        features: workerContractFeaturesOf(
+          headers.get(workerContractFeaturesHeader) ?? undefined,
+        ),
         body: await new Response(init?.body).text(),
       });
       return input.pathname === workerPlaneRoutes.runEnded.path
@@ -82,6 +89,7 @@ test("a killed job's text is left first, then its run is ended timed out, each o
       authorization: "Bearer chgw_job",
       contentType: workerPlaneBytesMediaType,
       release: workerContractRelease,
+      features: Object.keys(workerContractFeatures),
       body: "stopped at its deadline",
     },
     {
@@ -90,6 +98,7 @@ test("a killed job's text is left first, then its run is ended timed out, each o
       authorization: "Bearer chgw_job",
       contentType: "application/json",
       release: workerContractRelease,
+      features: Object.keys(workerContractFeatures),
       body: JSON.stringify({ evidence: "RunTimedOut" }),
     },
   ]);

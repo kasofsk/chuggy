@@ -6,7 +6,7 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -26,6 +26,7 @@ import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { styleless } from "../styleless.ts";
 import {
   linkCells as cells,
+  linkColumn,
   linkHeadings,
   linkRevocations as revocations,
   linkRows as rows,
@@ -54,6 +55,7 @@ import {
   projectsIn,
   refused,
 } from "./tenantPeopleFixture.tsx";
+import { tableCards, tableText } from "../tableText.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -82,7 +84,7 @@ test("the links are a section under the people and over the other identities, a 
   await drawPeople({ links: () => answer(linksListed) });
   expect(
     screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
-  ).toStrictEqual(["1 person", "Invite links", "Other identities"]);
+  ).toStrictEqual(["1 person", "Invite links", "Other identities", "Name"]);
   expect(statuses()).toStrictEqual(["Open", "Used", "Revoked", "Expired"]);
   expect(linkHeadings()).toStrictEqual([
     "Access",
@@ -113,7 +115,7 @@ test("a row is headed by what its link carries, drawn as a person's row draws wh
 
 test("an open link says when it expires, and no other state does", async () => {
   await drawPeople({ links: () => answer(linksListed) });
-  expect(rows().map((row) => cells(row)["Status"]?.textContent)).toStrictEqual([
+  expect(linkColumn("Status")).toStrictEqual([
     `OpenExpires ${when(opened?.expiresAtMs ?? 0)}`,
     "Used",
     "Revoked",
@@ -128,15 +130,15 @@ test("a used link names who used it and when, a subject the directory cannot nam
   const by = cells(row)["Used by"];
   expect(by?.querySelector(".identity")?.textContent).toBe("s-grace");
   expect(by?.textContent).toBe(`Used bys-grace${when(used.usedAtMs)}`);
-  expect(by?.hasAttribute("data-none")).toBe(false);
+  expect(by?.hasAttribute("data-empty")).toBe(false);
 });
 
-test("a link nobody used draws the none-mark where a stacked row leaves the cell out", async () => {
+test("a link nobody used draws the none-mark where its card leaves the cell out", async () => {
   await drawPeople({ links: () => answer(linksListed) });
   for (const row of [rows()[0], rows()[2], rows()[3]]) {
     const by = row === undefined ? undefined : cells(row)["Used by"];
-    expect(by?.textContent).toBe("—None");
-    expect(by?.getAttribute("data-none")).toBe("");
+    expect(by === undefined ? undefined : tableText(by)).toBe("—None");
+    expect(by?.getAttribute("data-empty")).toBe("");
   }
 });
 
@@ -162,9 +164,14 @@ test("a person is named on one line under their whole name, and a maker who is n
       }),
   });
   const [named, unnamed] = rows().map((row) => cells(row)["Made by"]);
-  const name = named?.querySelector(".people-name");
-  expect(name?.textContent).toBe("ada@example.com");
-  expect(name?.getAttribute("title")).toBe("ada@example.com");
+  const name = named?.querySelector<HTMLElement>(".tabular-cut");
+  if (name === null || name === undefined) throw new Error("no name drawn");
+  expect(name.textContent).toBe("ada@example.com");
+  expect(name.hasAttribute("title")).toBe(false);
+  fireEvent.focus(name);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "ada@example.com",
+  );
   expect(named?.textContent).not.toContain("No account");
   expect(unnamed?.querySelector(".identity")?.textContent).toBe(
     "chuggy-selector",
@@ -174,14 +181,23 @@ test("a person is named on one line under their whole name, and a maker who is n
   );
 });
 
-test("the two columns that name a person carry their words for a stacked row, and no other cell does", async () => {
+test("a link's card labels every value but the access heading it, and ends in its Revoke, left out where it has none", async () => {
   await drawPeople({ links: () => answer(linksListed) });
-  expect(linkStackedLabels()).toStrictEqual([
-    ["Made by"],
-    ["Used by", "Made by"],
-    ["Made by"],
-    ["Made by"],
+  expect(linkStackedLabels()).toStrictEqual(
+    Array.from({ length: 4 }, () => ["Status", "Used by", "Made by"]),
+  );
+  expect(tableCards(table()).map((card) => card.actionsLast)).toStrictEqual([
+    true,
+    true,
+    true,
+    true,
   ]);
+  expect(
+    Array.from(
+      table().querySelectorAll(".tabular-actions[data-empty]"),
+      (cell) => cell.closest("tr") === rows()[0],
+    ),
+  ).toStrictEqual([false, false, false]);
 });
 
 test("Revoke is offered on an open link the reader may grant every role of, and on no other", async () => {

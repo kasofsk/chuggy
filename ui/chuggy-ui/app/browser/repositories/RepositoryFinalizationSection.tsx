@@ -38,53 +38,11 @@ import {
   repositoryFinalizationWrite,
 } from "../../core/repositoryFinalization.ts";
 import type { RepositoryFinalizationDraft } from "../../core/repositoryFinalization.ts";
-import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
-import type { ConsoleWriting } from "../consoleWrite.tsx";
+import { useConsoleWrite } from "../consoleWrite.tsx";
 import { FinalizationChoiceFields } from "../FinalizationChoice.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
-import { Notice } from "../ui/Notice.tsx";
+import { settingsSectionRefusalOf } from "../settingsSectionRefusal.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
-
-/** What the last write did, in the one line the section says it in. */
-function RepositoryFinalizationNotice(props: {
-  readonly saving: ConsoleWriting<
-    RepositoryFinalizationDraft,
-    ProjectRepositoryResponse
-  >;
-}): ReactNode {
-  const text = useCopyText();
-  const saving = props.saving;
-  if (saving.isPending)
-    return (
-      <Notice
-        tone="info"
-        inline
-        detail={text({ id: "repositories-writing" })}
-      />
-    );
-  if (saving.error !== null)
-    return (
-      <Notice
-        tone={
-          repositoryFinalizationMoved(saving.error.failure) === undefined
-            ? "danger"
-            : "parked"
-        }
-        inline
-      >
-        <ConsoleWriteRefusedWords refused={saving.error} />
-      </Notice>
-    );
-  if (saving.isSuccess)
-    return (
-      <Notice
-        tone="live"
-        inline
-        detail={text({ id: "repositories-written" })}
-      />
-    );
-  return null;
-}
 
 interface RepositoryFinalizationHeld {
   readonly draft: RepositoryFinalizationDraft;
@@ -99,7 +57,7 @@ function useRepositoryFinalizationDraft(
   const [draft, setDraft] = useState<RepositoryFinalizationDraft>(() =>
     repositoryFinalizationDraft(binding),
   );
-  const standing = `${finalizationChoiceKey(binding.finalization)}/${String(binding.pipelinesWritable)}`;
+  const standing = `${finalizationChoiceKey(binding.finalization)}/${String(binding.pipelinesWritable)}/${String(binding.pipelinesRunnable)}`;
   const [seen, setSeen] = useState(standing);
   if (seen !== standing) {
     setSeen(standing);
@@ -149,6 +107,10 @@ function repositorySettingWrite(
         queryKey: projectRepositoriesQuery(partition).queryKey,
       });
     },
+    landedUnseen: () => ({
+      id: "repositories-saved",
+      args: { setting: title },
+    }),
   };
 }
 
@@ -181,7 +143,6 @@ export function RepositorySettingSection(props: {
   );
   const [editing, setEditing] = useState(false);
   const abilities = useProjectAbilities(props.partition);
-  const shown = saving.isPending || saving.error !== null || saving.isSuccess;
   const moved = repositoryFinalizationMoved(saving.error?.failure);
   return (
     <SettingsSection
@@ -190,11 +151,13 @@ export function RepositorySettingSection(props: {
       editing={editing}
       editable
       readOnly={projectAbilityRefused(abilities, "administer")}
-      savable={repositoryFinalizationSavable(held.draft) && !saving.isPending}
+      changed={repositoryFinalizationSavable(held.draft)}
+      saving={saving.isPending}
+      refusal={settingsSectionRefusalOf(
+        saving.error,
+        moved === undefined ? "danger" : "parked",
+      )}
       footLead={null}
-      {...(shown
-        ? { notice: <RepositoryFinalizationNotice saving={saving} /> }
-        : {})}
       {...(moved === undefined
         ? {}
         : {
@@ -236,8 +199,8 @@ export function RepositoryFinalizationSection(props: {
     <RepositorySettingSection
       partition={props.partition}
       binding={props.binding}
-      title={{ id: "repositories-landing-title" }}
-      about={{ id: "repositories-landing-about" }}
+      title={{ id: "repositories-finalization-title" }}
+      about={{ id: "repositories-finalization-about" }}
       body={(held, editing) => (
         <div className="flex flex-col gap-3">
           <FinalizationChoiceFields

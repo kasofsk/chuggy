@@ -53,7 +53,7 @@ import type { ThreadHome } from "../../core/threadHome.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { useApiPorts } from "../api.ts";
 import { ConversationCard } from "../conversation/ConversationCard.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 
 /** Whose store is walked: a project's own lead, or one member thread wherever
  * it is kept. */
@@ -223,9 +223,9 @@ export function LeadNote(props: {
             <span>{text({ id: "lead-handoff-note" })}</span>
             <span className="text-ink-3 tabular-nums">{note.bytes}</span>
             {note.truncated ? (
-              <Pill tone="parked">
+              <StatusBadge tone="parked" size="small">
                 {text({ id: "lead-handoff-truncated" })}
-              </Pill>
+              </StatusBadge>
             ) : null}
           </span>
         }

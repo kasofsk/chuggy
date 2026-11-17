@@ -35,14 +35,14 @@ import {
   conversationArgumentSummary,
   conversationArgumentText,
   conversationResultCut,
-  conversationWorkSummary,
+  conversationWorkLabel,
 } from "../../core/conversation.ts";
 import type {
   ConversationWorkActivity,
   ConversationWorkStep,
 } from "../../core/conversation.ts";
 import { copyOrDataText } from "../../core/copy.ts";
-import type { Copy, CopyText } from "../../core/copy.ts";
+import type { CopyText } from "../../core/copy.ts";
 import { durationText } from "../../core/figures.ts";
 import {
   ConversationChevron,
@@ -177,20 +177,6 @@ function ConversationWorkStepDrawn(props: {
  * no words kept of it has not. */
 function conversationWorkStepSays(step: ConversationWorkStep): boolean {
   return step.step !== "Thinking" || step.text.length > 0;
-}
-
-/** What the line says once the work is over, which is the shape of the work
- * rather than a count of everything in it. */
-function conversationWorkLabel(steps: readonly ConversationWorkStep[]): Copy {
-  const summary = conversationWorkSummary(steps);
-  const count = summary.toolCalls;
-  if (count === 0)
-    return summary.thought
-      ? { id: "conversation-work-thought" }
-      : { id: "conversation-work-done" };
-  return summary.thought
-    ? { id: "conversation-work-thought-tools", args: { count } }
-    : { id: "conversation-work-tools", args: { count } };
 }
 
 /** What is under way, named the way a step of the work names it. The name's
