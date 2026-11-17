@@ -1,0 +1,118 @@
+/* The inbox's own parts on the shared record list: each group under its
+   heading and count, and an item's foot under its head at every width, since
+   the foot is where what the item asks is answered and it is wider than a
+   column beside the title would hold. No bar heads a group's list, so its
+   first row draws the block's top edge. */
+
+@layer page {
+  .inbox-page {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .inbox-groups {
+    display: grid;
+    gap: var(--space-5);
+    min-width: 0;
+  }
+
+  .inbox-group {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .inbox-group-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    color: var(--ink-1);
+    font-size: var(--text-md);
+    font-weight: var(--weight-strong);
+  }
+
+  .inbox-groups .record-list-item:first-child .record-row {
+    border-top: var(--hairline) solid var(--edge);
+  }
+
+  @container not (max-width: 40em) {
+    .inbox-groups .record-list-item:first-child .record-row {
+      border-start-start-radius: var(--radius-3);
+      border-start-end-radius: var(--radius-3);
+    }
+  }
+
+  .inbox-groups .record-row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: var(--space-2);
+  }
+
+  /* The ticket's title is what gives way in a narrow meta line; who asks and
+     when keep their words. */
+  .inbox-item-fixed {
+    flex: none;
+  }
+
+  .inbox-item-ticket {
+    flex: 0 1 auto;
+  }
+
+  .inbox-item-run {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  .inbox-item-foot {
+    display: grid;
+    flex: 1 1 auto;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .inbox-item-said {
+    margin: 0;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .inbox-item-said > .status-badge {
+    margin-inline-end: var(--space-2);
+  }
+
+  .inbox-item-answers {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  /* Each answer's word and what it does, one line apiece. */
+  .inbox-item-does {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-1) var(--space-2);
+    margin: 0;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+  }
+
+  .inbox-item-does > div {
+    display: contents;
+  }
+
+  .inbox-item-does dt {
+    color: var(--ink-1);
+    font-weight: var(--weight-strong);
+  }
+
+  .inbox-item-does dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}

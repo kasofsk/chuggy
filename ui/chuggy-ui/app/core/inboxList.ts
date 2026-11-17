@@ -47,8 +47,6 @@ import {
 import type { ProjectList, ProjectListChange } from "./projectQueryKeys.ts";
 import { projectTicketExecutionLater } from "./projectTicketPages.ts";
 
-export const inboxSection = "NeedsYou" as const;
-
 export const inboxListName = "inbox";
 
 /** How many pages one read gathers at the most, and how many entries the rows hold at once. */

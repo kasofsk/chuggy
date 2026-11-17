@@ -1,12 +1,13 @@
 /**
- * A row whatever put its ticket in the inbox — an open action, a held proposal
- * or a refusal alone — drawn from the row its entry carries: its title, and its
- * last execution where one ran, with no read of the ticket on its own.
+ * An item whatever put its ticket in the inbox — an open action, a held
+ * proposal or a refusal alone — drawn from the row its entry carries: its
+ * number and title, and its last execution where one ran, with no read of the
+ * ticket on its own.
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, within } from "@testing-library/react";
 import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -19,7 +20,7 @@ import type {
   ProjectTicket,
 } from "../../../src/contract/responses.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
-import { inboxAnswered, inboxEntry } from "./inboxFixture.ts";
+import { inboxAnswered, inboxEntry, inboxItemOf } from "./inboxFixture.ts";
 import {
   abilitiesAnswered,
   abilitiesEvery,
@@ -145,33 +146,24 @@ function drawInbox(entries: readonly InboxEntryResponse[]): {
   return { read };
 }
 
-/** The row a ticket's number link sits in. */
-function row(ticket: number): HTMLElement {
-  const found = screen
-    .getByRole("link", { name: String(ticket) })
-    .closest("tr");
-  if (found === null) throw new Error(`no row for ticket ${String(ticket)}`);
-  return found;
-}
-
-/** One row's cell under the column the table names `column`. */
-function cell(ticket: number, column: string): string {
-  const columns = screen
-    .getAllByRole("columnheader")
-    .map((header) => header.textContent);
-  const at = columns.indexOf(column);
-  if (at < 0) throw new Error(`no column ${column}`);
-  return row(ticket).children[at]?.textContent ?? "";
+/** How an item says its ticket's last run ended, where it says so. */
+function lastRun(ticket: number): string | undefined {
+  return (
+    within(inboxItemOf(ticket)).queryByText("last run")?.textContent ??
+    undefined
+  );
 }
 
 test("a ticket only an open action names draws its last execution", async () => {
   drawInbox([inboxEntry(escalated, { actions: [escalation] })]);
   await settled();
-  expect(cell(11, "title")).toBe(`${escalated.title ?? ""}11`);
-  expect(cell(11, "last run")).toContain("Failed");
-  expect(cell(11, "last activity")).not.toBe("—");
   expect(
-    within(row(11))
+    within(inboxItemOf(11)).getByText(`#11 ${escalated.title ?? ""}`),
+  ).toBeDefined();
+  expect(lastRun(11)).toBe("last run Failed");
+  expect(inboxItemOf(11).textContent).not.toContain("—");
+  expect(
+    within(inboxItemOf(11))
       .getAllByRole("button")
       .map((button) => button.textContent),
   ).toStrictEqual(["resume", "revoke"]);
@@ -193,21 +185,25 @@ test("a ticket only a refusal names draws its last execution", async () => {
     }),
   ]);
   await settled();
-  expect(cell(42, "title")).toBe(`${refused.title ?? ""}42`);
-  expect(cell(42, "last run")).toContain("Failed");
+  expect(
+    within(inboxItemOf(42)).getByText(`#42 ${refused.title ?? ""}`),
+  ).toBeDefined();
+  expect(lastRun(42)).toBe("last run Failed");
 });
 
-test("a proposed ticket's row names it, says it never ran, and offers the proposal's answers alone", async () => {
+test("a proposed ticket's item names it, says it never ran, and offers the proposal's answers alone", async () => {
   drawInbox([
     inboxEntry(proposed, {
       proposals: [{ decision: "dec-one", tickets: [7] }],
     }),
   ]);
   await settled();
-  expect(cell(7, "title")).toBe(`${proposed.title ?? ""}7`);
-  expect(cell(7, "last run")).toBe("—");
   expect(
-    within(row(7))
+    within(inboxItemOf(7)).getByText(`#7 ${proposed.title ?? ""}`),
+  ).toBeDefined();
+  expect(lastRun(7)).toBeUndefined();
+  expect(
+    within(inboxItemOf(7))
       .getAllByRole("button")
       .map((button) => button.textContent),
   ).toStrictEqual(["approve", "reject"]);
