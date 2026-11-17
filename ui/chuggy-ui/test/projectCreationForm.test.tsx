@@ -42,6 +42,8 @@ import {
   typed,
 } from "./projectCreationDrawn.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { textSaid } from "./textSaid.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import { answer, heldAnswer, settled, turned } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import type * as RouterModule from "@tanstack/react-router";
@@ -102,6 +104,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   resizeObserverStubbed();
+  viewportAtEm(viewportDeskEm);
   held.went.length = 0;
   localStorage.clear();
 });
@@ -400,7 +403,7 @@ async function switcherOffers(): Promise<readonly (string | null)[]> {
     key: "ArrowDown",
   });
   await screen.findByRole("menu");
-  return screen.getAllByRole("menuitemradio").map((one) => one.textContent);
+  return screen.getAllByRole("menuitemradio").map(textSaid);
 }
 
 test("the switcher offers the workspace shown with no project where it lets the reader chat outside one, and that opens their own chat", async () => {
@@ -433,9 +436,9 @@ test("the switcher offers a new project beside every project, and it opens the f
   const item = await screen.findByRole("menuitem", {
     name: copyTextEn({ id: "shell-project-new" }),
   });
-  expect(
-    screen.getAllByRole("menuitemradio").map((one) => one.textContent),
-  ).toEqual(["vteng / Chuggy"]);
+  expect(screen.getAllByRole("menuitemradio").map(textSaid)).toEqual([
+    "vteng / Chuggy",
+  ]);
   fireEvent.click(item);
   expect(held.went).toStrictEqual([
     { to: projectCreationRoutePath, search: { workspace: partition.tenant } },

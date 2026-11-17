@@ -96,6 +96,40 @@
     /* under the context's line */
     --slot-area: color-mix(in srgb, var(--slot-5) 14%, transparent);
 
+    /* a project's mark where it names no icon: its initial in the first ink
+       on a slot's hue at background strength, which its name picks */
+    --mark-tint: 24%;
+    --mark-tint-1: color-mix(
+      in srgb,
+      var(--slot-1) var(--mark-tint),
+      var(--surface-1)
+    );
+    --mark-tint-2: color-mix(
+      in srgb,
+      var(--slot-2) var(--mark-tint),
+      var(--surface-1)
+    );
+    --mark-tint-3: color-mix(
+      in srgb,
+      var(--slot-3) var(--mark-tint),
+      var(--surface-1)
+    );
+    --mark-tint-4: color-mix(
+      in srgb,
+      var(--slot-4) var(--mark-tint),
+      var(--surface-1)
+    );
+    --mark-tint-5: color-mix(
+      in srgb,
+      var(--slot-5) var(--mark-tint),
+      var(--surface-1)
+    );
+    --mark-tint-6: color-mix(
+      in srgb,
+      var(--slot-6) var(--mark-tint),
+      var(--surface-1)
+    );
+
     /* washes — a tone at background strength, for notices */
     --wash: 10%;
     --wash-pass: color-mix(
@@ -320,6 +354,8 @@
     --width-epic-overview-aside: 16rem; /* epic: what is running and next, beside the description */
     --width-theme-card: 8rem; /* preferences: a theme's card, before the row of them wraps */
     --height-theme-swatch: 2.5rem; /* preferences: a theme's colours on its card */
+    --size-mark-sm: 1rem; /* a project's mark beside its name */
+    --size-mark-md: 1.25rem; /* a project's mark standing for its name */
   }
 
   :root[data-theme="light"] {

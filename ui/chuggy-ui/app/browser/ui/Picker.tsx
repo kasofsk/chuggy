@@ -26,6 +26,8 @@ import "./Picker.css";
 export interface PickerOption {
   readonly value: string;
   readonly text: string;
+  /** A mark drawn before the option's text, which the text names. */
+  readonly glyph?: ReactNode;
 }
 
 /** An item under the roster that does something rather than choosing a value. */
@@ -152,6 +154,7 @@ export function Picker(props: {
                 <span className="picker-gutter">
                   <DropdownMenu.ItemIndicator className="picker-mark" />
                 </span>
+                {option.glyph}
                 {option.text}
               </DropdownMenu.RadioItem>
             ))}
