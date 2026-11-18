@@ -25,6 +25,7 @@ import { signInStoreLockWord } from "../../../src/contract/signInStore.ts";
 import {
   folded,
   machineAudience,
+  machineRecordFiles,
   machineRecording,
   machineRecordsLeft,
   machineRemembered,
@@ -90,14 +91,14 @@ test("a sign-in the person finishes is remembered, and leaves neither a lock nor
   expect(machine.asked).toContain(`${machineSite}/access/v1/workspaces`);
 });
 
-test("a sign-in the person finishes leaves neither record another program kept beside the site's token, and another site's records alone", async () => {
+test("a sign-in the person finishes leaves no record another program kept beside the site's token, and another site's records alone", async () => {
   const machine = prompt();
   const other = "https://other.example";
   machineRecording(machine);
   machineRecording(machine, other);
   expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
   expect(machineRecordsLeft(machine)).toEqual([]);
-  expect(machineRecordsLeft(machine, other)).toHaveLength(2);
+  expect(machineRecordsLeft(machine, other)).toEqual(machineRecordFiles(other));
 });
 
 /** The lines a command's report prints. */

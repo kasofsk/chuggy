@@ -50,6 +50,7 @@ import {
   signInStoreAccessName,
   signInStoreEndedName,
   signInStoreFileName,
+  signInStorePendingName,
   signInStoreText,
   signInStoreTokenRead,
 } from "../../../src/contract/signInStore.ts";
@@ -457,10 +458,14 @@ export function machineTokenFile(site = machineSite): string {
 
 /** The records the shared store keeps beside a site's token. */
 export function machineRecordFiles(site = machineSite): readonly string[] {
-  return [signInStoreAccessName(site), signInStoreEndedName(site)];
+  return [
+    signInStoreAccessName(site),
+    signInStoreEndedName(site),
+    signInStorePendingName(site),
+  ];
 }
 
-/** The machine as one whose shared store holds both records for a site, as another program left them. */
+/** The machine as one whose shared store holds every record for a site, as another program left them. */
 export function machineRecording(
   machine: SetupMachine,
   site = machineSite,
