@@ -290,11 +290,10 @@ function OffersLine(props: {
 }
 
 /**
- * Whether the picker is open, and what the address asked of it, which the
- * address it was drawn at decides first. A close, and a bind told through
- * `bound`, take the picker's anchor and the repository it carried off the
- * address in the entry it is in, where the address carries them. The ask is
- * the first opening's alone: a close drops it, so a later opening chooses.
+ * Whether the picker is open, and what the address it was drawn at asked of
+ * its first opening alone, which a close drops so a later opening chooses. A
+ * close, and a bind told through `bound`, take the picker's anchor and the
+ * repository it carried off the address in the entry it is in.
  */
 function usePicker(returned: ForgeReturnWord | undefined): {
   readonly open: boolean;

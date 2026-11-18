@@ -3070,7 +3070,9 @@ test.each(arrivals)(
     await settled();
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText("Which repository is this for?")).toBeTruthy();
-    expect(dialog.queryByText("Connecting gdoteof/scratch to atlas")).toBeNull();
+    expect(
+      dialog.queryByText("Connecting gdoteof/scratch to atlas"),
+    ).toBeNull();
     expect(sent.filter((one) => one.method === "POST")).toHaveLength(1);
   },
 );
