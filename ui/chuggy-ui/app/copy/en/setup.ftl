@@ -28,13 +28,24 @@ setup-site-unreachable = { $site }, no answer
 setup-site-unconfigured = { $site }, not a { setup-site } this program can read
 setup-site-issuer = { $site }, its sign-in server is not answering
 
+## What setup will do, said before any of it is done, and the yes it waits on.
+
+# spells -agent: the person's own coding agent, not one of chuggy's
+# spells -brief-check: to check is a verb here
+setup-start-tell = I'll set { -brand-name } up for { $repository }. Here is what happens: 1. Sign you in to { -brand-name }. 2. Add { -brand-name }'s plugin and tools to your agent. 3. Create { -project(form: "a") }. 4. Connect { $repository } on { -github }. 5. Set up { -runner(form: "a") } and { -chat-host(form: "a") } on this machine. 6. File a first { -ticket } to check it all works. I'll say what each step does as we get to it. Okay to start?
+setup-start-folder = the { -repository } in this folder
+setup-start-when = once the person says yes to setting { -brand-name } up
+setup-rule-start-wait = Until the person says yes, do nothing else: start no { -subagent }, no sign-in and no other command.
+# spells -run: to run is a verb here
+setup-rule-start-site = Run { $command } with the address of the person's { setup-site } after it, such as { $example }, only { $when }. Ask the person for the address if you do not have it.
+
 ## How the program is driven, said to whoever has not yet signed in.
 
 # The words before each colon are the lines' own, which the agent reads.
 # spells -run: to run is a verb here
 setup-rule-drive = Run the command on the next: line exactly as written, and stop where it says { $stop }. Say each tell: line to the person as it is written. Put each ask: line to the person, and pass their answer in the flag it names.
 # spells -work-stage: the work in general
-setup-rule-explore = Before anything else, start { -subagent(form: "a") } that explores this folder's { -repository } and reports which toolchains work on it needs, and which images the { -repository } already defines for its CI or development. Go on with the person through the steps that do not depend on the { -repository } while it works, and use its report where the worker image is chosen.
+setup-rule-explore = Start { -subagent(form: "a") } in the background that explores this folder's { -repository } and reports which toolchains work on it needs, and which images the { -repository } already defines for its CI or development. Go on with the person through the sign-in and the other steps that do not depend on the { -repository } while it works, and use its report where the worker image is chosen.
 setup-rule-directory = Never read or print anything under { $directory }: it holds the sign-in.
 # spells -run: to run is a verb here
 setup-rule-sign-out = To change which { -github } account { setup-program } is signed in as, run { $command } and then sign in again.
@@ -57,7 +68,8 @@ setup-rule-ticket = Run { $command } with { $title } and a short title for what 
 
 # spells -run: to run is a verb here
 setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $signOut }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $merged }, as { $served }, as { $filed }, as { $watched } or as { $plugged }
-setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag } with { $runner }, { $test } with { $configuration }, { $title }, { $intent }, { $image }, { $toolchains } and { $chosen } with { $filed }, each once with a value, and no other flag
+# spells -run: to run is a verb here
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag } with { $runner }, { $test } with { $configuration }, { $title }, { $intent }, { $image }, { $toolchains } and { $chosen } with { $filed }, { $start } when run bare, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
@@ -71,6 +83,7 @@ setup-asked-replace = { $flag } takes the short id of your { -chat-host }, as yo
 setup-asked-chat-host = { $flag } takes only { $yes } or { $no }: whether this machine is made your { -chat-host } too
 setup-asked-plugin = { $flag } takes only { $skip }
 setup-asked-opened = { $flag } takes only { $github }, with { $bound }
+setup-asked-start = { $flag } takes only { $yes }, once the person has said yes to setup
 
 ## A machine the program is not served on, or a Node too old to run it.
 
@@ -684,6 +697,8 @@ setup-page-next = Go back to your { -agent }. You can close this tab.
 # spells -run: a run of this program
 setup-built-starts = the setup program at { $path } starts as a first run does
 setup-built-absent = the setup program at { $path } is not there
+# spells -run: a run of this program
+setup-built-wrote = the setup program at { $path } wrote to the home of a first run, which changes nothing
 # spells -run: a run of this program
 setup-built-unended = the setup program at { $path } did not run to its end within its bounds
 # spells -run: a run of this program

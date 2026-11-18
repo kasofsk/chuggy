@@ -368,7 +368,28 @@ async function setupEntered(
 }
 
 /**
- * The bare command opens no page and changes nothing at the site. Signed in,
+ * The site a bare run is about, where nothing on this machine says setup has
+ * begun for it: no site is remembered in its place and the shared store holds
+ * no sign-in to it. A site is remembered by the first run that works under it,
+ * so a run before that is one the person has not yet said yes to.
+ */
+function setupStatusUnbegun(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Status" }>,
+): { readonly site: string | undefined } | undefined {
+  if (asked.answers.start !== undefined) return undefined;
+  const remembered = setupSessionSite(ports.files);
+  const site = asked.site ?? remembered;
+  if (site === undefined) return { site };
+  return remembered === site || setupTokenRead(ports.store, site) !== undefined
+    ? undefined
+    : { site };
+}
+
+/**
+ * The bare command opens no page and changes nothing at the site, and before
+ * the person's yes to setup it takes no lock, asks no site and writes nothing:
+ * it says what setup will do and names itself again with that yes. Signed in,
  * it reads where the person stands; not signed in, it says how the last
  * sign-in ended while that ending stands, leaves it as said, and names
  * `sign-in` only where none does.
@@ -378,6 +399,14 @@ async function setupStatus(
   asked: Extract<SetupAsked, { readonly asked: "Status" }>,
   pacing: SetupPacing,
 ): Promise<SetupReport> {
+  const unbegun = setupStatusUnbegun(ports, asked);
+  if (unbegun !== undefined)
+    return {
+      report: "Opening",
+      site: unbegun.site,
+      repository: (await setupRemoteRead(ports.process, pacing.remoteWaitMs))
+        ?.said,
+    };
   const held = await setupEntered(ports, asked.site, "Status");
   if (held === undefined) return setupBusy(ports, "Status", asked.site);
   return held.signed === "Out"

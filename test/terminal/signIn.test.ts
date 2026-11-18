@@ -259,7 +259,7 @@ test("a declined sign-in stands: the bare command says it again and opens nothin
     assert.match(stood.lines[3] ?? "", /^rule: Run the command on the next: /u);
     assert.match(
       stood.lines[4] ?? "",
-      /^rule: Before anything else, start a subagent that explores /u,
+      /^rule: Start a subagent in the background that explores /u,
     );
     assert.match(stood.lines[5] ?? "", /^rule: Never read or print /u);
     assert.match(stood.lines[6] ?? "", signOutRule);
@@ -460,7 +460,7 @@ test("where the opener cannot be run the address is printed at once, and the pag
 
 test("a page nobody finishes stops answering at its bound, and the next sign-in says so once", async () => {
   const { installation, machine } = await installed();
-  await machine.run(["--site", installation.site]);
+  await machine.run(["--site", installation.site, "--start", "yes"]);
   const listened = machine.run([
     "listen",
     "--site",
@@ -614,7 +614,10 @@ test("a page whose site is no longer the one remembered signs nothing in, and wh
   const second = await made.installation();
   const machine = made.machine();
   const address = await waiting(first, machine);
-  assert.equal((await machine.run(["--site", second.site])).code, 0);
+  assert.equal(
+    (await machine.run(["--site", second.site, "--start", "yes"])).code,
+    0,
+  );
   const kept = machine.file("session.json");
   assert.equal((await person(address)).status, 400);
   assert.deepEqual(first.grants, []);

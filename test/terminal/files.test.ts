@@ -652,7 +652,10 @@ test("a home the program cannot keep its files in is a failure that names the pa
   const machine = made.machine();
   mkdirSync(dirname(machine.store), { recursive: true });
   writeFileSync(machine.store, "in the way");
-  for (const argv of [["--site", "http://127.0.0.1:9"], ["sign-in"]]) {
+  for (const argv of [
+    ["--site", "http://127.0.0.1:9", "--start", "yes"],
+    ["sign-in"],
+  ]) {
     const done = await machine.run(argv);
     assert.equal(done.code, 1);
     assert.equal(done.stderr, "");

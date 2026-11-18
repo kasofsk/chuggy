@@ -13,7 +13,11 @@ import { expect, test } from "vitest";
 
 import { projectInventoryPagesMax } from "../app/core/apiRoutes.ts";
 import { setupCheckoutTopCommand } from "../app/core/setupAgent.ts";
-import { setupAnswersAsked } from "../app/core/setupArguments.ts";
+import {
+  setupAnswersAsked,
+  setupStartFlag,
+  setupStartYes,
+} from "../app/core/setupArguments.ts";
 import { setupPacing } from "../app/core/setupPacing.ts";
 import { setupPluginListCommand } from "../app/core/setupPlugin.ts";
 import { setupProbeWaitMs } from "../app/core/setupRunnerMachine.ts";
@@ -378,10 +382,18 @@ test("a folder whose remote is added to one of two projects proposes it and says
   expect(machine.asked.join("\n")).not.toContain(secret);
 });
 
-test("git is asked for the remote only by a bare run that is signed in: not by one that is not, and not by a sign-in", async () => {
+test("git is asked for the remote only by a bare run that is signed in or that setup has not begun for: not by one signed out after the yes, and not by a sign-in", async () => {
+  const opening = setupMachine();
+  opening.remote = "https://github.com/acme-org/widgets";
+  expect(await opening.command(["--site", machineSite])).toEqual({
+    report: "Opening",
+    site: machineSite,
+    repository: "github.com/acme-org/widgets",
+  });
+  expect(opening.ran).toEqual([setupRemoteCommand]);
   const out = setupMachine();
   out.remote = "https://github.com/acme-org/widgets";
-  await out.command(["--site", machineSite]);
+  await out.command(["--site", machineSite, setupStartFlag, setupStartYes]);
   await out.command(["sign-in", "--wait-secs", "0"]);
   expect(out.ran).toEqual([]);
   const machine = await machineSignedIn();

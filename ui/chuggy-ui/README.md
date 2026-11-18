@@ -177,6 +177,12 @@ the bare command goes on saying it, and the next `sign-in` opens a page. It
 exits 0 where the last line is to be followed, 1 where it failed and 2 where it
 was asked wrongly or cannot run on this machine.
 
+Run bare where nothing on this machine says setup has begun for the site, no
+site remembered in its place and no sign-in held to it, it only reads: a
+`tell:` says what setup will do and asks whether to go on, and a `rule:` names
+the bare command again with `--start yes` for once she says yes, and nothing
+else before it. That run remembers the site, so none after it opens this way.
+
 Run bare and signed in, it prints the checklist: a `step:` line for each step
 of setup in order (workspace, project, github, repository, runner, ticket),
 saying it is done, waiting on something named, to do or not read, and then the
@@ -326,8 +332,9 @@ still take the work while her runner is off. Those are its only writes; it says
 what each came to, and reads the checklist again. Where she does not
 administer the project, the `tell:` names its Placement page for an admin.
 
-The first run's `rule:` lines have the agent start a subagent that explores
-the repository for the toolchains its work needs while she goes through the
+Once she has said yes, the `rule:` lines of a run not signed in have the agent
+start a subagent in the background that explores the repository for the
+toolchains its work needs while she goes through the sign-in and the other
 steps that do not depend on it.
 
 Where the project has no ticket yet, the configurations a ticket may use are

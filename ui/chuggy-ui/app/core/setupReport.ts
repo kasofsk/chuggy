@@ -4,6 +4,9 @@
  *
  * Every line is `<word>: <text>` with the word from a closed set, and the last
  * is the one `next:` line: a command that runs as it is written, or `stop`.
+ * A bare run before the person's yes to setup says what setup will do and
+ * stops, naming only the bare command again with that yes, under a rule that
+ * waits on it.
  * `stop` is also what follows anything running a command again would not
  * mend by itself: a Node too old to run the program, a sign-in that ended any
  * way but signed in, another run holding the lock, a path the machine would
@@ -71,6 +74,8 @@ import {
   setupOpenedGithub,
   setupPluginFlag,
   setupPluginSkip,
+  setupStartFlag,
+  setupStartYes,
   setupTestFlag,
   setupTitleFlag,
   setupToolchainsFlag,
@@ -362,6 +367,12 @@ export type SetupReport =
   | { readonly report: "Unserved"; readonly platform: string }
   | { readonly report: "AskedWrongly"; readonly fault: SetupAskFault }
   | { readonly report: "SiteUnknown" }
+  | {
+      /** A bare run before the person has said yes to setup: the site it would be for, where one was given, and what the folder's remote names. */
+      readonly report: "Opening";
+      readonly site: string | undefined;
+      readonly repository: string | undefined;
+    }
   | {
       readonly report: "Busy";
       readonly asked: SetupCommand;
@@ -708,6 +719,7 @@ function setupAskFlagSaid(words: ReturnType<typeof setupCommandWords>): Copy {
       plugin: setupPluginFlag,
       opened: setupOpenedFlag,
       bound,
+      start: setupStartFlag,
     },
   };
 }
@@ -788,6 +800,11 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
         id: "setup-asked-plugin",
         args: { flag: setupPluginFlag, skip: setupPluginSkip },
       };
+    case "Start":
+      return {
+        id: "setup-asked-start",
+        args: { flag: setupStartFlag, yes: setupStartYes },
+      };
     case "Opened":
       return {
         id: "setup-asked-opened",
@@ -847,6 +864,60 @@ function setupRuleLines(
     ["rule", { id: "setup-rule-explore" }],
     ["rule", { id: "setup-rule-directory", args: { directory } }],
     setupSignOutRule(saying),
+  ];
+}
+
+/**
+ * What setup will do, said before any of it is done, and the bare command
+ * named again with the person's yes as the one thing to run, after which
+ * nothing is.
+ */
+function setupOpeningLines(
+  report: Extract<SetupReport, { readonly report: "Opening" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  const repository: CopyArgument = report.repository ?? {
+    id: "setup-start-folder",
+  };
+  const answers: SetupAnswers = { ...saying.answers, start: setupStartYes };
+  const yes: SetupSaying = { ...saying, answers };
+  const when: Copy = { id: "setup-start-when" };
+  const run: SetupLine =
+    report.site === undefined
+      ? [
+          "rule",
+          {
+            id: "setup-rule-start-site",
+            args: {
+              command: setupCommandOf(yes, "Status", [setupFlagSite]),
+              example: setupSiteExample,
+              when,
+            },
+          },
+        ]
+      : [
+          "rule",
+          {
+            id: "setup-runner-rule",
+            args: {
+              command: setupCommandOf(
+                yes,
+                "Status",
+                setupSiteFlag(report.site),
+              ),
+              when,
+            },
+          },
+        ];
+  return [
+    report.site === undefined
+      ? ["found", { id: "setup-site-unknown" }]
+      : setupSiteSaid(report.site, "setup-site-signed-out"),
+    ["tell", { id: "setup-start-tell", args: { repository } }],
+    ["rule", { id: "setup-rule-drive", args: { stop: setupNextStop } }],
+    ["rule", { id: "setup-rule-start-wait" }],
+    run,
+    ["next", setupNextStop],
   ];
 }
 
@@ -2276,6 +2347,8 @@ function setupLines(
       return setupLinesAskedWrongly(report.fault, bare);
     case "SiteUnknown":
       return setupSiteUnknownLines(saying);
+    case "Opening":
+      return setupOpeningLines(report, saying);
     case "Busy":
     case "Faulted":
       return setupStoppedLines(report, saying);
@@ -2394,6 +2467,7 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
     case "IssuerUnanswered":
     case "WorkspacesUnread":
       return 1;
+    case "Opening":
     case "SignedOut":
     case "SignedOutHere":
     case "SignInWaiting":

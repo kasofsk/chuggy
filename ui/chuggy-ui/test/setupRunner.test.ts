@@ -3285,7 +3285,7 @@ test("runner keeps its rule of never replacing a chat host of the person's on an
   expect(
     (await ran(machine, [...runner, "--replace", "chuggy-chat-1"])).lines,
   ).toEqual([
-    "found: chuggy setup takes --site, --workspace, --project, --plugin and --wait-secs, --name with project, --opened with bind, --replace with chat-host, --chat-host with runner, --test with configuration, --title, --intent, --image, --toolchains and --configuration with ticket, each once with a value, and no other flag",
+    "found: chuggy setup takes --site, --workspace, --project, --plugin and --wait-secs, --name with project, --opened with bind, --replace with chat-host, --chat-host with runner, --test with configuration, --title, --intent, --image, --toolchains and --configuration with ticket, --start when run bare, each once with a value, and no other flag",
     `next: node ${machineScript}`,
   ]);
   expect(machine.box.ran).toEqual([]);
@@ -3377,7 +3377,7 @@ test("chat-host is not read without a workspace, with a project, or with --repla
     ],
     [
       [...chatHost, "--project", "widgets"],
-      "found: chuggy setup takes --site, --workspace, --project, --plugin and --wait-secs, --name with project, --opened with bind, --replace with chat-host, --chat-host with runner, --test with configuration, --title, --intent, --image, --toolchains and --configuration with ticket, each once with a value, and no other flag",
+      "found: chuggy setup takes --site, --workspace, --project, --plugin and --wait-secs, --name with project, --opened with bind, --replace with chat-host, --chat-host with runner, --test with configuration, --title, --intent, --image, --toolchains and --configuration with ticket, --start when run bare, each once with a value, and no other flag",
     ],
     [
       [...chatHost, "--replace", ".."],

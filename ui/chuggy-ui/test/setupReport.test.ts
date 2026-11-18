@@ -24,6 +24,8 @@ import {
   setupAnswersNone,
   setupAsked,
   setupPluginSkip,
+  setupStartFlag,
+  setupStartYes,
 } from "../app/core/setupArguments.ts";
 import type { SetupAnswers } from "../app/core/setupArguments.ts";
 import {
@@ -703,8 +705,13 @@ const roster: {
     { report: "AskedWrongly", fault: "Test" },
     { report: "AskedWrongly", fault: "Brief" },
     { report: "AskedWrongly", fault: "Opened" },
+    { report: "AskedWrongly", fault: "Start" },
   ],
   SiteUnknown: [{ report: "SiteUnknown" }],
+  Opening: [
+    { report: "Opening", site, repository: "github.com/quilbert/site" },
+    { report: "Opening", site: undefined, repository: undefined },
+  ],
   Busy: [
     { report: "Busy", asked: "SignIn", site: undefined, pid: 4242 },
     { report: "Busy", asked: "Status", site, pid: undefined },
@@ -1241,12 +1248,21 @@ test("a report of a run not signed in that does not stop names no command in a r
     const said = JSON.stringify(report);
     const unknown = report.report === "SiteUnknown";
     const reloading = report.report === "Plugin" && report.ended.ended === "On";
+    const opening = report.report === "Opening";
+    const yes = [setupStartFlag, setupStartYes];
     expect(ruled(lines), said).toEqual(
-      unknown ? [["--site"]] : reloading ? [["--site", site]] : [],
+      unknown
+        ? [["--site"]]
+        : reloading
+          ? [["--site", site]]
+          : opening
+            ? [[...yes, "--site", ...(report.site === undefined ? [] : [site])]]
+            : [],
     );
     expect(lines.at(-1) === stop, said).toBe(
       unknown ||
         reloading ||
+        opening ||
         report.report === "Unserved" ||
         report.report === "SignedOutHere",
     );
@@ -1288,7 +1304,9 @@ test("a run on a Node too old, on a platform not served, one asked wrongly and o
     roster[kind].map((report) => setupReportExit(report));
   expect(exits("NodeOld")).toEqual([2, 2]);
   expect(exits("Unserved")).toEqual([2]);
-  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
+  expect(exits("AskedWrongly")).toEqual([
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+  ]);
   expect(exits("SiteUnknown")).toEqual([2]);
 });
 
@@ -1332,9 +1350,14 @@ test("a sign-in that ended on the person's side exits zero, and one the installa
   });
 });
 
+const drive = `rule: Run the command on the next: line exactly as written, and stop where it says ${setupNextStop}. Say each tell: line to the person as it is written. Put each ask: line to the person, and pass their answer in the flag it names.`;
+
+const explore =
+  "rule: Start a subagent in the background that explores this folder's repository and reports which toolchains work on it needs, and which images the repository already defines for its CI or development. Go on with the person through the sign-in and the other steps that do not depend on the repository while it works, and use its report where the worker image is chosen.";
+
 const driven = [
-  `rule: Run the command on the next: line exactly as written, and stop where it says ${setupNextStop}. Say each tell: line to the person as it is written. Put each ask: line to the person, and pass their answer in the flag it names.`,
-  "rule: Before anything else, start a subagent that explores this folder's repository and reports which toolchains work on it needs, and which images the repository already defines for its CI or development. Go on with the person through the steps that do not depend on the repository while it works, and use its report where the worker image is chosen.",
+  drive,
+  explore,
   "rule: Never read or print anything under ~/.chuggy-setup: it holds the sign-in.",
   `rule: To change which GitHub account chuggy setup is signed in as, run node ${machineScript} sign-out and then sign in again.`,
 ];
@@ -1352,6 +1375,90 @@ test("not signed in, the bare command says how the program is driven and what is
   expect(signedOut(undefined)).toEqual(plain);
   for (const ended of ["SignedIn", "SiteChanged", "WorkspacesUnread"] as const)
     expect(signedOut(ended), ended).toEqual(plain);
+});
+
+const repository = "github.com/quilbert/site";
+
+const opening = (named: string): string =>
+  `tell: I'll set chuggy up for ${named}. Here is what happens: 1. Sign you in to chuggy. 2. Add chuggy's plugin and tools to your agent. 3. Create a project. 4. Connect ${named} on GitHub. 5. Set up a runner and a chat host on this machine. 6. File a first ticket to check it all works. I'll say what each step does as we get to it. Okay to start?`;
+
+const waits =
+  "rule: Until the person says yes, do nothing else: start no subagent, no sign-in and no other command.";
+
+test("before the person's yes, the bare command says every step setup will do and asks whether to go on, and names only itself again with that yes, once they say it", () => {
+  expect(
+    setupReportLines(
+      { report: "Opening", site, repository },
+      machineScript,
+      copyTextEn,
+    ),
+  ).toEqual([
+    `site: ${site}, not signed in`,
+    opening(repository),
+    drive,
+    waits,
+    `rule: Run node ${machineScript} --start yes --site ${site} only once the person says yes to setting chuggy up.`,
+    stop,
+  ]);
+  expect(
+    setupReportLines(
+      { report: "Opening", site: undefined, repository: undefined },
+      machineScript,
+      copyTextEn,
+    ),
+  ).toEqual([
+    "found: no chuggy site is remembered on this machine yet",
+    opening("the repository in this folder"),
+    drive,
+    waits,
+    `rule: Run node ${machineScript} --start yes --site with the address of the person's chuggy site after it, such as https://chuggy.example, only once the person says yes to setting chuggy up. Ask the person for the address if you do not have it.`,
+    stop,
+  ]);
+});
+
+test("before the person's yes, nothing printed starts a subagent or a sign-in: no explore rule, and no sign-in named in a rule or on next:", () => {
+  for (const report of roster.Opening) {
+    const lines = setupReportLines(report, machineScript, copyTextEn);
+    const said = JSON.stringify(report);
+    expect(lines, said).not.toContain(explore);
+    expect(
+      commands(lines.filter((text) => /^(?:rule|next): /u.test(text))).map(
+        (named) =>
+          setupAsked(
+            named.argv.at(-1) === "--site" ? [...named.argv, site] : named.argv,
+          ).asked,
+      ),
+      said,
+    ).toEqual(["Status"]);
+  }
+});
+
+test("only a run before the person's yes says what setup will do and waits on that yes: signed out after it, signed in, or with steps done, no report does", () => {
+  for (const report of every.filter((one) => one.report !== "Opening")) {
+    const lines = printed(report).join("\n");
+    const said = JSON.stringify(report);
+    expect(lines, said).not.toContain("Okay to start?");
+    expect(lines, said).not.toContain(waits);
+    expect(lines, said).not.toContain(`${setupStartFlag} ${setupStartYes}`);
+  }
+});
+
+test("a run given the person's yes carries it into every bare command it names again, and into no other command", () => {
+  const answers: SetupAnswers = { ...setupAnswersNone, start: setupStartYes };
+  const yes = `${setupStartFlag} ${setupStartYes}`;
+  const again = (report: SetupReport) =>
+    setupReportLines(report, machineScript, copyTextEn, answers);
+  expect(
+    again({ report: "Busy", asked: "Status", site, pid: undefined }),
+  ).toContain(
+    `rule: Run node ${machineScript} ${yes} --site ${site} only once that command has ended.`,
+  );
+  expect(again({ report: "SiteUnknown" }).join("\n")).toContain(
+    `node ${machineScript} ${yes} --site with the address`,
+  );
+  expect(
+    again({ report: "SignedOut", site, directory, ended: undefined }),
+  ).toEqual([`site: ${site}, not signed in`, ...driven, `${next} sign-in`]);
 });
 
 test("while the last sign-in's ending stands the bare command says it as sign-in did, under the same rule, and names no command to run", () => {
