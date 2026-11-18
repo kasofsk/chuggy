@@ -132,6 +132,7 @@ class Project implements Namespace {
     override_ticket_config: (ctx: Context): boolean => this.permits.administer(ctx),
     skip_planned_evaluations: (ctx: Context): boolean => this.permits.administer(ctx),
     merge_proposals: (ctx: Context): boolean => this.permits.administer(ctx),
+    make_access_tokens: (ctx: Context): boolean => this.permits.administer(ctx),
     chat_metadata: (ctx: Context): boolean => this.permits.read(ctx),
     grant_admin: (ctx: Context): boolean => this.related.admin_granters.includes(ctx.subject),
     grant_developer: (ctx: Context): boolean => this.related.developer_granters.includes(ctx.subject),

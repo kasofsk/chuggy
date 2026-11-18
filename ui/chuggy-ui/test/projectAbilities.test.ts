@@ -19,6 +19,7 @@ const abilities: readonly ProjectAbility[] = [
   "overrideTicketConfig",
   "skipPlannedEvaluations",
   "mergeProposals",
+  "makeAccessTokens",
   "administer",
 ];
 

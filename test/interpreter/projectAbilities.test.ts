@@ -32,6 +32,7 @@ const none: ProjectAbilitiesResponse = {
   overrideTicketConfig: false,
   skipPlannedEvaluations: false,
   mergeProposals: false,
+  makeAccessTokens: false,
   administer: false,
   writeEpic: false,
 };
@@ -47,6 +48,7 @@ const asked: readonly (readonly [
   ["overrideTicketConfig", "OverrideTicketConfig"],
   ["skipPlannedEvaluations", "SkipPlannedEvaluations"],
   ["mergeProposals", "MergeProposals"],
+  ["makeAccessTokens", "MakeAccessTokens"],
   ["administer", "Administer"],
 ];
 

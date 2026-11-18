@@ -1015,6 +1015,11 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["execution", "ticket", "SELECT", poolPlaneRole, true],
   ["execution", "registered_at", "SELECT", poolPlaneRole, true],
   ["execution_attempt", "claimed_at", "SELECT", poolPlaneRole, true],
+  ["access_token", null, "DELETE", apiRole, true],
+  ["access_token", null, "DELETE", boundaryOwnerRole, true],
+  ["access_token", null, "UPDATE", apiRole, false],
+  ["access_token", null, "UPDATE", boundaryOwnerRole, false],
+  ["access_token", null, "INSERT", boundaryOwnerRole, false],
 ];
 
 test("each role holds of a relation the columns it reaches it by, and is refused the ones it does not", async () => {
@@ -1068,6 +1073,15 @@ const boundaryGrantsHeld: readonly (readonly [
   readonly string[],
   readonly string[],
 ])[] = [
+  [
+    "access_token",
+    ["maker", "secret_digest"],
+    [
+      `${apiRole} INSERT maker,secret_digest`,
+      `${apiRole} SELECT maker,secret_digest`,
+      `${boundaryOwnerRole} SELECT maker,secret_digest`,
+    ],
+  ],
   [
     "worker_pool",
     ["class"],
