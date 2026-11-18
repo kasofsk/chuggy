@@ -56,6 +56,8 @@ import {
 } from "../../../src/contract/repositoryConfigurationReadiness.ts";
 import type { RepositoryConfigurationReferenced } from "../../../src/contract/repositoryConfigurationReference.ts";
 import type {
+  AgentAccount,
+  AgentPause,
   DraftResponse,
   ExecutionPlacementResponse,
   ExecutionSummary,
@@ -71,6 +73,7 @@ import type {
 } from "../../../src/contract/responses.ts";
 import { bootstrapConfigurationRevisionPrefix } from "../../../src/contract/responses.ts";
 import type {
+  AccountAgent,
   ForgeAppName,
   OwnerFallback,
   PersonalRunnerWait,
@@ -79,6 +82,7 @@ import type {
   SessionRunnerStanding,
 } from "../../../src/contract/rosters.ts";
 import {
+  accountAgents,
   proposalMergeForbiddenCode,
   proposalMergeRefusedCode,
 } from "../../../src/contract/rosters.ts";
@@ -169,7 +173,7 @@ export type SetupSiteRead =
 export const setupSiteMember =
   "20:https://auth.example0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f";
 
-/** What only `runner`, `bind`, `serve` or `ticket` asks, which a case moves likewise; `mint`, `chatMint`, `bind`, `serve` and `file` are writes, `file` the draft's creation and `serve` the project given the caller's runners. */
+/** What only `runner`, `bind`, `serve`, `ticket` or `usage` asks, or the checklist before the first ticket, which a case moves likewise; `mint`, `chatMint`, `bind`, `serve`, `file` and `raise` are writes, `file` the draft's creation, `serve` the project given the caller's runners, `usage` the read of the caller's agent accounts and `raise` the write of their settings. */
 export type SetupSiteRunnerAsk =
   | "abilities"
   | "serve"
@@ -180,7 +184,9 @@ export type SetupSiteRunnerAsk =
   | "chatMint"
   | "bind"
   | "configurations"
-  | "file";
+  | "file"
+  | "usage"
+  | "raise";
 
 /** The caller's chat host in a workspace: the id it is held by, and whether it has polled lately, which is what the site sees as live. */
 export interface SetupSiteChatHost {
@@ -235,6 +241,11 @@ export interface SetupSite {
   /** How the site meets a merge of a ticket's pull request, which it merges unless a case says otherwise, and the import that merge brings on while it is still to finish. */
   merging?: SetupSiteMerging;
   importing?: SetupSiteImporting | undefined;
+  /** The caller's own agent accounts, in roster order, and each settings write they were sent, by agent. */
+  readonly accounts: AgentAccount[];
+  readonly settingsWritten: (Pick<AgentAccount, "agent" | "settings"> & {
+    readonly body: unknown;
+  })[];
 }
 
 /** How a merge is met: merged, its import finishing as `outcome` after the project's repositories are read `reads` times, or refused for a reason, or refused to a caller without the permit. */
@@ -321,7 +332,32 @@ export function setupSiteEmpty(): SetupSite {
     mints: [],
     pushed: new Map(),
     letters: "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_",
+    accounts: accountAgents.map((agent) => setupSiteAccountOf(agent)),
+    settingsWritten: [],
   };
+}
+
+/** An agent account of the caller's at the default thresholds, with no reading and no pause unless `held` says otherwise. */
+export function setupSiteAccountOf(
+  agent: AccountAgent,
+  held: Partial<Omit<AgentAccount, "agent">> = {},
+): AgentAccount {
+  return {
+    agent,
+    settings: { fiveHourPercent: 80, sevenDayPercent: 90, pausesThreads: true },
+    readings: [],
+    ...held,
+  };
+}
+
+/** The site with the caller's Claude account held as `held` says. */
+export function setupSiteClaude(
+  site: SetupSite,
+  held: Partial<Omit<AgentAccount, "agent">>,
+): SetupSite {
+  const at = site.accounts.findIndex((account) => account.agent === "Claude");
+  site.accounts[at] = setupSiteAccountOf("Claude", held);
+  return site;
 }
 
 export function setupSiteClaim(
@@ -1123,6 +1159,7 @@ export function setupSiteWaiting(
   ticket: number,
   wait: PersonalRunnerWait,
   room?: ExecutionSummary["personalRunnerRoom"],
+  paused?: AgentPause,
 ): ExecutionSummary {
   return {
     ...ledgerExecution({
@@ -1135,6 +1172,7 @@ export function setupSiteWaiting(
     mine: true,
     personalRunnerWait: wait,
     ...(room === undefined ? {} : { personalRunnerRoom: room }),
+    ...(paused === undefined ? {} : { paused }),
   };
 }
 
@@ -1789,6 +1827,29 @@ function projectCreated(
   return answered({ tenant, project, name: name.trim() });
 }
 
+/** The caller's agent accounts as read, and a write of one's settings, kept whole as sent. */
+function accountsAnswered(
+  site: SetupSite,
+  path: string,
+  sent: SetupSiteSent,
+): SetupSiteAnswer | undefined {
+  if (sent.method === "GET" && path === "/api/v1/agent-accounts")
+    return fated(site, "usage") ?? answered({ accounts: site.accounts });
+  const written = /^\/api\/v1\/agent-accounts\/([^/]+)\/settings$/u.exec(path);
+  const at = site.accounts.findIndex(
+    (account) => account.agent === decodeURIComponent(written?.[1] ?? ""),
+  );
+  if (sent.method !== "PUT" || at < 0) return undefined;
+  const fate = fated(site, "raise");
+  if (fate !== undefined) return fate;
+  const body: unknown = JSON.parse(sent.body ?? "{}");
+  const account = site.accounts[at] as AgentAccount;
+  const settings = body as AgentAccount["settings"];
+  site.settingsWritten.push({ agent: account.agent, settings, body });
+  site.accounts[at] = { ...account, settings };
+  return { status: 204, body: undefined };
+}
+
 /**
  * What the site answers a request of `target`, a path with its query: a read
  * unless `sent` says otherwise. Nothing is answered where the path is none of
@@ -1813,6 +1874,8 @@ export function setupSiteAnswered(
       ? setupSitePersonalRedeemed(site, token)
       : setupSiteChatRedeemed(site, token);
   }
+  const accounts = accountsAnswered(site, url.pathname, sent);
+  if (accounts !== undefined) return accounts;
   const tenant = /^\/api\/v1\/tenants\/([^/]+)(\/.*)$/u.exec(url.pathname);
   const named = decodeURIComponent(tenant?.[1] ?? "");
   const rest = tenant?.[2] ?? "";

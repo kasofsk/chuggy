@@ -67,9 +67,9 @@ setup-rule-ticket = Run { $command } with { $title } and a short title for what 
 ## The arguments, asked wrongly. Each flag and command word is the program's own.
 
 # spells -run: to run is a verb here
-setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $signOut }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $merged }, as { $served }, as { $filed }, as { $watched } or as { $plugged }
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $signOut }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $merged }, as { $served }, as { $filed }, as { $watched }, as { $plugged } or as { $used }
 # spells -run: to run is a verb here
-setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag }, { $tokenFile } and { $apiKeyFile } with { $runner }, { $test } with { $configuration }, { $title }, { $intent }, { $image }, { $toolchains } and { $chosen } with { $filed }, { $start } when run bare, each once with a value, and no other flag
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin }, { $usage } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag }, { $tokenFile } and { $apiKeyFile } with { $runner }, { $test } with { $configuration }, { $title }, { $intent }, { $image }, { $toolchains } and { $chosen } with { $filed }, { $fiveHour } and { $sevenDay } with { $used }, { $start } when run bare, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
@@ -85,6 +85,9 @@ setup-asked-credential = { $token } and { $apiKey } each take the path of a file
 setup-asked-plugin = { $flag } takes only { $skip }
 setup-asked-opened = { $flag } takes only { $github }, with { $bound }
 setup-asked-start = { $flag } takes only { $yes }, once the person has said yes to setup
+# spells -work-stage: the work in general
+setup-asked-usage = { $flag } takes only { $keep }, once the person has said no to raising where { -brand-name } pauses their work
+setup-asked-percent = { $used } takes { $fiveHour }, { $sevenDay } or both, each a whole percentage in digits
 
 ## A machine the program is not served on, or a Node too old to run it.
 
@@ -599,6 +602,7 @@ setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $p
     [room] { " " }{ setup-mend-wait-room }
     [offline] { " " }{ setup-mend-wait-offline }
     [unable] { " " }{ setup-mend-wait-unable }
+    [paused] { " " }{ setup-mend-wait-paused }
    *[none] { "" }
 } { $ends ->
     [pull] It ends in { -pull-request(form: "a") }{ $bootstrap ->
@@ -611,8 +615,41 @@ setup-mend-wait-room = It is waiting on your { -personal-runner }, which has { $
 setup-mend-wait-offline = It is waiting on your { -personal-runner }, which is offline.
 # spells -run: to run is a verb here
 setup-mend-wait-unable = It is waiting on your { -personal-runner(form: "plural") }, and none of them can run it.
+# spells -work-stage: the work in general
+setup-mend-wait-paused = It is waiting until your { -claude } plan's usage falls under where { -brand-name } pauses your work.
 setup-mend-decision-tell = { -ticket(case: "upper") } { $ticket } is { -escalation }: it waits on a decision of yours at { $page }. Tell me once it is moving again.
 setup-mend-decision-when = once the person says { -ticket } { $ticket } is moving again
+
+## The person's own usage of their Claude plan, over where chuggy pauses
+## their work, said before the first ticket and while it waits; the usage
+## command, which raises it on their yes; and what that command wrote.
+
+setup-usage-window-five-hour = 5-hour
+setup-usage-window-seven-day = weekly
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+setup-usage-over = Your { -claude } plan is at { $reading }% of its { $window } limit, and { -brand-name } pauses your work at { $threshold }%, so your { -ticket(form: "plural") } won't run right now. I can raise that to { $offered }% so they do. Want me to?
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+setup-usage-over-both = Your { -claude } plan is at { $reading }% of its { $window } limit and { $readingOther }% of its { $windowOther } limit, and { -brand-name } pauses your work at { $threshold }% and { $thresholdOther }%, so your { -ticket(form: "plural") } won't run right now. I can raise those to { $offered }% and { $offeredOther }% so they do. Want me to?
+# spells -work-stage: the work in general
+setup-usage-full = Your { -claude } plan is at { $reading }% of its { $window } limit, too near all of it for { -ticket(form: "a") } to finish under any threshold, so raising where { -brand-name } pauses your work would not help. That limit resets at { $resets }, and your { -ticket(form: "plural") } will start by themselves then.
+# spells -work-stage: the work in general
+setup-usage-limit = Your { -claude } plan has reached a limit of its own, not where { -brand-name } pauses your work, so raising that would not help. { $resets ->
+    [known] It lifts at { $at }, and your { -ticket(form: "plural") } will start by themselves then.
+   *[unknown] Your { -ticket(form: "plural") } will start by themselves once it lifts.
+}
+# spells -run: to run is a verb here
+setup-rule-usage = Run { $command } only once the person says yes, with the figure they name in place of the one offered where they name another.
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+setup-rule-usage-keep = Run { $command } only if the person says no, without asking again, once you have told them in one sentence that their first { -ticket } will wait until their usage falls under where { -brand-name } pauses their work.
+# spells -work-stage: the work in general
+setup-usage-raised = { -brand-name } now pauses your work at { $percent }% of your { -claude } plan's { $window } limit
+# spells -work-stage: the work in general
+setup-usage-refused = { -brand-name } did not change where it pauses your work: { $refusal }
+# spells -work-stage: the work in general
+setup-usage-failed = { -brand-name } did not change where it pauses your work: { $failure }
 
 ## A step that was not read. The step's name is the checklist's own.
 

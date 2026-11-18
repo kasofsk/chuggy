@@ -307,9 +307,12 @@ const shareDigits = 12;
 
 /** A share of a whole in whole percent, rounded down so a share short of a
  * percent never reads as reaching it. */
+export function sharePercent(share: number): number {
+  return Math.floor(Number((share * percentPerWhole).toPrecision(shareDigits)));
+}
+
 export function shareFigure(share: number): Figure {
-  const percent = Number((share * percentPerWhole).toPrecision(shareDigits));
-  return countFigure(Math.floor(percent), { id: "figures-unit-percent" });
+  return countFigure(sharePercent(share), { id: "figures-unit-percent" });
 }
 
 /** A share as `shareFigure` reads it, except that a part short of a whole

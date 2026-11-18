@@ -468,6 +468,47 @@ const things: {
       project: "it's --site",
     },
   ],
+  Usage: [
+    {
+      thing: "Usage",
+      tell: {
+        id: "setup-usage-over",
+        args: {
+          reading: "83",
+          window: { id: "setup-usage-window-five-hour" },
+          threshold: "80",
+          offered: "90",
+        },
+      },
+      over: [{ window: "five_hour", reading: 83, threshold: 80, offered: 90 }],
+      then: "Status",
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "Usage",
+      tell: {
+        id: "setup-usage-over-both",
+        args: {
+          reading: "83",
+          window: { id: "setup-usage-window-five-hour" },
+          threshold: "80",
+          offered: "90",
+          readingOther: "91",
+          windowOther: { id: "setup-usage-window-seven-day" },
+          thresholdOther: "90",
+          offeredOther: "100",
+        },
+      },
+      over: [
+        { window: "five_hour", reading: 83, threshold: 80, offered: 90 },
+        { window: "seven_day", reading: 91, threshold: 90, offered: 100 },
+      ],
+      then: "Watch",
+      workspace: "two words",
+      project: "it's --site",
+    },
+  ],
   Failed: [
     { thing: "Failed", found: unreadFound, stale: false },
     { thing: "Failed", found: unreadFound, stale: true },
@@ -699,6 +740,8 @@ const roster: {
     { report: "AskedWrongly", fault: "Brief" },
     { report: "AskedWrongly", fault: "Opened" },
     { report: "AskedWrongly", fault: "Start" },
+    { report: "AskedWrongly", fault: "Usage" },
+    { report: "AskedWrongly", fault: "Percent" },
   ],
   SiteUnknown: [{ report: "SiteUnknown" }],
   Opening: [
@@ -902,6 +945,35 @@ const roster: {
     answered,
     checklist: checklist(things.Brief[0] as SetupThing),
   })),
+  Usage: [
+    {
+      report: "Usage",
+      answered: {
+        answered: "Raised",
+        raised: [
+          { window: "five_hour", percent: 90 },
+          { window: "seven_day", percent: 95 },
+        ],
+      },
+      checklist: checklist(things.Brief[0] as SetupThing),
+    },
+    {
+      report: "Usage",
+      answered: {
+        answered: "Refused",
+        refusal: { id: "usage-percent-fault", args: { min: "1", max: "100" } },
+      },
+      checklist: checklist(things.Usage[0] as SetupThing),
+    },
+    {
+      report: "Usage",
+      answered: {
+        answered: "Failed",
+        failure: { id: "failure-no-connection" },
+      },
+      checklist: checklist(things.Usage[0] as SetupThing),
+    },
+  ],
   RunnerOut: pairs.flatMap(({ workspace, project }) =>
     outsOf(project === undefined ? "ChatHost" : "Runner").map((out) => ({
       report: "RunnerOut",
@@ -927,6 +999,7 @@ const configuring: ReadonlySet<SetupReport["report"]> = new Set([
   "Merge",
   "Serve",
   "Ticket",
+  "Usage",
 ]);
 
 /** Every report but a checklist and a run of `mcp` or `runner`, which is every report a run that is not signed in can make. */
@@ -1109,7 +1182,8 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
     report.report === "Bind" ||
     report.report === "Merge" ||
     report.report === "Serve" ||
-    report.report === "Ticket"
+    report.report === "Ticket" ||
+    report.report === "Usage"
   )
     return carried(report.checklist, answers);
   if (report.report === "Plugin")
@@ -1125,7 +1199,8 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
       thing.thing === "Name" ||
       thing.thing === "Brief" ||
       thing.thing === "First" ||
-      thing.thing === "Configure"
+      thing.thing === "Configure" ||
+      thing.thing === "Usage"
       ? project(thing)
       : report.next.carried;
   }
@@ -1298,7 +1373,7 @@ test("a run on a Node too old, on a platform not served, one asked wrongly and o
   expect(exits("NodeOld")).toEqual([2, 2]);
   expect(exits("Unserved")).toEqual([2]);
   expect(exits("AskedWrongly")).toEqual([
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
   ]);
   expect(exits("SiteUnknown")).toEqual([2]);
 });
@@ -1575,6 +1650,7 @@ test("no checklist but bind's, merge's and watch's ends on a command: whatever e
       thing.thing === "Done"
         ? 0
         : (thing.thing === "Offer" && thing.command === "Plugin") ||
+            thing.thing === "Usage" ||
             imageRecommended
           ? 2
           : 1,
