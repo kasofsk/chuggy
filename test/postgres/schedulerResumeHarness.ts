@@ -1,7 +1,7 @@
 /**
  * What a case about the scheduler answering a ticket's escalation needs of a
- * real PostgreSQL and the real writer: a ticket whose jobs run on its
- * project's pools, the roles a runner and the API reach the database as, each
+ * real PostgreSQL and the real writer: a ticket whose jobs are routed to the
+ * pool plane, the roles a runner and the API reach the database as, each
  * spawn registered and admitted, and the writer deciding what each step left.
  *
  * A PASS IS INSTALLATION-WIDE and a suite's cases share one database, so each
@@ -53,7 +53,7 @@ import {
   poolRoutes,
 } from "./schedulerPoolsHarness.ts";
 
-/** One ticket whose jobs run on its project's pools, and the writer's memory of it so far. */
+/** One ticket whose jobs are routed to the pool plane, and the writer's memory of it so far. */
 export interface SchedulerResumeRouted {
   readonly project: SchedulerProject;
   memory: ProjectMemory;
@@ -219,7 +219,7 @@ export async function schedulerResumeAdmitted(
   return admitted;
 }
 
-/** Opens and invokes the execution's attempt under `invocation`, as a pass would for a pool. */
+/** Opens and invokes the execution's attempt under `invocation`, as a pass would for a runner of the pool plane. */
 export async function schedulerResumeInvoked(
   resume: SchedulerResumeRig,
   routed: SchedulerResumeRouted,

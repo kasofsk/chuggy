@@ -4,10 +4,15 @@
  * serves harnesses, and the API that registers one.
  *
  * EVERY CASE STARTS FROM AN OPENED, UNPLACED ATTEMPT. That is the row a pool
- * claims, and it is what the scheduler leaves behind when it opens an attempt
- * for an execution registered on the pool route. Each case writes `placement`
- * itself through the owner's harness, so it routes each execution rather than
- * each project.
+ * or a member's personal runner claims, and it is what the scheduler leaves
+ * behind when it opens an attempt for an execution registered on the pool
+ * route. Each case writes `placement` itself through the owner's harness, so it
+ * routes each execution rather than each project.
+ *
+ * WHAT A CASE ASKS OF THE PLANE ITSELF IT ASKS OF A PERSONAL RUNNER, its
+ * project's executions owned by the runner's owner and on their allowlist; a
+ * pool is registered only where its registration, its row or its grants are
+ * what the case is about.
  */
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
@@ -22,6 +27,7 @@ import {
   workerPoolReleaseFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
+import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolDirectory,
@@ -47,6 +53,8 @@ import {
 } from "../../src/interpreter/principal.ts";
 import type {
   DedicatedPoolIdentity,
+  PersonalRunnerIdentity,
+  WorkerPoolClaimed,
   WorkerPoolClaimTerms,
   WorkerPoolIdentity,
 } from "../../src/interpreter/workerPool.ts";
@@ -82,6 +90,7 @@ after(async () => {
 });
 
 const registry = postgresWorkerPoolRegistry(apiPool);
+const personalRegistry = postgresPersonalRunnerRegistry(apiPool);
 const assignments = postgresWorkerPoolAssignments(planePool);
 
 /** How long a claim's lease runs for, past the duration of any case here. */
@@ -254,49 +263,99 @@ function handles(label: string): { assignment: string; bearer: string } {
   };
 }
 
-test("a pool claims only work marked for a pool, and only what it declared", async () => {
-  const beyond = await poolProject(
+/** A project `poolProject` releases, every execution of it owned by `owner` under a fallback that lets their runners take it. */
+async function ownedProject(
+  label: string,
+  tasks = 1,
+  configuration: string = poolConfiguration(undefined),
+  owner: Principal = asPrincipal(
+    `https://issuer.invalid#owner-${randomUUID()}`,
+  ),
+): Promise<SchedulerProject & { readonly owner: Principal }> {
+  const project = await poolProject(label, tasks, configuration);
+  await rig.harness.query(
+    `UPDATE execution SET owner=$3, owner_fallback='Strict' WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project, owner],
+  );
+  return { ...project, owner };
+}
+
+/** One of a member's personal runners, and the projects it claims in. */
+type Runner = PersonalRunnerIdentity & {
+  readonly kind: "Personal";
+  readonly serves: readonly Partition[];
+};
+
+/** One more runner of the owner of `project`, registered declaring `capabilities` and allowlisting that project. */
+async function runnerOf(
+  project: SchedulerProject & { readonly owner: Principal },
+  label: string,
+  capabilities: readonly string[],
+): Promise<Runner> {
+  const key = { tenant: project.partition.tenant, owner: project.owner };
+  const principal = asPrincipal(
+    `https://issuer.invalid#runner-${label}-${randomUUID()}`,
+  );
+  assert.equal(
+    await personalRegistry.register({
+      ...key,
+      capabilities,
+      clientId: `chuggy-personal-${randomUUID()}`,
+      principal,
+    }),
+    "Registered",
+  );
+  assert.equal(
+    await personalRegistry.allow(key, project.partition.project),
+    "Allowed",
+  );
+  return { kind: "Personal", ...key, principal, serves: [project.partition] };
+}
+
+/** One claim by `runner` under the handles drawn, in the projects it serves. */
+function runnerClaim(
+  runner: Runner,
+  drawn: { assignment: string; bearer: string },
+): Promise<WorkerPoolClaimed | undefined> {
+  return assignments.claimPersonal(
+    runner,
+    terms,
+    drawn.assignment,
+    drawn.bearer,
+    runner.serves.map((partition) => partition.project),
+  );
+}
+
+test("a runner claims only work marked for a pool, and only what it declared", async () => {
+  const beyond = await ownedProject(
     "pool-beyond",
     1,
     poolConfiguration("Codex"),
   );
-  const beyondPool = await registered(beyond.partition, "beyond", [
+  const beyondRunner = await runnerOf(beyond, "beyond", [
     platform,
     "Agent:Claude",
   ]);
   await poolAttempt(beyond, "beyond");
-  const unclaimable = handles("beyond");
   assert.equal(
-    await assignments.claim(
-      beyondPool,
-      terms,
-      unclaimable.assignment,
-      unclaimable.bearer,
-      [],
-    ),
+    await runnerClaim(beyondRunner, handles("beyond")),
     undefined,
-    "a pool claims nothing whose capability it did not declare",
+    "a runner claims nothing whose capability it did not declare",
   );
 
-  const project = await poolProject(
+  const project = await ownedProject(
     "pool-claims",
     3,
     poolConfiguration("Claude"),
   );
-  const pool = await registered(project.partition, "claims", [
+  const runner = await runnerOf(project, "claims", [
     platform,
     "Agent:Claude",
     "Agent:Codex",
   ]);
   const wanted = await poolAttempt(project, "covered");
   const drawn = handles("covered");
-  const claimed = await assignments.claim(
-    pool,
-    terms,
-    drawn.assignment,
-    drawn.bearer,
-    [],
-  );
+  const claimed = await runnerClaim(runner, drawn);
   assert.deepEqual(claimed, {
     requirement: {
       mode: "Capability",
@@ -305,18 +364,15 @@ test("a pool claims only work marked for a pool, and only what it declared", asy
       capabilities: ["Agent:Claude"],
     },
     runtime: schedulerRuntime,
+    project: project.partition.project,
   });
   const held = (await rig.harness.query(
     `SELECT attempt, pool FROM execution_attempt
       WHERE tenant=$1 AND project=$2 AND assignment=$3`,
     [project.partition.tenant, project.partition.project, drawn.assignment],
   )) as readonly { attempt: string; pool: string }[];
-  assert.deepEqual(held, [{ attempt: wanted.attempt, pool: "claims" }]);
-  const second = handles("second");
-  assert.equal(
-    await assignments.claim(pool, terms, second.assignment, second.bearer, []),
-    undefined,
-  );
+  assert.deepEqual(held, [{ attempt: wanted.attempt, pool: project.owner }]);
+  assert.equal(await runnerClaim(runner, handles("second")), undefined);
 });
 
 test("a requirement stored as capabilities matches its pools under either name its mode has had", async () => {
@@ -353,39 +409,33 @@ async function poolRuntimeCleared(
 }
 
 test("a container claim returns the image its execution's requirement pinned and the runtime its attempt was opened under", async () => {
-  const project = await poolProject("pool-image", 2);
-  const pool = await registered(project.partition, "image", [platform]);
+  const project = await ownedProject("pool-image", 2);
+  const runner = await runnerOf(project, "image", [platform]);
   const requirement = {
     mode: "Container",
     operatingSystem: "Linux",
     architecture: "Amd64",
     image: "worker:v1",
   };
+  const named = { project: project.partition.project };
   await poolAttempt(project, "image");
-  const drawn = handles("image");
-  assert.deepEqual(
-    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer, []),
-    { requirement, runtime: schedulerRuntime },
-  );
+  assert.deepEqual(await runnerClaim(runner, handles("image")), {
+    requirement,
+    runtime: schedulerRuntime,
+    ...named,
+  });
   const { attempt } = await poolAttempt(project, "image-unruntimed");
   await poolRuntimeCleared(project, attempt);
-  const unruntimed = handles("image-unruntimed");
   assert.deepEqual(
-    await assignments.claim(
-      pool,
-      terms,
-      unruntimed.assignment,
-      unruntimed.bearer,
-      [],
-    ),
-    { requirement },
+    await runnerClaim(runner, handles("image-unruntimed")),
+    { requirement, ...named },
     "an attempt that kept no runtime is claimed with none",
   );
 });
 
-test("an execution the scheduler still places is offered to no pool", async () => {
-  const project = await poolProject("pool-in-cluster");
-  const pool = await registered(project.partition, "in-cluster", [platform]);
+test("an execution the scheduler still places is offered to no runner", async () => {
+  const project = await ownedProject("pool-in-cluster");
+  const runner = await runnerOf(project, "in-cluster", [platform]);
   const admitted = await rig.store.admit(project.cluster);
   assert.equal(admitted.admitted, "Admitted");
   if (admitted.admitted !== "Admitted") return;
@@ -404,33 +454,22 @@ test("an execution the scheduler still places is offered to no pool", async () =
     await rig.store.attemptInvoked(opened.attempt, schedulerInvocation),
     true,
   );
-  const drawn = handles("in-cluster");
-  assert.equal(
-    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer, []),
-    undefined,
-  );
+  assert.equal(await runnerClaim(runner, handles("in-cluster")), undefined);
 });
 
-test("an attempt with no invocation recorded is offered to no pool", async () => {
-  const project = await poolProject("pool-uninvoked");
-  const pool = await registered(project.partition, "uninvoked", [platform]);
+test("an attempt with no invocation recorded is offered to no runner", async () => {
+  const project = await ownedProject("pool-uninvoked");
+  const runner = await runnerOf(project, "uninvoked", [platform]);
   await poolAttempt(project, "uninvoked", false);
-  const drawn = handles("uninvoked");
-  assert.equal(
-    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer, []),
-    undefined,
-  );
+  assert.equal(await runnerClaim(runner, handles("uninvoked")), undefined);
 });
 
 test("a claim binds the attempt to the bearer its harness answers under", async () => {
-  const project = await poolProject("pool-bearer");
-  const pool = await registered(project.partition, "bearer", [platform]);
+  const project = await ownedProject("pool-bearer");
+  const runner = await runnerOf(project, "bearer", [platform]);
   const attempt = await poolAttempt(project, "bearer");
   const drawn = handles("bearer");
-  assert.notEqual(
-    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer, []),
-    undefined,
-  );
+  assert.notEqual(await runnerClaim(runner, drawn), undefined);
   const digest = createHash("sha256")
     .update(drawn.bearer, "utf8")
     .digest("hex");
@@ -448,22 +487,13 @@ test("a claim binds the attempt to the bearer its harness answers under", async 
   assert.equal(authenticated?.attempt, attempt.attempt);
 });
 
-test("an assignment is renewed, refused and released by the pool holding it", async () => {
-  const project = await poolProject("pool-settles", 3);
-  const mine = await registered(project.partition, "mine", [platform]);
-  const theirs = await registered(project.partition, "theirs", [platform]);
+test("an assignment is renewed, refused and released by the runner holding it", async () => {
+  const project = await ownedProject("pool-settles", 3);
+  const mine = await runnerOf(project, "mine", [platform]);
+  const theirs = await runnerOf(project, "theirs", [platform]);
   await poolAttempt(project, "renewed");
   const renewed = handles("renewed");
-  assert.notEqual(
-    await assignments.claim(
-      mine,
-      terms,
-      renewed.assignment,
-      renewed.bearer,
-      [],
-    ),
-    undefined,
-  );
+  assert.notEqual(await runnerClaim(mine, renewed), undefined);
   assert.equal(await assignments.held(mine, renewed.assignment), true);
   assert.equal(
     await assignments.renew(mine, renewed.assignment, leaseSecs),
@@ -472,7 +502,7 @@ test("an assignment is renewed, refused and released by the pool holding it", as
   assert.equal(
     await assignments.renew(theirs, renewed.assignment, leaseSecs),
     false,
-    "no pool renews another pool's lease",
+    "no runner renews another runner's lease",
   );
   assert.equal(await assignments.held(theirs, renewed.assignment), false);
   assert.equal(
@@ -500,15 +530,12 @@ test("an assignment is renewed, refused and released by the pool holding it", as
   );
 });
 
-test("a released attempt ends withdrawn under the pool that claimed it, spending and pacing nothing, and no pool claims it again", async () => {
-  const project = await poolProject("pool-releases");
-  const mine = await registered(project.partition, "releasing", [platform]);
+test("a released attempt ends withdrawn under the runner that claimed it, spending and pacing nothing, and no runner claims it again", async () => {
+  const project = await ownedProject("pool-releases");
+  const mine = await runnerOf(project, "releasing", [platform]);
   const released = await poolAttempt(project, "released");
   const handle = handles("released");
-  assert.notEqual(
-    await assignments.claim(mine, terms, handle.assignment, handle.bearer, []),
-    undefined,
-  );
+  assert.notEqual(await runnerClaim(mine, handle), undefined);
   assert.equal(await assignments.release(mine, handle.assignment), true);
   const after = await rig.harness.query(
     `SELECT a.state, a.evidence, a.pool, a.assignment, a.capability_secret_digest,
@@ -523,7 +550,7 @@ test("a released attempt ends withdrawn under the pool that claimed it, spending
     {
       state: "Withdrawn",
       evidence: "PlacementUnavailable",
-      pool: "releasing",
+      pool: project.owner,
       assignment: handle.assignment,
       capability_secret_digest: null,
       lease_expires_at: null,
@@ -532,97 +559,85 @@ test("a released attempt ends withdrawn under the pool that claimed it, spending
     },
   ]);
   assert.equal(await assignments.release(mine, handle.assignment), false);
-  const again = handles("again");
   assert.equal(
-    await assignments.claim(mine, terms, again.assignment, again.bearer, []),
+    await runnerClaim(mine, handles("again")),
     undefined,
-    "a released attempt is offered to no pool",
+    "a released attempt is offered to no runner",
   );
 });
 
-/** One more attempt of this project opened and claimed by `pool`, and the assignment the claim drew. */
-async function poolHeldBy(
+/** One more attempt of this project opened and claimed by `runner`, and the assignment the claim drew. */
+async function runnerHeldBy(
   project: SchedulerProject,
-  pool: DedicatedPoolIdentity,
+  runner: Runner,
   label: string,
 ): Promise<string> {
   await poolAttempt(project, label);
   const drawn = handles(label);
-  assert.notEqual(
-    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer, []),
-    undefined,
-  );
+  assert.notEqual(await runnerClaim(runner, drawn), undefined);
   return drawn.assignment;
 }
 
-test("a pool holds the images of the attempts it may still renew, and none of another pool's, another project's, or one it refused or released", async () => {
-  const project = await poolProject("pool-held-images", 4);
-  const mine = await registered(project.partition, "held-mine", [platform]);
-  const theirs = await registered(project.partition, "held-theirs", [platform]);
-  const elsewhere = await poolProject("pool-held-elsewhere");
-  const yonder = await registered(
-    elsewhere.partition,
-    "held-mine",
-    [platform],
-    poolPrincipalFresh("held-mine"),
-  );
+test("a runner holds the images of the attempts it may still renew, and none of another runner's, another project's, or one it refused or released", async () => {
+  const project = await ownedProject("pool-held-images", 4);
+  const mine = await runnerOf(project, "held-mine", [platform]);
+  const theirs = await runnerOf(project, "held-theirs", [platform]);
+  const elsewhere = await ownedProject("pool-held-elsewhere");
+  const yonder = await runnerOf(elsewhere, "held-mine", [platform]);
   const pulls = ["worker:v1", schedulerRuntime];
   assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), []);
-  await poolHeldBy(project, theirs, "held-theirs");
-  await poolHeldBy(elsewhere, yonder, "held-yonder");
+  await runnerHeldBy(project, theirs, "held-theirs");
+  await runnerHeldBy(elsewhere, yonder, "held-yonder");
   assert.deepEqual(await assignments.heldImages(theirs, terms.heldMax), pulls);
   assert.deepEqual(await assignments.heldImages(yonder, terms.heldMax), pulls);
   assert.deepEqual(
     await assignments.heldImages(mine, terms.heldMax),
     [],
-    "another pool's attempt, or the same name's in another project, is not this pool's",
+    "another runner's attempt, or another member's in another project, is not this runner's",
   );
-  const refused = await poolHeldBy(project, mine, "held-refused");
+  const refused = await runnerHeldBy(project, mine, "held-refused");
   assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), pulls);
   assert.equal(await assignments.refuse(mine, refused, "no node"), true);
   assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), []);
-  const released = await poolHeldBy(project, mine, "held-released");
+  const released = await runnerHeldBy(project, mine, "held-released");
   assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), pulls);
   assert.equal(await assignments.release(mine, released), true);
   assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), []);
   await assert.rejects(
     assignments.heldImages(mine, 0),
-    /invalid worker pool held bound/u,
+    /invalid personal runner held bound/u,
   );
 });
 
-test("a pool holding one attempt may pull both its image and its runtime, a capability's attempt its runtime alone, and one that kept no runtime its image alone", async () => {
-  const pinned = await poolProject("pool-held-pulls");
-  const one = await registered(pinned.partition, "held-pulls", [platform]);
-  await poolHeldBy(pinned, one, "held-pulls");
+test("a runner holding one attempt may pull both its image and its runtime, a capability's attempt its runtime alone, and one that kept no runtime its image alone", async () => {
+  const pinned = await ownedProject("pool-held-pulls");
+  const one = await runnerOf(pinned, "held-pulls", [platform]);
+  await runnerHeldBy(pinned, one, "held-pulls");
   assert.deepEqual(await assignments.heldImages(one, 1), [
     "worker:v1",
     schedulerRuntime,
   ]);
-  const unruntimed = await poolProject("pool-held-unruntimed");
-  const plain = await registered(unruntimed.partition, "held-unruntimed", [
-    platform,
-  ]);
+  const unruntimed = await ownedProject("pool-held-unruntimed");
+  const plain = await runnerOf(unruntimed, "held-unruntimed", [platform]);
   const { attempt } = await poolAttempt(unruntimed, "held-unruntimed");
   await poolRuntimeCleared(unruntimed, attempt);
-  const drawn = handles("held-unruntimed");
   assert.notEqual(
-    await assignments.claim(plain, terms, drawn.assignment, drawn.bearer, []),
+    await runnerClaim(plain, handles("held-unruntimed")),
     undefined,
   );
   assert.deepEqual(await assignments.heldImages(plain, terms.heldMax), [
     "worker:v1",
   ]);
-  const capable = await poolProject(
+  const capable = await ownedProject(
     "pool-held-capability",
     1,
     poolConfiguration("Claude"),
   );
-  const agent = await registered(capable.partition, "held-capability", [
+  const agent = await runnerOf(capable, "held-capability", [
     platform,
     "Agent:Claude",
   ]);
-  await poolHeldBy(capable, agent, "held-capability");
+  await runnerHeldBy(capable, agent, "held-capability");
   assert.deepEqual(await assignments.heldImages(agent, terms.heldMax), [
     schedulerRuntime,
   ]);
@@ -1080,12 +1095,15 @@ test("a pool's poll naming a memory ceiling keeps it for the scheduler to read, 
   assert.deepEqual(await ceilings(), [Number.MAX_SAFE_INTEGER]);
 });
 
-test("a pool's poll naming a set that no longer runs what it holds keeps what it holds", async () => {
-  const { project, identity, drawn } = await poolClaimed("narrowed");
+test("a runner's poll naming a set that no longer runs what it holds keeps what it holds", async () => {
+  const { identity, drawn } = await runnerClaimed("narrowed");
   await postgresWorkerPoolRunners(planePool).named(identity, undefined, []);
   assert.deepEqual(
-    (await poolCapabilitiesRow(project.partition, "narrowed")).kept,
-    [],
+    await rig.harness.query(
+      `SELECT capabilities FROM personal_runner WHERE principal=$1`,
+      [identity.principal],
+    ),
+    [{ capabilities: [] }],
   );
   assert.equal(await assignments.held(identity, drawn.assignment), true);
   assert.equal(
@@ -1201,6 +1219,30 @@ async function poolClaimed(label: string): ReturnType<typeof poolClaimedIn> {
   return poolClaimedIn(await poolProject(`pool-${label}`), label);
 }
 
+/** A runner of the owner of `project`, one attempt claimed by it, and the handles the claim drew. */
+async function runnerClaimedIn(
+  project: SchedulerProject & { readonly owner: Principal },
+  label: string,
+): Promise<{
+  project: SchedulerProject;
+  identity: Runner;
+  claimed: Awaited<ReturnType<typeof poolAttempt>>;
+  drawn: { assignment: string; bearer: string };
+}> {
+  const identity = await runnerOf(project, label, [platform]);
+  const claimed = await poolAttempt(project, label);
+  const drawn = handles(label);
+  assert.notEqual(await runnerClaim(identity, drawn), undefined);
+  return { project, identity, claimed, drawn };
+}
+
+/** One project's runner registered and one attempt claimed by it. */
+async function runnerClaimed(
+  label: string,
+): ReturnType<typeof runnerClaimedIn> {
+  return runnerClaimedIn(await ownedProject(`pool-${label}`), label);
+}
+
 /** The refusal one attempt keeps, read under the scheduler that blocks on it. */
 async function poolRefusalKept(
   project: SchedulerProject,
@@ -1215,8 +1257,8 @@ async function poolRefusalKept(
   ).rows;
 }
 
-test("a refusal keeps the image fault its pool named, and a refusal naming none keeps none", async () => {
-  const faulted = await poolClaimed("refused-faulted");
+test("a refusal keeps the image fault its runner named, and a refusal naming none keeps none", async () => {
+  const faulted = await runnerClaimed("refused-faulted");
   assert.equal(
     await assignments.refuse(
       faulted.identity,
@@ -1230,7 +1272,7 @@ test("a refusal keeps the image fault its pool named, and a refusal naming none 
     await poolRefusalKept(faulted.project, faulted.claimed.attempt),
     [{ pool_refusal: "git: not found", pool_refusal_fault: "ImageLacksGit" }],
   );
-  const plain = await poolClaimed("refused-plain");
+  const plain = await runnerClaimed("refused-plain");
   assert.equal(
     await assignments.refuse(plain.identity, plain.drawn.assignment, "no node"),
     true,
@@ -1244,9 +1286,9 @@ test("a refusal keeps the image fault its pool named, and a refusal naming none 
 /** Who reads an execution back through the API's role; no ticket here is theirs. */
 const reader = asPrincipal("https://issuer.invalid#an-operator");
 
-test("a refusal is read back through the API in the pool's own words, beside the size its execution asked for", async () => {
-  const sized = await poolClaimedIn(
-    await poolProject(
+test("a refusal is read back through the API in the runner's own words, beside the size its execution asked for", async () => {
+  const sized = await runnerClaimedIn(
+    await ownedProject(
       "pool-refused-sized",
       1,
       poolConfiguration(undefined, {
@@ -1271,7 +1313,7 @@ test("a refusal is read back through the API in the pool's own words, beside the
     read?.attempts.map((attempt) => attempt.refusal),
     [words],
   );
-  const unsized = await poolClaimed("refused-unsized");
+  const unsized = await runnerClaimed("refused-unsized");
   const plain = await postgresOperationalReads(apiPool).execution(
     unsized.project.partition,
     asExecutionId(unsized.claimed.execution),
@@ -1285,7 +1327,7 @@ test("a refusal is read back through the API in the pool's own words, beside the
 });
 
 test("no attempt keeps a fault the contract does not name, or a fault beside no refusal", async () => {
-  const { project, claimed } = await poolClaimed("refused-unknown");
+  const { project, claimed } = await runnerClaimed("refused-unknown");
   const where = [
     project.partition.tenant,
     project.partition.project,
@@ -1420,12 +1462,12 @@ test("the harness an older registration launched is refused, and its attempt end
 });
 
 /**
- * A pool that answers Unavailable launched nothing, and releasing the
+ * A runner that answers Unavailable launched nothing, and releasing the
  * assignment, as the pool plane's own role does, takes its bearer back: a
  * harness launched under it anyway is answered as a bearer never issued is.
  */
 test("a released attempt's bearer is answered as one never issued", async () => {
-  const { identity, claimed, drawn } = await poolClaimed("released-bearer");
+  const { identity, claimed, drawn } = await runnerClaimed("released-bearer");
   const bearer = asAttemptCapabilitySecret(drawn.bearer);
   assert.notEqual(
     await postgresWorkerPlaneAuthority(harnessPlanePool).authenticate(bearer),
@@ -1443,7 +1485,7 @@ test("a released attempt's bearer is answered as one never issued", async () => 
 
 /**
  * The heartbeat a harness sends for this bearer and generation, asking for a
- * lease shorter than any a pool is given.
+ * lease shorter than any a runner is given.
  */
 function poolHeartbeat(bearer: string, generation: number): Promise<boolean> {
   return postgresWorkerAttemptHeartbeats(harnessPlanePool).heartbeat(
@@ -1454,12 +1496,12 @@ function poolHeartbeat(bearer: string, generation: number): Promise<boolean> {
 }
 
 /**
- * A pool's polls lease the attempt it claimed, so the heartbeat of the harness
- * it launched answers whether that lease holds the attempt live and writes
+ * A runner's polls lease the attempt it claimed, so the heartbeat of the
+ * harness it launched answers whether that lease holds the attempt live and writes
  * nothing, however short a lease the harness asks for.
  */
-test("a harness a pool launched is answered live by its heartbeat, which renews nothing", async () => {
-  const live = await poolClaimed("heartbeat-live");
+test("a harness a runner launched is answered live by its heartbeat, which renews nothing", async () => {
+  const live = await runnerClaimed("heartbeat-live");
   const { bearer } = live.drawn;
   const { generation } = live.claimed.opened;
   const before = await poolClaimRow(live.project, live.claimed.attempt);
@@ -1489,8 +1531,8 @@ test("a harness a pool launched is answered live by its heartbeat, which renews 
   );
 });
 
-test("a pool's harness is answered stop once its attempt is refused, reported, never claimed, or recovered from", async () => {
-  const refused = await poolClaimed("heartbeat-refused");
+test("a runner's harness is answered stop once its attempt is refused, reported, never claimed, or recovered from", async () => {
+  const refused = await runnerClaimed("heartbeat-refused");
   assert.equal(
     await assignments.refuse(
       refused.identity,
@@ -1507,7 +1549,7 @@ test("a pool's harness is answered stop once its attempt is refused, reported, n
     false,
     "a refused assignment is not live",
   );
-  const reported = await poolClaimed("heartbeat-reported");
+  const reported = await runnerClaimed("heartbeat-reported");
   assert.equal(
     (
       await postgresWorkerReportStore(
@@ -1535,9 +1577,9 @@ test("a pool's harness is answered stop once its attempt is refused, reported, n
       unclaimed.opened.generation,
     ),
     false,
-    "an attempt no pool claimed is not a pool's",
+    "an attempt no runner claimed is not a runner's",
   );
-  const recovered = await poolClaimed("heartbeat-recovered");
+  const recovered = await runnerClaimed("heartbeat-recovered");
   await rig.harness.store.establishRecoveryEpoch(postgresHarnessNewEpoch());
   assert.equal(
     await poolHeartbeat(
@@ -1545,7 +1587,7 @@ test("a pool's harness is answered stop once its attempt is refused, reported, n
       recovered.claimed.opened.generation,
     ),
     false,
-    "a recovery fences what the last epoch's pool claimed",
+    "a recovery fences what the last epoch's runner claimed",
   );
 });
 

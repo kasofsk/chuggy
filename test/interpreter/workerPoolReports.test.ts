@@ -56,6 +56,9 @@ function samples(
 const poolLabels =
   'tenant="acme",project="web",pool="pool-one",owner="",personal_runner="",host="build-box.local"';
 
+const personalLabels =
+  'tenant="acme",project="",pool="",owner="alice-id",personal_runner="chuggy-personal-one",host="build-box.local"';
+
 test("a pool's report is served under its tenant, project and pool, and a personal runner's under its owner's bare subject and its client", () => {
   const { reports } = holding();
   reports.reported(pool, workerRunnerReportLeast);
@@ -83,26 +86,26 @@ test("a personal runner under another issuer is served with no owner and no clie
 
 test("a report's counts are served under every label of their roster, and a field it left out is no series", () => {
   const { reports } = holding();
-  reports.reported(pool, workerRunnerReportLeast);
+  reports.reported(personal, workerRunnerReportLeast);
   assert.deepEqual(samples(reports, "chuggy_runner_settlements_total"), [
-    `chuggy_runner_settlements_total{${poolLabels},outcome="Accepted"} 3`,
-    `chuggy_runner_settlements_total{${poolLabels},outcome="Refused"} 0`,
-    `chuggy_runner_settlements_total{${poolLabels},outcome="Unavailable"} 0`,
+    `chuggy_runner_settlements_total{${personalLabels},outcome="Accepted"} 3`,
+    `chuggy_runner_settlements_total{${personalLabels},outcome="Refused"} 0`,
+    `chuggy_runner_settlements_total{${personalLabels},outcome="Unavailable"} 0`,
   ]);
   assert.deepEqual(samples(reports, "chuggy_runner_disk_free_bytes"), []);
   assert.deepEqual(
     samples(reports, "chuggy_runner_image_pull_seconds_bucket").slice(-1),
-    [`chuggy_runner_image_pull_seconds_bucket{${poolLabels},le="+Inf"} 1`],
+    [`chuggy_runner_image_pull_seconds_bucket{${personalLabels},le="+Inf"} 1`],
   );
   assert.deepEqual(samples(reports, "chuggy_runner_run_seconds_count"), [
-    `chuggy_runner_run_seconds_count{${poolLabels},kind="Job"} 0`,
-    `chuggy_runner_run_seconds_count{${poolLabels},kind="Session"} 0`,
+    `chuggy_runner_run_seconds_count{${personalLabels},kind="Job"} 0`,
+    `chuggy_runner_run_seconds_count{${personalLabels},kind="Session"} 0`,
   ]);
 });
 
 test("a report older than the age bound is no series, and the next one is served again", () => {
   const { clock, reports } = holding();
-  reports.reported(pool, workerRunnerReportLeast);
+  reports.reported(personal, workerRunnerReportLeast);
   clock.nowMs += workerPoolReportAgeMsMax;
   assert.equal(samples(reports, "chuggy_runner_uptime_seconds").length, 1);
   clock.nowMs += 1;
@@ -110,13 +113,13 @@ test("a report older than the age bound is no series, and the next one is served
     reports.families().flatMap((family): readonly unknown[] => family.samples),
     [],
   );
-  reports.reported(pool, workerRunnerReportLeast);
+  reports.reported(personal, workerRunnerReportLeast);
   assert.equal(samples(reports, "chuggy_runner_uptime_seconds").length, 1);
 });
 
 test("a runner that polls and never reports has no series; once it reports its poll's are served beside the report's, and both go when the report expires", () => {
   const { clock, reports } = holding();
-  reports.polled(pool, {
+  reports.polled(personal, {
     runner: { package: "chuggy-linux", version: "0.14.1" },
     memoryRoomMib: 512,
     memoryCeilingMib: 1_024,
@@ -126,32 +129,32 @@ test("a runner that polls and never reports has no series; once it reports its p
     [],
   );
   clock.nowMs += 1_000;
-  reports.reported(pool, workerRunnerReportLeast);
+  reports.reported(personal, workerRunnerReportLeast);
   assert.deepEqual(samples(reports, "chuggy_runner_info"), [
-    `chuggy_runner_info{${poolLabels},package="chuggy-linux",version="0.14.1"} 1`,
+    `chuggy_runner_info{${personalLabels},package="chuggy-linux",version="0.14.1"} 1`,
   ]);
   assert.deepEqual(
     samples(reports, "chuggy_runner_last_poll_timestamp_seconds"),
-    [`chuggy_runner_last_poll_timestamp_seconds{${poolLabels}} 1000`],
+    [`chuggy_runner_last_poll_timestamp_seconds{${personalLabels}} 1000`],
   );
   assert.deepEqual(
     samples(reports, "chuggy_runner_last_report_timestamp_seconds"),
-    [`chuggy_runner_last_report_timestamp_seconds{${poolLabels}} 1001`],
+    [`chuggy_runner_last_report_timestamp_seconds{${personalLabels}} 1001`],
   );
   assert.deepEqual(samples(reports, "chuggy_runner_memory_room_bytes"), [
-    `chuggy_runner_memory_room_bytes{${poolLabels}} 536870912`,
+    `chuggy_runner_memory_room_bytes{${personalLabels}} 536870912`,
   ]);
   assert.deepEqual(samples(reports, "chuggy_runner_memory_ceiling_bytes"), [
-    `chuggy_runner_memory_ceiling_bytes{${poolLabels}} 1073741824`,
+    `chuggy_runner_memory_ceiling_bytes{${personalLabels}} 1073741824`,
   ]);
   clock.nowMs += workerPoolReportAgeMsMax - 1;
-  reports.polled(pool, {});
+  reports.polled(personal, {});
   clock.nowMs += 2;
   assert.deepEqual(
     reports.families().flatMap((family): readonly unknown[] => family.samples),
     [],
   );
-  reports.reported(pool, workerRunnerReportLeast);
+  reports.reported(personal, workerRunnerReportLeast);
   assert.equal(
     samples(reports, "chuggy_runner_last_poll_timestamp_seconds").length,
     1,
