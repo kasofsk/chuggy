@@ -27,6 +27,7 @@ import { test } from "node:test";
 import {
   signInStoreAccessName,
   signInStoreEndedName,
+  signInStorePendingName,
 } from "../../src/contract/signInStore.ts";
 import {
   browsed,
@@ -99,11 +100,12 @@ test("a sign-in the person finishes is exchanged, remembered and said, on this m
   assert.equal(machine.file("sign-in.json"), undefined);
 });
 
-test("a sign-in the person finishes leaves neither record another program kept beside the site's token", async () => {
+test("a sign-in the person finishes leaves no record another program kept beside the site's token", async () => {
   const { installation, machine } = await installed();
   const records = [
     signInStoreAccessName(installation.site),
     signInStoreEndedName(installation.site),
+    signInStorePendingName(installation.site),
   ];
   mkdirSync(machine.store, { recursive: true, mode: 0o700 });
   for (const record of records)
