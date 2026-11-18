@@ -97,7 +97,7 @@ test("a newcomer with nothing is shown every step to do, and told how a workspac
 
 /** The rule a trip to GitHub names `bind` under, to run at once while the person makes it. */
 const bindNow =
-  "rule: Run the command on the next: line now, without asking the person, and tell them what the tell: line says. It waits until GitHub lets both apps into this folder's repository, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.";
+  "rule: Run the command on the next: line now, without asking the person, and tell them what the tell: line says. It waits until GitHub lets both apps into the repository the tell: line names, and then adds it where it is not added yet. Nothing has failed, so do not tell the person that it did or give them a deadline.";
 
 test("a person part-way is shown what is done, what is waited on and what is to do, and the first of them that is not done is what is next", async () => {
   const machine = await machineSignedIn(setupSiteAt("Portal"));
@@ -113,7 +113,7 @@ test("a person part-way is shown what is done, what is waited on and what is to 
       "step: repository  todo",
       "step: runner      todo",
       "step: ticket      todo",
-      `tell: Open ${pages}/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them.`,
+      `tell: Which repository is this project for? I could not tell this folder's, so name it on ${pages}/repositories?from=setup#add. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to your repository. That page then shows both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here and add it once both reach it.`,
       bindNow,
       `next: node ${machineScript} bind --workspace acme --project widgets`,
     ],
@@ -233,7 +233,7 @@ test("a repository whose own account lacks the worker app holds the GitHub step,
     "step: repository  done     acme-org/widgets",
   ]);
   expect(done.lines.slice(-3)).toEqual([
-    `tell: Open ${pages}/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them.`,
+    `tell: This project's repository is acme-org/widgets. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to acme-org/widgets. Open ${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets with both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here until both reach it.`,
     bindNow,
     `next: node ${machineScript} bind --workspace acme --project widgets`,
   ]);
