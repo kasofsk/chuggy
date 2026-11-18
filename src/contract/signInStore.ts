@@ -10,7 +10,7 @@
  * the hold may be kept until it nears its expiry.
  *
  * THE STORE IS ONE DIRECTORY the person alone reads, with a renewal file a
- * site, named by the site's origin, and two records beside it. A renewal file
+ * site, named by the site's origin, and three records beside it. A renewal file
  * holds the renewal token and a newline, and nothing else. A write is made
  * whole under a draft's name beside the file and renamed over it, so a reader
  * finds the old token or the new and never part of either; a draft a write
@@ -34,20 +34,38 @@
  * refused may write it, and a program that writes a renewal token removes it.
  * It never holds a token.
  *
+ * THE PENDING RECORD holds the site's one device sign-in (RFC 8628) the person
+ * has yet to approve: its device code, the user code and verification URIs a
+ * program shows, when it expires, how often the issuer may be polled and when
+ * it last was. Every process on the machine shows and polls that one, so the
+ * code the person was given is never a process's that has since exited. The
+ * device code becomes a sign-in for whoever holds it once approved, so it is
+ * kept as a renewal token is and never shown. Two facts its reader cannot
+ * gather here are handed in:
+ *
+ * - A PENDING RECORD BESIDE A RENEWAL TOKEN IS STALE. The reader is told whether
+ *   the site's renewal file exists, and where it does the record reads as
+ *   absent and the lock's holder may remove it. Its removal cannot be relied
+ *   on: an older program writes a renewal token knowing nothing of the record.
+ * - IT EXPIRES BY ITS OWN TIME. The reader is given the time, and a record past
+ *   its expiry reads as absent. The issuer never ends it: Hydra answers an
+ *   unused code `authorization_pending` before it checks the code's expiry
+ *   (`fosite/handler/rfc8628/token_handler.go`), and goes on doing so after.
+ *
  * THE RECORDS' NAMES are the site's file name joined to a word by `+`, which
- * `encodeURIComponent` never emits, so neither is a name `signInStoreFileName`
+ * `encodeURIComponent` never emits, so none is a name `signInStoreFileName`
  * gives any origin, nor the lock's. A `.` would not do: the access record of
  * `https://chug.gy` would be the renewal file of `https://chug.gy.access`,
  * which an older program would write over. Nor would `%`, whose
  * `<file>%2Baccess` is the file of `<origin>+access`. `signInStoreDraftOf`
- * reads a draft of either record as that record's, so every sweep, old or new,
+ * reads a draft of any record as that record's, so every sweep, old or new,
  * removes it.
  *
  * EVERY READ OF THE STORE, the access record's included, is made under the
  * lock, so a program arriving during another's renewal waits and reuses what
  * it wrote. A record that does not read as this module writes it is absent and
  * never an error: it costs one renewal, or the reason. Only the lock's holder
- * writes or removes either record, each as a renewal file is written: whole
+ * writes or removes any record, each as a renewal file is written: whole
  * under a draft's name, renamed over, readable by the person alone.
  *
  * THE LOCK IS A DIRECTORY in the store holding one entry, whose name is what
@@ -231,6 +249,86 @@ export function signInStoreEndedRead(
   text: string,
 ): SignInStoreEnded | undefined {
   return signInStoreRecordRead(signInStoreEndedSchema, text);
+}
+
+/** The pending record's name in the store, for a site's origin. */
+export function signInStorePendingName(origin: string): string {
+  return `${signInStoreFileName(origin)}+pending`;
+}
+
+/** The longest user code a pending record keeps, past any a person is asked to type. */
+export const signInStorePendingUserCodeCharsMax = 64;
+
+/** The longest verification URI a pending record keeps. */
+export const signInStorePendingUriCharsMax = 2_048;
+
+/** The longest polling interval a pending record keeps, past any an issuer asks for and every slowing it orders. */
+export const signInStorePendingIntervalSecsMax = 3_600;
+
+/** A device sign-in the person has yet to approve, as the issuer's device authorization answered it, with when it expires worked out by its writer from `expires_in`, and when the issuer was last polled, where it has been. */
+export interface SignInStorePending {
+  readonly deviceCode: string;
+  readonly userCode: string;
+  readonly verificationUri: string;
+  readonly verificationUriComplete?: string | undefined;
+  readonly expiresAtMs: number;
+  readonly intervalSecs: number;
+  readonly polledAtMs?: number | undefined;
+}
+
+/** What a pending record's reader is told: whether the site's renewal file exists, and the time. */
+export interface SignInStorePendingReading {
+  readonly renewalHeld: boolean;
+  readonly nowMs: number;
+}
+
+const signInStorePendingUri = z
+  .string()
+  .max(signInStorePendingUriCharsMax)
+  .regex(/^https?:\/\/[\x21-\x7e]+$/u);
+
+const signInStorePendingMs = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER);
+
+const signInStorePendingSchema = z.strictObject({
+  deviceCode: z.string().regex(signInStoreTokenPattern),
+  userCode: z
+    .string()
+    .regex(
+      new RegExp(
+        `^[\\x21-\\x7e]{1,${String(signInStorePendingUserCodeCharsMax)}}$`,
+        "u",
+      ),
+    ),
+  verificationUri: signInStorePendingUri,
+  verificationUriComplete: signInStorePendingUri.optional(),
+  expiresAtMs: signInStorePendingMs,
+  intervalSecs: z
+    .number()
+    .int()
+    .positive()
+    .max(signInStorePendingIntervalSecsMax),
+  polledAtMs: signInStorePendingMs.optional(),
+});
+
+/** What a pending record holds. */
+export function signInStorePendingText(pending: SignInStorePending): string {
+  return `${JSON.stringify(signInStorePendingSchema.parse(pending))}\n`;
+}
+
+/** The site's pending device sign-in, or nothing where the record is no record this module wrote, the site holds a renewal token, or the sign-in has expired. */
+export function signInStorePendingRead(
+  text: string,
+  reading: SignInStorePendingReading,
+): SignInStorePending | undefined {
+  if (reading.renewalHeld) return undefined;
+  const read = signInStoreRecordRead(signInStorePendingSchema, text);
+  return read !== undefined && reading.nowMs < read.expiresAtMs
+    ? read
+    : undefined;
 }
 
 const signInStoreDraftSuffix = ".draft";

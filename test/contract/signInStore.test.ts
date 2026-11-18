@@ -28,6 +28,12 @@ import {
   signInStoreLockSecsMax,
   signInStoreLockStale,
   signInStoreLockWord,
+  signInStorePendingIntervalSecsMax,
+  signInStorePendingName,
+  signInStorePendingRead,
+  signInStorePendingText,
+  signInStorePendingUriCharsMax,
+  signInStorePendingUserCodeCharsMax,
   signInStorePlatforms,
   signInStoreText,
   signInStoreTokenRead,
@@ -229,4 +235,94 @@ test("an ended record that is empty, cut short, past its bounds, misshapen or ho
     `${JSON.stringify({ error: "invalid_grant" })}\n`,
   ])
     assert.equal(signInStoreEndedRead(other), undefined, other);
+});
+
+test("the pending record's name is no origin's file, an origin with its word added included, nor the lock's, a draft's or another record's, and its draft reads as its own", () => {
+  const name = signInStorePendingName(origin);
+  assert.notEqual(name, signInStoreLockName);
+  assert.equal(signInStoreDraftOf(name), undefined);
+  assert.notEqual(name, signInStoreAccessName(origin));
+  assert.notEqual(name, signInStoreEndedName(origin));
+  for (const other of [
+    origin,
+    `${origin}.pending`,
+    `${origin}+pending`,
+    `${origin}%2Bpending`,
+    decodeURIComponent(name),
+  ])
+    assert.notEqual(name, signInStoreFileName(other), other);
+  assert.ok(/[^A-Za-z0-9\-_.!~*'()%]/u.test(name));
+  assert.equal(signInStoreDraftOf(signInStoreDraftName(name, 4242)), name);
+});
+
+const pending = {
+  deviceCode: "GmRhmhcxhwAzkoEqiMEg_DnyEysNkuNhszIySk9eS",
+  userCode: "WDJB-MJHT",
+  verificationUri: "https://chug.gy/device",
+  verificationUriComplete: "https://chug.gy/device?user_code=WDJB-MJHT",
+  expiresAtMs: 1_800_000_000_000,
+  intervalSecs: 5,
+  polledAtMs: 1_799_999_990_000,
+};
+
+const pendingAt = { renewalHeld: false, nowMs: 1_799_999_999_999 };
+
+test("a pending record reads back what was written, with or without the complete URI or a poll", () => {
+  assert.deepEqual(
+    signInStorePendingRead(signInStorePendingText(pending), pendingAt),
+    pending,
+  );
+  const bare = {
+    deviceCode: pending.deviceCode,
+    userCode: pending.userCode,
+    verificationUri: pending.verificationUri,
+    expiresAtMs: pending.expiresAtMs,
+    intervalSecs: pending.intervalSecs,
+  };
+  assert.deepEqual(
+    signInStorePendingRead(signInStorePendingText(bare), pendingAt),
+    bare,
+  );
+});
+
+test("a pending record beside a renewal token, or at or past its expiry, reads as absent", () => {
+  const text = signInStorePendingText(pending);
+  assert.equal(
+    signInStorePendingRead(text, { ...pendingAt, renewalHeld: true }),
+    undefined,
+  );
+  for (const nowMs of [pending.expiresAtMs, pending.expiresAtMs + 1])
+    assert.equal(
+      signInStorePendingRead(text, { renewalHeld: false, nowMs }),
+      undefined,
+      String(nowMs),
+    );
+});
+
+test("a pending record that is empty, cut short, past its bounds or misshapen reads as absent", () => {
+  const text = signInStorePendingText(pending);
+  const raw = (fields: object) =>
+    `${JSON.stringify({ ...pending, ...fields })}\n`;
+  const uri = `https://chug.gy/${"u".repeat(signInStorePendingUriCharsMax)}`;
+  for (const other of [
+    "",
+    "\n",
+    text.slice(0, -1),
+    text.slice(0, text.length / 2),
+    raw({ deviceCode: "d".repeat(8193) }),
+    raw({ deviceCode: "two words" }),
+    raw({ deviceCode: "" }),
+    raw({ userCode: "c".repeat(signInStorePendingUserCodeCharsMax + 1) }),
+    raw({ userCode: "WDJB MJHT" }),
+    raw({ verificationUri: uri }),
+    raw({ verificationUri: "chug.gy/device" }),
+    raw({ verificationUriComplete: "javascript:alert(1)" }),
+    raw({ expiresAtMs: 1.5 }),
+    raw({ intervalSecs: 0 }),
+    raw({ intervalSecs: signInStorePendingIntervalSecsMax + 1 }),
+    raw({ polledAtMs: -1 }),
+    raw({ refreshToken: "renewal-1" }),
+    `${JSON.stringify({ deviceCode: pending.deviceCode })}\n`,
+  ])
+    assert.equal(signInStorePendingRead(other, pendingAt), undefined, other);
 });
