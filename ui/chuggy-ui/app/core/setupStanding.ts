@@ -50,7 +50,12 @@ import type {
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
 import { forgeAccountRows, forgeInstallOffered } from "./forgeInstallation.ts";
-import { runnerWait, runnerWaitPoolRoom, runnerWaitRoom } from "./myRunner.ts";
+import {
+  runnerWait,
+  runnerWaitPause,
+  runnerWaitPoolRoom,
+  runnerWaitRoom,
+} from "./myRunner.ts";
 import type { ForgeAccountRow } from "./forgeInstallation.ts";
 import {
   repositoriesWorkerless,
@@ -173,7 +178,7 @@ export type SetupLack =
 
 type TicketPhase = TicketResponse["phase"];
 
-/** What a ticket's starting execution waits on of the person's runners, beyond waiting: too little memory free on them for the run, their being offline, or none of them able to run it; or else too little memory free on the project's pools. */
+/** What a ticket's starting execution waits on of the person's runners, beyond waiting: too little memory free on them for the run, their being offline, none of them able to run it, or their agent account paused on its usage or its provider's limit; or else too little memory free on the project's pools. */
 export type SetupRunnerWait =
   | {
       readonly wait: "Room" | "PoolRoom";
@@ -181,7 +186,8 @@ export type SetupRunnerWait =
       readonly neededMib: number;
     }
   | { readonly wait: "Offline" }
-  | { readonly wait: "Unable" };
+  | { readonly wait: "Unable" }
+  | { readonly wait: "Paused" };
 
 /**
  * One app that is not granted the folder's repository, and where it is given
@@ -1093,6 +1099,9 @@ function setupRunnerWaitPersonal(
     (execution) => runnerWait(execution) !== undefined,
   );
   if (starting === undefined) return undefined;
+  const paused = runnerWaitPause(starting, runnerWait(starting));
+  if (paused?.reasons.some((reason) => reason !== "off") === true)
+    return { wait: "Paused" };
   const room = runnerWaitRoom(starting);
   if (room !== undefined)
     return { wait: "Room", freeMib: room.freeMib, neededMib: room.neededMib };

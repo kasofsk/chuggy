@@ -32,7 +32,12 @@
  * on another machine instead; where the machine could not take a runner, they
  * are told that instead. A chat host lacking is never the next thing.
  * Where a personal runner of theirs is registered and does not take the
- * project's work, `serve` is offered on the person's yes.
+ * project's work, `serve` is offered on the person's yes. Where the first
+ * ticket is next, or waits on the person's account paused, and their usage
+ * is over a threshold raising would lift, that is said first and `usage`
+ * offered on their yes, and on their no the checklist is read past it and
+ * never asks again; where raising would not help, that is said beside the
+ * next thing, with when the ticket starts by itself.
  * `setupMend` is where each thing a step can lack is turned into its next
  * thing; the slice that gives a step its command changes that step's line
  * there and nowhere else. A tell says of a page only what is pressed there:
@@ -53,7 +58,7 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { RepositoryConfigurationImportAttemptResponse } from "../../../../src/contract/responses.ts";
 import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type { Copy, CopyArgument } from "./copy.ts";
-import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
+import { instantText, memoryMibFigure, quantityFigureCopy } from "./figures.ts";
 import { claudeCodeRunnerLine } from "./claudeCodeLine.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
 import { repositoryAddAnchor, repositoryLabel } from "./projectRepositories.ts";
@@ -66,19 +71,25 @@ import {
   repositoryImportWordLabel,
 } from "./repositoryImport.ts";
 import type { SetupMcpPackaged } from "./setupAgent.ts";
-import { setupAnswersPlugin, setupNameFlag } from "./setupArguments.ts";
+import {
+  setupAnswersCarried,
+  setupNameFlag,
+  setupUsageKeep,
+} from "./setupArguments.ts";
 import { setupConfigurationPath } from "./setupConfiguration.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
 import { setupMergeImportFailed } from "./setupMerge.ts";
 import type { SetupHistory, SetupMergeSince } from "./setupMerge.ts";
 import type { SetupPlatform } from "./setupPorts.ts";
 import type { SetupChoice } from "./setupReads.ts";
+import { setupUsageWindowSaid } from "./setupReport.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
 import type { SetupFit } from "./setupFit.ts";
 import type { SetupRunnerHeld, SetupRunnerHere } from "./setupRunnerMachine.ts";
 import { setupTicketAgentsPath } from "./setupTicket.ts";
 import type { SetupTicketOffers } from "./setupTicket.ts";
 import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
+import type { SetupUsage, SetupUsageOver } from "./setupUsage.ts";
 import {
   setupClaudeSaved,
   setupClaudeWords,
@@ -859,7 +870,8 @@ function setupBriefAsked(
 
 /** What a ticket's starting execution waits on of the person's runners or the project's pools, as the finalization tell says it: the fact, and no remedy. */
 function setupWaitSaid(wait: SetupRunnerWait | undefined): {
-  readonly wait: "room" | "pool-room" | "offline" | "unable" | "none";
+  readonly wait:
+    "room" | "pool-room" | "offline" | "unable" | "paused" | "none";
   readonly free: CopyArgument;
   readonly needed: CopyArgument;
 } {
@@ -880,6 +892,8 @@ function setupWaitSaid(wait: SetupRunnerWait | undefined): {
       return { wait: "offline", free: "", needed: "" };
     case "Unable":
       return { wait: "unable", free: "", needed: "" };
+    case "Paused":
+      return { wait: "paused", free: "", needed: "" };
     case undefined:
       return { wait: "none", free: "", needed: "" };
   }
@@ -1082,19 +1096,19 @@ function setupAsk(
   };
 }
 
-/** The workspace and project a checklist's commands carry: none where there was nothing to choose, and otherwise the choice as far as it is made; and the plugin step passed over, where it was. */
+/** The workspace and project a checklist's commands carry: none where there was nothing to choose, and otherwise the choice as far as it is made; and the answers every command carries, where they were given. */
 function setupCarried(
   choice: SetupChoice,
   answers: SetupAnswers,
 ): SetupAnswers {
-  const plugin = setupAnswersPlugin(answers);
+  const carried = setupAnswersCarried(answers);
   if (choice.choice === "Made")
     return choice.by === "Only"
       ? answers
-      : { workspace: choice.workspace, project: choice.project, ...plugin };
+      : { workspace: choice.workspace, project: choice.project, ...carried };
   return choice.open === "workspace"
-    ? { workspace: undefined, project: answers.project, ...plugin }
-    : { workspace: choice.workspace, project: undefined, ...plugin };
+    ? { workspace: undefined, project: answers.project, ...carried }
+    : { workspace: choice.workspace, project: undefined, ...carried };
 }
 
 /** What setup said to be done says of the repository's own configuration, after a `merge` run: in place, being imported, or refused by its import with what the import said. */
@@ -1341,6 +1355,105 @@ export function setupWatchAwaited(standing: SetupStanding): boolean {
   return setupDue(standing, ["Landing"]) !== undefined;
 }
 
+/** Where the person's usage is read: before the project's first ticket, or while it waits on their account paused. */
+export function setupUsageDue(
+  standing: SetupStanding,
+): "Ticket" | "Landing" | undefined {
+  if (setupTicketDue(standing) !== undefined) return "Ticket";
+  if (setupDue(standing, ["Landing"]) === undefined) return undefined;
+  const lack = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
+  return lack?.lacks === "Landing" && lack.wait?.wait === "Paused"
+    ? "Landing"
+    : undefined;
+}
+
+/** The windows over their thresholds, each figure said whole, and the threshold offered in place of each, as one sentence says one or both. */
+function setupUsageOverSaid(over: readonly SetupUsageOver[]): Copy {
+  const [first, second] = over;
+  if (first === undefined) throw new Error("a usage over names a window");
+  const one = {
+    reading: String(first.reading),
+    window: setupUsageWindowSaid(first.window),
+    threshold: String(first.threshold),
+    offered: String(first.offered),
+  };
+  if (second === undefined) return { id: "setup-usage-over", args: one };
+  return {
+    id: "setup-usage-over-both",
+    args: {
+      ...one,
+      readingOther: String(second.reading),
+      windowOther: setupUsageWindowSaid(second.window),
+      thresholdOther: String(second.threshold),
+      offeredOther: String(second.offered),
+    },
+  };
+}
+
+/** What the person's usage holds their work to, said where raising a threshold would not help, with when it lifts where the read says. */
+function setupUsageUnraisedSaid(
+  usage: Exclude<SetupUsage, { readonly usage: "Over" }>,
+  nowMs: number,
+): Copy {
+  const now = new Date(nowMs);
+  if (usage.usage === "Full")
+    return {
+      id: "setup-usage-full",
+      args: {
+        reading: String(usage.reading),
+        window: setupUsageWindowSaid(usage.window),
+        resets: instantText(new Date(usage.resetsAt), now),
+      },
+    };
+  return usage.resetsAt === undefined
+    ? { id: "setup-usage-limit", args: { resets: "unknown", at: "" } }
+    : {
+        id: "setup-usage-limit",
+        args: {
+          resets: "known",
+          at: instantText(new Date(usage.resetsAt), now),
+        },
+      };
+}
+
+/** What the person's usage says beside the next thing: where raising would lift it and they have not said no, the offer, which is the next thing; where raising would not help, a line said before it. */
+interface SetupUsageThing {
+  readonly thing: SetupThing | undefined;
+  readonly said: Copy | undefined;
+}
+
+/** What the person's usage holds their work to, as read at `nowMs`. */
+export interface SetupUsageRead {
+  readonly usage: SetupUsage;
+  readonly nowMs: number;
+}
+
+function setupUsageThing(
+  standing: SetupStanding,
+  answers: SetupAnswers,
+  read: SetupUsageRead | undefined,
+): SetupUsageThing {
+  const due = setupUsageDue(standing);
+  if (read === undefined || due === undefined)
+    return { thing: undefined, said: undefined };
+  const { usage, nowMs } = read;
+  if (usage.usage !== "Over")
+    return { thing: undefined, said: setupUsageUnraisedSaid(usage, nowMs) };
+  if (answers.usage === setupUsageKeep || standing.choice.choice === "Open")
+    return { thing: undefined, said: undefined };
+  return {
+    thing: {
+      thing: "Usage",
+      tell: setupUsageOverSaid(usage.over),
+      over: usage.over,
+      then: due === "Ticket" ? "Status" : "Watch",
+      workspace: standing.choice.workspace ?? "",
+      project: standing.choice.project ?? "",
+    },
+    said: undefined,
+  };
+}
+
 /** The platform the program runs on, and what `mcp` would find of its runner package here. */
 interface SetupMcpHere {
   readonly platform: SetupPlatform;
@@ -1399,7 +1512,9 @@ function setupThing(
  * would find of the platform's runner package here, where `setupMcpDue`
  * named one; `offers` is what a ticket may be drawn under where
  * `setupTicketDue` named a project and it was read; `merge` is what the merge
- * offer turns on beyond the reads.
+ * offer turns on beyond the reads; `usage` is what the person's usage holds
+ * their work to, where `setupUsageDue` named where and it was read, at
+ * `nowMs`.
  */
 export function setupNext(
   standing: SetupStanding,
@@ -1409,9 +1524,14 @@ export function setupNext(
   packaged: SetupMcpPackaged = { packaged: "Absent" },
   offers?: SetupTicketOffers,
   merge: SetupMergeSeen = setupMergeUnseen,
+  usage?: SetupUsageRead,
 ): SetupNext {
-  return {
-    carried: setupCarried(standing.choice, answers),
-    thing: setupThing(standing, here, { platform, packaged }, offers, merge),
-  };
+  const carried = setupCarried(standing.choice, answers);
+  const said = setupUsageThing(standing, answers, usage);
+  const thing =
+    said.thing ??
+    setupThing(standing, here, { platform, packaged }, offers, merge);
+  return said.said === undefined
+    ? { carried, thing }
+    : { carried, thing, usage: said.said };
 }
