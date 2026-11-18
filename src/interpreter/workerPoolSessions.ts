@@ -21,12 +21,11 @@
  * was built from are still the session's — so a session another host claimed
  * in between is skipped and one this host has no room for ends the claims.
  *
- * A CHAT HOST CLAIMS ITS OWNER'S THREADS; A POOL CLAIMS NONE, and only holds
- * and settles what it claimed, and A PERSONAL RUNNER CLAIMS AND HOLDS NO
- * SESSION, so nothing here is asked of one. A session whose account has paused
- * its agent is not read as waiting, where that account's options say its kind
- * pauses, and the durable side reads the pause again under the lock that
- * opens it.
+ * ONLY A CHAT HOST CLAIMS, HOLDS AND SETTLES A SESSION, and only its owner's
+ * threads; A PERSONAL RUNNER CLAIMS AND HOLDS NONE, so nothing here is asked
+ * of one. A session whose account has paused its agent is not read as
+ * waiting, where that account's options say its kind pauses, and the durable
+ * side reads the pause again under the lock that opens it.
  *
  * A CHAT HOST'S OWNER MUST STILL READ THE PROJECT. Its candidates span every
  * project of its tenant, and the authority answers whether its owner may still
