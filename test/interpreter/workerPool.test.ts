@@ -219,17 +219,31 @@ function asked(over: Partial<WorkerPoolAsked> = {}): WorkerPoolAsked {
 
 const nothingHeld = { jobs: [], sessions: [] };
 
-test("a claim is asked for only as far as the pool's remaining room", async () => {
+/** A durable side holding nothing, its runner allowlisting `project`. */
+const allowlisting: WorkerPoolAssignments = {
+  ...idle,
+  allowlisted: () => Promise.resolve([asProjectId("project")]),
+};
+
+/** What a runner's claim of `requirement` in `project` answers. */
+function claimedThere(
+  requirement: ExecutionRequirement,
+  claimed: Omit<WorkerPoolClaimed, "requirement"> = {},
+) {
+  return { requirement, ...claimed, project: asProjectId("project") };
+}
+
+test("a claim is asked for only as far as the runner's remaining room", async () => {
   let asked = 0;
   const answered = await workerPoolReconcile(
     ports({
-      ...idle,
-      claim: () => {
+      ...allowlisting,
+      claimPersonal: () => {
         asked += 1;
-        return Promise.resolve({ requirement: container });
+        return Promise.resolve(claimedThere(container));
       },
     }),
-    identity,
+    runner,
     { jobs: ["one"], sessions: [] },
     { wanted: settings.assignmentsPerPollMax, wantedSessions: 0 },
     settings,
@@ -238,22 +252,22 @@ test("a claim is asked for only as far as the pool's remaining room", async () =
   assert.equal(answered.assignments.length, 1);
 });
 
-test("a pool wanting none is claimed nothing and still renewed and told what to stop", async () => {
+test("a runner wanting none is claimed nothing and still renewed and told what to stop", async () => {
   let asked = 0;
   const renewed: string[] = [];
   const answered = await workerPoolReconcile(
     ports({
-      ...idle,
-      claim: () => {
+      ...allowlisting,
+      claimPersonal: () => {
         asked += 1;
-        return Promise.resolve({ requirement: container });
+        return Promise.resolve(claimedThere(container));
       },
       renew: (_identity, assignment) => {
         renewed.push(assignment);
         return Promise.resolve(assignment === "live");
       },
     }),
-    identity,
+    runner,
     { jobs: ["live", "gone"], sessions: [] },
     { wanted: 0, wantedSessions: 0 },
     { ...settings, heldMax: 4 },
@@ -263,10 +277,10 @@ test("a pool wanting none is claimed nothing and still renewed and told what to 
   assert.deepEqual(answered, { assignments: [], sessions: [], stop: ["gone"] });
 });
 
-test("a pool wanting more than the plane allows is claimed the plane's bound", async () => {
+test("a runner wanting more than the plane allows is claimed the plane's bound", async () => {
   const claiming = ports({
-    ...idle,
-    claim: () => Promise.resolve({ requirement: container }),
+    ...allowlisting,
+    claimPersonal: () => Promise.resolve(claimedThere(container)),
   });
   const wanted = {
     wanted: settings.assignmentsPerPollMax + 5,
@@ -274,7 +288,7 @@ test("a pool wanting more than the plane allows is claimed the plane's bound", a
   };
   const perPoll = await workerPoolReconcile(
     claiming,
-    identity,
+    runner,
     nothingHeld,
     wanted,
     { ...settings, heldMax: 10 },
@@ -282,7 +296,7 @@ test("a pool wanting more than the plane allows is claimed the plane's bound", a
   assert.equal(perPoll.assignments.length, settings.assignmentsPerPollMax);
   const room = await workerPoolReconcile(
     claiming,
-    identity,
+    runner,
     { jobs: ["one"], sessions: [] },
     wanted,
     { ...settings, assignmentsPerPollMax: 10 },
@@ -291,7 +305,7 @@ test("a pool wanting more than the plane allows is claimed the plane's bound", a
 });
 
 /**
- * The one assignment a poll hands out when the durable side claims
+ * The one assignment a runner's poll hands out when the durable side claims
  * `requirement`, beside the runtime and the size `claimed` names; and the
  * terms the claim was held to.
  */
@@ -306,15 +320,15 @@ async function reconciledOne(
   const terms: WorkerPoolClaimTerms[] = [];
   const answered = await workerPoolReconcile(
     ports({
-      ...idle,
-      claim: (_identity, held) => {
+      ...allowlisting,
+      claimPersonal: (_identity, held) => {
         terms.push(held);
         return Promise.resolve(
-          terms.length === 1 ? { requirement, ...claimed } : undefined,
+          terms.length === 1 ? claimedThere(requirement, claimed) : undefined,
         );
       },
     }),
-    identity,
+    runner,
     nothingHeld,
     { wanted: 1, wantedSessions: 0 },
     polled,
@@ -360,7 +374,7 @@ test("an image pinned on a published host is handed out under the public host, i
 /** The runtime an attempt kept, on the host the plane publishes under its public one. */
 const runtime = `registry.chuggy.internal/chuggy/worker-runtime@sha256:${"e".repeat(64)}`;
 
-test("a pool that reads a runtime is handed its attempt's, under the public host, beside the image and beside none", async () => {
+test("a runner that reads a runtime is handed its attempt's, under the public host, beside the image and beside none", async () => {
   const hosted = `registry.public.invalid/chuggy/worker-runtime@sha256:${"e".repeat(64)}`;
   const pinned = await reconciledOne(container, settings, { runtime });
   assert.equal(pinned.assignment["runtime"], hosted);
@@ -388,7 +402,7 @@ test("a pool that reads a runtime is handed its attempt's, under the public host
   assert.equal(unpublished.assignment["runtime"], runtime);
 });
 
-test("an attempt that kept no runtime hands none to a pool", async () => {
+test("an attempt that kept no runtime hands none to a runner", async () => {
   const unkept = await reconciledOne(container);
   assert.equal("runtime" in unkept.assignment, false);
   assert.equal(
@@ -433,7 +447,7 @@ test("a capability requirement is handed out with its platform and capabilities 
   assert.equal("image" in assignment, false);
 });
 
-test("capabilities a project named for itself reach the pool as it named them", async () => {
+test("capabilities a project named for itself reach the runner as it named them", async () => {
   const { assignment } = await reconciledOne({
     mode: "Capability",
     operatingSystem: "MacOS",
@@ -458,7 +472,7 @@ test("a room, a memory ceiling, a memory room or a wait that is not a whole coun
       [{ pollWaitSecs: room }, /pollWaitSecs must/u],
     ] as const)
       await assert.rejects(
-        () => workerPoolPoll(ports(), identity, asked(over), settings),
+        () => workerPoolPoll(ports(), runner, asked(over), settings),
         refusal,
         JSON.stringify(over),
       );
@@ -486,7 +500,7 @@ test("a held list longer than either kind's bound is refused whole rather than c
   ] as const)
     assert.equal(
       (
-        await workerPoolPoll(ports(idle, store), identity, asked({ held }), {
+        await workerPoolPoll(ports(idle, store), host, asked({ held }), {
           ...settings,
           pollsMax: 1,
         })
@@ -531,7 +545,7 @@ test("a bound that is not a positive whole number refuses the poll", async () =>
   ] as const)
     await assert.rejects(
       () =>
-        workerPoolPoll(ports(), identity, asked({ wanted: 1 }), {
+        workerPoolPoll(ports(), runner, asked({ wanted: 1 }), {
           ...settings,
           [bound]: 0,
         }),
@@ -543,13 +557,13 @@ test("a long poll reconciles to its bound and answers empty rather than waiting 
   let passes = 0;
   const answered = await workerPoolPoll(
     ports({
-      ...idle,
-      claim: () => {
+      ...allowlisting,
+      claimPersonal: () => {
         passes += 1;
         return Promise.resolve(undefined);
       },
     }),
-    identity,
+    runner,
     asked({ wanted: 1 }),
     settings,
   );
@@ -570,7 +584,7 @@ test("a long poll stops at the first pass with a stop flag to deliver", async ()
         return Promise.resolve(false);
       },
     }),
-    identity,
+    runner,
     asked({ held: ["one"], wanted: 1 }),
     settings,
   );
@@ -970,7 +984,7 @@ test("a plane naming no session API, or with no launch published, claims no sess
   assert.deepEqual(unpublished.asked, []);
 });
 
-test("each kind a pool holds is renewed through its own rows, and a session no longer live is on stop", async () => {
+test("each kind a chat host holds is renewed through its own rows, and a session no longer live is on stop", async () => {
   const renewedJobs: string[] = [];
   const renewedSessions: string[] = [];
   const polled = await workerPoolPoll(
@@ -989,7 +1003,7 @@ test("each kind a pool holds is renewed through its own rows, and a session no l
         },
       }),
     ),
-    identity,
+    host,
     asked({ held: ["job", "s-live", "s-gone"] }),
     settings,
   );
@@ -1001,7 +1015,7 @@ test("each kind a pool holds is renewed through its own rows, and a session no l
   );
 });
 
-test("only a poll from a pool able to take a session, to a plane able to hand one out, is recorded as one, once however long it waits", async () => {
+test("only a poll from a chat host able to take a session, to a plane able to hand one out, is recorded as one, once however long it waits", async () => {
   for (const [over, recordedOnce, terms] of [
     [{ wantedSessions: 1 }, true, settings],
     [{ held: ["s1"] }, true, settings],
@@ -1019,7 +1033,7 @@ test("only a poll from a pool able to take a session, to a plane able to hand on
           },
         }),
       ),
-      identity,
+      host,
       asked(over),
       terms,
     );
@@ -1042,7 +1056,7 @@ test("every poll the plane answers keeps the runner it named, or none where it n
           return Promise.resolve();
         },
       }),
-      identity,
+      runner,
       asked(over),
       settings,
     );
@@ -1056,7 +1070,7 @@ test("every poll the plane answers keeps the runner it named, or none where it n
         return Promise.resolve();
       },
     }),
-    identity,
+    runner,
     asked({ held: ["j1", "j2", "j3"], runner: named }),
     settings,
   );
@@ -1074,8 +1088,8 @@ test("a poll naming capabilities keeps them before anything is claimed, once how
     await workerPoolPoll(
       ports(
         {
-          ...idle,
-          claim: () => {
+          ...allowlisting,
+          claimPersonal: () => {
             made.push("claim");
             return Promise.resolve(undefined);
           },
@@ -1090,7 +1104,7 @@ test("a poll naming capabilities keeps them before anything is claimed, once how
           },
         },
       ),
-      identity,
+      runner,
       asked({ wanted: 1, ...over }),
       settings,
     );
@@ -1112,8 +1126,8 @@ test("a poll naming a memory ceiling keeps it before anything is claimed, and ev
     await workerPoolPoll(
       ports(
         {
-          ...idle,
-          claim: (_identity, terms) => {
+          ...allowlisting,
+          claimPersonal: (_identity, terms) => {
             made.push(["claim", terms]);
             return Promise.resolve(undefined);
           },
@@ -1128,7 +1142,7 @@ test("a poll naming a memory ceiling keeps it before anything is claimed, and ev
           },
         },
       ),
-      identity,
+      runner,
       asked({ wanted: 1, ...over }),
       { ...settings, pollsMax: 1 },
     );
@@ -1142,6 +1156,7 @@ test("a poll naming a memory ceiling keeps it before anything is claimed, and ev
             leaseSecs: settings.leaseSecs,
             heldMax: settings.heldMax,
             memoryMibDefault: settings.memoryMib,
+            runnerBenchesCredential: false,
           },
         ],
       ],
@@ -1284,14 +1299,13 @@ test("a claim that took a job larger than the room its poll named fails the poll
   await assert.rejects(
     workerPoolReconcile(
       ports({
-        ...idle,
-        claim: () =>
-          Promise.resolve({
-            requirement: container,
-            resources: { memoryMib: 4_097 },
-          }),
+        ...allowlisting,
+        claimPersonal: () =>
+          Promise.resolve(
+            claimedThere(container, { resources: { memoryMib: 4_097 } }),
+          ),
       }),
-      identity,
+      runner,
       nothingHeld,
       {
         wanted: 1,
@@ -1380,7 +1394,7 @@ test("a poll naming its room whose release reads it is told whether a job it fit
     const durable = sized(sizes);
     const answered = await workerPoolReconcile(
       ports(durable.assignments),
-      identity,
+      runner,
       nothingHeld,
       {
         wanted: 0,
@@ -1405,7 +1419,7 @@ test("a poll wanting no job is answered at once when one it fits is waiting, and
     const durable = sized([3_000]);
     const answered = await workerPoolPoll(
       ports(durable.assignments),
-      identity,
+      runner,
       asked({
         memoryRoomMib: room,
         contract: workerContractPeerNaming(workerContractRelease),
@@ -1431,10 +1445,10 @@ test("a poll's wait bounds its passes: one where it is 0, those it leaves time f
     let claimed = 0;
     await workerPoolPoll(
       ports({
-        ...idle,
-        claim: () => Promise.resolve(void (claimed += 1)),
+        ...allowlisting,
+        claimPersonal: () => Promise.resolve(void (claimed += 1)),
       }),
-      identity,
+      runner,
       asked({ wanted: 1, ...over }),
       polled,
     );
@@ -1463,14 +1477,14 @@ test("a settlement is made against the kind its assignment is", async () => {
     holdingSessions(["s1"], recording("session")),
   );
   for (const assignment of ["s1", "j1"]) {
-    await workerPoolSettled(settling, identity, assignment, {
+    await workerPoolSettled(settling, host, assignment, {
       outcome: "Accepted",
     });
-    await workerPoolSettled(settling, identity, assignment, {
+    await workerPoolSettled(settling, host, assignment, {
       outcome: "Refused",
       evidence: "no",
     });
-    await workerPoolSettled(settling, identity, assignment, {
+    await workerPoolSettled(settling, host, assignment, {
       outcome: "Unavailable",
     });
   }
@@ -1501,7 +1515,7 @@ test("an execution's refusal reaches its store with the image fault it names, an
   );
   for (const assignment of ["j1", "s1"])
     assert.equal(
-      await workerPoolSettled(settling, identity, assignment, {
+      await workerPoolSettled(settling, host, assignment, {
         outcome: "Refused",
         evidence: "git: not found",
         fault: "ImageLacksGit",
@@ -1509,7 +1523,7 @@ test("an execution's refusal reaches its store with the image fault it names, an
       true,
     );
   assert.equal(
-    await workerPoolSettled(settling, identity, "j2", {
+    await workerPoolSettled(settling, host, "j2", {
       outcome: "Refused",
       evidence: "no node",
     }),
@@ -1522,7 +1536,7 @@ test("an execution's refusal reaches its store with the image fault it names, an
   ]);
 });
 
-test("the images a pool may pull are those of what it holds of either kind, each kind to its own bound", async () => {
+test("the images a chat host may pull of what it holds are those of either kind, each kind to its own bound", async () => {
   const bounds: string[] = [];
   assert.deepEqual(
     await workerPoolHeldImages(
@@ -1536,13 +1550,14 @@ test("the images a pool may pull are those of what it holds of either kind, each
         },
         {
           ...noSessions,
+          launch: () => Promise.resolve(undefined),
           heldImages: (_identity, max) => {
             bounds.push(`session:${String(max)}`);
             return Promise.resolve(["session-image"]);
           },
         },
       ),
-      identity,
+      host,
       { ...settings, heldMax: 3, sessionsHeldMax: 5 },
     ),
     ["job-image", "session-image"],

@@ -94,6 +94,8 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/owner-fallback",
   "/api/v1/tenants/:tenant/projects/:project/hosted-runs",
   "/api/v1/tenants/:tenant/projects/:project/abilities",
+  "/api/v1/tenants/:tenant/projects/:project/access-tokens",
+  "/api/v1/tenants/:tenant/projects/:project/access-tokens/:token",
   "/api/v1/tenants/:tenant/projects/:project/worker-pools",
   "/api/v1/tenants/:tenant/projects/:project/worker-pool-registration-tokens",
   "/api/v1/worker-pool-registrations",

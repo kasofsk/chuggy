@@ -13,7 +13,7 @@ import {
   poolPlaneMetricsListening,
 } from "../../src/adapters/http/poolPlaneMetrics.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
+import type { TenantId } from "../../src/interpreter/projectStore.ts";
 import {
   workerPoolReportAgeMsMax,
   workerPoolReports,
@@ -75,10 +75,10 @@ test("with a metrics port the held reports are served there as a page", async ()
   const held = reports();
   held.reported(
     {
-      kind: "Dedicated",
-      partition: { tenant: "acme", project: "web" } as Partition,
-      pool: "pool-one",
-      principal: oidcPrincipal("https://issuer.test", "chuggy-pool-one"),
+      kind: "Personal",
+      tenant: "acme" as TenantId,
+      owner: oidcPrincipal("https://issuer.test", "a-member"),
+      principal: oidcPrincipal("https://issuer.test", "chuggy-personal-one"),
     },
     workerRunnerReportLeast,
   );
@@ -98,7 +98,7 @@ test("with a metrics port the held reports are served there as a page", async ()
     );
     assert.match(
       await answered.text(),
-      /^chuggy_runner_jobs_running\{tenant="acme",project="web",pool="pool-one",owner="",personal_runner="",host="build-box\.local"\} 1$/mu,
+      /^chuggy_runner_jobs_running\{tenant="acme",project="",pool="",owner="a-member",personal_runner="chuggy-personal-one",host="build-box\.local"\} 1$/mu,
     );
     const open = await fetch(`http://127.0.0.1:${String(port)}/metrics`, {
       headers: { accept: "application/openmetrics-text;version=1.0.0" },

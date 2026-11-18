@@ -404,6 +404,7 @@ test("the reader's abilities hang from the partition and are read door by door",
     overrideTicketConfig: false,
     skipPlannedEvaluations: false,
     mergeProposals: false,
+    makeAccessTokens: false,
     administer: false,
     writeEpic: false,
   };

@@ -168,7 +168,7 @@ export interface KubernetesSecret {
  * a capability lets work reach them. A site with no such nodes needs none of
  * these.
  */
-export interface KubernetesToleration {
+interface KubernetesToleration {
   readonly key: string;
   readonly operator: "Equal" | "Exists";
   readonly value?: string | undefined;
@@ -281,7 +281,7 @@ export function kubernetesPositiveNumber(value: number, what: string): number {
 }
 
 /** A digest over an ordered list of parts, each length-prefixed so no two lists spell one string. */
-export function kubernetesIdentityDigest(parts: readonly string[]): string {
+function kubernetesIdentityDigest(parts: readonly string[]): string {
   return createHash("sha256")
     .update(parts.map((part) => `${String(part.length)}:${part}`).join("/"))
     .digest("hex");
@@ -417,88 +417,6 @@ export function kubernetesContainerResources(
       memory: resources.memoryLimit,
       "ephemeral-storage": resources.ephemeralStorageLimit,
     },
-  };
-}
-
-/** What one workload pod is assembled from, which is the same list whatever the workload is. */
-export interface KubernetesWorkloadPodInput {
-  readonly site: KubernetesPodSite;
-  readonly name: string;
-  readonly labels: Readonly<Record<string, string>>;
-  readonly annotations: Readonly<Record<string, string>>;
-  readonly activeDeadlineSecs: number;
-  readonly nodeSelector: Readonly<Record<string, string>>;
-  readonly tolerations: readonly KubernetesToleration[];
-  readonly initContainers: readonly KubernetesContainer[];
-  readonly containers: readonly KubernetesContainer[];
-  readonly volumes: KubernetesPod["spec"]["volumes"];
-}
-
-/**
- * The pod document a launcher here places, which is the site's own answers plus
- * the containers one workload adds. Nothing about the work is decided here:
- * what runs, what it may read and how long it may take all arrive as arguments.
- */
-export function kubernetesWorkloadPod(
-  input: KubernetesWorkloadPodInput,
-): KubernetesPod {
-  return {
-    apiVersion: "v1",
-    kind: "Pod",
-    metadata: {
-      name: input.name,
-      namespace: input.site.namespace,
-      labels: input.labels,
-      annotations: input.annotations,
-    },
-    spec: {
-      restartPolicy: "Never",
-      serviceAccountName: input.site.serviceAccountName,
-      automountServiceAccountToken: false,
-      activeDeadlineSeconds: input.activeDeadlineSecs,
-      nodeSelector: input.nodeSelector,
-      ...(input.tolerations.length === 0
-        ? {}
-        : { tolerations: input.tolerations }),
-      securityContext: input.site.podSecurityContext,
-      ...(input.initContainers.length === 0
-        ? {}
-        : { initContainers: input.initContainers }),
-      containers: input.containers,
-      volumes: input.volumes,
-    },
-  };
-}
-
-/**
- * The immutable Secret one pod's launch payload is projected from, owned by
- * that pod so the cluster collects it when the pod goes. The owner reference
- * needs the pod's uid, which is why it is an argument rather than a lookup.
- */
-export function kubernetesPodSecret(
-  pod: KubernetesPod,
-  podUid: string,
-  stringData: Readonly<Record<string, string>>,
-): KubernetesSecret {
-  return {
-    apiVersion: "v1",
-    kind: "Secret",
-    immutable: true,
-    metadata: {
-      name: pod.metadata.name,
-      namespace: pod.metadata.namespace,
-      ownerReferences: [
-        {
-          apiVersion: "v1",
-          kind: "Pod",
-          name: pod.metadata.name,
-          uid: podUid,
-          controller: true,
-          blockOwnerDeletion: true,
-        },
-      ],
-    },
-    stringData,
   };
 }
 

@@ -26,6 +26,7 @@ export const projectAbilityKinds: Readonly<
   overrideTicketConfig: "OverrideTicketConfig",
   skipPlannedEvaluations: "SkipPlannedEvaluations",
   mergeProposals: "MergeProposals",
+  makeAccessTokens: "MakeAccessTokens",
   administer: "Administer",
   writeEpic: "Mutate",
 };
@@ -53,6 +54,7 @@ export async function projectAbilities(
     overrideTicketConfig,
     skipPlannedEvaluations,
     mergeProposals,
+    makeAccessTokens,
     administer,
     writeEpic,
   ] = await Promise.all([
@@ -62,6 +64,7 @@ export async function projectAbilities(
     held(projectAbilityKinds.overrideTicketConfig),
     held(projectAbilityKinds.skipPlannedEvaluations),
     held(projectAbilityKinds.mergeProposals),
+    held(projectAbilityKinds.makeAccessTokens),
     held(projectAbilityKinds.administer),
     held(projectAbilityKinds.writeEpic),
   ]);
@@ -75,6 +78,7 @@ export async function projectAbilities(
       overrideTicketConfig,
       skipPlannedEvaluations,
       mergeProposals,
+      makeAccessTokens,
       administer,
       writeEpic,
     },

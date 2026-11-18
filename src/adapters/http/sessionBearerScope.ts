@@ -27,7 +27,8 @@
  * tools make it, so a write no session's tool makes is `Refused`. So is
  * everything addressed to no partition, and inside one the registration-token
  * mint, because enrolling a machine is provisioning rather than work, as
- * deleting the project is; every write of a personal runner, its allowlist
+ * deleting the project is; every route of a project's access tokens, a read
+ * included; every write of a personal runner, its allowlist
  * among them;
  * a reply to a thread's offer, a person's word on what a session put to them;
  * and every write of a thread or a member's own chat, which is its owner's. The confinement is by route and
@@ -182,6 +183,8 @@ export const sessionBearerRouteClasses = {
   ownerFallback: readRefusedReplace,
   hostedRuns: partitionRead,
   abilities: partitionRead,
+  accessTokens: { GET: "Refused", POST: "Refused" },
+  accessToken: { DELETE: "Refused" },
   workerPools: partitionRead,
   drafts: {
     GET: partitionRead.GET,

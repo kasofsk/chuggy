@@ -236,6 +236,9 @@ import {
   unrunDeletionStandingResponse,
   ticketTakeResponse,
   ticketProposalMergeResponse,
+  accessTokenDeletedResponse,
+  accessTokenMintedResponse,
+  accessTokensResponse,
   personalRunnerDisallowedResponse,
   personalRunnerPermitResponse,
   personalRunnerRedemptionResponse,
@@ -269,6 +272,7 @@ import type { PlacementAdministration } from "../../interpreter/placementRoute.t
 import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
 import type { TicketTakes } from "../../interpreter/ticketTake.ts";
 import type { TicketProposalMerges } from "../../interpreter/ticketProposalMerge.ts";
+import type { AccessTokenService } from "../../interpreter/accessToken.ts";
 import type { ThreadLimitAdministration } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
@@ -2583,6 +2587,42 @@ function registerLandingQueues(
   );
 }
 
+/** A project's access tokens: listed, minted by their maker, and deleted. */
+function registerAccessTokens(
+  app: FastifyInstance,
+  tokens: AccessTokenService,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.accessTokens,
+    (_request, principal, partition) => tokens.listed(principal, partition),
+    accessTokensResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.mintAccessToken,
+    (request, principal, partition) =>
+      tokens.mint(
+        principal,
+        partition,
+        nativeHttpEndpoints.mintAccessToken.body.parse(request.body),
+      ),
+    accessTokenMintedResponse,
+  );
+  app.delete(nativeHttpRoutes.accessToken, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      accessTokenDeletedResponse(
+        await tokens.deleted(
+          principalOf(request),
+          partitionOf(request),
+          textField(record(request.params), "token"),
+        ),
+      ),
+    );
+  });
+}
+
 /** A project made, and one that never ran work deleted. */
 function registerProjectLifecycle(
   app: FastifyInstance,
@@ -3364,6 +3404,7 @@ export function createNativeHttpApp(
   deletions?: UnrunDeletions,
   takes?: TicketTakes,
   proposalMerges?: TicketProposalMerges,
+  accessTokens?: AccessTokenService,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   registerCapacity(app, limits.concurrentRequestsMax);
@@ -3374,6 +3415,7 @@ export function createNativeHttpApp(
   registerProject(app, web);
   registerHostedRuns(app, web);
   registerProjectAbilities(app, web);
+  if (accessTokens !== undefined) registerAccessTokens(app, accessTokens);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
   if (inbox !== undefined) registerInbox(app, inbox);

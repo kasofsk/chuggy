@@ -70,7 +70,7 @@ export const kubernetesDeadlineText =
   "Worker exited before reporting: the cluster stopped its pod at its deadline";
 
 /** The text one fault is told by, the kubelet's message after it where the fault carried one. */
-export function kubernetesImageFaultText(
+function kubernetesImageFaultText(
   fault: WorkerImageFault,
   message: string | undefined,
 ): string {
@@ -145,7 +145,7 @@ export async function kubernetesWorkerErrorWritten(
 }
 
 /** Uploads one attempt's error text to the worker plane at `plane`, under `token`. */
-export async function kubernetesWorkerErrorPosted(
+async function kubernetesWorkerErrorPosted(
   site: KubernetesPodSite,
   fetcher: typeof fetch,
   bearer: { readonly token: string; readonly plane: string },

@@ -1,6 +1,20 @@
 import { z } from "zod";
 
+import {
+  accessTokenLimitReachedCode,
+  accessTokenMintForbiddenCode,
+  accessTokenNameTakenCode,
+  type AccessTokenMintedResponse,
+  type AccessTokenResponse,
+  type AccessTokensResponse,
+} from "../../contract/accessToken.ts";
 import { assertNever } from "../../domain/assertNever.ts";
+import type {
+  AccessTokenDeleted,
+  AccessTokenMinted,
+  AccessTokenRecord,
+  AccessTokensListed,
+} from "../../interpreter/accessToken.ts";
 import type { TicketId } from "../../domain/ids.ts";
 import type {
   ConfigurationPage,
@@ -3178,6 +3192,94 @@ export function ticketProposalMergeResponse(
         refused: result.refused,
         ...(result.url === undefined ? {} : { url: result.url }),
       });
+    default:
+      return assertNever(result);
+  }
+}
+
+function accessTokenBody(record: AccessTokenRecord): AccessTokenResponse {
+  return {
+    token: record.token,
+    name: record.name,
+    access: record.access,
+    maker: record.maker,
+    createdAt: record.createdAt,
+    expiresAt: record.expiresAt,
+  };
+}
+
+/** A project's tokens the reader may see, none of them with its secret. */
+export function accessTokensResponse(
+  result: AccessTokensListed,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, {
+        tokens: result.value.map(accessTokenBody),
+      } satisfies AccessTokensResponse);
+    default:
+      return assertNever(result);
+  }
+}
+
+/**
+ * A mint: the token and its secret, which no other answer holds, or a refusal
+ * by name. A reader without `make_access_tokens` meets `403`; either bound,
+ * and a name its maker already holds, `409`.
+ */
+export function accessTokenMintedResponse(
+  result: AccessTokenMinted,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Forbidden":
+      return response(
+        403,
+        nativeHttpError(
+          accessTokenMintForbiddenCode,
+          "Making an access token needs the project's make_access_tokens permit, which its administrators hold.",
+        ),
+      );
+    case "LimitReached":
+      return response(
+        409,
+        nativeHttpError(
+          accessTokenLimitReachedCode,
+          result.bound === "Held"
+            ? "The caller holds as many access tokens in the project as they may."
+            : "The project holds as many access tokens as it may.",
+        ),
+      );
+    case "NameTaken":
+      return response(
+        409,
+        nativeHttpError(
+          accessTokenNameTakenCode,
+          "The caller already holds an access token of that name in the project.",
+        ),
+      );
+    case "Minted":
+      return response(201, {
+        ...accessTokenBody(result.value),
+        secret: result.value.secret,
+      } satisfies AccessTokenMintedResponse);
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A token deleted, which revokes it, or one the caller may not see. */
+export function accessTokenDeletedResponse(
+  result: AccessTokenDeleted,
+): NativeHttpResponse {
+  switch (result) {
+    case "Deleted":
+      return noContent();
+    case "NotFound":
+      return notFound();
     default:
       return assertNever(result);
   }

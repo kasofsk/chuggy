@@ -521,6 +521,19 @@ redemption, which marks it redeemed once and unmarks it where the registration
 it paid for was lost. It has no unfinished work: an unredeemed token expires,
 and the minter's next mint removes it.
 
+`access_token` — a token a member makes to reach one project through the API:
+its name, its access, `Read` or `Write`, its maker, the digest of its secret,
+when it was made and expires, and the newest recovery epoch at its making.
+Written and read by the API role alone; the boundary owner reads and deletes
+it only in the project's deletion. Its identity is the project and a drawn
+token, its name is its maker's once in the project, and its digest is unique.
+It points at `project` and `recovery_epoch`. It is changed by a mint, which
+counts and inserts under one lock and is refused past a bound on the maker's
+tokens and on the project's, and by a delete, its maker's or an
+administrator's; nothing updates it in place. It has no unfinished work: an
+expired token stays listed until it is deleted, and the project's deletion
+empties it.
+
 `chat_host` — a member's chat host in one tenant: its principal, the issuer
 client it is removed by, when it registered and last polled, the runner
 package and version its newest poll named, and the credentials that poll
