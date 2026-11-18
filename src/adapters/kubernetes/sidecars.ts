@@ -1,7 +1,6 @@
 /**
  * The containers a site runs beside a worker, as native sidecars of the pod
- * that runs it: a pushed worker's pod and a pool's workload alike, so the two
- * render one site's sidecars one way.
+ * that runs it.
  *
  * NOTHING HERE KNOWS WHAT A SIDECAR RUNS. Its image, arguments, environment,
  * startup probe, budget and scratch space all arrive as the site's data, so a

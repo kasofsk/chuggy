@@ -64,7 +64,7 @@ function goldenInvocation(): AttemptPlacement["invocation"] {
   return composed.invocation;
 }
 
-/** The runtime both goldens copy, so a pushed worker's pod and a pool's workload can be compared. */
+/** The runtime the golden pod copies. */
 const goldenRuntimeImage = `registry.invalid/golden-runtime@sha256:${"d".repeat(64)}`;
 
 export const goldenConfig: KubernetesWorkerLaunchConfig = {

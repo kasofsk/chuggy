@@ -19,7 +19,7 @@
  * cluster's own state at this moment, and the placement is unavailable. The
  * attempt it was made for is ended, and what follows is the caller's: the
  * scheduler's launchers leave the execution or session held and try again after
- * the scheduler's placement backoff, and a pool answers that it cannot run it.
+ * the scheduler's placement backoff.
  *
  * A CREDENTIAL IS READ PER ACT AND NEVER HELD. The token file is what the site
  * carries, so a rotated token is picked up without a restart and no credential
