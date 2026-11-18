@@ -13,7 +13,9 @@ import assert from "node:assert/strict";
 import {
   chmodSync,
   existsSync,
+  mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -22,6 +24,11 @@ import { networkInterfaces } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 
+import {
+  signInStoreAccessName,
+  signInStoreEndedName,
+  signInStorePendingName,
+} from "../../src/contract/signInStore.ts";
 import {
   browsed,
   ended,
@@ -91,6 +98,24 @@ test("a sign-in the person finishes is exchanged, remembered and said, on this m
   assert.equal(remembered(machine).site, installation.site);
   assert.equal(machine.lock(), undefined);
   assert.equal(machine.file("sign-in.json"), undefined);
+});
+
+test("a sign-in the person finishes leaves no record another program kept beside the site's token", async () => {
+  const { installation, machine } = await installed();
+  const records = [
+    signInStoreAccessName(installation.site),
+    signInStoreEndedName(installation.site),
+    signInStorePendingName(installation.site),
+  ];
+  mkdirSync(machine.store, { recursive: true, mode: 0o700 });
+  for (const record of records)
+    writeFileSync(join(machine.store, record), "record\n", { mode: 0o600 });
+  const done = await signedIn(installation, machine);
+  assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
+  assert.deepEqual(readdirSync(machine.store).toSorted(), [
+    encodeURIComponent(installation.site),
+    "lock",
+  ]);
 });
 
 test("neither the program nor anything it asked ever names localhost", async () => {

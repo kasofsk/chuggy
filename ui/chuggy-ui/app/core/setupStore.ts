@@ -17,7 +17,14 @@
  * this module wrote is treated as absent, which costs a sign-in and never a
  * wrong answer. A token an older copy of this program kept beside the site it
  * remembers is moved into the shared store once, by the first run that holds
- * the lock, and is kept only where the store holds none for that site.
+ * the lock, and is kept only where the store holds none for that site. The
+ * program writes none of the records the contract keeps beside a site's
+ * token, and never reads them, but each write or removal of the token removes
+ * all three in the same hold, after it. An access record left behind is
+ * retired by its digest already, and a pending device sign-in by the token
+ * beside it or else by its own expiry, so failing to remove either is no
+ * fault; an ended record that cannot be removed is the path that would not
+ * change, never the token lost.
  *
  * The lock is one word, its holder's or none, and it changes hands only by a
  * swap that names the word it is changed from. So a lock whose holder is gone
@@ -30,10 +37,13 @@
 import { z } from "zod";
 
 import {
+  signInStoreAccessName,
+  signInStoreEndedName,
   signInStoreFileName,
   signInStoreLockHolder,
   signInStoreLockStale,
   signInStoreLockWord,
+  signInStorePendingName,
   signInStoreText,
   signInStoreTokenRead,
 } from "../../../../src/contract/signInStore.ts";
@@ -107,15 +117,30 @@ export function setupTokenRead(
   return text === undefined ? undefined : signInStoreTokenRead(text);
 }
 
-/** Removes the renewal token the shared store holds for a site, answering whether it held one. The caller holds the lock. */
+/** Removes the records the shared store keeps beside a site's token, after a write or removal of that token. The caller holds the lock. */
+function setupTokenRecordsRemoved(store: SetupStorePort, site: string): void {
+  for (const name of [
+    signInStoreAccessName(site),
+    signInStorePendingName(site),
+  ])
+    try {
+      store.remove(name);
+    } catch (failure: unknown) {
+      if (!(failure instanceof SetupMachineError)) throw failure;
+    }
+  store.remove(signInStoreEndedName(site));
+}
+
+/** Removes the sign-in the shared store holds for a site, the records beside it included, answering whether it held a renewal token. The caller holds the lock. */
 export function setupTokenRemoved(
   store: SetupStorePort,
   site: string,
 ): boolean {
   const name = signInStoreFileName(site);
-  if (store.read(name) === undefined) return false;
-  store.remove(name);
-  return true;
+  const held = store.read(name) !== undefined;
+  if (held) store.remove(name);
+  setupTokenRecordsRemoved(store, site);
+  return held;
 }
 
 /**
@@ -129,11 +154,13 @@ export function setupSessionMoved(
 ): void {
   const stored = setupSessionParsed(files);
   if (stored?.refreshToken === undefined) return;
-  if (setupTokenRead(store, stored.site) === undefined)
+  if (setupTokenRead(store, stored.site) === undefined) {
     store.write(
       signInStoreFileName(stored.site),
       signInStoreText(stored.refreshToken),
     );
+    setupTokenRecordsRemoved(store, stored.site);
+  }
   setupSessionSiteWritten(files, stored.site);
 }
 
@@ -161,10 +188,10 @@ function setupUnkept(failure: unknown): unknown {
 
 /**
  * The session holder's store for one site: the token it was opened with, and
- * every token after it written to the site's file in the shared store before
- * the write returns. The
- * first thing the machine refuses it is what that step and every refused step
- * after it throws, and what `kept` throws.
+ * every token after it written to the site's file in the shared store, and the
+ * records beside it removed, before the write returns. The first thing the
+ * machine refuses it is what that step and every refused step after it
+ * throws, and what `kept` throws.
  */
 export function setupTokenStore(
   store: SetupStorePort,
@@ -193,6 +220,9 @@ export function setupTokenStore(
       },
       next === undefined ? setupAsThrown : setupUnkept,
     );
+    noting(() => {
+      setupTokenRecordsRemoved(store, site);
+    }, setupAsThrown);
   };
   return {
     read: (key) =>

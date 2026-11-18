@@ -16,10 +16,11 @@
  * or git would refuse halfway through. `--dry-run` does everything but the
  * release and the tag.
  *
- * THE BUILD SYSTEM PUBLISHES, AT MERGE. When a merge that moves
- * `workerContractRelease` lands on `main`, the build system runs this script
- * there. A ticket's job never runs it; a person runs it by hand only where that
- * release did not happen.
+ * THE BUILD SYSTEM PUBLISHES, AT MERGE. For every commit on `main` whose
+ * `src/contract` differs from the newest release's, the build system runs this
+ * script there, labelled the minor after the newest `worker-contract-v*` tag. A
+ * ticket's job never runs it; a person runs it by hand only where that release
+ * did not happen.
  */
 
 import { spawnSync } from "node:child_process";

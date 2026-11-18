@@ -30,6 +30,12 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
+import {
+  signInStoreAccessName,
+  signInStoreDraftName,
+  signInStoreEndedName,
+  signInStorePendingName,
+} from "../../src/contract/signInStore.ts";
 import { SetupMachineError } from "../../ui/chuggy-ui/app/core/setupPorts.ts";
 import type { SetupMachineFault } from "../../ui/chuggy-ui/app/core/setupPorts.ts";
 import { filesIn } from "../../ui/chuggy-ui/terminal/files.ts";
@@ -624,6 +630,26 @@ test("what a write that was killed part-way left of the sign-in is gone after th
   assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
   assert.deepEqual(readdirSync(machine.directory), ["session.json"]);
   assert.deepEqual(readdirSync(machine.store).toSorted(), [token, "lock"]);
+});
+
+test("what a write that was killed part-way left of any record beside the sign-in is gone after the next run", async () => {
+  const { installation, machine } = await signedIn();
+  const gone = departed();
+  for (const record of [
+    signInStoreAccessName(installation.site),
+    signInStoreEndedName(installation.site),
+    signInStorePendingName(installation.site),
+  ])
+    writeFileSync(
+      join(machine.store, signInStoreDraftName(record, gone)),
+      '{"a record',
+    );
+  const done = await machine.run([]);
+  assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
+  assert.deepEqual(readdirSync(machine.store).toSorted(), [
+    encodeURIComponent(installation.site),
+    "lock",
+  ]);
 });
 
 test("runs started together each renew in turn with what the one before stored", async () => {

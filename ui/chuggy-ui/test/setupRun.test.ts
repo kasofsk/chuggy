@@ -31,6 +31,8 @@ import {
   machineHeld,
   machineHolding,
   machineKept,
+  machineRecording,
+  machineRecordsLeft,
   machineRemembered,
   machineRevokeAddress,
   machineSignedIn,
@@ -213,6 +215,31 @@ test("a renewal the issuer refuses is not signed in and not a failure, and the n
     report: "SignInWaiting",
     opened: "Opened",
   });
+});
+
+test("a renewal, a renewal the issuer refuses and a sign-out each leave no record beside the site's token", async () => {
+  const renewed = await signedIn();
+  machineRecording(renewed);
+  expect(await renewed.command([])).toMatchObject({ report: "Checklist" });
+  expect(machineRecordsLeft(renewed)).toEqual([]);
+  const refused = await signedIn();
+  machineHolding(refused, "renewal-spent");
+  machineRecording(refused);
+  expect(await refused.command([])).toEqual(signedOut);
+  expect(machineRecordsLeft(refused)).toEqual([]);
+  const signedOutHere = await signedIn();
+  machineRecording(signedOutHere);
+  expect(await signedOutHere.command(["sign-out"])).toMatchObject({
+    report: "SignedOutHere",
+    held: true,
+  });
+  expect(machineRecordsLeft(signedOutHere)).toEqual([]);
+  machineRecording(signedOutHere);
+  expect(await signedOutHere.command(["sign-out"])).toMatchObject({
+    report: "SignedOutHere",
+    held: false,
+  });
+  expect(machineRecordsLeft(signedOutHere)).toEqual([]);
 });
 
 test("a renewal the issuer does not answer is a failure, and the token is kept", async () => {

@@ -47,7 +47,10 @@ import {
 } from "./setupRunnerBox.ts";
 import type { RunnerBox } from "./setupRunnerBox.ts";
 import {
+  signInStoreAccessName,
+  signInStoreEndedName,
   signInStoreFileName,
+  signInStorePendingName,
   signInStoreText,
   signInStoreTokenRead,
 } from "../../../src/contract/signInStore.ts";
@@ -451,6 +454,32 @@ export function machineWrites(machine: SetupMachine): readonly string[] {
 /** The file the shared store keeps a site's sign-in in. */
 export function machineTokenFile(site = machineSite): string {
   return signInStoreFileName(site);
+}
+
+/** The records the shared store keeps beside a site's token. */
+export function machineRecordFiles(site = machineSite): readonly string[] {
+  return [
+    signInStoreAccessName(site),
+    signInStoreEndedName(site),
+    signInStorePendingName(site),
+  ];
+}
+
+/** The machine as one whose shared store holds every record for a site, as another program left them. */
+export function machineRecording(
+  machine: SetupMachine,
+  site = machineSite,
+): void {
+  for (const file of machineRecordFiles(site))
+    machine.store.set(file, "record\n");
+}
+
+/** Which of a site's records the shared store still holds. */
+export function machineRecordsLeft(
+  machine: SetupMachine,
+  site = machineSite,
+): readonly string[] {
+  return machineRecordFiles(site).filter((file) => machine.store.has(file));
 }
 
 /** The sign-in the shared store holds for a site, or nothing. */
