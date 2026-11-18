@@ -77,6 +77,7 @@ import {
 import {
   repositoryConnectAskedOf,
   repositoryConnectPath,
+  repositoryConnectUnasked,
 } from "../core/repositoryConnect.ts";
 import type { RepositoryConnectAsked } from "../core/repositoryConnect.ts";
 import { forgeInstallationsQuery } from "../core/tenantQueries.ts";
@@ -292,7 +293,8 @@ function OffersLine(props: {
  * Whether the picker is open, and what the address asked of it, which the
  * address it was drawn at decides first. A close, and a bind told through
  * `bound`, take the picker's anchor and the repository it carried off the
- * address in the entry it is in, where the address carries them.
+ * address in the entry it is in, where the address carries them. The ask is
+ * the first opening's alone: a close drops it, so a later opening chooses.
  */
 function usePicker(returned: ForgeReturnWord | undefined): {
   readonly open: boolean;
@@ -301,7 +303,9 @@ function usePicker(returned: ForgeReturnWord | undefined): {
   readonly bound: () => void;
 } {
   const navigate = useNavigate();
-  const [asked] = useState(() => repositoryConnectAskedOf(currentPath()));
+  const [asked, setAsked] = useState(() =>
+    repositoryConnectAskedOf(currentPath()),
+  );
   const [open, setOpen] = useState(() =>
     repositoryAddOpened(
       currentAnchor(),
@@ -311,10 +315,7 @@ function usePicker(returned: ForgeReturnWord | undefined): {
   );
   const left = (): void => {
     const path = repositoryAddClosedPath(
-      repositoryConnectPath(currentPath(), {
-        repository: undefined,
-        arrival: "Console",
-      }),
+      repositoryConnectPath(currentPath(), repositoryConnectUnasked),
       currentAnchor(),
     );
     if (path !== undefined)
@@ -325,7 +326,9 @@ function usePicker(returned: ForgeReturnWord | undefined): {
     open,
     opened: (next) => {
       setOpen(next);
-      if (!next) left();
+      if (next) return;
+      setAsked(repositoryConnectUnasked);
+      left();
     },
     bound: left,
   };

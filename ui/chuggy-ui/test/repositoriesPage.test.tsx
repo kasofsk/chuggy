@@ -3052,3 +3052,25 @@ test("a return saying GitHub asked an owner shows that it waits on them, on the 
   );
   expect(flowText()).toContain("Connecting gdoteof/scratch to atlas");
 });
+
+/** The address names the repository for the opening it made, and no later one. */
+test.each(arrivals)(
+  "arriving from %s, once the repository bound and the picker closed, Add opens on choosing and binds nothing again",
+  async (arrival) => {
+    const sent = await drawFlow(arrival, "both");
+    expect(sent.filter((one) => one.method === "POST")).toHaveLength(1);
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }),
+    );
+    await settled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    const [head] = addButtons();
+    fireEvent.click(head ?? document.body);
+    await settled();
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText("Which repository is this for?")).toBeTruthy();
+    expect(dialog.queryByText("Connecting gdoteof/scratch to atlas")).toBeNull();
+    expect(sent.filter((one) => one.method === "POST")).toHaveLength(1);
+  },
+);

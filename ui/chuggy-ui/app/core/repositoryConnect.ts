@@ -112,6 +112,12 @@ export interface RepositoryConnectAsked {
   readonly arrival: RepositoryConnectArrival;
 }
 
+/** An opening the address asked nothing of: the person chooses, in the console. */
+export const repositoryConnectUnasked: RepositoryConnectAsked = {
+  repository: undefined,
+  arrival: "Console",
+};
+
 /** The search key the repository is carried under. */
 export const repositoryConnectKey = "repository";
 
