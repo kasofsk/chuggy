@@ -32,7 +32,6 @@ import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
 import { fallbackIntervalMs } from "../app/core/projectFallback.ts";
 import { streamGraceMs } from "../app/browser/stream.tsx";
 import {
-  repositoriesConnectPath,
   repositoryAddHow,
   repositoryRosterPolledMs,
   repositoryRosterRereadsMax,
@@ -2185,94 +2184,6 @@ test("with no account, the page offers Add and Connect GitHub under its line, re
   });
 });
 
-/** The workspace's people as the reader reads them: the reader an
- * administrator, and whoever else `others` names. */
-function peopleOf(
-  others: readonly { readonly tenantRoles: readonly string[] }[],
-  over: Readonly<Record<string, unknown>> = {},
-): unknown {
-  const person = (subject: string, mine: boolean, tenantRoles: unknown) => ({
-    subject,
-    mine,
-    tenantRoles,
-    hostedRuns: false,
-    personalRunners: false,
-    unscopedChat: true,
-    projects: [],
-  });
-  return {
-    tenant: projectPartition.tenant,
-    projects: [projectPartition.project],
-    people: [
-      person("me", true, ["Admin"]),
-      ...others.map((other, index) =>
-        person(`other-${String(index)}`, false, other.tenantRoles),
-      ),
-    ],
-    otherIssuers: 0,
-    truncated: false,
-    ...over,
-  };
-}
-
-/** The page drawn at its own address asking for Connect GitHub, with no
- * account and the workspace's people answered by `people`. */
-async function drawAskingConnect(
-  people: () => Response,
-): Promise<readonly Sent[]> {
-  history.pushState({}, "", repositoriesConnectPath(projectPath));
-  return drawPage({
-    claimed: noAccount,
-    described: { apps: forgeApps, authorization: client },
-    over: (served) =>
-      ((url: string, init?: RequestInit) =>
-        url.endsWith("/people")
-          ? Promise.resolve(people())
-          : served(url, init)) as typeof fetch,
-  });
-}
-
-test("a sole administrator asked to connect is sent to the forge once, returning to the page without the ask", async () => {
-  await drawAskingConnect(() => answer(peopleOf([{ tenantRoles: [] }])));
-  expect(location.pathname + location.search).toBe(projectPath);
-  expect(held.redirects).toHaveLength(1);
-  const url = new URL(held.redirects[0] ?? "");
-  expect(`${url.origin}${url.pathname}`).toBe(client.authorizeUrl);
-  expect(
-    JSON.parse(sessionStorage.getItem(forgeAuthorizeTransactionKey) ?? "{}"),
-  ).toMatchObject({ returnPath: projectPath, installs: [] });
-  await settled();
-  expect(held.redirects).toHaveLength(1);
-});
-
-test.each<readonly [string, () => Response]>([
-  [
-    "another administrator",
-    () => answer(peopleOf([{ tenantRoles: ["Admin"] }])),
-  ],
-  ["a list cut short", () => answer(peopleOf([], { truncated: true }))],
-  ["another issuer", () => answer(peopleOf([], { otherIssuers: 1 }))],
-  ["a failed read", () => answer({}, 500)],
-])(
-  "an ask to connect beside %s loses the ask and waits for the press",
-  async (_beside, people) => {
-    await drawAskingConnect(people);
-    expect(location.pathname + location.search).toBe(projectPath);
-    expect(held.redirects).toStrictEqual([]);
-    expect(offered("Connect GitHub")).toBe(true);
-  },
-);
-
-test("a page not asked to connect does not read the workspace's people", async () => {
-  history.pushState({}, "", projectPath);
-  const sent = await drawPage({
-    claimed: noAccount,
-    described: { apps: forgeApps, authorization: client },
-  });
-  expect(sent.some((request) => request.url.endsWith("/people"))).toBe(false);
-  expect(held.redirects).toStrictEqual([]);
-});
-
 /** Back from a page at the forge can show this one again exactly as it was
  * left, with the press it left by still drawn as under way. */
 test("a page restored after Connect GitHub was pressed offers the press again", async () => {
@@ -2548,7 +2459,7 @@ test("an empty roster carries Add under its line and how a repository comes to b
     copyTextEn(repositoryAddHow),
   );
   expect(copyTextEn(repositoryAddHow)).toBe(
-    "Both apps on your repository on GitHub, then Add · chuggy setup adds it itself",
+    "Add, choose the repository, then set up both apps for it · chuggy setup adds it itself",
   );
   expect(body.previousElementSibling?.previousElementSibling?.textContent).toBe(
     "No repository connected",
@@ -3094,6 +3005,41 @@ test("an app's press returns to the flow on the repository it left with, countin
   });
 });
 
+/** An owner can take longer to approve than the readings last, so once they
+ * stop the flow says so and offers a reading, which finishes the connection
+ * where the apps reach the repository by then. */
+test("once the flow's readings are spent, it says so and a press to look again reads and finishes", async () => {
+  intervalsHeld();
+  const reach = vi.fn(flowGranting(granted));
+  history.pushState({}, "", `${projectPath}?repository=gdoteof%2Fscratch#add`);
+  let claimed: typeof installations = installations;
+  await drawPage({
+    listing: () => answer(claimed),
+    granting: reach,
+    described: { apps: forgeApps, authorization: client },
+    posted: accepted,
+  });
+  const look = () =>
+    within(screen.getByRole("dialog")).queryByRole("button", {
+      name: "Look again",
+    });
+  expect(look()).toBeNull();
+  for (let made = 1; made < repositoryRosterRereadsMax; made += 1)
+    await rosterIntervalPassed();
+  expect(flowText()).toContain(
+    "Stopped asking GitHub for now. Look again once the installs are done.",
+  );
+  expect(flowText()).toContain("Left to do: the worker app.");
+  const asked = reach.mock.calls.length;
+  await rosterIntervalPassed();
+  expect(reach.mock.calls.length).toBe(asked);
+  claimed = twoAccounts;
+  fireEvent.click(look() ?? document.body);
+  await settled();
+  expect(flowText()).toContain("gdoteof/scratch is connected to atlas.");
+  expect(look()).toBeNull();
+});
+
 /** An organisation's owner approves an install another member asked for, so the flow waits on them. */
 test("a return saying GitHub asked an owner shows that it waits on them, on the repository it left with", async () => {
   forgeReturnHold(transientStore, projectPartition.tenant, {
@@ -3102,7 +3048,7 @@ test("a return saying GitHub asked an owner shows that it waits on them, on the 
   });
   await drawFlow("Console", "one");
   expect(flowText()).toContain(
-    "GitHub asked an owner of gdoteof to approve the install. This waits for them and carries on here once they have.",
+    "GitHub asked an owner of gdoteof to approve the install. Once they have, this page shows it.",
   );
   expect(flowText()).toContain("Connecting gdoteof/scratch to atlas");
 });

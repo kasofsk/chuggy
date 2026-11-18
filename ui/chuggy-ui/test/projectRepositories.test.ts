@@ -51,9 +51,6 @@ import {
   type RepositoryNextStep,
   type RepositoryNote,
   type RepositoryOffersStep,
-  repositoriesConnectAsked,
-  repositoriesConnectDropped,
-  repositoriesConnectPath,
 } from "../app/core/projectRepositories.ts";
 import { workRunner } from "../app/core/workRunner.ts";
 import type { WorkRunner } from "../app/core/workRunner.ts";
@@ -81,19 +78,6 @@ function reachable(
     ...over,
   };
 }
-
-test("an ask to connect is read from the address and dropped from it alone", () => {
-  const asked = repositoriesConnectPath("/vteng/chuggy/repositories");
-  expect(repositoriesConnectAsked(asked)).toBe(true);
-  expect(repositoriesConnectAsked("/vteng/chuggy/repositories")).toBe(false);
-  expect(repositoriesConnectAsked("/vteng/chuggy/repositories?connect=1")).toBe(
-    false,
-  );
-  expect(repositoriesConnectDropped(`${asked}&other=1`)).toBe(
-    "/vteng/chuggy/repositories?other=1",
-  );
-  expect(repositoriesConnectDropped(asked)).toBe("/vteng/chuggy/repositories");
-});
 
 test("a repository is labelled by the account and the name it is under", () => {
   expect(repositoryLabel("https://forge.test/kasofsk/chuggy")).toBe(

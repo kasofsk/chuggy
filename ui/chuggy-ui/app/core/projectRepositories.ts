@@ -269,32 +269,6 @@ export function repositoryAddReturnPath(path: string): string {
   return `${path}#${repositoryAddAnchor}`;
 }
 
-/** The search value a link to the page carries to begin Connect GitHub's
- * press on arrival, under `repositoriesConnectKey`. */
-export const repositoriesConnectKey = "connect";
-export const repositoriesConnectValue = "github";
-
-/** The page at `path` asked to begin Connect GitHub's press. */
-export function repositoriesConnectPath(path: string): string {
-  return `${path}?${repositoriesConnectKey}=${repositoriesConnectValue}`;
-}
-
-/** Whether the address asks the page to begin Connect GitHub's press. */
-export function repositoriesConnectAsked(path: string): boolean {
-  const url = new URL(path, "https://console.invalid");
-  return (
-    url.searchParams.get(repositoriesConnectKey) === repositoriesConnectValue
-  );
-}
-
-/** The address without the ask to press, so a return to it or Back presses
- * nothing. */
-export function repositoriesConnectDropped(path: string): string {
-  const url = new URL(path, "https://console.invalid");
-  url.searchParams.delete(repositoriesConnectKey);
-  return `${url.pathname}${url.search}${url.hash}`;
-}
-
 /**
  * The address the page takes in this entry's place once the picker closes or
  * binds: its own without the picker's anchor, so a reload or Back opens none.

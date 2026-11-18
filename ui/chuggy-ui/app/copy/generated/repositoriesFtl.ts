@@ -51,7 +51,7 @@ repositories-title = { -repository(case: "upper", form: "plural") }
 repositories-about = What this { -project } is connected to. { -ticket(case: "upper", form: "a") } names one of these.
 repositories-none = No { -repository } connected
 repositories-add = Add
-repositories-add-how = Both apps on your { -repository } on { -github }, then Add · { setup-program } adds it itself
+repositories-add-how = Add, choose the { -repository }, then set up both apps for it · { setup-program } adds it itself
 repositories-bound-caption = Connected { -repository(form: "plural") }
 repositories-col-repository = { -repository(case: "upper") }
 repositories-bound = Connected
@@ -108,7 +108,9 @@ repositories-connect-left = { $count ->
         }.
        *[other] Left to do: both apps.
     }
-repositories-connect-requested = { -github } asked an owner of { $account } to approve the install. This waits for them and carries on here once they have.
+repositories-connect-requested = { -github } asked an owner of { $account } to approve the install. Once they have, this page shows it.
+repositories-connect-spent = Stopped asking { -github } for now. Look again once the installs are done.
+repositories-connect-reread = Look again
 repositories-connect-unseen = Installed on { -github } already, but shown here as not installed?
 repositories-connect-adding = Adding { $repository } to { $project }…
 repositories-connect-done = { $repository } is connected to { $project }.

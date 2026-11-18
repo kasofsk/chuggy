@@ -112,6 +112,8 @@ export interface RepositoriesCopy {
   readonly "repositories-connect-requested": {
     readonly account: unknown;
   };
+  readonly "repositories-connect-spent": Record<never, never>;
+  readonly "repositories-connect-reread": Record<never, never>;
   readonly "repositories-connect-unseen": Record<never, never>;
   readonly "repositories-connect-adding": {
     readonly repository: unknown;

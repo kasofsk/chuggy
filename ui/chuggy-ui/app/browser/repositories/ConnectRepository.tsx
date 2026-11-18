@@ -8,7 +8,8 @@
  * Where each app stands is read again on a clock of its own while either does
  * not reach the repository, because the forge can be slow to list a grant
  * just made and nothing tells this console when it does. A reading costs the
- * forge a request, so the readings are counted and stop;
+ * forge a request, so the readings are counted and stop, and the page then
+ * offers a reading the person asks for, which counts them again from none;
  * `ui/chuggy-ui/app/core/projectRepositories.ts` names the pace and the count.
  *
  * EVERY PRESS RETURNS HERE, to the address carrying the repository and who
@@ -121,17 +122,28 @@ function repositoryBindNoted(
   );
 }
 
+/** Where each app stands on the repository, and whether its readings are spent. */
+interface RepositoryReach {
+  readonly state: PanelState<readonly RepositoryAppReach[]>;
+  /** The readings stopped with an app still short of the repository. */
+  readonly spent: boolean;
+  /** A reading asked by the person, which counts the readings from none. */
+  readonly reread: () => void;
+}
+
 /**
  * Where each app stands on the repository, read again on the flow's clock
- * until both reach it or the readings are spent.
+ * until both reach it or the readings are spent, and again from none when the
+ * person asks.
  */
 function useRepositoryReach(
   tenant: string,
   named: RepositoryNamed,
-): PanelState<readonly RepositoryAppReach[]> {
+): RepositoryReach {
   const [reads, setReads] = useState(0);
   const [reached, setReached] = useState(false);
-  const state = usePanelState(
+  const polledMs = repositoryRosterRereadMs(reads);
+  const { state, refetch } = usePanelState(
     forgeRepositoryReachQuery(
       tenant,
       repositoryNamedLabel(named).toLowerCase(),
@@ -139,14 +151,22 @@ function useRepositoryReach(
         setReads((made) => made + 1);
         return repositoryConnectRead(ports, tenant, named);
       },
-      reached ? undefined : repositoryRosterRereadMs(reads),
+      reached ? undefined : polledMs,
     ),
+    (panel, answer) => ({ state: panel, refetch: answer.refetch }),
   );
   const bindable =
     state.state === "Ready" &&
     repositoryConnectBindable(state.value) !== undefined;
   if (bindable && !reached) setReached(true);
-  return state;
+  return {
+    state,
+    spent: !reached && polledMs === undefined,
+    reread: () => {
+      setReads(0);
+      void refetch();
+    },
+  };
 }
 
 /** One app's press on the forge: its install, with the repository chosen
@@ -243,6 +263,8 @@ function ConnectApps(props: {
   readonly apps: readonly RepositoryAppReach[];
   readonly named: RepositoryNamed;
   readonly returnPath: string;
+  readonly spent: boolean;
+  readonly onReread: () => void;
 }): ReactNode {
   const text = useCopyText();
   const left = repositoryConnectLeft(props.apps);
@@ -273,6 +295,16 @@ function ConnectApps(props: {
           args: { count: left.length, app: left[0] ?? "" },
         })}
       />
+      {props.spent ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-ink-3">
+            {text({ id: "repositories-connect-spent" })}
+          </span>
+          <Button size="sm" variant="default" onClick={props.onReread}>
+            {text({ id: "repositories-connect-reread" })}
+          </Button>
+        </div>
+      ) : null}
       {props.apps.some((one) => one.reach === "Uninstalled") ? (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-ink-3">
@@ -476,7 +508,7 @@ export function ConnectRepository(props: {
   const text = useCopyText();
   const { partition, named } = props;
   const repository = repositoryNamedLabel(named);
-  const state = useRepositoryReach(partition.tenant, named);
+  const { state, spent, reread } = useRepositoryReach(partition.tenant, named);
   const bindable =
     state.state === "Ready"
       ? repositoryConnectBindable(state.value)
@@ -511,6 +543,8 @@ export function ConnectRepository(props: {
           apps={state.value}
           named={named}
           returnPath={returnPath}
+          spent={spent}
+          onReread={reread}
         />
       ) : (
         <ConnectDone

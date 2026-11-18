@@ -22,11 +22,6 @@
  * return from the forge that did not simply connect says so in one line above
  * it, until the person leaves.
  *
- * AN ADDRESS ASKING FOR CONNECT GITHUB loses the ask, in the entry it is in,
- * before anything presses, so neither the return to this page nor Back asks
- * again; `ui/chuggy-ui/app/core/projectRepositories.ts` names the value and
- * `ConnectGithub` decides whether the ask is pressed or waits for the person.
- *
  * THE PICKER HAS AN ADDRESS, this page's own at the anchor
  * `ui/chuggy-ui/app/core/projectRepositories.ts` names, with the repository
  * it is on where `ui/chuggy-ui/app/core/repositoryConnect.ts` finds one, and
@@ -44,7 +39,7 @@
  */
 
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -69,8 +64,6 @@ import {
   repositoryAddOpened,
   repositoryLabel,
   repositoryOffersLine,
-  repositoriesConnectAsked,
-  repositoriesConnectDropped,
 } from "../core/projectRepositories.ts";
 import type {
   RepositoryOffersLine,
@@ -255,16 +248,14 @@ function BindingTable(props: {
 function OffersStep(props: {
   readonly tenant: string;
   readonly step: RepositoryOffersStep;
-  readonly connectAsked: boolean;
 }): ReactNode {
   switch (props.step) {
     case "Connect":
       return (
         <ConnectGithub
           tenant={props.tenant}
-          returnPath={repositoriesConnectDropped(currentPath())}
+          returnPath={currentPath()}
           variant="primary"
-          asked={props.connectAsked}
         />
       );
     case "InstallWorker":
@@ -281,7 +272,6 @@ function OffersStep(props: {
 function OffersLine(props: {
   readonly tenant: string;
   readonly line: RepositoryOffersLine | undefined;
-  readonly connectAsked: boolean;
 }): ReactNode {
   const text = useCopyText();
   const line = props.line;
@@ -291,38 +281,11 @@ function OffersLine(props: {
       <Notice tone="parked" inline detail={text(line.status)} />
       {line.step === undefined ? null : (
         <div className="flex">
-          <OffersStep
-            tenant={props.tenant}
-            step={line.step}
-            connectAsked={props.connectAsked}
-          />
+          <OffersStep tenant={props.tenant} step={line.step} />
         </div>
       )}
     </>
   );
-}
-
-/**
- * Whether the address this page was drawn at asked for Connect GitHub, which
- * is told only once the address has lost the ask.
- */
-function useConnectAsked(): boolean {
-  const navigate = useNavigate();
-  const [arrived] = useState(() => repositoriesConnectAsked(currentPath()));
-  const [asked, setAsked] = useState(false);
-  const dropping = useRef(false);
-  useEffect(() => {
-    if (!arrived || dropping.current) return;
-    dropping.current = true;
-    void navigate({
-      href: repositoriesConnectDropped(currentPath()),
-      replace: true,
-      resetScroll: false,
-    }).then(() => {
-      setAsked(true);
-    });
-  }, [arrived, navigate]);
-  return asked;
 }
 
 /**
@@ -394,7 +357,6 @@ function RepositoriesSection(props: {
     (binding) => binding.retiredAt === undefined,
   );
   const picker = usePicker(props.returned);
-  const connectAsked = useConnectAsked();
   const leads = repositoryAddLeads({
     bindings,
     installations: props.installations,
@@ -422,11 +384,7 @@ function RepositoriesSection(props: {
       }
     >
       <ForgeReturned word={props.returned} />
-      <OffersLine
-        tenant={props.partition.tenant}
-        line={props.line}
-        connectAsked={connectAsked}
-      />
+      <OffersLine tenant={props.partition.tenant} line={props.line} />
       {props.unready}
       {bindings === undefined ? null : (
         <BindingTable
