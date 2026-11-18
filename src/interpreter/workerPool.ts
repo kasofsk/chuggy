@@ -195,7 +195,7 @@ export type WorkerPoolAskedQuery = Pick<
 >;
 
 /** The memory, in MiB, an execution naming none runs with on a pool, where the plane names no size of its own. */
-export const workerPoolMemoryMibDefault = 4_096;
+export const workerPoolMemoryMibDefault = 2_048;
 
 /** What registering one pool records: who it is at the issuer, what it declared, and its class. */
 export interface WorkerPoolRegistration {
