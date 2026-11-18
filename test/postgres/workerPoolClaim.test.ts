@@ -32,8 +32,8 @@
  * the case rather than listed, so a case added to the table is planted or
  * named here without an edit.
  *
- * BESIDE THE TABLE is what no row of it states: a pool reporting less than it
- * holds, two claims of one pool made at once, a claim and a registration of
+ * BESIDE THE TABLE is what no row of it states: a runner reporting less than it
+ * holds, two claims of one runner made at once, a claim and a registration of
  * its pool made at once, the image and size a claim hands out, a claim
  * passing over a job whose account has paused its agent, and the order a claim
  * takes what it may in, both of which the model leaves to be chosen outside it. A ticket's age and whether it was started are read from
@@ -173,6 +173,18 @@ function polling(mint: () => string): WorkerPoolPorts {
       bearers: sessionAttemptMint(),
     },
     mint,
+  };
+}
+
+/** The ports `polling` names, under an authority that lets every owner read every project, as a runner's poll asks before it claims. */
+function pollingRead(mint: () => string): WorkerPoolPorts {
+  const ports = polling(mint);
+  return {
+    ...ports,
+    access: {
+      ...ports.access,
+      authorize: (principal) => Promise.resolve(memberAuthority(principal)),
+    },
   };
 }
 
@@ -1276,16 +1288,17 @@ async function ownersRunner(
   return runner;
 }
 
-test("a pool that reports holding nothing is held to what the database says it holds", async () => {
+test("a runner that reports holding nothing is held to what the database says it holds", async () => {
   const project = await releasedUnder("claim-under-report", pinned, 2);
-  const pool = await pollingPool(project, "under-report", pinned);
-  await opened(project);
-  await claimedBy(pool, `held-${randomUUID()}`);
-  await opened(project);
-  const ports = polling(() => randomUUID());
+  const runner = await ownersRunner(project, "under-report");
+  const strict = { owner: runner.owner, fallback: "Strict" };
+  await opened(project, false, strict);
+  await claimedBy(runner, `held-${randomUUID()}`, project.partition);
+  await opened(project, false, strict);
+  const ports = pollingRead(() => randomUUID());
   const underReported = await workerPoolReconcile(
     ports,
-    pool,
+    runner,
     { jobs: [], sessions: [] },
     { wanted: 1, wantedSessions: 0 },
     settings,
@@ -1293,7 +1306,7 @@ test("a pool that reports holding nothing is held to what the database says it h
   assert.deepEqual(underReported.assignments, []);
   const roomier = await workerPoolReconcile(
     ports,
-    pool,
+    runner,
     { jobs: [], sessions: [] },
     { wanted: 1, wantedSessions: 0 },
     { ...settings, heldMax: 2 },
@@ -1307,27 +1320,41 @@ test("a pool that reports holding nothing is held to what the database says it h
 
 /**
  * The first claim is held open at its commit, so the second is made while the
- * first's attempt is claimed and not yet committed: it waits on the pool's
+ * first's attempt is claimed and not yet committed: it waits on the owner's
  * lock and then counts that attempt, where without the lock it would count
  * nothing and take the other.
  */
-test("a claim made while the same pool's last is still open waits for it and counts it", async () => {
+test("a claim made while the same runner's last is still open waits for it and counts it", async () => {
   const project = await releasedUnder("claim-racing", pinned, 2);
-  const pool = await pollingPool(project, "racing", pinned);
-  await opened(project);
-  await opened(project);
+  const runner = await ownersRunner(project, "racing");
+  const strict = { owner: runner.owner, fallback: "Strict" };
+  await opened(project, false, strict);
+  await opened(project, false, strict);
   const terms = { leaseSecs, heldMax: 1, memoryMibDefault };
+  const projects = [project.partition.project];
   let reach = (): void => undefined;
   const reached = new Promise<void>((resolve) => (reach = resolve));
   let open = (): void => undefined;
   const gate = new Promise<void>((resolve) => (open = resolve));
   const first = postgresWorkerPoolAssignments(
     postgresHarnessHeldAtCommit(planePool, reach, gate),
-  ).claim(pool, terms, `first-${randomUUID()}`, `bearer-${randomUUID()}`, []);
+  ).claimPersonal(
+    runner,
+    terms,
+    `first-${randomUUID()}`,
+    `bearer-${randomUUID()}`,
+    projects,
+  );
   await reached;
   let settled = false;
   const second = assignments
-    .claim(pool, terms, `second-${randomUUID()}`, `bearer-${randomUUID()}`, [])
+    .claimPersonal(
+      runner,
+      terms,
+      `second-${randomUUID()}`,
+      `bearer-${randomUUID()}`,
+      projects,
+    )
     .finally(() => (settled = true));
   while (!settled && !(await postgresHarnessAdvisoryWaiting(rig.harness)))
     await delay(10);
@@ -1390,18 +1417,26 @@ test("a registration made while an older one's claim is still open waits for it 
   );
 });
 
-/** The one assignment a poll is handed for a project released under `requirement`, sized as `resources` names. */
+/** The one assignment an owner's runner's poll is handed for a project released under `requirement`, sized as `resources` names. */
 async function handedOut(
   label: string,
   requirement: ExecutionRequirement,
   resources?: TaskResources,
 ): Promise<WorkerPoolAssignment> {
   const project = await releasedUnder(label, requirement, 1, resources);
-  const pool = await pollingPool(project, label, requirement);
-  await opened(project);
+  const runner: PersonalPlaneIdentity = {
+    kind: "Personal",
+    tenant: project.partition.tenant,
+    owner: asPrincipal(`https://issuer.invalid#${label}-owner-${randomUUID()}`),
+    principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
+  };
+  await plantedRunnerRows(runner, declaringAll(requirement), 0, [
+    project.partition.project,
+  ]);
+  await opened(project, false, { owner: runner.owner, fallback: "Strict" });
   const answered = await workerPoolReconcile(
-    polling(() => randomUUID()),
-    pool,
+    pollingRead(() => randomUUID()),
+    runner,
     { jobs: [], sessions: [] },
     { wanted: 1, wantedSessions: 0 },
     settings,
@@ -1478,13 +1513,14 @@ test("a claim takes no job larger than the room its poll named, a job naming no 
 test("a poll's claims together fit the room it named, and it is told whether one more it fits is waiting under its ceiling", async () => {
   const label = "claim-room-poll";
   const project = await releasedUnder(label, pinned, 3, { memoryMib: 3_000 });
-  const pool = await pollingPool(project, label, pinned);
-  for (let opening = 0; opening < 3; opening += 1) await opened(project);
+  const runner = await ownersRunner(project, label);
+  for (let opening = 0; opening < 3; opening += 1)
+    await opened(project, false, { owner: runner.owner, fallback: "Strict" });
   const runners = postgresWorkerPoolRunners(planePool);
   const poll = (wanted: number, memoryRoomMib: number) =>
     workerPoolReconcile(
-      polling(() => randomUUID()),
-      pool,
+      pollingRead(() => randomUUID()),
+      runner,
       { jobs: [], sessions: [] },
       {
         wanted,
@@ -1502,9 +1538,9 @@ test("a poll's claims together fit the room it named, and it is told whether one
   assert.equal(first.jobsWaiting, false, "the room the first claim left");
   assert.equal((await poll(0, 3_000)).jobsWaiting, true, "a room it fits");
   assert.equal((await poll(0, 2_999)).jobsWaiting, false, "a room too small");
-  await runners.named(pool, undefined, undefined, 2_048);
+  await runners.named(runner, undefined, undefined, 2_048);
   assert.equal((await poll(0, 8_192)).jobsWaiting, false, "a ceiling below");
-  await runners.named(pool, undefined, undefined, 3_000);
+  await runners.named(runner, undefined, undefined, 3_000);
   assert.equal((await poll(0, 8_192)).jobsWaiting, true, "a ceiling at");
   const last = await poll(2, 6_000);
   assert.deepEqual(
@@ -1967,20 +2003,21 @@ for (const [why, credentials] of [
 test("a press lets exactly one claim of the agent through its limit, and a second press one more", async () => {
   const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
   const project = await releasedUnder("claim-pressed", pinned, 3);
+  const owned = { owner: member, fallback: "Strict" };
   for (let attempt = 0; attempt < 3; attempt++)
-    await opened(project, false, unowned, spending.Claude);
-  const pool = await registrantsPool(project, "pressed", member);
+    await opened(project, false, owned, spending.Claude);
+  const runner = await ownedRunner(project, "pressed", member);
   await agentAccountHarnessCommitted(rig.harness, member, "Claude", limited);
-  assert.deepEqual(await claimedInTurn(pool, project.partition, 1), [
+  assert.deepEqual(await claimedInTurn(runner, project.partition, 1), [
     undefined,
   ]);
   await agentAccountHarnessPressed(rig.harness, member, "Claude");
-  assert.deepEqual(await claimedInTurn(pool, project.partition, 2), [
+  assert.deepEqual(await claimedInTurn(runner, project.partition, 2), [
     "Claude",
     undefined,
   ]);
   await agentAccountHarnessPressed(rig.harness, member, "Claude");
-  assert.deepEqual(await claimedInTurn(pool, project.partition, 2), [
+  assert.deepEqual(await claimedInTurn(runner, project.partition, 2), [
     "Claude",
     undefined,
   ]);
@@ -1989,8 +2026,13 @@ test("a press lets exactly one claim of the agent through its limit, and a secon
 test("a press lets no claim through a threshold its account is over", async () => {
   const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
   const project = await releasedUnder("claim-pressed-soft", pinned, 1);
-  await opened(project, false, unowned, spending.Claude);
-  const pool = await registrantsPool(project, "pressed-soft", member);
+  await opened(
+    project,
+    false,
+    { owner: member, fallback: "Strict" },
+    spending.Claude,
+  );
+  const runner = await ownedRunner(project, "pressed-soft", member);
   await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
     readings: [
       {
@@ -2003,7 +2045,7 @@ test("a press lets no claim through a threshold its account is over", async () =
     ...limited,
   });
   await agentAccountHarnessPressed(rig.harness, member, "Claude");
-  assert.equal(await takes(pool, project.partition), false);
+  assert.equal(await takes(runner, project.partition), false);
 });
 
 /**
