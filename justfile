@@ -21,9 +21,10 @@ bump-worker-core commit:
 
 # The worker contract released on GitHub and its commit tagged. The script's
 # header names what it refuses; `just publish-worker-contract --dry-run` packs,
-# and neither releases nor tags. The build system runs it on `main` when a merge
-# that moves `workerContractRelease` lands; a ticket's job never runs it, and a
-# person runs it by hand only where that release did not happen.
+# and neither releases nor tags. The build system runs it for every `main`
+# commit whose `src/contract` differs from the newest release's, labelled the
+# minor after the newest `worker-contract-v*` tag; a ticket's job never runs it,
+# and a person runs it by hand only where that release did not happen.
 publish-worker-contract *ARGS:
     node --experimental-strip-types scripts/publish-worker-contract.ts {{ ARGS }}
 
