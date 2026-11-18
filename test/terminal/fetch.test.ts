@@ -150,13 +150,13 @@ test("a site that answers its configuration with a redirect is not a site, and w
   const elsewhere = await served(200);
   const there = await served(302, `${elsewhere.at}/config.json`);
   const machine = made.machine();
-  const done = await machine.run(["--site", there.at]);
+  const done = await machine.run(["--site", there.at, "--start", "yes"]);
   assert.equal(done.code, 1);
   assert.deepEqual(done.lines, [
     `site: ${there.at}, no answer`,
     "found: the site did not answer",
     `tell: ${there.at} did not answer, so chuggy setup did nothing. Check the address and that this machine can reach it, and tell me if you want me to try again.`,
-    `rule: Run node ${program} --site ${there.at} only if the person asks to try again.`,
+    `rule: Run node ${program} --start yes --site ${there.at} only if the person asks to try again.`,
     "next: stop",
   ]);
   assert.deepEqual(elsewhere.asked, []);

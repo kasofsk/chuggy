@@ -11,6 +11,7 @@
 import { expect, test } from "vitest";
 
 import { copyTextEn } from "../app/copy/catalog.ts";
+import { setupStartFlag, setupStartYes } from "../app/core/setupArguments.ts";
 import { setupReportLines } from "../app/core/setupReport.ts";
 import { setupPacing } from "../app/core/setupPacing.ts";
 import { setupFiles, SetupMachineError } from "../app/core/setupPorts.ts";
@@ -338,7 +339,7 @@ test("a page answered on a machine that gives no room for the sign-in exchanges 
 
 test("a sign-in the issuer exchanged that the machine would not write ends the page as a fault, and is not said to be signed in", async () => {
   const { machine, faults } = thrown();
-  await machine.command(["--site", machineSite]);
+  await machine.command(["--site", machineSite, setupStartFlag, setupStartYes]);
   machine.takes = (file) => file !== machineTokenFile();
   expect(await machine.command(["sign-in"])).toEqual(ended("Faulted"));
   expect(faults).toEqual(["Unkept"]);
@@ -351,7 +352,12 @@ test("a sign-in the issuer exchanged that the machine would not write ends the p
 test("a token renewed while the page confirmed its sign-in that the machine would not write ends the page as a sign-in that was not kept, whether or not the machine then let it be forgotten", async () => {
   for (const forgets of [true, false]) {
     const { machine, faults } = thrown();
-    await machine.command(["--site", machineSite]);
+    await machine.command([
+      "--site",
+      machineSite,
+      setupStartFlag,
+      setupStartYes,
+    ]);
     machine.admits = false;
     let writes = 0;
     machine.takes = (file) => {
@@ -603,7 +609,9 @@ test("a page whose site is no longer the one remembered exchanges nothing, and t
   const machine = setupMachine();
   const other = "https://other.example";
   await machine.command(signIn);
-  expect(await machine.command(["--site", other])).toMatchObject({
+  expect(
+    await machine.command(["--site", other, setupStartFlag, setupStartYes]),
+  ).toMatchObject({
     report: "SignedOut",
     site: other,
   });

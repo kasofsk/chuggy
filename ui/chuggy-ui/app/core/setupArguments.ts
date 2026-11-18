@@ -43,7 +43,9 @@
  * its landing, and reads the checklist again. `plugin` installs chuggy's
  * Claude Code plugin, or updates or enables it. `--plugin skip` is the way
  * past the plugin step without it, and every command the program prints
- * carries it as it carries the workspace and project.
+ * carries it as it carries the workspace and project. `--start yes` is the
+ * person's yes to setup itself, read only by the bare command and carried
+ * only by it.
  */
 
 import { setupLoopbackHost } from "./setupProgram.ts";
@@ -90,7 +92,8 @@ export type SetupAskFault =
   | "Brief"
   | "Image"
   | "Plugin"
-  | "Opened";
+  | "Opened"
+  | "Start";
 
 /** The commands a person or an agent runs, as a report names them. */
 export type SetupCommand =
@@ -117,6 +120,8 @@ export interface SetupAnswers {
   readonly project: string | undefined;
   readonly name?: string | undefined;
   readonly plugin?: SetupPluginAnswer;
+  /** The person's yes to setup itself, which a bare run is given once they have said it. */
+  readonly start?: SetupStartAnswer;
   /** What `runner` was told of making this machine the person's chat host too, carried into every `runner` printed again. */
   readonly chatHost?: SetupChatHostAnswer;
 }
@@ -135,6 +140,12 @@ export function setupAnswersPlugin(
 ): Pick<SetupAnswers, "plugin"> {
   return answers.plugin === undefined ? {} : { plugin: answers.plugin };
 }
+
+/** The flag the bare command is told the person's yes to setup in, and the one value it takes. */
+export const setupStartFlag = "--start";
+export const setupStartYes = "yes";
+
+export type SetupStartAnswer = typeof setupStartYes;
 
 /** The flag `runner` is told in whether to make this machine the person's chat host too, and the answers it takes. */
 export const setupChatHostFlag = "--chat-host";
@@ -322,13 +333,14 @@ const setupFlags = [
   "toolchains",
   "plugin",
   "opened",
+  "start",
 ] as const;
 
 type SetupFlag = (typeof setupFlags)[number];
 
 /** The flags each command reads; one it does not read is asked wrongly. */
 const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
-  Status: ["site", "workspace", "project", "plugin"],
+  Status: ["site", "workspace", "project", "plugin", "start"],
   SignIn: ["site", "wait-secs", "workspace", "project", "plugin"],
   SignOut: ["site", "workspace", "project", "plugin"],
   Project: ["site", "workspace", "project", "name", "plugin"],
@@ -436,9 +448,12 @@ function setupAnswersRead(
   const plugin: Pick<SetupAnswers, "plugin"> = flags.has("plugin")
     ? { plugin: setupPluginSkip }
     : {};
+  const start: Pick<SetupAnswers, "start"> = flags.has("start")
+    ? { start: setupStartYes }
+    : {};
   return name === undefined
-    ? { workspace, project, ...plugin }
-    : { workspace, project, name, ...plugin };
+    ? { workspace, project, ...plugin, ...start }
+    : { workspace, project, name, ...plugin, ...start };
 }
 
 /** A name is carried back in the command that retries it, so it is one a line prints as it is. */
@@ -579,6 +594,9 @@ function setupAskedOf(
   const plugin = flags.get("plugin");
   if (plugin !== undefined && plugin !== setupPluginSkip)
     return { asked: "Wrongly", fault: "Plugin" };
+  const start = flags.get("start");
+  if (start !== undefined && start !== setupStartYes)
+    return { asked: "Wrongly", fault: "Start" };
   const answers = setupAnswersRead(flags);
   if (answers === undefined) return { asked: "Wrongly", fault: "Name" };
   const wait = setupSecsRead(
@@ -676,7 +694,7 @@ export function setupCommandArguments(
   }
 }
 
-/** The flags that name a choice again for `command`, which `setupAsked` reads back as the same choice: the name only for `project`, the one command that reads it, and the plugin step passed over for every command. */
+/** The flags that name a choice again for `command`, which `setupAsked` reads back as the same choice: the name only for `project`, the one command that reads it, the yes to setup only for the bare command, and the plugin step passed over for every command. */
 export function setupAnswerArguments(
   answers: SetupAnswers,
   command: SetupCommand = "Status",
@@ -693,6 +711,9 @@ export function setupAnswerArguments(
     ...(command !== "Runner" || answers.chatHost === undefined
       ? []
       : [setupChatHostFlag, answers.chatHost]),
+    ...(command !== "Status" || answers.start === undefined
+      ? []
+      : [setupStartFlag, answers.start]),
   ];
 }
 

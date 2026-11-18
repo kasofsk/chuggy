@@ -56,8 +56,39 @@ test("a program asked wrongly exits two, says which way, and repeats nothing it 
   assert.deepEqual(readdirSync(machine.home), []);
 });
 
-test("with no site given and none remembered the program exits two, says what to pass, and names no command it could not run", async () => {
-  const done = await made.machine().run([]);
+test("with no site given and none remembered the program says what setup will do, waits on the person's yes, and exits having changed nothing", async () => {
+  const machine = made.machine();
+  const done = await machine.run([]);
+  assert.equal(done.code, 0);
+  dialect(done, "bare");
+  assert.equal(done.lines.length, 6);
+  assert.equal(
+    done.lines[0],
+    "found: no chuggy site is remembered on this machine yet",
+  );
+  assert.match(
+    done.lines[1] ?? "",
+    /^tell: I'll set chuggy up for the repository in this folder\. Here is what happens: 1\. Sign you in to chuggy\. .* Okay to start\?$/u,
+  );
+  assert.match(
+    done.lines[2] ?? "",
+    /^rule: Run the command on the next: line /u,
+  );
+  assert.equal(
+    done.lines[3],
+    "rule: Until the person says yes, do nothing else: start no subagent, no sign-in and no other command.",
+  );
+  assert.match(
+    done.lines[4] ?? "",
+    /^rule: Run node \S+ --start yes --site with the address of the person's chuggy site after it, such as https:\/\/chuggy\.example, only once the person says yes to setting chuggy up\. Ask the person for the address if you do not have it\.$/u,
+  );
+  assert.equal(done.lines[5], "next: stop");
+  assert.deepEqual(readdirSync(machine.home), []);
+  assert.deepEqual(readdirSync(machine.folder), []);
+});
+
+test("with the person's yes and no site given or remembered the program exits two, says what to pass, and names no command it could not run", async () => {
+  const done = await made.machine().run(["--start", "yes"]);
   assert.equal(done.code, 2);
   dialect(done, "bare");
   assert.equal(done.lines.length, 3);
@@ -67,7 +98,7 @@ test("with no site given and none remembered the program exits two, says what to
   );
   assert.match(
     done.lines[1] ?? "",
-    /^rule: Run node \S+ --site with the address of the person's chuggy site after it, such as https:\/\/chuggy\.example\. Ask the person for the address if you do not have it\.$/u,
+    /^rule: Run node \S+ --start yes --site with the address of the person's chuggy site after it, such as https:\/\/chuggy\.example\. Ask the person for the address if you do not have it\.$/u,
   );
   assert.equal(done.lines[2], "next: stop");
 });

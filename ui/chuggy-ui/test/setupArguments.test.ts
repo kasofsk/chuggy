@@ -17,6 +17,7 @@ import {
   setupWaitSecsDefault,
   setupWaitSecsMax,
 } from "../app/core/setupArguments.ts";
+import type { SetupAnswers } from "../app/core/setupArguments.ts";
 
 const site = "https://chuggy.example";
 
@@ -445,6 +446,24 @@ test("bind reads --opened, which takes only github and no other command reads, a
       setupAsked([...command, "--opened", "github"]),
       command.join(" "),
     ).toEqual(wrongly("Flag"));
+});
+
+test("--start takes only yes and only the bare command reads it, as the person's yes to setup, carried back only in the bare command a report names", () => {
+  const answers: SetupAnswers = { ...setupAnswersNone, start: "yes" };
+  expect(setupAsked(["--start", "yes", "--site", site])).toEqual({
+    asked: "Status",
+    site,
+    answers,
+  });
+  for (const value of ["no", "", "Yes"])
+    expect(setupAsked(["--start", value]), value).toEqual(wrongly("Start"));
+  for (const command of [["sign-in"], ["runner"], ["plugin"]])
+    expect(
+      setupAsked([...command, "--start", "yes"]),
+      command.join(" "),
+    ).toEqual(wrongly("Flag"));
+  expect(setupAnswerArguments(answers, "Status")).toEqual(["--start", "yes"]);
+  expect(setupAnswerArguments(answers, "SignIn")).toEqual([]);
 });
 
 test("serve is read only with the workspace and the project it is for, takes a site and no wait, and is run again as itself", () => {

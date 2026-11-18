@@ -36,6 +36,17 @@ export interface SetupCopy {
   readonly "setup-site-issuer": {
     readonly site: unknown;
   };
+  readonly "setup-start-tell": {
+    readonly repository: unknown;
+  };
+  readonly "setup-start-folder": Record<never, never>;
+  readonly "setup-start-when": Record<never, never>;
+  readonly "setup-rule-start-wait": Record<never, never>;
+  readonly "setup-rule-start-site": {
+    readonly command: unknown;
+    readonly example: unknown;
+    readonly when: unknown;
+  };
   readonly "setup-rule-drive": {
     readonly stop: unknown;
   };
@@ -105,6 +116,7 @@ export interface SetupCopy {
     readonly toolchains: unknown;
     readonly chosen: unknown;
     readonly filed: unknown;
+    readonly start: unknown;
   };
   readonly "setup-asked-site": {
     readonly flag: unknown;
@@ -165,6 +177,10 @@ export interface SetupCopy {
     readonly flag: unknown;
     readonly github: unknown;
     readonly bound: unknown;
+  };
+  readonly "setup-asked-start": {
+    readonly flag: unknown;
+    readonly yes: unknown;
   };
   readonly "setup-platforms-and": {
     readonly one: unknown;
@@ -1041,6 +1057,9 @@ export interface SetupCopy {
     readonly path: unknown;
   };
   readonly "setup-built-absent": {
+    readonly path: unknown;
+  };
+  readonly "setup-built-wrote": {
     readonly path: unknown;
   };
   readonly "setup-built-unended": {
