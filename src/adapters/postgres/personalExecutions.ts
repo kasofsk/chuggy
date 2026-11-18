@@ -4,14 +4,15 @@
  * plane's pool.
  *
  * THE CLAIM IS `workerPoolCanAssign` FOR A PERSONAL RUNNER, DECIDED UNDER THE
- * ROW LOCK as a pool's is in `./workerPool.ts`. The execution is `Launching`
- * with an attempt no runner holds; its project allows a personal runner,
- * which is `owner_fallback` named; its owner is the runner's, which a NULL
+ * ROW LOCK, of an attempt `./workerPool.ts` says a claim takes. The execution
+ * is `Launching` with an attempt no runner holds; it allows a personal runner,
+ * which is `owner_fallback` named, as the scheduler names it on every
+ * execution it registers; its owner is the runner's, which a NULL
  * owner never is; its project is on the runner's allowlist, which also holds
  * it to the runner's tenant; the runner's row names the poll's principal, so
  * it is enabled and current; its capabilities run the requirement, and the
- * execution's size is at or under its memory ceiling where a poll named one,
- * as a pool's is; and what that registration holds, across every project it
+ * execution's size is at or under its memory ceiling where a poll named one;
+ * and what that registration holds, across every project it
  * serves, is the slot, apart from what any other runner of the owner's holds.
  * The owner's fallback refuses a personal runner nothing. Its permit was asked
  * when its poll was admitted, and its owner's `Read` of each project before
@@ -19,7 +20,7 @@
  * execution larger than the room the terms name, which chooses among what
  * that allows as the order does rather than being a term of it. Its account
  * is its owner, and it passes over an attempt whose agent that account has
- * paused as a pool's claim does for its registrant: of an agent its newest
+ * paused: of an agent its newest
  * poll named credentials of, the account is paused only while every one of
  * them is, as `agent_account_named_pause` answers, so a credential at its
  * threshold leaves the runner's others to take the job; of any other agent,
@@ -270,7 +271,7 @@ function personalExecutionCredentialOutcome(row: {
 }
 
 /** What a claim's returned row says: its execution's requirement and size, and the runtime its attempt kept where it kept one. */
-export function workerPoolClaimedRow(row: {
+function workerPoolClaimedRow(row: {
   readonly requirement: unknown;
   readonly runtime: string | null;
   readonly cpu_millis: number | null;
@@ -284,7 +285,7 @@ export function workerPoolClaimedRow(row: {
 }
 
 /** Every image and runtime the held attempts' rows name, once each. */
-export function workerPoolHeldPulls(
+function workerPoolHeldPulls(
   rows: readonly {
     readonly image: string | null;
     readonly runtime: string | null;

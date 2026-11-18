@@ -543,10 +543,10 @@ interface ExecutionRunnerWait {
 
 /**
  * Each of `executions` the reader owns whose attempt waits unclaimed, beside
- * every runner of theirs a pool's claim of it defers to under `Strict` (one
- * listing its project, matching its requirement and fitting its memory, sized
- * at `memoryMibDefault` where it names none), with whether that runner polled
- * for executions within the deferral's window, whether it is offered the
+ * every runner of theirs configured for it (one listing its project, matching
+ * its requirement and fitting its memory, sized at `memoryMibDefault` where it
+ * names none), with whether that runner polled for executions within
+ * `sessionRunnerPolledSecsMax`, whether it is offered the
  * attempt's agent, its pause by the credentials it named, the memory room its
  * last poll named, and the memory the execution needs. It is one
  * of the copies of the claim's predicate `./personalRunner.ts` counts, and is
@@ -710,16 +710,11 @@ interface ExecutionPoolRow {
 
 /**
  * Each of `executions` whose attempt waits unclaimed on a pool of its project
- * live for executions within a personal runner's window that a claim on
- * `workerPoolWaiting`'s terms could take it from, once, with the least room
- * those pools last named (nothing where one named none), the most, and the
- * memory the execution needs, sized at `memoryMibDefault` where it names none;
- * the room a poll names, the slots a pool holds, the pause of the account it
- * spends and owners revoked are left out, since none is a fact of the
- * execution a reader's view knows.
- * It is one of the copies of the claim's predicate `./personalRunner.ts`
- * counts, and is held to the claim's answers in
- * `test/postgres/workerPoolClaim.test.ts`.
+ * whose last poll for executions is within a personal runner's window, that
+ * matches its requirement and fits its memory, and that no runner of its
+ * owner's configured for it holds back, once, with the least room those pools
+ * last named (nothing where one named none), the most, and the memory the
+ * execution needs, sized at `memoryMibDefault` where it names none.
  */
 async function executionsPoolRows(
   pool: pg.Pool,

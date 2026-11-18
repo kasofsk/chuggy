@@ -109,7 +109,6 @@ import {
   type WorkerPoolMint,
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
-  type WorkerPoolRegistry,
   type WorkerPoolRunners,
 } from "../../interpreter/workerPool.ts";
 import type {
@@ -149,7 +148,6 @@ export const poolPlaneSettlementBytesMax = planeJsonObjectBytesMax(
 export interface PoolPlaneService {
   readonly authentication: PrincipalAuthentication;
   readonly access: ProjectAccess;
-  readonly registry: WorkerPoolRegistry;
   readonly personal: PersonalRunnerPlaneRegistry;
   readonly chatHosts: ChatHostPlaneRegistry;
   readonly assignments: WorkerPoolAssignments;
@@ -260,7 +258,6 @@ async function poolCaller(
   try {
     identity = await workerPoolAdmitted(
       {
-        pools: service.registry,
         personal: service.personal,
         chatHosts: service.chatHosts,
       },

@@ -157,10 +157,10 @@ export interface WorkerPoolSessionOpening {
 /** `NotClaimable` skips one session; `PoolFull` ends the claims. */
 export type WorkerPoolSessionOpened = "Opened" | "NotClaimable" | "PoolFull";
 
-/** Whoever the pool plane admitted that claims and holds sessions: a project's pool, or a member's chat host. */
-export type WorkerPoolSessionClaimant = Exclude<
+/** Whoever the pool plane admitted that claims and holds sessions: a member's chat host. */
+export type WorkerPoolSessionClaimant = Extract<
   PoolPlaneIdentity,
-  { readonly kind: "Personal" }
+  { readonly kind: "ChatHost" }
 >;
 
 /** `identity` as a session claimant, and nothing for a personal runner, which claims and holds no session. */
@@ -262,34 +262,28 @@ function workerPoolSessionInvocation(
 
 /**
  * Whether a chat host's owner may still read `project`, or open their own
- * sessions where `project` is their reserved partition; a pool's own project
- * is answered by its admission.
+ * sessions where `project` is their reserved partition.
  */
 async function workerPoolSessionProjectRead(
   access: ProjectAccess,
   identity: WorkerPoolSessionClaimant,
   project: ProjectId,
 ): Promise<boolean> {
-  switch (identity.kind) {
-    case "Dedicated":
-      return project === identity.partition.project;
-    case "ChatHost":
-      if (workerPoolSessionMemberScoped(identity, project))
-        return (
-          (await access.authorizeTenant(
-            identity.owner,
-            identity.tenant,
-            "OpenUnscopedChat",
-          )) !== undefined
-        );
-      return (
-        (await access.authorize(
-          identity.owner,
-          { tenant: identity.tenant, project },
-          "Read",
-        )) !== undefined
-      );
-  }
+  if (workerPoolSessionMemberScoped(identity, project))
+    return (
+      (await access.authorizeTenant(
+        identity.owner,
+        identity.tenant,
+        "OpenUnscopedChat",
+      )) !== undefined
+    );
+  return (
+    (await access.authorize(
+      identity.owner,
+      { tenant: identity.tenant, project },
+      "Read",
+    )) !== undefined
+  );
 }
 
 /**
@@ -303,8 +297,7 @@ async function workerPoolSessionProjectsServed(
   identity: WorkerPoolSessionClaimant,
   waiting: readonly WorkerPoolSessionCandidate[],
 ): Promise<ReadonlyMap<ProjectId, RepositoryBinding | undefined>> {
-  const tenant =
-    identity.kind === "Dedicated" ? identity.partition.tenant : identity.tenant;
+  const tenant = identity.tenant;
   const served = new Map<ProjectId, RepositoryBinding | undefined>();
   for (const project of new Set(waiting.map((waited) => waited.project)))
     if (await workerPoolSessionProjectRead(access, identity, project))

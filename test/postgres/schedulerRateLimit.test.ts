@@ -9,8 +9,7 @@
  * A PASS IS INSTALLATION-WIDE and the cases share one database, so each reads
  * back only its own project's rows, and counts only the answers the scheduler
  * submitted there. Each runner is of a member of its own or of one its case
- * names, and each pool is registered by one of its own, so no two cases share
- * an account.
+ * names, so no two cases share an account.
  */
 
 import assert from "node:assert/strict";
@@ -20,11 +19,7 @@ import { after, test } from "node:test";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresWorkerRunEnded } from "../../src/adapters/postgres/workerPlane.ts";
-import {
-  postgresWorkerPoolRegistry,
-  postgresWorkerPoolRoster,
-  postgresWorkerPoolRunners,
-} from "../../src/adapters/postgres/workerPool.ts";
+import { postgresWorkerPoolRunners } from "../../src/adapters/postgres/workerPool.ts";
 import {
   asAttemptCapabilitySecret,
   type ExecutionId,
@@ -37,10 +32,7 @@ import {
   type Principal,
 } from "../../src/interpreter/principal.ts";
 import type { RunEndedEvidence } from "../../src/interpreter/runEvidence.ts";
-import type {
-  PersonalRunnerIdentity,
-  WorkerPoolIdentity,
-} from "../../src/interpreter/workerPool.ts";
+import type { PersonalRunnerIdentity } from "../../src/interpreter/workerPool.ts";
 import type { WorkerRunnerCredentials } from "../../src/contract/workerPool.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
@@ -82,54 +74,6 @@ type Routed = SchedulerResumeRouted;
 interface Runner {
   readonly account: Principal | undefined;
   readonly claimedWaiting: (routed: Routed) => Promise<string>;
-}
-
-/** Registers a pool `named` in the ticket's project, by a member of its own unless `registered` is false, and grants it `Execute`. */
-async function runnerOf(
-  routed: Routed,
-  registered = true,
-  named = "runner-a",
-): Promise<Runner & { readonly pool: WorkerPoolIdentity }> {
-  const { partition } = routed.project;
-  const principal = asPrincipal(`https://issuer.invalid#pool-${randomUUID()}`);
-  const account = registered
-    ? asPrincipal(`https://issuer.invalid#member-${randomUUID()}`)
-    : undefined;
-  assert.equal(
-    await postgresWorkerPoolRegistry(resume.apiPool).register({
-      partition,
-      pool: named,
-      capabilities: ["Platform:Linux:Amd64"],
-      class: "Dedicated",
-      clientId: `chuggy-pool-${randomUUID()}`,
-      principal,
-      ...(account === undefined ? {} : { registeredBy: account }),
-    }),
-    true,
-  );
-  resume.access.grant({ partition, principal, access: new Set(["Execute"]) });
-  const pool = (
-    await postgresWorkerPoolRoster(rig.pool).registered(partition)
-  ).pools.find((registered) => registered.pool === named);
-  assert.ok(pool !== undefined);
-  return {
-    pool,
-    account,
-    claimedWaiting: async () => {
-      const bearer = `bearer-${randomUUID()}`;
-      assert.notEqual(
-        await resume.assignments.claim(
-          pool,
-          claimTerms,
-          `assignment-${randomUUID()}`,
-          bearer,
-          [],
-        ),
-        undefined,
-      );
-      return bearer;
-    },
-  };
 }
 
 /** A personal runner of a member of its own, listing the ticket's project. */
@@ -279,24 +223,6 @@ function resumedAtDoor(routed: Routed) {
   });
 }
 
-/** Moves every attempt of the ticket's project that ended back by `secs`, as though that much time had passed. */
-async function endedEarlier(routed: Routed, secs: number): Promise<void> {
-  const { partition } = routed.project;
-  const moving = await rig.harness.begin();
-  try {
-    await moving.query("SET LOCAL session_replication_role=replica");
-    await moving.query(
-      `UPDATE execution_attempt SET ended_at=ended_at-make_interval(secs=>$3)
-        WHERE tenant=$1 AND project=$2 AND ended_at IS NOT NULL`,
-      [partition.tenant, partition.project, secs],
-    );
-  } catch (error) {
-    await moving.rollback();
-    throw error;
-  }
-  await moving.commit();
-}
-
 const workEscalated = {
   phase: "Escalated",
   escalation: "WorkFailureEscalated",
@@ -388,22 +314,6 @@ test("a try-again press makes the ticket resumable at the next pass, and lets it
   assert.equal(await steps.resumedByScheduler(routed), 1);
   assert.equal((await steps.standing(routed))?.["phase"], "Work");
   await claimed(routed, await newestOne(routed), runner);
-});
-
-test("a run that spent no account waits an hour from its end, as an unknown reset does", async () => {
-  const { routed, execution } = await steps.routedTicket("limit-no-account");
-  const runner = await runnerOf(routed, false);
-  const { bearer } = await claimed(routed, execution, runner);
-  await ended(routed, bearer, "RunRateLimited");
-  assert.deepEqual(await steps.standing(routed), workEscalated);
-  assert.deepEqual(await usageResumeRead(routed), { untilMins: 60 });
-  assert.equal(await steps.resumedByScheduler(routed), 0);
-  await endedEarlier(routed, 3_540);
-  assert.deepEqual(await usageResumeRead(routed), { untilMins: 1 });
-  assert.equal(await steps.resumedByScheduler(routed), 0);
-  await endedEarlier(routed, 120);
-  assert.equal(await steps.resumedByScheduler(routed), 1);
-  assert.equal((await steps.standing(routed))?.["phase"], "Work");
 });
 
 test("the third task a usage limit stops at one place stays with a person", async () => {
@@ -620,29 +530,6 @@ interface Claimant extends Runner {
   readonly named: (credentials: WorkerRunnerCredentials) => Promise<void>;
 }
 
-/** The claimant a pool `runnerOf` registered is. */
-function poolClaimant(
-  runner: Runner & { readonly pool: WorkerPoolIdentity },
-): Claimant {
-  const { account } = runner;
-  assert.ok(account !== undefined);
-  return {
-    account,
-    claimedWaiting: runner.claimedWaiting,
-    claimed: async (routed, execution) =>
-      (await claimed(routed, execution, runner)).bearer,
-    named: (credentials) =>
-      postgresWorkerPoolRunners(resume.planePool).named(
-        { ...runner.pool, kind: "Dedicated" },
-        undefined,
-        undefined,
-        undefined,
-        false,
-        credentials,
-      ),
-  };
-}
-
 /** Registers a personal runner of `owner`, who may read the ticket's project and register runners, listing the project unless `listed` is false. */
 async function personalRegistered(
   routed: Routed,
@@ -729,25 +616,11 @@ async function personalOf(
   };
 }
 
-/** Makes `owner` the execution's owner, naming an owner fallback, as a member's own ticket is. */
-async function ownedBy(
-  routed: Routed,
-  execution: ExecutionId,
-  owner: Principal,
-): Promise<void> {
-  const { partition } = routed.project;
-  await rig.harness.query(
-    `UPDATE execution SET owner=$4, owner_fallback='Strict'
-      WHERE tenant=$1 AND project=$2 AND execution=$3`,
-    [partition.tenant, partition.project, execution, owner],
-  );
-}
-
-/** Makes `owner` the owner of each execution of the ticket's project that has none or whose attempt waits to be claimed, naming an owner fallback, as a member's own ticket is. */
+/** Makes `owner` the owner of each execution of the ticket's project that has none or whose attempt waits to be claimed, as a member's own ticket is. */
 async function ownedWaiting(routed: Routed, owner: Principal): Promise<void> {
   const { partition } = routed.project;
   await rig.harness.query(
-    `UPDATE execution x SET owner=$3, owner_fallback='Strict'
+    `UPDATE execution x SET owner=$3
       WHERE x.tenant=$1 AND x.project=$2
         AND (x.owner IS NULL
              OR EXISTS(SELECT 1 FROM execution_attempt q
@@ -822,15 +695,6 @@ test("a personal runner naming two credentials frees a ticket limited on one whi
   );
 });
 
-test("a pool naming two credentials frees a ticket limited on one while the other is free, and waits for the earlier end while both are paused", async () => {
-  const { routed, execution } = await steps.routedTicket("limit-named-pool");
-  await namedCredentialResumes(
-    routed,
-    execution,
-    poolClaimant(await runnerOf(routed)),
-  );
-});
-
 test("a press after the limits holding every credential a runner names frees the ticket, though a credential it does not name is at its threshold", async () => {
   const { routed, execution } = await steps.routedTicket("limit-named-press");
   const claimant = await ownRunnerOf(routed);
@@ -864,22 +728,11 @@ test("a press after the limits holding every credential a runner names frees the
   assert.equal((await steps.standing(routed))?.["phase"], "Work");
 });
 
-/** A runner `claimantOf` answers naming one credential has a job limited on it, which is then over its threshold, so that runner alone would leave the ticket waiting; the job is its account's own unless `ownedByAnother`. */
-async function limitedOnNamed(
-  label: string,
-  claimantOf: (routed: Routed) => Promise<Claimant>,
-  ownedByAnother = false,
-) {
+/** A personal runner of a member of its own naming one credential has a job of theirs limited on it, which is then over its threshold, so that runner alone would leave the ticket waiting. */
+async function limitedOnNamed(label: string) {
   const { routed, execution } = await steps.routedTicket(label);
-  const claimant = await claimantOf(routed);
+  const claimant = await ownRunnerOf(routed);
   const { account } = claimant;
-  await ownedBy(
-    routed,
-    execution,
-    ownedByAnother
-      ? asPrincipal(`https://issuer.invalid#member-${randomUUID()}`)
-      : account,
-  );
   await claimant.named({ Claude: ["first"] });
   await rateLimited(
     routed,
@@ -893,20 +746,8 @@ async function limitedOnNamed(
   return { routed, account };
 }
 
-/** `limitedOnNamed` on a pool. */
-function limitedOnNamedPool(label: string, ownedByAnother = false) {
-  return limitedOnNamed(
-    label,
-    async (routed) => poolClaimant(await runnerOf(routed)),
-    ownedByAnother,
-  );
-}
-
 test("a second runner of the member naming a free credential frees a ticket the first runner's task was limited on", async () => {
-  const { routed, account } = await limitedOnNamed(
-    "limit-named-second",
-    ownRunnerOf,
-  );
+  const { routed, account } = await limitedOnNamed("limit-named-second");
   await (await personalOf(routed, account)).named({ Claude: ["second"] });
   assert.deepEqual(await usageResumeRead(routed), {});
   assert.equal(await steps.resumedByScheduler(routed), 1);
@@ -914,7 +755,11 @@ test("a second runner of the member naming a free credential frees a ticket the 
 });
 
 test("a personal runner frees nothing until it lists the project", async () => {
-  const { routed, account } = await limitedOnNamedPool("limit-named-unlisted");
+  const { routed, account } = await limitedOnNamed("limit-named-unlisted");
+  const { partition } = routed.project;
+  const key = { tenant: partition.tenant, owner: account };
+  const personal = postgresPersonalRunnerRegistry(resume.apiPool);
+  assert.equal(await personal.disallow(key, partition.project), true);
   await (
     await personalOf(routed, account, false)
   ).named({
@@ -922,25 +767,8 @@ test("a personal runner frees nothing until it lists the project", async () => {
   });
   assert.deepEqual(await usageResumeRead(routed), { untilMins: 60 });
   assert.equal(await steps.resumedByScheduler(routed), 0);
-  const { partition } = routed.project;
-  assert.equal(
-    await postgresPersonalRunnerRegistry(resume.apiPool).allow(
-      { tenant: partition.tenant, owner: account },
-      partition.project,
-    ),
-    "Allowed",
-  );
+  assert.equal(await personal.allow(key, partition.project), "Allowed");
   assert.equal(await steps.resumedByScheduler(routed), 1);
-});
-
-test("a personal runner frees nothing of a task whose execution is another member's", async () => {
-  const { routed, account } = await limitedOnNamedPool(
-    "limit-named-another",
-    true,
-  );
-  await (await personalOf(routed, account)).named({ Claude: ["second"] });
-  assert.deepEqual(await usageResumeRead(routed), { untilMins: 60 });
-  assert.equal(await steps.resumedByScheduler(routed), 0);
 });
 
 test("a runner naming no credential of the agent leaves the ticket waiting for the whole agent", async () => {

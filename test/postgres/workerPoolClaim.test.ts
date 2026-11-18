@@ -1,44 +1,38 @@
 /**
- * The claim a pool makes against PostgreSQL, held to `workerPoolCanAssign`
- * over the rows of `test/interpreter/runnerCases.ts`: each case the database
- * can express is planted as rows and claimed under the roles the deployment
- * runs, and the claim takes the attempt exactly where the case says the model
- * assigns it.
+ * The claim a member's runner makes against PostgreSQL, held to
+ * `workerPoolCanAssign` over the rows of `test/interpreter/runnerCases.ts`:
+ * each case the database can express is planted as rows and claimed under the
+ * roles the deployment runs, and the claim takes the attempt exactly where the
+ * case says the model assigns it.
  *
  * A CASE IS PLANTED IN A PROJECT OF ITS OWN. The case's partition is that
  * project, and a partition it names beside it is the same one with the
  * other's tenant or project name appended; its principals and assignment carry
  * a suffix of the case's own, since both are unique across the installation.
- * The pool is the registry row, its memory ceiling written as a poll naming one
- * writes it, the session is the identity the claim is asked under, and the
- * placement is an execution released with the case's requirement and size,
- * opened and invoked. A slot a session holds is an attempt its
- * pool claimed first, and a bound identity or an assigned phase is an attempt
- * another pool claimed first.
+ * The session is the identity the claim is asked under, and the placement is
+ * an execution released with the case's requirement and size, opened and
+ * invoked. A slot a session holds is an attempt its runner claimed first, and
+ * a bound identity or an assigned phase is an attempt planted as claimed by an
+ * owner the case does not name.
  *
- * THE REGISTRY ADMITS ONE CLASS, so this suite's own database stands the
- * CHECK down to plant a personal pool owning nothing there: a pool's own
- * refusal of a personal registration is the term under test, and a CHECK is
- * not that term.
- *
- * A PERSONAL POOL WITH AN OWNER IS A MEMBER'S RUNNER, planted as its row and
- * its allowlist in its partition's tenant and claimed as one. An execution's
- * owner and its project's fallback are its columns. A runner beside the case's
- * is live where it makes a poll whose token is open, which is a last poll the
- * claim reads as recent, and one the case revokes is named to the claim as the
- * interpreter names an owner it asked.
+ * ONLY A MEMBER'S RUNNER CLAIMS, since the pool plane admits no pool's poll. A
+ * case's runner is a personal pool with an owner, planted as its row and its
+ * allowlist in its partition's tenant and claimed as one; a registered pool
+ * beside it is a registry row. An execution's owner and its project's fallback
+ * are its columns. A runner beside the case's is live where it makes a poll
+ * whose token is open, which is a last poll the claim reads as recent.
  *
  * A CASE THE DATABASE CANNOT EXPRESS IS NAMED WITH THE REASON, derived from
  * the case rather than listed, so a case added to the table is planted or
  * named here without an edit.
  *
  * BESIDE THE TABLE is what no row of it states: a runner reporting less than it
- * holds, two claims of one runner made at once, a claim and a registration of
- * its pool made at once, the image and size a claim hands out, a claim
- * passing over a job whose account has paused its agent, and the order a claim
- * takes what it may in, both of which the model leaves to be chosen outside it. A ticket's age and whether it was started are read from
- * its executions' registrations, which a case plants by moving them back; a
- * second ticket in one project is an execution planted under another number.
+ * holds, two claims of one runner made at once, the image and size a claim
+ * hands out, a claim passing over a job whose account has paused its agent,
+ * and the order a claim takes what it may in, both of which the model leaves
+ * to be chosen outside it. A ticket's age and whether it was started are read
+ * from its executions' registrations, which a case plants by moving them back;
+ * a second ticket in one project is an execution planted under another number.
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -94,7 +88,6 @@ import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import type { TaskResources } from "../../src/interpreter/taskResources.ts";
 import {
   workerPoolReconcile,
-  type DedicatedPoolIdentity,
   type PersonalRunnerIdentity,
   type WorkerPoolClaimTerms,
   type WorkerPoolPollSettings,
@@ -187,10 +180,6 @@ function pollingRead(mint: () => string): WorkerPoolPorts {
     },
   };
 }
-
-await rig.harness.query(
-  "ALTER TABLE worker_pool DROP CONSTRAINT worker_pool_class_is_known",
-);
 
 /** How long a claim's lease runs for, past the duration of any case here. */
 const leaseSecs = 300;
@@ -329,20 +318,20 @@ function inexpressible(c: RunnerCase): string | undefined {
     return "only a poll claims, so a pool making none asks for nothing";
   if (!c.session.leaseOpen)
     return "a poll's lease is its token, verified before any claim is asked for";
+  if (!runnerOwned(c.pool))
+    return c.pool.class === "Personal"
+      ? "a personal pool owning nothing is no member's runner, and the plane admits no other"
+      : "the pool plane refuses a pool's poll, so only a member's runner claims";
   if (c.pool.revoked)
-    return "Execute, or a member's permit and Read, is the authority's, asked before any claim";
+    return "a member's permit and Read are the authority's, asked before any claim";
   const policy = policyUnplanted(c.pool);
   if (policy.length > 0)
-    return `the registry has no column for ${policy.join(", ")}, which every pool holds as registered`;
-  if (!runnerOwned(c.pool) && c.pool.agentsAdvertised)
-    return "the registry has no column for the agents a project's pool advertises, which it never does";
-  if (runnerOwned(c.pool)) {
-    const reason = runnerUnplanted(
-      { pool: c.pool, session: c.session },
-      c.placement.partition,
-    );
-    if (reason !== undefined) return reason;
-  }
+    return `a member's runner has no column for ${policy.join(", ")}, which every pool holds as registered`;
+  const reason = runnerUnplanted(
+    { pool: c.pool, session: c.session },
+    c.placement.partition,
+  );
+  if (reason !== undefined) return reason;
   const demand = (
     Object.keys(workerPoolDemandRouted) as (keyof WorkerPoolDemand)[]
   ).filter(
@@ -573,21 +562,19 @@ async function registeredPool(
   capabilities: readonly string[],
   policy: Pick<WorkerPoolPolicy, "class">,
   home: Partition,
-): Promise<string> {
+): Promise<void> {
   await projectPlanted(partition, home);
-  const clientId = `chuggy-pool-${randomUUID()}`;
   assert.equal(
     await registry.register({
       partition,
       pool,
       capabilities,
       class: policy.class,
-      clientId,
+      clientId: `chuggy-pool-${randomUUID()}`,
       principal,
     }),
     true,
   );
-  return clientId;
 }
 
 /** A member's runner as its row and allowlist, polled `polledSecsAgo` before now where it is `live` and never otherwise, under the ceiling it names. */
@@ -655,31 +642,26 @@ type PersonalPlaneIdentity = PersonalRunnerIdentity & {
   readonly kind: "Personal";
 };
 
-type PlantedIdentity = DedicatedPoolIdentity | PersonalPlaneIdentity;
-
-/** Whether the claim `takes` would make on these terms would take anything, asked of the probe that takes nothing. */
-async function waiting(
-  identity: PlantedIdentity,
+/** Whether the claim `takes` would make on these terms would take anything in `home`, asked of the probe that takes nothing. */
+function waiting(
+  identity: PersonalPlaneIdentity,
   terms: WorkerPoolClaimTerms,
   home: Partition | undefined,
-  ownersRevoked: readonly Principal[] = [],
 ): Promise<boolean> {
-  return identity.kind === "Dedicated"
-    ? assignments.waiting(identity, terms, ownersRevoked)
-    : assignments.waitingPersonal(
-        identity,
-        terms,
-        home === undefined ? [] : [home.project],
-      );
+  return assignments.waitingPersonal(
+    identity,
+    terms,
+    home === undefined ? [] : [home.project],
+  );
 }
 
 /**
- * Whether a pool or runner claims the oldest placeable attempt it may, a
- * runner in `home`, under `assignment` and within `memoryRoomMib` where it is
- * named; the probe is asked first, and answers what the claim then does.
+ * Whether a runner claims the oldest placeable attempt it may in `home`,
+ * under `assignment` and within `memoryRoomMib` where it is named; the probe
+ * is asked first, and answers what the claim then does.
  */
 async function takes(
-  identity: PlantedIdentity,
+  identity: PersonalPlaneIdentity,
   home?: Partition,
   assignment = `assignment-${randomUUID()}`,
   memoryRoomMib?: number,
@@ -693,15 +675,14 @@ async function takes(
 }
 
 /**
- * Whether a pool or runner claims an attempt, a runner across `projects`,
- * under `assignment` and within `memoryRoomMib` where it is named, the probe
- * asked first and held to the claim's answer. Where a runner names no room,
- * its owner's count of what waits is held to the claim too: something waits
- * where the owner's only runner takes something, and what it takes was
- * counted.
+ * Whether a runner claims an attempt across `projects`, under `assignment`
+ * and within `memoryRoomMib` where it is named, the probe asked first and held
+ * to the claim's answer. Where it names no room, its owner's count of what
+ * waits is held to the claim too: something waits where the owner's only
+ * runner takes something, and what it takes was counted.
  */
 async function takesAmong(
-  identity: PlantedIdentity,
+  identity: PersonalPlaneIdentity,
   projects: readonly ProjectId[],
   assignment: string,
   memoryRoomMib?: number,
@@ -712,22 +693,7 @@ async function takesAmong(
     memoryMibDefault,
     ...(memoryRoomMib === undefined ? {} : { memoryRoomMib }),
   };
-  const asked =
-    identity.kind === "Dedicated"
-      ? await assignments.waiting(identity, terms, [])
-      : await assignments.waitingPersonal(identity, terms, projects);
-  const bearer = `bearer-${randomUUID()}`;
-  if (identity.kind === "Dedicated") {
-    const claimed = await assignments.claim(
-      identity,
-      terms,
-      assignment,
-      bearer,
-      [],
-    );
-    assert.equal(asked, claimed !== undefined, "the probe answers the claim");
-    return claimed !== undefined;
-  }
+  const asked = await assignments.waitingPersonal(identity, terms, projects);
   const counting = memoryRoomMib === undefined;
   const before = counting
     ? await waitingCounted(identity, projects)
@@ -736,7 +702,7 @@ async function takesAmong(
     identity,
     terms,
     assignment,
-    bearer,
+    `bearer-${randomUUID()}`,
     projects,
   );
   assert.equal(asked, claimed !== undefined, "the probe answers the claim");
@@ -757,14 +723,30 @@ async function takesAmong(
   return claimed !== undefined;
 }
 
-/** Claims the oldest placeable attempt for a pool or runner that must get one, a runner in the case's project. */
+/** Claims the oldest placeable attempt in `home` for a runner that must get one. */
 async function claimedBy(
-  identity: PlantedIdentity,
+  identity: PersonalPlaneIdentity,
   assignment: string,
   home?: Partition,
 ) {
   if (!(await takes(identity, home, assignment)))
     throw new Error("worker pool claim suite: a planted claim took nothing");
+}
+
+/** Plants `attempt` as claimed under `assignment` by a runner of an owner no case names, holding its lease, as a claim writes it. */
+async function claimPlanted(
+  attempt: string,
+  assignment: string,
+): Promise<void> {
+  const owner = `https://issuer.invalid#claimant-${randomUUID()}`;
+  await rig.harness.query(
+    `UPDATE execution_attempt SET pool=$2,pool_principal=$3,personal=true,
+        assignment=$4,lease_owner=$2,
+        lease_expires_at=now()+make_interval(secs=>$5::double precision),
+        claimed_at=now()
+      WHERE attempt=$1`,
+    [attempt, owner, `${owner}-runner`, assignment, leaseSecs],
+  );
 }
 
 /** What a pool declaring everything declares for one requirement: its platform, both agents, and every capability it names. */
@@ -779,87 +761,46 @@ function declaringAll(requirement: ExecutionRequirement): readonly string[] {
   ];
 }
 
-/** The case's pool as planted, the client a registered one was registered under, another pool of the project declaring everything, and the owners the case revokes. */
-interface PlantedPools {
-  readonly pool: PlantedIdentity;
-  readonly clientId: string | undefined;
-  readonly other: DedicatedPoolIdentity;
-  readonly ownersRevoked: readonly Principal[];
-}
-
-/** One pool as the case registers it, or a member's runner where it has an owner. */
-async function plantedPool(
+/** One pool beside the case's as the case registers it, or a member's runner where it has an owner. */
+async function plantedBeside(
   named: Planted,
   { pool, session }: WorkerPoolEnrolment,
   polledSecsAgo: number,
-): Promise<{ identity: PlantedIdentity; clientId: string | undefined }> {
-  if (runnerOwned(pool))
-    return {
-      identity: await plantedRunner(
-        named,
-        pool,
-        session?.leaseOpen === true,
-        polledSecsAgo,
-      ),
-      clientId: undefined,
-    };
-  const identity: DedicatedPoolIdentity = {
-    kind: "Dedicated",
-    partition: named.partition(pool.partition),
-    pool: pool.pool,
-    principal: named.principal(pool.principal),
-  };
-  const clientId = await registeredPool(
-    identity.partition,
-    identity.pool,
-    identity.principal,
+): Promise<void> {
+  if (runnerOwned(pool)) {
+    await plantedRunner(
+      named,
+      pool,
+      session?.leaseOpen === true,
+      polledSecsAgo,
+    );
+    return;
+  }
+  await registeredPool(
+    named.partition(pool.partition),
+    pool.pool,
+    named.principal(pool.principal),
     pool.capabilities,
     pool,
     named.project.partition,
   );
-  if (pool.memoryCeilingMib !== undefined)
-    await postgresWorkerPoolRunners(planePool).named(
-      identity,
-      undefined,
-      undefined,
-      pool.memoryCeilingMib,
-    );
-  return { identity, clientId };
 }
 
+/** The case's runner as planted, and every pool beside it. */
 async function plantedPools(
   c: RunnerCase,
   named: Planted,
   polledSecsAgo: number,
-): Promise<PlantedPools> {
-  const home = named.project.partition;
-  const { identity: pool, clientId } = await plantedPool(
+): Promise<PersonalPlaneIdentity> {
+  const runner = await plantedRunner(
     named,
-    { pool: c.pool, session: c.session },
+    c.pool,
+    c.session?.leaseOpen === true,
     polledSecsAgo,
   );
-  const ownersRevoked: Principal[] = [];
-  for (const beside of c.others) {
-    await plantedPool(named, beside, polledSecsAgo);
-    const owner = beside.pool.dedicatedOwner;
-    if (runnerOwned(beside.pool) && beside.pool.revoked && owner !== undefined)
-      ownersRevoked.push(named.principal(owner));
-  }
-  const other: DedicatedPoolIdentity = {
-    kind: "Dedicated",
-    partition: home,
-    pool: "pool-other",
-    principal: named.principal(asPrincipal("principal-other")),
-  };
-  await registeredPool(
-    home,
-    other.pool,
-    other.principal,
-    declaringAll(c.placement.requirement),
-    workerPoolPolicyRegistered,
-    home,
-  );
-  return { pool, clientId, other, ownersRevoked };
+  for (const beside of c.others)
+    await plantedBeside(named, beside, polledSecsAgo);
+  return runner;
 }
 
 /** Moves an execution to a status no attempt is opened under, which only standing its trigger down can plant. */
@@ -889,27 +830,21 @@ function ownedAs(c: RunnerCase, named: Planted): Owned {
   };
 }
 
-/** The case's attempt, opened after the slots its pool holds and the identity another pool bound, and placed as the case says. */
+/** The case's attempt, opened after the slots its runner holds and the identity already bound, and placed as the case says. */
 async function plantedTarget(
   c: RunnerCase,
   held: number,
   named: Planted,
-  pools: PlantedPools,
+  runner: PersonalPlaneIdentity,
 ): Promise<{ execution: string; attempt: string }> {
   const home = named.project.partition;
   const owned = ownedAs(c, named);
   for (let slot = 0; slot < held; slot++) {
-    await opened(
-      named.project,
-      false,
-      pools.pool.kind === "Personal" ? owned : unowned,
-    );
-    await claimedBy(pools.pool, `held-${randomUUID()}`, home);
+    await opened(named.project, false, owned);
+    await claimedBy(runner, `held-${randomUUID()}`, home);
   }
-  if (c.assignmentsBound.includes(runnerCaseAssignment)) {
-    await opened(named.project);
-    await claimedBy(pools.other, named.assignment);
-  }
+  if (c.assignmentsBound.includes(runnerCaseAssignment))
+    await claimPlanted((await opened(named.project)).attempt, named.assignment);
   const target = await opened(
     named.project,
     c.placement.route === "InCluster",
@@ -917,7 +852,7 @@ async function plantedTarget(
     invocationRunning(c.placement.agent),
   );
   if (c.placement.phase === "Assigned")
-    await claimedBy(pools.other, `assigned-${randomUUID()}`);
+    await claimPlanted(target.attempt, `assigned-${randomUUID()}`);
   if (c.placement.status !== "Launching")
     await statusPlanted(home, target.execution, c.placement.status);
   return target;
@@ -925,49 +860,24 @@ async function plantedTarget(
 
 /** The case's claim, asked under its session; an identity already bound fails the statement, and that binds nothing. */
 async function claimAsked(
-  identity: PlantedIdentity,
+  identity: PersonalPlaneIdentity,
   heldMax: number,
   assignment: string,
-  pools: PlantedPools,
   home: Partition,
 ): Promise<unknown> {
   const terms = { leaseSecs, heldMax, memoryMibDefault };
-  const bearer = `bearer-${randomUUID()}`;
   try {
-    return identity.kind === "Dedicated"
-      ? await assignments.claim(
-          identity,
-          terms,
-          assignment,
-          bearer,
-          pools.ownersRevoked,
-        )
-      : await assignments.claimPersonal(identity, terms, assignment, bearer, [
-          home.project,
-        ]);
+    return await assignments.claimPersonal(
+      identity,
+      terms,
+      assignment,
+      `bearer-${randomUUID()}`,
+      [home.project],
+    );
   } catch (error) {
     if ((error as { code?: unknown }).code !== "23505") throw error;
     return undefined;
   }
-}
-
-/** The identity the case's poll is asked under: its pool's own, or the runner its principal names. */
-function sessionIdentity(
-  c: RunnerCase,
-  named: Planted,
-  pools: PlantedPools,
-): PlantedIdentity {
-  const session = c.session;
-  if (session === undefined) throw new Error("an inexpressible case");
-  const principal = named.principal(session.principal);
-  return pools.pool.kind === "Personal"
-    ? { ...pools.pool, principal }
-    : {
-        kind: "Dedicated",
-        partition: named.partition(session.partition),
-        pool: session.pool,
-        principal,
-      };
 }
 
 /** That the owner counts something waiting in `home` exactly where their runner's registration could take it, its slots aside, as the probe held to the claim answers. */
@@ -986,8 +896,8 @@ async function waitingCountedProbed(
   );
 }
 
-/** Whether a pool's claim of the case's run defers to a live runner of its owner's offered its agent, by the model's terms and a poll `polledSecsAgo` before now. */
-function deferredToLive(c: RunnerCase, polledSecsAgo: number): boolean {
+/** Whether the case's run waits on a live runner of its owner's offered its agent, by the model's terms and a poll `polledSecsAgo` before now. */
+function waitsOnLive(c: RunnerCase, polledSecsAgo: number): boolean {
   const { placement } = c;
   const registry = [{ pool: c.pool, session: c.session }, ...c.others];
   return (
@@ -1005,11 +915,11 @@ function deferredToLive(c: RunnerCase, polledSecsAgo: number): boolean {
 
 /**
  * That the owner's read of the case's run says it waits on their live runners
- * exactly where a pool's claim defers to one offered its agent. An owner the
- * case revokes is what the claim is told, not what their own read knows, and
- * a runner's row keeps no poll made under a principal registered over.
+ * exactly where the model has a live runner of theirs offered its agent. A
+ * runner's row keeps no poll made under a principal registered over, nor
+ * knows a permit the case revokes.
  */
-async function runnerWaitDeferred(
+async function runnerWaitRead(
   c: RunnerCase,
   named: Planted,
   execution: string,
@@ -1035,61 +945,8 @@ async function runnerWaitDeferred(
   );
   assert.equal(
     read?.personalRunnerWait === "Live",
-    deferredToLive(c, polledSecsAgo),
-    "the owner's run waits on their live runners where a pool's claim defers to one",
-  );
-}
-
-/** The owner's reads of the case's run, each held to what the claim answers. */
-async function ownerReadsProbed(
-  c: RunnerCase,
-  named: Planted,
-  pools: PlantedPools,
-  execution: string,
-  polledSecsAgo: number,
-): Promise<void> {
-  await runnerWaitDeferred(c, named, execution, polledSecsAgo);
-  if (pools.pool.kind === "Personal")
-    await waitingCountedProbed(pools.pool, named.project.partition);
-}
-
-/**
- * That a reader's read of the case's run says the pools of its project are
- * short of memory exactly where the case's pool, the one live and short,
- * could take it by the probe with its slots aside. An owner the case revokes
- * is what the claim is told, not what a reader's view knows; an account's
- * pause is the other such term, and no case plants one.
- */
-async function poolRoomProbed(
-  identity: PlantedIdentity,
-  pools: PlantedPools,
-  home: Partition,
-  execution: string,
-): Promise<void> {
-  if (identity.kind !== "Dedicated" || pools.ownersRevoked.length > 0) return;
-  await rig.harness.query(
-    `UPDATE worker_pool SET memory_room_mib=1,executions_polled_at=now()
-      WHERE tenant=$1 AND project=$2 AND pool=$3 AND principal=$4`,
-    [
-      identity.partition.tenant,
-      identity.partition.project,
-      identity.pool,
-      identity.principal,
-    ],
-  );
-  const read = await operationalReads.execution(
-    home,
-    asExecutionId(execution),
-    asPrincipal(`reader-${randomUUID()}`),
-  );
-  assert.equal(
-    read?.poolRoom !== undefined,
-    await waiting(
-      identity,
-      { leaseSecs, heldMax: Number.MAX_SAFE_INTEGER, memoryMibDefault },
-      home,
-    ),
-    "a reader reads the run short of its pools' memory where the pool could take it with its slots aside",
+    waitsOnLive(c, polledSecsAgo),
+    "the owner's run waits on their live runners where the model has one offered its agent",
   );
 }
 
@@ -1109,32 +966,21 @@ async function claimTook(
       memoryMib: c.placement.memoryMib,
     }),
   );
-  const pools = await plantedPools(c, named, polledSecsAgo);
-  const target = await plantedTarget(c, session.held, named, pools);
-  if (!c.pool.enabled && pools.pool.kind === "Dedicated")
-    assert.equal(
-      await registry.deregister(
-        pools.pool.partition,
-        pools.pool.pool,
-        pools.clientId ?? "",
-      ),
-      true,
-    );
+  const runner = await plantedPools(c, named, polledSecsAgo);
+  const target = await plantedTarget(c, session.held, named, runner);
   const home = named.project.partition;
-  await ownerReadsProbed(c, named, pools, target.execution, polledSecsAgo);
-  const identity = sessionIdentity(c, named, pools);
-  await poolRoomProbed(identity, pools, home, target.execution);
+  await runnerWaitRead(c, named, target.execution, polledSecsAgo);
+  await waitingCountedProbed(runner, home);
+  const identity = { ...runner, principal: named.principal(session.principal) };
   const asked = await waiting(
     identity,
     { leaseSecs, heldMax: session.heldMax, memoryMibDefault },
     home,
-    pools.ownersRevoked,
   );
   const claimed = await claimAsked(
     identity,
     session.heldMax,
     named.assignment,
-    pools,
     home,
   );
   const [bound] = (await rig.harness.query(
@@ -1142,8 +988,8 @@ async function claimTook(
       WHERE tenant=$1 AND project=$2 AND attempt=$3`,
     [home.tenant, home.project, target.attempt],
   )) as readonly { pool: string | null; assignment: string | null }[];
-  const holder = identity.kind === "Dedicated" ? identity.pool : identity.owner;
-  const took = bound?.pool === holder && bound.assignment === named.assignment;
+  const took =
+    bound?.pool === identity.owner && bound.assignment === named.assignment;
   assert.equal(
     claimed !== undefined,
     took,
@@ -1185,33 +1031,6 @@ for (const c of runnerCases) {
   });
 }
 
-test("a runner's poll for executions keeps a pool deferring to it for the liveness window and no longer", async () => {
-  const deferring = runnerCases.find(
-    (c) =>
-      c.name ===
-      "a dedicated pool is assigned nothing of an owner's whose personal pool is polling",
-  );
-  assert.ok(deferring !== undefined && !deferring.canAssign);
-  assert.equal(
-    await claimTook(
-      deferring,
-      "claim-live-inside",
-      sessionRunnerPolledSecsMax - 30,
-    ),
-    false,
-    "a poll inside the window",
-  );
-  assert.equal(
-    await claimTook(
-      deferring,
-      "claim-live-outside",
-      sessionRunnerPolledSecsMax + 30,
-    ),
-    true,
-    "a poll older than the window",
-  );
-});
-
 test("the claim is asked cases it takes and cases it refuses", () => {
   const asked = runnerCases.filter((c) => inexpressible(c) === undefined);
   assert.ok(asked.some((c) => c.canAssign));
@@ -1233,29 +1052,6 @@ const settings: WorkerPoolPollSettings = {
   pollsMax: 1,
   imageHosts: new Map(),
 };
-
-/** A pool registered in this project declaring everything, as it polls. */
-async function pollingPool(
-  project: SchedulerProject,
-  label: string,
-  requirement: ExecutionRequirement,
-): Promise<DedicatedPoolIdentity> {
-  const identity: DedicatedPoolIdentity = {
-    kind: "Dedicated",
-    partition: project.partition,
-    pool: label,
-    principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
-  };
-  await registeredPool(
-    identity.partition,
-    identity.pool,
-    identity.principal,
-    declaringAll(requirement),
-    workerPoolPolicyRegistered,
-    identity.partition,
-  );
-  return identity;
-}
 
 const pinnedImage = `registry.invalid/pinned-worker@sha256:${"b".repeat(64)}`;
 
@@ -1365,58 +1161,6 @@ test("a claim made while the same runner's last is still open waits for it and c
   );
 });
 
-/**
- * An older registration's claim is held open at its commit, so the pool is
- * registered again while that attempt is claimed and not yet committed: the
- * fence waits on the pool's lock and then takes the bearer, where without the
- * lock it would read the attempt as unclaimed and the claim would commit a
- * bearer no registration answers for.
- */
-test("a registration made while an older one's claim is still open waits for it and fences it", async () => {
-  const project = await releasedUnder("claim-fenced", pinned, 1);
-  const older = await pollingPool(project, "fenced", pinned);
-  const attempt = await opened(project);
-  let reach = (): void => undefined;
-  const reached = new Promise<void>((resolve) => (reach = resolve));
-  let open = (): void => undefined;
-  const gate = new Promise<void>((resolve) => (open = resolve));
-  const claim = postgresWorkerPoolAssignments(
-    postgresHarnessHeldAtCommit(planePool, reach, gate),
-  ).claim(
-    older,
-    { leaseSecs, heldMax: 1, memoryMibDefault },
-    `fenced-${randomUUID()}`,
-    `bearer-${randomUUID()}`,
-    [],
-  );
-  await reached;
-  let settled = false;
-  const newer = registry
-    .register({
-      partition: project.partition,
-      pool: "fenced",
-      capabilities: declaringAll(pinned),
-      class: "Dedicated",
-      clientId: `chuggy-pool-${randomUUID()}`,
-      principal: asPrincipal(`https://issuer.invalid#fenced-${randomUUID()}`),
-    })
-    .finally(() => (settled = true));
-  while (!settled && !(await postgresHarnessAdvisoryWaiting(rig.harness)))
-    await delay(10);
-  open();
-  const [claimed, registered] = await Promise.all([claim, newer]);
-  assert.notEqual(claimed, undefined);
-  assert.equal(registered, true);
-  assert.deepEqual(
-    await rig.harness.query(
-      `SELECT pool_principal, capability_secret_digest FROM execution_attempt
-        WHERE tenant=$1 AND project=$2 AND attempt=$3`,
-      [project.partition.tenant, project.partition.project, attempt.attempt],
-    ),
-    [{ pool_principal: older.principal, capability_secret_digest: null }],
-  );
-});
-
 /** The one assignment an owner's runner's poll is handed for a project released under `requirement`, sized as `resources` names. */
 async function handedOut(
   label: string,
@@ -1446,33 +1190,15 @@ async function handedOut(
   return assignment;
 }
 
-test("an execution naming no memory meets a ceiling at the plane's size for it, for a pool, for its owner's runner and for a pool deferring to that runner", async () => {
+test("an execution naming no memory meets a ceiling at the plane's size for it", async () => {
   for (const [ceiling, fits] of [
     [memoryMibDefault, true],
     [memoryMibDefault - 1, false],
   ] as const) {
     const label = `claim-unsized-${String(ceiling)}`;
-    const pooled = await releasedUnder(`${label}-pool`, pinned, 1);
-    const pool = await pollingPool(pooled, label, pinned);
-    await postgresWorkerPoolRunners(planePool).named(
-      pool,
-      undefined,
-      undefined,
-      ceiling,
-    );
-    await opened(pooled);
-    assert.equal(await takes(pool), fits, `a pool under ${String(ceiling)}`);
-    const owned = await releasedUnder(`${label}-owned`, pinned, 2);
+    const owned = await releasedUnder(label, pinned, 1);
     const runner = await ownersRunner(owned, label, ceiling);
-    const strict = { owner: runner.owner, fallback: "Strict" };
-    await opened(owned, false, strict);
-    await opened(owned, false, strict);
-    const unbounded = await pollingPool(owned, `${label}-unbounded`, pinned);
-    assert.equal(
-      await takes(unbounded),
-      !fits,
-      `a pool deferring to a runner under ${String(ceiling)}`,
-    );
+    await opened(owned, false, { owner: runner.owner, fallback: "Strict" });
     assert.equal(
       await takes(runner, owned.partition),
       fits,
@@ -1481,7 +1207,7 @@ test("an execution naming no memory meets a ceiling at the plane's size for it, 
   }
 });
 
-test("a claim takes no job larger than the room its poll named, a job naming no memory at the plane's size, for a pool and for its owner's runner", async () => {
+test("a claim takes no job larger than the room its poll named, a job naming no memory at the plane's size", async () => {
   for (const [memoryMib, room, fits] of [
     [4_096, 4_096, true],
     [4_096, 4_095, false],
@@ -1491,21 +1217,13 @@ test("a claim takes no job larger than the room its poll named, a job naming no 
   ] as const) {
     const label = `claim-room-${String(memoryMib)}-${String(room)}`;
     const resources = memoryMib === undefined ? undefined : { memoryMib };
-    const pooled = await releasedUnder(`${label}-pool`, pinned, 1, resources);
-    const pool = await pollingPool(pooled, label, pinned);
-    await opened(pooled);
-    assert.equal(
-      await takes(pool, undefined, undefined, room),
-      fits,
-      `a pool: ${label}`,
-    );
-    const owned = await releasedUnder(`${label}-owned`, pinned, 1, resources);
+    const owned = await releasedUnder(label, pinned, 1, resources);
     const runner = await ownersRunner(owned, label);
     await opened(owned, false, { owner: runner.owner, fallback: "Strict" });
     assert.equal(
       await takes(runner, owned.partition, undefined, room),
       fits,
-      `a runner: ${label}`,
+      label,
     );
   }
 });
@@ -1552,12 +1270,6 @@ test("a poll's claims together fit the room it named, and it is told whether one
 
 test("a claim or a probe whose size is no positive count, or whose room is no count, is refused before anything is asked", async () => {
   const partition = { tenant: "terms", project: "terms" } as Partition;
-  const pool: DedicatedPoolIdentity = {
-    kind: "Dedicated",
-    partition,
-    pool: "terms",
-    principal: asPrincipal("https://issuer.invalid#terms"),
-  };
   const runner: PersonalPlaneIdentity = {
     kind: "Personal",
     tenant: partition.tenant,
@@ -1571,8 +1283,6 @@ test("a claim or a probe whose size is no positive count, or whose room is no co
   ] as const) {
     const terms = { leaseSecs, heldMax: 1, memoryMibDefault, ...over };
     for (const asked of [
-      () => assignments.claim(pool, terms, "terms", "terms", []),
-      () => assignments.waiting(pool, terms, []),
       () =>
         assignments.claimPersonal(runner, terms, "terms", "terms", [
           partition.project,
@@ -1583,40 +1293,34 @@ test("a claim or a probe whose size is no positive count, or whose room is no co
   }
 });
 
-test("a claim and its probe take nothing of a project that is not Active, nor an attempt a newer recovery epoch superseded, for a pool and for its owner's runner", async () => {
+test("a claim and its probe take nothing of a project that is not Active, nor an attempt a newer recovery epoch superseded", async () => {
   const label = "claim-fenced";
-  const pooled = await releasedUnder(`${label}-pool`, pinned, 2);
-  const pool = await pollingPool(pooled, label, pinned);
-  const owned = await releasedUnder(`${label}-owned`, pinned, 2);
+  const owned = await releasedUnder(label, pinned, 2);
   const runner = await ownersRunner(owned, label);
-  for (let opening = 0; opening < 2; opening += 1) {
-    await opened(pooled);
+  for (let opening = 0; opening < 2; opening += 1)
     await opened(owned, false, { owner: runner.owner, fallback: "Strict" });
-  }
-  for (const [who, project, taking] of [
-    ["a pool", pooled, () => takes(pool)],
-    ["a runner", owned, () => takes(runner, owned.partition)],
+  for (const [lifecycle, taken] of [
+    ["Suspended", false],
+    ["Active", true],
   ] as const) {
-    for (const [lifecycle, taken] of [
-      ["Suspended", false],
-      ["Active", true],
-    ] as const) {
-      await rig.harness.query(
-        `UPDATE project SET lifecycle=$3, lifecycle_generation=lifecycle_generation+1
-          WHERE tenant=$1 AND project=$2`,
-        [project.partition.tenant, project.partition.project, lifecycle],
-      );
-      assert.equal(await taking(), taken, `${who} of a project ${lifecycle}`);
-    }
+    await rig.harness.query(
+      `UPDATE project SET lifecycle=$3, lifecycle_generation=lifecycle_generation+1
+        WHERE tenant=$1 AND project=$2`,
+      [owned.partition.tenant, owned.partition.project, lifecycle],
+    );
+    assert.equal(
+      await takes(runner, owned.partition),
+      taken,
+      `a project ${lifecycle}`,
+    );
   }
   await rig.harness.store.establishRecoveryEpoch(
     asRecoveryEpoch(`epoch-${label}-${randomUUID()}`),
   );
-  assert.equal(await takes(pool), false, "a pool under a superseded epoch");
   assert.equal(
     await takes(runner, owned.partition),
     false,
-    "a runner under a superseded epoch",
+    "an attempt under a superseded epoch",
   );
 });
 
@@ -1629,26 +1333,6 @@ async function withdrawnUnclaimed(attempt: string): Promise<void> {
     [attempt],
   );
 }
-
-test("a pool's claim and its probe take nothing of an attempt withdrawn unclaimed or not yet invoked, and take a job whose owner is not the owner of the live runner beside it", async () => {
-  const label = "probe-pool";
-  const withdrawn = await releasedUnder(`${label}-withdrawn`, pinned, 1);
-  const withdrawing = await pollingPool(withdrawn, `${label}-w`, pinned);
-  await withdrawnUnclaimed((await opened(withdrawn)).attempt);
-  assert.equal(await takes(withdrawing), false, "withdrawn unclaimed");
-  const uninvoked = await releasedUnder(`${label}-uninvoked`, pinned, 1);
-  const waiting = await pollingPool(uninvoked, `${label}-u`, pinned);
-  await opened(uninvoked, false, unowned, null);
-  assert.equal(await takes(waiting), false, "not yet invoked");
-  const beside = await releasedUnder(`${label}-beside`, pinned, 1);
-  const deferring = await pollingPool(beside, `${label}-b`, pinned);
-  await ownersRunner(beside, `${label}-beside`);
-  await opened(beside, false, {
-    owner: `https://issuer.invalid#${label}-owner-${randomUUID()}`,
-    fallback: "Strict",
-  });
-  assert.equal(await takes(deferring), true, "another owner's runner beside");
-});
 
 /** A case's project, its owner's runner in it, and the ownership its jobs are opened under. */
 interface RunnerPlanted {
@@ -1873,33 +1557,6 @@ const limited: AgentAccountHarnessState = {
   limit: { observedSecs: -60, resetsSecs: 3600 },
 };
 
-/** A pool `registrant` registered in this project, declaring everything `pinned` asks. */
-async function registrantsPool(
-  project: SchedulerProject,
-  label: string,
-  registrant: Principal,
-): Promise<DedicatedPoolIdentity> {
-  const identity: DedicatedPoolIdentity = {
-    kind: "Dedicated",
-    partition: project.partition,
-    pool: label,
-    principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
-  };
-  assert.equal(
-    await registry.register({
-      partition: project.partition,
-      pool: label,
-      capabilities: declaringAll(pinned),
-      class: "Dedicated",
-      clientId: `chuggy-pool-${randomUUID()}`,
-      principal: identity.principal,
-      registeredBy: registrant,
-    }),
-    true,
-  );
-  return identity;
-}
-
 /** `owner`'s live runner for `project` alone, declaring everything `pinned` asks. */
 async function ownedRunner(
   project: SchedulerProject,
@@ -1931,7 +1588,7 @@ async function agentClaimed(
 
 /** What each of `claims` claims in turn, as the agent of what it bound, the probe asked before each and held to its answer. */
 async function claimedInTurn(
-  identity: PlantedIdentity,
+  identity: PersonalPlaneIdentity,
   home: Partition,
   claims: number,
 ): Promise<readonly (string | null | undefined)[]> {
@@ -1944,61 +1601,36 @@ async function claimedInTurn(
   return agents;
 }
 
-/** A project with an attempt spending each of Claude, Codex and commands, oldest first, owned by `owner` for their runner where one is named. */
+/** A project with an attempt spending each of Claude, Codex and commands, oldest first, owned by `owner` for their runner. */
 async function spendingEach(
   label: string,
-  owner?: Principal,
+  owner: Principal,
 ): Promise<SchedulerProject> {
   const project = await releasedUnder(label, pinned, 3);
-  const owned: Owned =
-    owner === undefined ? unowned : { owner, fallback: "Strict" };
+  const owned: Owned = { owner, fallback: "Strict" };
   for (const invocation of [spending.Claude, spending.Codex, spending.Commands])
     await opened(project, false, owned, invocation);
   return project;
 }
 
-for (const by of ["a registered pool", "a personal runner"] as const)
-  test(`${by} passes over a job of its account's paused agent and takes the other agent's and a command's, the probe answering each claim`, async () => {
-    const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
-    const label = `claim-paused-${by === "a registered pool" ? "pool" : "runner"}`;
-    const project = await spendingEach(
-      label,
-      by === "a personal runner" ? member : undefined,
-    );
-    const claimant =
-      by === "a registered pool"
-        ? await registrantsPool(project, label, member)
-        : await ownedRunner(project, label, member);
-    await agentAccountHarnessCommitted(rig.harness, member, "Claude", limited);
-    assert.deepEqual(
-      await claimedInTurn(claimant, project.partition, 3),
-      ["Codex", null, undefined],
-      "Codex, then the command, then nothing",
-    );
-    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {});
-    assert.deepEqual(
-      await claimedInTurn(claimant, project.partition, 1),
-      ["Claude"],
-      "the pause lifted, its job is taken at the next claim",
-    );
-  });
-
-for (const [why, credentials] of [
-  ["naming none", {}],
-  ["naming credentials", { Claude: ["work"] }],
-] as readonly (readonly [string, WorkerRunnerCredentials])[])
-  test(`a pool no member registered ${why} spends no account, so nothing pauses its claims and it is answered no pause`, async () => {
-    const project = await releasedUnder(
-      `claim-paused-unregistered-${Object.keys(credentials).length}`,
-      pinned,
-      1,
-    );
-    const pool = await pollingPool(project, "unregistered", pinned);
-    await credentialsNamed(pool, credentials);
-    await opened(project, false, unowned, spending.Claude);
-    assert.equal(await takes(pool), true);
-    assert.deepEqual(await assignments.credentialPauses(pool, credentials), []);
-  });
+test("a runner passes over a job of its account's paused agent and takes the other agent's and a command's, the probe answering each claim", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const label = "claim-paused-runner";
+  const project = await spendingEach(label, member);
+  const runner = await ownedRunner(project, label, member);
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", limited);
+  assert.deepEqual(
+    await claimedInTurn(runner, project.partition, 3),
+    ["Codex", null, undefined],
+    "Codex, then the command, then nothing",
+  );
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {});
+  assert.deepEqual(
+    await claimedInTurn(runner, project.partition, 1),
+    ["Claude"],
+    "the pause lifted, its job is taken at the next claim",
+  );
+});
 
 test("a press lets exactly one claim of the agent through its limit, and a second press one more", async () => {
   const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
@@ -2046,96 +1678,6 @@ test("a press lets no claim through a threshold its account is over", async () =
   });
   await agentAccountHarnessPressed(rig.harness, member, "Claude");
   assert.equal(await takes(runner, project.partition), false);
-});
-
-/**
- * Two claims of one account made at once, each on a lock of its own, with one
- * press between them: the first is held open at its commit having spent the
- * press, so the second has read the press unspent and waits on its row, then
- * finds it spent and takes nothing.
- */
-async function pressRaced(
-  first: { identity: PlantedIdentity; home: Partition },
-  second: { identity: PlantedIdentity; home: Partition },
-): Promise<readonly boolean[]> {
-  let reach = (): void => undefined;
-  const reached = new Promise<void>((resolve) => (reach = resolve));
-  let open = (): void => undefined;
-  const gate = new Promise<void>((resolve) => (open = resolve));
-  const held = postgresWorkerPoolAssignments(
-    postgresHarnessHeldAtCommit(planePool, reach, gate),
-  );
-  const terms = { leaseSecs, heldMax: 1, memoryMibDefault };
-  const claimOf = (
-    through: typeof assignments,
-    { identity, home }: { identity: PlantedIdentity; home: Partition },
-  ) =>
-    identity.kind === "Dedicated"
-      ? through.claim(identity, terms, randomUUID(), randomUUID(), [])
-      : through.claimPersonal(identity, terms, randomUUID(), randomUUID(), [
-          home.project,
-        ]);
-  const firstClaim = claimOf(held, first);
-  await reached;
-  let settled = false;
-  const secondClaim = claimOf(assignments, second).finally(
-    () => (settled = true),
-  );
-  while (!settled) {
-    const [row] = (await rig.harness.query(
-      `SELECT count(*)::int AS waiting FROM pg_stat_activity
-        WHERE datname=current_database() AND wait_event_type='Lock'`,
-    )) as readonly { waiting: number }[];
-    if ((row?.waiting ?? 0) > 0) break;
-    await delay(10);
-  }
-  assert.equal(settled, false, "the second claim waited on the press");
-  open();
-  return (await Promise.all([firstClaim, secondClaim])).map(
-    (taken) => taken !== undefined,
-  );
-}
-
-test("of two pools one member registered claiming at once, one press lets one through", async () => {
-  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
-  const racing = [];
-  for (const side of ["one", "two"]) {
-    const project = await releasedUnder(`claim-press-race-${side}`, pinned, 1);
-    await opened(project, false, unowned, spending.Claude);
-    racing.push({
-      identity: await registrantsPool(project, `press-race-${side}`, member),
-      home: project.partition,
-    });
-  }
-  await agentAccountHarnessCommitted(rig.harness, member, "Claude", limited);
-  await agentAccountHarnessPressed(rig.harness, member, "Claude");
-  const [one, two] = racing;
-  if (one === undefined || two === undefined) throw new Error("no race");
-  assert.deepEqual(await pressRaced(one, two), [true, false]);
-});
-
-test("of a member's runner and a pool they registered claiming at once, one press lets one through", async () => {
-  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
-  const owned = await releasedUnder("claim-press-race-runner", pinned, 1);
-  await opened(
-    owned,
-    false,
-    { owner: member, fallback: "Strict" },
-    spending.Claude,
-  );
-  const runner = await ownedRunner(owned, "press-race-runner", member);
-  const pooled = await releasedUnder("claim-press-race-pool", pinned, 1);
-  await opened(pooled, false, unowned, spending.Claude);
-  const pool = await registrantsPool(pooled, "press-race-pool", member);
-  await agentAccountHarnessCommitted(rig.harness, member, "Claude", limited);
-  await agentAccountHarnessPressed(rig.harness, member, "Claude");
-  assert.deepEqual(
-    await pressRaced(
-      { identity: runner, home: owned.partition },
-      { identity: pool, home: pooled.partition },
-    ),
-    [true, false],
-  );
 });
 
 /** `runner` as its poll names `agents` among its capabilities beside `pinned`'s platform, advertising them as the agents it takes where `advertised` says so. */
@@ -2246,41 +1788,9 @@ test("every poll writes afresh whether its runner advertises its agents, so a ru
   assert.equal(await takes(runner, project.partition), true);
 });
 
-for (const fallback of ["Preferred", "Strict"] as const)
-  test(`a ${fallback} job whose owner's live runner leaves out its agent is ${fallback === "Preferred" ? "the pool's, and is deferred to the runner again once it advertises it" : "never the pool's, before or after the runner advertises it"}, each probe answering its claim`, async () => {
-    const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
-    const label = `claim-agents-${fallback.toLowerCase()}`;
-    const project = await releasedUnder(label, pinned, 2);
-    const owned: Owned = { owner: member, fallback };
-    const pool = await pollingPool(project, label, pinned);
-    const runner = await advertisingRunner(project, label, member);
-    await runnerAdvertised(runner, ["Agent:Codex"], true);
-    await opened(project, false, owned, spending.Claude);
-    assert.equal(
-      await takes(pool, project.partition),
-      fallback === "Preferred",
-      "the runner leaves out Claude",
-    );
-    assert.equal(await takes(runner, project.partition), false);
-    await runnerAdvertised(runner, ["Agent:Claude", "Agent:Codex"], true);
-    await opened(project, false, owned, spending.Claude);
-    assert.equal(
-      await takes(pool, project.partition),
-      false,
-      "the runner advertises Claude again",
-    );
-    assert.deepEqual(
-      await claimedInTurn(runner, project.partition, 3),
-      fallback === "Preferred"
-        ? ["Claude", undefined, undefined]
-        : ["Claude", "Claude", undefined],
-      "the runner takes what waited for it",
-    );
-  });
-
 /** `claimant`'s poll as it names `credentials`, a runner's capabilities and its advertising as `capabilities` and `advertised` say, or left as they are where it names none. */
 async function credentialsNamed(
-  claimant: PlantedIdentity,
+  claimant: PersonalPlaneIdentity,
   credentials: WorkerRunnerCredentials,
   capabilities?: readonly string[],
   advertised = false,
@@ -2296,46 +1806,38 @@ async function credentialsNamed(
 }
 
 /** The credentials `claimant`'s row keeps, as its newest poll named them. */
-async function credentialsKept(claimant: PlantedIdentity): Promise<unknown> {
+async function credentialsKept(
+  claimant: PersonalPlaneIdentity,
+): Promise<unknown> {
   const [row] = (await rig.harness.query(
-    claimant.kind === "Personal"
-      ? `SELECT credentials_named FROM personal_runner WHERE principal=$1`
-      : `SELECT credentials_named FROM worker_pool WHERE principal=$1`,
+    `SELECT credentials_named FROM personal_runner WHERE principal=$1`,
     [claimant.principal],
   )) as readonly { credentials_named: unknown }[];
   return row?.credentials_named;
 }
 
-/** Each claimant whose poll names credentials of the account its work spends. */
-const namingClaimants = ["a personal runner", "a registered pool"] as const;
-
 /**
- * A project with Claude attempts, and `by` naming `credentials` of Claude in
- * it on `member`'s account: their live runner of the project, the attempts
- * theirs and `Strict`, or a pool they registered there.
+ * A project with Claude attempts of `member`'s, `Strict`, and their live
+ * runner of it naming `credentials` of Claude on their account.
  */
-async function namingClaimant(
-  by: (typeof namingClaimants)[number],
+async function namingRunner(
   label: string,
   member: Principal,
   credentials: WorkerRunnerCredentials,
   attempts = 1,
 ): Promise<{
   readonly project: SchedulerProject;
-  readonly claimant: PlantedIdentity;
+  readonly claimant: PersonalPlaneIdentity;
 }> {
-  const named = `${label}-${by === "a personal runner" ? "runner" : "pool"}`;
-  const project = await releasedUnder(named, pinned, attempts);
-  const owned: Owned =
-    by === "a personal runner"
-      ? { owner: member, fallback: "Strict" }
-      : unowned;
+  const project = await releasedUnder(label, pinned, attempts);
   for (let attempt = 0; attempt < attempts; attempt++)
-    await opened(project, false, owned, spending.Claude);
-  const claimant =
-    by === "a personal runner"
-      ? await ownedRunner(project, named, member)
-      : await registrantsPool(project, named, member);
+    await opened(
+      project,
+      false,
+      { owner: member, fallback: "Strict" },
+      spending.Claude,
+    );
+  const claimant = await ownedRunner(project, label, member);
   await credentialsNamed(claimant, credentials);
   return { project, claimant };
 }
@@ -2358,251 +1860,194 @@ async function pressUnspent(member: Principal): Promise<boolean> {
   return row?.unspent === true;
 }
 
-for (const by of namingClaimants)
-  test(`${by} naming two credentials takes a job while one is paused and the other is free, or never reported`, async () => {
-    for (const [why, readings] of [
+test("a personal runner naming two credentials takes a job while one is paused and the other is free, or never reported", async () => {
+  for (const [why, readings] of [
+    [
+      "the other reported under its threshold",
       [
-        "the other reported under its threshold",
-        [
-          {
-            window: "five_hour",
-            utilization: 0.1,
-            resetsSecs: 1800,
-            observedSecs: -30,
-            credential: "home",
-          },
-        ],
-      ],
-      ["the other never reported", []],
-    ] as const) {
-      const member = asPrincipal(
-        `https://issuer.invalid#member-${randomUUID()}`,
-      );
-      const { project, claimant } = await namingClaimant(
-        by,
-        `claim-named-free-${readings.length}`,
-        member,
-        { Claude: ["work", "home"] },
-      );
-      await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
-        readings,
-        limits: [limitOf("work")],
-      });
-      assert.equal(await takes(claimant, project.partition), true, why);
-    }
-  });
-
-for (const by of namingClaimants)
-  test(`${by} whose every named credential is paused takes nothing, its probe and a runner's owner's count agreeing, until the earliest pause ends, and the pause names each reason once`, async () => {
-    const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
-    const { project, claimant } = await namingClaimant(
-      by,
-      "claim-named-held",
-      member,
-      { Claude: ["work", "home", "spare"] },
-    );
-    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
-      readings: [
         {
           window: "five_hour",
-          utilization: 0.95,
-          resetsSecs: 7200,
+          utilization: 0.1,
+          resetsSecs: 1800,
           observedSecs: -30,
-          credential: "spare",
+          credential: "home",
         },
       ],
-      limits: [limitOf("work", 3600), limitOf("home", 5400)],
+    ],
+    ["the other never reported", []],
+  ] as const) {
+    const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+    const { project, claimant } = await namingRunner(
+      `claim-named-free-${readings.length}`,
+      member,
+      { Claude: ["work", "home"] },
+    );
+    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+      readings,
+      limits: [limitOf("work")],
     });
-    assert.equal(await takes(claimant, project.partition), false);
-    if (claimant.kind === "Personal")
-      await waitingCountedProbed(claimant, project.partition);
-    const [answer] = await rig.harness.query(
-      `SELECT h.reasons,h.admitted_by_press,
+    assert.equal(await takes(claimant, project.partition), true, why);
+  }
+});
+
+test("a personal runner whose every named credential is paused takes nothing, its probe and a runner's owner's count agreeing, until the earliest pause ends, and the pause names each reason once", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const { project, claimant } = await namingRunner("claim-named-held", member, {
+    Claude: ["work", "home", "spare"],
+  });
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    readings: [
+      {
+        window: "five_hour",
+        utilization: 0.95,
+        resetsSecs: 7200,
+        observedSecs: -30,
+        credential: "spare",
+      },
+    ],
+    limits: [limitOf("work", 3600), limitOf("home", 5400)],
+  });
+  assert.equal(await takes(claimant, project.partition), false);
+  await waitingCountedProbed(claimant, project.partition);
+  const [answer] = await rig.harness.query(
+    `SELECT h.reasons,h.admitted_by_press,
               h.paused_until=(SELECT min(l.resets_at) FROM agent_account_limit l
                                WHERE l.principal=$1 AND l.agent='Claude') AS earliest
          FROM ${agentAccountNamedPauseFunction}($1,'Claude',$2) h`,
-      [member, ["work", "home", "spare", "work"]],
-    );
-    assert.deepEqual(answer, {
-      reasons: ["five_hour", "limit"],
-      admitted_by_press: false,
-      earliest: true,
-    });
-    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
-      limits: [limitOf("work", -1), limitOf("home", 5400)],
-    });
-    assert.equal(
-      await takes(claimant, project.partition),
-      true,
-      "the earlier pause ended",
-    );
-  });
-
-for (const by of namingClaimants)
-  test(`of ${by}'s named credentials one free and one held by a limit a press came after, the claim takes the job and spends no press, and with both held by limits the press lets one through and no more`, async () => {
-    const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
-    const { project, claimant } = await namingClaimant(
-      by,
-      "claim-named-pressed",
-      member,
-      { Claude: ["work", "home"] },
-      3,
-    );
-    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
-      limits: [limitOf("work")],
-      press: { pressedSecs: 0 },
-    });
-    assert.equal(await takes(claimant, project.partition), true);
-    assert.equal(
-      await pressUnspent(member),
-      true,
-      "the free credential took it",
-    );
-    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
-      limits: [limitOf("work"), limitOf("home")],
-      press: { pressedSecs: 0 },
-    });
-    assert.equal(await takes(claimant, project.partition), true);
-    assert.equal(await pressUnspent(member), false, "the press let it through");
-    assert.equal(
-      await takes(claimant, project.partition),
-      false,
-      "the spent press lets no second claim through",
-    );
-  });
-
-test("a Preferred job's pool goes on deferring to its owner's live runner while every credential the runner names is paused", async () => {
-  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
-  const label = "claim-named-preferred";
-  const project = await releasedUnder(label, pinned, 1);
-  const pool = await pollingPool(project, label, pinned);
-  const runner = await advertisingRunner(project, label, member);
-  await credentialsNamed(
-    runner,
-    { Claude: ["work", "home"] },
-    [workerPoolPlatformToken(pinned), "Agent:Claude"],
-    true,
+    [member, ["work", "home", "spare", "work"]],
   );
-  await opened(
-    project,
-    false,
-    { owner: member, fallback: "Preferred" },
-    spending.Claude,
-  );
+  assert.deepEqual(answer, {
+    reasons: ["five_hour", "limit"],
+    admitted_by_press: false,
+    earliest: true,
+  });
   await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
-    limits: [limitOf("work"), limitOf("home")],
+    limits: [limitOf("work", -1), limitOf("home", 5400)],
   });
-  assert.equal(await takes(pool, project.partition), false, "the pool");
-  assert.equal(await takes(runner, project.partition), false, "the runner");
+  assert.equal(
+    await takes(claimant, project.partition),
+    true,
+    "the earlier pause ended",
+  );
 });
 
-for (const by of namingClaimants)
-  for (const [why, credentials] of [
-    ["naming none", {}],
-    ["naming credentials of another agent alone", { Codex: ["work"] }],
-  ] as readonly (readonly [string, WorkerRunnerCredentials])[])
-    test(`${by} ${why} claims a job of an agent as its account's pause reads it`, async () => {
-      const member = asPrincipal(
-        `https://issuer.invalid#member-${randomUUID()}`,
-      );
-      const { project, claimant } = await namingClaimant(
-        by,
-        `claim-named-none-${Object.keys(credentials).length}`,
-        member,
-        credentials,
-      );
-      await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
-        limits: [limitOf("other")],
-      });
-      assert.equal(await takes(claimant, project.partition), false, "paused");
-      await agentAccountHarnessCommitted(rig.harness, member, "Claude", {});
-      assert.equal(await takes(claimant, project.partition), true, "unpaused");
-    });
-
-for (const by of namingClaimants)
-  test(`${by}'s poll naming credentials keeps them, and one naming none after clears them`, async () => {
-    const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
-    const { claimant } = await namingClaimant(
-      by,
-      "claim-named-cleared",
-      member,
-      { Claude: ["work", "home"], Codex: ["codex"] },
-    );
-    assert.deepEqual(await credentialsKept(claimant), {
-      Claude: ["work", "home"],
-      Codex: ["codex"],
-    });
-    await credentialsNamed(claimant, {});
-    assert.equal(await credentialsKept(claimant), null);
+test("of a personal runner's named credentials one free and one held by a limit a press came after, the claim takes the job and spends no press, and with both held by limits the press lets one through and no more", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const { project, claimant } = await namingRunner(
+    "claim-named-pressed",
+    member,
+    { Claude: ["work", "home"] },
+    3,
+  );
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    limits: [limitOf("work")],
+    press: { pressedSecs: 0 },
   });
+  assert.equal(await takes(claimant, project.partition), true);
+  assert.equal(await pressUnspent(member), true, "the free credential took it");
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    limits: [limitOf("work"), limitOf("home")],
+    press: { pressedSecs: 0 },
+  });
+  assert.equal(await takes(claimant, project.partition), true);
+  assert.equal(await pressUnspent(member), false, "the press let it through");
+  assert.equal(
+    await takes(claimant, project.partition),
+    false,
+    "the spent press lets no second claim through",
+  );
+});
 
-for (const by of namingClaimants)
-  test(`${by} is answered the pause of each credential it named that is paused, and of none it did not name`, async () => {
+for (const [why, credentials] of [
+  ["naming none", {}],
+  ["naming credentials of another agent alone", { Codex: ["work"] }],
+] as readonly (readonly [string, WorkerRunnerCredentials])[])
+  test(`a personal runner ${why} claims a job of an agent as its account's pause reads it`, async () => {
     const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
-    const { claimant } = await namingClaimant(
-      by,
-      "claim-named-answered",
+    const { project, claimant } = await namingRunner(
+      `claim-named-none-${Object.keys(credentials).length}`,
       member,
-      {},
+      credentials,
     );
     await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
-      limits: [limitOf("work"), limitOf("unnamed")],
+      limits: [limitOf("other")],
     });
-    await agentAccountHarnessCommitted(rig.harness, member, "Codex", {
-      limits: [limitOf("codex", 5400)],
-    });
-    const [limit] = (await rig.harness.query(
-      `SELECT ceil(extract(epoch FROM resets_at))::bigint::text AS until
+    assert.equal(await takes(claimant, project.partition), false, "paused");
+    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {});
+    assert.equal(await takes(claimant, project.partition), true, "unpaused");
+  });
+
+test("a personal runner's poll naming credentials keeps them, and one naming none after clears them", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const { claimant } = await namingRunner("claim-named-cleared", member, {
+    Claude: ["work", "home"],
+    Codex: ["codex"],
+  });
+  assert.deepEqual(await credentialsKept(claimant), {
+    Claude: ["work", "home"],
+    Codex: ["codex"],
+  });
+  await credentialsNamed(claimant, {});
+  assert.equal(await credentialsKept(claimant), null);
+});
+
+test("a personal runner is answered the pause of each credential it named that is paused, and of none it did not name", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const { claimant } = await namingRunner("claim-named-answered", member, {});
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    limits: [limitOf("work"), limitOf("unnamed")],
+  });
+  await agentAccountHarnessCommitted(rig.harness, member, "Codex", {
+    limits: [limitOf("codex", 5400)],
+  });
+  const [limit] = (await rig.harness.query(
+    `SELECT ceil(extract(epoch FROM resets_at))::bigint::text AS until
          FROM agent_account_limit WHERE principal=$1 AND credential='work'`,
-      [member],
-    )) as readonly { until: string }[];
-    const pauses = await assignments.credentialPauses(claimant, {
-      Claude: ["work", "home"],
-    });
-    assert.deepEqual(pauses, [
-      {
-        agent: "Claude",
-        credential: "work",
-        pausedUntil: Number(limit?.until),
-      },
-    ]);
-    assert.deepEqual(await assignments.credentialPauses(claimant, {}), []);
+    [member],
+  )) as readonly { until: string }[];
+  const pauses = await assignments.credentialPauses(claimant, {
+    Claude: ["work", "home"],
   });
+  assert.deepEqual(pauses, [
+    {
+      agent: "Claude",
+      credential: "work",
+      pausedUntil: Number(limit?.until),
+    },
+  ]);
+  assert.deepEqual(await assignments.credentialPauses(claimant, {}), []);
+});
 
-for (const by of namingClaimants)
-  test(`${by} is answered each named credential its owner turned off as paused, and waits while every one it names is off, claiming once one is on`, async () => {
-    const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
-    const { project, claimant } = await namingClaimant(
-      by,
-      "claim-named-off",
-      member,
-      { Claude: ["work", "home"] },
-    );
-    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
-      off: ["work", "home", "unnamed"],
-    });
-    const pauses = await assignments.credentialPauses(claimant, {
-      Claude: ["work", "home"],
-    });
-    assert.deepEqual(
-      pauses.map((pause) => [pause.agent, pause.credential]),
-      [
-        ["Claude", "home"],
-        ["Claude", "work"],
-      ],
-    );
-    const nowSecs = Date.now() / 1000;
-    for (const pause of pauses)
-      assert.ok(
-        pause.pausedUntil > nowSecs + agentAccountCredentialOffSecsAt191 - 3600,
-        "an off credential's pause ends past every window",
-      );
-    assert.equal(await takes(claimant, project.partition), false, "all off");
-    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
-      off: ["work", "unnamed"],
-    });
-    assert.equal(await takes(claimant, project.partition), true, "one on");
+test("a personal runner is answered each named credential its owner turned off as paused, and waits while every one it names is off, claiming once one is on", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const { project, claimant } = await namingRunner("claim-named-off", member, {
+    Claude: ["work", "home"],
   });
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    off: ["work", "home", "unnamed"],
+  });
+  const pauses = await assignments.credentialPauses(claimant, {
+    Claude: ["work", "home"],
+  });
+  assert.deepEqual(
+    pauses.map((pause) => [pause.agent, pause.credential]),
+    [
+      ["Claude", "home"],
+      ["Claude", "work"],
+    ],
+  );
+  const nowSecs = Date.now() / 1000;
+  for (const pause of pauses)
+    assert.ok(
+      pause.pausedUntil > nowSecs + agentAccountCredentialOffSecsAt191 - 3600,
+      "an off credential's pause ends past every window",
+    );
+  assert.equal(await takes(claimant, project.partition), false, "all off");
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    off: ["work", "unnamed"],
+  });
+  assert.equal(await takes(claimant, project.partition), true, "one on");
+});
 
 /** How many claims a case asking for an order makes at most, past the attempts any of them opens. */
 const orderClaimsMax = 8;
@@ -2659,9 +2104,9 @@ async function executionAssigned(assignment: string): Promise<string> {
   return row.execution;
 }
 
-/** The executions a pool or runner takes, a runner across `projects`, one claim after another until one takes nothing, each within `memoryRoomMib` where it is named. */
+/** The executions a runner takes across `projects`, one claim after another until one takes nothing, each within `memoryRoomMib` where it is named. */
 async function takenInTurn(
-  identity: PlantedIdentity,
+  identity: PersonalPlaneIdentity,
   projects: readonly SchedulerProject[],
   memoryRoomMib?: number,
 ): Promise<readonly string[]> {
@@ -2803,23 +2248,15 @@ test("a runner takes a started ticket's next stage before an older new ticket's 
   }
 });
 
-test("a pool takes a started ticket's next stage before an older new ticket's Work", async () => {
-  const project = await releasedUnder("order-pool", pinned, 3);
-  const pool = await pollingPool(project, "order-pool", pinned);
-  const fresh = (await opened(project)).execution;
-  await registeredAs(project, fresh, 7_200, project.ticket + 1);
-  const review = await startedOpened(project, unowned);
-  assert.deepEqual(await takenInTurn(pool, [project]), [review, fresh]);
-});
-
 test("an execution an earlier attempt of was claimed is started, and one whose earlier attempt was withdrawn unclaimed, as a runtime roll withdraws one, is not", async () => {
   for (const claimed of [true, false]) {
     const label = `order-reopened-${String(claimed)}`;
     const project = await releasedUnder(label, pinned, 2);
-    const pool = await pollingPool(project, label, pinned);
-    const fresh = (await opened(project)).execution;
+    const runner = await ownersRunner(project, label);
+    const owned = { owner: runner.owner, fallback: "Strict" };
+    const fresh = (await opened(project, false, owned)).execution;
     await registeredAs(project, fresh, 7_200, project.ticket + 1);
-    const first = await opened(project);
+    const first = await opened(project, false, owned);
     if (claimed)
       await rig.harness.query(
         `UPDATE execution_attempt SET claimed_at=opened_at WHERE attempt=$1`,
@@ -2842,7 +2279,7 @@ test("an execution an earlier attempt of was claimed is started, and one whose e
       true,
     );
     assert.deepEqual(
-      await takenInTurn(pool, [project]),
+      await takenInTurn(runner, [project]),
       claimed ? [first.execution, fresh] : [fresh, first.execution],
       label,
     );

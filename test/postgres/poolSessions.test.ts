@@ -1,7 +1,7 @@
 /**
  * A runner's claim of a session, against a real PostgreSQL and under the roles a
  * deployment runs: a member's chat host claims their threads through the pool
- * plane's role, while a project's pool and their personal runner claim none;
+ * plane's role, while their personal runner claims none;
  * the worker plane serves the attempt a claim opened, and the scheduler's
  * sweeps reach it. Each case holds a project of its own.
  */
@@ -71,8 +71,8 @@ import {
   workerPoolHeldImages,
   workerPoolPoll,
   workerPoolSettled,
-  type DedicatedPoolIdentity,
   type PoolPlaneIdentity,
+  type WorkerPoolIdentity,
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
@@ -196,13 +196,13 @@ function principal(label: string): Principal {
   return asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`);
 }
 
-/** A runner `member` registered on the project, or one no person registered, under the name given or one of its own. */
+/** A pool `member` registered on the project, or one no person registered, under the name given or one of its own. */
 async function runner(
   partition: Partition,
   member: Principal | undefined,
   pool = `runner-${randomUUID()}`,
   registered: Principal = principal("pool"),
-): Promise<DedicatedPoolIdentity> {
+): Promise<WorkerPoolIdentity> {
   assert.equal(
     await postgresWorkerPoolRegistry(apiPool).register({
       partition,
@@ -215,14 +215,14 @@ async function runner(
     }),
     true,
   );
-  return { kind: "Dedicated", partition, pool, principal: registered };
+  return { partition, pool, principal: registered };
 }
 
-/** A project whose sessions run on runners, with a member and that member's runner. */
+/** A project whose sessions run on runners, with a member and a pool that member registered. */
 async function routedProject(label: string): Promise<{
   readonly partition: Partition;
   readonly member: Principal;
-  readonly pool: DedicatedPoolIdentity;
+  readonly pool: WorkerPoolIdentity;
 }> {
   const partition = await sessionRigProject(rig, label);
   await sessionRigRouted(rig, partition, "Pool");
@@ -518,7 +518,7 @@ test("a runner is handed a session whose oldest queued turn was admitted for run
   assert.deepEqual((await polled(host, 4, [claimed.assignment])).sessions, []);
 });
 
-test("every attempt a chat host opens names its holder's kind, its holder and the principal that claimed, a pool and a personal runner open none, and an attempt in the cluster names none", async () => {
+test("every attempt a chat host opens names its holder's kind, its holder and the principal that claimed, a personal runner opens none, and an attempt in the cluster names none", async () => {
   const partition = await sessionRigProject(rig, "pool-holders");
   await sessionRigRouted(rig, partition, "Pool");
   const runs = principal("member-holders-runs");
@@ -526,7 +526,6 @@ test("every attempt a chat host opens names its holder's kind, its holder and th
   await waiting(partition, "holders-runs", runs);
   await waiting(partition, "holders-hosts", hosts);
   await waiting(partition, "holders-hosts-second", hosts);
-  const pool = await runner(partition, undefined);
   const personalRunner = await personal(partition, runs);
   const host = await chatHost(partition, hosts);
   const holders = async (
@@ -543,7 +542,6 @@ test("every attempt a chat host opens names its holder's kind, its holder and th
         ];
       }),
     );
-  assert.deepEqual(await holders(pool), []);
   assert.deepEqual(await holders(personalRunner), []);
   assert.deepEqual(await holders(host), [
     ["ChatHost", hosts, host.principal, hosts],
@@ -564,7 +562,7 @@ test("every attempt a chat host opens names its holder's kind, its holder and th
   );
 });
 
-test("a thread is handed to its member's chat host alone, never to a pool of the project, even one their member registered, or to their personal runner, and nothing to another project's", async () => {
+test("a thread is handed to its member's chat host alone, never to their personal runner, and nothing to another project's", async () => {
   const partition = await sessionRigProject(rig, "pool-whose");
   await sessionRigRouted(rig, partition, "Pool");
   const member = principal("member-whose");
@@ -575,7 +573,6 @@ test("a thread is handed to its member's chat host alone, never to a pool of the
   const handed = async (pool: PoolPlaneIdentity) =>
     new Set(await Promise.all((await polled(pool, 4)).sessions.map(sessionOf)));
 
-  assert.deepEqual(await handed(await runner(elsewhere, member)), new Set());
   assert.deepEqual(await handed(await chatHost(elsewhere, other)), new Set());
   assert.deepEqual(
     await handed(await personal(partition, member, [])),
@@ -587,12 +584,6 @@ test("a thread is handed to its member's chat host alone, never to a pool of the
     new Set(),
     "a personal runner was handed another member's session",
   );
-  for (const registeredBy of [member, undefined])
-    assert.deepEqual(
-      await handed(await runner(partition, registeredBy)),
-      new Set(),
-      "a pool was handed a session",
-    );
   assert.deepEqual(
     await handed(await personal(partition, member)),
     new Set(),
@@ -676,13 +667,8 @@ async function openedFor(
   });
 }
 
-test("no pool of the project reads a session as waiting, and a thread is read by its member's chat host alone", async () => {
+test("a thread is read as waiting by its member's chat host alone", async () => {
   const { partition, member, thread } = await confinedProject("pool-read");
-  for (const elsewhere of [member, principal("other-read"), undefined])
-    assert.deepEqual(
-      await awaitingOf(await runner(partition, elsewhere)),
-      new Set(),
-    );
   assert.deepEqual(
     await awaitingOf(await chatHost(partition, principal("other-read"))),
     new Set(),
@@ -722,17 +708,6 @@ async function openedByNone(
       refusal,
     );
 }
-
-test("a pool opens no session of its project, not even its member's thread", async () => {
-  const { partition, member, thread } = await confinedProject("pool-open");
-  const pool = await runner(partition, member);
-  const unregistered = await runner(partition, undefined);
-  const candidate = await candidatesRead([await chatHost(partition, member)]);
-  await openedByNone(candidate, [
-    [pool, thread, "a pool opened its member's thread"],
-    [unregistered, thread, "a pool no person registered opened a thread"],
-  ]);
-});
 
 test("a session read as waiting by the runner it is for is opened by no chat host it is not for", async () => {
   const { partition, member, thread } = await confinedProject("host-open");
@@ -973,7 +948,10 @@ test("only a poll that could take a session marks a runner live, and a member's 
     inquiry: "Unregistered",
     project: "Offline",
   });
-  await polled(pool, 1);
+  await rig.harness.query(
+    `UPDATE worker_pool SET last_polled_at=now() WHERE tenant=$1 AND project=$2 AND pool=$3`,
+    [partition.tenant, partition.project, pool.pool],
+  );
   const unregistered = {
     mine: "Unregistered",
     inquiry: "Unregistered",
@@ -1036,23 +1014,6 @@ async function taskOf(
   });
   return { status: answered.statusCode, body: answered.json() };
 }
-
-test("a pool's poll is recorded only for the registration it is made under", async () => {
-  const { partition, pool } = await routedProject("pool-scoped");
-  const stale = { ...pool, principal: principal("stale") };
-  const polledAt = async (): Promise<unknown> =>
-    (
-      await rig.harness.query(
-        `SELECT last_polled_at IS NOT NULL AS polled FROM worker_pool
-          WHERE tenant=$1 AND project=$2 AND pool=$3`,
-        [partition.tenant, partition.project, pool.pool],
-      )
-    )[0]?.["polled"];
-  await store.polled(stale);
-  assert.equal(await polledAt(), false);
-  await store.polled(pool);
-  assert.equal(await polledAt(), true);
-});
 
 test("a chat host's attempt's task names what it is launched with to a release whose runners launch sessions, and an in-cluster attempt's names nothing more", async () => {
   const { partition, member } = await hostedProject("host-task");
@@ -1745,7 +1706,7 @@ async function polledOffering(
 }
 
 test("a member's own thread is handed to their chat host alone, on a contract that runs one, with no repository, and its bearer answers its member's scope and capabilities", async () => {
-  const { partition, member, pool } = await routedProject("host-own");
+  const { partition, member } = await hostedProject("host-own");
   const runs = await personal(partition, member);
   const host = await chatHost(partition, member);
   const another = await chatHost(partition, principal("host-own-other"));
@@ -1754,7 +1715,6 @@ test("a member's own thread is handed to their chat host alone, on a contract th
   assert.deepEqual(await polledOffering(host, "1.28.0"), []);
   assert.deepEqual(await polledOffering(another, workerContractRelease), []);
   assert.deepEqual(await polledOffering(runs, workerContractRelease), []);
-  assert.deepEqual(await polledOffering(pool, workerContractRelease), []);
   const [claimed, ...more] = await polledOffering(host, workerContractRelease);
   assert.deepEqual(more, []);
   assert.ok(claimed !== undefined);

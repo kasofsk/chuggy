@@ -1,4 +1,4 @@
-/** Who a poll acts as, and where what it hands out is named from: shared by both kinds of work a pool is handed. */
+/** Who a poll acts as, and where what it hands out is named from: shared by both kinds of work the plane hands out. */
 import type { Principal } from "./principal.ts";
 import type { Partition, TenantId } from "./projectStore.ts";
 
@@ -23,21 +23,15 @@ export interface ChatHostIdentity {
   readonly principal: Principal;
 }
 
-/** A project's pool as the pool plane admitted it. */
-export type DedicatedPoolIdentity = WorkerPoolIdentity & {
-  readonly kind: "Dedicated";
-};
-
-/** Whoever the pool plane admitted: a project's pool, a member's personal runner, or a member's chat host. */
+/** Whoever the pool plane admitted: a member's personal runner, or a member's chat host. */
 export type PoolPlaneIdentity =
-  | DedicatedPoolIdentity
   | (PersonalRunnerIdentity & { readonly kind: "Personal" })
   | (ChatHostIdentity & { readonly kind: "ChatHost" });
 
-/** Whoever the pool plane admitted that may take an execution: a project's pool or a member's personal runner. */
-export type WorkerPoolExecutionPoller = Exclude<
+/** Whoever the pool plane admitted that may take an execution: a member's personal runner. */
+export type WorkerPoolExecutionPoller = Extract<
   PoolPlaneIdentity,
-  { readonly kind: "ChatHost" }
+  { readonly kind: "Personal" }
 >;
 
 /** Draws an assignment's identity and the one-shot bearer its harness answers under. */

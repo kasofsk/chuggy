@@ -5,7 +5,7 @@ import { test } from "node:test";
 
 import { metricsExposition } from "../../src/adapters/http/metricsExposition.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   workerPoolReportAgeMsMax,
   workerPoolReports,
@@ -15,16 +15,9 @@ import { workerRunnerReportLeast } from "../contract/workerRunnerReportFixture.t
 
 const issuer = "https://issuer.test";
 
-const pool: WorkerPoolReporter = {
-  kind: "Dedicated",
-  partition: { tenant: "acme", project: "web" } as Partition,
-  pool: "pool-one",
-  principal: oidcPrincipal(issuer, "chuggy-pool-one"),
-};
-
 const personal: WorkerPoolReporter = {
   kind: "Personal",
-  tenant: pool.partition.tenant,
+  tenant: asTenantId("acme"),
   owner: oidcPrincipal(issuer, "alice-id"),
   principal: oidcPrincipal(issuer, "chuggy-personal-one"),
 };
@@ -53,18 +46,13 @@ function samples(
     .filter((line) => line.startsWith(`${name}{`));
 }
 
-const poolLabels =
-  'tenant="acme",project="web",pool="pool-one",owner="",personal_runner="",host="build-box.local"';
-
 const personalLabels =
   'tenant="acme",project="",pool="",owner="alice-id",personal_runner="chuggy-personal-one",host="build-box.local"';
 
-test("a pool's report is served under its tenant, project and pool, and a personal runner's under its owner's bare subject and its client", () => {
+test("a personal runner's report is served under its owner's bare subject and its client", () => {
   const { reports } = holding();
-  reports.reported(pool, workerRunnerReportLeast);
   reports.reported(personal, workerRunnerReportLeast);
   assert.deepEqual(samples(reports, "chuggy_runner_jobs_running"), [
-    `chuggy_runner_jobs_running{${poolLabels}} 1`,
     'chuggy_runner_jobs_running{tenant="acme",project="",pool="",owner="alice-id",personal_runner="chuggy-personal-one",host="build-box.local"} 1',
   ]);
 });
