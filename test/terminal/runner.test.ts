@@ -280,7 +280,7 @@ function registrations(on: Stood): readonly (readonly string[])[] {
   return words(on, "chuggy-linux").filter((argv) => argv[0] === "register");
 }
 
-test("where the person's chats run on a chat host and they have none, the bare command offers it beside the runner by default and naming no size, and the command its rule names makes this machine the project's runner and then their chat host, sized in the one settings file to three chats on an engine with 11.7 GiB, on one package and one Claude login, and ends on a checklist that says the runner's step done", async () => {
+test("where the person's chats run on a chat host and they have none, the bare command offers it beside the runner by default and naming no size, and the command its rule names makes this machine the project's runner and then their chat host, sized in the one settings file to four chats on an engine with 11.7 GiB, on one package and one Claude login, and ends on a checklist that says the runner's step done", async () => {
   const on = await stood("Pool");
   const { found, did } = lines(on);
   const offered = await ran(on, []);
@@ -311,8 +311,8 @@ test("where the person's chats run on a chat host and they have none, the bare c
     next,
   ]);
   assert.deepEqual(settingsChat(on), {
-    sessionsMax: 3,
-    sessionMemoryMib: 2048,
+    sessionsMax: 4,
+    sessionMemoryMib: 1024,
   });
   assert.deepEqual(on.installation.writes, madeBoth);
   const [, token = ""] = on.installation.world.secrets.filter((secret) =>

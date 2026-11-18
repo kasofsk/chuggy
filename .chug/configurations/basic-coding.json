@@ -28,6 +28,9 @@
           "credentials": [
             "claude-code"
           ]
+        },
+        "resources": {
+          "memoryMib": 4096
         }
       },
       "ci": {
@@ -43,6 +46,9 @@
         },
         "authority": {
           "credentials": []
+        },
+        "resources": {
+          "memoryMib": 4096
         }
       },
       "review": {
@@ -70,6 +76,9 @@
           "credentials": [
             "claude-code"
           ]
+        },
+        "resources": {
+          "memoryMib": 4096
         }
       }
     },

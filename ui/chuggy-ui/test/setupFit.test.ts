@@ -180,11 +180,11 @@ test("a QEMU VM is told it is made again with what that costs, and nothing is ru
   expect(machine.box.acts).not.toContain("register");
 });
 
-test("a Linux box of 3 GiB is told it cannot run a job naming no memory, and one with room is offered as before", async () => {
+test("a Linux box of 2 GiB is told it cannot run a job naming no memory, and one with room is offered as before", async () => {
   const site = setupSiteAt("Configured");
   for (const project of site.projects) project.threads = "InCluster";
   const small = await machineSignedIn(site);
-  small.box.memoryBytes = 3 * gib;
+  small.box.memoryBytes = 2 * gib;
   const told = await offered(small);
   expect(told).toContain(
     " This machine is too small for your work, so set your runner up on another machine instead.",
