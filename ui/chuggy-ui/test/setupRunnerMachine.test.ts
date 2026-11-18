@@ -1214,25 +1214,26 @@ test("the chat host is sized to the engine's memory less what it runs, a run's a
     );
     return [room, sessionsMax, sessionMemoryMib];
   };
-  expect(sized(11_980, {}, 2_048)).toEqual([2, 2, 2_048]);
-  expect(sized(11_980, {}, 4_812)).toEqual([1, 1, 2_048]);
-  expect(sized(11_980, {}, 4_813)).toEqual([0, 1, 2_048]);
-  expect(sized(11_980, {}, 20_000)).toEqual([0, 1, 2_048]);
+  expect(sized(11_980, {}, 6_144)).toEqual([2, 2, 1_024]);
+  expect(sized(11_980, {}, 7_884)).toEqual([1, 1, 1_024]);
+  expect(sized(11_980, {}, 7_885)).toEqual([0, 1, 1_024]);
+  expect(sized(11_980, {}, 20_000)).toEqual([0, 1, 1_024]);
   expect(setupChatSized(11_980, undefined, {})).toMatchObject({
     room: 0,
     sessionsMax: 1,
   });
-  expect(sized(11_980, { sessionsMax: 3 }, 2_048)).toEqual([2, 3, 2_048]);
-  expect(sized(11_980)).toEqual([3, 3, 2_048]);
-  expect(sized(6_144)).toEqual([0, 1, 2_048]);
-  expect(sized(7_167)).toEqual([0, 1, 2_048]);
-  expect(sized(7_168)).toEqual([1, 1, 2_048]);
-  expect(sized(65_536)).toEqual([4, 4, 2_048]);
-  expect(sized(1_024)).toEqual([0, 1, 2_048]);
-  expect(sized(undefined)).toEqual([0, 1, 2_048]);
+  expect(sized(11_980, { sessionsMax: 3 }, 6_144)).toEqual([2, 3, 1_024]);
+  expect(sized(6_144)).toEqual([3, 3, 1_024]);
+  expect(sized(3_072)).toEqual([0, 1, 1_024]);
+  expect(sized(4_095)).toEqual([0, 1, 1_024]);
+  expect(sized(4_096)).toEqual([1, 1, 1_024]);
+  expect(sized(11_980)).toEqual([4, 4, 1_024]);
+  expect(sized(65_536)).toEqual([4, 4, 1_024]);
+  expect(sized(1_024)).toEqual([0, 1, 1_024]);
+  expect(sized(undefined)).toEqual([0, 1, 1_024]);
   expect(sized(11_980, { sessionMemoryMib: 3_072 })).toEqual([2, 2, 3_072]);
-  expect(sized(11_980, { sessionsMax: 1 })).toEqual([3, 1, 2_048]);
-  expect(sized(6_144, { sessionsMax: 6 })).toEqual([0, 6, 2_048]);
+  expect(sized(6_144, { sessionsMax: 1 })).toEqual([3, 1, 1_024]);
+  expect(sized(3_072, { sessionsMax: 6 })).toEqual([0, 6, 1_024]);
 });
 
 test("what an engine's running containers take is counted as the runner counts it: one of a pool with a cap at its cap, and every other at the use stats prints, in docker's units or podman's; a listing, an inspection or a use that could not be read is no count", async () => {

@@ -10,6 +10,7 @@
     "mayCompleteTask": false
   },
   "resources": {
-    "cpus": 6
+    "cpus": 6,
+    "memoryMib": 4096
   }
 }

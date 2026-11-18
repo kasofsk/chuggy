@@ -22,5 +22,8 @@
     "network": true,
     "filesystem": "WriteWorkspace",
     "mayCompleteTask": false
+  },
+  "resources": {
+    "memoryMib": 4096
   }
 }

@@ -918,7 +918,7 @@ test("the person's chat host is said as theirs, apart from the project's runner:
     .filter((note) => /^(?:Chat|ProjectLive|Hosted)/u.test(note.note))
     .map((note) => setupRunnerNoteSaid(note, widgets).join(": "));
   expect(lines).toEqual([
-    `did: wrote the size of your chat host into ${boxSettings}, every other setting kept as it was: the most chats it runs at once is 3, at 2 GiB each, 6 GiB in all`,
+    `did: wrote the size of your chat host into ${boxSettings}, every other setting kept as it was: the most chats it runs at once is 4, at 1 GiB each, 4 GiB in all`,
     "found: the site sees your runner live, taking your work in acme/widgets",
     "found: hosted runs take the work of acme/widgets, so that work needs no runner",
     `found: this machine is registered as your chat host, in ${rosterChat}`,

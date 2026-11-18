@@ -470,7 +470,7 @@ export function setupSettingsChatText(
 }
 
 /** The memory, in MiB, the runner package gives the chat host for each session where its settings name none. */
-export const setupChatSessionMemoryMib = 2_048;
+export const setupChatSessionMemoryMib = 1_024;
 
 /** The most sessions at once setup sizes a chat host to. */
 export const setupChatSessionsMax = 4;

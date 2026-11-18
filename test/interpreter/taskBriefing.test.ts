@@ -1466,9 +1466,15 @@ test("a targeted variant of the development work differs from its base only in a
   );
 });
 
-/** Every workload authority this tree declares, by the file and workload it is in; a workload named by path is read at that path, and an Approval, which a person answers, runs nothing and has none. */
-function treeWorkloadAuthorities(): ReadonlyMap<string, unknown> {
-  const authorities = new Map<string, unknown>();
+/** A workload this tree runs, as far as these suites read it. */
+interface TreeRunWorkload {
+  readonly authority?: unknown;
+  readonly resources?: { readonly memoryMib?: unknown };
+}
+
+/** Every workload this tree runs, by the file and workload it is in; a workload named by path is read at that path, and an Approval, which a person answers, runs nothing and is not one. */
+function treeRunWorkloads(): ReadonlyMap<string, TreeRunWorkload> {
+  const workloads = new Map<string, TreeRunWorkload>();
   const parsed = (path: string): unknown =>
     JSON.parse(readFileSync(path, "utf8"));
   for (const name of readdirSync(".chug/configurations")) {
@@ -1477,7 +1483,7 @@ function treeWorkloadAuthorities(): ReadonlyMap<string, unknown> {
     const declared = parsed(path) as {
       readonly configuration: {
         readonly workloads: Readonly<
-          Record<string, string | { runner: string; authority?: unknown }>
+          Record<string, string | (TreeRunWorkload & { runner: string })>
         >;
       };
     };
@@ -1485,15 +1491,34 @@ function treeWorkloadAuthorities(): ReadonlyMap<string, unknown> {
       declared.configuration.workloads,
     ))
       if (typeof declaration !== "string" && declaration.runner !== "Approval")
-        authorities.set(`${path} ${workload}`, declaration.authority);
+        workloads.set(`${path} ${workload}`, declaration);
   }
   for (const name of readdirSync(".chug/workloads")) {
     if (!name.endsWith(".json")) continue;
     const path = `.chug/workloads/${name}`;
-    authorities.set(path, (parsed(path) as { authority?: unknown }).authority);
+    workloads.set(path, parsed(path) as TreeRunWorkload);
   }
-  return authorities;
+  return workloads;
 }
+
+/** Every workload authority this tree declares, by the file and workload it is in. */
+function treeWorkloadAuthorities(): ReadonlyMap<string, unknown> {
+  return new Map(
+    [...treeRunWorkloads()].map(([where, { authority }]) => [where, authority]),
+  );
+}
+
+test("every workload this tree runs names 4,096 MiB of memory, so none of its jobs takes the plane's size for a job naming none", () => {
+  const workloads = treeRunWorkloads();
+  assert.ok(workloads.has(".chug/workloads/ci.json"));
+  assert.ok(workloads.has(".chug/workloads/review.json"));
+  assert.ok(workloads.has(".chug/configurations/basic-coding.json build"));
+  assert.ok(
+    workloads.has(".chug/configurations/chuggy-development.json build"),
+  );
+  for (const [where, { resources }] of workloads)
+    assert.equal(resources?.memoryMib, 4_096, where);
+});
 
 test("this tree's workloads each list their credentials, and only ones its deployment delivers", () => {
   const delivered = new Set(["claude-code", "track-record"]);

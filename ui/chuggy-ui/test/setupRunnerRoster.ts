@@ -430,8 +430,8 @@ export const runnerNotes: {
     {
       note: "ChatSettingsWritten",
       path: boxSettings,
-      sessionsMax: 3,
-      sessionMemoryMib: 2_048,
+      sessionsMax: 4,
+      sessionMemoryMib: 1_024,
     },
   ],
   Package: [{ note: "Package", command: rosterCommand, version: boxVersion }],
@@ -588,7 +588,7 @@ export function rosterLines(places: RosterPlaces) {
       allowed:
         "did: set acme/widgets to let your own runners take your work in it while one is online, and a shared runner while none is",
       restarted: `did: restarted ${unit}, so it runs as it is now registered and installed`,
-      chatSized: `did: wrote the size of your chat host into ${settings}, every other setting kept as it was: the most chats it runs at once is 3, at 2 GiB each, 6 GiB in all`,
+      chatSized: `did: wrote the size of your chat host into ${settings}, every other setting kept as it was: the most chats it runs at once is 4, at 1 GiB each, 4 GiB in all`,
       chat: `did: registered this machine as your chat host, in ${chat}`,
       chatUnit: `did: installed your chat host's service, ${chatUnit}`,
       chatStarted: `did: started ${chatUnit}, which also starts when you log in`,
