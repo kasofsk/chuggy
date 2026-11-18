@@ -257,7 +257,7 @@ test("a second run on a machine that has everything finds each thing as it is, r
 
 /** How the bare command says the chat host it puts here beside the runner on an engine with room for three chats beside a run, and the rule that names the answer it does not take by default. */
 const chatAsked =
-  /^tell: chuggy needs two things running on a machine of yours\. .* 4 GiB a run\. Your chat host is a second background service, which holds 6 GiB whenever it runs: 2 GiB a chat, for up to 3 at once\. /u;
+  /^tell: I'll install your chat host and your runner on this machine, as yours alone\. (?!.*(?:GiB|MiB))/u;
 const chatRuleNo =
   "rule: Run it with --chat-host no in place of --chat-host yes only where the person says they want no chat host. Before running it with --chat-host yes, tell the person: Downloading the chat image. This takes a few minutes the first time.";
 /** The end of the rule an offer of a runner names its command under. */
@@ -280,7 +280,7 @@ function registrations(on: Stood): readonly (readonly string[])[] {
   return words(on, "chuggy-linux").filter((argv) => argv[0] === "register");
 }
 
-test("where the person's chats run on a chat host and they have none, the bare command offers it beside the runner by default, three chats in 6 GiB on an engine with 11.7 GiB, and the command its rule names makes this machine the project's runner and then their chat host, sized in the one settings file, on one package and one Claude login, and ends on a checklist that says the runner's step done", async () => {
+test("where the person's chats run on a chat host and they have none, the bare command offers it beside the runner by default and naming no size, and the command its rule names makes this machine the project's runner and then their chat host, sized in the one settings file to three chats on an engine with 11.7 GiB, on one package and one Claude login, and ends on a checklist that says the runner's step done", async () => {
   const on = await stood("Pool");
   const { found, did } = lines(on);
   const offered = await ran(on, []);

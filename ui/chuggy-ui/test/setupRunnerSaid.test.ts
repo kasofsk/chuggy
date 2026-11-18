@@ -31,6 +31,7 @@ import {
 } from "../app/core/setupText.ts";
 import {
   boxClaudeConfig,
+  boxApiKey,
   boxLogin,
   boxOwn,
   boxPools,
@@ -192,6 +193,20 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       `${boxSettings} is there and does not read as the runner's settings`,
       1,
       "Again",
+    ],
+  ],
+  CredentialRefused: [
+    ["the file named was not taken: nothing is there", 0, "Status"],
+    ["the file named was not taken: it is empty", 0, "Status"],
+    [
+      "the file named was not taken: it holds no token `claude setup-token` made",
+      0,
+      "Status",
+    ],
+    [
+      "the file named was not taken: it holds no Anthropic API key",
+      0,
+      "Status",
     ],
   ],
   LoginMissing: [
@@ -634,6 +649,7 @@ test("only a stop made before the run's first act says nothing was changed, whic
       )
       .toSorted();
   expect([...new Set(saying("nothing was changed"))]).toEqual([
+    "CredentialRefused",
     "DockerBarred",
     "Engineless",
     "LoginMissing",
@@ -847,6 +863,7 @@ test("each kind of note is said as found, as did or as a tell, by its kind alone
     Settings: ["found"],
     SettingsWritten: ["did"],
     Login: ["found"],
+    CredentialPlaced: ["did"],
     Personal: ["found"],
     PersonalGone: ["found"],
     PersonalRegistered: ["did"],
@@ -1233,6 +1250,7 @@ test("on a Mac, an engine that did not answer is told to start Colima, the end s
       {
         settings: boxSettings,
         login: boxLogin,
+        apiKey: boxApiKey,
         pools: boxPools,
         units: "/Users/me/Library/LaunchAgents",
         own: boxOwn,

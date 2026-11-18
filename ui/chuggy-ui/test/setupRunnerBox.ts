@@ -30,6 +30,7 @@ export const boxHome = "/home/person";
 export const boxConfig = `${boxHome}/.config`;
 export const boxSettings = `${boxConfig}/chuggy-linux/runner.json`;
 export const boxLogin = `${boxConfig}/chuggy-linux/claude/token`;
+export const boxApiKey = `${boxConfig}/chuggy-linux/claude/api-key`;
 export const boxPools = `${boxConfig}/chuggy/pools`;
 export const boxUnits = `${boxConfig}/systemd/user`;
 /** Where chuggy-darwin keeps a Mac's settings and login, and where its agents are. */

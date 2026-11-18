@@ -459,13 +459,3 @@ export function setupFitOf(
     ? { fit: "Small", machine: "Engine", hasMib: engineMib }
     : { fit: "Room" };
 }
-
-/** The memory, in MiB, a chat host here is sized to: what the engine will have once a yes changes Colima, and otherwise what it reports. */
-export function setupFitEngineMib(
-  fit: SetupFit,
-  engineMib: number | undefined,
-): number | undefined {
-  return fit.fit === "Colima" && fit.targetMib !== undefined
-    ? fit.targetMib
-    : engineMib;
-}

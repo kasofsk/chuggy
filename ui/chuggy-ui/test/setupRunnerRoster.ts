@@ -17,6 +17,7 @@ import type {
 } from "../app/core/setupRunnerSaid.ts";
 import {
   boxClaudeConfig,
+  boxApiKey,
   boxLogin,
   boxChatFile,
   boxChatUnitName,
@@ -77,6 +78,7 @@ export const rosterRestart = setupRestartAll(
   {
     settings: boxSettings,
     login: boxLogin,
+    apiKey: boxApiKey,
     pools: boxPools,
     units: boxUnits,
     own: boxOwn,
@@ -192,6 +194,12 @@ export const runnerStops: {
     credential,
     guide,
   })),
+  CredentialRefused: [
+    { stop: "CredentialRefused", kind: "Subscription", why: "Missing" },
+    { stop: "CredentialRefused", kind: "Subscription", why: "Empty" },
+    { stop: "CredentialRefused", kind: "Subscription", why: "Unlike" },
+    { stop: "CredentialRefused", kind: "ApiKey", why: "Unlike" },
+  ],
   Npmless: [{ stop: "Npmless" }],
   Unwritten: [{ stop: "Unwritten", path: boxSettings }],
   Act: [
@@ -463,6 +471,16 @@ export const runnerNotes: {
     note: "Login" as const,
     credential,
   })),
+  CredentialPlaced: [
+    {
+      note: "CredentialPlaced",
+      credential: { kind: "Subscription", path: boxLogin },
+    },
+    {
+      note: "CredentialPlaced",
+      credential: { kind: "ApiKey", path: boxApiKey },
+    },
+  ],
   Personal: [{ note: "Personal", path: rosterPersonal }],
   ServerFound: [{ note: "ServerFound", path: boxClaudeConfig }],
   ServerAdded: [{ note: "ServerAdded", path: boxClaudeConfig }],

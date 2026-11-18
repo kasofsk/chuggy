@@ -64,7 +64,9 @@ import {
   setupAnswersNone,
   setupAnswersPlugin,
   setupChatHostAnswers,
+  setupApiKeyFileFlag,
   setupChatHostFlag,
+  setupTokenFileFlag,
   setupCommandArguments,
   setupConfigurationFlag,
   setupImageFlag,
@@ -211,6 +213,8 @@ export type SetupThing =
       readonly chatHost?: boolean;
       /** The line that has `runner` run on another machine of the person's instead, where the offer is of one. */
       readonly elsewhere?: string;
+      /** Whether `runner` is first run only to put the person's Claude credential in place, named with the flag of its kind and the path they point to. */
+      readonly credential?: boolean;
     }
   | {
       readonly thing: "Offer";
@@ -705,6 +709,8 @@ function setupAskFlagSaid(words: ReturnType<typeof setupCommandWords>): Copy {
       replace: setupReplaceFlag,
       chatHost,
       chatHostFlag: setupChatHostFlag,
+      tokenFile: setupTokenFileFlag,
+      apiKeyFile: setupApiKeyFileFlag,
       runner,
       name: setupNameFlag,
       made,
@@ -745,6 +751,20 @@ function setupAskFaultSaidTicket(
     : { id: "setup-asked-image", args: { image, toolchains } };
 }
 
+/** A flag only `runner` reads, given a value it does not take. */
+function setupAskRunnerSaid(fault: "ChatHost" | "Credential"): Copy {
+  if (fault === "Credential")
+    return {
+      id: "setup-asked-credential",
+      args: { token: setupTokenFileFlag, apiKey: setupApiKeyFileFlag },
+    };
+  const [yes, no] = setupChatHostAnswers;
+  return {
+    id: "setup-asked-chat-host",
+    args: { flag: setupChatHostFlag, yes, no },
+  };
+}
+
 function setupAskFaultSaid(fault: SetupAskFault): Copy {
   const words = setupCommandWords();
   const { made, chatHost, configuration, filed, bound } = words;
@@ -775,13 +795,9 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
       };
     case "Replace":
       return { id: "setup-asked-replace", args: { flag: setupReplaceFlag } };
-    case "ChatHost": {
-      const [yes, no] = setupChatHostAnswers;
-      return {
-        id: "setup-asked-chat-host",
-        args: { flag: setupChatHostFlag, yes, no },
-      };
-    }
+    case "ChatHost":
+    case "Credential":
+      return setupAskRunnerSaid(fault);
     case "ProjectName":
       return {
         id: "setup-asked-project-name",
@@ -1419,8 +1435,9 @@ function setupOfferLines(
   if (thing.command !== "Plugin") {
     const chatHost = thing.chatHost === true;
     const [yes] = setupChatHostAnswers;
+    const of = setupSayingOf(saying, thing);
     const command = setupCommandOf(
-      setupSayingOf(saying, thing),
+      of,
       thing.command,
       chatHost ? [setupChatHostFlag, yes] : [],
     );
@@ -1428,7 +1445,18 @@ function setupOfferLines(
       ["tell", thing.tell],
       [
         "rule",
-        { id: "setup-runner-rule", args: { command, when: thing.when } },
+        thing.credential === true
+          ? {
+              id: "setup-runner-rule-credential",
+              args: {
+                token: setupCommandOf(of, thing.command, [setupTokenFileFlag]),
+                apiKey: setupCommandOf(of, thing.command, [
+                  setupApiKeyFileFlag,
+                ]),
+                when: thing.when,
+              },
+            }
+          : { id: "setup-runner-rule", args: { command, when: thing.when } },
       ],
       ...(chatHost ? [setupChatHostRule()] : []),
       ...(thing.elsewhere === undefined
@@ -2106,6 +2134,7 @@ function setupRunnerLines(
   ];
   switch (report.ended.ended) {
     case "Live":
+    case "Credentialed":
       return [...head, setupNextLine(of, "Status")];
     case "Hosted":
       return [
