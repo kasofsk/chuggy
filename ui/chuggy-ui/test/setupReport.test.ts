@@ -2794,7 +2794,7 @@ test("a run of import says what it asked and what the site answered under the si
 const bindRule =
   "rule: Run the command on the next: line now, without asking the person";
 const bindRuleRest =
-  ". It waits until GitHub lets both apps into this folder's repository, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.";
+  ". It waits until GitHub lets both apps into the repository the tell: line names, and then adds it where it is not added yet. Nothing has failed, so do not tell the person that it did or give them a deadline.";
 
 test("bind is named to run at once for the project, asking nothing of the person, beside its tell of GitHub", () => {
   const [granted, trip] = things.Run;

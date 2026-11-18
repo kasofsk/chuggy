@@ -186,7 +186,7 @@ const mends: {
   Binding: [
     { lacks: "Binding", reach: undefined },
     hand(
-      `Open ${pages}/repositories, press Add and choose your repository. Tell me once it is added.`,
+      `Open ${pages}/repositories?from=setup#add and name your repository there: it then shows both apps, and adds it once both reach it. Tell me once it is added.`,
       "once the person says the repository is added",
     ),
   ],
@@ -284,7 +284,7 @@ const trips: {
       repository: "acme-org/widgets",
     },
     bindRun(
-      `Which repository is this project for? This folder's is acme-org/widgets. The worker app is installed on acme-org, and GitHub does not let it in yet. Open ${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, and the worker app's press there goes to GitHub to let it in. I'll wait here.`,
+      `This project's repository is acme-org/widgets. The worker app is installed on acme-org, and GitHub does not let it in yet. Open ${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, and the worker app's press there goes to GitHub to let it in. I'll wait here.`,
     ),
   ],
   Account: [
@@ -545,21 +545,82 @@ test("the portal app missing from an account is sent to the connect flow on the 
   expect(portal).toEqual(thing({ lacks: "Account" }, { remote }));
 });
 
-test("an app not granted the repository is sent to the connect flow on that repository, naming the app", () => {
+test("an app not granted the project's repository is sent to the connect flow on that repository, naming the app, and asks no question the binding settled", () => {
   const grant = { account: "acme-org", repository: "acme-org/widgets" };
   expect(thing({ lacks: "Grant", app: "portal", ...grant })).toEqual(
     bindRun(
-      `Which repository is this project for? This folder's is acme-org/widgets. The portal app is installed on acme-org, and GitHub does not let it in yet. Open ${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, and the portal app's press there goes to GitHub to let it in. I'll wait here.`,
+      `This project's repository is acme-org/widgets. The portal app is installed on acme-org, and GitHub does not let it in yet. Open ${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, and the portal app's press there goes to GitHub to let it in. I'll wait here.`,
     ),
   );
 });
 
-test("the repository to add is named as this folder's where the folder has a remote", () => {
+test("an app missing from the owner of the project's repository is sent to the connect flow on that repository, called the project's", () => {
+  const remote = setupRepositoryRead("git@github.com:acme-org/other.git");
+  expect(
+    thing(
+      {
+        lacks: "App",
+        app: "worker",
+        account: "acme-org",
+        repository: "acme-org/widgets",
+      },
+      { remote },
+    ),
+  ).toEqual(
+    bindRun(
+      `This project's repository is acme-org/widgets. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to acme-org/widgets. Open ${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets with both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here until both reach it.`,
+    ),
+  );
+});
+
+test("a tell of the project's repository makes no claim about the folder and asks nothing, whatever the folder's remote", () => {
+  const remotes = [
+    undefined,
+    setupRepositoryRead("git@github.com:acme-org/other.git"),
+  ];
+  const lacks: readonly SetupLack[] = [
+    {
+      lacks: "Grant",
+      app: "worker",
+      account: "acme-org",
+      repository: "acme-org/widgets",
+    },
+    {
+      lacks: "App",
+      app: "portal",
+      account: "acme-org",
+      repository: "acme-org/widgets",
+    },
+  ];
+  for (const remote of remotes)
+    for (const lack of lacks) {
+      const { tell } = thing(lack, { remote }) as { readonly tell: string };
+      expect(tell).not.toMatch(/folder|Which repository/u);
+      expect(tell).toMatch(
+        /^This project's repository is acme-org\/widgets\./u,
+      );
+    }
+});
+
+test("the repository to add is named as this folder's where the folder has a remote, and the address setup gives carries it", () => {
   const remote = setupRepositoryRead("git@github.com:acme-org/widgets.git");
   expect(
     thing({ lacks: "Binding", reach: undefined }, { remote }),
   ).toMatchObject({
-    tell: `Open ${pages}/repositories, press Add and choose acme-org/widgets, this folder's repository. Tell me once it is added.`,
+    tell: `Open ${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, this folder's repository, shows both apps, and adds it once both reach it. Tell me once it is added.`,
+  });
+});
+
+test("the repository to add is named on the connect flow where the folder has no remote, and the address says the person came from setup", () => {
+  expect(
+    thing(
+      { lacks: "Binding", reach: undefined },
+      {
+        remote: undefined,
+      },
+    ),
+  ).toMatchObject({
+    tell: `Open ${pages}/repositories?from=setup#add and name your repository there: it then shows both apps, and adds it once both reach it. Tell me once it is added.`,
   });
 });
 

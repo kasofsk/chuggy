@@ -114,7 +114,6 @@ import type { WorkspaceNamed } from "./workspaceNames.ts";
  * each page for it and fails where a page renamed it.
  */
 export const setupPressed = {
-  add: { id: "repositories-add" },
   runner: { id: "runners-register" },
   fallback: { id: "runners-fallback-title" },
   ticket: { id: "ticket-authoring-create-ticket" },
@@ -243,34 +242,53 @@ function setupGrantMend(
   });
 }
 
-/** The folder's repository by its remote, or the person's where it has none. */
-function setupMendBindingSaid(mine: string | undefined): Copy {
-  return mine === undefined
-    ? { id: "setup-mend-binding-yours" }
-    : { id: "setup-mend-binding-mine", args: { repository: mine } };
-}
-
 function setupGithubMend(
   lack: Extract<SetupLack, { readonly lacks: "Account" | "App" | "Grant" }>,
   at: SetupAt,
   mine: string | undefined,
 ): SetupThing {
   if (lack.lacks === "Grant") return setupGrantMend(lack, at);
-  const repository = lack.lacks === "App" ? (lack.repository ?? mine) : mine;
-  const explained: Copy = {
-    id: "setup-mend-apps-explained",
-    args: { repository: setupMendBindingSaid(repository) },
-  };
-  const page = setupConnectPage(at, repository);
-  return setupBindRun(
-    at,
-    repository === undefined
-      ? { id: "setup-mend-connect-tell-named", args: { explained, page } }
-      : {
-          id: "setup-mend-connect-tell",
-          args: { explained, page, repository },
+  const bound = lack.lacks === "App" ? lack.repository : undefined;
+  if (bound !== undefined)
+    return setupBindRun(at, {
+      id: "setup-mend-connect-tell-bound",
+      args: {
+        explained: {
+          id: "setup-mend-apps-explained",
+          args: { repository: bound },
         },
-  );
+        page: setupConnectPage(at, bound),
+        repository: bound,
+      },
+    });
+  const page = setupConnectPage(at, mine);
+  if (mine === undefined)
+    return setupBindRun(at, {
+      id: "setup-mend-connect-tell-named",
+      args: {
+        explained: {
+          id: "setup-mend-apps-explained",
+          args: { repository: { id: "setup-mend-binding-yours" } },
+        },
+        page,
+      },
+    });
+  return setupBindRun(at, {
+    id: "setup-mend-connect-tell",
+    args: {
+      explained: {
+        id: "setup-mend-apps-explained",
+        args: {
+          repository: {
+            id: "setup-mend-binding-mine",
+            args: { repository: mine },
+          },
+        },
+      },
+      page,
+      repository: mine,
+    },
+  });
 }
 
 /** An app as a line of the tell names it: granted the repository, with its settings page on the forge where that was read; installed and not let in; or not installed on the repository's owner. Its press is the connect flow's. */
@@ -315,7 +333,8 @@ function setupReachInstalledSaid(installed: readonly string[]): Copy {
  * was read: one tell says the repository, what each app is for, and each
  * app's page with whether it is granted it already, and `bind` waits while
  * the person gives an app what it is not, and adds the repository once both
- * are. Where what the apps grant was not read, the console's Add is the way.
+ * are. Where what the apps grant was not read, the person is sent to the
+ * connect flow on the folder's repository, or to name one there.
  */
 function setupBindingMend(
   lack: Extract<SetupLack, { readonly lacks: "Binding" }>,
@@ -343,15 +362,20 @@ function setupBindingMend(
       },
     });
   }
+  const page = setupConnectPage(at, mine);
   return setupHand(
-    {
-      id: "setup-mend-binding-tell",
-      args: {
-        page: setupPage(at, navRoutes.repositories),
-        add: setupPressed.add,
-        repository: setupMendBindingSaid(mine),
-      },
-    },
+    mine === undefined
+      ? { id: "setup-mend-binding-tell-named", args: { page } }
+      : {
+          id: "setup-mend-binding-tell",
+          args: {
+            page,
+            repository: {
+              id: "setup-mend-binding-mine",
+              args: { repository: mine },
+            },
+          },
+        },
     { id: "setup-mend-binding-when" },
   );
 }

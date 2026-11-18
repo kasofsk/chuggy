@@ -26,9 +26,8 @@ import { setupPressed } from "../../ui/chuggy-ui/app/core/setupNext.ts";
 type SetupPressed = keyof typeof setupPressed;
 
 /** The names a page draws from the catalog. */
-type SetupPressedCatalogued = "ticket" | "runner" | "fallback" | "add";
+type SetupPressedCatalogued = "ticket" | "runner" | "fallback";
 
-const addPicker = "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx";
 const myRunnerPage = "ui/chuggy-ui/app/browser/settings/MyRunnerPage.tsx";
 
 /** The page that draws each name the catalog does not, by its path from the
@@ -53,7 +52,6 @@ const drawnFromCatalog: Readonly<
     page: "ui/chuggy-ui/app/browser/settings/OwnerFallbackSection.tsx",
     id: "runners-fallback-title",
   },
-  add: { page: addPicker, id: "repositories-add" },
 };
 
 const ticketPage = "ui/chuggy-ui/app/browser/TicketActions.tsx";

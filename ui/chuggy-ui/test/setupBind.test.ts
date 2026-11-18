@@ -44,7 +44,7 @@ const granting = `Open ${flow}: it opens on ${repository}, and each app it still
 const runNow =
   "rule: Run the command on the next: line now, without asking the person";
 const runNowRest =
-  ". It waits until GitHub lets both apps into this folder's repository, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.";
+  ". It waits until GitHub lets both apps into the repository the tell: line names, and then adds it where it is not added yet. Nothing has failed, so do not tell the person that it did or give them a deadline.";
 const runBind = `next: node ${machineScript} bind ${at}`;
 const chose = `Which repository is this project for? This folder's is ${repository}, so that is the one I connect; for another, start me in the folder of its clone.`;
 const explained = `chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to ${repository}.`;
@@ -516,12 +516,12 @@ test("where the workspace already holds both apps on another account, the tell s
   expect(binds(machine)).toHaveLength(1);
 });
 
-test("where the deployment offers no install the workspace can claim, an app not installed there leaves the console's Add the way", async () => {
+test("where the deployment offers no install the workspace can claim, an app not installed there sends the person to the connect flow with the folder's repository in the address", async () => {
   const site = owning(["portal"]);
   site.authorizing = false;
   const machine = await inFolder(site);
   expect(lines(await machine.command(flags)).at(-3)).toMatch(
-    /^tell: Open \S+\/repositories, press Add and choose acme-org\/widgets, this folder's repository\./u,
+    /^tell: Open \S+\/repositories\?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org\/widgets, this folder's repository,/u,
   );
 });
 
@@ -536,10 +536,10 @@ test("the deployment's apps are asked only where the tell names an install, and 
   ).toHaveLength(2);
 });
 
-test("where what an app grants was not read, the console's Add is the way", async () => {
+test("where what an app grants was not read, the person is sent to the connect flow with the folder's repository in the address", async () => {
   const machine = await inFolder(connected({ portal: true, worker: true }));
   machine.world.fates.set("workerGrant", "Failed");
   expect(lines(await machine.command(flags)).at(-3)).toMatch(
-    /^tell: Open \S+\/repositories, press Add and choose acme-org\/widgets, this folder's repository\./u,
+    /^tell: Open \S+\/repositories\?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org\/widgets, this folder's repository,/u,
   );
 });

@@ -511,6 +511,11 @@ export interface SetupCopy {
     readonly explained: unknown;
     readonly page: unknown;
   };
+  readonly "setup-mend-connect-tell-bound": {
+    readonly repository: unknown;
+    readonly explained: unknown;
+    readonly page: unknown;
+  };
   readonly "setup-mend-connect-tell-named": {
     readonly page: unknown;
     readonly explained: unknown;
@@ -562,8 +567,10 @@ export interface SetupCopy {
   };
   readonly "setup-mend-binding-tell": {
     readonly page: unknown;
-    readonly add: unknown;
     readonly repository: unknown;
+  };
+  readonly "setup-mend-binding-tell-named": {
+    readonly page: unknown;
   };
   readonly "setup-mend-binding-when": Record<never, never>;
   readonly "setup-mend-configuration-never": Record<never, never>;

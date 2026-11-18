@@ -290,8 +290,9 @@ setup-mend-workspace-none = You are not in a { -brand-name } { -workspace } yet.
 setup-mend-workspace-unnamed = You are not in a { -brand-name } { -workspace } named { $workspace }.
 setup-mend-workspace-tell = { $none } A new { -workspace } is made from { -invite(form: "a") } link: open the one you were sent (it starts { $invites }) and sign in, and the { -workspace } is made for you. Tell me once it is made.
 setup-mend-workspace-when = once the person says their { -workspace } is made
-setup-mend-grant-tell = Which { -repository } is this { -project } for? This folder's is { $repository }. The { $app } is installed on { $account }, and { -github } does not let it in yet. Open { $page }: it opens on { $repository }, and the { $app }'s press there goes to { -github } to let it in. I'll wait here.
+setup-mend-grant-tell = This { -project }'s { -repository } is { $repository }. The { $app } is installed on { $account }, and { -github } does not let it in yet. Open { $page }: it opens on { $repository }, and the { $app }'s press there goes to { -github } to let it in. I'll wait here.
 setup-mend-connect-tell = Which { -repository } is this { -project } for? This folder's is { $repository }. { $explained } Open { $page }: it opens on { $repository } with both apps, and each app it still lacks has one press there that goes to { -github } for it. I'll wait here and add it once both reach it.
+setup-mend-connect-tell-bound = This { -project }'s { -repository } is { $repository }. { $explained } Open { $page }: it opens on { $repository } with both apps, and each app it still lacks has one press there that goes to { -github } for it. I'll wait here until both reach it.
 setup-mend-connect-tell-named = Which { -repository } is this { -project } for? I could not tell this folder's, so name it on { $page }. { $explained } That page then shows both apps, and each app it still lacks has one press there that goes to { -github } for it. I'll wait here and add it once both reach it.
 # spells -work-stage: the work a ticket asks for, in general
 setup-mend-apps-explained = { -brand-name } uses two { -github } apps. The { -worker-app } pushes { -ticket } work to branches and opens { -pull-request(form: "plural") }. The { -portal-app } merges finished work into protected branches such as main. Both need access to { $repository }.
@@ -315,7 +316,7 @@ setup-mend-reach-tell = Which { -repository } is this { -project } for? This fol
        *[lacking] I'll wait here. Open { $page }: it opens on { $repository }, and each app it still lacks has one press there that goes to { -github } for it. { -github } may ask you to confirm access first, with a code it emails you.
     }
 # spells -run: to run is a verb here
-setup-rule-bind = Run the command on the next: line now, without asking the person, and tell them what the tell: line says. It waits until { -github } lets both apps into this folder's { -repository }, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.
+setup-rule-bind = Run the command on the next: line now, without asking the person, and tell them what the tell: line says. It waits until { -github } lets both apps into the { -repository } the tell: line names, and then adds it where it is not added yet. Nothing has failed, so do not tell the person that it did or give them a deadline.
 # spells -run: to run is a verb here
 setup-rule-bind-again = Run the command on the next: line again, and go on running it while { -github } still lacks what the tell: line says. Nothing has failed, so do not tell the person that it did or give them a deadline.
 # spells -run: to run is a verb here
@@ -324,7 +325,8 @@ setup-rule-watch = Run the command on the next: line now, without asking the per
 setup-rule-merge-again = Run the command on the next: line again, and go on running it while { -brand-name } imports the { -repository }'s own { -configuration }: the { -pull-request } is merged already, so it merges nothing again and waits on the same import. Nothing has failed, so do not tell the person that it did or give them a deadline.
 setup-mend-binding-yours = your { -repository }
 setup-mend-binding-mine = { $repository }, this folder's { -repository }
-setup-mend-binding-tell = Open { $page }, press { $add } and choose { $repository }. Tell me once it is added.
+setup-mend-binding-tell = Open { $page }: it opens on { $repository }, shows both apps, and adds it once both reach it. Tell me once it is added.
+setup-mend-binding-tell-named = Open { $page } and name your { -repository } there: it then shows both apps, and adds it once both reach it. Tell me once it is added.
 setup-mend-binding-when = once the person says the { -repository } is added
 setup-mend-configuration-never = no import of it has finished yet
 setup-mend-configuration-last = its last import: { $word }
