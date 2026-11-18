@@ -1,13 +1,6 @@
 /** Who a poll acts as, and where what it hands out is named from: shared by both kinds of work the plane hands out. */
 import type { Principal } from "./principal.ts";
-import type { Partition, TenantId } from "./projectStore.ts";
-
-/** One registered pool as its principal resolves it: whose it is, and the principal a claim is current under. */
-export interface WorkerPoolIdentity {
-  readonly partition: Partition;
-  readonly pool: string;
-  readonly principal: Principal;
-}
+import type { TenantId } from "./projectStore.ts";
 
 /** One member's personal runner as its principal resolves it: its tenant and owner, and no project, since what it serves is its allowlist. */
 export interface PersonalRunnerIdentity {

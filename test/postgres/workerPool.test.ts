@@ -54,7 +54,6 @@ import type {
   PersonalRunnerIdentity,
   WorkerPoolClaimed,
   WorkerPoolClaimTerms,
-  WorkerPoolIdentity,
 } from "../../src/interpreter/workerPool.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
@@ -230,13 +229,40 @@ async function poolAttempt(
   };
 }
 
+/** One registered pool: its project, its name, and the principal it was registered under. */
+interface PoolRegistered {
+  readonly partition: Partition;
+  readonly pool: string;
+  readonly principal: Principal;
+}
+
+/** The pool of an active project registered under `principal`, as its row holds it, or nothing. */
+async function registeredAs(
+  principal: Principal,
+): Promise<PoolRegistered | undefined> {
+  const [row] = (await rig.harness.query(
+    `SELECT w.tenant, w.project, w.pool FROM worker_pool w
+      WHERE w.principal=$1
+        AND EXISTS(SELECT 1 FROM project p
+          WHERE p.tenant=w.tenant AND p.project=w.project AND p.lifecycle='Active')`,
+    [principal],
+  )) as readonly { tenant: string; project: string; pool: string }[];
+  return row === undefined
+    ? undefined
+    : {
+        partition: { tenant: row.tenant, project: row.project } as Partition,
+        pool: row.pool,
+        principal,
+      };
+}
+
 /** One registered pool of this project, declaring `capabilities`, under the principal its name gives unless the case names another. */
 async function registered(
   partition: Partition,
   label: string,
   capabilities: readonly string[],
   principal: Principal = asPrincipal(`https://issuer.invalid#pool-${label}`),
-): Promise<WorkerPoolIdentity> {
+): Promise<PoolRegistered> {
   assert.equal(
     await registry.register({
       partition,
@@ -248,9 +274,9 @@ async function registered(
     }),
     true,
   );
-  const identified = await registry.identify(principal);
+  const identified = await registeredAs(principal);
   assert.notEqual(identified, undefined);
-  return identified as WorkerPoolIdentity;
+  return identified as PoolRegistered;
 }
 
 /** The handles one claim draws, which are opaque to the pool that is given them. */
@@ -869,7 +895,7 @@ test("deregistration names the client the row holds, goes with that client alone
     }),
     true,
   );
-  const identity = (await registry.identify(principal)) as WorkerPoolIdentity;
+  const identity = (await registeredAs(principal)) as PoolRegistered;
   const attempt = await poolAttempt(project, "orphaned");
   await poolHolds(project, identity, attempt.attempt, handles("orphaned"));
   assert.equal(await registry.clientOf(project.partition, "gone"), clientId);
@@ -878,12 +904,12 @@ test("deregistration names the client the row holds, goes with that client alone
     false,
     "the row goes only with the client that was read out of it",
   );
-  assert.notEqual(await registry.identify(principal), undefined);
+  assert.notEqual(await registeredAs(principal), undefined);
   assert.equal(
     await registry.deregister(project.partition, "gone", clientId),
     true,
   );
-  assert.equal(await registry.identify(principal), undefined);
+  assert.equal(await registeredAs(principal), undefined);
   assert.equal(await registry.clientOf(project.partition, "gone"), undefined);
   assert.equal(
     await registry.deregister(project.partition, "gone", clientId),
@@ -917,7 +943,7 @@ async function poolClaimRow(
  */
 async function poolHolds(
   project: SchedulerProject,
-  identity: WorkerPoolIdentity,
+  identity: PoolRegistered,
   attempt: string,
   drawn: { assignment: string; bearer: string },
 ): Promise<void> {
@@ -947,7 +973,7 @@ async function poolClaimedIn(
   principal?: Principal,
 ): Promise<{
   project: SchedulerProject;
-  identity: WorkerPoolIdentity;
+  identity: PoolRegistered;
   claimed: Awaited<ReturnType<typeof poolAttempt>>;
   drawn: { assignment: string; bearer: string };
 }> {
@@ -1109,7 +1135,7 @@ function poolPrincipalFresh(pool: string): Principal {
 async function poolRegisteredAgain(
   project: SchedulerProject,
   pool: string,
-): Promise<WorkerPoolIdentity> {
+): Promise<PoolRegistered> {
   return registered(
     project.partition,
     pool,
@@ -1423,8 +1449,8 @@ test("a registration that cannot fence what it takes over is not made", async ()
   }
   assert.deepEqual(
     {
-      newer: await registry.identify(principal),
-      older: await registry.identify(identity.principal),
+      newer: await registeredAs(principal),
+      older: await registeredAs(identity.principal),
       attempt: await poolClaimRow(project, claimed.attempt),
     },
     { newer: undefined, older: identity, attempt: before },
@@ -1438,7 +1464,7 @@ test("a registration that cannot fence what it takes over is not made", async ()
  */
 test("a pool that comes back under the same principal keeps what it claimed", async () => {
   const { project, identity, claimed, drawn } = await poolClaimed("restart");
-  assert.deepEqual(await registry.identify(identity.principal), identity);
+  assert.deepEqual(await registeredAs(identity.principal), identity);
   const before = await poolClaimRow(project, claimed.attempt);
   const again = await registered(project.partition, "restart", [platform]);
   assert.deepEqual(again, identity);

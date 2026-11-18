@@ -72,7 +72,6 @@ import {
   workerPoolPoll,
   workerPoolSettled,
   type PoolPlaneIdentity,
-  type WorkerPoolIdentity,
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
@@ -196,13 +195,20 @@ function principal(label: string): Principal {
   return asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`);
 }
 
+/** One registered pool: its project, its name, and the principal it was registered under. */
+interface PoolRegistered {
+  readonly partition: Partition;
+  readonly pool: string;
+  readonly principal: Principal;
+}
+
 /** A pool `member` registered on the project, or one no person registered, under the name given or one of its own. */
 async function runner(
   partition: Partition,
   member: Principal | undefined,
   pool = `runner-${randomUUID()}`,
   registered: Principal = principal("pool"),
-): Promise<WorkerPoolIdentity> {
+): Promise<PoolRegistered> {
   assert.equal(
     await postgresWorkerPoolRegistry(apiPool).register({
       partition,
@@ -222,7 +228,7 @@ async function runner(
 async function routedProject(label: string): Promise<{
   readonly partition: Partition;
   readonly member: Principal;
-  readonly pool: WorkerPoolIdentity;
+  readonly pool: PoolRegistered;
 }> {
   const partition = await sessionRigProject(rig, label);
   await sessionRigRouted(rig, partition, "Pool");

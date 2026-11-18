@@ -57,7 +57,6 @@ function ports(input?: {
         held = undefined;
         return Promise.resolve(true);
       },
-      identify: () => Promise.resolve(undefined),
     },
     clients: {
       create: (clientId) =>

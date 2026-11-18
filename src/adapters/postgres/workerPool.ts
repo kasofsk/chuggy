@@ -203,28 +203,6 @@ export function postgresWorkerPoolRegistry(pool: pg.Pool): WorkerPoolRegistry {
           AND client_id=${clientId}`);
       return (deleted.rowCount ?? 0) === 1;
     },
-    identify: async (principal) => {
-      const found = await pool.query<{
-        tenant: string;
-        project: string;
-        pool: string;
-        principal: string;
-      }>(sql`SELECT w.tenant,w.project,w.pool,w.principal FROM worker_pool w
-        WHERE w.principal=${principal}
-          AND EXISTS(SELECT 1 FROM project p
-            WHERE p.tenant=w.tenant AND p.project=w.project AND p.lifecycle='Active')`);
-      const row = found.rows[0];
-      return row === undefined
-        ? undefined
-        : {
-            partition: {
-              tenant: row.tenant,
-              project: row.project,
-            } as Partition,
-            pool: row.pool,
-            principal: asPrincipal(row.principal),
-          };
-    },
   };
 }
 

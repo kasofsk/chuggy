@@ -137,7 +137,6 @@ import type {
   PersonalRunnerIdentity,
   PoolPlaneIdentity,
   WorkerPoolExecutionPoller,
-  WorkerPoolIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
 export type {
@@ -145,7 +144,6 @@ export type {
   PersonalRunnerIdentity,
   PoolPlaneIdentity,
   WorkerPoolExecutionPoller,
-  WorkerPoolIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
 import {
@@ -212,14 +210,13 @@ export interface WorkerPoolRegistration {
 }
 
 /**
- * Registration, deregistration and the lookup a poll resolves its pool by; no
- * secret passes through here, because a pool authenticates as an OAuth2 client
- * of the issuer this installation already runs and a row keeps only the
- * principal that client's subject resolves to. Taking a pool off is a read of
- * the client its row names and a delete conditional on that client, so the
- * command that has to remove the client and the relation before the row can
- * do so in that order, and a pool registered again in between keeps its newer
- * one.
+ * Registration and deregistration; no secret passes through here, because a
+ * pool authenticates as an OAuth2 client of the issuer this installation
+ * already runs and a row keeps only the principal that client's subject
+ * resolves to. Taking a pool off is a read of the client its row names and a
+ * delete conditional on that client, so the command that has to remove the
+ * client and the relation before the row can do so in that order, and a pool
+ * registered again in between keeps its newer one.
  */
 export interface WorkerPoolRegistry {
   /** Records the pool under this registration's principal, and fences the live attempts an older registration of its name claimed. */
@@ -230,7 +227,6 @@ export interface WorkerPoolRegistry {
     pool: string,
     clientId: string,
   ): Promise<boolean>;
-  identify(principal: Principal): Promise<WorkerPoolIdentity | undefined>;
 }
 
 /** One registered pool as a project's members read it: its newest poll where it has polled, whether that poll is recent enough for it to be taking work, and the runner it named where it named one. */
