@@ -107,6 +107,8 @@ export interface SetupCopy {
     readonly replace: unknown;
     readonly chatHost: unknown;
     readonly chatHostFlag: unknown;
+    readonly tokenFile: unknown;
+    readonly apiKeyFile: unknown;
     readonly runner: unknown;
     readonly test: unknown;
     readonly configuration: unknown;
@@ -168,6 +170,10 @@ export interface SetupCopy {
     readonly flag: unknown;
     readonly yes: unknown;
     readonly no: unknown;
+  };
+  readonly "setup-asked-credential": {
+    readonly token: unknown;
+    readonly apiKey: unknown;
   };
   readonly "setup-asked-plugin": {
     readonly flag: unknown;
@@ -734,6 +740,7 @@ export interface SetupCopy {
     readonly refusal: unknown;
   };
   readonly "setup-offer-when": Record<never, never>;
+  readonly "setup-offer-credential-when": Record<never, never>;
   readonly "setup-claude-on-subscription": Record<never, never>;
   readonly "setup-claude-on-api-key": Record<never, never>;
   readonly "setup-claude-on-bedrock": Record<never, never>;
@@ -751,7 +758,6 @@ export interface SetupCopy {
   readonly "setup-mend-runner-live-offer": {
     readonly project: unknown;
     readonly runs: unknown;
-    readonly job: unknown;
     readonly found: unknown;
     readonly fit: unknown;
     readonly chat: unknown;
@@ -759,7 +765,6 @@ export interface SetupCopy {
   readonly "setup-mend-runner-pool-offer": {
     readonly project: unknown;
     readonly runs: unknown;
-    readonly job: unknown;
     readonly found: unknown;
     readonly fit: unknown;
     readonly chat: unknown;
@@ -768,24 +773,19 @@ export interface SetupCopy {
   readonly "setup-mend-runner-put": {
     readonly program: unknown;
     readonly runs: unknown;
-    readonly job: unknown;
   };
-  readonly "setup-mend-chat-host-holds": {
-    readonly total: unknown;
-    readonly each: unknown;
-    readonly sessions: unknown;
-  };
+  readonly "setup-mend-chat-host-too": Record<never, never>;
   readonly "setup-mend-runner-things": {
+    readonly chat: unknown;
+  };
+  readonly "setup-mend-runner-opening": {
+    readonly things: unknown;
     readonly chat: unknown;
   };
   readonly "setup-mend-runner-found-settings": {
     readonly path: unknown;
     readonly credential: unknown;
     readonly login: unknown;
-  };
-  readonly "setup-mend-runner-login": {
-    readonly things: unknown;
-    readonly saved: unknown;
   };
   readonly "setup-mend-runner-login-named": {
     readonly things: unknown;
@@ -802,12 +802,10 @@ export interface SetupCopy {
     readonly add: unknown;
   };
   readonly "setup-mend-runner-offer": {
-    readonly things: unknown;
     readonly chat: unknown;
     readonly found: unknown;
     readonly put: unknown;
     readonly fit: unknown;
-    readonly holds: unknown;
     readonly project: unknown;
   };
   readonly "setup-mend-serving-offer": {
@@ -860,26 +858,12 @@ export interface SetupCopy {
     readonly told: unknown;
     readonly instead: unknown;
   };
-  readonly "setup-mend-fit-job": {
-    readonly job: unknown;
-    readonly spare: unknown;
-  };
-  readonly "setup-mend-fit-small": {
-    readonly machine: unknown;
-    readonly has: unknown;
-    readonly job: unknown;
-    readonly spare: unknown;
-    readonly engine: unknown;
-  };
+  readonly "setup-mend-fit-small": Record<never, never>;
   readonly "setup-mend-fit-colima": {
     readonly vm: unknown;
     readonly gives: unknown;
     readonly target: unknown;
-    readonly job: unknown;
-    readonly spare: unknown;
     readonly commands: unknown;
-    readonly short: unknown;
-    readonly has: unknown;
   };
   readonly "setup-mend-fit-commands": {
     readonly first: unknown;

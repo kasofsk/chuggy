@@ -198,6 +198,8 @@ test("a person with no personal runner is offered one on this machine, and serve
   site.personal.clear();
   const machine = await machineSignedIn(site);
   const said = lines(await machine.command(flags)).join("\n");
-  expect(said).toContain("I'll install it on this machine, as yours alone.");
+  expect(said).toContain(
+    "I'll install your runner on this machine, as yours alone.",
+  );
   expect(said).not.toContain(" serve ");
 });

@@ -232,6 +232,11 @@ export type SetupRunnerNote =
       readonly note: "Login";
       readonly credential: SetupClaudeCredential;
     }
+  /** The file the person named, copied to where the runner keeps its credential, readable only by them. */
+  | {
+      readonly note: "CredentialPlaced";
+      readonly credential: SetupClaudeCredential;
+    }
   /** `PersonalGone` is a registration this machine holds as the person's runner that the site no longer lists. */
   | {
       readonly note: "Personal" | "PersonalGone" | "PersonalRegistered";
@@ -354,6 +359,12 @@ export type SetupRunnerStop =
       readonly stop: "SettingsUnread";
       readonly path: string;
       readonly guide: string;
+    }
+  /** The file the person named as their credential was not taken: nothing is there, it holds nothing, or it is not of the kind named. */
+  | {
+      readonly stop: "CredentialRefused";
+      readonly kind: "Subscription" | "ApiKey";
+      readonly why: "Missing" | "Empty" | "Unlike";
     }
   | {
       readonly stop: "LoginMissing";
@@ -498,9 +509,10 @@ export type SetupServerEnded =
   | { readonly ended: "Served" }
   | { readonly ended: "Stopped"; readonly stop: SetupRunnerStop };
 
-/** How a run of `runner` ended: the site sees live the runner the project's work runs on and the chat host the person's chats in it run on, the cluster runs both, or it stopped. */
+/** How a run of `runner` ended: the site sees live the runner the project's work runs on and the chat host the person's chats in it run on, the cluster runs both, the runner's Claude credential is in place and nothing more was done, or it stopped. */
 export type SetupRunnerEnded =
   | { readonly ended: "Live" }
+  | { readonly ended: "Credentialed" }
   | { readonly ended: "Hosted" }
   | { readonly ended: "Stopped"; readonly stop: SetupRunnerStop };
 
@@ -856,10 +868,14 @@ export function setupRunnerNoteSaid(
     case "ChatSettingsWritten":
       return setupSettingsNoteSaid(note);
     case "Login":
+    case "CredentialPlaced":
       return [
-        "found",
+        note.note === "Login" ? "found" : "did",
         {
-          id: "setup-runner-note-login",
+          id:
+            note.note === "Login"
+              ? "setup-runner-note-login"
+              : "setup-runner-note-credential-placed",
           args: {
             credential: setupClaudeWords[note.credential.kind].credential,
             path: note.credential.path,
@@ -1546,6 +1562,19 @@ function setupLoginMissingSaid(
   };
 }
 
+/** A file named as the person's credential and not taken, said in one sentence that names neither the file nor its contents. */
+function setupCredentialRefusedSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "CredentialRefused" }>,
+): SetupRunnerStopSaid {
+  const why = stop.why === "Unlike" ? stop.kind : stop.why;
+  return {
+    found: { id: "setup-runner-credential-refused-found", args: { why } },
+    tell: { id: "setup-runner-credential-refused-tell", args: { why } },
+    when: { id: "setup-runner-credential-refused-when" },
+    again: "Status",
+  };
+}
+
 /** Settings at their place that do not read as the runner's. */
 function setupSettingsUnreadSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "SettingsUnread" }>,
@@ -1573,6 +1602,7 @@ function setupMachineSaid(
         | "Serviceless"
         | "SettingsUnread"
         | "LoginMissing"
+        | "CredentialRefused"
         | "Npmless"
         | "Unwritten";
     }
@@ -1596,6 +1626,8 @@ function setupMachineSaid(
       return setupSettingsUnreadSaid(stop);
     case "LoginMissing":
       return setupLoginMissingSaid(stop);
+    case "CredentialRefused":
+      return setupCredentialRefusedSaid(stop);
     case "Npmless":
       return {
         found: { id: "setup-runner-npmless-found" },
@@ -1979,6 +2011,7 @@ export function setupRunnerStopSaid(
     case "Serviceless":
     case "SettingsUnread":
     case "LoginMissing":
+    case "CredentialRefused":
     case "Npmless":
     case "Unwritten":
       return setupMachineSaid(stop);
@@ -2043,6 +2076,7 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 {
     case "Engineless":
     case "DockerBarred":
     case "LoginMissing":
+    case "CredentialRefused":
     case "Npmless":
     case "LingerAsks":
     case "PermitWithheld":

@@ -23,7 +23,9 @@
  * workspace lets them register one where this machine holds none the site
  * lists, the machine's user services, a container engine the package takes from this user, the
  * runner's settings and its Claude credential, and whether the package could be
- * installed at all.
+ * installed at all. Named the file of the person's Claude credential where the
+ * runner has none, a run copies it into place and does nothing more, so what
+ * it would put here is said before it is put.
  *
  * A registration is good where the machine holds a file of a runner the site
  * lists as the person's; otherwise a registration token is minted, a write,
@@ -85,7 +87,7 @@ import { myRunnerShort } from "./myRunner.ts";
 import { runnerPackages, runnerTokenLifetimeSecs } from "./runners.ts";
 import type { RunnerKind, RunnerPackage } from "./runners.ts";
 import { settingsRoutes } from "./settingsNav.ts";
-import type { SetupAsked } from "./setupArguments.ts";
+import type { SetupAsked, SetupCredentialGiven } from "./setupArguments.ts";
 import { SetupMachineError, setupPlatformOf } from "./setupPorts.ts";
 import type { SetupPlatform, SetupPorts } from "./setupPorts.ts";
 import { setupGot, setupReadPorts } from "./setupReads.ts";
@@ -100,6 +102,9 @@ import {
   setupChatSized,
   setupChildFailed,
   setupColimaAtLogin,
+  setupCredentialPath,
+  setupCredentialUnset,
+  setupCredentialRead,
   setupEngineInUseRead,
   setupEngineMemoryRead,
   setupInstallCommand,
@@ -266,6 +271,8 @@ interface Run {
 interface ProjectRun extends Run {
   readonly partition: PartitionIdentity;
   readonly chatHost: boolean;
+  /** The file the person named as their Claude credential, which a run copies into place and goes no further, where the runner has none. */
+  readonly credential: SetupCredentialGiven | undefined;
 }
 
 /** Why a walk went no further: a stop of its own, or a report another part of the program makes. */
@@ -483,7 +490,7 @@ async function setupMachineProbed(
   const credential: SetupClaudeCredential =
     settings.settings === "Read"
       ? settings.credential
-      : { kind: "Subscription", path: places.login };
+      : setupCredentialUnset(ports, places);
   if (ports.disk.kind(credential.path) !== "File")
     return halt({ stop: "LoginMissing", credential, guide });
   notes.push({ note: "Login", credential });
@@ -630,7 +637,11 @@ function setupSettingsHad(run: Run, machine: Machine): Halt | undefined {
   try {
     run.ports.disk.make(
       path,
-      setupSettingsText(run.platform, machine.engine, machine.credential.path),
+      setupSettingsText(
+        run.platform,
+        machine.engine,
+        setupCredentialUnset(run.ports, run.places),
+      ),
     );
   } catch (failure: unknown) {
     if (!(failure instanceof SetupMachineError)) throw failure;
@@ -1571,6 +1582,63 @@ async function setupColimaHad(run: Run): Promise<Halt | ColimaHad> {
     : had;
 }
 
+/**
+ * The file the person named as their Claude credential, copied to where the
+ * runner keeps one of its kind where the machine has no runner settings and
+ * no credential, the run going no further, so what `runner` would put here
+ * is said before it is put and the settings it then writes name the copy.
+ * Nothing is copied where a credential is in place, nor anything changed
+ * where the file is not taken or settings name a credential that is not there.
+ */
+function setupCredentialPlaced(
+  run: ProjectRun,
+  given: SetupCredentialGiven,
+): SetupRunnerEnded | Halt {
+  const { ports, places, notes, offered } = run;
+  const guide = offered.guideAddress;
+  const settings = setupSettingsRead(ports, places);
+  if (settings.settings === "Unread")
+    return halt({ stop: "SettingsUnread", path: places.settings, guide });
+  const held: SetupClaudeCredential =
+    settings.settings === "Read"
+      ? settings.credential
+      : setupCredentialUnset(ports, places);
+  if (ports.disk.kind(held.path) === "File") {
+    notes.push({ note: "Login", credential: held });
+    return { ended: "Credentialed" };
+  }
+  if (settings.settings === "Read")
+    return halt({ stop: "LoginMissing", credential: held, guide });
+  const path = setupCredentialPath(ports.surroundings, given.path);
+  const read = setupCredentialRead(ports, { kind: given.kind, path });
+  if (read.read === "Refused")
+    return halt({ stop: "CredentialRefused", kind: given.kind, why: read.why });
+  run.secrets.push(read.text.trim());
+  const credential = {
+    kind: given.kind,
+    path: given.kind === "Subscription" ? places.login : places.apiKey,
+  };
+  const put = setupCredentialPut(run, credential.path, read.text);
+  if (halted(put)) return put;
+  notes.push({ note: "CredentialPlaced", credential });
+  return { ended: "Credentialed" };
+}
+
+/** Puts a credential's text at `path`, readable only by the person, with the directories above it. */
+function setupCredentialPut(
+  run: Run,
+  path: string,
+  text: string,
+): Halt | undefined {
+  try {
+    run.ports.disk.make(path, text);
+  } catch (failure: unknown) {
+    if (!(failure instanceof SetupMachineError)) throw failure;
+    return halt({ stop: "Unwritten", path });
+  }
+  return undefined;
+}
+
 async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   const project = await setupProjectAsked(run);
   if (halted(project)) return project;
@@ -1582,6 +1650,8 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   if (halted(fallback)) return fallback;
   const personal = await setupPersonalAsked(run);
   if (halted(personal)) return personal;
+  if (run.credential !== undefined)
+    return setupCredentialPlaced(run, run.credential);
   const colima = await setupColimaHad(run);
   if (halted(colima)) return colima;
   const leasts = setupPackageLeasts[run.platform];
@@ -1721,6 +1791,7 @@ export async function setupRunner(
     ),
     partition,
     chatHost,
+    credential: asked.credential,
   };
   return setupRunReported(run, at, setupDoneNoted(run, await setupWalked(run)));
 }
