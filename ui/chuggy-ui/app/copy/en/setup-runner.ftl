@@ -18,6 +18,8 @@ setup-runner-versioned = { $program } { $version }
 # spells -run: to run is a verb here
 setup-runner-rule = Run { $command } only { $when }.
 # spells -run: to run is a verb here
+setup-runner-rule-credential = Run { $token } or { $apiKey }, followed by the path of that file, only { $when }. Never read, copy or move the file yourself, and never say what is in it.
+# spells -run: to run is a verb here
 setup-runner-rule-elsewhere = Where the person wants them on another machine instead, run nothing here, and give them this line to paste into { -claude-code } on that machine: { $line }
 # spells -run: to run is a verb here
 # spells -thread: the chat image is the image the chat host runs
@@ -55,6 +57,7 @@ setup-runner-note-settings-written = wrote the { -runner }'s settings to { $path
 # spells -run: to run is a verb here
 setup-runner-note-chat-settings-written = wrote the size of your { -chat-host } into { $path }, every other setting kept as it was: the most { -thread(form: "plural") } it runs at once is { $sessions }, at { $each } each, { $total } in all
 setup-runner-note-login = the { -runner }'s { $credential } is in { $path }
+setup-runner-note-credential-placed = put your { $credential } in { $path }, { setup-runner-claude-kept }
 setup-runner-note-personal = this machine is registered as your { -runner }, in { $path }
 setup-runner-note-personal-gone = { $path } registered this machine as your { -runner }, and the { -site } no longer knows that registration
 setup-runner-note-personal-registered = registered this machine as your { -runner }, in { $path }
@@ -179,6 +182,21 @@ setup-runner-settings-unread-when = once the person says { $path } is mended
 setup-runner-login-missing-found = the { -runner } has no { $credential } on this machine: nothing is at { $path }
 setup-runner-login-missing-tell = The { -runner } needs a { -claude } login of its own on this machine, and there is none at { $path }, { setup-runner-unchanged }. { $saved } An Anthropic API key or a cloud provider's credential can be used instead; the { -runner }'s guide says how: { $guide }. Tell me once one is there.
 setup-runner-login-missing-named-tell = The { -runner }'s settings name its { $credential } as { $path }, and nothing is there, { setup-runner-unchanged }. { $saved } Tell me once it is there.
+# spells -claude: claude setup-token is the command
+setup-runner-credential-refused-found = the file named was not taken: { $why ->
+    [Missing] nothing is there
+    [Empty] it is empty
+    [Subscription] it holds no token `claude setup-token` made
+   *[ApiKey] it holds no Anthropic API key
+}
+# spells -claude: claude setup-token is the command
+setup-runner-credential-refused-tell = { $why ->
+    [Missing] There is no file there, so nothing was changed; tell me when you have the right path.
+    [Empty] That file is empty, so nothing was changed; tell me when you have the right path.
+    [Subscription] That file holds no token from `claude setup-token`, so nothing was changed; tell me when you have the right path.
+   *[ApiKey] That file holds no Anthropic API key, so nothing was changed; tell me when you have the right path.
+}
+setup-runner-credential-refused-when = once the person gives you another path
 setup-runner-login-missing-when = once the person says the { -runner }'s { $credential } is on this machine
 setup-runner-npmless-found = the { -runner } package is not installed at a version { setup-program } can use, and npm did not answer
 # spells -run: to run is a verb here

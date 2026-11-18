@@ -227,6 +227,33 @@ test("runner is read only with the workspace and the project it is for, waits as
   expect(setupAnswersAsked(["runner", ...named])).toEqual(answers);
 });
 
+test("runner reads the path of a Claude credential of either kind, one at most and not empty, and no other command reads either flag", () => {
+  const named = ["runner", "--workspace", "acme", "--project", "widgets"];
+  expect(
+    setupAsked([...named, "--claude-token-file", "a b/token"]),
+  ).toMatchObject({
+    asked: "Runner",
+    credential: { kind: "Subscription", path: "a b/token" },
+  });
+  expect(
+    setupAsked([...named, "--anthropic-api-key-file=/keys/anthropic"]),
+  ).toMatchObject({
+    asked: "Runner",
+    credential: { kind: "ApiKey", path: "/keys/anthropic" },
+  });
+  expect(setupAsked(named)).toMatchObject({ credential: undefined });
+  for (const argv of [
+    [...named, "--claude-token-file", "t", "--anthropic-api-key-file", "k"],
+    [...named, "--claude-token-file="],
+    [...named, "--anthropic-api-key-file="],
+  ])
+    expect(setupAsked(argv), argv.join(" ")).toEqual(wrongly("Credential"));
+  for (const flag of ["--claude-token-file", "--anthropic-api-key-file"])
+    expect(setupAsked(["--workspace", "acme", flag, "t"]), flag).toEqual(
+      wrongly("Flag"),
+    );
+});
+
 test("the arguments a sign-in starts its listener with are read back as that listener", () => {
   expect(
     setupAsked(setupListenArguments(site, setupListenSecsDefault)),

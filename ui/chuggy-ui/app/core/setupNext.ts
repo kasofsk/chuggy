@@ -74,19 +74,12 @@ import type { SetupHistory, SetupMergeSince } from "./setupMerge.ts";
 import type { SetupPlatform } from "./setupPorts.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
-import { setupEngineSpareMib, setupJobMemoryMib } from "./setupFit.ts";
 import type { SetupFit } from "./setupFit.ts";
-import { setupChatSized } from "./setupRunnerMachine.ts";
-import type {
-  SetupChatSize,
-  SetupRunnerHeld,
-  SetupRunnerHere,
-} from "./setupRunnerMachine.ts";
+import type { SetupRunnerHeld, SetupRunnerHere } from "./setupRunnerMachine.ts";
 import { setupTicketAgentsPath } from "./setupTicket.ts";
 import type { SetupTicketOffers } from "./setupTicket.ts";
 import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
 import {
-  setupChatCost,
   setupClaudeSaved,
   setupClaudeWords,
   setupDockerBarredTold,
@@ -427,17 +420,25 @@ function setupConfigurationMend(
   };
 }
 
-/** What `runner` does on this machine for the checklist's project, said before it is run, with the line that has it run on another machine instead; `chat` where it makes this machine the person's chat host too. */
-function setupOffer(tell: Copy, at: SetupAt, chat: boolean): SetupThing {
+/** What `runner` does on this machine for the checklist's project, said before it is run, with the line that has it run on another machine instead; `chat` where it makes this machine the person's chat host too, and `credential` where it is first run only to put the person's Claude credential in place, once they point to it. */
+function setupOffer(
+  tell: Copy,
+  at: SetupAt,
+  chat: boolean,
+  credential = false,
+): SetupThing {
   const { workspace, project } = at;
   return {
     thing: "Offer",
     command: "Runner",
     tell,
-    when: { id: "setup-offer-when" },
+    when: {
+      id: credential ? "setup-offer-credential-when" : "setup-offer-when",
+    },
     workspace,
     project,
-    chatHost: chat,
+    chatHost: chat && !credential,
+    ...(credential ? { credential } : {}),
     elsewhere: claudeCodeRunnerLine(at.site, workspace, project, chat),
   };
 }
@@ -500,29 +501,14 @@ function setupRunsOn(claude: SetupClaudeKind | undefined): Copy {
     : { id: "setup-runs-on", args: { claude: setupClaudeOn[claude] } };
 }
 
-/** What a job of the project's takes, as an offer says it. */
-const setupJobSaid: Copy = quantityFigureCopy(
-  memoryMibFigure(setupJobMemoryMib),
-);
-
-/** What a chat host here would be, where the machine was looked at and its engine named; sized as having no room where the engine was not read. */
-function setupChatSizeHere(here: SetupRunnerHere): SetupChatSize {
-  return here.chatSize ?? setupChatSized(undefined, undefined, {});
-}
-
-/** What an offer of `runner` says of the two things it puts here, or of the runner alone where `chat` says the person's chat host is not made here. */
+/** What the runner's step says first of the two things it puts here, or of the runner alone where `chat` says the person's chat host is not made here. */
 function setupRunnerThings(chat: boolean): Copy {
   return { id: "setup-mend-runner-things", args: { chat: setupWith(chat) } };
 }
 
-/** What an offer of `runner` says the person's chat host here holds; nothing where it is not made here. */
-function setupChatHostSaid(chat: boolean, here: SetupRunnerHere): CopyArgument {
-  if (!chat) return "";
-  const size = setupChatSizeHere(here);
-  return {
-    id: "setup-mend-chat-host-holds",
-    args: setupChatCost(size.sessionsMax, size.sessionMemoryMib),
-  };
+/** What an offer of `runner` says of the person's chat host made here too; nothing where it is not. */
+function setupChatHostSaid(chat: boolean): CopyArgument {
+  return chat ? { id: "setup-mend-chat-host-too" } : "";
 }
 
 /** What an offer of `runner` says it finds here and keeps: the runner's settings, and whose Claude login they run work on. */
@@ -539,39 +525,44 @@ function setupRunnerFoundSaid(here: SetupRunnerHere): CopyArgument {
   };
 }
 
-/** Where the Claude credential work here would run on is not on this machine yet, what the person is told to do first, before anything is put here. */
+/**
+ * Where the Claude credential work here would run on is not on this machine
+ * yet, what the person is told first, before anything is put here: with no
+ * settings, the step's opening, which asks for a token or an API key by its
+ * path, for `runner` to copy into place, and offers another machine; where
+ * settings name a credential that is not there, to put it there.
+ */
 function setupRunnerLoginMend(
+  at: SetupAt,
   here: SetupRunnerHere,
   chat: boolean,
 ): SetupThing | undefined {
   const credential = here.loginMissing;
   if (credential === undefined) return undefined;
   const things = setupRunnerThings(chat);
-  const saved = setupClaudeSaved(credential);
+  if (here.settings === undefined)
+    return setupOffer(
+      {
+        id: "setup-mend-runner-opening",
+        args: { things, chat: setupWith(chat) },
+      },
+      at,
+      chat,
+      true,
+    );
   const words = setupClaudeWords[credential.kind].credential;
   return setupHand(
-    credential.kind === "Subscription"
-      ? { id: "setup-mend-runner-login", args: { things, saved } }
-      : {
-          id: "setup-mend-runner-login-named",
-          args: { things, credential: words, path: credential.path, saved },
-        },
+    {
+      id: "setup-mend-runner-login-named",
+      args: {
+        things,
+        credential: words,
+        path: credential.path,
+        saved: setupClaudeSaved(credential),
+      },
+    },
     { id: "setup-runner-login-missing-when", args: { credential: words } },
   );
-}
-
-/** Memory as an offer says it. */
-function setupMemorySaid(mib: number): Copy {
-  return quantityFigureCopy(memoryMibFigure(mib));
-}
-
-/** What Colima's VM is short of for a job, as the word an offer's sentence picks its clause by. */
-function setupColimaShort(
-  fit: Extract<SetupFit, { readonly fit: "Colima" }>,
-): string {
-  if (fit.short && fit.hasMib !== undefined)
-    return fit.amd64 ? "both" : "memory";
-  return fit.amd64 ? "amd64" : "none";
 }
 
 /** What `runner` gives Colima's VM, as the word an offer's sentence picks its clause by. */
@@ -585,36 +576,22 @@ function setupColimaGives(
   return fit.rosetta ? "rosetta" : "none";
 }
 
-/** What an offer of `runner` says this machine is short of for a job naming no memory or platform, and what `runner` does for it, or nothing where it is short of nothing. */
+/** What an offer of `runner` says this machine needs done or done elsewhere for a job naming no memory or platform, with no figure but the size `runner` gives Colima's VM, or nothing where it fits one as it stands. */
 function setupFitSaid(here: SetupRunnerHere): CopyArgument {
   const { fit } = here;
-  const engine = here.room.room === "Open" ? here.room.engine : "docker";
-  const job = setupMemorySaid(setupJobMemoryMib);
-  const spare = setupMemorySaid(setupEngineSpareMib);
   switch (fit.fit) {
     case "Small":
-      return {
-        id: "setup-mend-fit-small",
-        args: {
-          machine: fit.machine === "Mac" ? "mac" : "engine",
-          engine,
-          has: setupMemorySaid(fit.hasMib),
-          job,
-          spare,
-        },
-      };
+      return { id: "setup-mend-fit-small" };
     case "Colima":
       return {
         id: "setup-mend-fit-colima",
         args: {
           vm: fit.vm.toLowerCase(),
-          short: setupColimaShort(fit),
-          has: fit.hasMib === undefined ? "" : setupMemorySaid(fit.hasMib),
-          job,
-          spare,
           gives: setupColimaGives(fit),
           target:
-            fit.targetMib === undefined ? "" : setupMemorySaid(fit.targetMib),
+            fit.targetMib === undefined
+              ? ""
+              : quantityFigureCopy(memoryMibFigure(fit.targetMib)),
           commands: {
             id: "setup-mend-fit-commands",
             args: {
@@ -655,7 +632,7 @@ function setupRunnerLiveMend(
   instead: Copy,
 ): SetupThing {
   return (
-    setupRunnerLoginMend(here, chat) ??
+    setupRunnerLoginMend(at, here, chat) ??
     setupFitToldMend(here.fit, instead) ??
     setupOffer(
       {
@@ -666,10 +643,9 @@ function setupRunnerLiveMend(
         args: {
           project: setupNamed(at),
           runs: setupRunsOn(here.claude),
-          job: setupJobSaid,
           fit: setupFitSaid(here),
           found: setupRunnerFoundSaid(here),
-          chat: setupChatHostSaid(chat, here),
+          chat: setupChatHostSaid(chat),
         },
       },
       at,
@@ -787,13 +763,12 @@ function setupRunnerPutMend(
   instead: Copy,
 ): SetupThing {
   const told =
-    setupRunnerLoginMend(here, chat) ?? setupFitToldMend(here.fit, instead);
+    setupRunnerLoginMend(at, here, chat) ?? setupFitToldMend(here.fit, instead);
   if (told !== undefined) return told;
   return setupOffer(
     {
       id: "setup-mend-runner-offer",
       args: {
-        things: setupRunnerThings(chat),
         chat: setupWith(chat),
         found: setupRunnerFoundSaid(here),
         put: {
@@ -801,11 +776,9 @@ function setupRunnerPutMend(
           args: {
             program: runnerPackages[platform].program,
             runs: setupRunsOn(here.claude),
-            job: setupJobSaid,
           },
         },
         fit: setupFitSaid(here),
-        holds: setupChatHostSaid(chat, here),
         project: setupNamed(at),
       },
     },

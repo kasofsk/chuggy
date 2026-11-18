@@ -16,8 +16,9 @@
  * engine for the memory it reports and for what its running containers take
  * of it, the chat host's file for the id
  * the site holds that host by and for nothing else, and a pool's registration
- * and a Claude credential's file are never read at all, only looked for. The
- * package is
+ * and the runner's Claude credential are never read at all, only looked for.
+ * A file the person names as their credential is read only to be refused or
+ * copied into the runner's place for it, and never said. The package is
  * installed by the console's own install command, under the person's own
  * prefix where the machine's is not theirs to write.
  *
@@ -34,10 +35,10 @@ import { identitySchema } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 
 import { runnerPackages, runnerRegisterCommand } from "./runners.ts";
+import type { SetupCredentialGiven } from "./setupArguments.ts";
 import type { RunnerKind, RunnerPackage } from "./runners.ts";
 import {
   setupEngineSpareMib,
-  setupFitEngineMib,
   setupFitOf,
   setupJobMemoryMib,
   setupMacRead,
@@ -79,6 +80,8 @@ export interface SetupRunnerPlaces {
   readonly settings: string;
   /** Where the runner's Claude login is kept unless its settings name another place: alone in a directory of its own, which a chat host is handed whole. */
   readonly login: string;
+  /** Where the runner's Anthropic API key is kept where it is given one: alone in that same directory, in place of the login. */
+  readonly apiKey: string;
   readonly pools: string;
   /** Where the package writes the file of each service it runs: its systemd user units on Linux, its launchd agents on a Mac. */
   readonly units: string;
@@ -109,6 +112,7 @@ export function setupRunnerPlaces(
     return {
       settings: setupPath(support, "runner.json"),
       login: setupPath(support, "claude", "token"),
+      apiKey: setupPath(support, "claude", "api-key"),
       pools: setupPath(home, ".config", "chuggy", "pools"),
       units: setupPath(home, "Library", "LaunchAgents"),
       own,
@@ -121,6 +125,7 @@ export function setupRunnerPlaces(
   return {
     settings: setupPath(config, program, "runner.json"),
     login: setupPath(config, program, "claude", "token"),
+    apiKey: setupPath(config, program, "claude", "api-key"),
     pools: setupPath(config, "chuggy", "pools"),
     units: setupPath(config, "systemd", "user"),
     own,
@@ -738,22 +743,69 @@ export async function setupFitRead(
 /** The limits the package's guide writes in the settings it shows, which have no default of the package's own. */
 const setupGuideLimits = { timeoutSecsMax: 7_200, outputBytesMax: 1_048_576 };
 
-/** The settings a machine with none is given: the package's guide's own, with where the Claude login is and, on Linux, the engine that answered; chuggy-darwin's settings have no engine to name. */
+/** The settings a machine with none is given: the package's guide's own, with where the Claude credential is and, on Linux, the engine that answered; chuggy-darwin's settings have no engine to name. */
 export function setupSettingsText(
   platform: SetupPlatform,
   engine: SetupEngine,
-  login: string,
+  credential: SetupCredentialGiven,
 ): string {
   const settings = {
     ...(platform === "darwin" ? {} : { engine }),
     concurrencyMax: 1,
     sessionsMax: 2,
-    claudeTokenFile: login,
+    ...(credential.kind === "Subscription"
+      ? { claudeTokenFile: credential.path }
+      : {
+          claudeCredential: { kind: "ApiKey", apiKeyFile: credential.path },
+        }),
     ...setupGuideLimits,
     environment: {},
     network: "chuggy-jobs",
   };
   return `${JSON.stringify(settings, null, 2)}\n`;
+}
+
+/** What each kind of credential a person may name begins with: a token `claude setup-token` made, and an Anthropic API key. */
+const setupCredentialPrefixes: Readonly<
+  Record<SetupCredentialGiven["kind"], string>
+> = { Subscription: "sk-ant-oat", ApiKey: "sk-ant-api" };
+
+/** The most of a file named as a credential that is read, past which it is no credential of either kind. */
+const setupCredentialBytesMax = 4_096;
+
+/** A file the person named as their Claude credential: its text, to be copied and never said, or why it is refused. */
+export type SetupCredentialRead =
+  | { readonly read: "Held"; readonly text: string }
+  | {
+      readonly read: "Refused";
+      readonly why: "Missing" | "Empty" | "Unlike";
+    };
+
+/** The whole path of a file the person named, which a path not begun at the root is taken from the folder the program runs in. */
+export function setupCredentialPath(
+  surroundings: SetupSurroundings,
+  path: string,
+): string {
+  return path.startsWith("/")
+    ? path
+    : setupPath(surroundings.folder.replace(/\/+$/u, ""), path);
+}
+
+/** Reads the file the person named as their credential: refused where nothing is there, where it holds nothing, or where it is not one word of the kind named. */
+export function setupCredentialRead(
+  ports: SetupPorts,
+  given: SetupCredentialGiven,
+): SetupCredentialRead {
+  if (ports.disk.kind(given.path) !== "File")
+    return { read: "Refused", why: "Missing" };
+  const text = ports.disk.text(given.path, setupCredentialBytesMax);
+  const held = text?.trim();
+  if (held === "") return { read: "Refused", why: "Empty" };
+  return held !== undefined &&
+    held.startsWith(setupCredentialPrefixes[given.kind]) &&
+    !/\s/u.test(held)
+    ? { read: "Held", text: `${held}\n` }
+    : { read: "Refused", why: "Unlike" };
 }
 
 /** The runner package where it is installed: its command by its whole path, and the version its manifest names. */
@@ -946,8 +998,6 @@ export interface SetupRunnerHere {
     | undefined;
   /** The Claude credential work here would run on, where its file is not there yet: the one the settings name, or a subscription's where there are none. */
   readonly loginMissing: SetupClaudeCredential | undefined;
-  /** What a chat host here would hold, where a runner could be put here or will be once `runner` changes Colima. */
-  readonly chatSize: SetupChatSize | undefined;
   /** What this machine is short of for a job naming no memory or platform. */
   readonly fit: SetupFit;
 }
@@ -1079,13 +1129,26 @@ export function setupFileClient(
   return parsed.success ? parsed.data.clientId : undefined;
 }
 
-/** The kind of credential settings would run work on, a run writing a subscription's where there are none. */
+/** The credential a machine with no runner settings runs work on: the one in the runner's own place, a token before an API key, and where neither is there the token's place, which a run then finds missing. */
+export function setupCredentialUnset(
+  ports: SetupPorts,
+  places: SetupRunnerPlaces,
+): SetupCredentialGiven {
+  return ports.disk.kind(places.login) !== "File" &&
+    ports.disk.kind(places.apiKey) === "File"
+    ? { kind: "ApiKey", path: places.apiKey }
+    : { kind: "Subscription", path: places.login };
+}
+
+/** The kind of credential settings would run work on, and where there are none the kind a run would write them naming. */
 function setupClaudeHere(
+  ports: SetupPorts,
+  places: SetupRunnerPlaces,
   settings: SetupSettingsRead,
 ): SetupClaudeKind | undefined {
   switch (settings.settings) {
     case "Absent":
-      return "Subscription";
+      return setupCredentialUnset(ports, places).kind;
     case "Unread":
       return undefined;
     case "Read":
@@ -1120,22 +1183,18 @@ export async function setupRunnerHere(
     settings.settings === "Read" ? settings : undefined,
   );
   const open = room.room === "Open";
-  const chat = settings.settings === "Read" ? settings.chat : {};
-  const engine = setupRoomEngine(room);
-  const { fit, engineMib } = await setupFitRead(ports, engine);
-  const sized = open || fit.fit === "Colima";
-  const inUseMib = sized ? await setupInUseHere(ports, engine, fit) : undefined;
+  const { fit } = await setupFitRead(ports, setupRoomEngine(room));
   const credential: SetupClaudeCredential | undefined =
     settings.settings === "Read"
       ? settings.credential
       : settings.settings === "Absent"
-        ? { kind: "Subscription", path: places.login }
+        ? setupCredentialUnset(ports, places)
         : undefined;
   return {
     room,
     held: open ? setupRunnerHeld(ports, places, partition) : undefined,
     chat: open && setupChatFiles(ports, places, partition.tenant).length > 0,
-    claude: setupClaudeHere(settings),
+    claude: setupClaudeHere(ports, places, settings),
     settings:
       settings.settings === "Read"
         ? { path: places.settings, credential: settings.credential }
@@ -1144,23 +1203,8 @@ export async function setupRunnerHere(
       credential !== undefined && ports.disk.kind(credential.path) !== "File"
         ? credential
         : undefined,
-    chatSize: sized
-      ? setupChatSized(setupFitEngineMib(fit, engineMib), inUseMib, chat)
-      : undefined,
     fit,
   };
-}
-
-/** What the engine's running containers take of the memory a chat host here is sized to: none where Colima's VM is not running or there is none yet, since it runs nothing, and otherwise as the engine counts them. */
-async function setupInUseHere(
-  ports: SetupPorts,
-  engine: SetupEngine | undefined,
-  fit: SetupFit,
-): Promise<number | undefined> {
-  if (fit.fit === "Colima" && fit.vm !== "Running") return 0;
-  return engine === undefined
-    ? undefined
-    : await setupEngineInUseRead(ports, engine);
 }
 
 /** The engine a room is read of for what a job needs: the one that answered, or on a Mac docker, which Colima runs, whether or not it answered. */

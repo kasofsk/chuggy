@@ -49,6 +49,7 @@ import {
   boxAgentLabel,
   boxAgents,
   boxHome,
+  boxApiKey,
   boxLogin,
   boxMacLogin,
   boxMacSettings,
@@ -88,6 +89,7 @@ test("the package's things are under the person's configuration directory: the o
   expect(places).toEqual({
     settings: boxSettings,
     login: boxLogin,
+    apiKey: boxApiKey,
     pools: boxPools,
     units: boxUnits,
     own: boxOwn,
@@ -98,6 +100,7 @@ test("the package's things are under the person's configuration directory: the o
     expect(setupRunnerPlaces({ ...surroundings, configHome })).toEqual({
       settings: "/data/config/chuggy-linux/runner.json",
       login: "/data/config/chuggy-linux/claude/token",
+      apiKey: "/data/config/chuggy-linux/claude/api-key",
       pools: "/data/config/chuggy/pools",
       units: "/data/config/systemd/user",
       own: boxOwn,
@@ -111,6 +114,7 @@ test("on a Mac the package's settings and login are in its Application Support, 
   const darwin = {
     settings: boxMacSettings,
     login: boxMacLogin,
+    apiKey: boxMacLogin.replace(/token$/u, "api-key"),
     pools: boxPools,
     units: boxAgents,
     own: boxOwn,
@@ -405,7 +409,10 @@ test("settings naming a credential beside a login, or one missing or doubling it
 });
 
 test("the settings a machine with none is given are the package's guide's own, and read back as settings, which on a Mac name no engine", () => {
-  const text = setupSettingsText("linux", "podman", boxLogin);
+  const text = setupSettingsText("linux", "podman", {
+    kind: "Subscription",
+    path: boxLogin,
+  });
   expect(text.endsWith("}\n")).toBe(true);
   expect(JSON.parse(text)).toEqual({
     engine: "podman",
@@ -425,7 +432,12 @@ test("the settings a machine with none is given are the package's guide's own, a
     credential: { kind: "Subscription", path: boxLogin },
   });
   expect(
-    JSON.parse(setupSettingsText("darwin", "docker", boxMacLogin)),
+    JSON.parse(
+      setupSettingsText("darwin", "docker", {
+        kind: "Subscription",
+        path: boxMacLogin,
+      }),
+    ),
   ).toEqual({
     concurrencyMax: 1,
     sessionsMax: 2,
@@ -434,6 +446,21 @@ test("the settings a machine with none is given are the package's guide's own, a
     outputBytesMax: 1_048_576,
     environment: {},
     network: "chuggy-jobs",
+  });
+});
+
+test("settings given an Anthropic API key name it as the package takes one, and read back as that credential", () => {
+  const text = setupSettingsText("linux", "docker", {
+    kind: "ApiKey",
+    path: boxApiKey,
+  });
+  expect(JSON.parse(text)).toMatchObject({
+    claudeCredential: { kind: "ApiKey", apiKeyFile: boxApiKey },
+  });
+  expect(JSON.parse(text)).not.toHaveProperty("claudeTokenFile");
+  expect(settled(text)).toMatchObject({
+    settings: "Read",
+    credential: { kind: "ApiKey", path: boxApiKey },
   });
 });
 
@@ -729,13 +756,6 @@ test("what the bare command reads of the machine changes nothing: whether a runn
     room: { room: "Open", engine: "docker" },
     held: undefined,
     chat: false,
-    chatSize: {
-      engineMib: 11_980,
-      inUseMib: 0,
-      room: 3,
-      sessionsMax: 3,
-      sessionMemoryMib: 2_048,
-    },
     claude: "Subscription",
     settings: undefined,
     loginMissing: undefined,
@@ -802,7 +822,6 @@ test("a user barred from docker is read as that before the engine is asked, with
     },
     held: undefined,
     chat: false,
-    chatSize: undefined,
     claude: "Subscription",
     settings: {
       path: boxSettings,
@@ -834,13 +853,6 @@ test("on a Mac the bare command reads the settings at chuggy-darwin's place and 
     room: { room: "Open", engine: "docker" },
     held: "Pool",
     chat: false,
-    chatSize: {
-      engineMib: 11_980,
-      inUseMib: 0,
-      room: 3,
-      sessionsMax: 3,
-      sessionMemoryMib: 2_048,
-    },
     claude: "Subscription",
     settings: {
       path: boxMacSettings,

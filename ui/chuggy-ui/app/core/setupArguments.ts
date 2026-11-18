@@ -17,7 +17,11 @@
  * `--replace` is the person's yes to `chat-host` registering this machine in
  * place of the chat host of theirs it names. `--chat-host` is the person's
  * answer to `runner` making this machine their chat host too, which it does
- * only on `yes`. `configuration` writes a starting
+ * only on `yes`. `--claude-token-file` or `--anthropic-api-key-file` names
+ * the file of a token `claude setup-token` made or of an Anthropic API key,
+ * which `runner` copies to where the runner package keeps its credential
+ * where it has none yet; the two are never given together.
+ * `configuration` writes a starting
  * configuration into the checkout, its check running the command `--test`
  * gives where it gives one; `check` judges the checkout's configuration as an
  * import would; neither asks the site anything. `import` asks the site to
@@ -87,6 +91,7 @@ export type SetupAskFault =
   | "Workspace"
   | "Replace"
   | "ChatHost"
+  | "Credential"
   | "ProjectName"
   | "Test"
   | "Brief"
@@ -153,6 +158,16 @@ export const setupChatHostAnswers = ["yes", "no"] as const;
 
 export type SetupChatHostAnswer = (typeof setupChatHostAnswers)[number];
 
+/** The flags `runner` is told in where the person's Claude credential is, a token `claude setup-token` made or an Anthropic API key, each a file. */
+export const setupTokenFileFlag = "--claude-token-file";
+export const setupApiKeyFileFlag = "--anthropic-api-key-file";
+
+/** The file the person named as their Claude credential, and which kind they named it as. */
+export interface SetupCredentialGiven {
+  readonly kind: "Subscription" | "ApiKey";
+  readonly path: string;
+}
+
 export const setupAnswersNone: SetupAnswers = {
   workspace: undefined,
   project: undefined,
@@ -202,6 +217,8 @@ export type SetupAsked =
       readonly project: string;
       /** Whether this machine is made the person's chat host too, where the person was asked. */
       readonly chatHost: SetupChatHostAnswer | undefined;
+      /** The file the person named as their Claude credential, to be copied into place where the runner has none. */
+      readonly credential: SetupCredentialGiven | undefined;
     }
   | {
       readonly asked: "ChatHost";
@@ -325,6 +342,8 @@ const setupFlags = [
   "name",
   "replace",
   "chat-host",
+  "claude-token-file",
+  "anthropic-api-key-file",
   "test",
   "title",
   "intent",
@@ -345,7 +364,16 @@ const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
   SignOut: ["site", "workspace", "project", "plugin"],
   Project: ["site", "workspace", "project", "name", "plugin"],
   Mcp: ["site", "workspace", "project", "plugin"],
-  Runner: ["site", "wait-secs", "workspace", "project", "chat-host", "plugin"],
+  Runner: [
+    "site",
+    "wait-secs",
+    "workspace",
+    "project",
+    "chat-host",
+    "claude-token-file",
+    "anthropic-api-key-file",
+    "plugin",
+  ],
   ChatHost: ["site", "wait-secs", "workspace", "replace", "plugin"],
   Configuration: ["workspace", "project", "test", "plugin"],
   Check: ["workspace", "project", "plugin"],
@@ -494,6 +522,20 @@ function setupChatHostRead(
   return setupChatHostAnswers.find((answer) => answer === given) ?? "Wrongly";
 }
 
+/** The credential file `runner` was named, of one kind at most. */
+function setupCredentialRead(
+  flags: ReadonlyMap<SetupFlag, string>,
+): SetupCredentialGiven | "Wrongly" | undefined {
+  const token = flags.get("claude-token-file");
+  const apiKey = flags.get("anthropic-api-key-file");
+  if (token !== undefined && apiKey !== undefined) return "Wrongly";
+  if (token !== undefined)
+    return token === "" ? "Wrongly" : { kind: "Subscription", path: token };
+  if (apiKey !== undefined)
+    return apiKey === "" ? "Wrongly" : { kind: "ApiKey", path: apiKey };
+  return undefined;
+}
+
 /** A test command is carried back in the command that writes it, so it is one a line prints as it is. */
 function setupConfigurationAsked(
   answers: SetupAnswers,
@@ -572,6 +614,9 @@ function setupAskedOfProjectRun(
   if (asked !== "Runner") return { asked, site, answers, workspace, project };
   const chatHost = setupChatHostRead(flags.get("chat-host"));
   if (chatHost === "Wrongly") return { asked: "Wrongly", fault: "ChatHost" };
+  const credential = setupCredentialRead(flags);
+  if (credential === "Wrongly")
+    return { asked: "Wrongly", fault: "Credential" };
   return {
     asked,
     site,
@@ -580,6 +625,7 @@ function setupAskedOfProjectRun(
     workspace,
     project,
     chatHost,
+    credential,
   };
 }
 

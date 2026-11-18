@@ -20,6 +20,11 @@ export interface SetupRunnerCopy {
     readonly command: unknown;
     readonly when: unknown;
   };
+  readonly "setup-runner-rule-credential": {
+    readonly token: unknown;
+    readonly apiKey: unknown;
+    readonly when: unknown;
+  };
   readonly "setup-runner-rule-elsewhere": {
     readonly line: unknown;
   };
@@ -88,6 +93,10 @@ export interface SetupRunnerCopy {
     readonly total: unknown;
   };
   readonly "setup-runner-note-login": {
+    readonly credential: unknown;
+    readonly path: unknown;
+  };
+  readonly "setup-runner-note-credential-placed": {
     readonly credential: unknown;
     readonly path: unknown;
   };
@@ -315,6 +324,13 @@ export interface SetupRunnerCopy {
     readonly path: unknown;
     readonly saved: unknown;
   };
+  readonly "setup-runner-credential-refused-found": {
+    readonly why: unknown;
+  };
+  readonly "setup-runner-credential-refused-tell": {
+    readonly why: unknown;
+  };
+  readonly "setup-runner-credential-refused-when": Record<never, never>;
   readonly "setup-runner-login-missing-when": {
     readonly credential: unknown;
   };

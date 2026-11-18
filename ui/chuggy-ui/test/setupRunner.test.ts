@@ -2493,7 +2493,7 @@ test("a declined sign-in that still stands where a run enters its sign-in again 
 const pages = `${machineSite}/acme/widgets`;
 const offer = `rule: Run node ${machineScript} runner ${flags} only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.`;
 const runnerService =
-  "The runner package, chuggy-linux, runs it as a background service of yours that starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan, 4 GiB a run.";
+  "The runner package, chuggy-linux, runs it as a background service of yours that starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan.";
 const runnerIs =
   "The next step is a runner: the machine that does the work on your tickets";
 const takesWork =
@@ -2514,7 +2514,7 @@ test("the bare command, where a runner is next and this machine could take one, 
   expect(done.lines.slice(-6)).toEqual([
     "step: runner      todo",
     "step: ticket      todo",
-    `tell: chuggy needs a **runner** running on a machine of yours, which does the work of tickets. I'll install it on this machine, as yours alone. It can live on another machine instead; say so if you want that. ${runnerService} ${takesWork}`,
+    `tell: I'll install your runner on this machine, as yours alone. Say if you'd rather not have it here, or want it on another machine. ${runnerService} ${takesWork}`,
     offer,
     otherMachine(false),
     stop,
@@ -2541,7 +2541,7 @@ test("the bare command on a machine that already holds runner settings, which no
   const done = await ran(machine, []);
   expect(done.exit).toBe(0);
   expect(done.lines.at(-4)).toBe(
-    `tell: chuggy needs a **runner** running on a machine of yours, which does the work of tickets. I'll install it on this machine, as yours alone. It can live on another machine instead; say so if you want that. This machine already has runner settings, in ${boxSettings}, which run its work on the Claude login at ${theirs}. I keep them as they are. ${runnerService} ${takesWork}`,
+    `tell: I'll install your runner on this machine, as yours alone. Say if you'd rather not have it here, or want it on another machine. This machine already has runner settings, in ${boxSettings}, which run its work on the Claude login at ${theirs}. I keep them as they are. ${runnerService} ${takesWork}`,
   );
   expect(machine.box.paths.get(boxSettings)).toBe(settings);
   expect(writes(machine)).toEqual([]);
@@ -2564,10 +2564,10 @@ test("from the offer to live: the command the rule names sets the runner up, and
   );
 });
 
-/** The bare command's offer where the person's chats run on a chat host: its tell, naming the chat host's size, and the rules naming `runner` with it. */
-function chatOffer(program: string, held: string): readonly string[] {
+/** The bare command's offer where the person's chats run on a chat host: its tell, naming no size, and the rules naming `runner` with it. */
+function chatOffer(program: string): readonly string[] {
   return [
-    `tell: chuggy needs two things running on a machine of yours. A **runner** does the work of tickets. A **chat host** runs your chats with chuggy. I'll install both on this machine, as yours alone. They can live on another machine instead; say so if you want that. ${runnerService.replace("chuggy-linux", program)} Your chat host is a second background service, which holds ${held} at once. ${takesWork}`,
+    `tell: I'll install your chat host and your runner on this machine, as yours alone. Say if you'd rather not have either here, or want them on another machine. ${runnerService.replace("chuggy-linux", program)} ${takesWork}`,
     `rule: Run node ${machineScript} runner ${flags} --chat-host yes only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.`,
     "rule: Run it with --chat-host no in place of --chat-host yes only where the person says they want no chat host. Before running it with --chat-host yes, tell the person: Downloading the chat image. This takes a few minutes the first time.",
     otherMachine(true),
@@ -2575,26 +2575,28 @@ function chatOffer(program: string, held: string): readonly string[] {
   ];
 }
 
-const chatRoomy = chatOffer(
-  "chuggy-linux",
-  "6 GiB whenever it runs: 2 GiB a chat, for up to 3",
-);
-const chatShort = chatOffer(
-  "chuggy-linux",
-  "2 GiB whenever it runs: 2 GiB a chat, for up to 1",
-);
+const chatOffered = chatOffer("chuggy-linux");
 
-test("where the person's chats run on a chat host, the bare command offers it beside the runner, by default and asking nothing, sized to the engine: 11.7 GiB holds three chats in 6 GiB, and 6 GiB or a memory not said holds one", async () => {
+/** The chat host's size the run wrote into the settings at `at`. */
+function chatWritten(machine: SetupMachine, at = boxSettings): unknown {
+  return (JSON.parse(machine.box.paths.get(at) ?? "{}") as { chat?: unknown })
+    .chat;
+}
+
+test("where the person's chats run on a chat host, the bare command offers it beside the runner, by default and asking nothing and naming no size, and the run sizes it to the engine: 11.7 GiB holds three chats, and 6 GiB or a memory not said holds one", async () => {
   const roomy = await both();
-  expect((await ran(roomy, [])).lines.slice(-5)).toEqual(chatRoomy);
   const short = await both();
   short.box.memoryBytes = 6 * 2 ** 30;
-  expect((await ran(short, [])).lines.slice(-5)).toEqual(chatShort);
   const unsaid = await both();
   unsaid.box.memoryBytes = undefined;
-  expect((await ran(unsaid, [])).lines.slice(-5)).toEqual(chatShort);
-  for (const machine of [roomy, short, unsaid])
+  for (const machine of [roomy, short, unsaid]) {
+    expect((await ran(machine, [])).lines.slice(-5)).toEqual(chatOffered);
     expect(writes(machine)).toEqual([]);
+    expect((await ran(machine)).exit).toBe(0);
+  }
+  expect([roomy, short, unsaid].map((machine) => chatWritten(machine))).toEqual(
+    [3, 1, 1].map((sessionsMax) => ({ sessionsMax, sessionMemoryMib: 2048 })),
+  );
 });
 
 /** What an engine may run beside a run that is no runner's: a buildkitd and a postgres. */
@@ -2615,15 +2617,10 @@ const boxBesideContainers: BoxContainer[] = [
   },
 ];
 
-test("the bare command sizes the chat host to the room what the engine already runs leaves: 11.7 GiB with 2 GiB in use is offered two chats in 4 GiB and the run writes two, and a run's own container that leaves no room is offered none, saying what is in use", async () => {
+test("the run sizes the chat host to the room what the engine already runs leaves, which the offer does not say: 11.7 GiB with 2 GiB in use writes two chats", async () => {
   const used = await both();
   used.box.containers.push(...boxBesideContainers);
-  expect((await ran(used, [])).lines.slice(-5)).toEqual(
-    chatOffer(
-      "chuggy-linux",
-      "4 GiB whenever it runs: 2 GiB a chat, for up to 2",
-    ),
-  );
+  expect((await ran(used, [])).lines.slice(-5)).toEqual(chatOffered);
   const crowded = await both();
   crowded.box.containers.push(...boxBesideContainers, {
     id: "j3",
@@ -2632,11 +2629,11 @@ test("the bare command sizes the chat host to the room what the engine already r
     memoryBytes: 4 * 2 ** 30,
     usage: "1GiB",
   });
-  expect((await ran(crowded, [])).lines.slice(-5)).toEqual(chatShort);
+  expect((await ran(crowded, [])).lines.slice(-5)).toEqual(chatOffered);
   const uncounted = await both();
   uncounted.box.containers.push(...boxBesideContainers);
   uncounted.box.stats = undefined;
-  expect((await ran(uncounted, [])).lines.slice(-5)).toEqual(chatShort);
+  expect((await ran(uncounted, [])).lines.slice(-5)).toEqual(chatOffered);
   for (const machine of [used, crowded, uncounted])
     expect(writes(machine)).toEqual([]);
 
@@ -2646,21 +2643,21 @@ test("the bare command sizes the chat host to the room what the engine already r
   });
 });
 
-test("on a Mac the bare command asks of the chat host as Linux does, with the Mac's own package, on the memory its engine reports", async () => {
+test("on a Mac the bare command asks of the chat host as Linux does, with the Mac's own package and naming no size, whatever memory its engine reports", async () => {
   const roomy = await mac();
   for (const project of roomy.world.projects) project.threads = "Pool";
   expect((await ran(roomy, [])).lines.slice(-5)).toEqual(
-    chatRoomy.map((line) => line.replace("chuggy-linux", "chuggy-darwin")),
+    chatOffer("chuggy-darwin"),
   );
   const short = await mac();
   for (const project of short.world.projects) project.threads = "Pool";
   short.box.memoryBytes = 6 * 2 ** 30;
   expect((await ran(short, [])).lines.slice(-5)).toEqual(
-    chatShort.map((line) => line.replace("chuggy-linux", "chuggy-darwin")),
+    chatOffer("chuggy-darwin"),
   );
 });
 
-test("on a Mac whose Colima runs no VM, stopped or not made yet, the bare command counts nothing in use against the memory the run gives it, offering three chats in 6 GiB, and the run writes the same three", async () => {
+test("on a Mac whose Colima runs no VM, stopped or not made yet, the run counts nothing in use against the memory it gives the VM and writes three chats, which the offer does not say", async () => {
   for (const vm of ["Stopped", "None"] as const) {
     const machine = await mac();
     for (const project of machine.world.projects) project.threads = "Pool";
@@ -2681,9 +2678,7 @@ test("on a Mac whose Colima runs no VM, stopped or not made yet, the bare comman
             },
     });
     const offer = (await ran(machine, [])).lines.join("\n");
-    expect(offer).toContain(
-      "which holds 6 GiB whenever it runs: 2 GiB a chat, for up to 3 at once.",
-    );
+    expect(offer).not.toMatch(/whenever it runs|a chat,/u);
     expect(offer).toContain(`${flags} --chat-host yes only once`);
     expect(writes(machine)).toEqual([]);
 
@@ -2694,7 +2689,7 @@ test("on a Mac whose Colima runs no VM, stopped or not made yet, the bare comman
   }
 });
 
-test("on a Mac whose running Colima VM the run restarts, the run counts what ran before the restart, so a postgres the restart stops leaves the offer's two chats in 4 GiB, not three", async () => {
+test("on a Mac whose running Colima VM the run restarts, the run counts what ran before the restart, so a postgres the restart stops leaves two chats, not three, which the offer does not say", async () => {
   const machine = await mac();
   for (const project of machine.world.projects) project.threads = "Pool";
   boxMacMade(machine.box, {
@@ -2720,9 +2715,7 @@ test("on a Mac whose running Colima VM the run restarts, the run counts what ran
     },
   ];
   const offer = (await ran(machine, [])).lines.join("\n");
-  expect(offer).toContain(
-    "which holds 4 GiB whenever it runs: 2 GiB a chat, for up to 2 at once.",
-  );
+  expect(offer).not.toMatch(/whenever it runs|a chat,/u);
 
   expect((await ran(machine)).exit).toBe(0);
   expect(machine.box.containers).toEqual([]);
@@ -2902,7 +2895,7 @@ test("the bare command says why this machine cannot take a runner where it canno
 test("a runner registered and not running on another machine does not hold the step: a machine holding no registration is offered the person's own runner as where there is none, and the run ends with it live and given the project", async () => {
   const elsewhere = await machineSignedIn(projectOnly(setupSiteAt("Offline")));
   expect((await ran(elsewhere, [])).lines.slice(-4)).toEqual([
-    `tell: chuggy needs a **runner** running on a machine of yours, which does the work of tickets. I'll install it on this machine, as yours alone. It can live on another machine instead; say so if you want that. ${runnerService} ${takesWork}`,
+    `tell: I'll install your runner on this machine, as yours alone. Say if you'd rather not have it here, or want it on another machine. ${runnerService} ${takesWork}`,
     offer,
     otherMachine(false),
     stop,
@@ -2922,7 +2915,7 @@ test("a runner registered and not running is offered to be started here only whe
   const offered = await ran(here, []);
   expect(offered.lines.slice(-3)).toEqual([offer, otherMachine(false), stop]);
   const holds =
-    "tell: A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner. I'll check it and start it here as a background service of yours that starts when you log in, registering this machine again as yours alone first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan, 4 GiB a run.";
+    "tell: A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner. I'll check it and start it here as a background service of yours that starts when you log in, registering this machine again as yours alone first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan.";
   const keeps = `This machine already has runner settings, in ${boxSettings}, which run its work on the Claude login at ${boxLogin}. I keep them as they are.`;
   expect(offered.lines.at(-4)).toBe(
     `${holds} ${keeps} ${takesWork} It can live on another machine instead; say so if you want that.`,
@@ -2959,7 +2952,7 @@ test("a machine that holds only the project's pool's registration, beside a runn
   const pool = boxPoolFile("acme", "widgets");
   pooled.box.paths.set(pool, "{}");
   expect((await ran(pooled, [])).lines.slice(-4)).toEqual([
-    `tell: A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner of the project's rather than yours. I'll leave that registration as it is and register this machine again as yours alone, then check your runner and start it here as a background service of yours that starts when you log in, so work on your tickets runs on this machine in containers, on your Claude plan, 4 GiB a run. ${takesWork} It can live on another machine instead; say so if you want that.`,
+    `tell: A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner of the project's rather than yours. I'll leave that registration as it is and register this machine again as yours alone, then check your runner and start it here as a background service of yours that starts when you log in, so work on your tickets runs on this machine in containers, on your Claude plan. ${takesWork} It can live on another machine instead; say so if you want that.`,
     offer,
     otherMachine(false),
     stop,
@@ -3285,7 +3278,7 @@ test("runner keeps its rule of never replacing a chat host of the person's on an
   expect(
     (await ran(machine, [...runner, "--replace", "chuggy-chat-1"])).lines,
   ).toEqual([
-    "found: chuggy setup takes --site, --workspace, --project, --plugin and --wait-secs, --name with project, --opened with bind, --replace with chat-host, --chat-host with runner, --test with configuration, --title, --intent, --image, --toolchains and --configuration with ticket, --start when run bare, each once with a value, and no other flag",
+    "found: chuggy setup takes --site, --workspace, --project, --plugin and --wait-secs, --name with project, --opened with bind, --replace with chat-host, --chat-host, --claude-token-file and --anthropic-api-key-file with runner, --test with configuration, --title, --intent, --image, --toolchains and --configuration with ticket, --start when run bare, each once with a value, and no other flag",
     `next: node ${machineScript}`,
   ]);
   expect(machine.box.ran).toEqual([]);
@@ -3377,7 +3370,7 @@ test("chat-host is not read without a workspace, with a project, or with --repla
     ],
     [
       [...chatHost, "--project", "widgets"],
-      "found: chuggy setup takes --site, --workspace, --project, --plugin and --wait-secs, --name with project, --opened with bind, --replace with chat-host, --chat-host with runner, --test with configuration, --title, --intent, --image, --toolchains and --configuration with ticket, --start when run bare, each once with a value, and no other flag",
+      "found: chuggy setup takes --site, --workspace, --project, --plugin and --wait-secs, --name with project, --opened with bind, --replace with chat-host, --chat-host, --claude-token-file and --anthropic-api-key-file with runner, --test with configuration, --title, --intent, --image, --toolchains and --configuration with ticket, --start when run bare, each once with a value, and no other flag",
     ],
     [
       [...chatHost, "--replace", ".."],
