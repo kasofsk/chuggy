@@ -290,13 +290,10 @@ setup-mend-workspace-none = You are not in a { -brand-name } { -workspace } yet.
 setup-mend-workspace-unnamed = You are not in a { -brand-name } { -workspace } named { $workspace }.
 setup-mend-workspace-tell = { $none } A new { -workspace } is made from { -invite(form: "a") } link: open the one you were sent (it starts { $invites }) and sign in, and the { -workspace } is made for you. Tell me once it is made.
 setup-mend-workspace-when = once the person says their { -workspace } is made
-# The status and the label are the picker's own words, which another section holds.
-setup-mend-grant-tell = The { $app } is installed on { $account }, and { -github } does not let it into { $repository }. Open { $page }, press { $add }, and under the list find { $status }. Follow the link beside it, { $label }, and on { -github } add { $repository } to the { -repository(form: "plural") } the app may reach.
-# spells -repository: GitHub's own label
-setup-mend-account-tell = { $explained } Open { $page }, and press { $connect } if the page does not go on to { -github } by itself. { -github } then asks for two installs, the { -portal-app } and then the { -worker-app }, each on the { -github } account that owns { $repository }. On the first, choose "All repositories", or "Only select repositories" and pick { $repository }. Either is fine: with All, a later { -project } needs no trip to { -github }. The second comes with that choice already made.
-# The install button's label is the accounts page's own, which another section holds.
-setup-mend-worker-tell = Open { $page } and press { $install }, then install it on { $account }. Where { $account } is an organisation you do not own, { -github } asks its owner for you and this waits on them.
-setup-mend-portal-tell = Open { $page }, the { -workspace }'s { -github } accounts page, and press { $connect }, so { -brand-name } is shown { $account }.
+setup-mend-grant-tell = This { -project }'s { -repository } is { $repository }. The { $app } is installed on { $account }, and { -github } does not let it in yet. Open { $page }: it opens on { $repository }, and the { $app }'s press there goes to { -github } to let it in. I'll wait here.
+setup-mend-connect-tell = Which { -repository } is this { -project } for? This folder's is { $repository }. { $explained } Open { $page }: it opens on { $repository } with both apps, and each app it still lacks has one press there that goes to { -github } for it. I'll wait here and add it once both reach it.
+setup-mend-connect-tell-bound = This { -project }'s { -repository } is { $repository }. { $explained } Open { $page }: it opens on { $repository } with both apps, and each app it still lacks has one press there that goes to { -github } for it. I'll wait here until both reach it.
+setup-mend-connect-tell-named = Which { -repository } is this { -project } for? I could not tell this folder's, so name it on { $page }. { $explained } That page then shows both apps, and each app it still lacks has one press there that goes to { -github } for it. I'll wait here and add it once both reach it.
 # spells -work-stage: the work a ticket asks for, in general
 setup-mend-apps-explained = { -brand-name } uses two { -github } apps. The { -worker-app } pushes { -ticket } work to branches and opens { -pull-request(form: "plural") }. The { -portal-app } merges finished work into protected branches such as main. Both need access to { $repository }.
 setup-mend-reach-app = { $app ->
@@ -306,24 +303,20 @@ setup-mend-reach-app = { $app ->
 # The pages are the forge's own.
 setup-mend-reach-granted = { setup-mend-reach-app }: { $page }, already granted { $repository }
 setup-mend-reach-granted-unread = { setup-mend-reach-app }: already granted { $repository }
-setup-mend-reach-settings = { setup-mend-reach-app }: { $page }, not granted { $repository } yet
-# The press is the console's own install, which is the one the workspace claims.
-setup-mend-reach-install-portal = { setup-mend-reach-app }: not installed on { $account } yet; on { $page } press { $press } and install it on { $account }
-setup-mend-reach-install-worker = { setup-mend-reach-app }: not installed on { $account } yet; on { $page } press { $press } on the row of { $account }
-setup-mend-reach-install-worker-after = { setup-mend-reach-app }: not installed there either; once { $account } is listed on that page, press { $press } on its row
+setup-mend-reach-ungranted = { setup-mend-reach-app }: installed, not let into { $repository } yet
+setup-mend-reach-uninstalled = { setup-mend-reach-app }: not installed on { $account } yet
 setup-mend-reach-installed-none = {""}
 # A claim takes proof of owning the account, which any workspace's admin may hold.
 setup-mend-reach-installed = { $count ->
         [one] { $accounts } already has { -brand-name }'s apps installed, so I can see its { -repository(form: "plural") }. Another { -workspace } can only where one of its { -role-admin(form: "plural") } owns { $accounts } on { -github }.{" "}
        *[other] { $accounts } already have { -brand-name }'s apps installed, so I can see their { -repository(form: "plural") }. Another { -workspace } can only where one of its { -role-admin(form: "plural") } owns the account on { -github }.{" "}
     }
-# spells -repository: GitHub's own label
-setup-mend-reach-tell = { $installed }Which { -repository } is this { -project } for? This folder's is { $repository }, so that is the one I connect; for another, start me in the folder of its clone. { $explained } 1. { $portal } 2. { $worker }. { $granted ->
+setup-mend-reach-tell = Which { -repository } is this { -project } for? This folder's is { $repository }, so that is the one I connect; for another, start me in the folder of its clone. { $installed }{ $explained } 1. { $portal } 2. { $worker }. { $granted ->
         [both] Both are granted it, so I add it now.
-       *[lacking] I'll wait here. On { -github }, choose "All repositories", or "Only select repositories" and pick { $repository }, and save. Either is fine: with All, a later { -project } needs no trip to { -github }. { -github } may ask you to confirm access first, with a code it emails you.
+       *[lacking] I'll wait here. Open { $page }: it opens on { $repository }, and each app it still lacks has one press there that goes to { -github } for it. { -github } may ask you to confirm access first, with a code it emails you.
     }
 # spells -run: to run is a verb here
-setup-rule-bind = Run the command on the next: line now, without asking the person, and tell them what the tell: line says. It waits until { -github } lets both apps into this folder's { -repository }, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.
+setup-rule-bind = Run the command on the next: line now, without asking the person, and tell them what the tell: line says. It waits until { -github } lets both apps into the { -repository } the tell: line names, and then adds it where it is not added yet. Nothing has failed, so do not tell the person that it did or give them a deadline.
 # spells -run: to run is a verb here
 setup-rule-bind-again = Run the command on the next: line again, and go on running it while { -github } still lacks what the tell: line says. Nothing has failed, so do not tell the person that it did or give them a deadline.
 # spells -run: to run is a verb here
@@ -332,7 +325,8 @@ setup-rule-watch = Run the command on the next: line now, without asking the per
 setup-rule-merge-again = Run the command on the next: line again, and go on running it while { -brand-name } imports the { -repository }'s own { -configuration }: the { -pull-request } is merged already, so it merges nothing again and waits on the same import. Nothing has failed, so do not tell the person that it did or give them a deadline.
 setup-mend-binding-yours = your { -repository }
 setup-mend-binding-mine = { $repository }, this folder's { -repository }
-setup-mend-binding-tell = Open { $page }, press { $add } and choose { $repository }. Tell me once it is added.
+setup-mend-binding-tell = Open { $page }: it opens on { $repository }, shows both apps, and adds it once both reach it. Tell me once it is added.
+setup-mend-binding-tell-named = Open { $page } and name your { -repository } there: it then shows both apps, and adds it once both reach it. Tell me once it is added.
 setup-mend-binding-when = once the person says the { -repository } is added
 setup-mend-configuration-never = no import of it has finished yet
 setup-mend-configuration-last = its last import: { $word }

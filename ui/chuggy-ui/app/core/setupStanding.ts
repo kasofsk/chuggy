@@ -120,10 +120,12 @@ export type SetupLack =
   | { readonly lacks: "Administration"; readonly workspace: string }
   | { readonly lacks: "Project" }
   | { readonly lacks: "Account" }
+  /** `repository` is the added one the account owns, where one is added. */
   | {
       readonly lacks: "App";
       readonly app: ForgeAppName;
       readonly account: string;
+      readonly repository: string | undefined;
     }
   | {
       readonly lacks: "Grant";
@@ -563,6 +565,7 @@ function setupAppLacked(
     lacks: "App",
     app,
     account,
+    repository: owned,
   });
 }
 

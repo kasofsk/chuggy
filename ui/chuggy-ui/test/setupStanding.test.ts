@@ -610,7 +610,7 @@ test("once a repository is added GitHub is held to the account that owns it, wha
     step: "github",
     state: "waiting",
     detail: `acme-org, which owns ${repository}, ${detail}`,
-    lacks: { lacks: "App", app, account: setupSiteAccount },
+    lacks: { lacks: "App", app, account: setupSiteAccount, repository },
   });
   expect(
     await github(owned([...personal, [setupSiteAccount, "portal"]])),

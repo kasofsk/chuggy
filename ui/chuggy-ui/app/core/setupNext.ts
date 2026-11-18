@@ -15,8 +15,9 @@
  * GitHub to let both apps into the folder's repository and then adds it,
  * which the project's `Administer` permit already guards, so where both apps
  * are granted it the next thing is `bind` and nothing is asked. Its tell
- * names both apps, what each is for and each one's page on the forge, with
- * whether it is granted the repository already. Where the project has
+ * says the repository first, then both apps and what each is for, with
+ * whether each is granted it already, and sends the person to the console's
+ * connect flow opened on that repository. Where the project has
  * no ticket yet and what a ticket may be drawn under was read, the person is
  * asked what they want done first, and `ticket` files it, with the
  * configuration they choose where there is a choice; where that read came to
@@ -54,13 +55,9 @@ import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type { Copy, CopyArgument } from "./copy.ts";
 import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
 import { claudeCodeRunnerLine } from "./claudeCodeLine.ts";
-import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
-import {
-  repositoriesConnectPath,
-  repositoryGrantLines,
-  repositoryLabel,
-} from "./projectRepositories.ts";
+import { repositoryAddAnchor, repositoryLabel } from "./projectRepositories.ts";
+import { repositoryConnectSetupAddress } from "./repositoryConnect.ts";
 import { runnerPackages } from "./runners.ts";
 import { settingsRoutes } from "./settingsNav.ts";
 import {
@@ -117,9 +114,6 @@ import type { WorkspaceNamed } from "./workspaceNames.ts";
  * each page for it and fails where a page renamed it.
  */
 export const setupPressed = {
-  connect: { id: "repositories-connect-github" },
-  addAccount: { id: "settings-accounts-add" },
-  add: { id: "repositories-add" },
   runner: { id: "runners-register" },
   fallback: { id: "runners-fallback-title" },
   ticket: { id: "ticket-authoring-create-ticket" },
@@ -221,12 +215,20 @@ function setupProjectMend(at: SetupAt): SetupThing {
   };
 }
 
-/** An app that is installed and not let into the repository: the picker draws a line for it under its list, with a link to that app's own page on the forge. */
+/** The repositories page's connect flow, opened on the folder's repository where it has one, and on naming one where it has none. */
+function setupConnectPage(at: SetupAt, mine: string | undefined): string {
+  return repositoryConnectSetupAddress(
+    setupPage(at, navRoutes.repositories),
+    mine,
+    repositoryAddAnchor,
+  );
+}
+
+/** An app that is installed and not let into the repository: the connect flow opens on it, with that app's press. */
 function setupGrantMend(
   lack: Extract<SetupLack, { readonly lacks: "Grant" }>,
   at: SetupAt,
 ): SetupThing {
-  const line = repositoryGrantLines[lack.app];
   const app = setupAppNames[lack.app];
   const { account, repository } = lack;
   return setupBindRun(at, {
@@ -235,24 +237,9 @@ function setupGrantMend(
       app,
       account,
       repository,
-      page: setupPage(at, navRoutes.repositories),
-      add: setupPressed.add,
-      status: line.status,
-      label: line.label,
+      page: setupConnectPage(at, repository),
     },
   });
-}
-
-/** The repositories page asked to begin Connect GitHub's press, which it does by itself only for the workspace's sole administrator. */
-function setupConnectPage(at: SetupAt): string {
-  return repositoriesConnectPath(setupPage(at, navRoutes.repositories));
-}
-
-/** The folder's repository by its remote, or the person's where it has none. */
-function setupMendBindingSaid(mine: string | undefined): Copy {
-  return mine === undefined
-    ? { id: "setup-mend-binding-yours" }
-    : { id: "setup-mend-binding-mine", args: { repository: mine } };
 }
 
 function setupGithubMend(
@@ -261,50 +248,52 @@ function setupGithubMend(
   mine: string | undefined,
 ): SetupThing {
   if (lack.lacks === "Grant") return setupGrantMend(lack, at);
-  if (lack.lacks === "Account")
+  const bound = lack.lacks === "App" ? lack.repository : undefined;
+  if (bound !== undefined)
     return setupBindRun(at, {
-      id: "setup-mend-account-tell",
+      id: "setup-mend-connect-tell-bound",
       args: {
         explained: {
           id: "setup-mend-apps-explained",
-          args: { repository: setupMendBindingSaid(mine) },
+          args: { repository: bound },
         },
-        page: setupConnectPage(at),
-        connect: setupPressed.connect,
-        repository: setupMendBindingSaid(mine),
+        page: setupConnectPage(at, bound),
+        repository: bound,
       },
     });
-  const { account } = lack;
-  if (lack.app === "worker")
+  const page = setupConnectPage(at, mine);
+  if (mine === undefined)
     return setupBindRun(at, {
-      id: "setup-mend-worker-tell",
+      id: "setup-mend-connect-tell-named",
       args: {
-        page: setupPage(at, navRoutes.repositories),
-        install: forgeInstallLabel(lack.app),
-        account,
+        explained: {
+          id: "setup-mend-apps-explained",
+          args: { repository: { id: "setup-mend-binding-yours" } },
+        },
+        page,
       },
     });
   return setupBindRun(at, {
-    id: "setup-mend-portal-tell",
+    id: "setup-mend-connect-tell",
     args: {
-      page: setupPage(at, settingsRoutes.workspace.accounts),
-      connect: setupPressed.connect,
-      account,
+      explained: {
+        id: "setup-mend-apps-explained",
+        args: {
+          repository: {
+            id: "setup-mend-binding-mine",
+            args: { repository: mine },
+          },
+        },
+      },
+      page,
+      repository: mine,
     },
   });
 }
 
-/**
- * An app as a line of the tell names it: granted the repository, with its
- * settings page on the forge where that was read; or not, with that page, or
- * with the press on the workspace's accounts page that installs it. The
- * worker app's install is on the row of an account holding the portal app,
- * so where the portal app is to be installed there too, its row is waited on.
- */
+/** An app as a line of the tell names it: granted the repository, with its settings page on the forge where that was read; installed and not let in; or not installed on the repository's owner. Its press is the connect flow's. */
 function setupAppReachedSaid(
   reached: SetupAppReached,
-  apps: readonly SetupAppReached[],
-  at: SetupAt,
   repository: string,
 ): Copy {
   if (reached.reached === "Granted")
@@ -317,35 +306,15 @@ function setupAppReachedSaid(
           id: "setup-mend-reach-granted",
           args: { app: reached.app, page: reached.settings, repository },
         };
-  const page = reached.page;
-  const { app } = page;
-  if (page.page === "Settings")
-    return {
-      id: "setup-mend-reach-settings",
-      args: { app, page: page.settings, repository },
-    };
-  const accounts = setupPage(at, settingsRoutes.workspace.accounts);
-  const { account } = page;
-  if (app === "portal")
-    return {
-      id: "setup-mend-reach-install-portal",
-      args: { app, page: accounts, press: setupPressed.addAccount, account },
-    };
-  const after = apps.some(
-    (other) =>
-      other.reached === "Lacking" &&
-      other.page.app === "portal" &&
-      other.page.page === "Install",
-  );
-  const press = forgeInstallLabel("worker");
-  return after
+  const { page } = reached;
+  return page.page === "Settings"
     ? {
-        id: "setup-mend-reach-install-worker-after",
-        args: { app, press, account },
+        id: "setup-mend-reach-ungranted",
+        args: { app: page.app, repository },
       }
     : {
-        id: "setup-mend-reach-install-worker",
-        args: { app, page: accounts, press, account },
+        id: "setup-mend-reach-uninstalled",
+        args: { app: page.app, account: page.account },
       };
 }
 
@@ -364,7 +333,8 @@ function setupReachInstalledSaid(installed: readonly string[]): Copy {
  * was read: one tell says the repository, what each app is for, and each
  * app's page with whether it is granted it already, and `bind` waits while
  * the person gives an app what it is not, and adds the repository once both
- * are. Where what the apps grant was not read, the console's Add is the way.
+ * are. Where what the apps grant was not read, the person is sent to the
+ * connect flow on the folder's repository, or to name one there.
  */
 function setupBindingMend(
   lack: Extract<SetupLack, { readonly lacks: "Binding" }>,
@@ -377,7 +347,7 @@ function setupBindingMend(
       throw new Error("a tell of the apps names each app once");
     const { repository } = reach;
     const [portal, worker] = reach.apps.map((reached) =>
-      setupAppReachedSaid(reached, reach.apps, at, repository),
+      setupAppReachedSaid(reached, repository),
     );
     return setupBindRun(at, {
       id: "setup-mend-reach-tell",
@@ -388,18 +358,24 @@ function setupBindingMend(
         portal: portal ?? "",
         worker: worker ?? "",
         granted: reach.reach === "Granted" ? "both" : "lacking",
+        page: setupConnectPage(at, repository),
       },
     });
   }
+  const page = setupConnectPage(at, mine);
   return setupHand(
-    {
-      id: "setup-mend-binding-tell",
-      args: {
-        page: setupPage(at, navRoutes.repositories),
-        add: setupPressed.add,
-        repository: setupMendBindingSaid(mine),
-      },
-    },
+    mine === undefined
+      ? { id: "setup-mend-binding-tell-named", args: { page } }
+      : {
+          id: "setup-mend-binding-tell",
+          args: {
+            page,
+            repository: {
+              id: "setup-mend-binding-mine",
+              args: { repository: mine },
+            },
+          },
+        },
     { id: "setup-mend-binding-when" },
   );
 }
@@ -1315,17 +1291,20 @@ export function setupBindAwaited(standing: SetupStanding): boolean {
   return lack?.lacks !== "Binding" || lack.reach?.reach === "Ungranted";
 }
 
-/** The repositories page asked to begin Connect GitHub's press, where connecting GitHub is the one next thing, which is when `bind` opens it in a browser. */
+/** The repositories page's connect flow on the folder's repository, where connecting GitHub is the one next thing, which is when `bind` opens it in a browser. */
 export function setupConnectDue(standing: SetupStanding): string | undefined {
   const partition = setupDue(standing, ["Account"]);
   return partition === undefined
     ? undefined
-    : setupConnectPage({
-        site: standing.site,
-        workspace: partition.tenant,
-        project: partition.project,
-        named: workspaceNamesListed(standing.workspaces),
-      });
+    : setupConnectPage(
+        {
+          site: standing.site,
+          workspace: partition.tenant,
+          project: partition.project,
+          named: workspaceNamesListed(standing.workspaces),
+        },
+        setupMine(standing),
+      );
 }
 
 /** What `serve` writes for a project: the project given to the person's runners, and Preferred named as its owner fallback. */
@@ -1402,6 +1381,13 @@ export function setupMcpDue(
   return setupDue(standing, ["Mcp"]);
 }
 
+/** The folder's repository by its remote, where it has one. */
+function setupMine(standing: SetupStanding): string | undefined {
+  return standing.remote === undefined
+    ? undefined
+    : repositoryLabel(standing.remote.said);
+}
+
 function setupThing(
   standing: SetupStanding,
   here: SetupRunnerHere | undefined,
@@ -1420,11 +1406,15 @@ function setupThing(
   };
   const undone = standing.steps.find((step) => step.lacks !== undefined);
   if (undone?.lacks === undefined) return setupDoneThing(standing, at, merge);
-  const mine =
-    standing.remote === undefined
-      ? undefined
-      : repositoryLabel(standing.remote.said);
-  return setupMend(undone, undone.lacks, at, mine, here, mcp, offers);
+  return setupMend(
+    undone,
+    undone.lacks,
+    at,
+    setupMine(standing),
+    here,
+    mcp,
+    offers,
+  );
 }
 
 /**

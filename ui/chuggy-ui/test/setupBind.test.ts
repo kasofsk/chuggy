@@ -39,12 +39,12 @@ const flags = ["--workspace", "acme", "--project", "widgets"];
 const at = flags.join(" ");
 const repository = "acme-org/widgets";
 const bindPath = "/api/v1/tenants/acme/projects/widgets/repositories";
-const accounts = `${machineSite}/tenants/acme/settings/accounts`;
-const granting = `On GitHub, choose "All repositories", or "Only select repositories" and pick ${repository}, and save. Either is fine: with All, a later project needs no trip to GitHub. GitHub may ask you to confirm access first, with a code it emails you.`;
+const flow = `${machineSite}/acme/widgets/repositories?repository=acme-org%2Fwidgets&from=setup#add`;
+const granting = `Open ${flow}: it opens on ${repository}, and each app it still lacks has one press there that goes to GitHub for it. GitHub may ask you to confirm access first, with a code it emails you.`;
 const runNow =
   "rule: Run the command on the next: line now, without asking the person";
 const runNowRest =
-  ". It waits until GitHub lets both apps into this folder's repository, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.";
+  ". It waits until GitHub lets both apps into the repository the tell: line names, and then adds it where it is not added yet. Nothing has failed, so do not tell the person that it did or give them a deadline.";
 const runBind = `next: node ${machineScript} bind ${at}`;
 const chose = `Which repository is this project for? This folder's is ${repository}, so that is the one I connect; for another, start me in the folder of its clone.`;
 const explained = `chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to ${repository}.`;
@@ -54,11 +54,11 @@ const confirmed = `tell: Both apps can reach ${repository}. It is connected to w
 const elsewhere =
   "elsewhere already has chuggy's apps installed, so I can see its repositories. Another workspace can only where one of its admins owns elsewhere on GitHub. ";
 
-/** An app's line in the tell: its page, and whether it is granted the folder's repository. */
+/** An app's line in the tell: whether it is granted the folder's repository, with its page where it is. */
 function granted(page: string, is: boolean): string {
   return is
     ? `${page}, already granted ${repository}`
-    : `${page}, not granted ${repository} yet`;
+    : `installed, not let into ${repository} yet`;
 }
 
 /** The tell of the folder's repository, both apps' lines in the roster's order, and how it ends. */
@@ -68,7 +68,7 @@ function reachTell(
   end: string,
   installed = "",
 ): string {
-  return `tell: ${installed}${chose} ${explained} 1. Portal: ${portal} 2. Worker: ${worker}. ${end}`;
+  return `tell: ${chose} ${installed}${explained} 1. Portal: ${portal} 2. Worker: ${worker}. ${end}`;
 }
 /** The rule and command a checklist ends on beside its tell of GitHub. */
 const tripped = [
@@ -174,13 +174,12 @@ test("bind run while an app is not yet granted reads the checklist again until i
   );
 });
 
-test("on a machine with no browser, the checklist gives both apps' addresses and bind connects the folder's repository once GitHub grants it, opening nothing", async () => {
+test("on a machine with no browser, the checklist gives the connect flow's address and bind connects the folder's repository once GitHub grants it, opening nothing", async () => {
   const machine = await inFolder(connected({ portal: false, worker: false }));
   machine.opener = { launched: "Unstarted" };
   const before = machine.launched.length;
   const told = lines(await machine.command(flags)).at(-3);
-  expect(told).toContain(granted(settings("portal"), false));
-  expect(told).toContain(granted(settings("worker"), false));
+  expect(told).toContain(flow);
   let looks = 0;
   machine.answering = () => {
     if (!(machine.sent.at(-1) ?? "").endsWith("/permissions")) return;
@@ -302,9 +301,9 @@ test("a bind the site refuses as signed out ends at its first look, with no poll
   expect(binds(machine)).toEqual([]);
 });
 
-test("a bind whose first look fails while Connect GitHub is next opens the page once, at the look that reads where the person stands", async () => {
+test("a bind whose first look fails while connecting GitHub is next opens the page once, at the look that reads where the person stands", async () => {
   const machine = await machineSignedIn(setupSiteAt("Project"));
-  const connect = `${machineSite}/acme/widgets/repositories?connect=github`;
+  const connect = `${machineSite}/acme/widgets/repositories?from=setup#add`;
   const before = machine.launched.length;
   const workspaces = failingOnce(machine, workspacesPath, "Silent");
   const said = lines(
@@ -315,9 +314,9 @@ test("a bind whose first look fails while Connect GitHub is next opens the page 
   expect(said[1]).toBe(`did: opened ${connect} in a browser`);
 });
 
-test("bind run where GitHub is not connected opens the repositories page that begins Connect GitHub, with the opener sign-in uses, and says so", async () => {
+test("bind run where GitHub is not connected opens the connect flow, with the opener sign-in uses, and says so", async () => {
   const machine = await machineSignedIn(setupSiteAt("Project"));
-  const connect = `${machineSite}/acme/widgets/repositories?connect=github`;
+  const connect = `${machineSite}/acme/widgets/repositories?from=setup#add`;
   const before = machine.launched.length;
   const said = lines(
     await machine.command(["bind", ...flags, "--wait-secs", "0"]),
@@ -326,7 +325,7 @@ test("bind run where GitHub is not connected opens the repositories page that be
   expect(said[1]).toBe(`did: opened ${connect} in a browser`);
   expect(said.at(-3)).toMatch(
     new RegExp(
-      `^tell: ${explained.replace(repository, "your repository").replace(/[.]/gu, "\\$&")} Open ${connect.replace(/[.?]/gu, "\\$&")}, and press Connect GitHub if the page does not go on to GitHub by itself\\. `,
+      `^tell: Which repository is this project for\\? I could not tell this folder's, so name it on ${connect.replace(/[.?]/gu, "\\$&")}\\. ${explained.replace(repository, "your repository").replace(/[.]/gu, "\\$&")} That page then shows both apps`,
       "u",
     ),
   );
@@ -397,7 +396,7 @@ test("bind waits on nothing and asks nothing of the site where the next thing is
   expect(binds(machine)).toEqual([]);
 });
 
-test("where neither app is granted the folder's repository, one tell says what each app is for and names each app's settings page as not granted it, and says GitHub may ask to confirm access", async () => {
+test("where neither app is granted the folder's repository, one tell says what each app is for and names each as not let into it, and says GitHub may ask to confirm access", async () => {
   const machine = await inFolder(connected({ portal: false, worker: false }));
   const said = lines(await machine.command(flags));
   expect(said.slice(-3)).toEqual([
@@ -452,13 +451,13 @@ function claimed(machine: SetupMachine, app: "portal" | "worker"): void {
     ?.push(setupSiteClaim(setupSiteAccount, app));
 }
 
-test("an app not installed on the account that owns the folder's repository is sent to the console's install of it, whose claim the next read finds, and then bind is run told as granted", async () => {
+test("an app not installed on the account that owns the folder's repository is sent to the connect flow, whose install's claim the next read finds, and then bind is run told as granted", async () => {
   const machine = await inFolder(owning(["portal"]));
   const tell = lines(await machine.command(flags)).at(-3);
   expect(tell).toBe(
     reachTell(
       granted(settings("portal"), true),
-      `not installed on ${setupSiteAccount} yet; on ${accounts} press Install worker on the row of ${setupSiteAccount}`,
+      `not installed on ${setupSiteAccount} yet`,
       waiting,
       elsewhere,
     ),
@@ -476,13 +475,13 @@ test("an app not installed on the account that owns the folder's repository is s
   ]);
 });
 
-test("where neither app is installed on the account that owns the folder's repository, one tell names Add account for the portal app and the worker app's install on the row that follows it", async () => {
+test("where neither app is installed on the account that owns the folder's repository, one tell names both as not installed there and sends the person to the connect flow", async () => {
   const machine = await inFolder(owning([]));
   const tell = lines(await machine.command(flags)).at(-3);
   expect(tell).toBe(
     reachTell(
-      `not installed on ${setupSiteAccount} yet; on ${accounts} press Add account and install it on ${setupSiteAccount}`,
-      `not installed there either; once ${setupSiteAccount} is listed on that page, press Install worker on its row`,
+      `not installed on ${setupSiteAccount} yet`,
+      `not installed on ${setupSiteAccount} yet`,
       waiting,
       elsewhere,
     ),
@@ -500,7 +499,7 @@ test("where neither app is installed on the account that owns the folder's repos
   ]);
 });
 
-test("where the workspace already holds both apps on another account, the tell says so before the apps, and a bind of the folder's repository both apps are granted says both apps reach it", async () => {
+test("where the workspace already holds both apps on another account, the tell says so once the repository is said and before the apps, and a bind of the folder's repository both apps are granted says both apps reach it", async () => {
   const machine = await inFolder(owning(["portal", "worker"]));
   const said = lines(await machine.command(flags));
   expect(said.slice(-3)).toEqual([
@@ -517,12 +516,12 @@ test("where the workspace already holds both apps on another account, the tell s
   expect(binds(machine)).toHaveLength(1);
 });
 
-test("where the deployment offers no install the workspace can claim, an app not installed there leaves the console's Add the way", async () => {
+test("where the deployment offers no install the workspace can claim, an app not installed there sends the person to the connect flow with the folder's repository in the address", async () => {
   const site = owning(["portal"]);
   site.authorizing = false;
   const machine = await inFolder(site);
   expect(lines(await machine.command(flags)).at(-3)).toMatch(
-    /^tell: Open \S+\/repositories, press Add and choose acme-org\/widgets, this folder's repository\./u,
+    /^tell: Open \S+\/repositories\?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org\/widgets, this folder's repository,/u,
   );
 });
 
@@ -537,10 +536,10 @@ test("the deployment's apps are asked only where the tell names an install, and 
   ).toHaveLength(2);
 });
 
-test("where what an app grants was not read, the console's Add is the way", async () => {
+test("where what an app grants was not read, the person is sent to the connect flow with the folder's repository in the address", async () => {
   const machine = await inFolder(connected({ portal: true, worker: true }));
   machine.world.fates.set("workerGrant", "Failed");
   expect(lines(await machine.command(flags)).at(-3)).toMatch(
-    /^tell: Open \S+\/repositories, press Add and choose acme-org\/widgets, this folder's repository\./u,
+    /^tell: Open \S+\/repositories\?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org\/widgets, this folder's repository,/u,
   );
 });
