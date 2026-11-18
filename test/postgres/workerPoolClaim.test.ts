@@ -34,18 +34,14 @@
  *
  * BESIDE THE TABLE is what no row of it states: a pool reporting less than it
  * holds, two claims of one pool made at once, a claim and a registration of
- * its pool made at once, the image a claim hands out reaching the pod a site
- * places, a claim passing over a job whose account has paused its agent, and
- * the order a claim takes what it may in, both of which the model leaves to be
- * chosen outside it. A ticket's age and whether it was started are read from
+ * its pool made at once, the image and size a claim hands out, a claim
+ * passing over a job whose account has paused its agent, and the order a claim
+ * takes what it may in, both of which the model leaves to be chosen outside it. A ticket's age and whether it was started are read from
  * its executions' registrations, which a case plants by moving them back; a
  * second ticket in one project is an execution planted under another number.
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { after, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -59,10 +55,6 @@ import type {
 } from "../../src/contract/workerPool.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
-import {
-  kubernetesPoolBackend,
-  type KubernetesPoolPlacementConfig,
-} from "../../src/adapters/kubernetes/poolPlacement.ts";
 import {
   personalRunnerHeldAnsweredMax,
   personalRunnerWaitingCountedMax,
@@ -156,10 +148,8 @@ import { workerContractPeerNaming } from "../interpreter/workerContractPeerFixtu
 const rig = await schedulerRigOpen();
 const planePool = postgresHarnessRolePool(poolPlaneRole);
 const apiPool = postgresHarnessRolePool(apiRole);
-const root = mkdtempSync(join(tmpdir(), "chuggy-pool-claim-"));
 
 after(async () => {
-  rmSync(root, { recursive: true, force: true });
   await Promise.all([planePool.end(), apiPool.end()]);
   await rig.close();
 });
@@ -1400,80 +1390,6 @@ test("a registration made while an older one's claim is still open waits for it 
   );
 });
 
-const tokenFile = join(root, "token");
-writeFileSync(tokenFile, "cluster-token\n");
-
-const site: KubernetesPoolPlacementConfig = {
-  apiBaseUrl: "https://cluster.invalid:6443",
-  namespace: "pool",
-  tokenFile,
-  serviceAccountName: "pool-worker",
-  nodeSelector: {},
-  podSecurityContext: {},
-  containerSecurityContext: {},
-  requestTimeoutSecsMax: 2,
-  workerPlaneUrl: "https://worker-plane.invalid",
-  capabilityFile: "/run/chuggy/capability",
-  credentialMounts: {},
-  podNamePrefix: "pool",
-  image: "registry.invalid/site-worker:1",
-  poolLabel: { name: "chuggy.internal/pool", value: "pool-one" },
-  podLabels: {},
-  podAnnotations: {},
-  resources: {
-    cpuRequest: "100m",
-    cpuLimit: "1",
-    memoryRequest: "128Mi",
-    memoryLimit: "512Mi",
-    ephemeralStorageLimit: "4Gi",
-  },
-  timeoutSecsMax: 1_800,
-  outputBytesMax: 4_096,
-  environment: {},
-  capabilities: {},
-  sidecars: [],
-};
-
-/** The worker container of the pod a site places for one assignment, as the cluster was asked to create it. */
-async function podContainer(
-  assignment: WorkerPoolAssignment,
-): Promise<{ readonly image: string; readonly resources: unknown }> {
-  const created: unknown[] = [];
-  const fetcher: typeof fetch = (input, init) => {
-    const path = new URL(input instanceof Request ? input.url : input).pathname;
-    if (!path.endsWith("/pods") || typeof init?.body !== "string")
-      return Promise.resolve(new Response("{}", { status: 201 }));
-    const pod = JSON.parse(init.body) as { metadata: Record<string, unknown> };
-    created.push(pod);
-    return Promise.resolve(
-      new Response(
-        JSON.stringify({ metadata: { ...pod.metadata, uid: "u" } }),
-        {
-          status: 201,
-        },
-      ),
-    );
-  };
-  assert.deepEqual(
-    await kubernetesPoolBackend(site, fetcher).place({
-      kind: "Job",
-      assignment,
-    }),
-    { placed: "Placed" },
-  );
-  const [pod] = created as {
-    spec: { containers: { image: string; resources: unknown }[] };
-  }[];
-  const container = pod?.spec.containers[0];
-  if (container === undefined) throw new Error("no pod was created");
-  return container;
-}
-
-/** The image of the pod a site places for one assignment. */
-async function podImage(assignment: WorkerPoolAssignment): Promise<string> {
-  return (await podContainer(assignment)).image;
-}
-
 /** The one assignment a poll is handed for a project released under `requirement`, sized as `resources` names. */
 async function handedOut(
   label: string,
@@ -1839,25 +1755,20 @@ test("an owner's runner's claim and its probe take nothing it cannot run, routed
   }
 });
 
-test("a container's pod runs the image its requirement pinned, claimed out of the database", async () => {
+test("an assignment names the image its requirement pinned, claimed out of the database", async () => {
   const assignment = await handedOut("claim-pinned-image", pinned);
   assert.equal(assignment.image, pinnedImage);
-  assert.equal(await podImage(assignment), pinnedImage);
 });
 
-test("an execution released with no size is claimed on the plane's box, and its pod on the same", async () => {
+test("an execution released with no size is claimed on the plane's box", async () => {
   const assignment = await handedOut("claim-unsized", pinned);
   assert.deepEqual(
     [assignment.cpuMillis, assignment.memoryMib],
     [settings.cpuMillis, settings.memoryMib],
   );
-  assert.deepEqual((await podContainer(assignment)).resources, {
-    requests: { cpu: "500m", memory: "256Mi", "ephemeral-storage": "4Gi" },
-    limits: { cpu: "500m", memory: "256Mi", "ephemeral-storage": "4Gi" },
-  });
 });
 
-test("an execution released with a size is claimed asking for it, and its pod is held to it", async () => {
+test("an execution released with a size is claimed asking for it", async () => {
   const assignment = await handedOut("claim-sized", pinned, {
     cpuMillis: 2_000,
     memoryMib: 1_024,
@@ -1866,10 +1777,6 @@ test("an execution released with a size is claimed asking for it, and its pod is
     [assignment.cpuMillis, assignment.memoryMib],
     [2_000, 1_024],
   );
-  assert.deepEqual((await podContainer(assignment)).resources, {
-    requests: { cpu: "2000m", memory: "1024Mi", "ephemeral-storage": "4Gi" },
-    limits: { cpu: "2000m", memory: "1024Mi", "ephemeral-storage": "4Gi" },
-  });
   const memoryOnly = await handedOut("claim-sized-memory", pinned, {
     memoryMib: 1_024,
   });
@@ -1915,7 +1822,7 @@ test("an execution released with a size is claimed asking for it by its owner's 
   );
 });
 
-test("a capability requirement names no image, and its pod runs the pool's own", async () => {
+test("a capability requirement's assignment names no image", async () => {
   const assignment = await handedOut("claim-site-image", {
     mode: "Capability",
     operatingSystem: "Linux",
@@ -1923,7 +1830,6 @@ test("a capability requirement names no image, and its pod runs the pool's own",
     capabilities: ["Agent:Claude"],
   });
   assert.equal("image" in assignment, false);
-  assert.equal(await podImage(assignment), site.image);
 });
 
 /** A limit whose reset is ahead, which pauses an agent until a reading after it or a press. */

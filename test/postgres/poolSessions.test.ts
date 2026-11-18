@@ -11,19 +11,9 @@ import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
 import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
-import { poolJobPlaneClient } from "../../src/adapters/http/poolJobPlaneClient.ts";
-import { poolPlaneClient } from "../../src/adapters/http/poolPlaneClient.ts";
-import { createPoolPlaneApp } from "../../src/adapters/http/poolPlaneServer.ts";
-import { poolSessionPlaneClient } from "../../src/adapters/http/poolSessionPlaneClient.ts";
 import { createWorkerPlaneApp } from "../../src/adapters/http/workerPlaneServer.ts";
-import {
-  postgresChatHostPlaneRegistry,
-  postgresChatHostRegistry,
-} from "../../src/adapters/postgres/chatHost.ts";
-import {
-  postgresPersonalRunnerPlaneRegistry,
-  postgresPersonalRunnerRegistry,
-} from "../../src/adapters/postgres/personalRunner.ts";
+import { postgresChatHostRegistry } from "../../src/adapters/postgres/chatHost.ts";
+import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
 import {
   apiRole,
@@ -87,12 +77,6 @@ import {
   type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
 import { asPlacementId } from "../../src/interpreter/schedulerIdentity.ts";
-import {
-  workerPoolClientPass,
-  type WorkerPoolBackend,
-  type WorkerPoolClient,
-  type WorkerPoolSessionEnd,
-} from "../../src/interpreter/workerPoolClient.ts";
 import { asThreadOpenKey } from "../../src/interpreter/threadRead.ts";
 import { sessionTaskInvocation } from "../../src/interpreter/workerTask.ts";
 import type {
@@ -130,10 +114,6 @@ import {
   sessionRigTurn,
   sessionRigTurnState,
 } from "./sessionHarness.ts";
-import {
-  workerPoolReportAgeMsMax,
-  workerPoolReports,
-} from "../../src/interpreter/workerPoolReports.ts";
 import { workerContractPeerNaming } from "../interpreter/workerContractPeerFixture.ts";
 
 const rig = await sessionRigOpen();
@@ -1203,140 +1183,35 @@ test("a claim and the withdrawal of the turn it would serve exclude each other, 
   ]);
 });
 
-/** A container runtime that runs sessions only, each until the case says it ended. */
-function sessionRuntime(): {
-  readonly backend: WorkerPoolBackend;
-  readonly running: Map<string, WorkerPoolSessionAssignment>;
-  readonly finished: WorkerPoolSessionEnd[];
-} {
-  const running = new Map<string, WorkerPoolSessionAssignment>();
-  const finished: WorkerPoolSessionEnd[] = [];
-  return {
-    running,
-    finished,
-    backend: {
-      place: (offer) => {
-        if (offer.kind !== "Session")
-          return Promise.resolve({ placed: "Refused", evidence: "no jobs" });
-        running.set(offer.assignment.assignment, offer.assignment);
-        return Promise.resolve({ placed: "Placed" });
-      },
-      stop: (assignment) => {
-        running.delete(assignment);
-        return Promise.resolve({ stopped: "Stopped" });
-      },
-      held: () =>
-        Promise.resolve(
-          [...running.keys()].map((assignment) => ({
-            assignment,
-            kind: "Session" as const,
-          })),
-        ),
-      ended: () => Promise.resolve(finished.splice(0)),
-      clear: () => Promise.reject(new Error("a session runtime ends no job")),
-    },
-  };
-}
-
-/** The pool plane a runner polls, over the real stores, admitting one token as `runs` and every permit it asks. */
-async function poolPlaneServing(
-  runs: Principal,
-): Promise<{ readonly url: string; readonly close: () => Promise<void> }> {
-  const app = createPoolPlaneApp({
-    authentication: {
-      authenticateBearer: (token) =>
-        Promise.resolve(
-          token === "runner-token"
-            ? { authenticated: "Bearer", bearer: { principal: runs } }
-            : { authenticated: "InvalidToken" },
-        ),
-    },
-    access: readingEverything,
-    registry: postgresWorkerPoolRegistry(poolPlanePool),
-    personal: postgresPersonalRunnerPlaneRegistry(poolPlanePool),
-    chatHosts: postgresChatHostPlaneRegistry(poolPlanePool),
-    assignments: ports.assignments,
-    sessions: ports.sessions,
-    runners: ports.runners,
-    releases: new Map(),
-    reports: workerPoolReports({
-      issuer: "https://issuer.invalid",
-      runnersMax: 1,
-      ageMsMax: workerPoolReportAgeMsMax,
-      now: Date.now,
-    }),
-    settings,
-    mint: ports.mint,
-    ready: () => Promise.resolve(true),
-  });
-  const port = await planeListening(app);
-  return { url: `http://127.0.0.1:${String(port)}/`, close: () => app.close() };
-}
-
-test("a runner polls, runs the session it is handed through its turn, reports its end, and is then handed and told to stop nothing", async () => {
+test("a chat host runs the session it is handed through its turn, its end ends the attempt, and its next poll is handed and told to stop nothing", async () => {
   const { partition, member } = await routedProject("pool-runner");
-  const runs = principal("runner");
-  await chatHost(partition, member, runs);
+  const host = await chatHost(partition, member);
   const { session, turn } = await waiting(partition, "runner", member);
-  const plane = await poolPlaneServing(runs);
-  const runtime = sessionRuntime();
-  const client: WorkerPoolClient = {
-    tokens: {
-      acquire: () =>
-        Promise.resolve({ acquired: "Token", token: "runner-token" }),
-      invalidate: () => undefined,
+  const held = await claimedOne(host);
+  const task = await taskOf(held.bearer, workerContractRelease);
+  assert.deepEqual(
+    [task.status, documentOf(task.body)["session"]],
+    [200, session],
+  );
+  assert.equal(await runnerClaimed(held), turn);
+  const secret = asSessionBearerSecret(held.bearer);
+  assert.equal(
+    await rig.plane.answer({ secret, generation: 1, turn, result: "done" }),
+    "Answered",
+  );
+  const ended = await workerPlane.inject({
+    method: "POST",
+    url: "/v1/session/ended",
+    headers: {
+      authorization: `Bearer ${held.bearer}`,
+      [workerContractHeader]: workerContractRelease,
     },
-    plane: poolPlaneClient({
-      baseUrl: plane.url,
-      pollTimeoutMs: 5_000,
-      settleTimeoutMs: 5_000,
-    }),
-    jobs: poolJobPlaneClient({ timeoutMs: 5_000 }),
-    sessions: poolSessionPlaneClient({ timeoutMs: 5_000 }),
-    backend: runtime.backend,
-    settings: {
-      concurrencyMax: 1,
-      sessionsMax: 1,
-      outageBackoffMs: 1,
-      passesMax: 1,
-    },
-  };
-  try {
-    const counts = { placed: 1, stopped: 0, refused: 0, ended: 0 };
-    assert.deepEqual(await workerPoolClientPass(client), {
-      passed: "Reconciled",
-      ...counts,
-    });
-    const [held, ...more] = runtime.running.values();
-    assert.ok(held !== undefined);
-    assert.deepEqual(more, []);
-    const task = await taskOf(held.bearer, workerContractRelease);
-    assert.deepEqual(
-      [task.status, documentOf(task.body)["session"]],
-      [200, session],
-    );
-    assert.equal(await runnerClaimed(held), turn);
-    const secret = asSessionBearerSecret(held.bearer);
-    assert.equal(
-      await rig.plane.answer({ secret, generation: 1, turn, result: "done" }),
-      "Answered",
-    );
-    runtime.running.delete(held.assignment);
-    runtime.finished.push({
-      kind: "Session",
-      session: held,
-      phase: "Succeeded",
-    });
-    assert.deepEqual(await workerPoolClientPass(client), {
-      passed: "Reconciled",
-      ...counts,
-      placed: 0,
-      ended: 1,
-    });
-    assert.deepEqual([(await attemptOf(held.assignment))["state"]], ["Lost"]);
-  } finally {
-    await plane.close();
-  }
+    payload: { phase: "Succeeded" },
+  });
+  assert.equal(ended.statusCode, 204);
+  assert.deepEqual([(await attemptOf(held.assignment))["state"]], ["Lost"]);
+  const next = await polled(host);
+  assert.deepEqual([next.sessions, next.stop], [[], []]);
 });
 
 test("a personal runner's poll with room for a session asks the authority nothing of one and opens nothing for its owner's waiting thread", async () => {

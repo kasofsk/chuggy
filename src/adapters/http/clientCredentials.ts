@@ -1,8 +1,6 @@
 /**
  * The access token an authenticated client presents, minted by the OAuth2
- * client-credentials grant and replaced before the issuer expires it. This and
- * `src/adapters/http/poolTokens.ts` are chuggy-common's `poolTokens.mjs` in
- * TypeScript, and a change to one is a change to both.
+ * client-credentials grant and replaced before the issuer expires it.
  *
  * A TOKEN IS REPLACED AHEAD OF EXPIRY. The issuer signs short-lived access
  * tokens and the API verifies them offline, so a client that waits for the 401
@@ -136,7 +134,7 @@ const clientCredentialsRefusalSchema = z.object({
   error: z.enum(clientCredentialsRefusalCodes),
 });
 
-export interface ClientCredentialsConfig {
+interface ClientCredentialsConfig {
   readonly tokenUrl: string;
   readonly clientId: string;
   readonly clientSecret: string;
@@ -225,7 +223,7 @@ function clientCredentialsHoldMs(
  * issuer that could not be reached: a caller told its credential is wrong
  * learns nothing by presenting it again, and one told nothing at all does.
  */
-export class ClientCredentialsRefused extends Error {
+class ClientCredentialsRefused extends Error {
   readonly status: number;
   readonly code: ClientCredentialsRefusalCode;
   constructor(status: number, code: ClientCredentialsRefusalCode) {
