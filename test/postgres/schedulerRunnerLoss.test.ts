@@ -20,10 +20,6 @@ import {
   postgresWorkerRunEnded,
 } from "../../src/adapters/postgres/workerPlane.ts";
 import {
-  postgresWorkerPoolRegistry,
-  postgresWorkerPoolRoster,
-} from "../../src/adapters/postgres/workerPool.ts";
-import {
   nativeHttpPathSegmentCharsMax,
   workerErrorPath,
 } from "../../src/contract/http.ts";
@@ -48,10 +44,7 @@ import {
   asPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
-import type {
-  PersonalRunnerIdentity,
-  WorkerPoolIdentity,
-} from "../../src/interpreter/workerPool.ts";
+import type { PersonalRunnerIdentity } from "../../src/interpreter/workerPool.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   schedulerClaimFor,
@@ -86,36 +79,7 @@ after(() => resume.close());
 
 const reads = postgresNativeReads(apiPool);
 
-/** The name the pool a case registers goes by. */
-const poolName = "runner-a";
-
 type Routed = SchedulerResumeRouted;
-
-/** Whoever claims a case's jobs: a member's personal runner, or a project's pool where the pool is what a case reads. */
-type Claimant = PersonalRunnerIdentity | WorkerPoolIdentity;
-
-/** Registers a pool in the ticket's project and grants it `Execute`, answering the identity it claims under. */
-async function poolOf(routed: Routed): Promise<WorkerPoolIdentity> {
-  const { partition } = routed.project;
-  const principal = asPrincipal(`https://issuer.invalid#pool-${randomUUID()}`);
-  assert.equal(
-    await postgresWorkerPoolRegistry(apiPool).register({
-      partition,
-      pool: poolName,
-      capabilities: ["Platform:Linux:Amd64"],
-      class: "Dedicated",
-      clientId: `chuggy-pool-${randomUUID()}`,
-      principal,
-    }),
-    true,
-  );
-  access.grant({ partition, principal, access: new Set(["Execute"]) });
-  const [registered] = (
-    await postgresWorkerPoolRoster(rig.pool).registered(partition)
-  ).pools;
-  assert.ok(registered !== undefined);
-  return registered;
-}
 
 /** Registers a personal runner of a member of its own, who may read the ticket's project and register runners, listing the project, answering the identity it claims under. */
 async function runnerOf(routed: Routed): Promise<PersonalRunnerIdentity> {
@@ -147,7 +111,7 @@ async function runnerOf(routed: Routed): Promise<PersonalRunnerIdentity> {
   return { ...key, principal };
 }
 
-/** Makes `owner` the execution's owner, naming an owner fallback, as a member's own ticket is. */
+/** Makes `owner` the execution's owner, as a member's own ticket is. */
 async function ownedBy(
   routed: Routed,
   execution: ExecutionId,
@@ -155,7 +119,7 @@ async function ownedBy(
 ): Promise<void> {
   const { partition } = routed.project;
   await rig.harness.query(
-    `UPDATE execution SET owner=$4, owner_fallback='Strict'
+    `UPDATE execution SET owner=$4
       WHERE tenant=$1 AND project=$2 AND execution=$3`,
     [partition.tenant, partition.project, execution, owner],
   );
@@ -172,13 +136,13 @@ async function newestAdmitted(routed: Routed): Promise<ExecutionId> {
 const invokedAttempt = (routed: Routed, execution: ExecutionId) =>
   schedulerResumeInvoked(resume, routed, execution, schedulerInvocation);
 
-/** Has `claimant` claim the execution's attempt, a personal runner's as its owner's, answering the attempt and the bearer it was claimed under. */
+/** Has `claimant` claim the execution's attempt as its owner's, answering the attempt and the bearer it was claimed under. */
 async function claimed(
   routed: Routed,
   execution: ExecutionId,
-  claimant: Claimant,
+  claimant: PersonalRunnerIdentity,
 ): Promise<{ attempt: PhysicalAttempt; bearer: string }> {
-  if ("owner" in claimant) await ownedBy(routed, execution, claimant.owner);
+  await ownedBy(routed, execution, claimant.owner);
   const attempt = await invokedAttempt(routed, execution);
   const bearer = `bearer-${randomUUID()}`;
   const terms = {
@@ -188,11 +152,9 @@ async function claimed(
   };
   const assignment = `assignment-${randomUUID()}`;
   assert.notEqual(
-    "owner" in claimant
-      ? await assignments.claimPersonal(claimant, terms, assignment, bearer, [
-          routed.project.partition.project,
-        ])
-      : await assignments.claim(claimant, terms, assignment, bearer, []),
+    await assignments.claimPersonal(claimant, terms, assignment, bearer, [
+      routed.project.partition.project,
+    ]),
     undefined,
   );
   return { attempt, bearer };
@@ -454,13 +416,13 @@ test("a verdict between two losses starts the count again", async () => {
   assert.equal(await schedulerAnswers(routed), 2);
 });
 
-test("a ticket read names the pool a job was lost on, its attempt and the error its worker kept", async () => {
+test("a ticket read names the member whose own runner a job was lost on, its attempt and the error its worker kept", async () => {
   const { routed, execution } = await routedTicket("loss-read");
-  const pool = await poolOf(routed);
-  const { attempt, bearer } = await claimed(routed, execution, pool);
+  const runner = await runnerOf(routed);
+  const { attempt, bearer } = await claimed(routed, execution, runner);
   await lostOnRunner(routed, bearer, 61);
   assert.deepEqual(await readLoss(routed), {
-    runner: { kind: "Pool", pool: poolName },
+    runner: { kind: "Personal", owner: runner.owner },
     execution,
     attempt: attempt.attempt,
     evidence: "RunFailed",
@@ -472,7 +434,7 @@ test("a ticket read names the pool a job was lost on, its attempt and the error 
   const { bearer: second } = await claimed(
     routed,
     await newestAdmitted(routed),
-    pool,
+    runner,
   );
   await lostOnRunner(routed, second);
   const lost = await readLoss(routed);
@@ -481,57 +443,6 @@ test("a ticket read names the pool a job was lost on, its attempt and the error 
     { losses: lost?.losses, resumed: lost?.resumed },
     { losses: 2, resumed: 1 },
   );
-});
-
-test("a ticket read names the member whose own runner a job was lost on", async () => {
-  const { routed, execution } = await routedTicket("loss-personal");
-  const { partition } = routed.project;
-  const owner: Principal = asPrincipal(
-    `https://issuer.invalid#member-${randomUUID()}`,
-  );
-  const principal = asPrincipal(
-    `https://issuer.invalid#personal-${randomUUID()}`,
-  );
-  const key = { tenant: partition.tenant, owner };
-  const personal = postgresPersonalRunnerRegistry(apiPool);
-  assert.equal(
-    await personal.register({
-      ...key,
-      capabilities: ["Platform:Linux:Amd64"],
-      clientId: `chuggy-personal-${randomUUID()}`,
-      principal,
-    }),
-    "Registered",
-  );
-  assert.equal(await personal.allow(key, partition.project), "Allowed");
-  await rig.harness.query(
-    `UPDATE execution SET owner=$4, owner_fallback='Strict'
-      WHERE tenant=$1 AND project=$2 AND execution=$3`,
-    [partition.tenant, partition.project, execution, owner],
-  );
-  await invokedAttempt(routed, execution);
-  const bearer = `bearer-${randomUUID()}`;
-  assert.notEqual(
-    await assignments.claimPersonal(
-      { ...key, principal },
-      {
-        leaseSecs: service.config.attemptLeaseSecs,
-        heldMax: 1,
-        memoryMibDefault: service.poolMemoryMib,
-      },
-      `assignment-${randomUUID()}`,
-      bearer,
-      [partition.project],
-    ),
-    undefined,
-  );
-  await lostOnRunner(routed, bearer);
-  assert.deepEqual((await readLoss(routed))?.runner, {
-    kind: "Personal",
-    owner,
-  });
-  await resumedByScheduler(routed);
-  assert.equal((await standing(routed))?.["phase"], "Work");
 });
 
 test("work whose run ended itself out of turns is the run's own outcome, and is never resumed", async () => {

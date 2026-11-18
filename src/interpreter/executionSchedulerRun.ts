@@ -228,10 +228,8 @@ import type {
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Principal } from "./principal.ts";
 import {
-  workerPoolExecutes,
   workerPoolOwnerStands,
   type PersonalRunnerRegistered,
-  type WorkerPoolRegistered,
   type WorkerPoolRoster,
 } from "./workerPool.ts";
 import {
@@ -1037,7 +1035,7 @@ interface SchedulerOwnerRunners {
   readonly runners: readonly PersonalRunnerRegistered[];
 }
 
-/** The owner's runners where the execution's project allows one, and nothing where it allows none, it has no owner, or the owner has no runner. */
+/** The owner's runners where the execution allows one, and nothing where it allows none, it has no owner, or the owner has no runner. */
 async function schedulerOwnerRunners(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
@@ -1077,35 +1075,18 @@ async function schedulerOwnerRunnersAnswered(
 }
 
 /**
- * Each pool beside whether the authority withholds its `Execute`, and each of
- * the owner's personal runners beside whether it is revoked, or nothing where
- * the authority could not answer, which decides nothing this pass.
+ * Each of the owner's personal runners beside whether it is revoked, none
+ * where it has no owner or the owner none, or nothing where the authority
+ * could not answer, which decides nothing this pass.
  */
 async function schedulerPoolsAnswered(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
-  pools: readonly WorkerPoolRegistered[],
-  owned: SchedulerOwnerRunners | undefined,
 ): Promise<readonly WorkerPoolAnswered[] | undefined> {
+  const owned = await schedulerOwnerRunners(service, execution);
+  if (owned === undefined) return [];
   try {
-    const answered = await Promise.all(
-      pools.map(async (pool) => ({
-        ...pool,
-        dedicatedOwner: undefined,
-        allowlist: [],
-        revoked: !(await workerPoolExecutes(
-          service.access,
-          pool.partition,
-          pool.principal,
-        )),
-      })),
-    );
-    return owned === undefined
-      ? answered
-      : [
-          ...answered,
-          ...(await schedulerOwnerRunnersAnswered(service, execution, owned)),
-        ];
+    return await schedulerOwnerRunnersAnswered(service, execution, owned);
   } catch {
     return undefined;
   }
@@ -1118,23 +1099,16 @@ type SchedulerPoolsAnswer =
   | Extract<SchedulerRefused, { readonly refused: "Block" }>;
 
 /**
- * Asks what can be said of an execution routed to pools against the pools its
- * project registered and its owner's personal runners: the one no runner is
- * configured to run blocks, for its size where that is all that stops one. A
- * page the registry cut short never blocks, since a pool past it may be, and
- * an authority that could not answer decides nothing.
+ * Asks what can be said of an execution routed to pools against its owner's
+ * personal runners, the only runners a registry holds that take work: the one
+ * none is configured to run blocks, for its size where that is all that stops
+ * one, and an authority that could not answer decides nothing.
  */
 async function schedulerPoolsAsked(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
 ): Promise<SchedulerPoolsAnswer> {
-  const registered = await service.workerPools.registered(execution.partition);
-  const answered = await schedulerPoolsAnswered(
-    service,
-    execution,
-    registered.pools,
-    await schedulerOwnerRunners(service, execution),
-  );
+  const answered = await schedulerPoolsAnswered(service, execution);
   if (answered === undefined) return { pools: "Undecided" };
   const outcome = workerPoolOutcomeRegistered(
     execution,
@@ -1143,7 +1117,6 @@ async function schedulerPoolsAsked(
   );
   switch (outcome) {
     case "DefinitiveIncompatibility":
-      if (registered.truncated) return { pools: "Offerable" };
       return {
         refused: "Block",
         evidence: "PlacementIncompatible",

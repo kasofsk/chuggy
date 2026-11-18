@@ -1,17 +1,22 @@
 # The rig's worker pools
 
-A worker pool is a machine or a cluster that claims work from a project and
-runs it. This is what registering one means and the order an operator writes
-in, neither of which a variable table can carry.
+A worker pool is a machine or a cluster registered to a project. This is what
+registering one means and the order an operator writes in, neither of which a
+variable table can carry.
 
-## What reaches a pool
+**A pool's poll is refused.** The pool plane admits a member's personal runner
+and chat host and nothing else, so a registered pool's principal is answered
+as one nobody registered, and no pool is given work. A project's work runs in
+the cluster or on its owner's personal runner.
 
-An execution is offered to a pool only where its `placement` is `Pool`, which
+## What reaches a personal runner
+
+An execution is offered to a runner only where its `placement` is `Pool`, which
 the scheduler writes once, when it registers the execution. The route is
 `CHUG_SCHEDULER_EXECUTION_POLICY`'s: a `route` of `InCluster` or `Pool` on each
 task kind, and `projectRoutes`, keyed by tenant and then project, for a project
 that routes a kind otherwise. A kind that names no route runs in the cluster,
-so a pool takes nothing until a policy sends it work, and a policy changed
+so a runner takes nothing until a policy sends it work, and a policy changed
 later moves only what registers after it.
 
 A thread is routed by `CHUG_SCHEDULER_SESSION_POLICY`'s `routes` on `Thread`,
@@ -25,25 +30,24 @@ session. A member with no chat host is refused a thread's turn on `Pool` as
 `sessionPoolTurnDwellSecs` (`src/interpreter/sessionPlacement.ts`) is
 withdrawn by the scheduler.
 
-A pool is handed a placement and nothing about the work, so its harness
+A runner is handed a placement and nothing about the work, so its harness
 fetches the task from the worker plane under the attempt bearer, as it fetches
 its inputs and its credentials (`GET /v1/task`,
 `src/adapters/http/workerPlaneServer.ts`). The scheduler records that task for
-an attempt routed to a pool after the same policy check as one it places, and
-does not place it: the pool claims it.
+an attempt routed to a runner after the same policy check as one it places,
+and does not place it: the runner claims it.
 
-A project's owner fallback lets a member's personal runner take a `Pool`
-execution of a ticket that member wrote; until an administrator writes it, no
-personal runner takes the project's work. Under `Strict` no pool takes such an
-execution while its owner has a runner serving the project and able to run it,
-and under `Preferred` none takes it while that runner is live; otherwise it
-reaches the pools as before. An execution keeps the fallback it was registered
-under, so changing or removing it moves only what registers after.
+A `Pool` execution is taken by a personal runner of the member who wrote its
+ticket, one serving the project and able to run it, and by nothing else. The
+scheduler pins every execution `Strict` as it registers it, whatever the
+project's owner fallback names, so that setting decides nothing. An execution
+with no owner, or whose owner has no runner configured for it, is blocked; one
+whose owner's runner is configured and not polling waits for it.
 
-**A pool's refusal is final.** The scheduler withdraws the refused attempt
+**A runner's refusal is final.** The scheduler withdraws the refused attempt
 without spending the retry budget and blocks the execution; it does not offer
-the work to another pool. `Unavailable` for an assignment a pool claimed is
-as final: the execution concludes as a failed process.
+the work to another runner. `Unavailable` for an assignment a runner claimed
+is as final: the execution concludes as a failed process.
 
 ## How a pool pulls
 
@@ -79,15 +83,9 @@ API, cannot propose or dispatch, and cannot widen its own access — the
 registration command holds the issuer's admin address and the plane a pool
 polls holds none, which `.dependency-cruiser.cjs` states as a rule.
 
-With `Execute` a pool claims work whose platform and required capabilities its
-declaration covers, a platform being declared as a token such as
-`Platform:Linux:Amd64`, and mints a forge credential for any repository the
-project binds (`src/interpreter/forgeCredentials.ts`). Both are revoked by
-taking the relation back, so a revoked pool stops being admitted without
-anything being deleted (`src/interpreter/workerPool.ts`). The scheduler asks
-the authority the same question of every registered pool, so a revoked one is
-not counted as able to run the project's work either: work that only it could
-run is blocked, and an authority the scheduler cannot reach blocks nothing.
+With `Execute` a pool mints a forge credential for any repository the project
+binds (`src/interpreter/forgeCredentials.ts`), though it claims nothing. That
+is revoked by taking the relation back.
 
 **The pool's host sees everything the harness sees.** This is not a gap waiting
 on a fix — it is what running the work means. The machine executing a harness
@@ -116,7 +114,7 @@ host the rig does not run and those controls say nothing about.
 ## Personal runners
 
 A personal runner is a member's own machine, and it takes nothing but that
-member's executions under the owner fallback, in the projects they allowlist
+member's executions, in the projects they allowlist
 and may still read; their threads run on their chat host. A member may hold several in a
 tenant, each with its own room, and none until the tenant gives them personal
 runners, which a new tenant's administrators may (an older tenant:
@@ -152,8 +150,7 @@ start.
 **The deployed relation model gains `pools` first.** Keto writes a tuple naming
 any relation whether or not the model declares one, so a registration against a
 model without `pools` succeeds, answers nothing, and every poll that pool makes
-is refused as though it were never registered; the scheduler reads that pool as
-revoked, and blocks the work only it could run. The deployed model is the
+is refused as though it were never registered. The deployed model is the
 fabric's; `.chug/tasks/keto/namespaces.ts` is the copy `check-keto.sh` drives
 its own server with, and `deploy/rig/keto/README.md` is why reading one against
 the other is a hand operation.

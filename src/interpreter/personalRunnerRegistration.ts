@@ -91,7 +91,7 @@ export interface PersonalRunnerHeldView {
  * One runner as its owner reads it, by the client it registered: its newest
  * poll of either kind, absent until it polls, and whether that poll is within
  * the window a runner is held live for; whether its newest poll for executions
- * is, which is the liveness a pool's claim defers to under Preferred; the
+ * is, which is the liveness a run's wait reads it by; the
  * runner its newest poll named, absent where it named none; and what it holds,
  * the earliest claimed first, as far as `personalRunnerHeldAnsweredMax`, with
  * `heldTruncated` where it holds more.

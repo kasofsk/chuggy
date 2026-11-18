@@ -1,13 +1,10 @@
 /**
- * Whether a project's executions may run on their owner's personal runner, and
- * when a pool may take one instead: one setting, the project's own, read by
- * its members and written by its administrators.
+ * A project's owner fallback: one setting, the project's own, read by its
+ * members and written by its administrators.
  *
- * ABSENT IS NOT A THIRD FALLBACK. A project that names none registers its
- * executions as it did before personal runners existed: no personal runner
- * takes one and every pool may. Naming one is the model's
- * `personalRunnerAllowed` with that `ownerFallback`, pinned on each execution
- * registered after it, as its route is.
+ * IT DECIDES NOTHING. The scheduler pins every execution it registers with
+ * `Strict`, the model's `personalRunnerAllowed` with that `ownerFallback`,
+ * whatever this names or whether it names one.
  */
 
 import type { Authority } from "./operationInbox.ts";

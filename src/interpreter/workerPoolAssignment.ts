@@ -43,7 +43,8 @@
  * each of them are the model's `ExecutionProfile`. The registry carries a
  * pool's class, and a personal pool's owner and allowlist; every other term of
  * its policy is `workerPoolPolicyRegistered`'s. An execution carries its owner
- * and the fallback its project named, and every other term of its demand is
+ * and the fallback it was pinned with, which is `Strict` for every one the
+ * scheduler registers, and every other term of its demand is
  * `workerPoolDemandRouted`'s, which `workerPoolDemandOf` reads it with; the
  * guard reads both as it reads any other field, so a registry that carries
  * more of them changes values and not terms.
@@ -57,9 +58,10 @@
  * THE SCHEDULER ASKS THE OUTCOME OF THE REGISTRY AND THE AUTHORITY. A poll is
  * not durable, so the scheduler sees no session and no pool is placeable to
  * it. The agents a pool takes are read only beside a session, so it asks of
- * a placement naming no agent and pools advertising none. A registered pool is enabled, and revoked where the authority withholds
- * the `Execute` its polls are admitted by; an owner's personal pool is revoked
- * where it withholds the permit its polls are admitted by, or the owner's
+ * a placement naming no agent and pools advertising none. The registry it
+ * asks of is the execution's owner's personal pools and no other, since the
+ * plane admits no poll of any other; each is enabled, and revoked where the
+ * authority withholds the permit its polls are admitted by, or the owner's
  * `Read` of the project its claims are asked under.
  */
 
@@ -487,8 +489,8 @@ function workerPoolOutcomeRegisteredRunner(
 
 /**
  * What `workerPoolPlacementOutcome` says of an execution no pool has taken,
- * asked of its project's registered pools and its owner's personal pools, an
- * execution naming no memory sized at `memoryMibDefault`.
+ * asked of `registered`, an execution naming no memory sized at
+ * `memoryMibDefault`.
  */
 export function workerPoolOutcomeRegistered(
   execution: LogicalExecution,

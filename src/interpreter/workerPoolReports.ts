@@ -33,18 +33,15 @@ import type {
   MetricsValueSample,
 } from "./metricsFamily.ts";
 import { oidcPrincipalSubject } from "./principal.ts";
-import type {
-  DedicatedPoolIdentity,
-  PersonalRunnerIdentity,
-} from "./workerPoolIdentity.ts";
+import type { PersonalRunnerIdentity } from "./workerPoolIdentity.ts";
 
 /** How long a report or a poll's facts are held once made. */
 export const workerPoolReportAgeMsMax = 180_000;
 
-/** A caller whose reports are held: a project's pool or a member's personal runner. */
-export type WorkerPoolReporter =
-  | DedicatedPoolIdentity
-  | (PersonalRunnerIdentity & { readonly kind: "Personal" });
+/** A caller whose reports are held: a member's personal runner. */
+export type WorkerPoolReporter = PersonalRunnerIdentity & {
+  readonly kind: "Personal";
+};
 
 /** What a poll named that is served beside its runner's report, where it named each. */
 export interface WorkerPoolPolled {
@@ -87,32 +84,20 @@ interface WorkerPoolReportServed {
 
 const workerPoolReportBytesPerMib = 1_048_576;
 
-/** The labels every series of one runner carries, each its kind does not name empty. */
+/** The labels every series of one runner carries, those a personal runner does not name empty. */
 function workerPoolReportLabels(
   reporter: WorkerPoolReporter,
   host: string,
   issuer: string,
 ): MetricsLabels {
-  switch (reporter.kind) {
-    case "Dedicated":
-      return {
-        tenant: reporter.partition.tenant,
-        project: reporter.partition.project,
-        pool: reporter.pool,
-        owner: "",
-        personal_runner: "",
-        host,
-      };
-    case "Personal":
-      return {
-        tenant: reporter.tenant,
-        project: "",
-        pool: "",
-        owner: oidcPrincipalSubject(issuer, reporter.owner) ?? "",
-        personal_runner: oidcPrincipalSubject(issuer, reporter.principal) ?? "",
-        host,
-      };
-  }
+  return {
+    tenant: reporter.tenant,
+    project: "",
+    pool: "",
+    owner: oidcPrincipalSubject(issuer, reporter.owner) ?? "",
+    personal_runner: oidcPrincipalSubject(issuer, reporter.principal) ?? "",
+    host,
+  };
 }
 
 /** A gauge of what `measured` reads of each runner, a runner it reads nothing of left out. */

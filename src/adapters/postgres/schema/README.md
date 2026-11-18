@@ -441,16 +441,15 @@ scheduler, which writes it at boot, and read by the API, which answers a
 project's placement from it. It has no unfinished work: the scheduler decides
 from its own routing, so a row older than the process only misreports.
 
-`project_owner_fallback` — whether one project's members' personal runners
-take the executions of tickets they wrote, under `Strict` or `Preferred`, and
-who set it. Owned by the boundary owner, which is what
-`set_project_owner_fallback` runs as; the API role writes it through that door
-alone, and it and the scheduler read it. Its key and identity are
+`project_owner_fallback` — the owner fallback one project's administrators
+named, `Strict` or `Preferred`, and who set it. Owned by the boundary owner,
+which is what `set_project_owner_fallback` runs as; the API role writes it
+through that door alone, and reads it. Its key and identity are
 `(tenant, project)` and it points at `project`. It is changed by that door
 alone, which answers `Unchanged` where nothing moved; a row naming no fallback
-is a project that took them out. It has no unfinished work: the scheduler
-copies it onto an execution when it registers one, so a change moves only what
-registers after it, and a project with no row places as it did before.
+is a project that took it out. It has no unfinished work and decides nothing:
+the scheduler pins every execution it registers `Strict` and reads no row of
+it.
 
 `member_thread_limit` — how many threads one member may hold open in one
 project, and who set it. Owned by the boundary owner, which is what

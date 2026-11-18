@@ -32,9 +32,9 @@
  * sessions apart, and what it holds is told apart by the rows each kind lives
  * in, so each kind is renewed, bounded and claimed on its own;
  * `./workerPoolSessions.ts` says what claiming one opens. A poll that could take
- * a session is what a pool or a chat host is read as live for a session by, so
- * only it is recorded as one; a personal runner's poll that could take an
- * execution is recorded apart, as what a pool's claim reads it as live by.
+ * a session is what a chat host is read as live for a session by, so only it
+ * is recorded as one; a personal runner's poll that could take an execution is
+ * recorded apart.
  *
  * A MEMBER'S PERSONAL RUNNER POLLS THE SAME CHANNEL. It is admitted by its row
  * in its tenant and its owner's standing permit to register one, since no
@@ -51,17 +51,16 @@
  * job such a poll claims is recorded so on its attempt, its usage limit pauses
  * no account, and each answer that stops it names how its run ended, where
  * that was a usage limit or credits run out. A job claimed by any other
- * runner, a pool's, and the cluster's pause the account as they always did.
+ * runner, and the cluster's, pause the account as they always did.
  *
- * A POOL'S, A PERSONAL RUNNER'S OR A CHAT HOST'S POLL MAY NAME THE
+ * A PERSONAL RUNNER'S OR A CHAT HOST'S POLL MAY NAME THE
  * CREDENTIALS IT WOULD RUN EACH AGENT'S WORK ON, which are kept for its
  * claims, a poll naming none clearing them, so that its claim of a job of an
  * agent it named, or of a session where it named Claude's, waits only while
  * every one of them is paused for the account its work spends: a runner's or
- * a chat host's owner, or the member who registered a pool, where one did.
- * Its answer names each of them that is paused and when that ends, to a poll
- * whose peer implements `CredentialPauses`, read as the answer is made and
- * kept nowhere. Neither moves what it advertises, nor a pool's deferring to a runner.
+ * a chat host's owner. Its answer names each of them that is paused and when
+ * that ends, to a poll whose peer implements `CredentialPauses`, read as the
+ * answer is made and kept nowhere. Neither moves what it advertises.
  *
  * A MEMBER'S CHAT HOST POLLS IT TOO, admitted as a personal runner is, by its
  * row and its owner's permit. It claims sessions and never an execution, and
@@ -94,12 +93,9 @@
  * pool that wants no job because it is full waits out its whole poll. A poll may name how long it
  * waits for an answer with nothing in it, up to the plane's own longest wait.
  *
- * A POOL'S CLAIM DEFERS TO AN OWNER'S PERSONAL RUNNERS as the owner's fallback
- * says, and a runner the authority revoked is none of the owner's, as the
- * model's `ownerRunners` reads it. The claim cannot ask the authority, so the
- * owners it would defer to are read first and asked, and the claim is told
- * which of them are revoked; an owner past the bound is not asked, and is
- * deferred to as though their runners stood.
+ * A PROJECT'S POOL IS ADMITTED BY NOTHING. Its registration and its `Execute`
+ * still stand, but its principal is neither a personal runner nor a chat host,
+ * so its poll is answered as one nobody registered.
  */
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -141,16 +137,13 @@ import type {
   PersonalRunnerIdentity,
   PoolPlaneIdentity,
   WorkerPoolExecutionPoller,
-  WorkerPoolIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
 export type {
   ChatHostIdentity,
-  DedicatedPoolIdentity,
   PersonalRunnerIdentity,
   PoolPlaneIdentity,
   WorkerPoolExecutionPoller,
-  WorkerPoolIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
 import {
@@ -217,14 +210,13 @@ export interface WorkerPoolRegistration {
 }
 
 /**
- * Registration, deregistration and the lookup a poll resolves its pool by; no
- * secret passes through here, because a pool authenticates as an OAuth2 client
- * of the issuer this installation already runs and a row keeps only the
- * principal that client's subject resolves to. Taking a pool off is a read of
- * the client its row names and a delete conditional on that client, so the
- * command that has to remove the client and the relation before the row can
- * do so in that order, and a pool registered again in between keeps its newer
- * one.
+ * Registration and deregistration; no secret passes through here, because a
+ * pool authenticates as an OAuth2 client of the issuer this installation
+ * already runs and a row keeps only the principal that client's subject
+ * resolves to. Taking a pool off is a read of the client its row names and a
+ * delete conditional on that client, so the command that has to remove the
+ * client and the relation before the row can do so in that order, and a pool
+ * registered again in between keeps its newer one.
  */
 export interface WorkerPoolRegistry {
   /** Records the pool under this registration's principal, and fences the live attempts an older registration of its name claimed. */
@@ -235,20 +227,6 @@ export interface WorkerPoolRegistry {
     pool: string,
     clientId: string,
   ): Promise<boolean>;
-  identify(principal: Principal): Promise<WorkerPoolIdentity | undefined>;
-}
-
-/** One registered pool as the scheduler reads it: its identity, what it declared, the memory ceiling its polls named where they named one, and its class. */
-export interface WorkerPoolRegistered extends WorkerPoolIdentity {
-  readonly capabilities: readonly string[];
-  readonly memoryCeilingMib: number | undefined;
-  readonly class: WorkerPoolClass;
-}
-
-/** One project's registered pools, `truncated` saying it holds more than this answers. */
-export interface WorkerPoolRosterPage {
-  readonly pools: readonly WorkerPoolRegistered[];
-  readonly truncated: boolean;
 }
 
 /** One registered pool as a project's members read it: its newest poll where it has polled, whether that poll is recent enough for it to be taking work, and the runner it named where it named one. */
@@ -261,7 +239,7 @@ export interface WorkerPoolListed {
   readonly runner?: WorkerRunnerListed;
 }
 
-/** One project's registered pools as its members read them, `truncated` as the roster's. */
+/** One project's registered pools as its members read them, `truncated` saying it holds more than this answers. */
 export interface WorkerPoolListing {
   readonly pools: readonly WorkerPoolListed[];
   readonly truncated: boolean;
@@ -272,9 +250,8 @@ export interface WorkerPoolDirectory {
   listed(partition: Partition): Promise<WorkerPoolListing>;
 }
 
-/** The registry as the scheduler reads it, which is a project's pools, a member's personal runners, and nothing a registration or a poll writes. */
+/** The registry as the scheduler reads it, which is a member's personal runners, and nothing a registration or a poll writes. */
 export interface WorkerPoolRoster {
-  registered(partition: Partition): Promise<WorkerPoolRosterPage>;
   personal(
     partition: Partition,
     owner: Principal,
@@ -300,9 +277,8 @@ export interface ChatHostPlaneRegistry {
   identify(principal: Principal): Promise<ChatHostIdentity | undefined>;
 }
 
-/** The registries a poll's principal is looked up in, a pool's first. */
+/** The registries a poll's principal is looked up in. */
 export interface PoolPlaneRegistries {
-  readonly pools: WorkerPoolRegistry;
   readonly personal: PersonalRunnerPlaneRegistry;
   readonly chatHosts: ChatHostPlaneRegistry;
 }
@@ -322,25 +298,20 @@ async function workerPoolMemberPermitted(
 }
 
 /**
- * The pool, personal runner or chat host one authenticated principal acts as,
- * and nothing where the authority says it may not: a pool's permit is
- * `Execute` on its project, and a personal runner's and a chat host's is their
- * owner's `RegisterPersonalRunner` in their tenant, so revoking either is a
- * revocation like any other and needs no row deleted here. An authority that
- * could not answer throws `ProjectAccessUnavailable` through this function
- * rather than resolving to `undefined`, because a pool told it is not allowed
- * stops where a pool told to retry comes back.
+ * The personal runner or chat host one authenticated principal acts as, and
+ * nothing where the authority says it may not, or where it is neither, as a
+ * registered pool's principal is: the permit of both is their owner's
+ * `RegisterPersonalRunner` in their tenant, so revoking it is a revocation
+ * like any other and needs no row deleted here. An authority that could not
+ * answer throws `ProjectAccessUnavailable` through this function rather than
+ * resolving to `undefined`, because a runner told it is not allowed stops
+ * where a runner told to retry comes back.
  */
 export async function workerPoolAdmitted(
   registries: PoolPlaneRegistries,
   access: ProjectAccess,
   principal: Principal,
 ): Promise<PoolPlaneIdentity | undefined> {
-  const pool = await registries.pools.identify(principal);
-  if (pool !== undefined)
-    return (await workerPoolExecutes(access, pool.partition, principal))
-      ? { ...pool, kind: "Dedicated" }
-      : undefined;
   const runner = await registries.personal.identify(principal);
   if (runner !== undefined)
     return (await workerPoolMemberPermitted(access, runner))
@@ -351,17 +322,6 @@ export async function workerPoolAdmitted(
   return (await workerPoolMemberPermitted(access, host))
     ? { ...host, kind: "ChatHost" }
     : undefined;
-}
-
-/** Whether the authority permits a pool's principal to run its project's work, which is the one question a pool is admitted or revoked by. */
-export async function workerPoolExecutes(
-  access: ProjectAccess,
-  partition: Partition,
-  principal: Principal,
-): Promise<boolean> {
-  return (
-    (await access.authorize(principal, partition, "Execute")) !== undefined
-  );
 }
 
 /** A fault that left the issuer's client registry unchanged, or left it unknown whether it did. */
@@ -395,7 +355,7 @@ export interface WorkerPoolClaimed {
   readonly runtime?: string;
 }
 
-/** What a personal runner's claim is held to beyond a pool's: whether its runner benches the credential it hands the job, which a claim absent it does not. */
+/** What a personal runner's claim is held to beyond a claim's terms: whether its runner benches the credential it hands the job, which a claim absent it does not. */
 export interface WorkerPoolPersonalClaimTerms extends WorkerPoolClaimTerms {
   readonly runnerBenchesCredential?: boolean;
 }
@@ -412,14 +372,6 @@ export interface WorkerPoolClaimTerms {
   readonly memoryMibDefault: number;
   readonly memoryRoomMib?: number;
 }
-
-/**
- * The most owners one poll asks the authority about before a pool claims. Each
- * poll asks a window of the waiting owners drawn afresh, so an owner outside
- * this poll's is deferred to by this poll's claim alone and is in a later
- * poll's window by the same chance as any other.
- */
-export const workerPoolOwnersAskedMax = 16;
 
 /** The calls one kind of caller holds and settles what it claimed through, each scoped to its current registration and to what that registration claimed. */
 export interface WorkerPoolExecutionHolds<Identity> {
@@ -447,20 +399,6 @@ export interface WorkerPoolExecutionHolds<Identity> {
  * a pool that could read one would learn the tenant's ticket structure.
  */
 export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlaneIdentity> {
-  /** One claim by a pool, deferring to no runner of the owners named revoked. */
-  claim(
-    identity: WorkerPoolIdentity,
-    terms: WorkerPoolClaimTerms,
-    assignment: string,
-    bearer: string,
-    ownersRevoked: readonly Principal[],
-  ): Promise<WorkerPoolClaimed | undefined>;
-  /** At most `max` of the owners whose personal runners a claim by this pool would defer to, in an order `rotation` draws, so a fresh rotation draws a fresh window. */
-  ownersDeferredTo(
-    identity: WorkerPoolIdentity,
-    max: number,
-    rotation: string,
-  ): Promise<readonly Principal[]>;
   /** One claim by a personal runner, in one of `projects` alone. */
   claimPersonal(
     identity: PersonalRunnerIdentity,
@@ -469,7 +407,7 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
     bearer: string,
     projects: readonly ProjectId[],
   ): Promise<WorkerPoolPersonalClaimed | undefined>;
-  /** Each of `credentials` that is paused now for the account a pool's, a runner's or a chat host's work spends, and when that pause ends, at most once each. */
+  /** Each of `credentials` that is paused now for the account a runner's or a chat host's work spends, and when that pause ends, at most once each. */
   credentialPauses(
     identity: PoolPlaneIdentity,
     credentials: WorkerRunnerCredentials,
@@ -479,12 +417,6 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
     identity: PersonalRunnerIdentity,
     assignments: readonly string[],
   ): Promise<readonly WorkerPoolCredentialOutcome[]>;
-  /** Whether `claim` on the same terms would take an attempt now, taking none. */
-  waiting(
-    identity: WorkerPoolIdentity,
-    terms: WorkerPoolClaimTerms,
-    ownersRevoked: readonly Principal[],
-  ): Promise<boolean>;
   /** Whether `claimPersonal` on the same terms would take an attempt now, taking none. */
   waitingPersonal(
     identity: PersonalRunnerIdentity,
@@ -493,7 +425,7 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
   ): Promise<boolean>;
   /** The projects a personal runner's current registration allowlists. */
   allowlisted(identity: PersonalRunnerIdentity): Promise<readonly ProjectId[]>;
-  /** Records a pool's or a personal runner's poll as one that could take an execution where `executions` says it could, a personal runner's whatever it could take, and either's memory room it named, under its current registration alone. */
+  /** Records a personal runner's poll, and as one that could take an execution where `executions` says it could, and the memory room it named, under its current registration alone. */
   polled(
     identity: WorkerPoolExecutionPoller,
     executions: boolean,
@@ -664,15 +596,14 @@ interface WorkerPoolClaimer {
     assignment: string,
     bearer: string,
     memoryRoomMib: number | undefined,
-  ): Promise<WorkerPoolClaimed | WorkerPoolPersonalClaimed | undefined>;
+  ): Promise<WorkerPoolPersonalClaimed | undefined>;
   waiting(memoryRoomMib: number | undefined): Promise<boolean>;
 }
 
 /**
- * How this caller claims: a pool deferring to no revoked owner's runners, a
- * personal runner in the projects its owner may still read, and a chat host
- * nothing, since it takes sessions alone. Every answer is the authority's
- * before anything is claimed.
+ * How this caller claims: a personal runner in the projects its owner may
+ * still read, and a chat host nothing, since it takes sessions alone. Every
+ * answer is the authority's before anything is claimed.
  */
 async function workerPoolClaimMade(
   ports: WorkerPoolPorts,
@@ -688,22 +619,6 @@ async function workerPoolClaimMade(
     ...(memoryRoomMib === undefined ? {} : { memoryRoomMib }),
   });
   switch (identity.kind) {
-    case "Dedicated": {
-      const owners = await assignments.ownersDeferredTo(
-        identity,
-        workerPoolOwnersAskedMax,
-        ports.mint(),
-      );
-      const revoked: Principal[] = [];
-      for (const owner of owners)
-        if (!(await workerPoolOwnerStands(access, owner, identity.partition)))
-          revoked.push(owner);
-      return {
-        claim: (assignment, bearer, room) =>
-          assignments.claim(identity, held(room), assignment, bearer, revoked),
-        waiting: (room) => assignments.waiting(identity, held(room), revoked),
-      };
-    }
     case "Personal": {
       const projects: ProjectId[] = [];
       for (const project of await assignments.allowlisted(identity))
@@ -746,16 +661,14 @@ async function workerPoolClaimMade(
 }
 
 /**
- * The project an assignment names: a personal runner's claimed attempt's own,
- * where its poll's peer implements `RunnerProjects`, and none for a pool's
- * claim.
+ * The project an assignment names: the claimed attempt's own, where its poll's
+ * peer implements `RunnerProjects`.
  */
 function workerPoolClaimedProject(
-  row: WorkerPoolClaimed | WorkerPoolPersonalClaimed,
+  row: WorkerPoolPersonalClaimed,
   contract: WorkerContractPeer | undefined,
 ): Pick<WorkerPoolAssignment, "project"> {
-  return "project" in row &&
-    workerPoolPeerImplements("RunnerProjects", contract)
+  return workerPoolPeerImplements("RunnerProjects", contract)
     ? { project: row.project }
     : {};
 }
@@ -859,11 +772,7 @@ function workerPoolSessionsClaimed(
   },
 ): Promise<WorkerPoolSessionAssignment[]> {
   const apiUrl = settings.sessionApiUrl;
-  if (
-    identity === undefined ||
-    identity.kind === "Dedicated" ||
-    apiUrl === undefined
-  )
+  if (identity === undefined || apiUrl === undefined)
     return Promise.resolve([]);
   return workerPoolSessionClaims(
     ports.sessions,
@@ -1078,16 +987,14 @@ async function workerPoolHoldingRead(
  * named, which its claims read, the capabilities a chat host named for its
  * threads, which its owner reads, whether a chat host's threads are woken for
  * their tickets, which the wake pass reads, and the poll as the
- * caller's last of each kind of work it could take: for a pool or a chat host,
- * a session, with room for one or holding one from a plane that names the API
- * a session reaches, and, for a pool or a personal runner, an execution, with
- * room for one, holding one, or naming a memory room above nothing, which a
- * runner holding back from claiming names while it would take what fits and a
- * runner taking nothing names as 0. That is what a pool's claim reads a
- * personal runner as live by, and what a project's pools are read as live by
- * beside their session polls; every poll of a personal runner is recorded too,
- * as what its owner reads it as live by, and every poll of either with the
- * memory room it named, which a run's wait reads it as short of memory by.
+ * caller's last of each kind of work it could take: for a chat host, a
+ * session, with room for one or holding one from a plane that names the API a
+ * session reaches, and, for a personal runner, an execution, with room for
+ * one, holding one, or naming a memory room above nothing, which a runner
+ * holding back from claiming names while it would take what fits and a runner
+ * taking nothing names as 0. Every poll of a personal runner is recorded too,
+ * as what its owner reads it as live by, with the memory room it named, which
+ * a run's wait reads it as short of memory by.
  */
 async function workerPoolPollRecorded(
   ports: WorkerPoolPorts,

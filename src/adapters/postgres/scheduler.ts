@@ -161,6 +161,7 @@ import type {
   RecoveryEpoch,
 } from "../../interpreter/projectStore.ts";
 import { runStepEvidences } from "../../interpreter/runEvidence.ts";
+import type { WorkerPoolOwnerFallback } from "../../interpreter/projectOwnerFallback.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import { postgresProjectPlacement } from "./executionPlacement.ts";
@@ -427,7 +428,7 @@ async function schedulerRegistrationConflict(
  * One task of a request as registration reads it, with what its execution
  * copies out: its owner pinned as its route is, the member who took the
  * ticket, else the member whose authority wrote its first draft revision, else
- * nobody, and the fallback its project names at registration.
+ * nobody.
  */
 interface ExecutionCreateInput {
   task: string;
@@ -443,8 +444,14 @@ interface ExecutionCreateInput {
   capacity_account: string;
   cluster: string;
   owner: string | null;
-  owner_fallback: string | null;
 }
+
+/**
+ * The owner's fallback every execution is pinned with, whatever its project's
+ * setting names: the one under which nothing but its owner's personal runner
+ * takes it.
+ */
+const schedulerOwnerFallbackPinned: WorkerPoolOwnerFallback = "Strict";
 
 /**
  * Registers one task that runs on a runner, queued for admission, with the
@@ -478,7 +485,7 @@ async function schedulerCreatePlaced(
         ${input.configuration_revision},${input.configuration_digest},${execution},
         ${requirementValue}::jsonb,${materialized.digest},${materialized.source},
         ${materialized.platformDefaultVersion},${route},
-        ${input.owner},${input.owner_fallback},
+        ${input.owner},${schedulerOwnerFallbackPinned},
         ${resources?.cpuMillis ?? null},${resources?.memoryMib ?? null},
         ${workloadDigest ?? null})
        ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
@@ -509,7 +516,7 @@ async function schedulerCreateAwaiting(
        VALUES (${claim.partition.tenant},${claim.partition.project},${execution},${claim.ticket},
         ${task},${claim.request},${input.capacity_account},${input.cluster},
         ${input.configuration_revision},${input.configuration_digest},${execution},
-        ${route},${input.owner},${input.owner_fallback})
+        ${route},${input.owner},${schedulerOwnerFallbackPinned})
        ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
   return inserted.rowCount ?? 0;
 }
@@ -534,7 +541,7 @@ async function schedulerCreateExecutions(
        d.overrides::text AS configuration_overrides,
        d.selection::text AS configuration_selection,q.configuration_revision,
        q.configuration_digest,q.capacity_account,a.cluster,
-       ticket_owner(q.tenant,q.project,q.ticket)::text AS owner,f.fallback AS owner_fallback
+       ticket_owner(q.tenant,q.project,q.ticket)::text AS owner
      FROM execution_request q
      JOIN execution_request_task t
        ON t.tenant=q.tenant AND t.project=q.project AND t.request=q.request
@@ -544,8 +551,6 @@ async function schedulerCreateExecutions(
      JOIN ticket_definition d
        ON d.tenant=q.tenant AND d.project=q.project AND d.ticket=q.ticket
      JOIN capacity_account a ON a.account=q.capacity_account
-     LEFT JOIN project_owner_fallback f
-       ON f.tenant=q.tenant AND f.project=q.project
      WHERE q.tenant=${claim.partition.tenant} AND q.project=${claim.partition.project}
        AND q.request=${claim.request} ORDER BY t.task
      LIMIT ${tasksMax + 1}`);

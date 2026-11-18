@@ -229,12 +229,6 @@ function poolPlaneFeatureApp(
   const service: PoolPlaneService = {
     authentication: poolPlaneFeatureIssuer,
     access: allowing,
-    registry: {
-      register: () => Promise.resolve(true),
-      clientOf: () => Promise.resolve(undefined),
-      deregister: () => Promise.resolve(false),
-      identify: () => Promise.resolve(undefined),
-    },
     personal: {
       identify: (principal) =>
         Promise.resolve(principal === runner.principal ? runner : undefined),

@@ -32,10 +32,7 @@
  * alone, asked per agent: paused where every runner offered the agent is, of
  * those polling for executions where any is, as the fourth asks of a run's
  * live runners, and `test/postgres/personalRunner.test.ts` holds it to the
- * cases those terms decide. `./operationalReads.ts`'s answer of the memory a
- * run waiting on its project's pools is short of is a sixth copy of the
- * predicate, a pool's claim's with its room, slots and pause left out, and
- * `test/postgres/workerPoolClaim.test.ts` holds it to the claim's answers too.
+ * cases those terms decide.
  */
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";

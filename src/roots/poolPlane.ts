@@ -59,7 +59,6 @@ import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositor
 import { poolPlaneRole } from "../adapters/postgres/schema.ts";
 import {
   postgresWorkerPoolAssignments,
-  postgresWorkerPoolRegistry,
   postgresWorkerPoolRunners,
 } from "../adapters/postgres/workerPool.ts";
 import { postgresWorkerPoolSessions } from "../adapters/postgres/workerPoolSessions.ts";
@@ -215,7 +214,6 @@ async function main(): Promise<void> {
   const app = createPoolPlaneApp({
     authentication,
     access,
-    registry: postgresWorkerPoolRegistry(pool),
     personal: postgresPersonalRunnerPlaneRegistry(pool),
     chatHosts: postgresChatHostPlaneRegistry(pool),
     assignments: postgresWorkerPoolAssignments(pool),

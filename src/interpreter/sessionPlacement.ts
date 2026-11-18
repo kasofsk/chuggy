@@ -48,10 +48,9 @@ export interface SessionRouteResolved {
 }
 
 /**
- * How long after its last poll a runner still counts as live, for a session and
- * for a pool deferring to it under `Preferred`. A runner polls again as soon as
- * its held poll answers, so this spans several polls and a restart; erring long
- * only delays a pool's claim by as much.
+ * How long after its last poll a runner still counts as live, wherever its
+ * liveness is read. A runner polls again as soon as its held poll answers, so
+ * this spans several polls and a restart.
  */
 export const sessionRunnerPolledSecsMax = 120;
 
