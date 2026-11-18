@@ -67,6 +67,8 @@ export interface ApiRequest {
   readonly idempotencyKey?: string;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
+  /** How many times the request is sent while the API answers it may be retried, at most `apiAttemptsMax`, which is where it is left out. */
+  readonly attemptsMax?: number;
 }
 
 /**
@@ -232,15 +234,19 @@ async function apiAttempts(
   ports: ApiPorts,
   request: ApiRequest,
 ): Promise<ApiAnswer> {
+  const attemptsMax = Math.max(
+    1,
+    Math.min(request.attemptsMax ?? apiAttemptsMax, apiAttemptsMax),
+  );
   let last: ApiAnswer | undefined;
-  for (let attempt = 0; attempt < apiAttemptsMax; attempt += 1) {
+  for (let attempt = 0; attempt < attemptsMax; attempt += 1) {
     try {
       last = await apiOnce(ports, request);
     } catch (failure: unknown) {
       return { outcome: "Unreachable", reason: apiReason(failure) };
     }
     if (last.outcome !== "Retryable") return last;
-    if (attempt + 1 === apiAttemptsMax) return last;
+    if (attempt + 1 === attemptsMax) return last;
     await ports.sleepMs(last.retryAfterSeconds * 1_000, request.signal);
   }
   return (

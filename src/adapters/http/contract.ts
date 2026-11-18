@@ -184,6 +184,11 @@ import {
   type RegistrationTokenRequest,
 } from "../../contract/requests.ts";
 import {
+  deviceApprovalRequestSchema,
+  deviceUserCodeNormalized,
+  type DeviceApprovalRequest,
+} from "../../contract/deviceApproval.ts";
+import {
   workerPoolRedemptionSchema,
   type WorkerPoolRedemptionRequest,
 } from "../../contract/workerPool.ts";
@@ -202,6 +207,12 @@ export function parseRegistrationTokenRequest(
 ): RegistrationTokenRequest {
   const { lifetimeSecs } = registrationTokenRequestSchema.parse(body);
   return { lifetimeSecs };
+}
+
+/** A device approval as the issuer compares it, its code normalised here so every client's is. */
+export function parseDeviceApproval(body: unknown): DeviceApprovalRequest {
+  const { challenge, userCode } = deviceApprovalRequestSchema.parse(body);
+  return { challenge, userCode: deviceUserCodeNormalized(userCode) };
 }
 
 export function parseWorkerPoolRedemption(

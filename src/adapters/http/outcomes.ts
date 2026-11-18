@@ -237,6 +237,8 @@ import type {
   UnrunDeletionStanding,
 } from "../../interpreter/unrunDeletion.ts";
 import type { TicketLandings } from "../../interpreter/ticketLandings.ts";
+import type { DeviceApproved } from "../../interpreter/deviceApproval.ts";
+import { deviceApprovalCodes } from "../../contract/deviceApproval.ts";
 import type {
   ActionReachRead,
   TicketActionReach,
@@ -3178,6 +3180,47 @@ export function ticketProposalMergeResponse(
         refused: result.refused,
         ...(result.url === undefined ? {} : { url: result.url }),
       });
+    default:
+      return assertNever(result);
+  }
+}
+
+/**
+ * A device's code approved: where the browser goes next, `422` for a code the
+ * issuer did not accept or a link it no longer knows, `429` once the caller's
+ * own bound is spent, and `503` for anything else. A link no longer known is
+ * never `401`, which a console reads as its own bearer refused.
+ */
+export function deviceApprovalResponse(
+  result: DeviceApproved,
+): NativeHttpResponse {
+  switch (result.answer) {
+    case "Accepted":
+      return response(200, { redirectTo: result.redirectTo });
+    case "CodeRefused":
+      return response(
+        422,
+        nativeHttpError(
+          deviceApprovalCodes.CodeRefused,
+          "The issuer did not accept the code.",
+        ),
+      );
+    case "LinkExpired":
+      return response(
+        422,
+        nativeHttpError(
+          deviceApprovalCodes.LinkExpired,
+          "The issuer no longer knows the device's link.",
+        ),
+      );
+    case "TriesSpent":
+      return retry(429, result.retryAfterSecs, deviceApprovalCodes.TriesSpent);
+    case "Unavailable":
+      return retry(
+        503,
+        authorityRetryAfterSeconds,
+        deviceApprovalCodes.Unavailable,
+      );
     default:
       return assertNever(result);
   }

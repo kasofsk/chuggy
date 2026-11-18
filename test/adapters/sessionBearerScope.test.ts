@@ -202,6 +202,7 @@ function scopedApp(
     },
     recorded(reached, "takes"),
     recorded(reached, "proposalMerges"),
+    recorded(reached, "deviceApprovals"),
   );
 }
 

@@ -34,6 +34,12 @@ import {
   forgeCallbackRoutePath,
 } from "../core/forgeAuthorization.ts";
 import type { ForgeCallbackQuery } from "../core/forgeAuthorization.ts";
+import {
+  deviceDoneRoutePath,
+  deviceQueryOf,
+  deviceRoutePath,
+} from "../core/deviceApproval.ts";
+import type { DeviceQuery } from "../core/deviceApproval.ts";
 import { epicGraphAddressOf, epicsQueryOf } from "../core/epics.ts";
 import type { EpicGraphAddress, EpicsQuery } from "../core/epics.ts";
 import { forgeSetupQueryOf, forgeSetupRoutePath } from "../core/forgeSetup.ts";
@@ -56,6 +62,7 @@ import type { TicketListQuery } from "../core/ticketListView.ts";
 import { usePanelState } from "./api.ts";
 import { CatalogPage } from "./catalog/CatalogPage.tsx";
 import { DataPanel } from "./DataPanel.tsx";
+import { DeviceDonePage, DevicePage } from "./DevicePage.tsx";
 import { EpicPage } from "./EpicPage.tsx";
 import { EpicEditPage } from "./epic/EpicEditPage.tsx";
 import { EpicGraphTab } from "./epic/EpicGraphTab.tsx";
@@ -405,6 +412,26 @@ const projectCreationRoute = createRoute({
   ): ProjectCreationQuery => projectCreationQueryOf(search),
 });
 
+function DeviceRoute(): ReactNode {
+  return <DevicePage query={deviceRoute.useSearch()} />;
+}
+
+/** Where the issuer sends a person to approve a device's sign-in, outside the
+ * partition as the project creation page is and for the same reason. */
+const deviceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: deviceRoutePath,
+  component: DeviceRoute,
+  validateSearch: (search: Readonly<Record<string, unknown>>): DeviceQuery =>
+    deviceQueryOf(search),
+});
+
+const deviceDoneRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: deviceDoneRoutePath,
+  component: DeviceDonePage,
+});
+
 function TicketCreationRoute(): ReactNode {
   const query = ticketCreationRoute.useSearch();
   return (
@@ -492,6 +519,8 @@ const routeTree = rootRoute.addChildren([
   forgeSetupRoute,
   forgeCallbackRoute,
   projectCreationRoute,
+  deviceRoute,
+  deviceDoneRoute,
   inviteRoute,
   workspaceSettingsRoutes(rootRoute),
   memberChatRoute,

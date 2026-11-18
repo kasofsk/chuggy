@@ -5,6 +5,7 @@
 
 import {
   createNativeHttpApp,
+  type PrincipalAuthentication,
   type UnrunDeletions,
 } from "../../src/adapters/http/server.ts";
 import { asInstallationId } from "../../src/domain/ids.ts";
@@ -17,6 +18,7 @@ import type { TicketActionReaches } from "../../src/interpreter/ticketActionReac
 import type { TicketLandingReads } from "../../src/interpreter/ticketLandings.ts";
 import type { LandingQueueReads } from "../../src/interpreter/landingQueues.ts";
 import type { TicketProposalMerges } from "../../src/interpreter/ticketProposalMerge.ts";
+import type { DeviceApprovals } from "../../src/interpreter/deviceApproval.ts";
 import type { TicketTakes } from "../../src/interpreter/ticketTake.ts";
 import { unservedNativeWeb } from "./threadFixtures.ts";
 
@@ -32,23 +34,28 @@ export interface CallerAppServices {
   readonly deletions?: UnrunDeletions;
   readonly takes?: TicketTakes;
   readonly proposalMerges?: TicketProposalMerges;
+  readonly deviceApprovals?: DeviceApprovals;
 }
 
-/** The app serving `services`, where `Bearer valid` authenticates `caller` and any other bearer nobody. */
-export function callerApp(caller: Principal, services: CallerAppServices) {
+/** The app serving `services`, where `Bearer valid` authenticates `caller` and any other bearer nobody, unless a suite hands its own authentication. */
+export function callerApp(
+  caller: Principal,
+  services: CallerAppServices,
+  authentication: PrincipalAuthentication = {
+    authenticateBearer: (token) =>
+      Promise.resolve(
+        token === "valid"
+          ? {
+              authenticated: "Bearer" as const,
+              bearer: { principal: caller },
+            }
+          : { authenticated: "InvalidToken" as const },
+      ),
+  },
+) {
   return createNativeHttpApp(
     unservedNativeWeb,
-    {
-      authenticateBearer: (token) =>
-        Promise.resolve(
-          token === "valid"
-            ? {
-                authenticated: "Bearer" as const,
-                bearer: { principal: caller },
-              }
-            : { authenticated: "InvalidToken" as const },
-        ),
-    },
+    authentication,
     { ready: () => Promise.resolve(true) },
     {
       installationAuthority: () =>
@@ -80,5 +87,6 @@ export function callerApp(caller: Principal, services: CallerAppServices) {
     services.deletions,
     services.takes,
     services.proposalMerges,
+    services.deviceApprovals,
   );
 }

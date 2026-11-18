@@ -625,6 +625,7 @@ export const nativeHttpRoutes = {
   personalRunnerProject: `${nativeHttpBasePath}/tenants/:tenant/personal-runner/projects/:project`,
   personalRunnerRunner: `${nativeHttpBasePath}/tenants/:tenant/personal-runner/runners/:runner`,
   personalRunnerMember: `${nativeHttpBasePath}/tenants/:tenant/personal-runners/:subject`,
+  deviceApprovals: `${nativeHttpBasePath}/device-approvals`,
   agentAccounts: `${nativeHttpBasePath}/agent-accounts`,
   agentAccountSettings: `${nativeHttpBasePath}/agent-accounts/:agent/settings`,
   agentAccountPresses: `${nativeHttpBasePath}/agent-accounts/:agent/presses`,

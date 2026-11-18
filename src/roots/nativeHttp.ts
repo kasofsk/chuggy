@@ -145,6 +145,11 @@ import type { ProjectInbox } from "../interpreter/projectInbox.ts";
 import { randomBytes, createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { hydraWorkerPoolClients } from "../adapters/hydra/oauthClients.ts";
+import { hydraDeviceUserCodes } from "../adapters/hydra/deviceUserCodes.ts";
+import {
+  deviceApprovals,
+  type DeviceApprovals,
+} from "../interpreter/deviceApproval.ts";
 import { postgresChatHostRegistry } from "../adapters/postgres/chatHost.ts";
 import { postgresAgentAccounts } from "../adapters/postgres/agentAccount.ts";
 import type { TicketUsageResumeBounds } from "../adapters/postgres/nativeReads.ts";
@@ -395,6 +400,22 @@ function nativeRunnerClients(): WorkerPoolClients {
       ketoTimeoutVariable,
       projectAccessTimeoutMsDefault,
     ),
+  });
+}
+
+/** A person's approval of a device's sign-in, composed where the issuer's admin port is named, as a runner's registration is. */
+function nativeDeviceApprovals(issuer: string): DeviceApprovals | undefined {
+  if (process.env[hydraAdminUrlVariable] === undefined) return undefined;
+  return deviceApprovals({
+    codes: hydraDeviceUserCodes({
+      adminUrl: requiredEnvironment(hydraAdminUrlVariable),
+      issuer,
+      requestTimeoutMs: positiveEnvironment(
+        ketoTimeoutVariable,
+        projectAccessTimeoutMsDefault,
+      ),
+    }),
+    nowMs: () => Date.now(),
   });
 }
 
@@ -1567,6 +1588,7 @@ async function main(): Promise<void> {
     nativeUnrunDeletions(pool, access, erasure),
     composeTicketTakes(pool, access),
     forge.proposalMerges,
+    nativeDeviceApprovals(authenticationConfig.issuer),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

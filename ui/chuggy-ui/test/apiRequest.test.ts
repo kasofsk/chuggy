@@ -166,6 +166,39 @@ test("retry-after is honoured, bounded by the attempt count", async () => {
   expect(outcome.outcome).toBe("Retryable");
 });
 
+test("a request held to one attempt is sent once and hands back the retryable answer with its delay", async () => {
+  const held = harness([
+    {
+      status: 429,
+      headers: { "retry-after": "7" },
+      body: { error: { code: "Spent" } },
+    },
+  ]);
+  const outcome = await apiSend(held.ports, {
+    method: "POST",
+    path: "/api/v1/device-approvals",
+    body: {},
+    attemptsMax: 1,
+  });
+  expect(held.sent.length).toBe(1);
+  expect(held.waitsMs).toEqual([]);
+  expect(outcome).toEqual({
+    outcome: "Retryable",
+    code: "Spent",
+    retryAfterSeconds: 7,
+  });
+});
+
+test("an attempt count past the bound is held to it", async () => {
+  const held = harness([{ status: 503, body: {} }]);
+  await apiSend(held.ports, {
+    method: "GET",
+    path: "/api/v1/installation",
+    attemptsMax: apiAttemptsMax + 5,
+  });
+  expect(held.sent.length).toBe(apiAttemptsMax);
+});
+
 test("a hostile retry-after arrives already capped by the wire", async () => {
   const held = harness([
     { status: 429, headers: { "retry-after": "99999" }, body: {} },

@@ -44,6 +44,10 @@ import {
   registrationTokenRequestSchema,
 } from "./requests.ts";
 import { epicWriteRequestSchema } from "./epics.ts";
+import {
+  deviceApprovalCodes,
+  deviceApprovalRequestSchema,
+} from "./deviceApproval.ts";
 import { workerPoolRedemptionSchema } from "./workerPool.ts";
 import { actionReportDocumentSchema } from "./actionReport.ts";
 import { contractJsonSchemaInput } from "./jsonSchema.ts";
@@ -109,6 +113,9 @@ function nativeHttpContractDocumentSchemas(): unknown {
       nativeHttpEndpoints.sendChatThreadMessage.body,
     ),
     epicWrite: nativeHttpContractDocumentInput(epicWriteRequestSchema),
+    deviceApproval: nativeHttpContractDocumentInput(
+      deviceApprovalRequestSchema,
+    ),
     threadRename: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.renameThread.body,
     ),
@@ -258,6 +265,7 @@ export function nativeHttpContractDocument(): unknown {
     repositoryConfigurations:
       "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it, and is asked for again through its own route, which runs it for a live binding the project holds no configuration from and no bootstrap of its own that still releases and otherwise answers what the project holds; a bootstrap is one revision per repository, named for it, and never rewritten, so two requests racing author it once and a repository meeting its own whose text differs, worded otherwise or outgrown by the release rule, defers as BootstrapDiffers until it declares its own; a ticket releases under a repository's bootstrap in that repository alone",
     ...runnerNotes,
+    deviceApproval: `a person approves a device's sign-in by the code it shows and the challenge the issuer's page was opened with; the code is upper-cased and its spaces and hyphens dropped, and the issuer is asked to accept it, answering where the browser goes next, on the issuer's own origin; a code it did not accept is refused 422 ${deviceApprovalCodes.CodeRefused}, a challenge it no longer knows 422 ${deviceApprovalCodes.LinkExpired}, a caller who has had too many codes refused lately 429 ${deviceApprovalCodes.TriesSpent} with retry-after, and anything else 503 ${deviceApprovalCodes.Unavailable}; it needs no project permission, every session bearer is refused, and a deployment naming no issuer admin serves no such route`,
     actionReports:
       "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, a verified request its scheme reads no outcome in is answered Ignored and records nothing, and a request that proves nothing is not found",
     ...ticketSubReadNotes,

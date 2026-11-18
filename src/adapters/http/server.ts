@@ -146,6 +146,7 @@ import {
   parsePersonalRunnerRedemption,
   parseWorkerPoolRedemption,
   parseRegistrationTokenRequest,
+  parseDeviceApproval,
 } from "./contract.ts";
 import {
   cancellationResponse,
@@ -236,6 +237,7 @@ import {
   unrunDeletionStandingResponse,
   ticketTakeResponse,
   ticketProposalMergeResponse,
+  deviceApprovalResponse,
   personalRunnerDisallowedResponse,
   personalRunnerPermitResponse,
   personalRunnerRedemptionResponse,
@@ -269,6 +271,7 @@ import type { PlacementAdministration } from "../../interpreter/placementRoute.t
 import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
 import type { TicketTakes } from "../../interpreter/ticketTake.ts";
 import type { TicketProposalMerges } from "../../interpreter/ticketProposalMerge.ts";
+import type { DeviceApprovals } from "../../interpreter/deviceApproval.ts";
 import type { ThreadLimitAdministration } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
@@ -3237,6 +3240,26 @@ function registerThreadLive(
   );
 }
 
+/** A device's sign-in approved by the person whose bearer the request carries. */
+function registerDeviceApprovals(
+  app: FastifyInstance,
+  approvals: DeviceApprovals,
+): void {
+  app.post(
+    nativeHttpRoutes.deviceApprovals,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const { challenge, userCode } = parseDeviceApproval(request.body);
+      nativeHttpSend(
+        reply,
+        deviceApprovalResponse(
+          await approvals.approve(principalOf(request), challenge, userCode),
+        ),
+      );
+    },
+  );
+}
+
 /** The server every route is registered on: its bounds, its media type, and no response cached. */
 function nativeHttpServer(limits: NativeHttpLimits): FastifyInstance {
   const app = fastify({
@@ -3364,6 +3387,7 @@ export function createNativeHttpApp(
   deletions?: UnrunDeletions,
   takes?: TicketTakes,
   proposalMerges?: TicketProposalMerges,
+  deviceApprovals?: DeviceApprovals,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   registerCapacity(app, limits.concurrentRequestsMax);
@@ -3398,6 +3422,8 @@ export function createNativeHttpApp(
   registerActions(app, actionReports, actionReach);
   registerTicketDoors(app, landings, landingQueues, takes, proposalMerges);
   if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
+  if (deviceApprovals !== undefined)
+    registerDeviceApprovals(app, deviceApprovals);
   registerFailures(app);
   return app;
 }

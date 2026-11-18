@@ -16,6 +16,7 @@ import type { ConfigurationCatalogCopy } from "./generated/configurationCatalogC
 import type { ConfigurationStepsCopy } from "./generated/configurationStepsCopy.ts";
 import type { ContextCopy } from "./generated/contextCopy.ts";
 import type { ConversationCopy } from "./generated/conversationCopy.ts";
+import type { DeviceCopy } from "./generated/deviceCopy.ts";
 import type { DraftsCopy } from "./generated/draftsCopy.ts";
 import type { EpicsCopy } from "./generated/epicsCopy.ts";
 import type { FailureCopy } from "./generated/failureCopy.ts";
@@ -51,6 +52,7 @@ type CopyVariables = ApiCopy &
   ConfigurationStepsCopy &
   ContextCopy &
   ConversationCopy &
+  DeviceCopy &
   DraftsCopy &
   EpicsCopy &
   FailureCopy &

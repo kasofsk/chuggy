@@ -53,27 +53,35 @@ export interface HydraClientSettings {
   readonly requestTimeoutMs: number;
 }
 
-/** Narrows the admin address, which carries no credential and is never a pool's. */
-export function checkedHydraClientSettings(
-  input: HydraClientSettings,
-): HydraClientSettings {
-  const url = new URL(input.adminUrl);
+/** Narrows the admin address, which carries no credential, and the timeout every admin call is held to. */
+export function checkedHydraAdminUrl(
+  adminUrl: string,
+  requestTimeoutMs: number,
+): string {
+  const url = new URL(adminUrl);
   if (url.protocol !== "http:" && url.protocol !== "https:")
     throw new RangeError("Hydra admin URL must be HTTP or HTTPS");
   if (url.username !== "" || url.password !== "")
     throw new RangeError("Hydra admin URL must carry no credentials");
-  if (input.audience.length === 0)
-    throw new RangeError("Hydra client audience is empty");
-  if (
-    !Number.isSafeInteger(input.requestTimeoutMs) ||
-    input.requestTimeoutMs < 1
-  )
+  if (!Number.isSafeInteger(requestTimeoutMs) || requestTimeoutMs < 1)
     throw new RangeError("Hydra admin timeout must be a positive integer");
-  return { ...input, adminUrl: url.toString() };
+  return url.toString();
 }
 
-/** One answer read under a byte bound, so a stream cannot hold the command open. */
-async function hydraBoundedText(response: Response): Promise<string> {
+/** Narrows the admin address, which carries no credential and is never a pool's. */
+export function checkedHydraClientSettings(
+  input: HydraClientSettings,
+): HydraClientSettings {
+  const adminUrl = checkedHydraAdminUrl(input.adminUrl, input.requestTimeoutMs);
+  if (input.audience.length === 0)
+    throw new RangeError("Hydra client audience is empty");
+  return { ...input, adminUrl };
+}
+
+/** One answer read under `hydraResponseBytesMax`, so a stream cannot hold the call open, or nothing where it is past it. */
+export async function hydraBoundedText(
+  response: Response,
+): Promise<string | undefined> {
   if (response.body === null) return "";
   const decoder = new TextDecoder("utf-8", { fatal: false });
   const reader = response.body.getReader();
@@ -83,7 +91,7 @@ async function hydraBoundedText(response: Response): Promise<string> {
     weighed += (read.value as Uint8Array).byteLength;
     if (weighed > hydraResponseBytesMax) {
       await reader.cancel("the issuer's answer is past its bound");
-      throw new WorkerPoolClientUnavailable("the answer is past its bound");
+      return undefined;
     }
     text += decoder.decode(read.value as Uint8Array, { stream: true });
   }
@@ -119,6 +127,8 @@ async function hydraRequest(input: {
     );
   }
   const text = await hydraBoundedText(answered);
+  if (text === undefined)
+    throw new WorkerPoolClientUnavailable("the answer is past its bound");
   if (answered.status === 404 && input.absentIsDone === true) return undefined;
   if (!answered.ok)
     throw new WorkerPoolClientUnavailable(

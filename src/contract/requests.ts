@@ -178,6 +178,7 @@ export const reservedTenantNames = [
   "access",
   "api",
   "auth",
+  "device",
   "forge",
   "health",
   "invite",

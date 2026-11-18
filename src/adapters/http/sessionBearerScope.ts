@@ -113,6 +113,7 @@ export const sessionBearerRouteClasses = {
   personalRunnerProject: { PUT: "Refused", DELETE: "Refused" },
   personalRunnerRunner: { DELETE: "Refused" },
   personalRunnerMember: { DELETE: "Refused" },
+  deviceApprovals: refusedWrite,
   agentAccounts: { GET: "Refused" },
   agentAccountSettings: { PUT: "Refused" },
   agentAccountPresses: { POST: "Refused" },
