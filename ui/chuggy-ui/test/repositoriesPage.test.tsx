@@ -660,8 +660,8 @@ test("the picker asks every account's listing of one app at once, the portal app
   ]);
 });
 
-test("choosing a repository binds it by address under an idempotency key", async () => {
-  const sent = await drawPage();
+test("choosing a repository both apps reach binds it by address under an idempotency key", async () => {
+  const sent = await drawPage({ claimed: twoAccounts });
   await chooseFree();
   const bind = sent.find((one) => one.method === "POST");
   expect(bind?.body).toStrictEqual({ repository: freeUrl });
@@ -671,27 +671,15 @@ test("choosing a repository binds it by address under an idempotency key", async
   ).toBeTruthy();
 });
 
-function rowsBusy(): readonly string[] {
-  return within(screen.getByRole("dialog"))
-    .queryAllByRole("button")
-    .filter((row) => row.getAttribute("aria-busy") === "true")
-    .map((row) => row.textContent);
-}
-
-test("the pressed row is busy from its press until the bind is answered, and no other row is", async () => {
-  const bind = heldAnswer();
-  await drawPage({ posted: () => bind.answered });
+test("choosing a repository the worker app is not installed on binds nothing and draws both apps with what is left", async () => {
+  const sent = await drawPage();
   await chooseFree();
-  expect(rowsBusy()).toStrictEqual(["gdoteof/scratch"]);
-  const rows = within(
-    screen.getByRole("dialog"),
-  ).getAllByRole<HTMLButtonElement>("button", {
-    name: /^(kasofsk\/chuggy|gdoteof\/scratch)$/u,
-  });
-  expect(rows.map((row) => row.disabled)).toStrictEqual([true, true]);
-  bind.release(accepted());
-  await settled();
-  expect(rowsBusy()).toStrictEqual([]);
+  expect(sent.some((one) => one.method === "POST")).toBe(false);
+  const dialog = within(screen.getByRole("dialog"));
+  expect(dialog.getByText("Connecting gdoteof/scratch to atlas")).toBeTruthy();
+  expect(dialog.getByText("Portal app")).toBeTruthy();
+  expect(dialog.getByText("Worker app")).toBeTruthy();
+  expect(dialog.getByText("Left to do: the worker app.")).toBeTruthy();
 });
 
 function pickerRows(): readonly (string | null)[] {
@@ -738,7 +726,7 @@ test("clearing the filter draws every row again, the bound mark with them", asyn
 });
 
 test("a query narrows the picker and a row it kept still binds by address", async () => {
-  const sent = await drawPage();
+  const sent = await drawPage({ claimed: twoAccounts });
   await searchPicker("SCRATCH");
   const picker = within(screen.getByRole("dialog"));
   expect(picker.queryByRole("button", { name: "kasofsk/chuggy" })).toBeNull();
@@ -792,35 +780,6 @@ async function openPickerAtProject(drawing: Drawing = {}): Promise<void> {
   await settled();
 }
 
-/** A line the picker draws and the link beside it, each `null` where it is not. */
-function grantOffered(
-  status: string,
-  label: string,
-): {
-  readonly line: HTMLElement | null;
-  readonly link: HTMLAnchorElement | null;
-} {
-  const picker = within(screen.getByRole("dialog"));
-  return {
-    line: picker.queryByText(status),
-    link: picker.queryByRole<HTMLAnchorElement>("link", { name: label }),
-  };
-}
-
-function portalGrant(): ReturnType<typeof grantOffered> {
-  return grantOffered(
-    "Repository not listed · add it to the portal app on GitHub",
-    "Portal app",
-  );
-}
-
-function workerGrant(): ReturnType<typeof grantOffered> {
-  return grantOffered(
-    "A row marked missing · add it to the worker app on GitHub",
-    "Worker app",
-  );
-}
-
 /** The transaction a followed link left for the setup landing to match. */
 function followed(link: HTMLAnchorElement | null): unknown {
   fireEvent.click(link ?? document.body);
@@ -830,49 +789,15 @@ function followed(link: HTMLAnchorElement | null): unknown {
 /** Where a grant made from the picker comes back to: the picker, open. */
 const pickerPath = `${projectPath}#add`;
 
-/**
- * A repository an installation was not granted is in no listing, so nothing
- * the picker reads can name it: the line is drawn under every roster, and its
- * link is the portal app's own page on the forge, returning to the picker.
- */
-test("under its roster the picker says a missing repository is granted on GitHub, with the portal app's page returning to the picker", async () => {
-  await openPickerAtProject();
-  const { line, link } = portalGrant();
-  expect(line?.classList.contains("notice-info")).toBe(true);
-  expect(link?.href.startsWith(`${forgeApps[0]?.installUrl}?state=`)).toBe(
-    true,
-  );
-  expect(followed(link)).toStrictEqual({
-    state: new URL(link?.href ?? "").searchParams.get("state"),
-    tenant: projectPartition.tenant,
-    returnPath: pickerPath,
-    installs: ["portal"],
-  });
-  expect(workerGrant()).toStrictEqual({ line: null, link: null });
-});
-
-/** The roster that lists nothing is the one whose reader most needs the way. */
-test("a roster that lists nothing still carries the line and its link", async () => {
+/** A repository an installation was not granted is in no listing, so the
+ * roster that lists nothing is the one whose reader most needs to name it. */
+test("a roster that lists nothing still offers naming the repository", async () => {
   await openPickerAtProject({
     granting: () =>
       answer({ truncated: false, selection: "Selected", repositories: [] }),
   });
   expect(pickerRows()).toStrictEqual([]);
-  const { line, link } = portalGrant();
-  expect(line).not.toBeNull();
-  expect(link).not.toBeNull();
-});
-
-/** The link comes back through the authorization, so the line stands alone
- * where the deployment answers no client to finish one with. */
-test("a deployment that offers no install still says where a missing repository is granted", async () => {
-  history.pushState({}, "", projectPath);
-  await drawPage();
-  fireEvent.click(screen.getByRole("button", { name: "Add" }));
-  await settled();
-  const { line, link } = portalGrant();
-  expect(line).not.toBeNull();
-  expect(link).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Repository" })).toBeTruthy();
 });
 
 /** What the worker installation on kasofsk answers, every other as it was. */
@@ -888,10 +813,9 @@ function workerAnswering(
 /**
  * A job's credential is minted under the worker app, so a repository the
  * portal app lists and the worker app does not grant binds and then cannot be
- * worked on. The row says so and the line under the roster carries the worker
- * app's own page, returning to the picker.
+ * worked on. The row says so.
  */
-test("a repository the worker app does not grant is marked on its row, with the worker app's page under the roster", async () => {
+test("a repository the worker app does not grant is marked on its row", async () => {
   await openPickerAtProject(
     workerAnswering(() =>
       answer({ truncated: false, selection: "Selected", repositories: [] }),
@@ -901,18 +825,6 @@ test("a repository the worker app does not grant is marked on its row, with the 
     "kasofsk/chuggyConnectedWorker app missing",
     "gdoteof/scratch",
   ]);
-  const { line, link } = workerGrant();
-  expect(line?.classList.contains("notice-parked")).toBe(true);
-  expect(link?.href.startsWith(`${forgeApps[1]?.installUrl}?state=`)).toBe(
-    true,
-  );
-  expect(followed(link)).toStrictEqual({
-    state: new URL(link?.href ?? "").searchParams.get("state"),
-    tenant: projectPartition.tenant,
-    returnPath: pickerPath,
-    installs: ["worker"],
-  });
-  expect(portalGrant().link).not.toBeNull();
 });
 
 /** The roster is the portal app's, and a worker listing that did not answer,
@@ -932,8 +844,6 @@ test.each<readonly [string, () => Response]>([
       "kasofsk/chuggyConnected",
       "gdoteof/scratch",
     ]);
-    expect(workerGrant()).toStrictEqual({ line: null, link: null });
-    expect(portalGrant().line).not.toBeNull();
   },
 );
 
@@ -959,14 +869,6 @@ test("a repository the worker app does not grant is marked on a row this project
  * until the worker app's listing is read and where that listing is not. */
 const unmarked = ["kasofsk/chuggyConnected", "gdoteof/scratch"];
 
-/** The line the picker draws where a row was chosen with the worker app's
- * listings unread. */
-function workerReading(): HTMLElement | null {
-  return within(screen.getByRole("dialog")).queryByText(
-    "Worker app · loading…",
-  );
-}
-
 /** The worker installation on kasofsk answering when the case lets it. */
 function workerHeld(): {
   readonly drawing: Drawing;
@@ -985,15 +887,13 @@ const workerEnds: readonly (readonly [
   string,
   () => Response,
   readonly string[],
-  boolean,
 ])[] = [
   [
     "answers late",
     lacking,
     ["kasofsk/chuggyConnectedWorker app missing", "gdoteof/scratch"],
-    true,
   ],
-  ["is refused", () => answer({}, 404), unmarked, false],
+  ["is refused", () => answer({}, 404), unmarked],
 ];
 
 /**
@@ -1003,18 +903,13 @@ const workerEnds: readonly (readonly [
  */
 test.each(workerEnds)(
   "the roster is drawn before a worker listing that %s, and is marked by it only where it answers",
-  async (_how, answered, rows, marked) => {
+  async (_how, answered, rows) => {
     const worker = workerHeld();
     await openPickerAtProject(worker.drawing);
     expect(pickerRows()).toStrictEqual(unmarked);
-    expect(portalGrant().link).not.toBeNull();
-    expect(workerReading()).toBeNull();
-    expect(workerGrant()).toStrictEqual({ line: null, link: null });
     worker.release(answered());
     await settled();
     expect(pickerRows()).toStrictEqual(rows);
-    expect(workerReading()).toBeNull();
-    expect(workerGrant().link !== null).toBe(marked);
   },
 );
 
@@ -1045,56 +940,15 @@ async function clockMoved(ms: number): Promise<void> {
 }
 
 /** What ends a listing that never answers is the client's own deadline, and
- * the roster stands and binds for the whole of it. */
+ * the roster stands for the whole of it. */
 test("the roster is drawn before a worker listing that never answers, and nothing arrives once the client gives up on it", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   await openPickerAtProject(workerSilent);
   expect(pickerRows()).toStrictEqual(unmarked);
-  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
-  await settled();
-  expect(workerReading()).not.toBeNull();
-  await clockMoved(apiTimeoutMsDefault - 1_000);
-  expect(workerReading()).not.toBeNull();
-  await clockMoved(1_000);
+  await clockMoved(apiTimeoutMsDefault);
   await settled();
   expect(pickerRows()).toStrictEqual(unmarked);
-  expect(workerReading()).toBeNull();
-  expect(workerGrant()).toStrictEqual({ line: null, link: null });
 });
-
-/**
- * Nothing holds a bind back while the worker app's listing is unread, so the
- * reader who chooses a row then is the one a mark could be late for. She is
- * told under the roster that it is unread, from the press until it answers,
- * and the mark arrives on the row she bound.
- */
-test.each(workerEnds)(
-  "a row chosen before a worker listing that %s is bound under the line that says it is unread, until it is not",
-  async (_how, answered, rows, marked) => {
-    const worker = workerHeld();
-    const bind = heldAnswer();
-    await openPickerAtProject({
-      ...worker.drawing,
-      bound: { repositories: [] },
-      rebound: bindings,
-      posted: () => bind.answered,
-    });
-    expect(pickerRows()).toStrictEqual(["kasofsk/chuggy", "gdoteof/scratch"]);
-    fireEvent.click(screen.getByRole("button", { name: "kasofsk/chuggy" }));
-    await settled();
-    expect(workerReading()?.classList.contains("notice-info")).toBe(true);
-    bind.release(answer({ repository: boundUrl }));
-    await settled();
-    expect(pickerRows()).toStrictEqual(unmarked);
-    expect(statusesOf()).toStrictEqual(["kasofsk/chuggy · Already connected"]);
-    expect(workerReading()).not.toBeNull();
-    worker.release(answered());
-    await settled();
-    expect(pickerRows()).toStrictEqual(rows);
-    expect(workerReading()).toBeNull();
-    expect(workerGrant().link !== null).toBe(marked);
-  },
-);
 
 /**
  * Closing the picker abandons the read it had out, and the next opening reads
@@ -1153,7 +1007,6 @@ test("the page opened at the picker's address draws the picker open with its ros
     "kasofsk/chuggyConnected",
     "gdoteof/scratch",
   ]);
-  expect(portalGrant().link).not.toBeNull();
 });
 
 test("the page opened at its own address draws no picker and reads no listing", async () => {
@@ -1178,9 +1031,21 @@ test("a return that brought a word draws the word and leaves the picker closed",
 });
 
 /** A roster read under no portal claim is an empty one, held under the key the
- * real one is read at, so nothing opens until there is a claim to read under. */
-test("the picker's address opens nothing where no portal claim is held", async () => {
+ * real one is read at, so none is read until there is a claim to read under,
+ * and the repository is named instead. */
+test("the picker's address opens on naming the repository, reading no listing, where no portal claim is held", async () => {
   const sent = await drawAtPicker({ claimed: without("portal") });
+  expect(
+    within(screen.getByRole("dialog")).getByRole("textbox", {
+      name: "Repository",
+    }),
+  ).toBeTruthy();
+  expect(listingsRead(sent)).toStrictEqual([]);
+});
+
+test("the picker's address opens nothing where no portal claim is held and the deployment cannot authorize", async () => {
+  history.pushState({}, "", pickerPath);
+  const sent = await drawPage({ claimed: without("portal") });
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(listingsRead(sent)).toStrictEqual([]);
 });
@@ -1342,10 +1207,11 @@ const accepted = (): Response =>
  * staying open over what the bind came to.
  */
 test("a bind the route accepts takes the anchor off the address once, the picker staying open, and a reload opens none", async () => {
-  await drawAtPicker({ posted: accepted });
+  await drawAtPicker({ claimed: twoAccounts, posted: accepted });
   fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
   await settled();
   expect(statusesOf()).toStrictEqual([
+    "gdoteof/scratch is connected to atlas.",
     "gdoteof/scratch · Configurations imported · New ticket",
   ]);
   expect(held.navigations).toStrictEqual(anchorLeft);
@@ -1361,7 +1227,7 @@ test("a bind the route accepts takes the anchor off the address once, the picker
 /** A refusal leaves the person choosing, in a picker that is still what the
  * address names. */
 test("a refused bind leaves the picker its address, and a reload opens it again", async () => {
-  await drawAtPicker();
+  await drawAtPicker({ claimed: twoAccounts });
   fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
   await settled();
   expect(statusesOf()).toStrictEqual(["Deferring"]);
@@ -1406,6 +1272,9 @@ test("a press on Add at the picker's own address moves nothing, and the close af
   expect(held.navigations).toStrictEqual(anchorLeft);
   expect(addressDrawn()).toBe(projectPath);
 });
+
+/** The line the flow draws once it has connected the free repository. */
+const connectedFree = "gdoteof/scratch is connected to atlas.";
 
 function statusesOf(): readonly (string | null)[] {
   return within(screen.getByRole("dialog"))
@@ -1642,7 +1511,6 @@ test.each<readonly [string, number]>([
     expect(readingsBegun(sent)).toBe(2);
     expect(pickerRows()).toStrictEqual(marked);
     expect(rosterUnread()).toBeNull();
-    expect(workerGrant().line).not.toBeNull();
     forge.portal = lateListed;
     await rosterIntervalPassed();
     expect(pickerRows()).toStrictEqual(markedLate);
@@ -1699,29 +1567,20 @@ test("an opening whose first reading failed reads nothing by itself, and the nex
 /**
  * An opening's first reading draws the portal app's roster ahead of the worker
  * app's marks, which a reading made by itself must not do again: a row would
- * lose its mark to get it back, and a reader who had chosen a row would be
- * told the worker app's listings were unread. So it is drawn only once whole.
+ * lose its mark to get it back. So it is drawn only once whole.
  */
 test("a reading the open picker makes by itself draws nothing until the worker app's listing has answered too", async () => {
   intervalsHeld();
   const { forge, drawing } = forgeMoving();
   await drawAtPicker(drawing);
-  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
-  await settled();
-  expect(statusesOf()).toStrictEqual(["Deferring"]);
   const worker = heldAnswer();
   forge.portal = lateListed;
   forge.worker = () => worker.answered;
   await rosterIntervalPassed();
   expect(pickerRows()).toStrictEqual(marked);
-  expect(workerReading()).toBeNull();
-  expect(workerGrant().line).not.toBeNull();
   worker.release(lacking());
   await settled();
   expect(pickerRows()).toStrictEqual(markedLate);
-  expect(workerReading()).toBeNull();
-  expect(workerGrant().line).not.toBeNull();
-  expect(statusesOf()).toStrictEqual(["Deferring"]);
 });
 
 /**
@@ -1742,7 +1601,6 @@ test.each<readonly [string, () => Response]>([
     forge.worker = answered;
     await rosterIntervalPassed();
     expect(pickerRows()).toStrictEqual(marked);
-    expect(workerGrant().line).not.toBeNull();
     forge.worker = lacking;
     await rosterIntervalPassed();
     expect(pickerRows()).toStrictEqual(markedLate);
@@ -1750,16 +1608,13 @@ test.each<readonly [string, () => Response]>([
 );
 
 /**
- * What a person is doing in the picker is hers: the text she filtered by, the
- * row the keyboard is on, the bind she is waiting for and the line it leaves.
- * A reading replaces the roster under all of them, while a bind is in flight
- * as at any other time, and only the bind's own answer ends the bind.
+ * What a person is doing in the picker is hers: the text she filtered by and
+ * the row the keyboard is on. A reading replaces the roster under both.
  */
-test("a reading the open picker makes by itself keeps the filter, the row in focus, a bind in flight and the note it leaves", async () => {
+test("a reading the open picker makes by itself keeps the filter and the row in focus", async () => {
   intervalsHeld();
   const { forge, drawing } = forgeMoving();
-  const bind = heldAnswer();
-  const sent = await drawAtPicker({ ...drawing, posted: () => bind.answered });
+  await drawAtPicker(drawing);
   typedInPicker("gdoteof");
   const row = screen.getByRole<HTMLButtonElement>("button", {
     name: "gdoteof/scratch",
@@ -1767,34 +1622,8 @@ test("a reading the open picker makes by itself keeps the filter, the row in foc
   row.focus();
   forge.portal = lateListed;
   await rosterIntervalPassed();
-  const filtered = ["gdoteof/scratch", "gdoteof/late"];
-  expect(pickerRows()).toStrictEqual(filtered);
+  expect(pickerRows()).toStrictEqual(["gdoteof/scratch", "gdoteof/late"]);
   expect(document.activeElement).toBe(row);
-  fireEvent.click(row);
-  await settled();
-  forge.portal = () => answer(granted["13"]);
-  await rosterIntervalPassed();
-  expect(pickerRows()).toStrictEqual([
-    "gdoteof/scratch",
-    "gdoteof/lateUnlisted",
-  ]);
-  expect(row.disabled).toBe(true);
-  expect(
-    within(screen.getByRole("dialog")).queryAllByRole("status"),
-  ).toStrictEqual([]);
-  expect(sent.filter((one) => one.method === "POST")).toHaveLength(1);
-  bind.release(accepted());
-  await settled();
-  expect(statusesOf()).toStrictEqual([
-    "gdoteof/scratch · Configurations imported · New ticket",
-  ]);
-  forge.portal = lateListed;
-  await rosterIntervalPassed();
-  expect(readingsBegun(sent)).toBe(4);
-  expect(pickerRows()).toStrictEqual(filtered);
-  expect(statusesOf()).toStrictEqual([
-    "gdoteof/scratch · Configurations imported · New ticket",
-  ]);
   expect(
     screen.getByRole<HTMLInputElement>("textbox", { name: "Filter" }).value,
   ).toBe("gdoteof");
@@ -1915,6 +1744,7 @@ test("an opening's first reading lists a repository ahead of what the last openi
   );
   await settled();
   expect(pickerRows()).toStrictEqual(aheadAfter);
+  forge.held = undefined;
   expect(await firstRowPressed(sent)).toStrictEqual({ repository: boundUrl });
 });
 
@@ -1951,6 +1781,7 @@ test("a row a reading no longer lists stands where it stood, says it is unlisted
  * the repository alone, so the second line is drawn for one and not the other. */
 test("a new binding names the repository and draws what its own configurations came to", async () => {
   await drawPage({
+    claimed: twoAccounts,
     posted: () =>
       answer(
         {
@@ -1964,14 +1795,15 @@ test("a new binding names the repository and draws what its own configurations c
   });
   await chooseFree();
   expect(statusesOf()).toStrictEqual([
+    connectedFree,
     "gdoteof/scratch · Configurations imported · New ticket",
   ]);
 });
 
-/** The row is what says Bound, once the bindings it is marked against are read
- * again; the one line under the roster says what came of it and what is next. */
-test("a bind that bootstrapped draws Bound once and links a new ticket", async () => {
+/** The one line under the finished state says what came of it and what is next. */
+test("a bind that bootstrapped says so once and links a new ticket", async () => {
   await drawPage({
+    claimed: twoAccounts,
     posted: () =>
       answer(
         {
@@ -1999,9 +1831,8 @@ test("a bind that bootstrapped draws Bound once and links a new ticket", async (
   });
   await chooseFree();
   const picker = within(screen.getByRole("dialog"));
-  const row = picker.getByRole("button", { name: "gdoteof/scratch" });
-  expect(row.parentElement?.textContent).toBe("gdoteof/scratchConnected");
   expect(statusesOf()).toStrictEqual([
+    connectedFree,
     "gdoteof/scratch · Default configuration added · New ticket",
   ]);
   expect(
@@ -2014,6 +1845,7 @@ test("a bind that bootstrapped draws Bound once and links a new ticket", async (
 test("a bind whose step read entries of `.chug/` none of counts them under its line", async () => {
   const chug = ".chug/";
   await drawPage({
+    claimed: twoAccounts,
     posted: () =>
       answer(
         {
@@ -2034,15 +1866,22 @@ test("a bind whose step read entries of `.chug/` none of counts them under its l
   });
   await chooseFree();
   expect(statusesOf()).toStrictEqual([
+    connectedFree,
     "gdoteof/scratch · Default configuration added · New ticket",
     `2 other items in ${chug} are not chuggy configurations and are ignored.`,
   ]);
 });
 
 test("a binding that already stood draws the repository's name and the one word and no more", async () => {
-  await drawPage({ posted: () => answer({ repository: freeUrl }) });
+  await drawPage({
+    claimed: twoAccounts,
+    posted: () => answer({ repository: freeUrl }),
+  });
   await chooseFree();
-  expect(statusesOf()).toStrictEqual(["gdoteof/scratch · Already connected"]);
+  expect(statusesOf()).toStrictEqual([
+    connectedFree,
+    "gdoteof/scratch · Already connected",
+  ]);
 });
 
 /**
@@ -2073,6 +1912,7 @@ test("a listing that fails is a picker that offers nothing", async () => {
  */
 test("a bind stales the bindings the page drew", async () => {
   await drawPage({
+    claimed: twoAccounts,
     posted: () =>
       answer(
         {
@@ -2093,6 +1933,7 @@ test("a bind stales the bindings the page drew", async () => {
  * key would send the page back to the API on every failed attempt. */
 test("a refused bind stales nothing", async () => {
   await drawPage({
+    claimed: twoAccounts,
     posted: () =>
       answer(
         {
@@ -2319,10 +2160,10 @@ test("a listing that failed says the accounts did not load, and offers no step",
 });
 
 /** A new project's creator lands here, so the press returns here, where Add is. */
-test("with no account, the page offers Connect GitHub under its line, returning to itself", async () => {
+test("with no account, the page offers Add and Connect GitHub under its line, returning to itself", async () => {
   await drawAtProject(noAccount);
-  expect(offered("Add")).toBe(false);
-  expect(offersLine()).toBe("Connect a GitHub account first");
+  expect(offered("Add")).toBe(true);
+  expect(offersLine()).toBe("No GitHub account connected yet");
   const { connect, install } = offersSteps();
   expect(install).toBeNull();
   expect(connect?.classList.contains("btn-primary")).toBe(true);
@@ -2457,9 +2298,9 @@ test("with no account on a deployment that cannot authorize, the page says who c
   expect(offersSteps()).toStrictEqual(noStep);
 });
 
-test("with no portal claim, the page says no account has the portal app, and offers no step", async () => {
+test("with no portal claim, the page says no account has the portal app, offers no step there, and offers Add", async () => {
   await drawAtProject(without("portal"));
-  expect(offered("Add")).toBe(false);
+  expect(offered("Add")).toBe(true);
   expect(offersLine()).toBe("No account has the portal app");
   expect(offersSteps()).toStrictEqual(noStep);
 });
@@ -2522,13 +2363,13 @@ test("a return's word is drawn above the line once, and is not left held", async
   await drawAtProject(noAccount);
   expect(sectionLines()).toStrictEqual([
     "Not installed",
-    "Connect a GitHub account first",
+    "No GitHub account connected yet",
   ]);
   expect(sessionStorage.getItem(forgeReturnKey)).toBeNull();
   expect(offersSteps().connect).not.toBeNull();
   cleanup();
   await drawAtProject(noAccount);
-  expect(sectionLines()).toStrictEqual(["Connect a GitHub account first"]);
+  expect(sectionLines()).toStrictEqual(["No GitHub account connected yet"]);
 });
 
 test("a return that failed is drawn as a failure", async () => {
@@ -2590,11 +2431,13 @@ function dialogSteps(): readonly (readonly [string | null, string | null])[] {
  * bind leads to the runner first and offers no ticket beside it. */
 test("a bind in a project with no runner leads to adding one, and to no ticket", async () => {
   await drawPage({
+    claimed: twoAccounts,
     posted: bootstrapped,
     over: workRunnerOver({ runners: "Unregistered" }),
   });
   await chooseFree();
   expect(statusesOf()).toStrictEqual([
+    connectedFree,
     `gdoteof/scratch · ${configured} · Add runner`,
   ]);
   expect(dialogSteps()).toStrictEqual([["Add runner", runnersPath]]);
@@ -2617,9 +2460,14 @@ const ticketLeading: readonly (readonly [string, WorkRunnerReads])[] = [
 test.each(ticketLeading)(
   "a bind in a project %s leads to a first ticket",
   async (_project, reads) => {
-    await drawPage({ posted: bootstrapped, over: workRunnerOver(reads) });
+    await drawPage({
+      claimed: twoAccounts,
+      posted: bootstrapped,
+      over: workRunnerOver(reads),
+    });
     await chooseFree();
     expect(statusesOf()).toStrictEqual([
+      connectedFree,
       `gdoteof/scratch · ${configured} · New ticket`,
     ]);
     expect(dialogSteps().map(([words]) => words)).toStrictEqual(["New ticket"]);
@@ -2630,16 +2478,21 @@ test.each(ticketLeading)(
  * line already says what the bind came to. */
 test("a bind whose runners read has not come back draws what it came to and no step yet", async () => {
   await drawPage({
+    claimed: twoAccounts,
     posted: bootstrapped,
     over: workRunnerOver({ runners: unanswered }),
   });
   await chooseFree();
-  expect(statusesOf()).toStrictEqual([`gdoteof/scratch · ${configured}`]);
+  expect(statusesOf()).toStrictEqual([
+    connectedFree,
+    `gdoteof/scratch · ${configured}`,
+  ]);
   expect(dialogSteps()).toStrictEqual([]);
 });
 
 test("a bind that left no configuration offers no step, runner or none", async () => {
   await drawPage({
+    claimed: twoAccounts,
     posted: () =>
       answer(
         {
@@ -2982,6 +2835,7 @@ test("an unbind refused under its question is no toast", async () => {
  * picker offers it as any repository this project does not bind. */
 test("the picker offers a repository whose binding is retired, marks a live one Bound, and binds the retired one when pressed", async () => {
   const sent = await drawPage({
+    claimed: twoAccounts,
     bound: {
       repositories: [
         bindings.repositories[0],
@@ -3002,15 +2856,16 @@ test("the picker offers a repository whose binding is retired, marks a live one 
   });
 });
 
-/** A press is over when the bindings it changed have answered, so a second
- * press is never drawn against a list that has not been read again. */
-test("a bind keeps its row busy until the bindings it changed have been read again", async () => {
+/** A bind is over when the bindings it changed have answered, so the way on
+ * is never drawn against a list that has not been read again. */
+test("a bind says it is adding until the bindings it changed have been read again", async () => {
   let release: () => void = () => undefined;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
   let posted = false;
   await drawPage({
+    claimed: twoAccounts,
     posted: () => {
       posted = true;
       return answer(
@@ -3030,17 +2885,224 @@ test("a bind keeps its row busy until the bindings it changed have been read aga
           : served(url, init)) as unknown as typeof fetch,
   });
   await chooseFree();
-  const row = (): HTMLElement =>
-    within(screen.getByRole("dialog")).getByRole("button", {
-      name: "gdoteof/scratch",
-    });
-  expect(row().hasAttribute("disabled")).toBe(true);
+  expect(statusesOf()).toStrictEqual(["Adding gdoteof/scratch to atlas…"]);
+  expect(
+    screen.queryByRole("button", { name: "Show it in the list" }),
+  ).toBeNull();
 
   await turned(release);
   await settled();
 
-  expect(row().hasAttribute("disabled")).toBe(false);
+  expect(
+    screen.getByRole("button", { name: "Show it in the list" }),
+  ).toBeTruthy();
   expect(statusesOf()).toStrictEqual([
+    connectedFree,
     "gdoteof/scratch · Configurations imported · New ticket",
   ]);
+});
+
+/** Where an app's settings page on the forge is, as the permissions read says. */
+function settingsOf(url: string): string {
+  const id = /\/forge-installations\/(\d+)\//u.exec(url)?.[1] ?? "";
+  return `https://forge.test/settings/${id}`;
+}
+
+/** Each installation's listing, and its page where the flow asks for it. */
+function flowGranting(listed: Readonly<Record<string, unknown>>) {
+  return (url: string): Response =>
+    url.endsWith("/permissions")
+      ? answer({ permissions: "Current", settingsUrl: settingsOf(url) })
+      : answer(
+          Object.entries(listed).find(([id]) =>
+            url.includes(`/forge-installations/${id}/`),
+          )?.[1] ?? {
+            truncated: false,
+            selection: "Selected",
+            repositories: [],
+          },
+        );
+}
+
+/** The tenant's claims with none on gdoteof. */
+const kasofskOnly: typeof installations = {
+  truncated: false,
+  installations: installations.installations.filter(
+    (one) => one.account !== "gdoteof",
+  ),
+};
+
+/** Where both apps stand on gdoteof/scratch, as each state of the flow draws it. */
+const flowStates = {
+  neither: { claimed: kasofskOnly, listed: granted },
+  one: { claimed: installations, listed: granted },
+  existing: {
+    claimed: twoAccounts,
+    listed: {
+      ...granted,
+      "14": { truncated: false, selection: "Selected", repositories: [] },
+    },
+  },
+  both: { claimed: twoAccounts, listed: granted },
+} as const;
+
+/** The flow drawn as an arrival from setup or the console opens it, on gdoteof/scratch. */
+async function drawFlow(
+  arrival: "Setup" | "Console",
+  state: keyof typeof flowStates,
+): Promise<readonly Sent[]> {
+  const from = arrival === "Setup" ? "&from=setup" : "";
+  history.pushState(
+    {},
+    "",
+    `${projectPath}?repository=gdoteof%2Fscratch${from}#add`,
+  );
+  const { claimed, listed } = flowStates[state];
+  return drawPage({
+    claimed,
+    granting: flowGranting(listed),
+    described: { apps: forgeApps, authorization: client },
+    posted: accepted,
+  });
+}
+
+function flowText(): string {
+  return screen.getByRole("dialog").textContent ?? "";
+}
+
+function flowPresses(): readonly (readonly [string | null, string])[] {
+  return within(screen.getByRole("dialog"))
+    .queryAllByRole<HTMLAnchorElement>("link", {
+      name: /^(?:Install on GitHub|Let it in on GitHub)$/u,
+    })
+    .map((link) => [link.textContent, link.href.split("?")[0] ?? ""]);
+}
+
+const installPage = (app: number): string => forgeApps[app]?.installUrl ?? "";
+
+const arrivals = ["Setup", "Console"] as const;
+
+test.each(arrivals)(
+  "arriving from %s, with neither app on the owner, the flow names the repository, both apps, both installs and that both are left, and binds nothing",
+  async (arrival) => {
+    const sent = await drawFlow(arrival, "neither");
+    const dialog = within(screen.getByRole("dialog"));
+    expect(
+      dialog.getByText("Connecting gdoteof/scratch to atlas"),
+    ).toBeTruthy();
+    expect(dialog.getAllByText("Not installed on gdoteof yet")).toHaveLength(2);
+    expect(flowPresses()).toStrictEqual([
+      ["Install on GitHub", installPage(0)],
+      ["Install on GitHub", installPage(1)],
+    ]);
+    expect(flowText()).toContain(
+      'On GitHub, install it on gdoteof, then choose "Only select repositories" and pick gdoteof/scratch',
+    );
+    expect(dialog.getByText("Left to do: both apps.")).toBeTruthy();
+    expect(dialog.getByRole("button", { name: "Connect GitHub" })).toBeTruthy();
+    expect(sent.some((one) => one.method === "POST")).toBe(false);
+  },
+);
+
+test.each(arrivals)(
+  "arriving from %s, with one app reaching it, the flow says so, and what is left is the other app's one press",
+  async (arrival) => {
+    const sent = await drawFlow(arrival, "one");
+    const dialog = within(screen.getByRole("dialog"));
+    expect(
+      dialog.getByText("Connecting gdoteof/scratch to atlas"),
+    ).toBeTruthy();
+    expect(dialog.getByText("Connected to gdoteof/scratch")).toBeTruthy();
+    expect(dialog.getByText("Not installed on gdoteof yet")).toBeTruthy();
+    expect(flowPresses()).toStrictEqual([
+      ["Install on GitHub", installPage(1)],
+    ]);
+    expect(dialog.getByText("Left to do: the worker app.")).toBeTruthy();
+    expect(sent.some((one) => one.method === "POST")).toBe(false);
+  },
+);
+
+test.each(arrivals)(
+  "arriving from %s, with an installation that already existed and does not let it in, the flow sends that app to its own page to let it in",
+  async (arrival) => {
+    const sent = await drawFlow(arrival, "existing");
+    const dialog = within(screen.getByRole("dialog"));
+    expect(
+      dialog.getByText("Connecting gdoteof/scratch to atlas"),
+    ).toBeTruthy();
+    expect(
+      dialog.getByText(
+        "Installed on gdoteof, not let into gdoteof/scratch yet",
+      ),
+    ).toBeTruthy();
+    expect(flowPresses()).toStrictEqual([
+      ["Let it in on GitHub", "https://forge.test/settings/14"],
+    ]);
+    expect(flowText()).toContain(
+      'On GitHub, under "Repository access", add gdoteof/scratch and save.',
+    );
+    expect(dialog.getByText("Left to do: the worker app.")).toBeTruthy();
+    expect(sent.some((one) => one.method === "POST")).toBe(false);
+  },
+);
+
+test.each(arrivals)(
+  "arriving from %s, with both apps reaching it, the flow binds it with no press, and shows it finished and the way on",
+  async (arrival) => {
+    const sent = await drawFlow(arrival, "both");
+    expect(sent.filter((one) => one.method === "POST")).toHaveLength(1);
+    const dialog = within(screen.getByRole("dialog"));
+    expect(
+      dialog.getByText("Connecting gdoteof/scratch to atlas"),
+    ).toBeTruthy();
+    expect(
+      dialog.getByText("Portal app: connected to gdoteof/scratch"),
+    ).toBeTruthy();
+    expect(
+      dialog.getByText("Worker app: connected to gdoteof/scratch"),
+    ).toBeTruthy();
+    expect(statusesOf()[0]).toBe(connectedFree);
+    expect(flowPresses()).toStrictEqual([]);
+    if (arrival === "Setup") {
+      expect(
+        dialog.getByText("Go back to the chat: setup carries on there."),
+      ).toBeTruthy();
+      expect(
+        dialog.queryByRole("button", { name: "Show it in the list" }),
+      ).toBeNull();
+    } else {
+      fireEvent.click(
+        dialog.getByRole("button", { name: "Show it in the list" }),
+      );
+      await settled();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    }
+  },
+);
+
+/** A press to the forge from the flow comes back to it, on the same repository and arrival. */
+test("an app's press returns to the flow on the repository it left with, counting both apps as sent", async () => {
+  await drawFlow("Setup", "one");
+  const [press] = within(
+    screen.getByRole("dialog"),
+  ).getAllByRole<HTMLAnchorElement>("link", { name: "Install on GitHub" });
+  expect(followed(press ?? null)).toStrictEqual({
+    state: new URL(press?.href ?? "").searchParams.get("state"),
+    tenant: projectPartition.tenant,
+    returnPath: `${projectPath}?repository=gdoteof%2Fscratch&from=setup#add`,
+    installs: ["portal", "worker"],
+  });
+});
+
+/** An organisation's owner approves an install another member asked for, so the flow waits on them. */
+test("a return saying GitHub asked an owner shows that it waits on them, on the repository it left with", async () => {
+  forgeReturnHold(transientStore, projectPartition.tenant, {
+    standing: "Unfinished",
+    status: "Requested",
+  });
+  await drawFlow("Console", "one");
+  expect(flowText()).toContain(
+    "GitHub asked an owner of gdoteof to approve the install. This waits for them and carries on here once they have.",
+  );
+  expect(flowText()).toContain("Connecting gdoteof/scratch to atlas");
 });

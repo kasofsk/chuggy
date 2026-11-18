@@ -39,7 +39,6 @@ export interface RepositoriesCopy {
   readonly "repositories-about": Record<never, never>;
   readonly "repositories-none": Record<never, never>;
   readonly "repositories-add": Record<never, never>;
-  readonly "repositories-add-apps": Record<never, never>;
   readonly "repositories-add-how": Record<never, never>;
   readonly "repositories-bound-caption": Record<never, never>;
   readonly "repositories-col-repository": Record<never, never>;
@@ -67,9 +66,67 @@ export interface RepositoriesCopy {
   readonly "repositories-unlisted": Record<never, never>;
   readonly "repositories-unbound": Record<never, never>;
   readonly "repositories-truncated": Record<never, never>;
-  readonly "repositories-grant-portal": Record<never, never>;
-  readonly "repositories-grant-worker": Record<never, never>;
-  readonly "repositories-worker-reading": Record<never, never>;
+  readonly "repositories-connect-which": Record<never, never>;
+  readonly "repositories-connect-name": Record<never, never>;
+  readonly "repositories-connect-name-hint": Record<never, never>;
+  readonly "repositories-connect-name-invalid": Record<never, never>;
+  readonly "repositories-connect-next": Record<never, never>;
+  readonly "repositories-connect-listed": Record<never, never>;
+  readonly "repositories-connect-title": {
+    readonly repository: unknown;
+    readonly project: unknown;
+  };
+  readonly "repositories-connect-another": Record<never, never>;
+  readonly "repositories-connect-apps": {
+    readonly repository: unknown;
+  };
+  readonly "repositories-connect-reason-worker": Record<never, never>;
+  readonly "repositories-connect-reason-portal": Record<never, never>;
+  readonly "repositories-connect-reaches": {
+    readonly repository: unknown;
+  };
+  readonly "repositories-connect-ungranted": {
+    readonly account: unknown;
+    readonly repository: unknown;
+  };
+  readonly "repositories-connect-uninstalled": {
+    readonly account: unknown;
+  };
+  readonly "repositories-connect-install": Record<never, never>;
+  readonly "repositories-connect-let-in": Record<never, never>;
+  readonly "repositories-connect-choose-install": {
+    readonly account: unknown;
+    readonly repository: unknown;
+  };
+  readonly "repositories-connect-choose-chosen": {
+    readonly account: unknown;
+    readonly repository: unknown;
+  };
+  readonly "repositories-connect-choose-settings": {
+    readonly repository: unknown;
+  };
+  readonly "repositories-connect-left": {
+    readonly count: unknown;
+    readonly app: unknown;
+  };
+  readonly "repositories-connect-requested": {
+    readonly account: unknown;
+  };
+  readonly "repositories-connect-unseen": Record<never, never>;
+  readonly "repositories-connect-adding": {
+    readonly repository: unknown;
+    readonly project: unknown;
+  };
+  readonly "repositories-connect-done": {
+    readonly repository: unknown;
+    readonly project: unknown;
+  };
+  readonly "repositories-connect-done-app": {
+    readonly app: unknown;
+    readonly repository: unknown;
+  };
+  readonly "repositories-connect-back-setup": Record<never, never>;
+  readonly "repositories-connect-back-list": Record<never, never>;
   readonly "repositories-bound-named": {
     readonly repository: unknown;
     readonly status: unknown;

@@ -51,7 +51,6 @@ repositories-title = { -repository(case: "upper", form: "plural") }
 repositories-about = What this { -project } is connected to. { -ticket(case: "upper", form: "a") } names one of these.
 repositories-none = No { -repository } connected
 repositories-add = Add
-repositories-add-apps = Adding { -repository(form: "a") } takes two { -github } apps on it: the { -portal-app }, which lists it here, and the { -worker-app }, which { -run(form: "plural") } act as.
 repositories-add-how = Both apps on your { -repository } on { -github }, then Add · { setup-program } adds it itself
 repositories-bound-caption = Connected { -repository(form: "plural") }
 repositories-col-repository = { -repository(case: "upper") }
@@ -60,7 +59,7 @@ repositories-unbind = Disconnect
 repositories-offers-withheld = { -workspace(case: "upper", form: "a") } { -role-admin } adds { -repository(form: "plural") }
 repositories-offers-failed = Accounts failed to load
 repositories-offers-not-configured = { -github } not configured · ask an operator
-repositories-offers-connect = Connect a { -github } account first
+repositories-offers-connect = No { -github } account connected yet
 repositories-offers-portal-missing = No account has the { -portal-app }
 repositories-offers-worker-missing = { -worker-app(case: "upper") } missing · { $account }
 
@@ -76,9 +75,50 @@ repositories-filter = Filter
 repositories-unlisted = Unlisted
 repositories-unbound = Disconnected
 repositories-truncated = More than shown
-repositories-grant-portal = { -repository(case: "upper") } not listed · add it to the { -portal-app } on { -github }
-repositories-grant-worker = A row marked missing · add it to the { -worker-app } on { -github }
-repositories-worker-reading = { -worker-app(case: "upper") } · loading…
+
+## Connecting one repository: which it is, then both apps on it, then done.
+
+repositories-connect-which = Which { -repository } is this for?
+repositories-connect-name = { -repository(case: "upper") }
+repositories-connect-name-hint = owner/name, or its { -github } address
+repositories-connect-name-invalid = Write it as owner/name, or paste its { -github } address.
+repositories-connect-next = Continue
+repositories-connect-listed = Or pick one { -brand-name } can see already:
+repositories-connect-title = Connecting { $repository } to { $project }
+repositories-connect-another = Choose another
+repositories-connect-apps = { -brand-name } needs two { -github } apps on { $repository }.
+# spells -work-stage: the work a ticket asks for, in general
+repositories-connect-reason-worker = Pushes { -ticket } work to branches and opens { -pull-request(form: "plural") }.
+# spells -work-stage: the work a ticket asks for, in general
+repositories-connect-reason-portal = Merges finished work into protected branches such as main.
+repositories-connect-reaches = Connected to { $repository }
+repositories-connect-ungranted = Installed on { $account }, not let into { $repository } yet
+repositories-connect-uninstalled = Not installed on { $account } yet
+repositories-connect-install = Install on { -github }
+repositories-connect-let-in = Let it in on { -github }
+# spells -repository: GitHub's own labels
+repositories-connect-choose-install = On { -github }, install it on { $account }, then choose "Only select repositories" and pick { $repository }, or choose "All repositories".
+repositories-connect-choose-chosen = { -github } opens with { $account } and { $repository } already chosen.
+# spells -repository: GitHub's own label
+repositories-connect-choose-settings = On { -github }, under "Repository access", add { $repository } and save.
+repositories-connect-left = { $count ->
+        [one] Left to do: the { $app ->
+            [portal] { -portal-app }
+           *[worker] { -worker-app }
+        }.
+       *[other] Left to do: both apps.
+    }
+repositories-connect-requested = { -github } asked an owner of { $account } to approve the install. This waits for them and carries on here once they have.
+repositories-connect-unseen = Installed on { -github } already, but shown here as not installed?
+repositories-connect-adding = Adding { $repository } to { $project }…
+repositories-connect-done = { $repository } is connected to { $project }.
+repositories-connect-done-app = { $app ->
+        [portal] { -portal-app(case: "upper") }
+       *[worker] { -worker-app(case: "upper") }
+    }: connected to { $repository }
+# spells -thread: the person's chat with their agent, where setup runs
+repositories-connect-back-setup = Go back to the chat: setup carries on there.
+repositories-connect-back-list = Show it in the list
 
 ## What connecting, a configuration step and disconnecting came to.
 

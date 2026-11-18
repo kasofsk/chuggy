@@ -18,10 +18,7 @@ import type {
   ProjectRepositoryWorkerReachResponse,
   RepositoryConfigurationIgnoredResponse,
 } from "../../../../src/contract/responses.ts";
-import type {
-  ForgeAppName,
-  ProjectRepositoryConfigurationDeferralName,
-} from "../../../../src/contract/rosters.ts";
+import type { ProjectRepositoryConfigurationDeferralName } from "../../../../src/contract/rosters.ts";
 import { repositoryConfigurationRoot } from "../../../../src/contract/configurationDocument.ts";
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
@@ -204,53 +201,6 @@ export function repositoryWorkerReachLine(
   }
 }
 
-/** A line under the picker's roster, and what its link to the forge says. */
-export interface RepositoryGrantLine {
-  readonly status: Copy;
-  readonly label: Copy;
-}
-
-/**
- * The picker's line for a repository an app's installation does not grant, by
- * the app whose own page on the forge grants it: the portal app's for one the
- * roster does not list, and the worker app's for one a row marks.
- */
-export const repositoryGrantLines: Readonly<
-  Record<ForgeAppName, RepositoryGrantLine>
-> = {
-  portal: {
-    status: { id: "repositories-grant-portal" },
-    label: { id: "repositories-portal-app" },
-  },
-  worker: {
-    status: { id: "repositories-grant-worker" },
-    label: { id: "repositories-worker-app" },
-  },
-};
-
-/** What the picker draws under its roster about the worker app, where it has
- * anything to say. */
-export type RepositoryWorkerLine = "Reading" | "Missing";
-
-/** The line the picker draws where a row was chosen before the worker app's
- * listings were read, so it is not taken for one the worker app grants. */
-export const repositoryWorkerReading: Copy = {
-  id: "repositories-worker-reading",
-};
-
-/**
- * The worker app's line under the roster, from what it was read not to grant,
- * which is `undefined` until its listings are read. Unread is said only once a
- * row was `chosen`, to the one reader a mark still to come would be late for.
- */
-export function repositoryWorkerLine(
-  workerless: readonly string[] | undefined,
-  chosen: boolean,
-): RepositoryWorkerLine | undefined {
-  if (workerless === undefined) return chosen ? "Reading" : undefined;
-  return workerless.length > 0 ? "Missing" : undefined;
-}
-
 /** The roster an opening of the picker draws. */
 export interface ForgeReachable {
   readonly repositories: readonly ForgeRepositoryResponse[];
@@ -359,14 +309,33 @@ export function repositoryAddClosedPath(
 }
 
 /**
+ * Whether this reader can connect a repository here: the workspace's accounts
+ * read, and either a portal claim among them or the forge's apps read with
+ * the authorization a return from an install goes through.
+ */
+export function repositoryAddable(
+  accounts: PanelState<ForgeInstallationsResponse>,
+  apps: PanelState<ForgeAppsResponse>,
+): boolean {
+  if (accounts.state !== "Ready") return false;
+  return (
+    forgePortalInstallations(accounts.value.installations).length > 0 ||
+    (apps.state === "Ready" && apps.value.authorization !== undefined)
+  );
+}
+
+/**
  * Whether the page opens with the picker open: at the picker's anchor, unless
- * the return brought a word, which is drawn on the page the picker would cover.
+ * the return brought a word and the address carries no repository, the word
+ * then being drawn on the page the picker would cover. One carrying a
+ * repository opens the picker on it, which draws the word itself.
  */
 export function repositoryAddOpened(
   anchor: string,
   returned: ForgeReturnWord | undefined,
+  carried: boolean,
 ): boolean {
-  return anchor === repositoryAddAnchor && returned === undefined;
+  return anchor === repositoryAddAnchor && (returned === undefined || carried);
 }
 
 /** What the accounts panel draws for a viewer the listing is not shown to,

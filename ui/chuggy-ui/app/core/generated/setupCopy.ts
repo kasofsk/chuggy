@@ -501,29 +501,19 @@ export interface SetupCopy {
   };
   readonly "setup-mend-workspace-when": Record<never, never>;
   readonly "setup-mend-grant-tell": {
+    readonly repository: unknown;
     readonly app: unknown;
     readonly account: unknown;
-    readonly repository: unknown;
     readonly page: unknown;
-    readonly add: unknown;
-    readonly status: unknown;
-    readonly label: unknown;
   };
-  readonly "setup-mend-account-tell": {
+  readonly "setup-mend-connect-tell": {
+    readonly repository: unknown;
     readonly explained: unknown;
     readonly page: unknown;
-    readonly connect: unknown;
-    readonly repository: unknown;
   };
-  readonly "setup-mend-worker-tell": {
+  readonly "setup-mend-connect-tell-named": {
     readonly page: unknown;
-    readonly install: unknown;
-    readonly account: unknown;
-  };
-  readonly "setup-mend-portal-tell": {
-    readonly page: unknown;
-    readonly connect: unknown;
-    readonly account: unknown;
+    readonly explained: unknown;
   };
   readonly "setup-mend-apps-explained": {
     readonly repository: unknown;
@@ -540,27 +530,13 @@ export interface SetupCopy {
     readonly app: unknown;
     readonly repository: unknown;
   };
-  readonly "setup-mend-reach-settings": {
+  readonly "setup-mend-reach-ungranted": {
     readonly app: unknown;
-    readonly page: unknown;
     readonly repository: unknown;
   };
-  readonly "setup-mend-reach-install-portal": {
+  readonly "setup-mend-reach-uninstalled": {
     readonly app: unknown;
     readonly account: unknown;
-    readonly page: unknown;
-    readonly press: unknown;
-  };
-  readonly "setup-mend-reach-install-worker": {
-    readonly app: unknown;
-    readonly account: unknown;
-    readonly page: unknown;
-    readonly press: unknown;
-  };
-  readonly "setup-mend-reach-install-worker-after": {
-    readonly app: unknown;
-    readonly account: unknown;
-    readonly press: unknown;
   };
   readonly "setup-mend-reach-installed-none": Record<never, never>;
   readonly "setup-mend-reach-installed": {
@@ -568,12 +544,13 @@ export interface SetupCopy {
     readonly accounts: unknown;
   };
   readonly "setup-mend-reach-tell": {
-    readonly installed: unknown;
     readonly repository: unknown;
+    readonly installed: unknown;
     readonly explained: unknown;
     readonly portal: unknown;
     readonly worker: unknown;
     readonly granted: unknown;
+    readonly page: unknown;
   };
   readonly "setup-rule-bind": Record<never, never>;
   readonly "setup-rule-bind-again": Record<never, never>;

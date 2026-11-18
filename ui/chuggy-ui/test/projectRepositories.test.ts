@@ -16,10 +16,7 @@ import type {
   ForgeRepositoryResponse,
   ProjectRepositoryConfigurationsResponse,
 } from "../../../src/contract/responses.ts";
-import {
-  forgeApps,
-  projectRepositoryConfigurationDeferrals,
-} from "../../../src/contract/rosters.ts";
+import { projectRepositoryConfigurationDeferrals } from "../../../src/contract/rosters.ts";
 import { copyCatalogEn, copyTextEn } from "../app/copy/catalog.ts";
 import { copyTextOf } from "../app/copy/copyBundle.ts";
 import { copyPseudoBundleOf } from "../app/copy/copyPseudo.ts";
@@ -38,7 +35,6 @@ import {
   repositoryConfigureStatus,
   repositoriesDrawn,
   repositoryDeferrals,
-  repositoryGrantLines,
   repositoryIgnoredLine,
   repositoryLabel,
   repositoryNextStep,
@@ -49,9 +45,7 @@ import {
   repositoryRosterRereadsMax,
   repositoryUnbindNote,
   repositoryUnbindQuestion,
-  repositoryWorkerLine,
   repositoryWorkerReachLine,
-  repositoryWorkerReading,
   type InstallationGrant,
   type RepositoryDrawn,
   type RepositoryNextStep,
@@ -332,28 +326,6 @@ test("a row is offered only while the latest reading lists it", () => {
   ).toEqual([false, true]);
 });
 
-/** A line is the status and what to do about it, and the link beside it names
- * the app whose page it opens, so two lines never offer one label. */
-test("each app has one short line under the roster and a link of its own", () => {
-  expect(Object.keys(repositoryGrantLines).toSorted()).toStrictEqual(
-    [...forgeApps].toSorted(),
-  );
-  expect(copiedWords(repositoryGrantLines)).toStrictEqual({
-    portal: {
-      status: "Repository not listed · add it to the portal app on GitHub",
-      label: "Portal app",
-    },
-    worker: {
-      status: "A row marked missing · add it to the worker app on GitHub",
-      label: "Worker app",
-    },
-  });
-  for (const app of forgeApps)
-    expect(
-      copyTextEn(repositoryGrantLines[app].status).length,
-    ).toBeLessThanOrEqual(60);
-});
-
 test("the picker's address is the page's own at its anchor", () => {
   expect(repositoryAddReturnPath("/vteng/chuggy/repositories")).toBe(
     "/vteng/chuggy/repositories#add",
@@ -361,16 +333,18 @@ test("the picker's address is the page's own at its anchor", () => {
 });
 
 /** A word the return brought is drawn on the page, which an open picker
- * covers, so the word is read first. */
-test("the page opens with the picker open at its anchor, unless the return brought a word", () => {
+ * covers, so the word is read first, unless the address carries the
+ * repository the picker is on, which draws the word itself. */
+test("the page opens with the picker open at its anchor, unless the return brought a word and no repository", () => {
   const word = { standing: "Failed", status: "Unavailable" } as const;
   expect([
-    repositoryAddOpened("add", undefined),
-    repositoryAddOpened("", undefined),
-    repositoryAddOpened("elsewhere", undefined),
-    repositoryAddOpened("add", word),
-    repositoryAddOpened("", word),
-  ]).toStrictEqual([true, false, false, false, false]);
+    repositoryAddOpened("add", undefined, false),
+    repositoryAddOpened("", undefined, false),
+    repositoryAddOpened("elsewhere", undefined, true),
+    repositoryAddOpened("add", word, false),
+    repositoryAddOpened("", word, true),
+    repositoryAddOpened("add", word, true),
+  ]).toStrictEqual([true, false, false, false, false, true]);
 });
 
 /** The anchor is what opens the picker when the page is drawn, so it goes
@@ -382,25 +356,6 @@ test("the address a closed picker leaves is the page's own, and nothing where it
     repositoryAddClosedPath(path, ""),
     repositoryAddClosedPath(path, "elsewhere"),
   ]).toStrictEqual([path, undefined, undefined]);
-});
-
-/**
- * Unread is not the same as lacking nothing, and the one reader it matters to
- * is the one who chose a row before the worker app's listings were read. To
- * everyone else a line that comes and goes is a roster that shifts for nothing.
- */
-test("the worker app's line is what a row marks, and that its listings are unread only where a row was chosen first", () => {
-  expect(
-    [undefined, [rehearsal.url], []].map((workerless) => [
-      repositoryWorkerLine(workerless, false),
-      repositoryWorkerLine(workerless, true),
-    ]),
-  ).toStrictEqual([
-    [undefined, "Reading"],
-    ["Missing", "Missing"],
-    [undefined, undefined],
-  ]);
-  expect(copyTextEn(repositoryWorkerReading)).toBe("Worker app · loading…");
 });
 
 /** How long the forge was once seen to take to list a grant just made. */
@@ -788,7 +743,7 @@ test("the line under Add says what is missing, and carries a step only where it 
       "Accounts failed to load",
       undefined,
     ],
-    [claimed(), authorizing, "Connect a GitHub account first", "Connect"],
+    [claimed(), authorizing, "No GitHub account connected yet", "Connect"],
     [
       claimed(),
       unauthorizing,
