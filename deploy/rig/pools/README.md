@@ -68,9 +68,7 @@ assignment the pool still holds names, are allowed, so an index's platform
 manifests are pulled as its blobs are; everything
 else is refused, including the catalog, tags, a manifest by tag, any write, and
 a pull before a claim or after a release. The token is checked as each request
-starts, so a pull's last request has to start before the token expires. The
-Kubernetes pool client sets no pull credential on the pods it makes, so a pool
-pulling from the public registry supplies one to its container runtime itself.
+starts, so a pull's last request has to start before the token expires.
 
 ## What a pool is trusted with
 

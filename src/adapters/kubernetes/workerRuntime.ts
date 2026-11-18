@@ -2,9 +2,7 @@
  * How a job's pod runs chuggy's runtime whatever image the job names: the
  * runtime image's tree is copied into a volume of the pod's own, the job's
  * container mounts it read-only at `workerRuntimeDirectory`, and starts
- * through `workerJobCommand` in place of its image's entrypoint. A pushed
- * worker's pod and a pool's workload are both jobs, so the two inject one
- * runtime one way.
+ * through `workerJobCommand` in place of its image's entrypoint.
  *
  * THE COPY RUNS FIRST AND TO COMPLETION. It is a plain init container, listed
  * ahead of a site's sidecars, so the cluster starts nothing else until the
@@ -26,8 +24,7 @@
  * directory its image names.
  *
  * NOTHING HERE CHOOSES A RUNTIME. Which image the tree is copied from is the
- * caller's: the site's own for a pushed worker, and the assignment's for a
- * pool. The copy runs under the site's container security context, as every
+ * caller's: the site's own for a pushed worker. The copy runs under the site's container security context, as every
  * container of the pod does, and asks for a budget of its own small enough
  * that the pod's request, which is the larger of it and what follows it, does
  * not grow.

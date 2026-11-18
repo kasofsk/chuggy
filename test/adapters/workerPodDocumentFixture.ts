@@ -64,8 +64,8 @@ function goldenInvocation(): AttemptPlacement["invocation"] {
   return composed.invocation;
 }
 
-/** The runtime both goldens copy, so a pushed worker's pod and a pool's workload can be compared. */
-export const goldenRuntimeImage = `registry.invalid/golden-runtime@sha256:${"d".repeat(64)}`;
+/** The runtime the golden pod copies. */
+const goldenRuntimeImage = `registry.invalid/golden-runtime@sha256:${"d".repeat(64)}`;
 
 export const goldenConfig: KubernetesWorkerLaunchConfig = {
   apiBaseUrl: "https://golden-cluster.invalid:6443",
@@ -134,7 +134,7 @@ export const rigSidecars: readonly KubernetesSidecar[] = [
 ];
 
 /** The rig's sidecars under an image no registry serves, which is what the golden pins. */
-export const goldenSidecars: readonly KubernetesSidecar[] = rigSidecars.map(
+const goldenSidecars: readonly KubernetesSidecar[] = rigSidecars.map(
   (sidecar) => ({ ...sidecar, image: "registry.invalid/golden-postgres:18" }),
 );
 
