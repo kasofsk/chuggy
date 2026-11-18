@@ -33,6 +33,8 @@ const document = golden as {
 /** Every route name the golden document names, sorted. */
 const documentRouteNames = [
   "abilities",
+  "accessToken",
+  "accessTokens",
   "actionReports",
   "agentAccountCredential",
   "agentAccountCredentialOff",
@@ -146,6 +148,7 @@ test("the golden names every route and not an empty stand-in", () => {
 
 test("the golden names every request schema", () => {
   assert.deepEqual(Object.keys(document.schemas).sort(), [
+    "accessTokenMint",
     "actionReport",
     "agentAccountSettings",
     "chatThreadMessage",

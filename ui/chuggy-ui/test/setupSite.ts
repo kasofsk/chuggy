@@ -890,6 +890,7 @@ function abilities(
       overrideTicketConfig: administer,
       skipPlannedEvaluations: administer,
       mergeProposals: administer,
+      makeAccessTokens: administer,
       administer,
       writeEpic: true,
     })

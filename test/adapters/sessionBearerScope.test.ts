@@ -202,6 +202,7 @@ function scopedApp(
     },
     recorded(reached, "takes"),
     recorded(reached, "proposalMerges"),
+    recorded(reached, "accessTokens"),
   );
 }
 
@@ -570,6 +571,31 @@ test("merge_pull_request's route is refused every project session bearer as out 
     );
     assert.deepEqual(reached, [], kind);
   }
+});
+
+test("a project's access token routes are refused every session bearer, of every kind and holding every capability its scope may, before any port", async () => {
+  const routes = [
+    `GET ${nativeHttpRoutes.accessTokens}`,
+    `POST ${nativeHttpRoutes.accessTokens}`,
+    `DELETE ${nativeHttpRoutes.accessToken}`,
+  ];
+  for (const route of routes)
+    assert.equal(sessionBearerMethodClasses.get(route), "Refused", route);
+  for (const kind of sessionKinds)
+    for (const route of routes) {
+      const reached: string[] = [];
+      await using app = scopedApp(
+        reached,
+        undefined,
+        kind,
+        "Project",
+        true,
+        projectCapabilities,
+      );
+      const answered = await app.inject(routeRequest(route, own, sessionToken));
+      assert.ok(scopeRefused(answered), `${kind} ${route}`);
+      assert.deepEqual(reached, [], `${kind} ${route}`);
+    }
 });
 
 test("no session capability admits a tool the person's own agent alone may call", () => {

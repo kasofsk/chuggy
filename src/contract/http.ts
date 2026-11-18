@@ -615,6 +615,8 @@ export const nativeHttpRoutes = {
   ownerFallback: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/owner-fallback`,
   hostedRuns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/hosted-runs`,
   abilities: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/abilities`,
+  accessTokens: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/access-tokens`,
+  accessToken: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/access-tokens/:token`,
   workerPools: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pools`,
   workerPoolRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pool-registration-tokens`,
   workerPoolRegistrations: `${nativeHttpBasePath}/worker-pool-registrations`,

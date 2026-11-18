@@ -26,7 +26,7 @@ import {
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { projectDeletionHoldingsAt174 } from "../../src/adapters/postgres/schema/migrations/174-unrun-deletion.ts";
-import { projectDeletionRelationsAt205 } from "../../src/adapters/postgres/schema/migrations/205-selector-retired.ts";
+import { projectDeletionRelationsAt211 } from "../../src/adapters/postgres/schema/migrations/211-access-tokens.ts";
 import {
   asForgeAccount,
   asForgeApp,
@@ -190,7 +190,7 @@ async function tenantRows(tenant: TenantId): Promise<number> {
 
 test("every relation keyed by a project is emptied by its deletion or reached only beneath what holds it", async () => {
   const keyed = await projectKeyedRelations();
-  const deleted: readonly string[] = projectDeletionRelationsAt205;
+  const deleted: readonly string[] = projectDeletionRelationsAt211;
   const holdings: readonly string[] = Object.values(
     projectDeletionHoldingsAt174,
   );
@@ -210,7 +210,7 @@ test("every relation keyed by a project is emptied by its deletion or reached on
     );
 });
 
-test("a project that released nothing is deleted with its drafts, bindings, configurations, operations, settings and capacity", async () => {
+test("a project that released nothing is deleted with its drafts, bindings, configurations, operations, settings, access tokens and capacity", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     `unrun-${randomUUID()}`,
@@ -235,6 +235,12 @@ test("a project that released nothing is deleted with its drafts, bindings, conf
      VALUES($1,$2,1,1,'Epic','About','Active')`,
     [partition.tenant, partition.project],
   );
+  await harness.query(
+    `INSERT INTO access_token(tenant,project,token,name,access,maker,secret_digest,expires_at,recovery_epoch)
+     SELECT $1,$2,'token-unrun','nightly','Read','alice',$3,now()+interval '1 day',r.epoch
+       FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1`,
+    [partition.tenant, partition.project, "a".repeat(64)],
+  );
   const store = postgresProjectDeletion(apiPool);
   assert.deepEqual(await store.holds(partition), []);
   const before = await rowsNaming(partition);
@@ -246,6 +252,7 @@ test("a project that released nothing is deleted with its drafts, bindings, conf
     "operation",
     "project_owner_fallback",
     "epic",
+    "access_token",
   ])
     assert.ok((before[relation] ?? 0) > 0, `${relation} holds a row first`);
   assert.equal(await capacityAccounts(partition), 1);

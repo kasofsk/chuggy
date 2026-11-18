@@ -2593,6 +2593,8 @@ export const projectAbilitiesResponseSchema = z.strictObject({
   skipPlannedEvaluations: z.boolean(),
   /** Whether the reader may have chuggy merge a pull request one of the project's tickets opened. */
   mergeProposals: z.boolean(),
+  /** Whether the reader may make an access token for the project. */
+  makeAccessTokens: z.boolean(),
   administer: z.boolean(),
   /** Whether the reader may create and revise epics, which is the `Mutate` kind. */
   writeEpic: z.boolean(),

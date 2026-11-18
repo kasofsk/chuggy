@@ -101,6 +101,12 @@ import { postgresExecutionPlacement } from "./adapters/postgres/executionPlaceme
 import { postgresProjectOwnerFallback } from "./adapters/postgres/projectOwnerFallback.ts";
 import { postgresTicketTakes } from "./adapters/postgres/ticketTake.ts";
 import { ticketTakes, type TicketTakes } from "./interpreter/ticketTake.ts";
+import { postgresAccessTokens } from "./adapters/postgres/accessToken.ts";
+import { accessTokenSecrets } from "./adapters/crypto/accessTokenMint.ts";
+import {
+  accessTokenService,
+  type AccessTokenService,
+} from "./interpreter/accessToken.ts";
 import { postgresTicketProposedLandings } from "./adapters/postgres/ticketProposedLanding.ts";
 import {
   ticketProposalMerges,
@@ -292,6 +298,18 @@ export function composeTicketTakes(
   access: ProjectAccess,
 ): TicketTakes {
   return ticketTakes(access, postgresTicketTakes(apiPool));
+}
+
+/** Wires a project's access tokens to API-role credentials, the access that gates them and the secrets they are drawn from. */
+export function composeAccessTokens(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+): AccessTokenService {
+  return accessTokenService({
+    access,
+    store: postgresAccessTokens(apiPool),
+    secrets: accessTokenSecrets(),
+  });
 }
 
 /**

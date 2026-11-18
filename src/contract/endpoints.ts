@@ -1,4 +1,9 @@
 /** Shared conversation and run-evidence endpoints for the server, browser, and contract document. */
+import {
+  accessTokenMintedResponseSchema,
+  accessTokenMintRequestSchema,
+  accessTokensResponseSchema,
+} from "./accessToken.ts";
 import { ticketActionReachResponseSchema } from "./actionReach.ts";
 import {
   epicHistoryQuerySchema,
@@ -122,6 +127,17 @@ export const nativeHttpEndpoints = {
     method: "GET",
     path: nativeHttpRoutes.abilities,
     response: projectAbilitiesResponseSchema,
+  },
+  accessTokens: {
+    method: "GET",
+    path: nativeHttpRoutes.accessTokens,
+    response: accessTokensResponseSchema,
+  },
+  mintAccessToken: {
+    method: "POST",
+    path: nativeHttpRoutes.accessTokens,
+    body: accessTokenMintRequestSchema,
+    response: accessTokenMintedResponseSchema,
   },
   runTurns: {
     method: "GET",
