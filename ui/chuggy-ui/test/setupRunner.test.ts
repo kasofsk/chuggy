@@ -2583,10 +2583,10 @@ function chatWritten(machine: SetupMachine, at = boxSettings): unknown {
     .chat;
 }
 
-test("where the person's chats run on a chat host, the bare command offers it beside the runner, by default and asking nothing and naming no size, and the run sizes it to the engine: 11.7 GiB holds three chats, and 6 GiB or a memory not said holds one", async () => {
+test("where the person's chats run on a chat host, the bare command offers it beside the runner, by default and asking nothing and naming no size, and the run sizes it to the engine: 11.7 GiB holds four chats, and 4 GiB or a memory not said holds one", async () => {
   const roomy = await both();
   const short = await both();
-  short.box.memoryBytes = 6 * 2 ** 30;
+  short.box.memoryBytes = 4 * 2 ** 30;
   const unsaid = await both();
   unsaid.box.memoryBytes = undefined;
   for (const machine of [roomy, short, unsaid]) {
@@ -2595,7 +2595,7 @@ test("where the person's chats run on a chat host, the bare command offers it be
     expect((await ran(machine)).exit).toBe(0);
   }
   expect([roomy, short, unsaid].map((machine) => chatWritten(machine))).toEqual(
-    [3, 1, 1].map((sessionsMax) => ({ sessionsMax, sessionMemoryMib: 2048 })),
+    [4, 1, 1].map((sessionsMax) => ({ sessionsMax, sessionMemoryMib: 1024 })),
   );
 });
 
@@ -2606,7 +2606,7 @@ const boxBesideContainers: BoxContainer[] = [
     name: "buildkitd",
     labels: {},
     memoryBytes: 0,
-    usage: "1.6GiB",
+    usage: "5.6GiB",
   },
   {
     id: "p2",
@@ -2617,7 +2617,7 @@ const boxBesideContainers: BoxContainer[] = [
   },
 ];
 
-test("the run sizes the chat host to the room what the engine already runs leaves, which the offer does not say: 11.7 GiB with 2 GiB in use writes two chats", async () => {
+test("the run sizes the chat host to the room what the engine already runs leaves, which the offer does not say: 11.7 GiB with 6 GiB in use writes two chats", async () => {
   const used = await both();
   used.box.containers.push(...boxBesideContainers);
   expect((await ran(used, [])).lines.slice(-5)).toEqual(chatOffered);
@@ -2639,7 +2639,7 @@ test("the run sizes the chat host to the room what the engine already runs leave
 
   await ran(used);
   expect(JSON.parse(used.box.paths.get(boxSettings) ?? "")).toMatchObject({
-    chat: { sessionsMax: 2, sessionMemoryMib: 2048 },
+    chat: { sessionsMax: 2, sessionMemoryMib: 1024 },
   });
 });
 
@@ -2657,7 +2657,7 @@ test("on a Mac the bare command asks of the chat host as Linux does, with the Ma
   );
 });
 
-test("on a Mac whose Colima runs no VM, stopped or not made yet, the run counts nothing in use against the memory it gives the VM and writes three chats, which the offer does not say", async () => {
+test("on a Mac whose Colima runs no VM, stopped or not made yet, the run counts nothing in use against the memory it gives the VM and writes four chats, which the offer does not say", async () => {
   for (const vm of ["Stopped", "None"] as const) {
     const machine = await mac();
     for (const project of machine.world.projects) project.threads = "Pool";
@@ -2685,11 +2685,11 @@ test("on a Mac whose Colima runs no VM, stopped or not made yet, the run counts 
     expect((await ran(machine)).exit).toBe(0);
     expect(
       JSON.parse(machine.box.paths.get(boxMacSettings) ?? ""),
-    ).toMatchObject({ chat: { sessionsMax: 3, sessionMemoryMib: 2048 } });
+    ).toMatchObject({ chat: { sessionsMax: 4, sessionMemoryMib: 1024 } });
   }
 });
 
-test("on a Mac whose running Colima VM the run restarts, the run counts what ran before the restart, so a postgres the restart stops leaves two chats, not three, which the offer does not say", async () => {
+test("on a Mac whose running Colima VM the run restarts, the run counts what ran before the restart, so a postgres the restart stops leaves three chats, not four, which the offer does not say", async () => {
   const machine = await mac();
   for (const project of machine.world.projects) project.threads = "Pool";
   boxMacMade(machine.box, {
@@ -2711,7 +2711,7 @@ test("on a Mac whose running Colima VM the run restarts, the run counts what ran
       name: "postgres",
       labels: {},
       memoryBytes: 0,
-      usage: "2GiB",
+      usage: "6GiB",
     },
   ];
   const offer = (await ran(machine, [])).lines.join("\n");
@@ -2720,7 +2720,7 @@ test("on a Mac whose running Colima VM the run restarts, the run counts what ran
   expect((await ran(machine)).exit).toBe(0);
   expect(machine.box.containers).toEqual([]);
   expect(JSON.parse(machine.box.paths.get(boxMacSettings) ?? "")).toMatchObject(
-    { chat: { sessionsMax: 2, sessionMemoryMib: 2048 } },
+    { chat: { sessionsMax: 3, sessionMemoryMib: 1024 } },
   );
 });
 
@@ -2785,7 +2785,7 @@ test("--chat-host yes writes the chat host's size into settings it wrote itself,
   await ran(made);
   expect(JSON.parse(made.box.paths.get(boxSettings) ?? "")).toMatchObject({
     engine: "docker",
-    chat: { sessionsMax: 3, sessionMemoryMib: 2048 },
+    chat: { sessionsMax: 4, sessionMemoryMib: 1024 },
   });
 
   const theirs = {
@@ -2799,7 +2799,7 @@ test("--chat-host yes writes the chat host's size into settings it wrote itself,
   expect(run.lines).toContain(did.chatSized);
   expect(JSON.parse(merged.box.paths.get(boxSettings) ?? "")).toEqual({
     ...theirs,
-    chat: { sessionsMax: 3, sessionMemoryMib: 2048 },
+    chat: { sessionsMax: 4, sessionMemoryMib: 1024 },
   });
 
   const sized = await both();
@@ -2825,10 +2825,10 @@ test("--chat-host yes writes the chat host's size into settings it wrote itself,
   });
 
   const cramped = await both();
-  cramped.box.memoryBytes = 6 * 2 ** 30;
+  cramped.box.memoryBytes = 4 * 2 ** 30;
   await ran(cramped);
   expect(JSON.parse(cramped.box.paths.get(boxSettings) ?? "")).toMatchObject({
-    chat: { sessionsMax: 1, sessionMemoryMib: 2048 },
+    chat: { sessionsMax: 1, sessionMemoryMib: 1024 },
   });
 });
 

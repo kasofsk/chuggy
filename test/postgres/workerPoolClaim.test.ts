@@ -93,6 +93,7 @@ import { sessionRunnerPolledSecsMax } from "../../src/interpreter/sessionPlaceme
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import type { TaskResources } from "../../src/interpreter/taskResources.ts";
 import {
+  workerPoolMemoryMibDefault,
   workerPoolReconcile,
   type DedicatedPoolIdentity,
   type PersonalRunnerIdentity,
@@ -1548,6 +1549,35 @@ test("a poll's claims together fit the room it named, and it is told whether one
     [3_000, 3_000],
   );
   assert.equal(last.jobsWaiting, false, "nothing left to claim");
+});
+
+test("a job naming no memory is claimed at 2,048 MiB where the plane names no size of its own, and one naming 4,096 MiB at 4,096 as before", async () => {
+  for (const [resources, sized] of [
+    [undefined, 2_048],
+    [{ memoryMib: 4_096 }, 4_096],
+  ] as const) {
+    const label = `claim-default-${String(sized)}`;
+    const project = await releasedUnder(label, pinned, 1, resources);
+    const runner = await ownersRunner(project, label);
+    await opened(project, false, { owner: runner.owner, fallback: "Strict" });
+    const polled = await workerPoolReconcile(
+      pollingRead(() => randomUUID()),
+      runner,
+      { jobs: [], sessions: [] },
+      {
+        wanted: 1,
+        wantedSessions: 0,
+        memoryRoomMib: 8_192,
+        contract: workerContractPeerNaming(workerContractRelease),
+      },
+      { ...settings, memoryMib: workerPoolMemoryMibDefault },
+    );
+    assert.deepEqual(
+      polled.assignments.map((taken) => taken.memoryMib),
+      [sized],
+      label,
+    );
+  }
 });
 
 test("a claim or a probe whose size is no positive count, or whose room is no count, is refused before anything is asked", async () => {
