@@ -508,7 +508,7 @@ test("an owner's waiting run waits on a live runner of theirs offered its agent,
     );
 });
 
-test("a live runner not offered the run's agent leaves it to a pool under Preferred and under Strict holds it on runners none of which can run it, and an offline one offered it beside that holds it offline", async () => {
+test("a live runner not offered the run's agent waits on nothing under Preferred and under Strict holds it on runners none of which can run it, and an offline one offered it beside that holds it offline", async () => {
   for (const fallback of fallbacksBoth) {
     const member = principal("member");
     const project = await waitingProject(
