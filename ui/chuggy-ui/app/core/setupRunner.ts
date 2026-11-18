@@ -1624,16 +1624,14 @@ function setupCredentialPlaced(
   return { ended: "Credentialed" };
 }
 
-/** Puts a credential's text at `path`, readable only by the person, with the directories above it, in place of a copy an earlier run left there. */
+/** Puts a credential's text at `path`, readable only by the person, with the directories above it. */
 function setupCredentialPut(
   run: Run,
   path: string,
   text: string,
 ): Halt | undefined {
-  const disk = run.ports.disk;
   try {
-    if (disk.kind(path) === "File") disk.replace(path, text);
-    else disk.make(path, text);
+    run.ports.disk.make(path, text);
   } catch (failure: unknown) {
     if (!(failure instanceof SetupMachineError)) throw failure;
     return halt({ stop: "Unwritten", path });
