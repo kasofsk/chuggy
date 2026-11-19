@@ -22,7 +22,6 @@ import {
   setupSiteChatRedeemed,
   setupSitePersonalId,
   setupSitePersonalRedeemed,
-  setupSiteRedeemed,
 } from "./setupSite.ts";
 import type { SetupSite } from "./setupSite.ts";
 
@@ -686,7 +685,7 @@ interface BoxWorld {
   readonly platform: string;
 }
 
-/** A registration, as a pool's, with `--personal` as the person's own runner, or with `--chat` as their chat host: the token redeemed at the site, and the file the package names for what it answered. */
+/** A registration, with `--personal` as the person's own runner or with `--chat` as their chat host: the token redeemed at the site, and the file the package names for what it answered. A bare `register` sends nothing and is refused as an unknown token is. */
 function registered(
   box: RunnerBox,
   world: BoxWorld,
@@ -707,23 +706,17 @@ function registered(
     ? setupSiteChatRedeemed(world.site(), redeemed)
     : personal
       ? setupSitePersonalRedeemed(world.site(), redeemed)
-      : setupSiteRedeemed(world.site(), redeemed, boxPoolName);
-  if (answer.status !== 201)
+      : undefined;
+  if (answer?.status !== 201)
     return exited(
       1,
       "",
       "the registration token is unknown, spent or expired; mint another in chuggy's console\n",
     );
-  const held = answer.body as {
-    tenant: string;
-    project?: string;
-    owner?: string;
-  };
+  const held = answer.body as { tenant: string; owner?: string };
   const file = chat
     ? boxChatFile(held.tenant, held.owner ?? "")
-    : personal
-      ? boxPersonalFile(held.tenant, held.owner ?? "")
-      : boxPoolFile(held.tenant, held.project ?? "");
+    : boxPersonalFile(held.tenant, held.owner ?? "");
   const at = boxPackageOf(world.platform);
   const unit = at.unitOf(file);
   const serves = box.paths.has(at.unitPath(file));
@@ -852,7 +845,7 @@ function agentServed(
   );
 }
 
-/** What the site sees once the unit `name` is up and polls: a runner of every project this machine is registered for as live, or, for the unit of the person's own runner or chat host, that runner or host where its file names it. */
+/** What the site sees once the unit `name` is up and polls: for the unit of the person's own runner or chat host, that runner or host where its file names it. */
 function polled(box: RunnerBox, world: BoxWorld, name: string): void {
   const site = world.site();
   for (const [tenant, host] of site.chat) {
@@ -881,13 +874,6 @@ function polled(box: RunnerBox, world: BoxWorld, name: string): void {
     );
     if (at >= 0) held.live[at] = true;
   }
-  if (
-    !name.endsWith(`.${boxPoolName}.service`) &&
-    !name.endsWith(`.${boxPoolName}`)
-  )
-    return;
-  for (const project of site.projects)
-    if (project.pools.includes(boxPoolName)) project.runner = "Live";
 }
 
 function up(

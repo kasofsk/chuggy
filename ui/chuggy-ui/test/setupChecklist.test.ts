@@ -200,10 +200,7 @@ test("a ticket released before anything could run it is not waited on: the perso
 
 test("a project whose work the cluster runs, with a ticket landed and no runner, is set up, and is sent to no runners page", async () => {
   const world = setupSiteAt("Landed");
-  for (const held of world.projects) {
-    held.work = "InCluster";
-    held.runner = "Unregistered";
-  }
+  for (const held of world.projects) held.work = "InCluster";
   const done = await printed(await machineSignedIn(world));
   expect(done.lines.slice(-5)).toEqual([
     "step: runner      done     hosted runs take its work",

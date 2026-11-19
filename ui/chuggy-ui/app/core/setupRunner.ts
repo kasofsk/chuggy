@@ -711,7 +711,7 @@ type Mint = (
 async function setupTokenHanded(
   run: Run,
   command: string,
-  kind: Exclude<RunnerKind, "Pool">,
+  kind: RunnerKind,
   mint: Mint,
 ): Promise<Exited | Halt> {
   const lapseMins = Math.ceil(

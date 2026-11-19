@@ -273,7 +273,7 @@ function settingsChat(on: Stood): unknown {
   return held.chat;
 }
 
-/** The words each registration was run with, a pool's and the person's chat host's. */
+/** The words each registration was run with, the person's own runner's and their chat host's. */
 function registrations(on: Stood): readonly (readonly string[])[] {
   return words(on, "chuggy-linux").filter((argv) => argv[0] === "register");
 }
@@ -547,8 +547,6 @@ const losses: readonly Loss[] = [
         ...on.machine.state(),
         units: { [unit]: { enabled: true, active: false } },
       });
-      for (const project of on.installation.world.projects)
-        project.runner = "Offline";
     },
     did: (did) => [did.started],
     acts: [...rerun, "reload", "start", "shown"],
