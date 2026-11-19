@@ -609,7 +609,6 @@ export const nativeHttpRoutes = {
   projectRepositoryConfigurations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/configurations`,
   executionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/execution-placement`,
   sessionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/session-placement`,
-  ownerFallback: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/owner-fallback`,
   hostedRuns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/hosted-runs`,
   abilities: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/abilities`,
   accessTokens: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/access-tokens`,

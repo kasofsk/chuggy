@@ -191,7 +191,6 @@ import type {
   PlacementRead,
   PlacementWritten,
 } from "../../interpreter/placementRoute.ts";
-import type { ProjectOwnerFallbackView } from "../../interpreter/projectOwnerFallback.ts";
 import type { ThreadLimitView } from "../../interpreter/threadLimit.ts";
 import {
   sessionPlacementLeadCompatibility,
@@ -215,7 +214,6 @@ import type {
   PersonalRunnerCredentialsResponse,
   PersonalRunnerPermitResponse,
   PersonalRunnerResponse,
-  ProjectOwnerFallbackResponse,
   ThreadLimitResponse,
   RunnerListedResponse,
   SessionPlacementResponse,
@@ -1406,15 +1404,6 @@ export function personalRunnerPermitResponse(
 
 export function threadLimitBody(view: ThreadLimitView): ThreadLimitResponse {
   return { threadsMax: view.threadsMax, administers: view.administers };
-}
-
-export function ownerFallbackBody(
-  view: ProjectOwnerFallbackView,
-): ProjectOwnerFallbackResponse {
-  return {
-    ...(view.fallback === undefined ? {} : { fallback: view.fallback }),
-    administers: view.administers,
-  };
 }
 
 /** A credential's pause's copy, or no field where none holds. */

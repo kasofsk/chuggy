@@ -1,8 +1,7 @@
 /**
  * An execution a member's personal runner claims, against a real PostgreSQL
- * and under the roles a deployment runs: the owner and the fallback the
- * scheduler pins when it registers an execution, the door the API names a
- * project's fallback through, and what a runner holds once it has claimed —
+ * and under the roles a deployment runs: the owner the scheduler records when
+ * it registers an execution, and what a runner holds once it has claimed —
  * renewed, settled and fenced through its own registration, across every
  * project it serves. The guard of the claim itself is held to the model's
  * cases in `./workerPoolClaim.test.ts`.
@@ -15,7 +14,6 @@ import { after, test } from "node:test";
 import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
-import { postgresProjectOwnerFallback } from "../../src/adapters/postgres/projectOwnerFallback.ts";
 import { postgresTicketTakes } from "../../src/adapters/postgres/ticketTake.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
@@ -38,7 +36,6 @@ import {
   asPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
-import type { WorkerPoolOwnerFallback } from "../../src/interpreter/projectOwnerFallback.ts";
 import {
   asProjectId,
   type Partition,
@@ -96,7 +93,6 @@ after(async () => {
 
 const assignments = postgresWorkerPoolAssignments(planePool);
 const personalRegistry = postgresPersonalRunnerRegistry(apiPool);
-const fallbacks = postgresProjectOwnerFallback(apiPool);
 
 const leaseSecs = 300;
 /** The size a claim reads an execution naming no memory as. */
@@ -145,7 +141,7 @@ async function registered(
   );
 }
 
-/** The owner and fallback every execution of the project was registered with. */
+/** The owner and `owner_fallback` every execution of the project was registered with. */
 async function pinned(
   project: SchedulerProject,
 ): Promise<readonly { owner: string | null; owner_fallback: string | null }[]> {
@@ -183,11 +179,10 @@ async function imagePinned(
   );
 }
 
-/** A project of `member`'s, its executions registered as the scheduler registers them and then carrying `fallback`, NULL where it is null, as one registered before every execution was pinned `Strict` may. */
+/** A project of `member`'s, its executions registered as the scheduler registers them. */
 async function ownedProject(
   label: string,
   member: Principal,
-  fallback: WorkerPoolOwnerFallback | null,
   tasks: number,
   partition?: Partition,
   image?: string,
@@ -202,11 +197,6 @@ async function ownedProject(
   await draftedBy(project, member);
   if (image !== undefined) await imagePinned(project, image);
   await registered(project, label);
-  if (fallback !== "Strict")
-    await rig.harness.query(
-      `UPDATE execution SET owner_fallback=$3 WHERE tenant=$1 AND project=$2`,
-      [project.partition.tenant, project.partition.project, fallback],
-    );
   return project;
 }
 
@@ -278,59 +268,17 @@ async function claimed(
   return taken === undefined ? undefined : assignment;
 }
 
-/** Each kind of `project_owner_fallback` row a project may hold when the scheduler registers its executions: none, `Preferred`, and one cleared, each named by `named`. */
-const fallbackRows: readonly {
-  readonly label: string;
-  readonly named: (partition: Partition) => Promise<void>;
-}[] = [
-  { label: "none", named: async () => {} },
-  {
-    label: "preferred",
-    named: async (partition) => {
-      assert.equal(
-        await fallbacks.write(
-          partition,
-          "Preferred",
-          memberAuthority(principal("administrator")),
-        ),
-        "Written",
-      );
-    },
-  },
-  {
-    label: "cleared",
-    named: async (partition) => {
-      for (const fallback of ["Preferred", undefined] as const)
-        assert.equal(
-          await fallbacks.write(
-            partition,
-            fallback,
-            memberAuthority(principal("administrator")),
-          ),
-          "Written",
-        );
-    },
-  },
-];
-
-test("an execution is registered owned by the member who first drafted its ticket and pinned Strict, whatever its project's fallback names", async () => {
-  for (const row of fallbackRows) {
-    const member = principal("member");
-    const project = await schedulerProject(rig, `pinned-${row.label}`, {
-      tasks: 1,
-    });
-    await draftedBy(project, member);
-    await row.named(project.partition);
-    await registered(project, `pinned-${row.label}`);
-    assert.deepEqual(
-      await pinned(project),
-      [{ owner: member, owner_fallback: "Strict" }],
-      row.label,
-    );
-  }
+test("an execution is registered owned by the member who first drafted its ticket and pinned Strict", async () => {
+  const member = principal("member");
+  const project = await schedulerProject(rig, "pinned", { tasks: 1 });
+  await draftedBy(project, member);
+  await registered(project, "pinned");
+  assert.deepEqual(await pinned(project), [
+    { owner: member, owner_fallback: "Strict" },
+  ]);
 });
 
-test("a personal runner claims its owner's newly registered execution in a project naming no fallback, and nothing of another owner's, of nobody's, or in a project it does not allowlist", async () => {
+test("a personal runner claims its owner's newly registered execution, and nothing of another owner's, of nobody's, or in a project it does not allowlist", async () => {
   const member = principal("member");
   const project = await schedulerProject(rig, "claim-unnamed", { tasks: 1 });
   await draftedBy(project, member);
@@ -372,16 +320,6 @@ test("a personal runner claims its owner's newly registered execution in a proje
     project.partition,
     others.partition,
   ]);
-  assert.equal(
-    (
-      await rig.harness.query(
-        `SELECT 1 FROM project_owner_fallback WHERE tenant=$1 AND project=$2`,
-        [project.partition.tenant, project.partition.project],
-      )
-    ).length,
-    0,
-    "the project names no fallback",
-  );
   assert.notEqual(
     await claimed(runner, [project.partition]),
     undefined,
@@ -399,30 +337,23 @@ test("a personal runner claims its owner's newly registered execution in a proje
   );
 });
 
-test("the API reads an execution's fallback only where its owner's runner may take it, and whether the reader owns it", async () => {
+test("the API reads whether the reader owns an execution, routed in cluster or to runners", async () => {
   const member = principal("member");
-  const project = await ownedProject("owned-read", member, "Strict", 1);
+  const project = await ownedProject("owned-read", member, 1);
   const reads = postgresOperationalReads(apiPool);
   const listed = async (reader: Principal) =>
     (await reads.executions(project.partition, { limit: 10 }, reader))
       .executions[0];
   const inCluster = await listed(member);
   assert.equal(inCluster?.mine, true);
-  assert.equal(
-    inCluster.ownerFallback,
-    undefined,
-    "routed in cluster, no personal runner may take it",
-  );
   await opened(project);
   const pooled = await listed(member);
-  assert.equal(pooled?.ownerFallback, "Strict");
-  assert.equal(pooled.mine, true);
+  assert.equal(pooled?.mine, true);
   const stranger = await reads.execution(
     project.partition,
     pooled.execution,
     principal("stranger"),
   );
-  assert.equal(stranger?.ownerFallback, "Strict");
   assert.equal(stranger?.mine, false, "another reader does not own it");
 });
 
@@ -447,13 +378,12 @@ async function runnerPolledOf(
   return runner;
 }
 
-/** A project of `member`'s under `fallback`, its one execution opened as an attempt spending Claude and waiting unclaimed. */
+/** A project of `member`'s, its one execution opened as an attempt spending Claude and waiting unclaimed. */
 async function waitingProject(
   label: string,
   member: Principal,
-  fallback: WorkerPoolOwnerFallback | null,
 ): Promise<SchedulerProject> {
-  const project = await ownedProject(label, member, fallback, 1);
+  const project = await ownedProject(label, member, 1);
   await opened(project, spendingClaude);
   return project;
 }
@@ -476,14 +406,9 @@ function pauseMinutes(pause: { readonly until?: string } | undefined): number {
   return Math.round((Date.parse(pause.until) - Date.now()) / 60_000);
 }
 
-const fallbacksBoth: readonly WorkerPoolOwnerFallback[] = [
-  "Strict",
-  "Preferred",
-];
-
 test("an owner's waiting run waits on a live runner of theirs offered its agent, to its owner alone, and on nothing where they hold none", async () => {
   const member = principal("member");
-  const project = await waitingProject("wait-live", member, "Preferred");
+  const project = await waitingProject("wait-live", member);
   assert.equal(
     (await listedAs(project, member))?.personalRunnerWait,
     undefined,
@@ -507,107 +432,65 @@ test("an owner's waiting run waits on a live runner of theirs offered its agent,
     );
 });
 
-test("an owner's run pinned with no fallback waits on their live runner, and that runner claims it", async () => {
+test("a live runner not offered the run's agent holds it on runners none of which can run it, and an offline one offered it beside that holds it offline", async () => {
   const member = principal("member");
-  const project = await waitingProject("wait-unpinned", member, null);
-  assert.deepEqual(await pinned(project), [
-    { owner: member, owner_fallback: null },
-  ]);
-  const runner = await runnerPolledOf(project, member, { live: true });
+  const project = await waitingProject("wait-unoffered", member);
+  await runnerPolledOf(project, member, { live: true, offered: false });
+  assert.equal((await listedAs(project, member))?.personalRunnerWait, "Unable");
+  await runnerPolledOf(project, member, { live: false });
+  assert.equal(
+    (await listedAs(project, member))?.personalRunnerWait,
+    "Offline",
+  );
+});
+
+test("a run none of whose owner's runners is live waits on them offline", async () => {
+  const member = principal("member");
+  const project = await waitingProject("wait-offline", member);
+  const runner = await runnerPolledOf(project, member, { live: false });
+  assert.equal(
+    (await listedAs(project, member))?.personalRunnerWait,
+    "Offline",
+  );
+  await personalRunnerHarnessPolled(rig.harness, runner.principal, {
+    live: true,
+  });
   assert.equal((await listedAs(project, member))?.personalRunnerWait, "Live");
-  assert.notEqual(await claimed(runner, [project.partition]), undefined);
 });
 
-test("a live runner not offered the run's agent waits on nothing under Preferred and under Strict holds it on runners none of which can run it, and an offline one offered it beside that holds it offline", async () => {
-  for (const fallback of fallbacksBoth) {
-    const member = principal("member");
-    const project = await waitingProject(
-      `wait-unoffered-${fallback}`,
-      member,
-      fallback,
-    );
-    await runnerPolledOf(project, member, { live: true, offered: false });
-    assert.equal(
-      (await listedAs(project, member))?.personalRunnerWait,
-      fallback === "Strict" ? "Unable" : undefined,
-    );
-    await runnerPolledOf(project, member, { live: false });
-    assert.equal(
-      (await listedAs(project, member))?.personalRunnerWait,
-      fallback === "Strict" ? "Offline" : undefined,
-    );
-  }
-});
-
-test("a run none of whose owner's runners is live waits on them offline under Strict and on nothing under Preferred", async () => {
-  for (const fallback of fallbacksBoth) {
-    const member = principal("member");
-    const project = await waitingProject(
-      `wait-offline-${fallback}`,
-      member,
-      fallback,
-    );
-    const runner = await runnerPolledOf(project, member, { live: false });
-    assert.equal(
-      (await listedAs(project, member))?.personalRunnerWait,
-      fallback === "Strict" ? "Offline" : undefined,
-    );
-    await personalRunnerHarnessPolled(rig.harness, runner.principal, {
-      live: true,
-    });
-    assert.equal((await listedAs(project, member))?.personalRunnerWait, "Live");
-  }
-});
-
-test("a runner that does not match the run's requirement, or whose owner lists another project, counts for nothing under either fallback", async () => {
-  for (const fallback of fallbacksBoth) {
-    const member = principal("member");
-    const project = await waitingProject(
-      `wait-unmatched-${fallback}`,
-      member,
-      fallback,
-    );
-    await runnerPolledOf(project, member, {
-      live: true,
-      capabilities: ["Platform:Windows:Amd64", workerPoolAgentToken("Claude")],
-    });
-    assert.equal(
-      (await listedAs(project, member))?.personalRunnerWait,
-      undefined,
-    );
-    const elsewhere = principal("elsewhere");
-    const listing = await waitingProject(
-      `wait-listing-${fallback}`,
-      elsewhere,
-      fallback,
-    );
-    const other = await ownedProject(
-      `wait-other-${fallback}`,
-      elsewhere,
-      fallback,
-      1,
-      {
-        tenant: listing.partition.tenant,
-        project: asProjectId(`wait-other-${randomUUID()}`),
-      },
-    );
-    const runner = await runnerOf(listing.partition, elsewhere, [
-      other.partition,
-    ]);
-    await personalRunnerHarnessPolled(rig.harness, runner.principal, {
-      live: true,
-    });
-    assert.equal(
-      (await listedAs(listing, elsewhere))?.personalRunnerWait,
-      undefined,
-    );
-  }
+test("a runner that does not match the run's requirement, or whose owner lists another project, counts for nothing", async () => {
+  const member = principal("member");
+  const project = await waitingProject("wait-unmatched", member);
+  await runnerPolledOf(project, member, {
+    live: true,
+    capabilities: ["Platform:Windows:Amd64", workerPoolAgentToken("Claude")],
+  });
+  assert.equal(
+    (await listedAs(project, member))?.personalRunnerWait,
+    undefined,
+  );
+  const elsewhere = principal("elsewhere");
+  const listing = await waitingProject("wait-listing", elsewhere);
+  const other = await ownedProject("wait-other", elsewhere, 1, {
+    tenant: listing.partition.tenant,
+    project: asProjectId(`wait-other-${randomUUID()}`),
+  });
+  const runner = await runnerOf(listing.partition, elsewhere, [
+    other.partition,
+  ]);
+  await personalRunnerHarnessPolled(rig.harness, runner.principal, {
+    live: true,
+  });
+  assert.equal(
+    (await listedAs(listing, elsewhere))?.personalRunnerWait,
+    undefined,
+  );
 });
 
 test("the API reads its owner's pause on a waiting execution's live runners to its owner alone, and only while it waits", async () => {
   const member = principal("member");
   const stranger = principal("stranger");
-  const project = await waitingProject("owned-paused", member, "Strict");
+  const project = await waitingProject("owned-paused", member);
   const runner = await runnerPolledOf(project, member, { live: true });
   const limit = { limit: { observedSecs: -60, resetsSecs: 3_600 } };
   await agentAccountHarnessCommitted(rig.harness, stranger, "Claude", limit);
@@ -651,7 +534,7 @@ test("the API reads its owner's pause on a waiting execution's live runners to i
 
 test("a live runner's pause is answered only while every credential it named is paused, the earliest end of them, and only while every live runner is held", async () => {
   const member = principal("member");
-  const project = await waitingProject("named-paused", member, "Strict");
+  const project = await waitingProject("named-paused", member);
   const runner = await runnerPolledOf(project, member, {
     live: true,
     credentials: ["first", "second"],
@@ -688,7 +571,7 @@ test("a live runner's pause is answered only while every credential it named is 
 
 test("a live runner whose named credentials are all off holds its owner's run off with no end, and one with a credential on beside it holds nothing", async () => {
   const member = principal("member");
-  const project = await waitingProject("named-off", member, "Strict");
+  const project = await waitingProject("named-off", member);
   await runnerPolledOf(project, member, {
     live: true,
     credentials: ["first", "second"],
@@ -721,7 +604,7 @@ test("a live runner whose named credentials are all off holds its owner's run of
 
 test("a live runner naming a room above nothing and below the run's memory carries what it has free and what the run needs, to the list and the single read alike", async () => {
   const member = principal("member");
-  const project = await waitingProject("room-short", member, "Strict");
+  const project = await waitingProject("room-short", member);
   await runnerPolledOf(project, member, { live: true, roomMib: 1_434 });
   const listed = await listedAs(project, member);
   assert.equal(listed?.personalRunnerWait, "Live");
@@ -744,11 +627,7 @@ test("a live runner naming a room above nothing and below the run's memory carri
 test("a live runner naming no room, a room of nothing or one the run fits carries no room", async () => {
   for (const roomMib of [undefined, 0, 8_192]) {
     const member = principal("member");
-    const project = await waitingProject(
-      `room-${roomMib ?? "none"}`,
-      member,
-      "Strict",
-    );
+    const project = await waitingProject(`room-${roomMib ?? "none"}`, member);
     await runnerPolledOf(project, member, {
       live: true,
       ...(roomMib === undefined ? {} : { roomMib }),
@@ -761,7 +640,7 @@ test("a live runner naming no room, a room of nothing or one the run fits carrie
 
 test("a paused runner short of memory carries its pause and no room", async () => {
   const member = principal("member");
-  const project = await waitingProject("room-paused", member, "Strict");
+  const project = await waitingProject("room-paused", member);
   await runnerPolledOf(project, member, { live: true, roomMib: 1_434 });
   await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
     limit: { observedSecs: -60, resetsSecs: 3_600 },
@@ -773,7 +652,7 @@ test("a paused runner short of memory carries its pause and no room", async () =
 
 test("two live runners carry the larger room only where both fall short", async () => {
   const member = principal("member");
-  const project = await waitingProject("room-two", member, "Strict");
+  const project = await waitingProject("room-two", member);
   const first = await runnerPolledOf(project, member, {
     live: true,
     roomMib: 1_434,
@@ -796,7 +675,7 @@ test("two live runners carry the larger room only where both fall short", async 
 
 test("a run waiting on offline runners says so and no pause", async () => {
   const member = principal("member");
-  const project = await waitingProject("offline-paused", member, "Strict");
+  const project = await waitingProject("offline-paused", member);
   await runnerPolledOf(project, member, { live: false });
   await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
     limit: { observedSecs: -60, resetsSecs: 3_600 },
@@ -808,67 +687,15 @@ test("a run waiting on offline runners says so and no pause", async () => {
 
 test("an execution whose ticket was first drafted under another kind of authority is owned by nobody", async () => {
   const project = await schedulerProject(rig, "owned-by-none", { tasks: 1 });
-  assert.equal(
-    await fallbacks.write(
-      project.partition,
-      "Strict",
-      memberAuthority(principal("administrator")),
-    ),
-    "Written",
-  );
   await registered(project, "owned-by-none");
   assert.deepEqual(await pinned(project), [
     { owner: null, owner_fallback: "Strict" },
   ]);
 });
 
-test("a project's fallback is written through its door by the API alone, and absent is a value it can name", async () => {
-  const project = await schedulerProject(rig, "fallback-door", { tasks: 1 });
-  const authority = memberAuthority(principal("administrator"));
-  assert.equal(await fallbacks.fallback(project.partition), undefined);
-  assert.equal(
-    await fallbacks.write(project.partition, "Preferred", authority),
-    "Written",
-  );
-  assert.equal(
-    await fallbacks.write(project.partition, "Preferred", authority),
-    "Unchanged",
-  );
-  assert.equal(await fallbacks.fallback(project.partition), "Preferred");
-  assert.equal(
-    await fallbacks.write(project.partition, undefined, authority),
-    "Written",
-  );
-  assert.equal(await fallbacks.fallback(project.partition), undefined);
-  assert.equal(
-    await fallbacks.write(
-      { ...project.partition, project: asProjectId("not-a-project") },
-      "Strict",
-      authority,
-    ),
-    "NotFound",
-  );
-  await assert.rejects(
-    postgresProjectOwnerFallback(schedulerPool).write(
-      project.partition,
-      "Strict",
-      authority,
-    ),
-    { code: "42501" },
-  );
-  await assert.rejects(
-    apiPool.query(
-      `INSERT INTO project_owner_fallback(tenant,project,fallback,set_by_kind,set_by_subject,set_at)
-        VALUES($1,$2,'Strict','Member','someone',now())`,
-      [project.partition.tenant, project.partition.project],
-    ),
-    { code: "42501" },
-  );
-});
-
 test("a runner's claim returns the runtime its attempt was opened under, and stamps when it claimed an attempt that waited unleased", async () => {
   const member = principal("member");
-  const project = await ownedProject("runtime", member, "Strict", 1);
+  const project = await ownedProject("runtime", member, 1);
   const attempt = await opened(project);
   const standing = async () =>
     (await rig.harness.query(
@@ -891,8 +718,8 @@ test("a runner's claim returns the runtime its attempt was opened under, and sta
 
 test("a runner's claim returns the project of the attempt it took, across every project it serves", async () => {
   const member = principal("member");
-  const first = await ownedProject("named-one", member, "Strict", 1);
-  const second = await ownedProject("named-two", member, "Strict", 1, {
+  const first = await ownedProject("named-one", member, 1);
+  const second = await ownedProject("named-two", member, 1, {
     tenant: first.partition.tenant,
     project: asProjectId(`named-two-${randomUUID()}`),
   });
@@ -927,7 +754,7 @@ test("a runner's claim returns the project of the attempt it took, across every 
 
 test("a runner renews, settles and pulls the image of what it claimed, and another member's runner reaches none of it", async () => {
   const member = principal("member");
-  const project = await ownedProject("holds", member, "Preferred", 2);
+  const project = await ownedProject("holds", member, 2);
   await opened(project);
   await opened(project);
   const runner = await runnerOf(project.partition, member);
@@ -987,8 +814,8 @@ test("a runner renews, settles and pulls the image of what it claimed, and anoth
 
 test("a runner's room is its own across every project it serves", async () => {
   const member = principal("member");
-  const first = await ownedProject("room-one", member, "Strict", 1);
-  const second = await ownedProject("room-two", member, "Strict", 1, {
+  const first = await ownedProject("room-one", member, 1);
+  const second = await ownedProject("room-two", member, 1, {
     tenant: first.partition.tenant,
     project: asProjectId(`room-two-${randomUUID()}`),
   });
@@ -1006,7 +833,7 @@ test("a runner's room is its own across every project it serves", async () => {
 
 test("each of a member's runners has room of its own, apart from what another of theirs holds", async () => {
   const member = principal("member");
-  const project = await ownedProject("room-each", member, "Strict", 2);
+  const project = await ownedProject("room-each", member, 2);
   await opened(project);
   await opened(project);
   const first = await runnerOf(project.partition, member);
@@ -1023,7 +850,7 @@ test("each of a member's runners has room of its own, apart from what another of
 
 test("a runner claims only in a project its owner may still read, as the poll names them", async () => {
   const member = principal("member");
-  const project = await ownedProject("unread", member, "Strict", 1);
+  const project = await ownedProject("unread", member, 1);
   await opened(project);
   const runner = await runnerOf(project.partition, member);
   assert.equal(await claimed(runner, []), undefined);
@@ -1032,7 +859,7 @@ test("a runner claims only in a project its owner may still read, as the poll na
 
 test("taking a project off a runner's allowlist stops what it holds there, and removing one runner fences what it claimed and nothing another of its owner's holds", async () => {
   const member = principal("member");
-  const project = await ownedProject("fenced", member, "Strict", 2);
+  const project = await ownedProject("fenced", member, 2);
   const first = await opened(project);
   await opened(project);
   const runner = await runnerOf(project.partition, member);
@@ -1083,7 +910,7 @@ test("taking a project off a runner's allowlist stops what it holds there, and r
 
 test("a runner's poll naming capabilities replaces what it registered with, so what it claims follows the set named", async () => {
   const member = principal("member");
-  const project = await ownedProject("advertised", member, "Strict", 1);
+  const project = await ownedProject("advertised", member, 1);
   await opened(project);
   const runner = await runnerOf(project.partition, member);
   const runners = postgresWorkerPoolRunners(planePool);
@@ -1099,7 +926,7 @@ test("a runner's poll naming capabilities replaces what it registered with, so w
 
 test("a runner's poll is stamped under its own registration alone, and as one for executions only where it could take one, apart from another runner of its owner's", async () => {
   const member = principal("member");
-  const project = await ownedProject("polled", member, "Preferred", 1);
+  const project = await ownedProject("polled", member, 1);
   const runner = await runnerOf(project.partition, member);
   const stamps = async () =>
     (await rig.harness.query(
@@ -1128,7 +955,7 @@ test("a runner's poll is stamped under its own registration alone, and as one fo
 
 test("a runner's poll keeps the memory room it named, and none where the next names none", async () => {
   const member = principal("member");
-  const project = await ownedProject("polled-room", member, "Preferred", 1);
+  const project = await ownedProject("polled-room", member, 1);
   const runner = await runnerOf(project.partition, member);
   const room = async () =>
     (await rig.harness.query(
@@ -1148,7 +975,6 @@ test("a project taken off a runner's allowlist stops what it holds there alone, 
   const kept = await ownedProject(
     "scoped-kept",
     member,
-    "Strict",
     1,
     undefined,
     keptImage,
@@ -1156,7 +982,6 @@ test("a project taken off a runner's allowlist stops what it holds there alone, 
   const dropped = await ownedProject(
     "scoped-dropped",
     member,
-    "Strict",
     1,
     {
       tenant: kept.partition.tenant,
@@ -1301,7 +1126,7 @@ async function benchAccount(member: Principal) {
 /** A member's project of two Claude jobs both waiting, and one of their runners. */
 async function benchProject(label: string) {
   const member = principal("member");
-  const project = await ownedProject(label, member, "Strict", 2);
+  const project = await ownedProject(label, member, 2);
   await opened(project, spendingClaude);
   await opened(project, spendingClaude);
   return { member, runner: await runnerOf(project.partition, member) };
@@ -1383,7 +1208,7 @@ test("a runner of an earlier release is named no outcome, and its job's usage li
 
 test("each outcome a benching runner's job ended under is named for it alone: a limit with its reset, a limit naming none, and credits run out", async () => {
   const member = principal("member");
-  const project = await ownedProject("bench-outcomes", member, "Strict", 4);
+  const project = await ownedProject("bench-outcomes", member, 4);
   for (let opening = 0; opening < 4; opening += 1)
     await opened(project, spendingClaude);
   const runner = await runnerOf(project.partition, member);
@@ -1507,7 +1332,7 @@ async function claimedOwner(assignment: string | undefined): Promise<string> {
 test("a take places the ticket's next execution for its taker and a return for its creator, while one registered before either keeps its owner", async () => {
   const alice = principal("alice");
   const bob = principal("bob");
-  const project = await ownedProject("taken", alice, "Preferred", 1);
+  const project = await ownedProject("taken", alice, 1);
   assert.deepEqual(await ownersByTask(project), [[1, alice]]);
   assert.deepEqual(
     await takes.write(

@@ -98,7 +98,6 @@ import {
 } from "./adapters/postgres/projectInventory.ts";
 import { memberChat, type MemberChat } from "./interpreter/memberChat.ts";
 import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
-import { postgresProjectOwnerFallback } from "./adapters/postgres/projectOwnerFallback.ts";
 import { postgresTicketTakes } from "./adapters/postgres/ticketTake.ts";
 import { ticketTakes, type TicketTakes } from "./interpreter/ticketTake.ts";
 import { postgresAccessTokens } from "./adapters/postgres/accessToken.ts";
@@ -127,10 +126,6 @@ import {
   threadLimitAdministration,
   type ThreadLimitAdministration,
 } from "./interpreter/threadLimit.ts";
-import {
-  projectOwnerFallbackAdministration,
-  type ProjectOwnerFallbackAdministration,
-} from "./interpreter/projectOwnerFallback.ts";
 import {
   postgresSessionPlacement,
   postgresSessionRouteReads,
@@ -278,17 +273,6 @@ export function composeSessionPlacement(
   return sessionPlacementAdministration(
     access,
     postgresSessionPlacement(apiPool),
-  );
-}
-
-/** Wires whether a project's members' personal runners serve them to API-role credentials and the access that gates choosing it. */
-export function composeProjectOwnerFallback(
-  apiPool: pg.Pool,
-  access: ProjectAccess,
-): ProjectOwnerFallbackAdministration {
-  return projectOwnerFallbackAdministration(
-    access,
-    postgresProjectOwnerFallback(apiPool),
   );
 }
 

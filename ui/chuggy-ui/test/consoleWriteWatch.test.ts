@@ -28,7 +28,7 @@ import {
 } from "../app/core/consoleWrite.ts";
 import { consoleStoreBare } from "./consoleStoreBare.tsx";
 
-const saved = consoleWriteKey("owner-fallback", "acme", "atlas");
+const saved = consoleWriteKey("session-placement", "acme", "atlas");
 
 const drawn = (): boolean => true;
 
@@ -134,7 +134,7 @@ test("a refusal under a watched key is not kept, and is once the watch is releas
 
   released();
   watch.refused(
-    consoleWriteKey("owner-fallback", "acme", "atlas"),
+    consoleWriteKey("session-placement", "acme", "atlas"),
     refusal("second"),
     undefined,
   );
@@ -171,7 +171,7 @@ test("a refusal a watching screen does not draw is kept, asked of the variables 
 
 test("the console's cache asks a refusal of the watch once its readers have been told what the write changed before it", async () => {
   const client = consoleQueryClient();
-  const read = ["owner-fallback", "read"];
+  const read = ["session-placement", "read"];
   client.setQueryData(read, "before");
   const told: unknown[] = [];
   const observer = new QueryObserver(client, {

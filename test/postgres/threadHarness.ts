@@ -375,7 +375,6 @@ export function threadRigApp(input: {
     undefined,
     undefined,
     undefined,
-    undefined,
     composeThreadLimits(pool, input.access, threadRigIssuer),
   );
 }

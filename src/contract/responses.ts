@@ -151,7 +151,6 @@ import {
   operationStates,
   outputContentEncodings,
   outputRenderers,
-  ownerFallbacks,
   personalRunnerWaits,
   personalRunnerPriorities,
   phaseRoster,
@@ -1038,12 +1037,6 @@ export const executionSummarySchema = z.object({
   carrier: z.enum(briefingCarriers).optional(),
   terminalAt: instantSchema.optional(),
   runTotals: runTotalsSchema.optional(),
-  /**
-   * The fallback its owner's personal runner may take it under, absent where no
-   * personal runner may: routed in cluster, owned by nobody, or registered
-   * while its project named no fallback.
-   */
-  ownerFallback: z.enum(ownerFallbacks).optional(),
   /**
    * Whether the reader is the member who owns it, computed against the
    * request's own principal. Optional for the deployment window, as `request`
@@ -2389,18 +2382,6 @@ export type SessionPlacementResponse = z.infer<
   typeof sessionPlacementResponseSchema
 >;
 
-/**
- * Whether a project's members' personal runners serve them there, absent where
- * they serve nobody, and whether this caller may change it.
- */
-export const projectOwnerFallbackResponseSchema = z.strictObject({
-  fallback: z.enum(ownerFallbacks).optional(),
-  administers: z.boolean(),
-});
-export type ProjectOwnerFallbackResponse = z.infer<
-  typeof projectOwnerFallbackResponseSchema
->;
-
 /** What keeps a project from deletion: a released ticket, or work run in it. */
 export const projectDeletionHoldings = [
   "ReleasedTicket",
@@ -2721,9 +2702,9 @@ const personalRunnerHeldSchema = z.strictObject({
  * One of a member's runners, named by `id`, the client its registration made.
  * `polledAt` is its newest poll, absent until it polls, and `live` whether that
  * poll is recent enough for the runner to be taking work; `executionsLive` is
- * the same of its newest poll for executions alone, which is what a pool's
- * claim defers to under Preferred; `held` is what it holds, the earliest
- * claimed first, and `heldTruncated` says it holds more than one read answers.
+ * the same of its newest poll for executions alone; `held` is what it holds,
+ * the earliest claimed first, and `heldTruncated` says it holds more than one
+ * read answers.
  */
 const personalRunnerListedSchema = z.strictObject({
   id: identitySchema,

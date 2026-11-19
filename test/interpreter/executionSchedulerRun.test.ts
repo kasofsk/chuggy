@@ -2267,10 +2267,9 @@ function ownerAccess(permit: boolean, read: boolean): ProjectAccess {
   };
 }
 
-/** A pass over an execution of `owned`'s owner routed to pools and pinned to `fallback`, against their `runners`. */
+/** A pass over an execution of `owned`'s owner routed to pools, against their `runners`. */
 function ownedLaunch(
   calls: string[],
-  fallback: "Strict" | "Preferred" | undefined,
   runners: readonly PersonalRunnerRegistered[],
   access: ProjectAccess,
   failing = false,
@@ -2278,14 +2277,10 @@ function ownedLaunch(
   owned: LogicalExecution = { ...execution, route: "Pool", owner: member },
 ): Promise<number> {
   const service = serviceWith(calls, runnable, placedOk);
-  const pinned: LogicalExecution = {
-    ...owned,
-    ...(fallback === undefined ? {} : { ownerFallback: fallback }),
-  };
   return executionSchedulerLaunch(
     {
       ...service,
-      store: { ...service.store, unlaunched: () => Promise.resolve([pinned]) },
+      store: { ...service.store, unlaunched: () => Promise.resolve([owned]) },
       placement: {
         ...service.placement,
         place: () => {
@@ -2324,14 +2319,7 @@ test("an owner's execution none of their runners is configured to run is blocked
     const calls: string[] = [];
     const seen: string[] = [];
     assert.equal(
-      await ownedLaunch(
-        calls,
-        "Strict",
-        runners,
-        ownerAccess(true, true),
-        false,
-        seen,
-      ),
+      await ownedLaunch(calls, runners, ownerAccess(true, true), false, seen),
       0,
     );
     assert.deepEqual(calls, ["personal:member-one", ...blocked], why);
@@ -2350,15 +2338,10 @@ test("an owner's execution none of their runners is configured to run is blocked
 
 test("an execution with no owner is blocked without reading any runner", async () => {
   const calls: string[] = [];
-  await ownedLaunch(
-    calls,
-    "Strict",
-    [memberRunner],
-    ownerAccess(true, true),
-    false,
-    [],
-    { ...execution, route: "Pool" },
-  );
+  await ownedLaunch(calls, [memberRunner], ownerAccess(true, true), false, [], {
+    ...execution,
+    route: "Pool",
+  });
   assert.deepEqual(calls, blocked);
 });
 
@@ -2368,7 +2351,7 @@ test("an authority that cannot answer of the owner decides nothing, so the execu
     new Error("the authority answered something unreadable"),
   ]) {
     const calls: string[] = [];
-    await ownedLaunch(calls, "Strict", [memberRunner], {
+    await ownedLaunch(calls, [memberRunner], {
       authorize: () => Promise.reject(failure),
       authorizeTenant: () => Promise.reject(failure),
       authorizeSite: projectAccessSiteRefused,
@@ -2417,7 +2400,6 @@ async function poolWaitingPass(
             route: "Pool" as const,
             status: "Launching" as const,
             owner: member,
-            ownerFallback: "Strict" as const,
           }),
         waitingAttemptWithdrawn: (_attempt, evidence) => {
           calls.push(`waiting-withdrawn:${evidence}`);
@@ -2504,12 +2486,10 @@ test("a waiting attempt that prepares is compared against what this pass would r
   assert.deepEqual(current.invocation.profile, runnable.profile);
 });
 
-test("an owner's execution is held while the owner's runner could run it, polling or not, under either fallback, rather than blocked", async () => {
-  for (const fallback of ["Strict", "Preferred"] as const) {
-    const calls: string[] = [];
-    await ownedLaunch(calls, fallback, [memberRunner], ownerAccess(true, true));
-    assert.deepEqual(calls, ["personal:member-one"], fallback);
-  }
+test("an owner's execution is held while the owner's runner could run it, polling or not, rather than blocked", async () => {
+  const calls: string[] = [];
+  await ownedLaunch(calls, [memberRunner], ownerAccess(true, true));
+  assert.deepEqual(calls, ["personal:member-one"]);
 });
 
 test("an owner's execution is held while any one of their runners could run it, and blocked where none of them could", async () => {
@@ -2524,7 +2504,7 @@ test("an owner's execution is held while any one of their runners could run it, 
     [[arm], ["personal:member-one", ...blocked]],
   ] as const) {
     const calls: string[] = [];
-    await ownedLaunch(calls, "Strict", runners, ownerAccess(true, true));
+    await ownedLaunch(calls, runners, ownerAccess(true, true));
     assert.deepEqual(calls, called);
   }
 });
@@ -2548,7 +2528,7 @@ test("an owner's execution is blocked where the runner that alone could run it i
     ],
   ] as const) {
     const calls: string[] = [];
-    await ownedLaunch(calls, "Strict", [runner], access);
+    await ownedLaunch(calls, [runner], access);
     assert.deepEqual(calls, ["personal:member-one", ...blocked], why);
   }
 });
@@ -2581,7 +2561,7 @@ test("an owner's execution is held where the owner's runner takes its size, and 
     ],
   ] as const) {
     const calls: string[] = [];
-    await ownedLaunch(calls, "Strict", [runner], ownerAccess(true, true));
+    await ownedLaunch(calls, [runner], ownerAccess(true, true));
     assert.deepEqual(calls, called, why);
   }
 });
@@ -2591,7 +2571,6 @@ test("an incompatible execution is blocked for its memory exactly where some per
     ...execution,
     route: "Pool",
     owner: member,
-    ownerFallback: "Strict",
   };
   const small = workerPoolMemoryMibDefault - 1;
   const arm = ["Platform:Linux:Arm64"];
@@ -2637,16 +2616,10 @@ test("an incompatible execution is blocked for its memory exactly where some per
 test("a failed read of the owner's runner fails the pass rather than holding the execution", async () => {
   const calls: string[] = [];
   await assert.rejects(
-    ownedLaunch(calls, "Strict", [memberRunner], ownerAccess(true, true), true),
+    ownedLaunch(calls, [memberRunner], ownerAccess(true, true), true),
     /the roster could not be read/u,
   );
   assert.ok(!calls.some((call) => call.startsWith("ended:")));
-});
-
-test("an owner's execution pinned to no fallback reads the owner's runner, and is held while it could run it", async () => {
-  const calls: string[] = [];
-  await ownedLaunch(calls, undefined, [memberRunner], ownerAccess(true, true));
-  assert.deepEqual(calls, ["personal:member-one"]);
 });
 
 test("an attempt a pool refused is withdrawn and its execution blocked before any lease is reaped, and the refusal is counted", async () => {
@@ -2768,7 +2741,6 @@ function poolOffer(
               ...execution,
               route: "Pool" as const,
               owner: member,
-              ownerFallback: "Strict" as const,
             },
           ]),
         attemptInvoked: (invoked) => {

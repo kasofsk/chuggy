@@ -91,7 +91,6 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/repositories/configurations",
   "/api/v1/tenants/:tenant/projects/:project/execution-placement",
   "/api/v1/tenants/:tenant/projects/:project/session-placement",
-  "/api/v1/tenants/:tenant/projects/:project/owner-fallback",
   "/api/v1/tenants/:tenant/projects/:project/hosted-runs",
   "/api/v1/tenants/:tenant/projects/:project/abilities",
   "/api/v1/tenants/:tenant/projects/:project/access-tokens",

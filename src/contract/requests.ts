@@ -41,7 +41,6 @@ import {
   forgeCredentialPermissions,
   forgeIds,
   nativeActionResolutions,
-  ownerFallbacks,
   leadOfferings,
   personalRunnerPriorities,
   placementRoutes,
@@ -292,11 +291,6 @@ export const sessionPlacementSchema = z.strictObject({
   thread: z.enum(placementRoutes),
   lead: z.enum(placementRoutes),
   leadOffering: z.enum(leadOfferings).optional(),
-});
-
-/** Whether a project's members' personal runners serve them there, and under which fallback; a body naming none takes them out. */
-export const projectOwnerFallbackSchema = z.strictObject({
-  fallback: z.enum(ownerFallbacks).optional(),
 });
 
 /** The priority a project on its member's allowlist is written at; a write with no body adds one at `Normal` and leaves one already there as it was. */

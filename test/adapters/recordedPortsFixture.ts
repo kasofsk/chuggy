@@ -52,7 +52,6 @@ export function recordedPorts(
     port("actionReach"),
     port("landings"),
     port("personalRunners"),
-    port("ownerFallback"),
     port("threadLimits"),
     chat as never,
     port("inbox"),

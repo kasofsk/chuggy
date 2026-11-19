@@ -446,13 +446,12 @@ from its own routing, so a row older than the process only misreports.
 
 `project_owner_fallback` — the owner fallback one project's administrators
 named, `Strict` or `Preferred`, and who set it. Owned by the boundary owner,
-which is what `set_project_owner_fallback` runs as; the API role writes it
-through that door alone, and reads it. Its key and identity are
+which is what `set_project_owner_fallback` runs as; the API role is granted
+that door and SELECT on the table. Its key and identity are
 `(tenant, project)` and it points at `project`. It is changed by that door
 alone, which answers `Unchanged` where nothing moved; a row naming no fallback
-is a project that took it out. It has no unfinished work and decides nothing:
-the scheduler pins every execution it registers `Strict` and reads no row of
-it.
+is a project that took it out. Nothing calls that door or reads the table, and
+it has no unfinished work.
 
 `member_thread_limit` — how many threads one member may hold open in one
 project, and who set it. Owned by the boundary owner, which is what

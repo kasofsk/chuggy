@@ -55,7 +55,6 @@ import {
 } from "../../interpreter/operationsView.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { Principal } from "../../interpreter/principal.ts";
-import { asWorkerPoolOwnerFallback } from "../../interpreter/projectOwnerFallback.ts";
 import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
 import { workerPoolMemoryMibDefault } from "../../interpreter/workerPool.ts";
 import {
@@ -125,7 +124,6 @@ interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly run_started_at: string | null;
   readonly terminal_at: string | null;
   readonly result_manifest: string | null;
-  readonly owner_fallback: string | null;
   readonly mine: boolean;
 }
 
@@ -343,9 +341,6 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
     ...(row.terminal_at === null
       ? {}
       : { terminalAt: asPublicInstant(row.terminal_at) }),
-    ...(row.owner_fallback === null
-      ? {}
-      : { ownerFallback: asWorkerPoolOwnerFallback(row.owner_fallback) }),
     mine: row.mine,
   };
 }
@@ -464,8 +459,6 @@ async function executionRows(
                  ORDER BY a.attempt_number LIMIT 1) AS started_at,
                to_char(live.started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS run_started_at,
                e.result_manifest,
-               CASE WHEN e.placement='Pool' AND e.owner IS NOT NULL
-                    THEN e.owner_fallback END AS owner_fallback,
                coalesce(e.owner=${reader},false) AS mine,
                v.name AS version_name,v.number::text AS version_number
           FROM execution e JOIN configuration_revision c
@@ -523,7 +516,6 @@ async function executionPage(
 
 interface ExecutionRunnerRow {
   readonly execution: string;
-  readonly owner_fallback: string | null;
   readonly live: boolean | null;
   readonly offered: boolean | null;
   readonly paused_until: string | null;
@@ -561,7 +553,7 @@ async function executionsRunnerRows(
 ): Promise<readonly ExecutionRunnerRow[]> {
   if (executions.length === 0) return [];
   const found = await pool.query<ExecutionRunnerRow>(
-    sql`SELECT e.execution,e.owner_fallback,
+    sql`SELECT e.execution,
                r.executions_polled_at
                  > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS live,
                worker_pool_agent_offered(a.agent,r.capabilities,r.agents_advertised)::boolean AS offered,
@@ -652,14 +644,13 @@ function executionRunnerWaitRoom(
 /**
  * What an execution waits on of the runners `rows` names: a live one offered
  * its agent, and the pause ending first where every such one is held, or else
- * the memory they are short of where every such one is; or else under
- * `Strict` an offline one offered it, or runners none of which is.
+ * the memory they are short of where every such one is; or else an offline
+ * one offered it, or runners none of which is.
  */
 function executionRunnerWaitOf(
   rows: readonly ExecutionRunnerRow[],
 ): ExecutionRunnerWait | undefined {
-  const [first] = rows;
-  if (first === undefined) return undefined;
+  if (rows.length === 0) return undefined;
   const live = rows.filter((row) => row.live === true && row.offered === true);
   if (live.length > 0) {
     const paused = executionRunnerPausedEvery(live.map(executionRunnerPause));
@@ -667,11 +658,6 @@ function executionRunnerWaitOf(
     const room = executionRunnerWaitRoom(live);
     return { wait: "Live", ...(room === undefined ? {} : { room }) };
   }
-  if (
-    first.owner_fallback === null ||
-    asWorkerPoolOwnerFallback(first.owner_fallback) !== "Strict"
-  )
-    return undefined;
   return {
     wait: rows.some((row) => row.offered === true) ? "Offline" : "Unable",
   };
@@ -956,8 +942,6 @@ async function oneExecution(
                  ORDER BY a.attempt_number LIMIT 1) AS started_at,
                to_char(live.started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS run_started_at,
                e.result_manifest,
-               CASE WHEN e.placement='Pool' AND e.owner IS NOT NULL
-                    THEN e.owner_fallback END AS owner_fallback,
                coalesce(e.owner=${reader},false) AS mine,
                v.name AS version_name,v.number::text AS version_number
           FROM execution e JOIN configuration_revision c

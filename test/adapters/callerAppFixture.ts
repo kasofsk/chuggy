@@ -12,7 +12,6 @@ import type { AgentAccountService } from "../../src/interpreter/agentAccount.ts"
 import type { MemberChat } from "../../src/interpreter/memberChat.ts";
 import type { PersonalRunnerService } from "../../src/interpreter/personalRunnerRegistration.ts";
 import type { Principal } from "../../src/interpreter/principal.ts";
-import type { ProjectOwnerFallbackAdministration } from "../../src/interpreter/projectOwnerFallback.ts";
 import type { TicketActionReaches } from "../../src/interpreter/ticketActionReach.ts";
 import type { TicketLandingReads } from "../../src/interpreter/ticketLandings.ts";
 import type { LandingQueueReads } from "../../src/interpreter/landingQueues.ts";
@@ -26,7 +25,6 @@ export interface CallerAppServices {
   readonly actionReach?: TicketActionReaches;
   readonly landings?: TicketLandingReads;
   readonly personalRunners?: PersonalRunnerService;
-  readonly ownerFallback?: ProjectOwnerFallbackAdministration;
   readonly chat?: MemberChat;
   readonly agentAccounts?: AgentAccountService;
   readonly landingQueues?: LandingQueueReads;
@@ -71,7 +69,6 @@ export function callerApp(caller: Principal, services: CallerAppServices) {
     services.actionReach,
     services.landings,
     services.personalRunners,
-    services.ownerFallback,
     undefined,
     services.chat,
     undefined,

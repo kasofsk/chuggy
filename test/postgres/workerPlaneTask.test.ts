@@ -586,7 +586,7 @@ test("a personal runner's bearer fetches the task of the execution it claimed, a
   const answers: { status: number; body: unknown }[] = [];
   const placement = await launched(project, async (placing) => {
     await rig.harness.query(
-      `UPDATE execution SET placement='Pool',owner=$4,owner_fallback='Strict'
+      `UPDATE execution SET placement='Pool',owner=$4
         WHERE tenant=$1 AND project=$2 AND execution=$3`,
       [
         placing.partition.tenant,

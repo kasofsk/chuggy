@@ -106,7 +106,6 @@ import { checkedFinalizerConfig } from "./finalizer.ts";
 import type { FinalizerConfig } from "./finalizer.ts";
 import type { OperationId } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
-import type { WorkerPoolOwnerFallback } from "./projectOwnerFallback.ts";
 import { mailboxCompletionRoom, observe } from "./ticketService.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
 import type {
@@ -479,8 +478,6 @@ export interface LogicalExecution {
   readonly route: ExecutionRoute;
   /** Who created its ticket, absent where no member did or it was registered before owners were recorded. */
   readonly owner?: Principal;
-  /** The fallback it was pinned with when it was registered, absent where it was pinned with none. */
-  readonly ownerFallback?: WorkerPoolOwnerFallback;
   readonly ticket: TicketId;
   readonly task: TaskId;
   readonly taskKind: ExecutionTaskKind;

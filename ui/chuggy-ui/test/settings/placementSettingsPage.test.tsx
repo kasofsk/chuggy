@@ -507,14 +507,3 @@ test("a reader who may choose nothing is given no Edit to press", async () => {
     screen.getByRole("button", { name: "Edit" }).hasAttribute("disabled"),
   ).toBe(true);
 });
-
-/** Whether a member's own runner takes their work is no longer the project's
- * to say, so the page draws no section for it and asks nothing of it. */
-test("the page draws no owner fallback and reads none", async () => {
-  const sent = await drawPage();
-  expect(
-    screen.queryByRole("heading", { name: "Personal runners" }),
-  ).toBeNull();
-  expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(1);
-  expect(sent.some((one) => one.url.endsWith("/owner-fallback"))).toBe(false);
-});

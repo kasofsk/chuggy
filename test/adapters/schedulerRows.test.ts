@@ -36,7 +36,6 @@ function rowOf(configuration: unknown, overrides?: unknown): ExecutionRow {
     execution: "execution-one",
     placement: "InCluster",
     owner: null,
-    owner_fallback: null,
     ticket: "22",
     task: "1",
     task_kind: "Work",

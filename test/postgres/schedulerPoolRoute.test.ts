@@ -26,7 +26,6 @@ import {
   postgresWorkerTasks,
 } from "../../src/adapters/postgres/workerPlane.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
-import { postgresProjectOwnerFallback } from "../../src/adapters/postgres/projectOwnerFallback.ts";
 import { postgresWorkerPoolAssignments } from "../../src/adapters/postgres/workerPool.ts";
 import { postgresExecutionPlacement } from "../../src/adapters/postgres/executionPlacement.ts";
 import { workerPlaneUploadBytesMax } from "../../src/contract/http.ts";
@@ -189,11 +188,10 @@ type Runner = PersonalRunnerIdentity & {
 };
 
 /**
- * Makes a fresh member the author of this project's ticket and names the
- * project's owner fallback, so the executions it registers are that member's,
- * registers a personal runner of theirs listing the project and able to run
- * the harness requirement under the API's role, and grants the owner what
- * admits the runner and `Read` of the project.
+ * Makes a fresh member the author of this project's ticket, so the executions
+ * it registers are that member's, registers a personal runner of theirs
+ * listing the project and able to run the harness requirement under the API's
+ * role, and grants the owner what admits the runner and `Read` of the project.
  */
 async function runnerOwning(project: SchedulerProject): Promise<Runner> {
   const { partition } = project;
@@ -205,14 +203,6 @@ async function runnerOwning(project: SchedulerProject): Promise<Runner> {
     [partition.tenant, partition.project, project.ticket, owner],
   )) as readonly unknown[];
   assert.equal(drafted.length, 1, "the ticket has a first draft revision");
-  assert.equal(
-    await postgresProjectOwnerFallback(apiPool).write(
-      partition,
-      "Strict",
-      memberAuthority(asPrincipal("https://issuer.invalid#an-owner")),
-    ),
-    "Written",
-  );
   const personal = postgresPersonalRunnerRegistry(apiPool);
   const principal = asPrincipal(
     `https://issuer.invalid#runner-${randomUUID()}`,

@@ -1071,7 +1071,6 @@ function appPinning(calls: string[], releases = pinnedFixture) {
     undefined,
     undefined,
     undefined,
-    undefined,
     releases,
   );
 }

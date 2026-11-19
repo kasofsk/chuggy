@@ -60,7 +60,6 @@ import {
   selectorProjectSettingsSchema,
   sessionPlacementSchema,
   personalRunnerProjectSchema,
-  projectOwnerFallbackSchema,
   threadLimitSchema,
   type PublicMutation,
 } from "../../contract/requests.ts";
@@ -70,7 +69,6 @@ import {
 } from "../../interpreter/agentSession.ts";
 import type { ExecutionRoutes } from "../../interpreter/executionScheduler.ts";
 import type { SessionPlacementChoice } from "../../interpreter/sessionPlacement.ts";
-import type { WorkerPoolOwnerFallback } from "../../interpreter/projectOwnerFallback.ts";
 import {
   asThreadOpenKey,
   type ThreadOpenKey,
@@ -302,13 +300,6 @@ function parseRepositoryFinalization(
 export function parseExecutionPlacement(body: unknown): ExecutionRoutes {
   const parsed = executionPlacementSchema.parse(body);
   return { Work: parsed.work, Evaluation: parsed.evaluation };
-}
-
-/** A project's fallback as the wire carries it, absent where it names none. */
-export function parseProjectOwnerFallback(
-  body: unknown,
-): WorkerPoolOwnerFallback | undefined {
-  return projectOwnerFallbackSchema.parse(body).fallback;
 }
 
 /** The priority an allowlist write names, or none where it came with no body. */
