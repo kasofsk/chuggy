@@ -456,7 +456,7 @@ export const agentPauseSchema = z
   );
 export type AgentPause = z.infer<typeof agentPauseSchema>;
 
-/** A runner a job ran on: one of the project's pools by its name, or a member's own runner by the member it is. */
+/** A runner a job ran on: a pool, by the name it had, or a member's own runner by the member it is. */
 export const runnerSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("Pool"), pool: identitySchema }),
   z.strictObject({ kind: z.literal("Personal"), owner: identitySchema }),
@@ -2611,7 +2611,7 @@ export type WorkerPoolTokenResponse = z.infer<
   typeof workerPoolTokenResponseSchema
 >;
 
-/** Whether a runner sends its pool's credential to this URL: https, or http to its own loopback, and carrying no credential of its own. */
+/** Whether a runner sends its credential to this URL: https, or http to its own loopback, and carrying no credential of its own. */
 function workerPoolEndpointAllowed(text: string): boolean {
   let url: URL;
   try {
@@ -2628,7 +2628,7 @@ function workerPoolEndpointAllowed(text: string): boolean {
   return url.protocol === "http:" && loopback;
 }
 
-/** A URL a runner sends its pool's credential to. */
+/** A URL a runner sends its credential to. */
 export const workerPoolEndpointSchema = z
   .string()
   .refine(workerPoolEndpointAllowed, {
@@ -2636,18 +2636,14 @@ export const workerPoolEndpointSchema = z
       "is not an https URL, or an http URL on the loopback, carrying no credentials",
   });
 
-/** A registry a runner presents its pool's token to: a lowercase DNS name, and a port where it names one. */
+/** A registry a runner presents its token to: a lowercase DNS name, and a port where it names one. */
 export const workerPoolRegistryHostSchema = z
   .string()
   .regex(
     /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::[0-9]{1,5})?$/u,
   );
 
-/**
- * What a redemption answers, once: everything a runner needs to serve the pool
- * it registered, which is the file it keeps. `registryHost` is absent where the
- * deployment names no registry of its own.
- */
+/** @deprecated No endpoint answers this. */
 export const workerPoolCredentialsSchema = z.strictObject({
   tenant: identitySchema,
   project: identitySchema,
@@ -2671,9 +2667,10 @@ export const runnerListedSchema = workerRunnerSchema.extend({
 export type RunnerListedResponse = z.infer<typeof runnerListedSchema>;
 
 /**
- * What a personal redemption answers, once: a pool's file with the pool's
- * project and name taken out and the tenant's member it serves put in, `kind`
- * telling it apart from a pool's file, which carries none.
+ * What a personal redemption answers, once: the file a member's runner keeps,
+ * naming its tenant and the member it serves, `kind` telling it apart from a
+ * file of `workerPoolCredentialsSchema`, which carries none. `registryHost` is
+ * absent where the deployment names no registry of its own.
  */
 export const personalRunnerCredentialsSchema = z.strictObject({
   kind: z.literal("Personal"),

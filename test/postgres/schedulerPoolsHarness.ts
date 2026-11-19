@@ -1,7 +1,7 @@
 /**
  * What a case about work routed to pools needs of a real PostgreSQL: an
- * execution marked for its project's pools, the scheduler that would launch
- * it, and what the scheduler made of it.
+ * execution so routed, the scheduler that would launch it, and what the
+ * scheduler made of it.
  *
  * THE AUTHORITY IS A PARAMETER because two suites ask it: one holds grants in
  * memory beside the database, and the other asks the Keto a deployment runs.
@@ -80,7 +80,7 @@ export function poolRoutedService(
   };
 }
 
-/** One execution routed to its project's pools, and the project it belongs to. */
+/** One execution routed to pools, and the project it belongs to. */
 export interface PoolRouted {
   readonly project: SchedulerProject;
   readonly execution: ExecutionId;

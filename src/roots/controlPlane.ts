@@ -453,9 +453,10 @@ export interface SchedulerProcessRootConfig {
     | "access"
   >;
   /**
-   * Where the project authority is. A pass asks it whether a registered pool
-   * may still run its project's work, and the wake pass whether a thread's
-   * principal may still read the project, which no row in this database says.
+   * Where the project authority is. A pass asks it whether a member's runner
+   * may still run their work in a project, and the wake pass whether a
+   * thread's principal may still read the project, which no row in this
+   * database says.
    */
   readonly access: ProjectAccessSettings;
   /**

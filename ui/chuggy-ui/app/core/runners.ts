@@ -216,7 +216,7 @@ export function runnerCapabilityLabel(capability: string): string {
     : platform[1].replaceAll(":", " ");
 }
 
-/** Whose a registered machine is: one of the project's pools, one of the reader's own runners, or the reader's chat host. */
+/** Whose a registration on a machine is: a pool's, one of the reader's own runners, or the reader's chat host. */
 export type RunnerKind = "Pool" | "Personal" | "ChatHost";
 
 /** What a reader's choices ask, or why they cannot be asked. */
@@ -230,7 +230,7 @@ export function runnerAskRead(
   return { ask: { package: chosen, host, capabilities: read.capabilities } };
 }
 
-/** The command that registers the machine a package was installed on, with this console and a minted token, as a pool's, as the reader's own or as their chat host, declaring what the reader asked. */
+/** The command that registers the machine a package was installed on, with this console and a minted token, as the reader's own or as their chat host, declaring what the reader asked; a pool's kind names neither. */
 export function runnerRegisterCommand(
   installed: RunnerPackage,
   origin: string,

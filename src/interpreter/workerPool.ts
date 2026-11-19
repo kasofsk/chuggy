@@ -281,8 +281,8 @@ export interface WorkerPoolClientSecret {
 }
 
 /**
- * The issuer's client registration, held by the owner-side command and by no
- * process a pool can reach. The plane pools poll verifies tokens and mints
+ * The issuer's client registration, held by the API and by no process a pool
+ * can reach. The plane pools poll verifies tokens and mints
  * nothing, which is why this port is not among the ones it is composed with.
  */
 export interface WorkerPoolClients {

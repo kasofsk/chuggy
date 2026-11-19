@@ -53,7 +53,7 @@ An assignment names the image its execution pinned, as its configuration
 names it. A job's assignment also names the runtime image its attempt was
 opened under, where the attempt kept one. The pool plane serves only releases
 that read it (`workerPoolContractAccepted` in `src/interpreter/workerPool.ts`):
-an earlier pool or personal runner is refused at its poll, which chuggy-linux
+an earlier runner is refused at its poll, which chuggy-linux
 before 0.5.0 logs as the plane not serving its worker contract, and exits.
 Where either reference's host is a key of the pool plane's
 `CHUG_POOL_PLANE_IMAGE_HOSTS`, a JSON object from an internal registry host to
