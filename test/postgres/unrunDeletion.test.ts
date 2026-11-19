@@ -11,6 +11,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
 import { postgresForgeInstallationRecording } from "../../src/adapters/postgres/forgeInstallation.ts";
+import { postgresProjectConnectors } from "../../src/adapters/postgres/projectConnectors.ts";
 import { postgresProjectCreation } from "../../src/adapters/postgres/projectCreation.ts";
 import {
   postgresProjectDeletion,
@@ -26,7 +27,7 @@ import {
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { projectDeletionHoldingsAt174 } from "../../src/adapters/postgres/schema/migrations/174-unrun-deletion.ts";
-import { projectDeletionRelationsAt211 } from "../../src/adapters/postgres/schema/migrations/211-access-tokens.ts";
+import { projectDeletionRelationsAt215 } from "../../src/adapters/postgres/schema/migrations/215-project-connectors.ts";
 import {
   asForgeAccount,
   asForgeApp,
@@ -146,6 +147,29 @@ async function rowsNaming(
   return held;
 }
 
+/** One connector created in the partition, which appends its change. */
+async function unrunDeletionConnectorCreated(
+  partition: Partition,
+): Promise<void> {
+  assert.equal(
+    (
+      await postgresProjectConnectors(apiPool).write({
+        partition,
+        connector: {
+          name: "unrun",
+          kind: "Azure",
+          settings: { tenantId: "tenant", clientId: "client" },
+        },
+        authority: {
+          kind: asAuthorityKind("Member"),
+          subject: asAuthoritySubject("alice"),
+        },
+      })
+    ).outcome,
+    "Created",
+  );
+}
+
 function freshPartition(label: string): Partition {
   return {
     tenant: asTenantId(`tenant-${label}-${randomUUID()}`),
@@ -190,7 +214,7 @@ async function tenantRows(tenant: TenantId): Promise<number> {
 
 test("every relation keyed by a project is emptied by its deletion or reached only beneath what holds it", async () => {
   const keyed = await projectKeyedRelations();
-  const deleted: readonly string[] = projectDeletionRelationsAt211;
+  const deleted: readonly string[] = projectDeletionRelationsAt215;
   const holdings: readonly string[] = Object.values(
     projectDeletionHoldingsAt174,
   );
@@ -210,7 +234,7 @@ test("every relation keyed by a project is emptied by its deletion or reached on
     );
 });
 
-test("a project that released nothing is deleted with its drafts, bindings, configurations, operations, settings, access tokens and capacity", async () => {
+test("a project that released nothing is deleted with its drafts, bindings, configurations, operations, settings, access tokens, connectors and capacity", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     `unrun-${randomUUID()}`,
@@ -242,6 +266,7 @@ test("a project that released nothing is deleted with its drafts, bindings, conf
        FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1`,
     [partition.tenant, partition.project, "a".repeat(64)],
   );
+  await unrunDeletionConnectorCreated(partition);
   const store = postgresProjectDeletion(apiPool);
   assert.deepEqual(await store.holds(partition), []);
   const before = await rowsNaming(partition);
@@ -254,6 +279,8 @@ test("a project that released nothing is deleted with its drafts, bindings, conf
     "project_owner_fallback",
     "epic",
     "access_token",
+    "project_connector",
+    "project_connector_change",
   ])
     assert.ok((before[relation] ?? 0) > 0, `${relation} holds a row first`);
   assert.equal(await capacityAccounts(partition), 1);

@@ -43,6 +43,16 @@ export const repositoryBindingListAllFunction = "list_repository_bindings";
 export const repositoryLandingReadFunction = "read_project_repository_landing";
 export const repositoryLandingWriteFunction = "set_project_repository_landing";
 export const repositoryRetirementWriteFunction = "retire_project_repository";
+/** One of a project's connectors, by its name. */
+export const connectorReadFunction = "read_project_connector";
+/** A project's connectors, by name. */
+export const connectorListFunction = "list_project_connectors";
+/** Creates or replaces one connector against the revision its writer read, appending its change. */
+export const connectorWriteFunction = "write_project_connector";
+/** Removes one connector against the revision its writer read, appending its change. */
+export const connectorRemoveFunction = "remove_project_connector";
+/** One page of a project's connector changes, newest first. */
+export const connectorChangesListFunction = "list_project_connector_changes";
 export const executionPlacementSetFunction = "set_project_execution_placement";
 export const sessionPlacementSetFunction = "set_project_session_placement";
 /** The one resolution of where a session kind runs for one project. */

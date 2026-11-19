@@ -12,6 +12,8 @@
 
 import { z } from "zod";
 
+import { isConnectorName } from "./connectors.ts";
+
 /** The two variables the image selects its mode by; it refuses a pod launched with both or with neither. */
 export const workerTaskVariable = "CHUG_WORKER_TASK";
 export const sessionTaskVariable = "CHUG_SESSION_TASK";
@@ -69,6 +71,23 @@ export const issuedCredentialPrefix = "chuggy.";
 /** Whether `credential` is a name in the prefix reserved to the credentials chuggy issues. */
 export function isIssuedCredential(credential: string): boolean {
   return credential.startsWith(issuedCredentialPrefix);
+}
+
+/** The prefix of the credential a workload asks for a project's connector by. */
+export const connectorCredentialPrefix = `${issuedCredentialPrefix}connector.`;
+
+/** The credential a workload asks for the connector `name` by. */
+export function connectorCredentialOf(name: string): string {
+  if (!isConnectorName(name))
+    throw new Error(`connector credential: ${name} is not a connector name`);
+  return `${connectorCredentialPrefix}${name}`;
+}
+
+/** The connector `credential` asks for, none where it is not in the prefix or the rest is not a connector name. */
+export function connectorNameOf(credential: string): string | undefined {
+  if (!credential.startsWith(connectorCredentialPrefix)) return undefined;
+  const name = credential.slice(connectorCredentialPrefix.length);
+  return isConnectorName(name) ? name : undefined;
 }
 
 /** The writable directory a pod does its work in. */

@@ -48,6 +48,8 @@ const wipeKept = [
   "personal_runner_project",
   "personal_runner_registration_token",
   "project",
+  "project_connector",
+  "project_connector_change",
   "project_creation_grant",
   "project_creation_operation",
   "project_execution_placement",
