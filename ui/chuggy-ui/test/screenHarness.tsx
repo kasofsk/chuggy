@@ -184,6 +184,8 @@ export function heldAnswer(): {
 
 export interface DrawnStrict {
   readonly sent: readonly SentRequest[];
+  /** The cache the page was drawn over, for what a case says it holds. */
+  readonly client: QueryClient;
   /** The page drawn again with nothing about it changed, which is what a
    * re-render is: a decision it already took has to survive one. */
   readonly redraw: () => void;
@@ -216,6 +218,7 @@ export async function drawnStrict(
   await settled();
   return {
     sent,
+    client,
     redraw: () => {
       view.rerender(drawn(1));
     },

@@ -90,6 +90,7 @@ import {
   ticketResponseSchema,
 } from "../../../src/contract/responses.ts";
 import type { InboxResponse } from "../../../src/contract/responses.ts";
+import { accessTokensResponseSchema } from "../../../src/contract/accessToken.ts";
 import { InviteProvider } from "../app/browser/InvitePage.tsx";
 import { consoleRouterOver } from "../app/browser/routes.tsx";
 import { SessionProvider, useSilentRefresh } from "../app/browser/session.tsx";
@@ -330,6 +331,22 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadAt(`${projectPath}/abilities`),
     schema: projectAbilitiesResponseSchema,
     body: () => abilitiesEvery,
+  },
+  {
+    path: consoleReadAt(`${projectPath}/access-tokens`),
+    schema: accessTokensResponseSchema,
+    body: () => ({
+      tokens: [
+        {
+          token: "token-1",
+          name: "deploy-1",
+          access: "Read",
+          maker: abilitiesEvery.principal,
+          createdAt: "2026-08-27T00:00:00Z",
+          expiresAt: "2026-09-26T00:00:00Z",
+        },
+      ],
+    }),
   },
   {
     path: consoleReadAt(`${projectPath}/inbox`),

@@ -20,6 +20,7 @@ export const settingsRoutes = {
     threads: "/$tenant/$project/settings/threads",
     placement: "/$tenant/$project/settings/placement",
     permissions: "/$tenant/$project/settings/permissions",
+    accessTokens: "/$tenant/$project/settings/access-tokens",
     people: "/$tenant/$project/settings/workspace/people",
     accounts: "/$tenant/$project/settings/workspace/accounts",
     workspacePermissions: "/$tenant/$project/settings/workspace/permissions",
@@ -104,6 +105,7 @@ const settingsNavLabels = {
   threads: { id: "settings-nav-threads" },
   placement: { id: "settings-nav-placement" },
   permissions: { id: "settings-nav-permissions" },
+  "access-tokens": { id: "settings-nav-access-tokens" },
   people: { id: "settings-nav-people" },
   accounts: { id: "settings-nav-accounts" },
   "workspace-permissions": { id: "settings-nav-permissions" },
@@ -133,6 +135,7 @@ export function settingsNav(
       entry("threads", settingsRoutes.project.threads),
       entry("placement", settingsRoutes.project.placement),
       entry("permissions", settingsRoutes.project.permissions),
+      entry("access-tokens", settingsRoutes.project.accessTokens),
     ],
   };
   const workspaceGroup: SettingsNavGroup = {

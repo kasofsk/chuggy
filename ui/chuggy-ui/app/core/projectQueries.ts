@@ -11,6 +11,7 @@ import type { QueryClient } from "@tanstack/query-core";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { apiProjectAuthorities, apiProjectPeople } from "./accessRoutes.ts";
 import {
+  apiAccessTokens,
   apiExecutionPlacement,
   apiForgeApps,
   apiHostedRuns,
@@ -28,6 +29,13 @@ import { sessionPlacementPolledMs } from "./sessionRunners.ts";
 export function projectAbilitiesQuery(partition: PartitionIdentity) {
   return consolePartitionQuery(partition, "abilities", (ports) =>
     apiProjectAbilities(ports, partition),
+  );
+}
+
+/** The project's access tokens the reader may see. */
+export function accessTokensQuery(partition: PartitionIdentity) {
+  return consolePartitionQuery(partition, "access-tokens", (ports) =>
+    apiAccessTokens(ports, partition),
   );
 }
 

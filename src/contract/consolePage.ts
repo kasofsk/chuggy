@@ -24,6 +24,7 @@ export const consolePageSettingsSections = [
   "ProjectPlacement",
   "ProjectPools",
   "ProjectPermissions",
+  "ProjectAccessTokens",
   "WorkspacePeople",
   "WorkspaceAccounts",
   "WorkspacePermissions",

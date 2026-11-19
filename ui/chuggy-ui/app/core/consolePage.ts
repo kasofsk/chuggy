@@ -81,6 +81,7 @@ const consolePageSettingsPaths: Readonly<
   ProjectLead: "settings/threads",
   ProjectPlacement: "settings/placement",
   ProjectPermissions: "settings/permissions",
+  ProjectAccessTokens: "settings/access-tokens",
   WorkspacePeople: "settings/workspace/people",
   WorkspaceAccounts: "settings/workspace/accounts",
   WorkspacePermissions: "settings/workspace/permissions",
@@ -237,6 +238,10 @@ const consolePageSectionWords: Readonly<
   ProjectPermissions: [
     { id: "settings-nav-project" },
     { id: "settings-nav-permissions" },
+  ],
+  ProjectAccessTokens: [
+    { id: "settings-nav-project" },
+    { id: "settings-nav-access-tokens" },
   ],
   WorkspacePeople: [
     { id: "settings-nav-workspace" },
