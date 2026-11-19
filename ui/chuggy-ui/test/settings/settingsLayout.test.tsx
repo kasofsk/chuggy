@@ -211,6 +211,7 @@ const projectGroups = [
       "Chats /acme-co/atlas-web/settings/threads",
       "Placement /acme-co/atlas-web/settings/placement",
       "Permissions /acme-co/atlas-web/settings/permissions",
+      "Access tokens /acme-co/atlas-web/settings/access-tokens",
     ],
   ],
   [

@@ -75,6 +75,16 @@
     width: 6.5em;
   }
 
+  /* An access token's columns: Read or Write, and two instants each as wide
+     as one in another year. */
+  .people-col-access {
+    width: 6em;
+  }
+
+  .people-col-when {
+    width: 11.5em;
+  }
+
   /* A column's words over its cell, drawn only where the row is stacked and
      the head that said them is clipped. */
   .people-stacked-label {
