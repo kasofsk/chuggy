@@ -124,6 +124,7 @@ export interface SetupCopy {
     readonly sevenDay: unknown;
     readonly used: unknown;
     readonly start: unknown;
+    readonly more: unknown;
   };
   readonly "setup-asked-site": {
     readonly flag: unknown;
@@ -192,6 +193,10 @@ export interface SetupCopy {
   readonly "setup-asked-start": {
     readonly flag: unknown;
     readonly yes: unknown;
+  };
+  readonly "setup-asked-more": {
+    readonly flag: unknown;
+    readonly answers: unknown;
   };
   readonly "setup-asked-usage": {
     readonly flag: unknown;
@@ -1042,7 +1047,54 @@ export interface SetupCopy {
     readonly detail: unknown;
     readonly configuration: unknown;
     readonly last: unknown;
+    readonly url: unknown;
     readonly page: unknown;
+  };
+  readonly "setup-more-offer": {
+    readonly done: unknown;
+  };
+  readonly "setup-rule-more": {
+    readonly runners: unknown;
+    readonly configuration: unknown;
+    readonly review: unknown;
+    readonly none: unknown;
+  };
+  readonly "setup-rule-more-next": {
+    readonly runners: unknown;
+    readonly configuration: unknown;
+    readonly review: unknown;
+  };
+  readonly "setup-more-runners": {
+    readonly line: unknown;
+    readonly runners: unknown;
+  };
+  readonly "setup-rule-more-runners": Record<never, never>;
+  readonly "setup-more-configuration": {
+    readonly directory: unknown;
+  };
+  readonly "setup-rule-more-configuration": {
+    readonly directory: unknown;
+    readonly configuration: unknown;
+    readonly image: unknown;
+    readonly check: unknown;
+    readonly press: unknown;
+    readonly page: unknown;
+  };
+  readonly "setup-more-review": {
+    readonly permissions: unknown;
+    readonly placement: unknown;
+    readonly usage: unknown;
+    readonly directory: unknown;
+    readonly configuration: unknown;
+    readonly sizing: unknown;
+    readonly program: unknown;
+    readonly guide: unknown;
+  };
+  readonly "setup-more-none": {
+    readonly line: unknown;
+  };
+  readonly "setup-rule-merge-self": {
+    readonly command: unknown;
   };
   readonly "setup-page-brand": Record<never, never>;
   readonly "setup-page-unfinished": Record<never, never>;

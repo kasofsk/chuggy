@@ -86,6 +86,8 @@ import {
   setupPluginSkip,
   setupStartFlag,
   setupStartYes,
+  setupMoreFlag,
+  setupMoreAnswers,
   setupTestFlag,
   setupTitleFlag,
   setupToolchainsFlag,
@@ -95,6 +97,7 @@ import type {
   SetupAnswers,
   SetupAskFault,
   SetupCommand,
+  SetupMoreAnswer,
 } from "./setupArguments.ts";
 import type {
   SetupBlank,
@@ -186,7 +189,9 @@ export interface SetupStepSaid {
 }
 
 /**
- * The one next thing a checklist ends on: nothing, where setup is done;
+ * The one next thing a checklist ends on: nothing, where setup is done and
+ * the person wants nothing more; what is offered once its last step is done,
+ * or the offer taken of them, each named by the bare command taking it;
  * something the person does by hand, and the condition the checklist may be
  * read again under; something `plugin` would do on this machine, with the way
  * past it; something `mcp` or `runner` would do on this machine for
@@ -207,8 +212,31 @@ export interface SetupStepSaid {
  * read that failed, `stale` where this copy of the program could not read what
  * the site sent.
  */
+/** Which offer after setup's last step a run gives: the three offered together, or the one the person took. */
+export type SetupMore = "Offer" | "Runners" | "Configuration" | "Review";
+
 export type SetupThing =
   | { readonly thing: "Done"; readonly tell: Copy }
+  | {
+      readonly thing: "More";
+      readonly more: Exclude<SetupMore, "Configuration">;
+      readonly tell: Copy;
+      readonly workspace: string;
+      readonly project: string;
+    }
+  | {
+      readonly thing: "More";
+      readonly more: "Configuration";
+      readonly tell: Copy;
+      /** Where the checkout holds the repository's configuration. */
+      readonly directory: string;
+      /** The docs page that says what an image needs. */
+      readonly image: string;
+      /** The repositories page, from whose page of the repository the configuration pushed is imported at once. */
+      readonly page: string;
+      readonly workspace: string;
+      readonly project: string;
+    }
   | { readonly thing: "Hand"; readonly tell: Copy; readonly when: Copy }
   | {
       readonly thing: "Offer";
@@ -757,6 +785,7 @@ function setupAskFlagSaid(words: ReturnType<typeof setupCommandWords>): Copy {
       opened: setupOpenedFlag,
       bound,
       start: setupStartFlag,
+      more: setupMoreFlag,
       usage: setupUsageFlag,
       fiveHour: setupUsagePercentFlag("five_hour"),
       sevenDay: setupUsagePercentFlag("seven_day"),
@@ -864,8 +893,16 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
     case "Usage":
     case "Percent":
       return setupAskUsageSaid(fault, words.used);
+    case "More":
+      return setupAskMoreSaid;
   }
 }
+
+/** A `--more` that is none of the offers it names. */
+const setupAskMoreSaid: Copy = {
+  id: "setup-asked-more",
+  args: { flag: setupMoreFlag, answers: setupMoreAnswers.join(", ") },
+};
 
 /** A `--usage` that is not the no it carries, and a `usage` given no whole-number threshold. */
 function setupAskUsageSaid(fault: "Usage" | "Percent", used: string): Copy {
@@ -1496,6 +1533,7 @@ function setupOfferLines(
       thing.command,
       chatHost ? [setupChatHostFlag, yes] : [],
     );
+    const self = thing.command === "Merge" ? setupMergeSelfLines(of) : [];
     return [
       ["tell", thing.tell],
       [
@@ -1513,6 +1551,7 @@ function setupOfferLines(
             }
           : { id: "setup-runner-rule", args: { command, when: thing.when } },
       ],
+      ...self,
       ...(chatHost ? [setupChatHostRule()] : []),
       ...(thing.elsewhere === undefined
         ? []
@@ -1539,6 +1578,97 @@ function setupOfferLines(
         args: { command: setupCommandOf(setupSkipping(saying), "Status") },
       },
     ],
+    ["next", setupNextStop],
+  ];
+}
+
+/** What is pressed on a repository's page to import it at once, by the message the page draws it as. */
+export const setupImportPressed: Copy = { id: "repositories-import-now" };
+
+/** The rule naming the bare command that takes the person's no to `merge`, on which they merge the pull request themselves. */
+function setupMergeSelfLines(saying: SetupSaying): readonly SetupLine[] {
+  return [
+    [
+      "rule",
+      {
+        id: "setup-rule-merge-self",
+        args: { command: setupMoreCommand(saying, "offer") },
+      },
+    ],
+  ];
+}
+
+/** The bare command naming the offer after setup's last step the person took. */
+function setupMoreCommand(saying: SetupSaying, more: SetupMoreAnswer): string {
+  return setupCommandOf(saying, "Status", [setupMoreFlag, more]);
+}
+
+/** The bare command for each of the three offers, as a rule names them. */
+function setupMoreCommands(
+  saying: SetupSaying,
+): Readonly<Record<"runners" | "configuration" | "review", string>> {
+  return {
+    runners: setupMoreCommand(saying, "runners"),
+    configuration: setupMoreCommand(saying, "configuration"),
+    review: setupMoreCommand(saying, "review"),
+  };
+}
+
+/**
+ * Setup's end: setup done, and nothing named to run; or an offer after its
+ * last step, the three together, under a rule naming the bare command for
+ * each and for none, or the one the person took, under a rule naming those
+ * they may have taken beside it, and for the person's configuration, one
+ * naming the commands it is changed and judged by.
+ */
+function setupEndLines(
+  thing: Extract<SetupThing, { readonly thing: "Done" | "More" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  if (thing.thing === "Done")
+    return [
+      ["tell", thing.tell],
+      ["next", setupNextStop],
+    ];
+  const of = setupSayingOf(saying, thing);
+  const commands = setupMoreCommands(of);
+  if (thing.more === "Offer")
+    return [
+      ["tell", thing.tell],
+      [
+        "rule",
+        {
+          id: "setup-rule-more",
+          args: { ...commands, none: setupMoreCommand(of, "none") },
+        },
+      ],
+      ["next", setupNextStop],
+    ];
+  const own: readonly SetupLine[] =
+    thing.more === "Runners"
+      ? [["rule", { id: "setup-rule-more-runners" }]]
+      : thing.more === "Configuration"
+        ? [
+            [
+              "rule",
+              {
+                id: "setup-rule-more-configuration",
+                args: {
+                  directory: thing.directory,
+                  configuration: setupCommandOf(of, "Configuration"),
+                  image: thing.image,
+                  check: setupCommandOf(of, "Check"),
+                  page: thing.page,
+                  press: setupImportPressed,
+                },
+              },
+            ],
+          ]
+        : [];
+  return [
+    ["tell", thing.tell],
+    ...own,
+    ["rule", { id: "setup-rule-more-next", args: commands }],
     ["next", setupNextStop],
   ];
 }
@@ -1590,10 +1720,8 @@ function setupThingLines(
   const thing = report.next.thing;
   switch (thing.thing) {
     case "Done":
-      return [
-        ["tell", thing.tell],
-        ["next", setupNextStop],
-      ];
+    case "More":
+      return setupEndLines(thing, saying);
     case "Hand":
       return [
         ["tell", thing.tell],

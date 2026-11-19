@@ -57,6 +57,7 @@ import type {
 } from "../app/core/setupStanding.ts";
 import {
   saidLandingTicket,
+  saidMoreOffered,
   saidNext,
   saidRunnable,
   saidThing,
@@ -752,7 +753,7 @@ test("a step the site would not show, or sent only part of, is a state the perso
   );
 });
 
-test("with every step done, setup is said to be done in the ticket step's own words, and nothing is named but where the next ticket is made", () => {
+test("with every step done, setup is said to be done in the ticket step's own words, with where the next ticket is made and the three things offered after it", () => {
   for (const detail of [
     "ticket 4 is finalized",
     "ticket 4 opened a pull request",
@@ -771,23 +772,27 @@ test("with every step done, setup is said to be done in the ticket step's own wo
       ),
     ).toEqual({
       carried: setupAnswersNone,
-      thing: {
-        thing: "Done",
-        tell: `chuggy is set up for acme/widgets: ${detail}. The next ticket is made at ${pages}/tickets/new.`,
-      },
+      thing: closingWith(detail),
     });
   }
 });
 
 const pullRequest = "https://github.com/acme-org/widgets/pull/2";
 
-/** Setup said to be done in the ticket step's words. */
-function closing(detail: string): SaidThing {
+/** Setup said to be done in the ticket step's words, with `configuration` said of the repository's own, and the three things offered after it. */
+function closingWith(detail: string, configuration = ""): SaidThing {
   return {
-    thing: "Done",
-    tell: `chuggy is set up for acme/widgets: ${detail}. The next ticket is made at ${pages}/tickets/new.`,
+    thing: "More",
+    more: "Offer",
+    tell: saidMoreOffered(
+      `chuggy is set up for acme/widgets: ${detail}.${configuration} The next ticket is made at ${pages}/tickets/new.`,
+    ),
+    workspace: "acme",
+    project: "widgets",
   };
 }
+
+const closing = (detail: string): SaidThing => closingWith(detail);
 
 /** What a reader of this repository is told as the offer to merge `ticket`'s pull request, leaning towards leaving it to the person where `leave` is said. */
 function mergeOffered(ticket: number, leave = ""): SaidThing {
@@ -908,7 +913,7 @@ test("the merge offer leans towards leaving the merge to the person, and says wh
   expect(await offered("Unread")).toEqual(mergeOffered(1));
 });
 
-test("where the site refused the merge, setup done closes as it always has, with the pull request still unmerged", async () => {
+test("where the site refused the merge, setup done closes with the offers after it, with the pull request still unmerged", async () => {
   expect(
     (
       await nextSaid(doneWith([setupSiteOpened(pullRequest)]), {
@@ -918,7 +923,7 @@ test("where the site refused the merge, setup done closes as it always has, with
   ).toEqual(closing("ticket 1 is done"));
 });
 
-test("where the repository holds its own configuration, setup done closes as it always has, whatever pull request the ticket opened", async () => {
+test("where the repository holds its own configuration, setup done closes with the offers after it, whatever pull request the ticket opened", async () => {
   expect(
     (await nextSaid(doneWith([setupSiteOpened(pullRequest)], true))).thing,
   ).toEqual(closing("ticket 1 is done"));
@@ -927,7 +932,7 @@ test("where the repository holds its own configuration, setup done closes as it 
   ).toEqual(closing("ticket 6 opened a pull request"));
 });
 
-test("where the repository holds only the bootstrap and no pull request of the ticket stands unmerged, setup done closes as it always has: none opened, one pushed, one that landed or says it merged, one failed or invalidated", async () => {
+test("where the repository holds only the bootstrap and no pull request of the ticket stands unmerged, setup done closes with the offers after it: none opened, one pushed, one that landed or says it merged, one failed or invalidated", async () => {
   const opened = setupSiteOpened(pullRequest);
   const proposal = {
     url: pullRequest,
@@ -956,7 +961,7 @@ test("where the repository holds only the bootstrap and no pull request of the t
 });
 
 test.each(["Refused", "Failed", "Garbled", "Unauthenticated", "Cut"] as const)(
-  "the done ticket's landings answered as %s leave setup done, closing as it always has, and stop nothing",
+  "the done ticket's landings answered as %s leave setup done, closing with the offers after it, and stop nothing",
   async (fate) => {
     const site = doneWith([setupSiteOpened(pullRequest)]);
     site.fates.set("landings", fate);
@@ -1393,7 +1398,8 @@ test("at each stage of a site the first step that is not done decides what is ne
     const next = await nextSaid(setupSiteAt(stage));
     const kind = deciding[stage];
     expect(next.carried, stage).toEqual(setupAnswersNone);
-    if (kind === "Done") expect(next.thing.thing, stage).toBe("Done");
+    if (kind === "Done")
+      expect(next.thing, stage).toMatchObject({ thing: "More", more: "Offer" });
     else if (kind === "Project")
       expect(next.thing, stage).toMatchObject({
         thing: "Name",

@@ -39,6 +39,7 @@ import {
   setupSiteOpened,
 } from "./setupSite.ts";
 import type { SetupSite, SetupSiteMerging } from "./setupSite.ts";
+import { saidMoreCommand, saidMoreOffered } from "./setupSaid.ts";
 
 const flags = ["--workspace", "acme", "--project", "widgets"];
 const at = flags.join(" ");
@@ -82,16 +83,20 @@ const offerTold = (lean: string): string =>
   `tell: Ticket 1 opened a pull request, ${pullRequest}, holding its work and this repository's own configuration; once it is merged, later tickets run on that configuration. Do you want me to merge it, or would you rather review it and merge it yourself?${lean} If you merge it yourself, setup is done now, and the configuration is in place once it is merged.`;
 const leaning =
   " I would leave it to you: a repository with a history of its own often has rules an app cannot pass, such as a branch protection or a required review or check, and its owners may want to review the change first.";
-const doneTold = (configuration: string): string =>
-  `tell: chuggy is set up for acme/widgets: ticket 1 is done.${configuration} The next ticket is made at ${page}.`;
+/** Setup said to be done, with the offers after it unless the import the merge brought on is still under way. */
+const doneTold = (configuration: string, offered = true): string => {
+  const done = `chuggy is set up for acme/widgets: ticket 1 is done.${configuration} The next ticket is made at ${page}.`;
+  return `tell: ${offered ? saidMoreOffered(done) : done}`;
+};
 const merged = `did: asked chuggy to merge ${pullRequest}, and it is merged`;
 
 test("where the first ticket's pull request stands unmerged on the bootstrap, the checklist offers merge under one rule in place of setup done, and merges nothing", async () => {
   const machine = await signedIn(unmerged());
   const said = lines(await machine.command(flags));
   expect(told(said)).toBe(offerTold(""));
-  expect(said.slice(-2)).toEqual([
+  expect(said.slice(-3)).toEqual([
     `rule: Run node ${machineScript} merge ${at} only once the person says yes to chuggy merging that pull request.`,
+    `rule: Run ${saidMoreCommand(machineScript, "offer")} only if the person would rather merge it themselves.`,
     stop,
   ]);
   expect(writes(machine)).toEqual([]);
@@ -166,6 +171,7 @@ test("a merge whose wait ends before the import says it is under way and names m
   expect(said.slice(-3)).toEqual([
     doneTold(
       " chuggy is importing the repository's own configuration, and later tickets run on it once it is in place.",
+      false,
     ),
     "rule: Run the command on the next: line again, and go on running it while chuggy imports the repository's own configuration: the pull request is merged already, so it merges nothing again and waits on the same import. Nothing has failed, so do not tell the person that it did or give them a deadline.",
     `next: node ${machineScript} merge ${at}`,

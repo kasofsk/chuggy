@@ -12,6 +12,7 @@ import { copyTextEn } from "../app/copy/catalog.ts";
 import { copyOrDataText } from "../app/core/copy.ts";
 import type { CopyArgument, CopyOrData } from "../app/core/copy.ts";
 import type {
+  SetupMore,
   SetupOfferCommand,
   SetupNext,
   SetupStepSaid,
@@ -44,6 +45,16 @@ export function saidStep(step: SetupStepSaid): Said {
 /** A next thing as the program words it, each descriptor in it formatted. */
 export type SaidThing =
   | { readonly thing: "Done"; readonly tell: string }
+  | {
+      readonly thing: "More";
+      readonly more: SetupMore;
+      readonly tell: string;
+      readonly directory?: string;
+      readonly image?: string;
+      readonly page?: string;
+      readonly workspace: string;
+      readonly project: string;
+    }
   | { readonly thing: "Hand"; readonly tell: string; readonly when: string }
   | {
       readonly thing: "Offer";
@@ -117,6 +128,7 @@ export type SaidThing =
 export function saidThing(thing: SetupThing): SaidThing {
   switch (thing.thing) {
     case "Done":
+    case "More":
     case "Configure":
     case "First":
     case "Usage":
@@ -405,3 +417,19 @@ export const saidViewer: readonly Said[] = [
   saidLive,
   ["done", "ticket 1 is done"],
 ];
+
+/** Setup said to be done by `done`, with the three things offered after its last step. */
+export function saidMoreOffered(done: string): string {
+  return `${done} A few more things you might want: 1. Add more runners, on another machine. 2. Customize your default ticket configuration, including your own image for your tickets to run in. 3. Review what else you can configure. Want any of these?`;
+}
+
+/** The bare command run by `script` for acme/widgets with `--more` given `more`. */
+export function saidMoreCommand(script: string, more: string): string {
+  return `node ${script} --workspace acme --project widgets --more ${more}`;
+}
+
+/** The rule the three offers after setup's last step are put under, each and none naming the bare command run by `script`. */
+export function saidMoreRule(script: string): string {
+  const command = (more: string) => saidMoreCommand(script, more);
+  return `rule: Run ${command("runners")} where the person wants more runners, ${command("configuration")} where they want their configuration different, and ${command("review")} where they want to see what else they can set, one at a time in the order they named them. Run ${command("none")} where they want none of these.`;
+}

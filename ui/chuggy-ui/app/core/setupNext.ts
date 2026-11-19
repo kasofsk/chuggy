@@ -51,15 +51,23 @@
  * step is done and the first ticket's pull request, holding the repository's
  * own configuration, stands unmerged, `merge` is offered on the person's yes,
  * leaning towards leaving the merge to them where the repository has a history
- * of its own; on their no, setup is done.
+ * of its own. Once that merge is settled, by `merge` or by the person saying
+ * they merge it themselves, and on every bare run after, setup is said to be
+ * done with three things offered after it, none of them a step: more runners,
+ * by the line that makes another machine one; the repository's configuration
+ * changed with the person's agent and judged by `check`; and where else
+ * chuggy is set, each by its address. On none of them, setup ends saying how
+ * to have them offered again.
  */
 
+import { repositoryConfigurationRoot } from "../../../../src/contract/configurationDocument.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { RepositoryConfigurationImportAttemptResponse } from "../../../../src/contract/responses.ts";
 import { forgeApps } from "../../../../src/contract/rosters.ts";
+import { chuggyDocsIndex } from "../../../../src/contract/sessionTools.ts";
 import type { Copy, CopyArgument } from "./copy.ts";
 import { instantText, memoryMibFigure, quantityFigureCopy } from "./figures.ts";
-import { claudeCodeRunnerLine } from "./claudeCodeLine.ts";
+import { claudeCodeLine, claudeCodeRunnerLine } from "./claudeCodeLine.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
 import { repositoryAddAnchor, repositoryLabel } from "./projectRepositories.ts";
 import { repositoryConnectSetupAddress } from "./repositoryConnect.ts";
@@ -77,7 +85,7 @@ import {
   setupUsageKeep,
 } from "./setupArguments.ts";
 import { setupConfigurationPath } from "./setupConfiguration.ts";
-import type { SetupAnswers } from "./setupArguments.ts";
+import type { SetupAnswers, SetupMoreAnswer } from "./setupArguments.ts";
 import { setupMergeImportFailed } from "./setupMerge.ts";
 import type { SetupHistory, SetupMergeSince } from "./setupMerge.ts";
 import type { SetupPlatform } from "./setupPorts.ts";
@@ -1087,9 +1095,10 @@ function setupCarried(
 /** What setup said to be done says of the repository's own configuration, after a `merge` run: in place, being imported, or refused by its import with what the import said. */
 type SetupDoneConfiguration =
   | { readonly configuration: "imported" | "importing" | "none" }
-  | { readonly configuration: "refused"; readonly last: Copy };
+  | { readonly configuration: "refused"; readonly last: Copy }
+  | { readonly configuration: "merging"; readonly url: string };
 
-/** Setup said to be done in the ticket step's own words, so a pull request that was opened is not said to have landed, and with what became of the repository's own configuration where a `merge` run waited on it. */
+/** Setup said to be done in the ticket step's own words, so a pull request that was opened is not said to have landed, and with what became of the repository's own configuration where a `merge` run waited on it, or where the person merges it themselves. */
 function setupDoneTell(
   standing: SetupStanding,
   at: SetupAt,
@@ -1104,6 +1113,7 @@ function setupDoneTell(
       detail: detail ?? "",
       configuration: done.configuration,
       last: done.configuration === "refused" ? done.last : "",
+      url: done.configuration === "merging" ? done.url : "",
       page: setupPage(at, navRoutes.ticketNew),
     },
   };
@@ -1148,26 +1158,135 @@ export const setupMergeUnseen: SetupMergeSeen = {
   history: "Unread",
 };
 
+/** A page of chuggy's docs, by the address the docs' own index gives it. */
+function setupDocsPage(path: string): string {
+  return new URL(path, chuggyDocsIndex).href;
+}
+
+/** The docs pages the offers after setup's last step name. */
+export const setupDocsPages = {
+  configuration: setupDocsPage("docs/configuration.md"),
+  image: setupDocsPage("docs/jobs/image.md"),
+  sizing: setupDocsPage("docs/jobs/sizing.md"),
+  runners: setupDocsPage("docs/runners.md"),
+} as const;
+
+/** What else can be set and where, each by its address: the project's settings pages, the repository's configuration and the docs on it and on sizing a stage, and the settings file of the runner package of `platform`, by the part of its README that says it. */
+function setupReviewTell(at: SetupAt, platform: SetupPlatform): Copy {
+  const runner = runnerPackages[platform];
+  return {
+    id: "setup-more-review",
+    args: {
+      permissions: setupPage(at, settingsRoutes.project.permissions),
+      placement: setupPage(at, settingsRoutes.project.placement),
+      usage: setupPage(at, settingsRoutes.project.usage),
+      directory: repositoryConfigurationRoot,
+      configuration: setupDocsPages.configuration,
+      sizing: setupDocsPages.sizing,
+      program: runner.program,
+      guide: runner.guideAddress,
+    },
+  };
+}
+
+/**
+ * Setup's last step behind it, said by `done`: the three things offered after
+ * it, or the one the person took, `more` naming which; on none of them, setup
+ * ended with how to be offered them again.
+ */
+function setupMoreThing(
+  done: Copy,
+  at: SetupAt,
+  more: SetupMoreAnswer | undefined,
+  platform: SetupPlatform,
+): SetupThing {
+  const { workspace, project } = at;
+  switch (more) {
+    case undefined:
+    case "offer":
+      return {
+        thing: "More",
+        more: "Offer",
+        tell: { id: "setup-more-offer", args: { done } },
+        workspace,
+        project,
+      };
+    case "runners":
+      return {
+        thing: "More",
+        more: "Runners",
+        tell: {
+          id: "setup-more-runners",
+          args: {
+            line: claudeCodeRunnerLine(at.site, workspace, project, false),
+            runners: setupDocsPages.runners,
+          },
+        },
+        workspace,
+        project,
+      };
+    case "configuration":
+      return {
+        thing: "More",
+        more: "Configuration",
+        tell: {
+          id: "setup-more-configuration",
+          args: { directory: repositoryConfigurationRoot },
+        },
+        directory: repositoryConfigurationRoot,
+        image: setupDocsPages.image,
+        page: setupPage(at, navRoutes.repositories),
+        workspace,
+        project,
+      };
+    case "review":
+      return {
+        thing: "More",
+        more: "Review",
+        tell: setupReviewTell(at, platform),
+        workspace,
+        project,
+      };
+    case "none":
+      return {
+        thing: "Done",
+        tell: {
+          id: "setup-more-none",
+          args: { line: claudeCodeLine(at.site) },
+        },
+      };
+  }
+}
+
 /**
  * Every step done: the merge offered where the first ticket's pull request
- * stands unmerged, and otherwise setup said to be done; after a merge, with
- * the import of the repository's own configuration in place, refused, or
- * still under way, which is `merge` run again.
+ * stands unmerged and the person has not said they merge it themselves, and
+ * otherwise setup said to be done with what is offered after it; after a
+ * merge, with the import of the repository's own configuration in place,
+ * refused, or still under way, which is `merge` run again.
  */
 function setupDoneThing(
   standing: SetupStanding,
   at: SetupAt,
   merge: SetupMergeSeen,
+  more: SetupMoreAnswer | undefined,
+  platform: SetupPlatform,
 ): SetupThing {
-  const done = (configuration: SetupDoneConfiguration): SetupThing => ({
-    thing: "Done",
-    tell: setupDoneTell(standing, at, configuration),
-  });
+  const done = (configuration: SetupDoneConfiguration): SetupThing =>
+    setupMoreThing(
+      setupDoneTell(standing, at, configuration),
+      at,
+      more,
+      platform,
+    );
   if (merge.seen === "Refused") return done({ configuration: "none" });
-  if (merge.seen === "Offered")
-    return standing.unmerged === undefined
-      ? done({ configuration: "none" })
-      : setupMergeOffer(standing.unmerged, at, merge.history);
+  if (merge.seen === "Offered") {
+    const { unmerged } = standing;
+    if (unmerged === undefined) return done({ configuration: "none" });
+    return more === undefined
+      ? setupMergeOffer(unmerged, at, merge.history)
+      : done({ configuration: "merging", url: unmerged.url });
+  }
   if (standing.bootstrap === undefined)
     return done({ configuration: "imported" });
   const last = standing.bootstrap.lastImport;
@@ -1461,6 +1580,7 @@ function setupThing(
   mcp: SetupMcpHere,
   offers: SetupTicketOffers | undefined,
   merge: SetupMergeSeen,
+  more: SetupMoreAnswer | undefined,
 ): SetupThing {
   const named = workspaceNamesListed(standing.workspaces);
   if (standing.choice.choice === "Open")
@@ -1472,7 +1592,8 @@ function setupThing(
     named,
   };
   const undone = standing.steps.find((step) => step.lacks !== undefined);
-  if (undone?.lacks === undefined) return setupDoneThing(standing, at, merge);
+  if (undone?.lacks === undefined)
+    return setupDoneThing(standing, at, merge, more, mcp.platform);
   return setupMend(
     undone,
     undone.lacks,
@@ -1511,7 +1632,14 @@ export function setupNext(
   const said = setupUsageThing(standing, answers, usage);
   const thing =
     said.thing ??
-    setupThing(standing, here, { platform, packaged }, offers, merge);
+    setupThing(
+      standing,
+      here,
+      { platform, packaged },
+      offers,
+      merge,
+      answers.more,
+    );
   return said.said === undefined
     ? { carried, thing }
     : { carried, thing, usage: said.said };
