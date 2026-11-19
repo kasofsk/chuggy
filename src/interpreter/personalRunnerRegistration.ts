@@ -9,14 +9,12 @@
  * asked again of the minter when the token is redeemed, so a permit taken away
  * in between registers nothing.
  *
- * IT IS TWO WRITES AT TWO AUTHORITIES, NOT A POOL'S THREE. A pool's
- * registration writes the relation its principal is answered `Execute` from; a
- * personal runner's writes none, so its principal holds no permit of any
- * project, and nothing gated on `Execute` — the forge credential a project
- * mints among them — answers it. What its owner's runners may serve is one
- * allowlist, which starts empty, which its owner writes one project at a time
- * under their own `Read` of that project, and which goes with their last
- * runner.
+ * IT IS TWO WRITES AT TWO AUTHORITIES. A personal runner's registration writes
+ * no relation, so its principal holds no permit of any project, and nothing
+ * gated on `Execute` — the forge credential a project mints among them —
+ * answers it. What its owner's runners may serve is one allowlist, which starts
+ * empty, which its owner writes one project at a time under their own `Read` of
+ * that project, and which goes with their last runner.
  *
  * A CLIENT GOES BEFORE ITS ROW. Taking a runner off removes the client its row
  * names and then deletes the row, so a failure part-way leaves a row naming a
@@ -207,9 +205,8 @@ export interface PersonalRunnerTokenTerms {
 export const personalRunnerTokensLiveMax = 4;
 
 /**
- * A personal token's whole life, as `WorkerPoolRegistrationTokens` is a pool
- * token's, bounded per member and tenant, and `permitted` beside it, which
- * reads one neither spent nor expired without spending it.
+ * A personal token's whole life, bounded per member and tenant, and `permitted`
+ * beside it, which reads one neither spent nor expired without spending it.
  */
 export interface PersonalRunnerRegistrationTokens {
   mint(
@@ -434,8 +431,7 @@ function personalRunnerCredentialsOf(
  * Redemption, authenticated on the token alone and authorized on its minter's
  * current permit, registering the runner with what it declares. The token is
  * read before it is spent, so one whose minter has lost the permit stays
- * unspent, and given back where the writes after the spend faulted, as a pool
- * token is.
+ * unspent, and given back where the writes after the spend faulted.
  */
 export async function personalRunnerTokenRedeem(
   access: ProjectAccess,

@@ -84,11 +84,12 @@
  * that never reached one.
  *
  * AN EXECUTION ROUTED TO POOLS IS NEVER PLACED HERE. Its attempt is opened and
- * `runner.qnt`'s `placementOutcome` asked of the pools its project registered,
- * each revoked where the project authority withholds its `Execute`. That is
- * the two inabilities again: no pool configured to run it blocks, and one that
- * could is a hold, as is an authority that could not answer. A held attempt,
- * prepared and invoked as a placed one is where a pool could run it, waits
+ * `runner.qnt`'s `placementOutcome` asked of its owner's personal runners,
+ * each revoked where the owner no longer holds what admits them or `Read` of
+ * the project. That is the two inabilities again: no runner configured to run
+ * it blocks, and one that could is a hold, as is an authority that could not
+ * answer. A held attempt, prepared and invoked as a placed one is where a
+ * runner could run it, waits
  * for a runner with no lease, as `runner.qnt` holds an `Unavailable`
  * placement until one can take it. Its place in the claims' order is its
  * opening, so waiting longer never sends it to the back.
@@ -96,13 +97,13 @@
  * A WAITING ATTEMPT IS ASKED AGAIN, IN TURN, WHAT ITS OPENING ASKED. Once no
  * lapse ends it, nothing else would: a pass reads a bounded batch of them, each
  * after where the last batch stopped, and checks each for a project no longer
- * `Active`, the pools again, and a preparation that would now record something
- * else — a repinned runtime, a policy or a briefing that moved. The first and
- * the last withdraw it without spending the budget, for the pass to open again,
- * which it does for a project only while it is `Active`; the pools and the
- * preparation block it as they would at opening, and a hold leaves it waiting.
- * Every one of those ends is fenced by `pool` being null in the statement that
- * ends it, so a runner that claimed it in between keeps it.
+ * `Active`, the owner's runners again, and a preparation that would now record
+ * something else — a repinned runtime, a policy or a briefing that moved. The
+ * first and the last withdraw it without spending the budget, for the pass to
+ * open again, which it does for a project only while it is `Active`; the
+ * runners and the preparation block it as they would at opening, and a hold
+ * leaves it waiting. Every one of those ends is fenced by `pool` being null in
+ * the statement that ends it, so a runner that claimed it in between keeps it.
  *
  * A POOL'S REFUSAL IS THE DEFINITIVE INABILITY. A pool that says it cannot run
  * what it claimed blocks the execution rather than holding it for another pool,

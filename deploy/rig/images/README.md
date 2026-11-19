@@ -215,9 +215,9 @@ holds, beside what that runner's latest poll named. A report older than
 `workerPoolReportAgeMsMax` in `src/interpreter/workerPoolReports.ts` is
 dropped, and its runner's series with it.
 
-Every series carries `tenant` and `host`; a pool's carries `project` and
-`pool`, and a personal runner's `owner`, its owner's subject under
-`CHUG_POOL_PLANE_OIDC_ISSUER`, and `personal_runner`, its client id.
+Every series carries `tenant`, `host`, `owner`, the runner's owner's subject
+under `CHUG_POOL_PLANE_OIDC_ISSUER`, and `personal_runner`, its client id;
+`project` and `pool` are empty.
 
 | Variable | | |
 |---|---|---|

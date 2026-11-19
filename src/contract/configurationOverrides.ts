@@ -16,7 +16,7 @@
  *
  * A CATALOG TICKET OVERRIDES ANY FIELD OF A WORKLOAD, under `workloads` by the
  * name the catalog holds it under. Where a task runs is still bounded by the
- * runners whose pools declare what it requires, which no override reaches, so
+ * runners that declare what it requires, which no override reaches, so
  * an image or a requirement is overridable like the prompt. The two are one
  * placement, and naming either drops the other. A prompt named by path is the
  * text the catalog's import stored beside that path, so nothing reads a

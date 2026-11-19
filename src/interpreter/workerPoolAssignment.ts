@@ -11,14 +11,14 @@
  * PostgreSQL predicate, because only under the row lock is it exclusive, and
  * this states what that predicate must decide.
  *
- * A POOL IS THE MODEL'S RUNNER, AND EVERY ONE IS A MEMBER'S. It takes only
- * that member's executions in the partitions they allowlisted: its owner is
- * the model's `r.owner`, an execution's owner `p.ownerOf`, and its allowlist
- * of partitions `r.allowlist`. Registering a pool enables it, withholding
- * `Execute` from its principal revokes it, and registering it again mints a
- * new principal, which is the generation a session is current under. A poll is the session: it resolves to one pool,
- * authenticates as a principal whose token is its lease, and holds its slots
- * against the plane's bound.
+ * A POOL IS THE MODEL'S RUNNER, AND EVERY ONE IS A MEMBER'S. It takes only that
+ * member's executions in the partitions they allowlisted: its owner is the
+ * model's `r.owner`, an execution's owner `p.ownerOf`, and its allowlist of
+ * partitions `r.allowlist`. Registering a pool enables it, withholding its
+ * owner's permit revokes it, and registering it again mints a new principal,
+ * which is the generation a session is current under. A poll is the session: it
+ * resolves to one pool, authenticates as a principal whose token is its lease,
+ * and holds its slots against the plane's bound.
  *
  * ONE INVENTORY, WHICH A POLL PUBLISHES BEFORE IT CLAIMS. What a pool runs is
  * the capability tokens kept for it: platforms, and whatever else its owner
@@ -47,12 +47,12 @@
  * terms.
  *
  * THE SCHEDULER ASKS THE OUTCOME OF THE REGISTRY AND THE AUTHORITY. A poll is
- * not durable, so the scheduler sees no session and no pool is placeable to
- * it. The agents a pool takes are read only beside a session, so it asks of
- * a placement naming no agent and pools advertising none. The registry it
- * asks of is the execution's owner's pools and no other; each is enabled, and revoked where the
- * authority withholds the permit its polls are admitted by, or the owner's
- * `Read` of the project its claims are asked under.
+ * not durable, so the scheduler sees no session and no pool is placeable to it.
+ * The agents a pool takes are read only beside a session, so it asks of a
+ * placement naming no agent and pools advertising none. The registry it asks of
+ * is the execution's owner's runners and no other; each is enabled, and revoked
+ * where the authority withholds the permit its polls are admitted by, or the
+ * owner's `Read` of the project its claims are asked under.
  */
 
 import type { AccountAgent } from "../contract/rosters.ts";
@@ -132,7 +132,7 @@ export function workerPoolDemandOf(
   return { ...workerPoolDemandRouted, ownerOf: execution.owner };
 }
 
-/** A registered pool as the model's `Runner`: its partition and name are the runner's identity, and its principal the session generation. */
+/** A registered runner as the model's `Runner`: its partition and name are the runner's identity, and its principal the session generation. */
 export interface WorkerPoolRunner extends WorkerPoolPolicy {
   readonly partition: Partition;
   readonly pool: string;
@@ -168,7 +168,7 @@ export interface WorkerPoolPlacement {
   readonly agent: AccountAgent | undefined;
 }
 
-/** A registered pool beside the poll it is making, if it is making one. */
+/** A registered runner beside the poll it is making, if it is making one. */
 export interface WorkerPoolEnrolment {
   readonly pool: WorkerPoolRunner;
   readonly session: WorkerPoolSession | undefined;
@@ -318,7 +318,7 @@ export function workerPoolCanAssign(
 }
 
 /**
- * What can be said of the execution against every registered pool, which is
+ * What can be said of the execution against every registered runner, which is
  * the model's `placementOutcome`. A pool that is configured for it and not
  * taking it now leaves it unavailable, and only a registry with no configured
  * pool at all makes it definitively incompatible.
@@ -348,7 +348,7 @@ export function workerPoolPlacementOutcome(
   return configured.length > 0 ? "Unavailable" : "DefinitiveIncompatibility";
 }
 
-/** A registered pool as the registry and the authority answer it: the runner's identity, inventory, owner and allowlist, and whether it is revoked. */
+/** A registered runner as the registry and the authority answer it: the runner's identity, inventory, owner and allowlist, and whether it is revoked. */
 export type WorkerPoolAnswered = Pick<
   WorkerPoolRunner,
   | "partition"
@@ -361,7 +361,7 @@ export type WorkerPoolAnswered = Pick<
   | "revoked"
 >;
 
-/** A registered pool as the scheduler reads it: the owner and allowlist it registered, the registered policy otherwise, enabled, and revoked as the authority answered. */
+/** A registered runner as the scheduler reads it: the owner and allowlist it registered, the registered policy otherwise, enabled, and revoked as the authority answered. */
 function workerPoolOutcomeRegisteredRunner(
   registered: WorkerPoolAnswered,
 ): WorkerPoolRunner {

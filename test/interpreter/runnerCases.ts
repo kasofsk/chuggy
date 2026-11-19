@@ -332,7 +332,7 @@ const refusedByPlacement: readonly RunnerCase[] = [
 
 const refusedByPolicy: readonly RunnerCase[] = [
   refused(
-    "a deregistered pool is assigned nothing",
+    "a deregistered runner is assigned nothing",
     [runnerTerm.enabled],
     "DefinitiveIncompatibility",
     { pool: { ...pool, enabled: false } },
@@ -456,7 +456,7 @@ const refusedByAgent: readonly RunnerCase[] = [
 
 const refusedBySession: readonly RunnerCase[] = [
   refused(
-    "a registered pool making no poll is unavailable",
+    "a registered runner making no poll is unavailable",
     [runnerTerm.session],
     "Unavailable",
     {

@@ -1411,8 +1411,8 @@ function registerPersonalRunnerRemovals(
 
 /**
  * A member's own runners: the token they mint for one in a tenant, its public
- * redemption, which the token in its body authenticates as a pool's does, the
- * caller's own runners read, their allowlist narrowed or widened by a project,
+ * redemption, which the token in its body authenticates, the caller's own
+ * runners read, their allowlist narrowed or widened by a project,
  * and their removal.
  */
 function registerPersonalRunners(

@@ -606,7 +606,7 @@ test("a runner holding one attempt may pull both its image and its runtime, a ca
   ]);
 });
 
-test("the plane serving harnesses cannot read the relation of a project's pools", async () => {
+test("the plane serving harnesses cannot read worker_pool", async () => {
   await assert.rejects(
     harnessPlanePool.query("SELECT pool FROM worker_pool"),
     /permission denied/u,

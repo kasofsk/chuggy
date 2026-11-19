@@ -329,7 +329,7 @@ export const sessionWokenAnswerSchema = z.union([
   z.object({ woken: z.enum(["NoThread", "Closed", "Backlogged"]) }),
 ]);
 
-/** How a pool's runner reports that the container its session ran in has ended, under that session's bearer. */
+/** How the runner holding a session reports that the container its session ran in has ended, under that session's bearer. */
 export const sessionEndedSchema = z.strictObject({
   phase: z.enum(sessionContainerEnds),
 });

@@ -147,7 +147,7 @@ export interface WorkerPoolSessionOpening {
   readonly invocation: SessionTaskInvocation;
   readonly image: string;
   readonly launch: SessionTaskLaunch;
-  /** How long a chat host's attempt may sit idle, absent where its host named no bound; a pool's attempt is reaped at the scheduler's window whatever this says. */
+  /** How long a chat host's attempt may sit idle, absent where its host named no bound. */
   readonly idleSecs?: number;
   /** The capabilities a chat host named for the thread this opens, absent where it named none or this opens no chat host's thread. */
   readonly hostCapabilities?: readonly SessionCapability[];

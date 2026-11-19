@@ -292,7 +292,7 @@ export type OperationResource =
   | (OperationResourceBase & { readonly state: "Answered" })
   | (OperationResourceBase & { readonly state: "Cancelled" });
 
-/** A runner a job ran on: one of the project's pools by its name, or a member's own runner by the member it is. */
+/** A runner a job ran on: a pool, by the name it had, or a member's own runner by the member it is. */
 export type RunnerResource =
   | { readonly kind: "Pool"; readonly pool: string }
   | { readonly kind: "Personal"; readonly owner: Principal };

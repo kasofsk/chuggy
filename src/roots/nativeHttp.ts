@@ -218,18 +218,17 @@ const oidcAlgorithmsVariable = "CHUG_API_OIDC_ALGORITHMS";
 const artifactRootVariable = "CHUG_API_ARTIFACT_ROOT";
 const ketoReadUrlVariable = "CHUG_API_KETO_READ_URL";
 /**
- * The only two addresses this process names that write rather than read. The
- * authority's write port alone is what creating a project needs, and a pool's
- * registration needs both, so naming the issuer's admin port without it refuses
- * the start rather than minting a client the authority is never told about.
+ * The only two addresses this process names that write rather than read: the
+ * authority's write port, which creating a project needs, and the issuer's
+ * admin port, which a runner's registration needs.
  */
 const ketoWriteUrlVariable = "CHUG_API_KETO_WRITE_URL";
 const hydraAdminUrlVariable = "CHUG_API_HYDRA_ADMIN_URL";
 const ketoTimeoutVariable = "CHUG_API_KETO_TIMEOUT_MS";
 /**
- * Where a registered runner, a pool or a member's personal one, reaches this
- * deployment, which a redemption answers so a runner's file is written whole:
- * required wherever runners are registered, the registry host only where the
+ * Where a member's registered runner or chat host reaches this deployment,
+ * which a redemption answers so a runner's file is written whole: required
+ * wherever runners are registered, the registry host only where the
  * deployment names one of its own.
  */
 const poolTokenUrlVariable = "CHUG_API_POOL_TOKEN_URL";

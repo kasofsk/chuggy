@@ -474,7 +474,7 @@ export function executionRoutes(
 export interface LogicalExecution {
   readonly partition: Partition;
   readonly execution: ExecutionId;
-  /** Where its attempts run: placed by this scheduler, or offered to the project's pools. */
+  /** Where its attempts run: placed by this scheduler, or offered on the pool plane. */
   readonly route: ExecutionRoute;
   /** Who created its ticket, absent where no member did or it was registered before owners were recorded. */
   readonly owner?: Principal;

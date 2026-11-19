@@ -1,6 +1,6 @@
 /**
- * What a worker pool is handed per assignment, what it answers with, and what
- * it registers as.
+ * What a runner polling the pool plane is handed per assignment, and what it
+ * answers with.
  *
  * A POOL IS A PLACEMENT BACKEND AND NOTHING ELSE. It is handed what it needs to
  * size and start a workload and to kill one that stopped answering; everything
@@ -18,11 +18,10 @@
  * the tenant its registration names, and how the agent credential of its
  * owner's own that it handed a job stopped that job. It is its owner's
  * machine, where that job's own shells are told the project already, by the
- * core's `workerJobVariables`, and where those credentials are kept. A
- * project's pool is told neither, since its registration names its project.
+ * core's `workerJobVariables`, and where those credentials are kept.
  * A member's chat host is told the thread each session it is handed is an
  * attempt of, and the threads it last ran that have since closed.
- * A runner, a pool or a chat host that names the credentials it holds is told
+ * A runner or a chat host that names the credentials it holds is told
  * which of them are paused for the member whose account its work spends.
  */
 
@@ -55,8 +54,8 @@ export const workerImageCharsMax = 512;
  * A capability token, free-form and per-project: what a pool declares and
  * what a requirement names, in one grammar, so a token a task can require is a
  * token a pool can declare. A declaration is a claim rather than a proof,
- * accepted knowingly because a project's owner knows the pools it registered
- * and decides how each meets the tokens it declares.
+ * accepted knowingly because a runner is its owner's machine, and its owner
+ * decides how it meets the tokens it declares.
  */
 export const workerPoolCapabilitySchema = z
   .string()
@@ -104,8 +103,8 @@ export const workerPoolAssignmentSchema = z.strictObject({
   /**
    * The project of a job a member's personal runner is assigned, in the
    * tenant its registration names, by which the job mounts its owner's
-   * volumes scoped per project. It is absent for a project's pool, whose
-   * registration names its own.
+   * volumes scoped per project. It is absent to a runner whose release does
+   * not read it.
    */
   project: workerPoolProjectSchema.optional(),
   /**
@@ -338,8 +337,8 @@ export function workerRunnerOf(
  * The header a runner names the capabilities it has in on its poll, as tokens
  * separated by commas with any spaces or tabs around each, whose set replaces
  * the one its registration or an earlier poll recorded. A poll without it
- * leaves the recorded set as it is, since the cluster's own pool and every
- * earlier runner send none, and an empty one names the empty set.
+ * leaves the recorded set as it is, since every earlier runner sends none,
+ * and an empty one names the empty set.
  */
 export const workerRunnerCapabilitiesHeader = "chuggy-capabilities";
 
@@ -383,12 +382,11 @@ export const workerRunnerCredentialAgents = Object.keys(
 export const workerRunnerCredentialsPerAgentMax = 16;
 
 /**
- * The header a member's personal runner or chat host or a project's pool names
- * in on its poll, per agent, the credentials it would run that agent's work on
- * now, as `<agent>:<name>`
- * separated by commas with any spaces or tabs around each. A poll without it,
- * or with one `workerRunnerCredentialsOf` does not read, names none and is
- * served as one naming none, never refused, as a poll's runner is.
+ * The header a member's personal runner or chat host names in on its poll, per
+ * agent, the credentials it would run that agent's work on now, as
+ * `<agent>:<name>` separated by commas with any spaces or tabs around each. A
+ * poll without it, or with one `workerRunnerCredentialsOf` does not read, names
+ * none and is served as one naming none, never refused, as a poll's runner is.
  */
 export const workerRunnerCredentialsHeader = "chuggy-credentials";
 
@@ -599,7 +597,7 @@ export const workerPoolReconciliationSchema = z
      * Each credential the poll named that is paused for the member whose
      * account its work spends, read as this answer is made and so gone from
      * the next once the pause is, and none it did not name. It is named only to
-     * a personal runner, a pool or a chat host whose poll's release reads it,
+     * a personal runner or a chat host whose poll's release reads it,
      * and absent is the default: no credential it named is paused.
      */
     credentialPauses: z
@@ -787,10 +785,7 @@ export const workerPoolRegistrationTokenRequestSchema = z.strictObject({
   lifetimeSecs: z.number().int().positive().safe(),
 });
 
-/**
- * What an operator redeems with: the token, the name the pool takes, and the
- * capabilities it declares.
- */
+/** @deprecated No endpoint reads this. */
 export const workerPoolRedemptionSchema = z.strictObject({
   token: z.string().min(1).max(workerPoolIdentityCharsMax),
   pool: z.string().min(1).max(workerPoolIdentityCharsMax),
