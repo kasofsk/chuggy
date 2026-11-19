@@ -25,10 +25,9 @@
  * `MemberRead`; a read a chuggy tool makes is admitted under that tool's
  * capability too, and a write is admitted under exactly the capabilities whose
  * tools make it, so a write no session's tool makes is `Refused`. So is
- * everything addressed to no partition, and inside one a registration token's
- * mint, because enrolling a machine is provisioning rather than work, as
- * deleting the project is; every route of a project's access tokens, a read
- * included; every write of a personal runner, its allowlist
+ * everything addressed to no partition, and inside one deleting the project,
+ * because that is provisioning rather than work; every route of a project's
+ * access tokens, a read included; every write of a personal runner, its allowlist
  * among them;
  * a reply to a thread's offer, a person's word on what a session put to them;
  * and every write of a thread or a member's own chat, which is its owner's. The confinement is by route and
