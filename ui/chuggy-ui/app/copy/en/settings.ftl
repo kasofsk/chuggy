@@ -192,6 +192,9 @@ settings-access-tokens-send = Create token
 settings-access-tokens-secret = Token
 settings-access-tokens-copy = Copy token
 settings-access-tokens-shown-once = Copy it now. It is not shown again.
+# spells -brand-name: the runner packages' own command names
+settings-access-tokens-use = Use it as CHUGGY_TOKEN for chuggy-linux mcp or chuggy-darwin mcp.
+settings-access-tokens-how = How to use
 settings-access-tokens-created = Created
 settings-access-tokens-status = Status
 settings-access-tokens-maker = Made by

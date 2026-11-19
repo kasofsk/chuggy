@@ -154,6 +154,16 @@ async function named(name = "deploy"): Promise<void> {
   });
 }
 
+/** The dialog's link to the docs page on using a token, opening apart. */
+function expectHowToUse(region: HTMLElement): void {
+  const link = within(region).getByRole("link", { name: "How to use" });
+  expect(link.getAttribute("href")).toBe(
+    "https://github.com/kasofsk/chuggy-docs/blob/main/docs/access-tokens.md",
+  );
+  expect(link.getAttribute("target")).toBe("_blank");
+  expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+}
+
 function rowsText(): readonly string[] {
   return within(sectionOf("Access tokens"))
     .getAllByRole("row")
@@ -208,6 +218,7 @@ test("the dialog opens on Read for thirty days, says the token is the reader's o
   expect(
     within(opened).getByText("For your own scripts. Never share it."),
   ).toBeTruthy();
+  expectHowToUse(opened);
   await turned(() => {
     fireEvent.click(within(opened).getByRole("radio", { name: "Write" }));
   });
@@ -253,6 +264,12 @@ test("a token made shows its secret once beside Copy, and once put away nothing 
   expect(
     within(dialog()).getByText("Copy it now. It is not shown again."),
   ).toBeTruthy();
+  expect(
+    within(dialog()).getByText(
+      "Use it as CHUGGY_TOKEN for chuggy-linux mcp or chuggy-darwin mcp.",
+    ),
+  ).toBeTruthy();
+  expectHowToUse(dialog());
   await press("Done");
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(tokenHeldOutside(minted.secret, [])).toStrictEqual([]);

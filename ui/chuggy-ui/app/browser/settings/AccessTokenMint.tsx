@@ -1,6 +1,7 @@
 /**
  * Making one access token, in a dialog: its name, Read or Write, and how long
- * it stands, over one line saying what it is for. A refusal is one line under
+ * it stands, over one line saying what it is for and linking the docs page on
+ * using one. A refusal is one line under
  * the form with everything typed still there. A token made replaces the form
  * with its secret, which only `Done` or Escape puts away, because the secret
  * is shown this once.
@@ -26,6 +27,7 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   accessTokenAccessLabel,
+  accessTokenDocsAddress,
   accessTokenFormBlank,
   accessTokenLifetimeLabel,
   accessTokenLifetimesDays,
@@ -131,9 +133,19 @@ function useAccessTokenMint(
   };
 }
 
+/** The docs page on using a token, as a link in a line of the dialog. */
+function AccessTokenHowToUse(): ReactNode {
+  const text = useCopyText();
+  return (
+    <a href={accessTokenDocsAddress} rel="noopener noreferrer" target="_blank">
+      {text(accessTokenMintWords.how)}
+    </a>
+  );
+}
+
 /** A token just made, as the whole body of the dialog: its secret in a field
- * a reader selects from, the control that copies it, and the line that says
- * it is not shown again. */
+ * a reader selects from, the control that copies it, the line that says it is
+ * not shown again, and the line that says where it is used. */
 function AccessTokenMade(props: {
   readonly minted: AccessTokenMintedResponse;
 }): ReactNode {
@@ -155,6 +167,9 @@ function AccessTokenMade(props: {
       </div>
       <p className="m-0 text-sm text-ink-3">
         {text(accessTokenMintWords.shownOnce)}
+      </p>
+      <p className="m-0 text-sm text-ink-3">
+        {text(accessTokenMintWords.use)} <AccessTokenHowToUse />
       </p>
     </div>
   );
@@ -229,7 +244,9 @@ function AccessTokenFields(props: {
           }}
         />
       </div>
-      <p className="m-0 text-sm text-ink-3">{text(accessTokenMintWords.own)}</p>
+      <p className="m-0 text-sm text-ink-3">
+        {text(accessTokenMintWords.own)} <AccessTokenHowToUse />
+      </p>
     </div>
   );
 }
