@@ -1,6 +1,7 @@
 /**
  * Who may answer a native action, and what feedback an answer may carry: an
- * evaluation approval by whom its approvers name and never by a session,
+ * evaluation approval by whom its approvers name and never by a session or
+ * an access token,
  * every other kind under `Mutate`, and a caller who may not read the project
  * told nothing is there.
  */
@@ -8,8 +9,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { AccessTokenVia } from "../../src/interpreter/operationInbox.ts";
+import { projectInbox } from "../../src/interpreter/projectInbox.ts";
 import {
   nativeActionAnswerer,
+  nativeActionCallerOf,
   nativeActionFeedbackRefusal,
   nativeActionsAnswerable,
   type NativeActionAsked,
@@ -43,6 +47,7 @@ const developer = asPrincipal("developer");
 const admin = asPrincipal("admin");
 const outsider = asPrincipal("outsider");
 const session = "session-1" as SessionId;
+const token: AccessTokenVia = { token: "token-1", name: "nightly" };
 
 /** Read for everyone but the outsider, develop for the developer and the admin, administer for the admin. */
 const held: ReadonlyMap<Principal, readonly ProjectAccessKind[]> = new Map([
@@ -83,10 +88,11 @@ async function answererOf(
   principal: Principal,
   asked: NativeActionAsked,
   viaSession?: SessionId,
+  viaToken?: AccessTokenVia,
 ) {
   return nativeActionAnswerer(
     access(),
-    viaSession === undefined ? { principal } : { principal, viaSession },
+    nativeActionCallerOf(principal, viaSession, viaToken),
     partition,
     asked,
   );
@@ -143,6 +149,33 @@ test("a session never answers an approval, whatever it holds or whoever names it
       code: "ApproverNotAPerson",
     });
   }
+});
+
+test("an access token never answers an approval, whatever its maker holds or whoever names them", async () => {
+  for (const asked of [
+    approval("Developer"),
+    approval("Admin"),
+    approval([admin]),
+  ]) {
+    assert.deepEqual(await answererOf(admin, asked, undefined, token), {
+      answerer: "Refused",
+      code: "ApproverNotAPerson",
+    });
+  }
+});
+
+test("an escalation is answered under Mutate through an access token, as its maker would", async () => {
+  assert.equal(
+    (
+      await answererOf(
+        developer,
+        { kind: "TicketEscalation" },
+        undefined,
+        token,
+      )
+    ).answerer,
+    "Answerer",
+  );
 });
 
 test("an escalation is answered under Mutate, by a session as by a person", async () => {
@@ -210,4 +243,73 @@ test("each listed action says whether its caller may answer it, asking the autho
     [false, true, false, false],
   );
   assert.deepEqual(asked, ["reader:Mutate", "reader:Read"]);
+});
+
+test("no approval a list offers is answerable through an access token, though its maker may answer each", async () => {
+  const approvals = [
+    {
+      kind: "EvaluationApproval" as const,
+      approval: { approvers: [admin] },
+    },
+    {
+      kind: "EvaluationApproval" as const,
+      approval: { approvers: "Admin" as const },
+    },
+  ];
+  const byPerson = await nativeActionsAnswerable(
+    access(),
+    nativeActionCallerOf(admin, undefined, undefined),
+    partition,
+    approvals,
+  );
+  assert.deepEqual(
+    byPerson.map((action) => action.answerable),
+    [true, true],
+  );
+  const byToken = await nativeActionsAnswerable(
+    access(),
+    nativeActionCallerOf(admin, undefined, token),
+    partition,
+    approvals,
+  );
+  assert.deepEqual(
+    byToken.map((action) => action.answerable),
+    [false, false],
+  );
+});
+
+test("the inbox offers an access token no approval its maker could answer", async () => {
+  const ticket = { ticket: 1, sequence: 1 };
+  const inbox = projectInbox(access(), {
+    store: {
+      inbox: () =>
+        Promise.resolve({
+          count: 1,
+          tickets: [ticket] as never,
+          actions: [
+            {
+              ticket: 1,
+              kind: "EvaluationApproval",
+              approval: { approvers: [admin] },
+            },
+          ] as never,
+        }),
+    },
+    operationalReads: { ticketLatestExecutions: () => Promise.resolve([]) },
+  });
+  const offered = async (viaToken?: AccessTokenVia) => {
+    const page = await inbox.read(
+      admin,
+      partition,
+      { limit: 1 },
+      undefined,
+      viaToken,
+    );
+    if (page.result !== "Authorized") throw new Error("the inbox was refused");
+    return page.value.entries.flatMap((entry) =>
+      entry.actions.map((action) => action.answerable),
+    );
+  };
+  assert.deepEqual(await offered(), [true]);
+  assert.deepEqual(await offered(token), [false]);
 });

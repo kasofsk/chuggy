@@ -1,5 +1,5 @@
 /**
- * The API command's authentication, which is two bearer kinds and one door.
+ * The API command's authentication, which is three bearer kinds and one door.
  *
  * IT IS DRIVEN AS A PROCESS BECAUSE NOTHING MAY IMPORT ONE. `src/roots/` is the
  * graph's executable roots and `.dependency-cruiser.cjs` forbids importing one,
@@ -18,7 +18,7 @@
 
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -41,6 +41,9 @@ const principal = `${String(issuer.length)}:${issuer}${subject}`;
 /** A bearer of the session language, which is the prefix and two hyphenated uuids. */
 const sessionToken = `chgs_${"a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c8d".repeat(2)}`;
 
+/** A secret of the access token language, which is the prefix and unpadded base64url. */
+const accessToken = `chgp_${"k".repeat(43)}`;
+
 /** A compact JWS, whose first bytes are the base64url of `{"alg`, so it is the issuer's. */
 const issuerToken = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJsZWFkIn0.c2ln";
 
@@ -55,6 +58,12 @@ function authenticationProgram(token: string): string {
     const pooled = (named, principal) => ({
       query: async (statement) => {
         asked[named].push(statement.values);
+        if (statement.text.includes('access_token')) return { rows: [{
+          tenant: 'tenant', project: 'project', token: 'token-' + named,
+          name: 'nightly', access: 'Read', maker: principal,
+          created_at: new Date('2026-01-01T00:00:00.000Z'),
+          expires_at: new Date('2027-01-01T00:00:00.000Z'),
+        }] };
         return { rows: [{
           tenant: 'tenant', project: 'project', session: 'session-' + named,
           kind: 'Thread', principal, scope: 'Project',
@@ -82,6 +91,7 @@ interface Authenticated {
     readonly authenticated: string;
     readonly bearer?: {
       readonly principal: string;
+      readonly viaToken?: { readonly token: string };
       readonly viaSession?: {
         readonly session: string;
         readonly partition: {
@@ -1022,6 +1032,27 @@ test("a token of the issuer's language never reaches the session authority", asy
   });
   assert.deepEqual(found.asked.oidc, [issuerToken]);
   assert.deepEqual(found.asked.pool, []);
+});
+
+test("an access token is answered on the API pool by its digest, and never reaches the issuer", async () => {
+  const found = await authenticating(accessToken);
+  assert.deepEqual(found.authenticated, {
+    authenticated: "Bearer",
+    bearer: {
+      principal,
+      viaToken: {
+        token: "token-pool",
+        name: "nightly",
+        access: "Read",
+        partition: { tenant: "tenant", project: "project" },
+        expiresAt: "2027-01-01T00:00:00.000Z",
+      },
+    },
+  });
+  assert.deepEqual(found.asked.oidc, []);
+  assert.deepEqual(found.asked.pool, [
+    [createHash("sha256").update(accessToken).digest("hex")],
+  ]);
 });
 
 /**

@@ -209,6 +209,7 @@ import { migration208 } from "./208-session-history-retired.ts";
 import { migration209 } from "./209-started-first.ts";
 import { migration210 } from "./210-stage-awaited.ts";
 import { migration211 } from "./211-access-tokens.ts";
+import { migration212 } from "./212-operation-via-token.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -423,4 +424,5 @@ export const migrations: readonly Migration[] = [
   migration209,
   migration210,
   migration211,
+  migration212,
 ];

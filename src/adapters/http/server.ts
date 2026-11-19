@@ -255,6 +255,8 @@ import {
   sessionPlacementWriteResponse,
   notFound,
   sessionBearerRefusedResponse,
+  accessTokenReadOnlyResponse,
+  accessTokenRefusedResponse,
   actionReportResponse,
   ticketActionReachResponse,
   ticketLandingsResponse,
@@ -272,7 +274,11 @@ import type { PlacementAdministration } from "../../interpreter/placementRoute.t
 import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
 import type { TicketTakes } from "../../interpreter/ticketTake.ts";
 import type { TicketProposalMerges } from "../../interpreter/ticketProposalMerge.ts";
-import type { AccessTokenService } from "../../interpreter/accessToken.ts";
+import type {
+  AccessTokenBearerIdentity,
+  AccessTokenService,
+} from "../../interpreter/accessToken.ts";
+import { accessTokenExpiresHeader } from "../../contract/accessToken.ts";
 import type { ThreadLimitAdministration } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
@@ -284,6 +290,13 @@ import {
   sessionBearerAdmission,
   type SessionBearerConfinement,
 } from "./sessionBearerScope.ts";
+import { accessTokenAdmission } from "./accessTokenScope.ts";
+
+/** The access token a request came through: the one it records, and the project, access and expiry it is confined to. */
+export type AuthenticatedViaToken = Pick<
+  AccessTokenBearerIdentity,
+  "token" | "name" | "access" | "partition" | "expiresAt"
+>;
 
 /** Who the bearer is, and when it stops saying so, for a route that outlives one request. */
 export interface AuthenticatedBearer {
@@ -294,6 +307,8 @@ export interface AuthenticatedBearer {
     SessionBearerIdentity,
     "partition" | "session" | "scope" | "capabilities"
   >;
+  /** The access token the bearer was, whose maker `principal` is. */
+  readonly viaToken?: AuthenticatedViaToken;
 }
 
 /**
@@ -447,6 +462,7 @@ declare module "fastify" {
     principal?: Principal;
     bearerExpiresAtMs?: number;
     viaSession?: SessionId;
+    viaToken?: AuthenticatedViaToken;
   }
 }
 
@@ -524,6 +540,7 @@ function registerAuthentication(
   app.decorateRequest("principal");
   app.decorateRequest("bearerExpiresAtMs");
   app.decorateRequest("viaSession");
+  app.decorateRequest("viaToken");
   app.addHook("preHandler", async (request, reply) => {
     if (request.routeOptions.config.public === true) return;
     const authenticated = await nativeHttpBearerAuthenticated(
@@ -541,11 +558,51 @@ function registerAuthentication(
       }))
     )
       return reply;
+    const token = authenticated.viaToken;
+    if (
+      token !== undefined &&
+      !registerAuthenticationToken(request, reply, token)
+    )
+      return reply;
     request.principal = authenticated.principal;
     if (authenticated.expiresAtMs !== undefined)
       request.bearerExpiresAtMs = authenticated.expiresAtMs;
     if (session !== undefined) request.viaSession = session.session;
+    if (token !== undefined) request.viaToken = token;
   });
+}
+
+/**
+ * Whether an access token may reach the route this request matched, having
+ * answered it when it may not: another project as an unauthorized read is
+ * answered, and a route no token may reach, or a write under a token that may
+ * only read, as `insufficient_scope`. Every answer names the token's expiry.
+ */
+function registerAuthenticationToken(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  token: AuthenticatedViaToken,
+): boolean {
+  void reply.header(accessTokenExpiresHeader, token.expiresAt);
+  const admission = accessTokenAdmission(
+    token,
+    request.method,
+    request.routeOptions.url,
+    request.params,
+  );
+  switch (admission) {
+    case "Admitted":
+      return true;
+    case "OtherPartition":
+      nativeHttpSend(reply, notFound());
+      return false;
+    case "ReadOnly":
+      nativeHttpSend(reply, accessTokenReadOnlyResponse());
+      return false;
+    case "Refused":
+      nativeHttpSend(reply, accessTokenRefusedResponse());
+      return false;
+  }
 }
 
 /**
@@ -885,7 +942,8 @@ function registerProjectAbilities(
   registerEndpoint(
     app,
     nativeHttpEndpoints.abilities,
-    (_request, principal, partition) => web.abilities(principal, partition),
+    (request, principal, partition) =>
+      web.abilities(principal, partition, request.viaToken?.access),
     projectAbilitiesResponse,
   );
 }
@@ -907,6 +965,7 @@ function registerInbox(app: FastifyInstance, inbox: ProjectInbox): void {
           limit: query.limit,
         },
         request.viaSession,
+        request.viaToken,
       );
     },
     inboxResponse,
@@ -1026,6 +1085,7 @@ function registerNativeActions(
       partitionOf(request),
       asTicketIdField(params, "ticket"),
       request.viaSession,
+      request.viaToken,
     );
     nativeHttpSend(reply, ticketNativeActionsResponse(actions));
   });
@@ -1048,6 +1108,7 @@ function registerNativeActions(
         limit: integerField(query, "limit", 50),
       },
       request.viaSession,
+      request.viaToken,
     );
     nativeHttpSend(reply, nativeActionsResponse(partition, result));
   });
@@ -2266,10 +2327,14 @@ function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
         fields["mutation"],
       );
       const session = request.viaSession;
+      const token = request.viaToken;
       const result = await web.submit(principalOf(request), {
         partition,
         ...parsed,
         ...(session === undefined ? {} : { viaSession: session }),
+        ...(token === undefined
+          ? {}
+          : { viaToken: { token: token.token, name: token.name } }),
       });
       nativeHttpSend(reply, submissionResponse(partition, result));
     },

@@ -84,9 +84,13 @@ import {
   asRepositoryFinalization,
   type ProjectRepositoryLandingStore,
 } from "../../src/interpreter/repositoryBinding.ts";
-import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
+import { threeBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
+import {
+  accessTokenExpiresHeader,
+  accessTokenPrefix,
+} from "../../src/contract/accessToken.ts";
 import { unservedEpics, unservedThreads } from "./threadFixtures.ts";
 import type { WorkerPoolRegistrationService } from "../../src/interpreter/workerPoolRegistrationToken.ts";
 import type { ExecutionPlacementAdministration } from "../../src/interpreter/executionPlacement.ts";
@@ -486,7 +490,9 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
     submit: (_principal, submission) => {
       const via =
         submission.viaSession === undefined
-          ? ""
+          ? submission.viaToken === undefined
+            ? ""
+            : `:token:${submission.viaToken.token}:${submission.viaToken.name}`
           : `:via:${String(submission.viaSession)}`;
       calls.push(`submit:${submission.command.command}${via}`);
       return Promise.resolve({
@@ -2346,14 +2352,25 @@ function sessionSecret(): string {
 
 const liveSession = asSessionId("session-one");
 
+/** The token the token authority answers for, a writer in the session's project. */
+const liveToken = {
+  partition: { tenant: asTenantId("tenant"), project: asProjectId("project") },
+  token: "0b5f3c1e-7a4d-4f2b-9c8e-1d2a3b4c5d6e",
+  name: "nightly",
+  access: "Write" as const,
+  principal: asPrincipal("issuer subject"),
+  expiresAt: "2027-01-01T00:00:00.000Z",
+};
+
 /**
- * The server as it is composed once a session authority stands beside the
- * issuer, which is the only arrangement in which either bearer kind is routed.
+ * The server as it is composed once a session authority and a token authority
+ * stand beside the issuer, which is the only arrangement in which every bearer
+ * kind is routed.
  */
-function twoBearerAppOf(calls: string[], known: ReadonlySet<string>) {
+function threeBearerAppOf(calls: string[], known: ReadonlySet<string>) {
   return createNativeHttpApp(
     fakeWeb(calls),
-    twoBearerAuthentication(
+    threeBearerAuthentication(
       {
         authenticateBearer: (token) => {
           calls.push(`oidc:${token}`);
@@ -2387,6 +2404,12 @@ function twoBearerAppOf(calls: string[], known: ReadonlySet<string>) {
           );
         },
       },
+      {
+        authenticate: (secret) => {
+          calls.push("token-authority");
+          return Promise.resolve(known.has(secret) ? liveToken : undefined);
+        },
+      },
     ),
     { ready: () => Promise.resolve(true) },
     authority,
@@ -2410,9 +2433,24 @@ function submissionUnder(token: string) {
   };
 }
 
+/** A submission under `token`, known to no authority, refused as an invalid bearer and not as an outage. */
+async function refusedAsInvalid(token: string) {
+  const calls: string[] = [];
+  await using app = threeBearerAppOf(calls, new Set());
+  const found = await app.inject(submissionUnder(token));
+  assert.equal(found.statusCode, 401, token);
+  assert.equal(
+    found.headers["www-authenticate"],
+    'Bearer error="invalid_token"',
+    token,
+  );
+  assert.equal(found.headers["retry-after"], undefined, token);
+  return { calls, found };
+}
+
 test("an OIDC bearer still authenticates, and stamps no session", async () => {
   const calls: string[] = [];
-  await using app = twoBearerAppOf(calls, new Set());
+  await using app = threeBearerAppOf(calls, new Set());
   const found = await app.inject(submissionUnder("valid"));
   assert.equal(found.statusCode, 422);
   assert.deepEqual(calls, ["oidc:valid", "submit:Decide"]);
@@ -2421,13 +2459,37 @@ test("an OIDC bearer still authenticates, and stamps no session", async () => {
 test("a session bearer submits as its principal, and the record says which session", async () => {
   const calls: string[] = [];
   const secret = sessionSecret();
-  await using app = twoBearerAppOf(calls, new Set([secret]));
+  await using app = threeBearerAppOf(calls, new Set([secret]));
   const found = await app.inject(submissionUnder(secret));
   assert.equal(found.statusCode, 422);
   assert.deepEqual(calls, [
     "session-authority",
     `submit:Decide:via:${String(liveSession)}`,
   ]);
+});
+
+test("an access token submits as its maker, and the record names the token and its expiry", async () => {
+  const calls: string[] = [];
+  const secret = `${accessTokenPrefix}${"t".repeat(43)}`;
+  await using app = threeBearerAppOf(calls, new Set([secret]));
+  const found = await app.inject(submissionUnder(secret));
+  assert.equal(found.statusCode, 422);
+  assert.equal(found.headers[accessTokenExpiresHeader], liveToken.expiresAt);
+  assert.deepEqual(calls, [
+    "token-authority",
+    `submit:Decide:token:${liveToken.token}:${liveToken.name}`,
+  ]);
+});
+
+test("a malformed or unknown access token is unauthenticated, and never reported as an outage", async () => {
+  for (const token of [
+    accessTokenPrefix,
+    `${accessTokenPrefix}!!`,
+    `${accessTokenPrefix}${"t".repeat(43)}`,
+  ]) {
+    const { found } = await refusedAsInvalid(token);
+    assert.equal(found.headers[accessTokenExpiresHeader], undefined, token);
+  }
 });
 
 /** A draft creation, offered under whichever bearer a case is about. */
@@ -2441,7 +2503,7 @@ function draftUnder(token: string) {
 
 test("a draft created under an OIDC bearer has no origin session", async () => {
   const calls: string[] = [];
-  await using app = twoBearerAppOf(calls, new Set());
+  await using app = threeBearerAppOf(calls, new Set());
   await app.inject(draftUnder("valid"));
   assert.deepEqual(calls, ["oidc:valid", "createDraft"]);
 });
@@ -2451,7 +2513,7 @@ test("a draft created under an OIDC bearer has no origin session", async () => {
 test("a draft created under a session bearer has that session as its origin", async () => {
   const calls: string[] = [];
   const secret = sessionSecret();
-  await using app = twoBearerAppOf(calls, new Set([secret]));
+  await using app = threeBearerAppOf(calls, new Set([secret]));
   await app.inject(draftUnder(secret));
   assert.deepEqual(calls, [
     "session-authority",
@@ -2461,7 +2523,7 @@ test("a draft created under a session bearer has that session as its origin", as
 
 test("a session bearer no live row answers is unauthenticated, not forbidden", async () => {
   const calls: string[] = [];
-  await using app = twoBearerAppOf(calls, new Set());
+  await using app = threeBearerAppOf(calls, new Set());
   const found = await app.inject(submissionUnder(sessionSecret()));
   assert.equal(found.statusCode, 401);
   assert.equal(
@@ -2482,16 +2544,7 @@ test("a malformed session bearer is refused, and never reported as an outage", a
     `${sessionBearerPrefix}!!`,
     `${sessionBearerPrefix.toUpperCase()}${randomUUID()}${randomUUID()}`,
   ]) {
-    const calls: string[] = [];
-    await using app = twoBearerAppOf(calls, new Set());
-    const found = await app.inject(submissionUnder(token));
-    assert.equal(found.statusCode, 401, token);
-    assert.equal(
-      found.headers["www-authenticate"],
-      'Bearer error="invalid_token"',
-      token,
-    );
-    assert.equal(found.headers["retry-after"], undefined, token);
+    const { calls } = await refusedAsInvalid(token);
     assert.equal(
       calls.includes("session-authority"),
       false,
