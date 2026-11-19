@@ -17,8 +17,8 @@
  *
  * ONLY A MEMBER'S RUNNER CLAIMS, since the pool plane admits no pool's poll. A
  * case's runner is a personal pool with an owner, planted as its row and its
- * allowlist in its partition's tenant and claimed as one; a registered pool
- * beside it is a registry row. An execution's owner and its project's fallback
+ * allowlist in its partition's tenant and claimed as one; nothing registers a
+ * project's pool, so none is planted beside it. An execution's owner and its project's fallback
  * are its columns. A runner beside the case's is live where it makes a poll
  * whose token is open, which is a last poll the claim reads as recent.
  *
@@ -65,7 +65,6 @@ import { agentAccountCredentialOffSecsAt191 } from "../../src/adapters/postgres/
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRunners,
-  postgresWorkerPoolRegistry,
 } from "../../src/adapters/postgres/workerPool.ts";
 import { postgresWorkerPoolSessions } from "../../src/adapters/postgres/workerPoolSessions.ts";
 import type { ExecutionRequirement } from "../../src/contract/executionRequirement.ts";
@@ -148,7 +147,6 @@ after(async () => {
   await rig.close();
 });
 
-const registry = postgresWorkerPoolRegistry(apiPool);
 const assignments = postgresWorkerPoolAssignments(planePool);
 
 /** The pool plane's ports with no session ever waiting, since every case here is an execution's. */
@@ -292,23 +290,13 @@ function othersUnplanted(c: RunnerCase): string | undefined {
   for (const other of c.others) {
     if (other.pool.class === "Personal" && !runnerOwned(other.pool))
       return "a personal pool owning nothing beside the case's is no member's runner";
-    if (!runnerOwned(other.pool) && other.pool.agentsAdvertised)
-      return "a project's pool beside the case's advertises no agents";
+    if (!runnerOwned(other.pool))
+      return "nothing registers a project's pool, so none stands beside the case's";
     const policy = policyUnplanted(other.pool);
     if (policy.length > 0)
       return `the pool beside the case's varies ${policy.join(", ")}, which no row carries`;
-    if (runnerOwned(other.pool)) {
-      const reason = runnerUnplanted(other, home);
-      if (reason !== undefined) return reason;
-    } else if (
-      other.pool.revoked ||
-      !other.pool.enabled ||
-      other.pool.partition.tenant !== home.tenant ||
-      other.pool.partition.project !== home.project ||
-      other.pool.pool === c.pool.pool ||
-      other.pool.pool === "pool-other"
-    )
-      return "a pool beside the case's is planted registered in its project under a name of its own";
+    const reason = runnerUnplanted(other, home);
+    if (reason !== undefined) return reason;
   }
   return undefined;
 }
@@ -555,29 +543,6 @@ async function projectPlanted(
   if (found.length === 0) await rig.harness.store.createProject(partition);
 }
 
-/** Registers one pool, making its project first where it is not the case's own. */
-async function registeredPool(
-  partition: Partition,
-  pool: string,
-  principal: Principal,
-  capabilities: readonly string[],
-  policy: Pick<WorkerPoolPolicy, "class">,
-  home: Partition,
-): Promise<void> {
-  await projectPlanted(partition, home);
-  assert.equal(
-    await registry.register({
-      partition,
-      pool,
-      capabilities,
-      class: policy.class,
-      clientId: `chuggy-pool-${randomUUID()}`,
-      principal,
-    }),
-    true,
-  );
-}
-
 /** A member's runner as its row and allowlist, polled `polledSecsAgo` before now where it is `live` and never otherwise, under the ceiling it names. */
 async function plantedRunner(
   named: Planted,
@@ -762,29 +727,13 @@ function declaringAll(requirement: ExecutionRequirement): readonly string[] {
   ];
 }
 
-/** One pool beside the case's as the case registers it, or a member's runner where it has an owner. */
+/** One member's runner beside the case's. */
 async function plantedBeside(
   named: Planted,
   { pool, session }: WorkerPoolEnrolment,
   polledSecsAgo: number,
 ): Promise<void> {
-  if (runnerOwned(pool)) {
-    await plantedRunner(
-      named,
-      pool,
-      session?.leaseOpen === true,
-      polledSecsAgo,
-    );
-    return;
-  }
-  await registeredPool(
-    named.partition(pool.partition),
-    pool.pool,
-    named.principal(pool.principal),
-    pool.capabilities,
-    pool,
-    named.project.partition,
-  );
+  await plantedRunner(named, pool, session?.leaseOpen === true, polledSecsAgo);
 }
 
 /** The case's runner as planted, and every pool beside it. */

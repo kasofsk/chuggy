@@ -1138,24 +1138,6 @@ export function setupSiteWaiting(
   };
 }
 
-/** Another member's execution of `ticket`'s work, admitted and not begun, waiting on its project's live pools short of `room`. */
-export function setupSitePoolWaiting(
-  ticket: number,
-  room: NonNullable<ExecutionSummary["poolRoom"]>,
-): ExecutionSummary {
-  return {
-    ...ledgerExecution({
-      execution: `execution-${String(ticket)}`,
-      task: 1,
-      identity: workIdentity(1),
-      status: "Admitted",
-    }),
-    ticket,
-    mine: false,
-    poolRoom: room,
-  };
-}
-
 /** A ticket's executions, the whole of them on one page unless a case cut it. */
 function executions(
   site: SetupSite,

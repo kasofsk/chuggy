@@ -64,13 +64,11 @@ export const sessionPoolTurnDwellSecs = 30 * 60;
 
 /**
  * The runners a member's thread would run on: `mine` their chat host for a
- * project's thread, `inquiry` their chat host for their own chat's, and
- * `project` whether any of the project's pools is live.
+ * project's thread and `inquiry` their chat host for their own chat's.
  */
 export interface SessionRunners {
   readonly mine: SessionRunnerStanding;
   readonly inquiry: SessionRunnerStanding;
-  readonly project: SessionRunnerStanding;
 }
 
 /** The standing of the runners a member's thread in `partition` would run on. */
@@ -111,6 +109,13 @@ export interface SessionPlacementView {
   readonly choices: readonly PlacementRoute[];
   readonly runners: SessionRunners;
 }
+
+/**
+ * What a placement read answers of the project's runners for clients that
+ * still parse them: there is no project pool, so they are never registered.
+ */
+export const sessionPlacementProjectRunnersCompatibility =
+  "Unregistered" satisfies SessionRunnerStanding;
 
 /**
  * What a placement read answers of the lead for clients that still parse one:

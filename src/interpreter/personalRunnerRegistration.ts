@@ -45,6 +45,7 @@ import {
   type ChatHostPorts,
   type ChatHostRead,
   type ChatHostRegistry,
+  type WorkerPoolSite,
 } from "./chatHostRegistration.ts";
 import type { AgentAccountPause } from "./agentAccount.ts";
 import { oidcPrincipal, type Principal } from "./principal.ts";
@@ -55,17 +56,34 @@ import type {
   WorkerPoolClientSecret,
 } from "./workerPool.ts";
 import {
-  workerPoolTokenLifetimeSecsMax,
-  type WorkerPoolSite,
-  type WorkerPoolTokenMinted,
-  type WorkerPoolTokenRequest,
-  type WorkerPoolTokenWritten,
-} from "./workerPoolRegistrationToken.ts";
-import {
   workerRunnerListed,
   type WorkerRunnerListed,
   type WorkerRunnerReleases,
 } from "./workerRunnerRelease.ts";
+
+/** What one mint wrote: a row, nothing because no tenant was named, or nothing because the member is at their bound. */
+export type WorkerPoolTokenWritten = "Minted" | "NotFound" | "LimitReached";
+
+/**
+ * What minting for a caller came to. An authority that could not answer is not
+ * an arm here: it throws `ProjectAccessUnavailable`, which the boundary already
+ * answers 503 with, so a refusal and an outage cannot be merged by accident.
+ */
+export type WorkerPoolTokenMinted =
+  | { readonly result: "NotFound" }
+  | { readonly result: "LimitReached" }
+  | {
+      readonly result: "Minted";
+      readonly value: { readonly token: string; readonly expiresAtMs: number };
+    };
+
+/** What one mint asks for: how long the token stands. */
+export interface WorkerPoolTokenRequest {
+  readonly lifetimeSecs: number;
+}
+
+/** The longest a registration token may stand, which bounds what an owner may ask for. */
+export const workerPoolTokenLifetimeSecsMax = 3_600;
 
 /** Whose runners a row is one of: a member, in one tenant. */
 export interface PersonalRunnerKey {

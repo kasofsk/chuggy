@@ -107,8 +107,8 @@ to start without the required ones.
 | `CHUG_API_OIDC_AUDIENCE` | required | |
 | `CHUG_API_OIDC_ALGORITHMS` | required | comma-separated, surrounding spaces trimmed; every entry must be one `oidcVerifiableAlgorithms` in `src/adapters/http/oidc.ts` admits, and anything else — a shared-secret algorithm, `none`, an empty entry, a name with a typo — refuses to start, naming what it refused |
 | `CHUG_API_KETO_READ_URL` | required | the read API of the authority that answers project access, HTTP or HTTPS and carrying no credentials |
-| `CHUG_API_KETO_WRITE_URL` | optional | the write API of that authority, where a created project's grants and a registered pool's tuple are written; without it, creating a project answers `ProjectCreationNotConfigured` and no pool registers |
-| `CHUG_API_HYDRA_ADMIN_URL` | optional | the issuer's admin API, where a registered runner's OAuth2 client, a pool's or a member's personal one, is minted; without it no runner registers, and naming it without the write URL refuses the start |
+| `CHUG_API_KETO_WRITE_URL` | optional | the write API of that authority, where a created project's grants are written; without it, creating a project answers `ProjectCreationNotConfigured` |
+| `CHUG_API_HYDRA_ADMIN_URL` | optional | the issuer's admin API, where a registered runner's OAuth2 client, a member's personal runner's or chat host's, is minted; without it no runner registers |
 | `CHUG_API_POOL_TOKEN_URL` | with the admin URL | the token endpoint a registered runner's client asks for its bearer, written into the file a redemption answers; https, or http on the loopback, with no credentials in it, or the API refuses to start |
 | `CHUG_API_POOL_PLANE_URL` | with the admin URL | the pool plane's address, written into that file; https, or http on the loopback, with no credentials in it, or the API refuses to start |
 | `CHUG_API_POOL_REGISTRY_HOST` | optional | the registry a runner pulls worker images from, written into that file only where it is named; a lowercase host and an optional port, or the API refuses to start |

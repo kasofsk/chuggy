@@ -100,7 +100,6 @@ async function acme(memory: AccessMemory = accessMemory()) {
     on("bo", web, "developers"),
     on("bo", api, "dispatchers"),
     on("robot", web, "agents"),
-    on("pool", web, "pools"),
     on("stray", loose, "developers"),
   ]);
   accessGivenTenantAdministrator(memory, alice, tenant, [web, api]);

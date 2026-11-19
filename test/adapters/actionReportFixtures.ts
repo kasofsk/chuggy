@@ -41,11 +41,13 @@ export function actionReportsApp(
     undefined,
     undefined,
     undefined,
-    unserved(calls, "workerPools"),
     undefined,
     undefined,
     undefined,
     undefined,
     reports,
+    undefined,
+    undefined,
+    unserved(calls, "personalRunners"),
   );
 }

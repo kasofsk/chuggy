@@ -70,7 +70,6 @@ import {
   setupSiteOpened,
   setupSiteProposed,
   setupSiteStages,
-  setupSitePoolWaiting,
   setupSiteWaiting,
 } from "./setupSite.ts";
 import type { SetupSite, SetupSiteFate, SetupSiteStage } from "./setupSite.ts";
@@ -870,12 +869,6 @@ test.each([
     );
   },
 );
-
-test("a ticket whose starting execution the server says its project's pools are short of memory for is told as it was before any wait was read", async () => {
-  expect(
-    (await nextSaid(workingWith([setupSitePoolWaiting(7, room)]))).thing,
-  ).toEqual(working(""));
-});
 
 test("a ticket whose starting execution waits on runners that are live, with no room said, is told as it was before any wait was read", async () => {
   expect(
