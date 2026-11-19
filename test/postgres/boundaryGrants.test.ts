@@ -31,6 +31,11 @@ import {
   configurationFollowingCandidatesFunction,
   configurationFollowingMoveFunction,
   configurationImporterRole,
+  connectorChangesListFunction,
+  connectorListFunction,
+  connectorReadFunction,
+  connectorRemoveFunction,
+  connectorWriteFunction,
   draftCreateFunction,
   draftInEpicFunction,
   draftReviseFunction,
@@ -679,6 +684,31 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [],
   ),
   boundaryGrantsDoor(
+    `${connectorReadFunction}(text,text,text)`,
+    [apiRole, workerPlaneRole],
+    [schedulerRole, poolPlaneRole, finalizerRole],
+  ),
+  boundaryGrantsDoor(
+    `${connectorListFunction}(text,text)`,
+    [apiRole],
+    [workerPlaneRole, schedulerRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${connectorWriteFunction}(text,text,text,text,jsonb,bigint,text,text)`,
+    [apiRole],
+    [workerPlaneRole, schedulerRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${connectorRemoveFunction}(text,text,text,bigint,text,text)`,
+    [apiRole],
+    [workerPlaneRole, schedulerRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${connectorChangesListFunction}(text,text,bigint,bigint)`,
+    [apiRole],
+    [workerPlaneRole, schedulerRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
     `${repositoryConfigurationImportRecordFunction}(text,text,text,text,text,text,jsonb,integer)`,
     [apiRole, configurationImporterRole],
     [selectorServiceRole],
@@ -1008,6 +1038,12 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["access_token", null, "UPDATE", apiRole, false],
   ["access_token", null, "UPDATE", boundaryOwnerRole, false],
   ["access_token", null, "INSERT", boundaryOwnerRole, false],
+  ["project_connector", null, "SELECT", apiRole, false],
+  ["project_connector", null, "SELECT", workerPlaneRole, false],
+  ["project_connector", null, "UPDATE", boundaryOwnerRole, true],
+  ["project_connector_change", null, "SELECT", apiRole, false],
+  ["project_connector_change", null, "INSERT", boundaryOwnerRole, true],
+  ["project_connector_change", null, "UPDATE", boundaryOwnerRole, false],
 ];
 
 test("each role holds of a relation the columns it reaches it by, and is refused the ones it does not", async () => {
