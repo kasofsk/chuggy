@@ -349,6 +349,48 @@ test("unscoped chat is every tenant role holder's with no tuple written, until t
   );
 });
 
+test("making access tokens is an administrator's, or a reader's whom the tenant lets register a personal runner", async () => {
+  const partition = ketoHarnessPartition("make-tokens");
+  const tenantOf = async (subject: string, relation: string) => {
+    await grants.write(
+      tenantPrincipalGrant({
+        issuer: ketoHarnessIssuer,
+        subject,
+        tenant: partition.tenant,
+        relation,
+      }),
+    );
+    return oidcPrincipal(ketoHarnessIssuer, subject);
+  };
+  await grants.write(projectTenantGrant(partition));
+  const developer = await granted(partition, "tokens-developer", "developers");
+  await tenantOf("tokens-developer", "personal_runners");
+  const viewer = await granted(partition, "tokens-viewer", "viewers");
+  await tenantOf("tokens-viewer", "personal_runners");
+  const unpermitted = await granted(
+    partition,
+    "tokens-unpermitted",
+    "developers",
+  );
+  const outsider = await tenantOf("tokens-outsider", "personal_runners");
+  const projectAdmin = await granted(partition, "tokens-admin", "admins");
+  const tenantAdmin = await tenantOf("tokens-tenant-admin", "admins");
+  for (const [who, principal, expected] of [
+    ["a developer the tenant lets register a personal runner", developer, true],
+    ["a viewer the tenant lets register a personal runner", viewer, true],
+    ["a developer the tenant does not", unpermitted, false],
+    ["a personal runner holder with no role in the project", outsider, false],
+    ["a project administrator", projectAdmin, true],
+    ["a tenant administrator", tenantAdmin, true],
+  ] as const)
+    assert.equal(
+      (await access.authorize(principal, partition, "MakeAccessTokens")) !==
+        undefined,
+      expected,
+      who,
+    );
+});
+
 test("a project's chat metadata is its readers', and nobody's beside them", async () => {
   const partition = ketoHarnessPartition("chat-metadata");
   const viewer = await granted(partition, "metadata-viewer", "viewers");
