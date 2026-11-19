@@ -73,7 +73,7 @@ export function awsSessionTags(
   return tags;
 }
 
-function awsSessionTagRefusal(
+function awsTokenTargetRefusal(
   key: string,
   value: string,
 ): AwsTokenTargetRefusal | undefined {
@@ -93,7 +93,7 @@ export function awsTokenTarget(
   const claims: Record<string, string> = {};
   if (connector.settings.sessionTags === true)
     for (const [key, value] of awsSessionTags(subject)) {
-      const refusal = awsSessionTagRefusal(key, value);
+      const refusal = awsTokenTargetRefusal(key, value);
       if (refusal !== undefined) return { result: "Refused", refusal };
       claims[`${awsSessionTagClaimPrefix}${key}`] = value;
     }
