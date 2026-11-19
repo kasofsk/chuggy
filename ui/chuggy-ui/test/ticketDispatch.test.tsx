@@ -15,7 +15,6 @@ import {
   settled,
   turned,
 } from "./screenHarness.tsx";
-import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import {
   abilitiesEvery,
   abilitiesOver,
@@ -27,6 +26,7 @@ import {
   ticketDispatchViewOf,
   ticketPageCandidate,
   ticketPageRoutes,
+  ticketPageTicket,
 } from "./ticketPageFixture.ts";
 import {
   dispatchAskTitle,
@@ -115,16 +115,19 @@ test("a dispatchable ticket submits the version from the strict view", async () 
 });
 
 /** The page with the ticket a dispatch candidate or not as `candidate` says,
- * and the abilities read answering as the page's other reads do unless `over`
- * answers it. */
+ * owned by whom `owner` names, and the abilities read answering as the page's
+ * other reads do unless `over` answers it. */
 async function drawnDispatching(
   candidate = true,
   over: (served: typeof fetch) => typeof fetch = (served) => served,
+  owner?: string,
 ): Promise<void> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
-    route: ticketPageRoutes(atlas, () =>
-      ticketDispatchViewOf(atlas, candidate ? [ticketPageCandidate] : []),
+    route: ticketPageRoutes(
+      atlas,
+      () => ticketDispatchViewOf(atlas, candidate ? [ticketPageCandidate] : []),
+      owner === undefined ? ticketPageTicket : { ...ticketPageTicket, owner },
     ),
   });
   vi.stubGlobal("fetch", over(api.fetch));
@@ -199,27 +202,52 @@ function noRunnerLine(): HTMLElement | null {
   );
 }
 
-/** The page with the reads its runner is decided from answering as the case
- * says. */
+/** The page of a ticket `owner` owns, the reader by default, read by a reader
+ * who may press every door unless `over` answers otherwise, with the reads its
+ * runner is decided from answering as the case says. */
 async function drawnWithRunner(
   reads: WorkRunnerReads,
   candidate = true,
-  over: (served: typeof fetch) => typeof fetch = (served) => served,
+  over: (served: typeof fetch) => typeof fetch = abilitiesOver(abilitiesEvery),
+  owner: string = abilitiesEvery.principal,
 ): Promise<void> {
-  await drawnDispatching(candidate, (served) =>
-    workRunnerOver(reads)(over(served)),
+  await drawnDispatching(
+    candidate,
+    (served) => workRunnerOver(reads)(over(served)),
+    owner,
   );
 }
 
 /** A press there would escalate the ticket, so the header draws the way to a
  * runner where the press would be. */
-test("a ticket whose project has no runner for its work draws the way to one in Dispatch's place", async () => {
-  await drawnWithRunner({ runners: "Unregistered" });
+test("the reader's own ticket, with no runner of theirs for its work, draws the way to one in Dispatch's place", async () => {
+  await drawnWithRunner({});
   expect(dispatchOffered()).toBe(false);
   const line = noRunnerLine();
   expect(line?.textContent).toBe("No runner · Add runner");
   expect(line !== null && ticketHeader().contains(line)).toBe(true);
   expect(screen.getByText("Edit")).toBeDefined();
+});
+
+/** Another member's runners are not the reader's to read, so their ticket is
+ * offered Dispatch whatever the reader holds. */
+test("another member's ticket is offered Dispatch while the reader holds no runner", async () => {
+  await drawnWithRunner(
+    {},
+    true,
+    abilitiesOver(abilitiesEvery),
+    ticketPageTicket.creator,
+  );
+  expect(dispatchOffered()).toBe(true);
+  expect(noRunnerLine()).toBeNull();
+});
+
+test("a ticket naming no owner is offered Dispatch while the reader holds no runner", async () => {
+  await drawnDispatching(true, (served) =>
+    abilitiesOver(abilitiesEvery)(workRunnerOver({})(served)),
+  );
+  expect(dispatchOffered()).toBe(true);
+  expect(noRunnerLine()).toBeNull();
 });
 
 /** A read the API refuses, answered afresh for each request. */
@@ -228,35 +256,28 @@ function refusedRead(): Promise<Response> {
 }
 
 const runnerReadsStartable: readonly (readonly [string, WorkRunnerReads])[] = [
-  ["with a runner that is live", { runners: "Live" }],
-  ["with a runner that is offline", { runners: "Offline" }],
   [
-    "with no runner, whose owner's own may take its work",
-    { runners: "Unregistered", mine: "Unregistered", fallback: "Strict" },
+    "with their own runner serving it, live",
+    { personal: { live: true, project: atlas.project } },
   ],
   [
-    "whose work the cluster runs, with no runner",
-    { runners: "Unregistered", work: "InCluster" },
+    "with their own runner serving it, offline",
+    { personal: { live: false, project: atlas.project } },
   ],
-  ["whose runners read has not come back", { runners: unanswered }],
   [
-    "whose route read has not come back",
-    { runners: "Unregistered", work: unanswered },
+    "whose work the cluster runs, with no runner of theirs",
+    { work: "InCluster" },
   ],
-  ["whose runners read failed", { runners: workRunnerUnreadable }],
-  [
-    "whose route read failed",
-    { runners: "Unregistered", work: workRunnerUnreadable },
-  ],
-  ["whose runners read was refused", { runners: refusedRead }],
-  [
-    "whose route read was refused",
-    { runners: "Unregistered", work: refusedRead },
-  ],
+  ["whose runners read has not come back", { personal: unanswered }],
+  ["whose route read has not come back", { work: unanswered }],
+  ["whose runners read failed", { personal: workRunnerUnreadable }],
+  ["whose route read failed", { work: workRunnerUnreadable }],
+  ["whose runners read was refused", { personal: refusedRead }],
+  ["whose route read was refused", { work: refusedRead }],
 ];
 
 test.each(runnerReadsStartable)(
-  "a ticket in a project %s is offered Dispatch as it was",
+  "the reader's own ticket %s is offered Dispatch as it was",
   async (_project, reads) => {
     await drawnWithRunner(reads);
     expect(dispatchOffered()).toBe(true);
@@ -264,12 +285,12 @@ test.each(runnerReadsStartable)(
   },
 );
 
-test("a Dispatch offered while the runners read was out gives way once it answers none", async () => {
+test("a Dispatch offered while the reader's runners read was out gives way once it answers none", async () => {
   const held = heldAnswer();
-  await drawnWithRunner({ runners: () => held.answered });
+  await drawnWithRunner({ personal: () => held.answered });
   expect(dispatchOffered()).toBe(true);
   await turned(() => {
-    held.release(answer(sessionPlacementBody({ project: "Unregistered" })));
+    held.release(answer({ error: { code: "NotFound" } }, 404));
   });
   await settled();
   expect(dispatchOffered()).toBe(false);
@@ -278,15 +299,15 @@ test("a Dispatch offered while the runners read was out gives way once it answer
 
 /** The line stands in for a Dispatch, so a ticket that would have been
  * offered none is told nothing of a runner. */
-test("a ticket offered no Dispatch is told nothing of a runner, with none registered", async () => {
-  await drawnWithRunner({ runners: "Unregistered" }, false);
+test("a ticket offered no Dispatch is told nothing of a runner, with none of the reader's", async () => {
+  await drawnWithRunner({}, false);
   expect(dispatchOffered()).toBe(false);
   expect(noRunnerLine()).toBeNull();
 });
 
-test("a reader who may not dispatch is told nothing of a runner, with none registered", async () => {
+test("a reader who may not dispatch is told nothing of a runner, with none of theirs", async () => {
   await drawnWithRunner(
-    { runners: "Unregistered" },
+    {},
     true,
     abilitiesOver({ ...abilitiesEvery, dispatch: false }),
   );

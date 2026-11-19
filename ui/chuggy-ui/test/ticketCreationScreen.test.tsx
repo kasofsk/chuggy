@@ -48,7 +48,6 @@ import {
   creationListed,
   creationPartition,
 } from "./ticketCreationFixture.ts";
-import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { workRunnerOver, workRunnerUnreadable } from "./workRunnerReads.ts";
 import type { WorkRunnerReads } from "./workRunnerReads.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -437,53 +436,35 @@ const runnerReads: readonly (readonly [
   WorkRunnerReads,
   readonly [string, boolean],
 ])[] = [
+  ["where the reader holds no runner", {}, ["No runner", true]],
   [
-    "with no runner registered",
-    { runners: "Unregistered" },
+    "where the reader holds a personal runner they gave only another project",
+    { personal: { live: true, project: "elsewhere" } },
     ["No runner", true],
   ],
   [
-    "with no runner but the reader's own, which it lets take their work",
-    {
-      runners: "Unregistered",
-      fallback: "Strict",
-      personal: { live: false, project: creationPartition.project },
-    },
+    "where the reader's own runner serves it, offline",
+    { personal: { live: false, project: creationPartition.project } },
     starting,
   ],
   [
-    "with no runner, which lets a reader with none of their own take their work",
-    { runners: "Unregistered", fallback: "Preferred" },
-    ["No runner", true],
-  ],
-  [
-    "with no runner, which lets a reader take their work on a personal runner they gave only another project",
-    {
-      runners: "Unregistered",
-      fallback: "Strict",
-      personal: { live: true, project: "elsewhere" },
-    },
-    ["No runner", true],
-  ],
-  ["with a runner that is offline", { runners: "Offline" }, starting],
-  ["with a runner that is live", { runners: "Live" }, starting],
-  [
-    "whose work is hosted, with no runner",
-    { runners: "Unregistered", work: "InCluster" },
+    "where the reader's own runner serves it, live",
+    { personal: { live: true, project: creationPartition.project } },
     starting,
   ],
-  ["whose runners read failed", { runners: workRunnerUnreadable }, starting],
+  ["whose work is hosted, with no runner", { work: "InCluster" }, starting],
   [
-    "whose route read failed",
-    { runners: "Unregistered", work: workRunnerUnreadable },
+    "whose reader's runners read failed",
+    { personal: workRunnerUnreadable },
     starting,
   ],
-  ["whose runners read has not come back", { runners: unanswered }, waiting],
+  ["whose route read failed", { work: workRunnerUnreadable }, starting],
   [
-    "whose route read has not come back",
-    { runners: "Unregistered", work: unanswered },
+    "whose reader's runners read has not come back",
+    { personal: unanswered },
     waiting,
   ],
+  ["whose route read has not come back", { work: unanswered }, waiting],
 ];
 
 /**
@@ -503,11 +484,11 @@ test("the line a read was out for is the one its answer earns, once it is back",
   const held = heldAnswer();
   await drawCreation(
     () => undefined,
-    dispatcherOver({ runners: () => held.answered }),
+    dispatcherOver({ personal: () => held.answered }),
   );
   expect(effectDrawn()).toStrictEqual(waiting);
   await turned(() => {
-    held.release(answer(sessionPlacementBody({ project: "Unregistered" })));
+    held.release(answer({ error: { code: "NotFound" } }, 404));
   });
   await settled();
   expect(effectDrawn()).toStrictEqual(["No runner", true]);
@@ -520,7 +501,7 @@ test("a reader who may not dispatch reads the same line with no runner as with o
     () => undefined,
     (served) =>
       abilitiesOver({ ...abilitiesEvery, dispatch: false })(
-        workRunnerOver({ runners: "Unregistered" })(served),
+        workRunnerOver({})(served),
       ),
   );
   expect(effectDrawn()).toStrictEqual(waiting);

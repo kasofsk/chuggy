@@ -6,9 +6,6 @@
  * read says the reader may choose, so a reader the tenant has not granted
  * hosted runs is never shown the choice, and a write the grant refuses anyway
  * is said in the section rather than drawn as written.
- *
- * Beside it, whether a member's own runner takes their work here is read in
- * plain words by anyone, and edited only by a reader the read says may.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -79,9 +76,6 @@ interface Drawing {
   readonly sessionsFailing?: boolean;
   /** What a session placement read waits on before it answers. */
   readonly sessionsHeld?: Promise<void> | undefined;
-  /** The owner fallback's read, answered as absent where a case names none so
-   * the placement's own Edit is the page's only one. */
-  readonly fallback?: unknown;
 }
 
 async function drawPage(
@@ -92,10 +86,6 @@ async function drawPage(
   const written = [...(drawing.written ?? [])];
   const scripted = scriptedFetch((request) => {
     if (request.method !== "GET") return written.shift() ?? answer({}, 503);
-    if (request.url.endsWith("/owner-fallback"))
-      return drawing.fallback === undefined
-        ? answer({ error: { code: "NotFound" } }, 404)
-        : answer(drawing.fallback);
     if (request.url.endsWith("/session-placement"))
       return (drawing.sessionsHeld ?? Promise.resolve()).then(() =>
         drawing.sessionsFailing === true
@@ -518,56 +508,13 @@ test("a reader who may choose nothing is given no Edit to press", async () => {
   ).toBe(true);
 });
 
-/** The fallback's own section, pressed within so the placement's Edit is not. */
-async function pressInFallback(name: string): Promise<void> {
-  await turned(() => {
-    fireEvent.click(
-      within(sectionOf("Personal runners")).getByRole("button", { name }),
-    );
-  });
-  await settled();
-}
-
-test("a project naming no fallback is read in plain words, says a change reaches only work started after it, and a reader who may not change it is given no Edit to press", async () => {
-  await drawPage({ fallback: { administers: false } });
-  const section = within(sectionOf("Personal runners"));
-  expect(section.getByText("None")).toBeTruthy();
+/** Whether a member's own runner takes their work is no longer the project's
+ * to say, so the page draws no section for it and asks nothing of it. */
+test("the page draws no owner fallback and reads none", async () => {
+  const sent = await drawPage();
   expect(
-    section.getByText("Personal runners take no work started from now on."),
-  ).toBeTruthy();
-  expect(section.getByText(/Changes reach new work only/u)).toBeTruthy();
-  expect(
-    section.getByRole("button", { name: "Edit" }).hasAttribute("disabled"),
-  ).toBe(true);
-});
-
-test("an administrator writes the fallback chosen, and clearing it writes none", async () => {
-  const sent = await drawPage({
-    fallback: { fallback: "Strict", administers: true },
-    written: [
-      answer({ fallback: "Preferred", administers: true }),
-      answer({ administers: true }),
-    ],
-  });
-  expect(
-    within(sectionOf("Personal runners")).getByText("Strict"),
-  ).toBeTruthy();
-  await pressInFallback("Edit");
-  await choose("Personal runners", "Preferred");
-  await pressInFallback("Save changes");
-  expect(
-    within(sectionOf("Personal runners")).getByText("Preferred"),
-  ).toBeTruthy();
-  await pressInFallback("Edit");
-  await choose("Personal runners", "None");
-  await pressInFallback("Save changes");
-  expect(
-    sent
-      .filter((one) => one.method === "PUT")
-      .map((one) => [one.url.split("/").pop(), one.body]),
-  ).toStrictEqual([
-    ["owner-fallback", { fallback: "Preferred" }],
-    ["owner-fallback", {}],
-  ]);
-  expect(within(sectionOf("Personal runners")).getByText("None")).toBeTruthy();
+    screen.queryByRole("heading", { name: "Personal runners" }),
+  ).toBeNull();
+  expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(1);
+  expect(sent.some((one) => one.url.endsWith("/owner-fallback"))).toBe(false);
 });

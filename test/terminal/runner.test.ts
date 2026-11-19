@@ -171,7 +171,6 @@ function madeRunner(on: Stood): readonly string[] {
     did.linger,
     did.started,
     did.given,
-    did.allowed,
     found.live,
   ];
 }
@@ -245,7 +244,6 @@ test("a second run on a machine that has everything finds each thing as it is, r
     found.linger,
     found.running,
     found.given,
-    found.allowed,
     found.live,
     next,
   ]);
@@ -511,7 +509,6 @@ test("a machine that was set up and has since come to have no runner package run
         found.linger,
         found.running,
         found.given,
-        found.allowed,
         found.live,
         did.chatSized,
         did.chat,

@@ -39,7 +39,6 @@ import {
   apiHostedRuns,
   apiInbox,
   apiOpenThread,
-  apiOwnerFallback,
   apiPersonalRunnerPermit,
   apiPressAgentAccount,
   apiRetireAgentAccountCredential,
@@ -62,7 +61,6 @@ import {
   apiTicketDispatchView,
   apiTicketNativeActions,
   apiWriteAgentAccountSettings,
-  apiWriteOwnerFallback,
   apiWriteProjectRepositoryLanding,
   apiWriteSelectorSettings,
   projectInventoryPagesMax,
@@ -625,19 +623,12 @@ test("each forge route is one path, and a bind spends an identity", async () => 
 /**
  * A member's own runners hang from the tenant, and one project they serve and
  * one runner of theirs from those, so a project or a runner named like a path
- * is still one segment; the project's fallback hangs from the partition beside
- * its placement.
+ * is still one segment.
  */
-test("a member's runners and a project's fallback are each asked at their own address", async () => {
+test("a member's runners are each asked at their own address", async () => {
   const held = recordingRequests((url) =>
-    url.endsWith("/owner-fallback")
-      ? { fallback: "Strict", administers: true }
-      : url.endsWith("/personal-runner-permit")
-        ? { granted: true }
-        : {},
+    url.endsWith("/personal-runner-permit") ? { granted: true } : {},
   );
-  await apiOwnerFallback(held.ports, partition);
-  await apiWriteOwnerFallback(held.ports, partition, {});
   await apiPersonalRunnerPermit(held.ports, "acme");
   await apiPersonalRunnerServes(held.ports, partition, true);
   await apiPersonalRunnerServes(held.ports, partition, false);
@@ -647,8 +638,6 @@ test("a member's runners and a project's fallback are each asked at their own ad
   expect(
     held.requests.map((request) => `${request.init.method} ${request.url}`),
   ).toStrictEqual([
-    `GET ${partitionPath}/owner-fallback`,
-    `PUT ${partitionPath}/owner-fallback`,
     `GET ${tenantPath}/personal-runner-permit`,
     `PUT ${tenantPath}/personal-runner/projects/at%20las`,
     `DELETE ${tenantPath}/personal-runner/projects/at%20las`,

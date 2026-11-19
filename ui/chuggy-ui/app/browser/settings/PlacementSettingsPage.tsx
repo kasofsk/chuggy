@@ -1,7 +1,6 @@
 /**
  * The project's placement setting: where its work, evaluation and threads run,
- * read and edited behind one Edit; and beside it, whether a member's own runner
- * takes the work they start here.
+ * read and edited behind one Edit.
  *
  * A HOSTED ROUTE IS OFFERED ONLY WHERE THE API SAYS SO. The placement read
  * answers the routes this reader may choose, so the choice is drawn from that
@@ -82,7 +81,6 @@ import { Panel } from "../ui/Panel.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
 import { Table } from "../ui/Table.tsx";
-import { OwnerFallbackSection } from "./OwnerFallbackSection.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
 
 /** One kind's row: where it runs, what decided it, and, for a session on
@@ -422,7 +420,6 @@ export function PlacementSettingsPage(): ReactNode {
           />
         </Panel>
       )}
-      <OwnerFallbackSection partition={partition} />
     </SettingsPage>
   );
 }

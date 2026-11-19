@@ -20,7 +20,7 @@ import { copyTextEn } from "../app/copy/catalog.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import {
   apiCreateProject,
-  apiMintWorkerPoolToken,
+  apiMintPersonalRunnerToken,
   apiProjectInventory,
   apiWriteSessionPlacement,
   projectInventoryPagesMax,
@@ -530,7 +530,6 @@ const reads = [
   `GET ${project}/repositories?reach=false`,
   `GET ${project}/execution-placement`,
   `GET ${project}/session-placement`,
-  `GET ${project}/owner-fallback`,
   "GET /api/v1/tenants/acme/personal-runner",
   `GET ${project}?limit=1&phase=Done`,
   `GET ${project}?order=RecentActivity&${moving}`,
@@ -682,7 +681,7 @@ test("each of the console's writes, sent through the ports the checklist reads t
       { tenant: "acme", project: "widgets", name: "Widgets" },
       "op-1",
     ),
-    apiMintWorkerPoolToken(ports, partition, { pool: "laptop" } as never),
+    apiMintPersonalRunnerToken(ports, "acme", {} as never),
     apiWriteSessionPlacement(ports, partition, {} as never),
   ];
   for (const write of writes)

@@ -141,15 +141,12 @@ export const runnerStops: {
   ],
   Unread: [
     { stop: "Unread", read: "work", outcome: "Refused" },
-    { stop: "Unread", read: "fallback", outcome: "Fault" },
     { stop: "Unread", read: "personal", outcome: "Cut" },
-    { stop: "Unread", read: "fallback", outcome: "Refused" },
     { stop: "Unread", read: "personal", outcome: "Refused" },
     { stop: "Unread", read: "threads", outcome: "Refused" },
     { stop: "Unread", read: "permit", outcome: "Fault" },
     { stop: "Unread", read: "chat", outcome: "Fault" },
   ],
-  NotAdmin: [{ stop: "NotAdmin" }],
   Serviceless: [{ stop: "Serviceless", guide }],
   Engineless: [
     {
@@ -344,8 +341,8 @@ export const runnerStops: {
   ],
   RunnerWithheld: [{ stop: "RunnerWithheld", people: rosterPeople }],
   ServeRefused: [
-    { stop: "ServeRefused", write: "Give", outcome: "Rejected" },
-    { stop: "ServeRefused", write: "Allow", outcome: "Fault" },
+    { stop: "ServeRefused", outcome: "Rejected" },
+    { stop: "ServeRefused", outcome: "Fault" },
   ],
   ChatMintRefused: [
     { stop: "ChatMintRefused", outcome: "Absent", lapseMins: 60 },
@@ -490,10 +487,6 @@ export const runnerNotes: {
     { note: "Given", now: false },
     { note: "Given", now: true },
   ],
-  Allowed: [
-    { note: "Allowed", now: false },
-    { note: "Allowed", now: true },
-  ],
   Checked: [
     { note: "Checked", warned: undefined },
     { note: "Checked", warned: "warn  job network: it is slow" },
@@ -564,7 +557,6 @@ export function rosterLines(places: RosterPlaces) {
       linger: "found: your services keep running after you log out",
       running: `found: ${unit} is enabled and running`,
       given: "found: your runners are given acme/widgets",
-      allowed: "found: acme/widgets lets your own runners take your work in it",
       live: "found: the site sees your runner live, taking your work in acme/widgets",
       chat: `found: this machine is registered as your chat host, in ${chat}`,
       chatGone: `found: ${chat} registered this machine as your chat host, and the site no longer knows that registration`,
@@ -585,8 +577,6 @@ export function rosterLines(places: RosterPlaces) {
       enabled: `did: set ${unit}, which was running, to start when you log in`,
       started: `did: started ${unit}, which also starts when you log in`,
       given: "did: gave your runners acme/widgets",
-      allowed:
-        "did: set acme/widgets to let your own runners take your work in it while one is online, and a shared runner while none is",
       restarted: `did: restarted ${unit}, so it runs as it is now registered and installed`,
       chatSized: `did: wrote the size of your chat host into ${settings}, every other setting kept as it was: the most chats it runs at once is 4, at 1 GiB each, 4 GiB in all`,
       chat: `did: registered this machine as your chat host, in ${chat}`,

@@ -2340,11 +2340,11 @@ function dialogSteps(): readonly (readonly [string | null, string | null])[] {
 
 /** The first ticket of a project with no runner parks for want of one, so the
  * bind leads to the runner first and offers no ticket beside it. */
-test("a bind in a project with no runner leads to adding one, and to no ticket", async () => {
+test("a bind in a project where the reader holds no runner leads to adding one, and to no ticket", async () => {
   await drawPage({
     claimed: twoAccounts,
     posted: bootstrapped,
-    over: workRunnerOver({ runners: "Unregistered" }),
+    over: workRunnerOver({}),
   });
   await chooseFree();
   expect(statusesOf()).toStrictEqual([
@@ -2355,17 +2355,17 @@ test("a bind in a project with no runner leads to adding one, and to no ticket",
 });
 
 const ticketLeading: readonly (readonly [string, WorkRunnerReads])[] = [
-  ["with a runner that is offline", { runners: "Offline" }],
-  ["with a runner that is live", { runners: "Live" }],
   [
-    "whose work is hosted, with no runner",
-    { runners: "Unregistered", work: "InCluster" },
+    "where the reader's own runner serves it, offline",
+    { personal: { live: false, project: projectPartition.project } },
   ],
-  ["whose runners read failed", { runners: workRunnerUnreadable }],
   [
-    "whose route read failed",
-    { runners: "Unregistered", work: workRunnerUnreadable },
+    "where the reader's own runner serves it, live",
+    { personal: { live: true, project: projectPartition.project } },
   ],
+  ["whose work is hosted, with no runner", { work: "InCluster" }],
+  ["whose reader's runners read failed", { personal: workRunnerUnreadable }],
+  ["whose route read failed", { work: workRunnerUnreadable }],
 ];
 
 test.each(ticketLeading)(
@@ -2387,11 +2387,11 @@ test.each(ticketLeading)(
 
 /** Either step drawn before the read is back could be the wrong one, and the
  * line already says what the bind came to. */
-test("a bind whose runners read has not come back draws what it came to and no step yet", async () => {
+test("a bind whose reader's runners read has not come back draws what it came to and no step yet", async () => {
   await drawPage({
     claimed: twoAccounts,
     posted: bootstrapped,
-    over: workRunnerOver({ runners: unanswered }),
+    over: workRunnerOver({ personal: unanswered }),
   });
   await chooseFree();
   expect(statusesOf()).toStrictEqual([
@@ -2414,7 +2414,7 @@ test("a bind that left no configuration offers no step, runner or none", async (
         },
         201,
       ),
-    over: workRunnerOver({ runners: "Unregistered" }),
+    over: workRunnerOver({}),
   });
   await chooseFree();
   expect(dialogSteps()).toStrictEqual([]);

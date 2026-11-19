@@ -352,7 +352,6 @@ export interface SetupCopy {
   readonly "setup-read-repositories": Record<never, never>;
   readonly "setup-read-work": Record<never, never>;
   readonly "setup-read-placement": Record<never, never>;
-  readonly "setup-read-fallback": Record<never, never>;
   readonly "setup-read-personal": Record<never, never>;
   readonly "setup-read-tickets": Record<never, never>;
   readonly "setup-read-drafts": Record<never, never>;
@@ -685,14 +684,6 @@ export interface SetupCopy {
     readonly project: unknown;
     readonly failure: unknown;
   };
-  readonly "setup-serve-allowed": {
-    readonly project: unknown;
-    readonly preferred: unknown;
-  };
-  readonly "setup-serve-allowed-failed": {
-    readonly project: unknown;
-    readonly failure: unknown;
-  };
   readonly "setup-offer-mcp-when": Record<never, never>;
   readonly "setup-mend-mcp-offer": Record<never, never>;
   readonly "setup-mend-mcp-offer-absent": Record<never, never>;
@@ -762,13 +753,6 @@ export interface SetupCopy {
     readonly fit: unknown;
     readonly chat: unknown;
   };
-  readonly "setup-mend-runner-pool-offer": {
-    readonly project: unknown;
-    readonly runs: unknown;
-    readonly found: unknown;
-    readonly fit: unknown;
-    readonly chat: unknown;
-  };
   readonly "setup-mend-runner-live-tell": Record<never, never>;
   readonly "setup-mend-runner-put": {
     readonly program: unknown;
@@ -810,19 +794,6 @@ export interface SetupCopy {
   };
   readonly "setup-mend-serving-offer": {
     readonly project: unknown;
-    readonly does: unknown;
-    readonly admin: unknown;
-    readonly setting: unknown;
-    readonly placement: unknown;
-  };
-  readonly "setup-mend-serving-admin": {
-    readonly setting: unknown;
-    readonly placement: unknown;
-  };
-  readonly "setup-mend-serving-admin-tell": {
-    readonly project: unknown;
-    readonly setting: unknown;
-    readonly placement: unknown;
   };
   readonly "setup-offer-serve-when": Record<never, never>;
   readonly "setup-mend-merge-offer": {
@@ -831,9 +802,6 @@ export interface SetupCopy {
     readonly lean: unknown;
   };
   readonly "setup-offer-merge-when": Record<never, never>;
-  readonly "setup-mend-serving-admin-when": {
-    readonly setting: unknown;
-  };
   readonly "setup-mend-runner-serviceless": {
     readonly elsewhere: unknown;
   };
@@ -954,10 +922,6 @@ export interface SetupCopy {
     readonly page: unknown;
   };
   readonly "setup-mend-wait-room": {
-    readonly free: unknown;
-    readonly needed: unknown;
-  };
-  readonly "setup-mend-wait-pool-room": {
     readonly free: unknown;
     readonly needed: unknown;
   };

@@ -120,10 +120,9 @@ const mint = `POST ${machineSite}/api/v1/tenants/acme/personal-runner-registrati
 const chat = boxChatFile("acme", setupSiteMember);
 const chatUnit = boxChatUnitName("acme", setupSiteMember);
 const chatMint = `POST ${machineSite}/api/v1/tenants/acme/chat-host-registration-tokens`;
-/** The writes that let the person's runner take the project's work: the project given to it, and the fallback that routes their work to it. */
+/** The write that lets the person's runner take the project's work: the project given to it. */
 const serve = [
   `PUT ${machineSite}/api/v1/tenants/acme/personal-runner/projects/widgets`,
-  `PUT ${machineSite}/api/v1/tenants/acme/projects/widgets/owner-fallback`,
 ];
 const pickedUp =
   "What was done before it stays done, and running again picks up from there. Tell me if you want me to try again.";
@@ -215,7 +214,6 @@ const projectFound = [
   found.linger,
   found.running,
   found.given,
-  found.allowed,
   live,
 ];
 
@@ -235,7 +233,6 @@ test("on a machine with an engine, a Claude login and the runner package and not
       did.linger,
       did.started,
       did.given,
-      did.allowed,
       live,
       next,
     ],
@@ -315,7 +312,6 @@ test("where the person's chats run on a chat host and they have none, runner mak
       did.linger,
       did.started,
       did.given,
-      did.allowed,
       live,
       ...chatMade,
       next,
@@ -355,7 +351,7 @@ test("where the person's chats run on a chat host and they have none, runner mak
   );
 });
 
-test("a fresh Linux box and a fresh Mac each end with the person's own runner and chat host live, both tokens minted by the run itself, the project given to the runner and the project's owner fallback Preferred", async () => {
+test("a fresh Linux box and a fresh Mac each end with the person's own runner and chat host live, both tokens minted by the run itself, the project given to the runner and the project's owner fallback left as it was", async () => {
   const macBoth = async () => {
     const machine = await machineSignedIn(setupSiteAt("Configured"), false);
     machine.platform = "darwin";
@@ -371,7 +367,7 @@ test("a fresh Linux box and a fresh Mac each end with the person's own runner an
     expect(
       machine.world.projects.find((held) => held.project === "widgets")
         ?.fallback,
-    ).toBe("Preferred");
+    ).toBeUndefined();
     expect(machine.world.chat.get("acme")?.live).toBe(true);
   }
 });
@@ -480,7 +476,6 @@ test("settings naming claudeCredential with a package older than the runner need
     did.linger,
     did.started,
     did.given,
-    did.allowed,
     live,
     next,
   ]);
@@ -1563,12 +1558,11 @@ test("a registration of the person's runner the site no longer lists is said and
     `found: ${personal} registered this machine as your runner, and the site no longer knows that registration`,
     did.personal,
   ]);
-  expect(done.lines.slice(-7)).toEqual([
+  expect(done.lines.slice(-6)).toEqual([
     found.unit,
     found.linger,
     `did: restarted ${unit}, so it runs as it is now registered and installed`,
     did.given,
-    found.allowed,
     live,
     next,
   ]);
@@ -1698,11 +1692,10 @@ test("a service found running and not set to start at login is set to by the one
   if (held !== undefined) held.enabled = false;
   machine.box.acts.length = 0;
   const done = await ran(machine);
-  expect(done.lines.slice(-6)).toEqual([
+  expect(done.lines.slice(-5)).toEqual([
     found.linger,
     did.enabled,
     found.given,
-    found.allowed,
     live,
     next,
   ]);
@@ -1712,11 +1705,10 @@ test("a service found running and not set to start at login is set to by the one
 
   if (held !== undefined) held.active = false;
   const stopped = await ran(machine);
-  expect(stopped.lines.slice(-6)).toEqual([
+  expect(stopped.lines.slice(-5)).toEqual([
     found.linger,
     did.started,
     found.given,
-    found.allowed,
     live,
     next,
   ]);
@@ -1931,10 +1923,9 @@ test("the site is asked until it sees the runner live and no longer than the wai
     if (polls(machine, true) === 3) personalHeld(machine).live.fill(true);
   };
   const late = await ran(machine);
-  expect(late.lines.slice(-5)).toEqual([
+  expect(late.lines.slice(-4)).toEqual([
     found.running,
     found.given,
-    found.allowed,
     live,
     next,
   ]);
@@ -1961,10 +1952,9 @@ test("a service that stops while the site is waited on is what the run says when
   machine.box.exit = 75;
   const done = await ran(machine, [...runner, "--wait-secs", "7"]);
   expect(done.exit).toBe(1);
-  expect(done.lines.slice(-7)).toEqual([
+  expect(done.lines.slice(-6)).toEqual([
     did.started,
     did.given,
-    did.allowed,
     `found: ${unit} was running and after 7 s is activating (auto-restart)`,
     `tell: The runner's service was started and is activating (auto-restart), so the runner is not set up yet. ${exitedSaid.updated} ${pickedUp}`,
     again(asksAgain),
@@ -2043,7 +2033,7 @@ test("a workspace or project named as a place an address would fold away is aske
     );
 });
 
-test("a project whose work the cluster runs needs no runner, and one this person does not administer gets none: either way the machine is not looked at", async () => {
+test("a project whose work the cluster runs needs no runner, and the machine is not looked at", async () => {
   const hosted = await fresh();
   for (const held of hosted.world.projects) held.work = "InCluster";
   expect(await ran(hosted)).toEqual({
@@ -2054,23 +2044,27 @@ test("a project whose work the cluster runs needs no runner, and one this person
       next,
     ],
   });
+  expect(hosted.box.ran).toEqual([]);
+  expect(hosted.box.read).toEqual([]);
+  expect(writes(hosted)).toEqual([]);
+});
+
+/** A member's own runner takes their work wherever they are given the
+ * project, so whether they administer it is not asked. */
+test("a member who does not administer a project naming no owner fallback is not stopped, and the run gives their runner the project and writes nothing of a fallback", async () => {
   const viewer = await fresh();
   for (const held of viewer.world.projects) held.administer = false;
-  expect(await ran(viewer)).toEqual({
-    exit: 0,
-    lines: [
-      signedIn,
-      "found: the site says you are not an admin of acme/widgets",
-      "tell: Your runner takes your work in acme/widgets only once the project lets its members' own runners take it, which takes an admin of it to set, and the chuggy site says you are not one, so nothing was changed on this machine. Ask an admin of acme/widgets to set it, or to make you one. Tell me once they have.",
-      again("once the person says they are an admin of acme/widgets"),
-      stop,
-    ],
-  });
-  for (const machine of [hosted, viewer]) {
-    expect(machine.box.ran).toEqual([]);
-    expect(machine.box.read).toEqual([]);
-    expect(writes(machine)).toEqual([]);
-  }
+  const done = await ran(viewer);
+  expect(done.exit).toBe(0);
+  expect(done.lines.at(-1)).toBe(next);
+  expect(done.lines).not.toContain(
+    "found: the site says you are not an admin of acme/widgets",
+  );
+  expect(writes(viewer)).toEqual([mint, ...serve]);
+  expect(
+    viewer.sent.filter((asked) => asked.includes("/owner-fallback")),
+  ).toEqual([]);
+  expect(viewer.world.personal.get("acme")?.projects).toContain("widgets");
 });
 
 test("where the project's work runs not read is a stop before the machine is looked at: a failure where the site failed, and the person's to take up where it does not show them the project", async () => {
@@ -2159,7 +2153,6 @@ test("on a Mac runner takes Linux's path through chuggy-darwin: settings with no
       macSaid.did.unit,
       macSaid.did.started,
       did.given,
-      did.allowed,
       live,
       colima,
       next,
@@ -2277,7 +2270,6 @@ test("on a Mac a second run finds the agent running and loads nothing, and a per
     macSaid.found.unit,
     macSaid.found.running,
     found.given,
-    found.allowed,
     live,
     colima,
     next,
@@ -2904,7 +2896,7 @@ test("a runner registered and not running on another machine does not hold the s
   expect(done.lines).toContain(did.personal);
   expect(done.lines.slice(-2)).toEqual([live, next]);
   expect(elsewhere.box.paths.has(personal)).toBe(true);
-  expect(writes(elsewhere)).toEqual([mint, ...serve]);
+  expect(writes(elsewhere)).toEqual([mint]);
 });
 
 test("a runner registered and not running is offered to be started here only where this machine holds a registration for the project, and the offer says the machine is registered again where the site no longer knows that one", async () => {
@@ -2921,10 +2913,9 @@ test("a runner registered and not running is offered to be started here only whe
     `${holds} ${keeps} ${takesWork} It can live on another machine instead; say so if you want that.`,
   );
   const started = await ran(here);
-  expect(started.lines.slice(-5)).toEqual([
+  expect(started.lines.slice(-4)).toEqual([
     did.started,
     found.given,
-    found.allowed,
     live,
     next,
   ]);
@@ -2944,25 +2935,23 @@ test("a runner registered and not running is offered to be started here only whe
     `found: ${old} registered this machine as your runner, and the site no longer knows that registration`,
   );
   expect(anew.lines).toContain(did.personal);
-  expect(writes(stale)).toEqual([mint, ...serve]);
+  expect(writes(stale)).toEqual([mint]);
 });
 
-test("a machine that holds only the project's pool's registration, beside a runner registered and not running, is offered to be registered again as the person's own, and the run does that and leaves the pool's file as it was", async () => {
+/** A project's pool takes no one's work, so its registration on this
+ * machine is no runner of the person's and is left as it was. */
+test("a machine that holds only a project's pool's registration is offered and run as one that holds none, and the pool's file is left as it was", async () => {
+  const bare = await machineSignedIn(projectOnly(setupSiteAt("Offline")));
   const pooled = await machineSignedIn(projectOnly(setupSiteAt("Offline")));
   const pool = boxPoolFile("acme", "widgets");
   pooled.box.paths.set(pool, "{}");
-  expect((await ran(pooled, [])).lines.slice(-4)).toEqual([
-    `tell: A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner of the project's rather than yours. I'll leave that registration as it is and register this machine again as yours alone, then check your runner and start it here as a background service of yours that starts when you log in, so work on your tickets runs on this machine in containers, on your Claude plan. ${takesWork} It can live on another machine instead; say so if you want that.`,
-    offer,
-    otherMachine(false),
-    stop,
-  ]);
+  expect((await ran(pooled, [])).lines).toEqual((await ran(bare, [])).lines);
   const anew = await ran(pooled);
+  expect(anew.lines).toEqual((await ran(bare)).lines);
   expect(anew.lines).toContain(did.personal);
-  expect(anew.lines.slice(-2)).toEqual([live, next]);
   expect(pooled.box.paths.get(pool)).toBe("{}");
   expect(pooled.box.paths.has(personal)).toBe(true);
-  expect(writes(pooled)).toEqual([mint, ...serve]);
+  expect(writes(pooled)).toEqual(writes(bare));
 });
 
 test("the machine is looked at only where the runner's step is the one next, and at no stage is anything on it changed or anything but a read sent", async () => {
@@ -3001,7 +2990,7 @@ function reaching(): { readonly api: ApiPorts; readonly reached: string[] } {
   };
 }
 
-test("the ports the writes go out through pass the mint for the person's runner, the project given to it and the fallback that lets it take their work, the mint for their chat host where the run is named with one, and any read, and refuse every other write having reached nothing", async () => {
+test("the ports the writes go out through pass the mint for the person's runner and the project given to it, the mint for their chat host where the run is named with one, and any read, and refuse every other write having reached nothing", async () => {
   const { api, reached } = reaching();
   const partition = { tenant: "two words", project: "a/b" };
   const ports = setupWritePorts(
@@ -3025,7 +3014,6 @@ test("the ports the writes go out through pass the mint for the person's runner,
     (await apiMintPersonalRunnerToken(ports, partition.tenant, asked)).outcome,
   ).toBe("Ok");
   await ports.fetch(project, init("PUT"));
-  await ports.fetch(fallback, init("PUT"));
   expect(
     (await apiMintChatHostToken(ports, partition.tenant, asked)).outcome,
   ).toBe("Ok");
@@ -3039,6 +3027,7 @@ test("the ports the writes go out through pass the mint for the person's runner,
     ["POST", "/api/v1/personal-runner-registrations"],
     ["POST", "/api/v1/tenants/acme/chat-host-registration-tokens"],
     ["PUT", `${tenant}/personal-runner/projects/other`],
+    ["PUT", fallback],
     ["PUT", `${tenant}/projects/other/owner-fallback`],
     ["DELETE", `${tenant}/chat-host`],
     ["DELETE", project],
@@ -3055,7 +3044,6 @@ test("the ports the writes go out through pass the mint for the person's runner,
   expect(reached).toEqual([
     `POST ${path}`,
     `PUT ${project}`,
-    `PUT ${fallback}`,
     `POST ${hosting}`,
     "GET /api/v1/projects",
   ]);

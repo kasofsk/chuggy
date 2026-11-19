@@ -14,7 +14,6 @@ import {
   apiExecutionPlacement,
   apiForgeApps,
   apiHostedRuns,
-  apiOwnerFallback,
   apiProjectAbilities,
   apiProjectArtifact,
   apiProjectDeletion,
@@ -22,7 +21,6 @@ import {
   apiSelectorSettings,
   apiSelectorSettingsHistory,
   apiSessionPlacement,
-  apiWorkerPools,
 } from "./apiRoutes.ts";
 import { consolePartitionQuery } from "./consoleQuery.ts";
 import { sessionPlacementPolledMs } from "./sessionRunners.ts";
@@ -46,12 +44,6 @@ export function executionPlacementQuery(partition: PartitionIdentity) {
   );
 }
 
-export function ownerFallbackQuery(partition: PartitionIdentity) {
-  return consolePartitionQuery(partition, "owner-fallback", (ports) =>
-    apiOwnerFallback(ports, partition),
-  );
-}
-
 /** Polled, since nothing names the placement or a runner's poll. */
 export function sessionPlacementQuery(partition: PartitionIdentity) {
   return consolePartitionQuery(
@@ -59,12 +51,6 @@ export function sessionPlacementQuery(partition: PartitionIdentity) {
     "session-placement",
     (ports) => apiSessionPlacement(ports, partition),
     sessionPlacementPolledMs,
-  );
-}
-
-export function workerPoolsQuery(partition: PartitionIdentity) {
-  return consolePartitionQuery(partition, "worker-pools", (ports) =>
-    apiWorkerPools(ports, partition),
   );
 }
 

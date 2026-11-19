@@ -242,8 +242,8 @@ export type SetupRunnerNote =
       readonly note: "Personal" | "PersonalGone" | "PersonalRegistered";
       readonly path: string;
     }
-  /** The project given to the person's runners, and their own runners let take its work: each found so, or `now` where this run wrote it. */
-  | { readonly note: "Given" | "Allowed"; readonly now: boolean }
+  /** The project given to the person's runners: found so, or `now` where this run wrote it. */
+  | { readonly note: "Given"; readonly now: boolean }
   /** `warned` is the first line of the check that passed with a warning, where one did. */
   | { readonly note: "Checked"; readonly warned: string | undefined }
   | { readonly note: "ChatChecked"; readonly warned: string | undefined }
@@ -332,7 +332,7 @@ export function setupCheckFirst(
 
 /** A read of the site `runner` makes, by what it is of. */
 export type SetupRunnerRead =
-  "work" | "threads" | "fallback" | "personal" | "permit" | "chat";
+  "work" | "threads" | "personal" | "permit" | "chat";
 
 /** Why a run stopped short of a runner the site sees live. */
 export type SetupRunnerStop =
@@ -341,7 +341,6 @@ export type SetupRunnerStop =
       readonly read: SetupRunnerRead;
       readonly outcome: ApiFailure["outcome"] | "Refused" | "Cut";
     }
-  | { readonly stop: "NotAdmin" }
   | { readonly stop: "Serviceless"; readonly guide: string }
   | {
       readonly stop: "Engineless";
@@ -457,10 +456,9 @@ export type SetupRunnerStop =
     }
   /** The workspace does not let the person register a runner of their own; `people` is its People page. */
   | { readonly stop: "RunnerWithheld"; readonly people: string }
-  /** The site did not make one of the writes that let the person's runner take the project's work. */
+  /** The site did not make the write that gives the person's runner the project. */
   | {
       readonly stop: "ServeRefused";
-      readonly write: "Give" | "Allow";
       readonly outcome: ApiFailure["outcome"];
     }
   /** The person's chat host is another machine, registered and not running, which registering this one would replace; `runners` is the page it is removed on. */
@@ -753,12 +751,7 @@ type SetupPersonalNote = Extract<
   SetupRunnerNote,
   {
     readonly note:
-      | "Personal"
-      | "PersonalGone"
-      | "PersonalRegistered"
-      | "Given"
-      | "Allowed"
-      | "Checked";
+      "Personal" | "PersonalGone" | "PersonalRegistered" | "Given" | "Checked";
   }
 >;
 
@@ -789,10 +782,6 @@ function setupPersonalNoteSaid(
       return note.now
         ? ["did", { id: "setup-runner-note-given-now", args: { project } }]
         : ["found", { id: "setup-runner-note-given", args: { project } }];
-    case "Allowed":
-      return note.now
-        ? ["did", { id: "setup-runner-note-allowed-now", args: { project } }]
-        : ["found", { id: "setup-runner-note-allowed", args: { project } }];
     case "Checked":
       return [
         "found",
@@ -886,7 +875,6 @@ export function setupRunnerNoteSaid(
     case "PersonalGone":
     case "PersonalRegistered":
     case "Given":
-    case "Allowed":
     case "Checked":
       return setupPersonalNoteSaid(note, setupRunnerNamed(at));
     case "Unit":
@@ -1221,18 +1209,13 @@ function setupDockerBarredSaid(
 const setupReadsSaid: Readonly<Record<SetupRunnerRead, Copy>> = {
   work: { id: "setup-runner-read-work" },
   threads: { id: "setup-runner-read-threads" },
-  fallback: { id: "setup-runner-read-fallback" },
   personal: { id: "setup-runner-read-personal" },
   permit: { id: "setup-runner-read-permit" },
   chat: { id: "setup-runner-read-chat" },
 };
 
 /** The reads a run makes before it looks at the machine, which makes them the ones a stop at can say nothing was changed. */
-const setupReadsFirst: readonly SetupRunnerRead[] = [
-  "work",
-  "fallback",
-  "threads",
-];
+const setupReadsFirst: readonly SetupRunnerRead[] = ["work", "threads"];
 
 /** What a read the site did not give leaves of a run: a runner not known to be set up, which is not one known not to be. */
 const setupUnknown: Copy = { id: "setup-runner-unknown" };
@@ -1483,21 +1466,17 @@ function setupServiceRefusedSaid(
   };
 }
 
-/** A write that lets the person's runner take the project's work, which the site did not make. */
+/** The write that gives the person's runner the project, which the site did not make. */
 function setupServeRefusedSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "ServeRefused" }>,
   project: string,
 ): SetupRunnerStopSaid {
-  const write = stop.write === "Give" ? "give" : "allow";
   return {
     found: {
       id: "setup-runner-serve-refused-found",
-      args: { write, project, outcome: stop.outcome },
+      args: { project, outcome: stop.outcome },
     },
-    tell: {
-      id: "setup-runner-serve-refused-tell",
-      args: { write, project },
-    },
+    tell: { id: "setup-runner-serve-refused-tell", args: { project } },
     when: setupTryAgain,
     again: "Again",
   };
@@ -2017,13 +1996,6 @@ export function setupRunnerStopSaid(
       return setupMachineSaid(stop);
     case "Unread":
       return setupUnreadSaid(stop, at);
-    case "NotAdmin":
-      return {
-        found: { id: "setup-runner-not-admin-found", args: { project } },
-        tell: { id: "setup-runner-not-admin-tell", args: { project } },
-        when: { id: "setup-runner-when-admin", args: { project } },
-        again: "Again",
-      };
     case "Engineless":
       return setupEnginelessSaid(stop);
     case "DockerBarred":
@@ -2071,7 +2043,6 @@ export function setupRunnerStopSaid(
 /** Zero where a stop waits on the person, and one where something failed. */
 export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 {
   switch (stop.stop) {
-    case "NotAdmin":
     case "Serviceless":
     case "Engineless":
     case "DockerBarred":

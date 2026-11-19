@@ -95,7 +95,6 @@ import type {
   SetupConfigurationEnded,
   SetupImportAnswered,
 } from "./setupConfigurationEnded.ts";
-import { ownerFallbackLabel } from "./myRunner.ts";
 import { setupPlatforms } from "./setupPorts.ts";
 import type { SetupMachineFault, SetupPlatform } from "./setupPorts.ts";
 import {
@@ -301,10 +300,9 @@ export type SetupServeWritten =
   | { readonly written: true }
   | { readonly written: false; readonly failure: Copy };
 
-/** What the site answered each write `serve` made, where it made it: the project given to the person's runners, and Preferred named as its owner fallback. */
+/** What the site answered the write `serve` made: the project given to the person's runners. */
 export interface SetupServeAnswered {
-  readonly given: SetupServeWritten | undefined;
-  readonly allowed: SetupServeWritten | undefined;
+  readonly given: SetupServeWritten;
 }
 
 /** What the site answered a filing: the ticket made, released and sent to start, under the configuration named and whether that is a bootstrap, or refused, in the console's creation's words where they are its. */
@@ -1969,44 +1967,24 @@ function setupMergeLines(
   ];
 }
 
-/** One write `serve` made, as what it did or what the site answered it instead. */
-function setupServeWrittenSaid(
-  written: SetupServeWritten | undefined,
-  did: Copy,
-  failed: (failure: Copy) => Copy,
-): readonly SetupLine[] {
-  if (written === undefined) return [];
-  return written.written
-    ? [["did", did]]
-    : [["found", failed(written.failure)]];
-}
-
-/** What `serve` asked of the site and what it answered, each write in the order it was made. */
+/** What `serve` asked of the site and what it answered: what the write did, or what the site answered it instead. */
 function setupServeSaid(
   report: Extract<SetupReport, { readonly report: "Serve" }>,
 ): readonly SetupLine[] {
   const project = report.project ?? "";
-  const answered = report.answered;
-  if (answered === undefined) return [["found", { id: "setup-serve-none" }]];
-  const preferred = ownerFallbackLabel("Preferred");
-  return [
-    ...setupServeWrittenSaid(
-      answered.given,
-      { id: "setup-serve-given", args: { project } },
-      (failure) => ({
-        id: "setup-serve-given-failed",
-        args: { project, failure },
-      }),
-    ),
-    ...setupServeWrittenSaid(
-      answered.allowed,
-      { id: "setup-serve-allowed", args: { project, preferred } },
-      (failure) => ({
-        id: "setup-serve-allowed-failed",
-        args: { project, failure },
-      }),
-    ),
-  ];
+  const given = report.answered?.given;
+  if (given === undefined) return [["found", { id: "setup-serve-none" }]];
+  return given.written
+    ? [["did", { id: "setup-serve-given", args: { project } }]]
+    : [
+        [
+          "found",
+          {
+            id: "setup-serve-given-failed",
+            args: { project, failure: given.failure },
+          },
+        ],
+      ];
 }
 
 /** A run of `serve`: the checklist read after it, with what it asked and what the site answered after the site's own line. */

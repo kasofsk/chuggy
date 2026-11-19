@@ -158,7 +158,6 @@ export type SetupSiteRead =
   | "repositories"
   | "work"
   | "placement"
-  | "fallback"
   | "personal"
   | "landed"
   | "moving"
@@ -170,11 +169,10 @@ export type SetupSiteRead =
 export const setupSiteMember =
   "20:https://auth.example0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f";
 
-/** What only `runner`, `bind`, `serve` or `ticket` asks, which a case moves likewise; `mint`, `chatMint`, `bind`, `serve`, `allow` and `file` are writes, `file` the draft's creation, `serve` the project given the caller's runners and `allow` the owner fallback named. */
+/** What only `runner`, `bind`, `serve` or `ticket` asks, which a case moves likewise; `mint`, `chatMint`, `bind`, `serve` and `file` are writes, `file` the draft's creation and `serve` the project given the caller's runners. */
 export type SetupSiteRunnerAsk =
   | "abilities"
   | "serve"
-  | "allow"
   | "pools"
   | "mint"
   | "permit"
@@ -431,7 +429,11 @@ export function setupSiteAt(stage: SetupSiteStage): SetupSite {
       repository: setupSiteRepositoryAddress,
       configured: reached("Configured"),
     });
-  if (reached("Offline")) project.runner = reached("Live") ? "Live" : "Offline";
+  if (reached("Offline"))
+    site.personal.set(setupSiteWorkspace, {
+      live: [reached("Live")],
+      projects: [setupSiteProjectName],
+    });
   if (reached("Live")) setupSiteChatAdded(site, setupSiteWorkspace, true);
   if (stage === "Draft") project.drafts.push(1);
   if (stage === "Moving") project.tickets.push({ ticket: 1, phase: "Work" });
@@ -1131,7 +1133,6 @@ export function setupSiteWaiting(
     }),
     ticket,
     mine: true,
-    ownerFallback: "Strict",
     personalRunnerWait: wait,
     ...(room === undefined ? {} : { personalRunnerRoom: room }),
   };
@@ -1212,15 +1213,12 @@ function projectAnswered(
     case "/session-placement":
       return fated(site, "placement") ?? answered(placement(site, project));
     case "/owner-fallback":
-      return (
-        fated(site, "fallback") ??
-        answered({
-          ...(project.fallback === undefined
-            ? {}
-            : { fallback: project.fallback }),
-          administers: project.administer,
-        })
-      );
+      return answered({
+        ...(project.fallback === undefined
+          ? {}
+          : { fallback: project.fallback }),
+        administers: project.administer,
+      });
     case "/abilities":
       return abilities(site, project);
     case "/configurations":
@@ -1595,12 +1593,9 @@ function personalServed(
 
 /** A project's owner fallback named whole, by a caller who administers it. */
 function fallbackWritten(
-  site: SetupSite,
   project: SetupSiteProject,
   body: string | undefined,
 ): SetupSiteAnswer {
-  const fate = fated(site, "allow");
-  if (fate !== undefined) return fate;
   if (!project.administer)
     return {
       status: 403,
@@ -1643,7 +1638,7 @@ function tenantWritten(
     const project = projectOf(site, tenant, within[1]);
     return project === undefined
       ? refused()
-      : fallbackWritten(site, project, sent.body);
+      : fallbackWritten(project, sent.body);
   }
   if (sent.method === "POST" && within?.[2] === "/drafts") {
     const project = projectOf(site, tenant, within[1]);

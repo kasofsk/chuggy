@@ -27,8 +27,6 @@ import {
   setupLingerRead,
   setupPackageLeast,
   setupPackageProbed,
-  setupPoolFilePrefix,
-  setupPoolFiles,
   setupRegisterFailed,
   setupRestartAll,
   setupRunnerCommands,
@@ -125,18 +123,6 @@ test("on a Mac the package's settings and login are in its Application Support, 
   );
 });
 
-test("a pool file is named for its project as the package names it: letters, digits and hyphens as themselves and every other octet by its number", () => {
-  const named = (tenant: string, project: string) =>
-    setupPoolFilePrefix({ tenant, project });
-  expect(named("a-b", "c")).toBe("a-b.c.");
-  expect(named("vteng", "chuggy")).toBe("vteng.chuggy.");
-  expect(named("../x", "a.b_c")).toBe("_2e_2e_2fx.a_2eb_5fc.");
-  expect(named("Acme", "é")).toBe("Acme._c3_a9.");
-  expect(`${boxPools}/${named("acme", "widgets")}shame.json`).toBe(
-    boxPoolFile("acme", "widgets"),
-  );
-});
-
 /** A machine whose pools directory holds files by these names, and one directory. */
 function pooled(names: readonly string[]): SetupMachine {
   const machine = setupMachine();
@@ -144,30 +130,6 @@ function pooled(names: readonly string[]): SetupMachine {
   machine.box.paths.set(`${boxPools}/acme.widgets.dir.json/x`, "{}");
   return machine;
 }
-
-test("the pool files of a project are the files named for it with a pool's name, found by name in the order of their names and never opened", () => {
-  const machine = pooled([
-    "acme.widgets.shame.json",
-    "acme.widgets.box-2.json",
-    "acme.widgets.shame.json.1234.draft",
-    "acme.widgets.shame.bak",
-    "acme.widgets.shamejson",
-    "acme.widgets.Shame.json",
-    "acme.widgets.a.b.json",
-    "acme.widgets.-a.json",
-    "acme.widgets..json",
-    "acme.widgets_2ex.shame.json",
-    "acme.widgets-2.shame.json",
-    "acme.gadgets.shame.json",
-    "pool-0123456789abcdef0123.json",
-  ]);
-  expect(setupPoolFiles(machine.ports(), places, acme)).toEqual([
-    { path: `${boxPools}/acme.widgets.box-2.json`, pool: "box-2" },
-    { path: `${boxPools}/acme.widgets.shame.json`, pool: "shame" },
-  ]);
-  expect(machine.box.read).toEqual([]);
-  expect(setupPoolFiles(setupMachine().ports(), places, acme)).toEqual([]);
-});
 
 test("a pool file's service is named as the package names it, which the registration in the package's own words shows", () => {
   const file = {
@@ -747,7 +709,7 @@ test("docker is asked only of the user the package takes it from: any other is a
   ]);
 });
 
-test("what the bare command reads of the machine changes nothing: whether a runner could be put here, whether it holds the person's runner's registration or only the project's pool's, and the kind of Claude credential its work would run on", async () => {
+test("what the bare command reads of the machine changes nothing: whether a runner could be put here, whether it holds the person's runner's registration, a project's pool's being none, and the kind of Claude credential its work would run on", async () => {
   const here = (machine: SetupMachine) =>
     setupRunnerHere(machine.ports(), acme);
   const bare = setupMachine();
@@ -765,9 +727,15 @@ test("what the bare command reads of the machine changes nothing: whether a runn
   expect(bare.box.acts).toEqual(["services", "docker"]);
 
   const registered = pooled(["acme.widgets.shame.json"]);
-  expect(await here(registered)).toMatchObject({ held: "Pool", chat: false });
+  expect(await here(registered)).toMatchObject({
+    held: undefined,
+    chat: false,
+  });
   registered.box.paths.set(boxChatFile("acme", setupSiteMember), "{}");
-  expect(await here(registered)).toMatchObject({ held: "Pool", chat: true });
+  expect(await here(registered)).toMatchObject({
+    held: undefined,
+    chat: true,
+  });
   registered.box.paths.set(boxPersonalFile("acme", setupSiteMember), "{}");
   expect(await here(registered)).toMatchObject({
     held: "Personal",
@@ -842,7 +810,7 @@ test("a personal runner's registration on this machine is held as the person's",
   });
 });
 
-test("on a Mac the bare command reads the settings at chuggy-darwin's place and asks docker alone, and a registration there is held", async () => {
+test("on a Mac the bare command reads the settings at chuggy-darwin's place and asks docker alone, and a pool's registration there is held as none", async () => {
   const darwin = pooled(["acme.widgets.shame.json"]);
   darwin.box.paths.set(
     boxMacSettings,
@@ -851,7 +819,7 @@ test("on a Mac the bare command reads the settings at chuggy-darwin's place and 
   darwin.platform = "darwin";
   expect(await setupRunnerHere(darwin.ports(), acme)).toEqual({
     room: { room: "Open", engine: "docker" },
-    held: "Pool",
+    held: undefined,
     chat: false,
     claude: "Subscription",
     settings: {

@@ -50,7 +50,7 @@ import type {
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
 import { forgeAccountRows, forgeInstallOffered } from "./forgeInstallation.ts";
-import { runnerWait, runnerWaitPoolRoom, runnerWaitRoom } from "./myRunner.ts";
+import { runnerWait, runnerWaitRoom } from "./myRunner.ts";
 import type { ForgeAccountRow } from "./forgeInstallation.ts";
 import {
   repositoriesWorkerless,
@@ -76,7 +76,6 @@ import type {
 } from "./setupReads.ts";
 import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
 import type { SetupRemote } from "./setupRemote.ts";
-import { workRunnerStanding } from "./workRunner.ts";
 import { workspaceNamesListed } from "./workspaceNames.ts";
 import type { WorkspaceNamed } from "./workspaceNames.ts";
 import type {
@@ -96,7 +95,6 @@ export type SetupReadName =
   | "repositories"
   | "work"
   | "placement"
-  | "fallback"
   | "personal"
   | "tickets"
   | "drafts"
@@ -148,13 +146,8 @@ export type SetupLack =
     }
   /** `chat` where the person's chat host is lacking too, which `runner` sets up beside the project's runner. */
   | { readonly lacks: "Runner"; readonly chat: boolean }
-  /** A personal runner of the person's registered where the project has no pool, which does not take its work: `given` where the project is given it, `named` where the project names an owner fallback, and `administers` where the person may name one. */
-  | {
-      readonly lacks: "Serving";
-      readonly given: boolean;
-      readonly named: boolean;
-      readonly administers: boolean;
-    }
+  /** A personal runner of the person's registered, which the project is not given and so does not take its work. */
+  | { readonly lacks: "Serving" }
   | { readonly lacks: "RunnerLive"; readonly chat: boolean }
   /** `pullRequest` where the repository meant lands a ticket in a pull request the person merges. */
   | { readonly lacks: "Ticket"; readonly pullRequest: boolean }
@@ -173,10 +166,10 @@ export type SetupLack =
 
 type TicketPhase = TicketResponse["phase"];
 
-/** What a ticket's starting execution waits on of the person's runners, beyond waiting: too little memory free on them for the run, their being offline, or none of them able to run it; or else too little memory free on the project's pools. */
+/** What a ticket's starting execution waits on of the person's runners, beyond waiting: too little memory free on them for the run, their being offline, or none of them able to run it. */
 export type SetupRunnerWait =
   | {
-      readonly wait: "Room" | "PoolRoom";
+      readonly wait: "Room";
       readonly freeMib: number;
       readonly neededMib: number;
     }
@@ -317,7 +310,6 @@ const setupReadSubjects: Readonly<Record<SetupReadName, Copy>> = {
   repositories: { id: "setup-read-repositories" },
   work: { id: "setup-read-work" },
   placement: { id: "setup-read-placement" },
-  fallback: { id: "setup-read-fallback" },
   personal: { id: "setup-read-personal" },
   tickets: { id: "setup-read-tickets" },
   drafts: { id: "setup-read-drafts" },
@@ -875,50 +867,33 @@ export function setupHosted(route: PlacementRoute): boolean {
 }
 
 /**
- * How the runners the project's work would go to stand, by the console's own
- * decider; or the step unread, where a read it turns on was not got; or the
- * step to do where the project has no pool and the person holds a personal
- * runner that does not take its work, because the project is not given it or
- * names no fallback; a live one that takes the work stands for the project
- * beside a pool that is not, and both are read only where no pool is live.
+ * How the runners the project's work would go to stand: unregistered where it
+ * runs on the cluster, which needs none, and otherwise the person's own
+ * personal runners, which take it; or the step unread, where that read was not
+ * got; or the step to do where the person holds a personal runner the project
+ * is not given.
  */
 function setupWorkStanding(
   reads: SetupReads,
   route: PlacementRoute,
-  project: SessionRunnerStanding,
 ): SetupStep | SessionRunnerStanding {
-  const short = sessionRunnerShort(route, project);
-  if (short === undefined) return project;
-  const fallback = reads.fallback;
-  if (fallback.read !== "Got")
-    return setupUnread("runner", "fallback", setupFateOf(fallback));
-  const named = fallback.value.fallback !== undefined;
+  if (setupHosted(route)) return "Unregistered";
   const personal = reads.personal;
   if (personal.read !== "Got")
     return setupUnread("runner", "personal", setupFateOf(personal));
-  if (!personal.value.registered) return project;
-  const given = personal.value.standing !== "Unregistered";
-  if (given && named && short === "RunnerOffline")
-    return personal.value.standing === "Live" ? "Live" : project;
-  if (given && named)
-    return workRunnerStanding(project, named, personal.value.standing);
-  if (short === "RunnerOffline") return project;
-  return setupUndone("runner", "todo", undefined, {
-    lacks: "Serving",
-    given,
-    named,
-    administers: fallback.value.administers,
-  });
+  if (!personal.value.registered) return "Unregistered";
+  if (personal.value.standing === "Unregistered")
+    return setupUndone("runner", "todo", undefined, { lacks: "Serving" });
+  return personal.value.standing;
 }
 
 /**
  * Done where the project's work has a runner live or the cluster runs it;
- * waiting where a runner is registered and is not running, its runner being a
- * pool or, where it has none and names an owner fallback, a personal runner
- * of the person's that serves the project, as the console's own decider
- * counts one, and never their chat host, which takes no work. Where the
- * person's chats in it run on their chat host and they have none live, the
- * done line says so and names `chat-host`, which sets one up.
+ * waiting where a personal runner of the person's that serves the project is
+ * registered and is not running, as the console's own decider counts one, and
+ * never their chat host, which takes no work. Where the person's chats in it
+ * run on their chat host and they have none live, the done line says so and
+ * names `chat-host`, which sets one up.
  */
 function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   const work = reads.work;
@@ -933,7 +908,7 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   if (read.read !== "Got")
     return setupUnread("runner", "placement", setupFateOf(read));
   const route = work.value.work.route;
-  const standing = setupWorkStanding(reads, route, read.value.runners.project);
+  const standing = setupWorkStanding(reads, route);
   if (typeof standing !== "string") return standing;
   const mine = sessionPlacementShort(read.value, "mine");
   const chat = mine !== undefined;
@@ -1068,21 +1043,13 @@ function setupTicketUnread(reads: SetupReads): SetupStep | undefined {
 /** The phase a ticket is in between its release and its start, where pressing is what starts one nothing else has. */
 export const setupUnstartedPhase = "Pending" satisfies TicketPhase;
 
-/** What the starting execution of a ticket's executions, read whole, waits on of the person's runners, by the console's own decider, or else of the project's pools: none where they were not read whole, none is starting, or the runners it waits on are live and short of nothing said. */
+/** What the starting execution of a ticket's executions, read whole, waits on of the person's runners, by the console's own decider: none where they were not read whole, none is starting, or the runners it waits on are live and short of nothing said. */
 function setupRunnerWaitOf(
   held: SetupTicketExecutions | undefined,
 ): SetupRunnerWait | undefined {
   if (held?.executions.read !== "Got" || !held.executions.whole)
     return undefined;
-  const executions = held.executions.value;
-  const personal = setupRunnerWaitPersonal(executions);
-  if (personal !== undefined) return personal;
-  const room = executions
-    .map(runnerWaitPoolRoom)
-    .find((each) => each !== undefined);
-  return room === undefined
-    ? undefined
-    : { wait: "PoolRoom", freeMib: room.freeMib, neededMib: room.neededMib };
+  return setupRunnerWaitPersonal(held.executions.value);
 }
 
 /** What the starting execution of `executions` waits on of the person's runners, by the console's own decider. */

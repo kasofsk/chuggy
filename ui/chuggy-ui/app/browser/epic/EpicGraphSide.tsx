@@ -16,6 +16,7 @@ import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { epicGraphNeighboursOf } from "../../core/epicGraph.ts";
 import type { EpicGraphTicket } from "../../core/epicGraph.ts";
 import type { EpicGraphLayered } from "../../core/epicGraphLayers.ts";
+import { projectTableRowOwner } from "../../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../../core/projectTableRows.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketStateStanding } from "../../core/ticketHeader.ts";
@@ -102,6 +103,7 @@ function EpicGraphSideDispatch(props: {
       partition={props.partition}
       ticket={props.row.ticket}
       sequence={props.row.sequence}
+      owner={projectTableRowOwner(props.row)}
     >
       {(dispatch, notes) =>
         dispatch === undefined ? null : (

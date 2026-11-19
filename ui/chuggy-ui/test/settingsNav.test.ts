@@ -43,11 +43,7 @@ test("in a project the project's pages lead, then the workspace's, each group un
     site: siteNone,
   });
   expect(drawn(groups)).toStrictEqual([
-    [
-      "Project",
-      "Atlas Billing",
-      ["Chats", "Placement", "Pools", "Permissions"],
-    ],
+    ["Project", "Atlas Billing", ["Chats", "Placement", "Permissions"]],
     [
       "Workspace",
       "Acme Co.",

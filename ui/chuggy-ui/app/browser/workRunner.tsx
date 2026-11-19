@@ -8,16 +8,12 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
-import {
-  executionPlacementQuery,
-  ownerFallbackQuery,
-} from "../core/projectQueries.ts";
+import { executionPlacementQuery } from "../core/projectQueries.ts";
 import { settingsRoutes } from "../core/settingsNav.ts";
 import { personalRunnerQuery } from "../core/tenantQueries.ts";
 import { workRunner, workRunnerPersonalRead } from "../core/workRunner.ts";
 import type { WorkRunner, WorkRunnerOwner } from "../core/workRunner.ts";
 import { usePanelState } from "./api.ts";
-import { useSessionPlacementSettled } from "./sessionPlacement.tsx";
 
 export function useWorkRunner(
   partition: PartitionIdentity,
@@ -27,18 +23,12 @@ export function useWorkRunner(
     executionPlacementQuery(partition),
     (state, answer) => ({ state, settled: answer.isFetched }),
   );
-  const fallback = usePanelState(
-    ownerFallbackQuery(partition),
-    (state, answer) => ({ state, settled: answer.isFetched }),
-  );
   const personal = usePanelState(
     personalRunnerQuery(partition.tenant),
     (state, answer) => ({ state, settled: answer.isFetched }),
   );
   return workRunner(
     placement,
-    useSessionPlacementSettled(partition),
-    fallback,
     workRunnerPersonalRead(personal, partition.project),
     owner,
   );

@@ -58,7 +58,10 @@ import type {
   TicketFilter,
   TicketListAsk,
 } from "../core/projectTableFilters.ts";
-import { projectTableRow } from "../core/projectTableRows.ts";
+import {
+  projectTableRow,
+  projectTableRowOwner,
+} from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import {
   projectTicketRowsHaveMore,
@@ -343,6 +346,7 @@ function TicketListFoot(props: {
           partition={props.partition}
           ticket={row.ticket}
           sequence={row.sequence}
+          owner={projectTableRowOwner(row)}
         >
           {(dispatch, notes) => (
             <>

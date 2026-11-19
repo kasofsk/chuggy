@@ -871,14 +871,10 @@ test.each([
   },
 );
 
-test("a ticket whose starting execution waits on its project's pools short of memory is told how much they have free and it needs, and no remedy, in one sentence after its phase", async () => {
+test("a ticket whose starting execution the server says its project's pools are short of memory for is told as it was before any wait was read", async () => {
   expect(
     (await nextSaid(workingWith([setupSitePoolWaiting(7, room)]))).thing,
-  ).toEqual(
-    working(
-      " It is waiting on this project's runners, which have 1.4 GiB free; this run needs 4 GiB.",
-    ),
-  );
+  ).toEqual(working(""));
 });
 
 test("a ticket whose starting execution waits on runners that are live, with no room said, is told as it was before any wait was read", async () => {
@@ -1252,7 +1248,7 @@ test("a user the runner package bars from docker is told the package's reason an
   );
 });
 
-test("a runner registered and not running is offered to be started here only where this machine holds the person's runner's registration, said as held and as registered again where the site no longer knows it, offered to be registered again beside a pool's registration, and where this machine holds none is offered as where there is no runner", () => {
+test("a runner registered and not running is offered to be started here only where this machine holds the person's runner's registration, said as held and as registered again where the site no longer knows it, and where this machine holds none is offered as where there is no runner", () => {
   const holds =
     "A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner. I'll check it and start it here as a background service of yours that starts when you log in, registering this machine again as yours alone first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan.";
   const instead =
@@ -1268,11 +1264,6 @@ test("a runner registered and not running is offered to be started here only whe
     offered(
       `${holds} I'll make this machine your chat host too. ${takesWork} ${instead}`,
       true,
-    ),
-  );
-  expect(here({ lacks: "RunnerLive", chat: false }, roomy, "Pool")).toEqual(
-    offered(
-      `A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner of the project's rather than yours. I'll leave that registration as it is and register this machine again as yours alone, then check your runner and start it here as a background service of yours that starts when you log in, so work on your tickets runs on this machine in containers, on your Claude plan. ${takesWork} ${instead}`,
     ),
   );
 });
@@ -1703,84 +1694,28 @@ test("the page bind opens is the connect flow, on the folder's repository where 
   ).toBeUndefined();
 });
 
-/** What a personal runner of the person's lacks to take the project's work. */
-function serving(
-  given: boolean,
-  named: boolean,
-  administers: boolean,
-): SetupLack {
-  return { lacks: "Serving", given, named, administers };
-}
+/** A personal runner of the person's registered and not given the project. */
+const serving: SetupLack = { lacks: "Serving" };
 
 const servingWhen =
   "once the person says yes to their runner taking the project's work";
-const servingPlacement = `${pages}/settings/placement`;
 
-test("a personal runner that does not take the project's work is offered serve, which gives it the project and lets the person's own runners take the work, each only where it is lacking", () => {
-  const offered = (tell: string): SaidThing => ({
+test("a personal runner that does not take the project's work is offered serve, which gives it the project and nothing else", () => {
+  expect(thing(serving)).toEqual({
     thing: "Offer",
     command: "Serve",
-    tell: `Your runner is registered and does not take acme/widgets's work yet. With your yes I will ${tell}. Tell me yes to go ahead.`,
+    tell: "Your runner is registered and does not take acme/widgets's work yet. With your yes I will give it acme/widgets. Tell me yes to go ahead.",
     when: servingWhen,
     workspace: "acme",
     project: "widgets",
   });
-  expect(thing(serving(false, false, true))).toEqual(
-    offered("give it acme/widgets and let your own runners take its work"),
-  );
-  expect(thing(serving(false, true, true))).toEqual(
-    offered("give it acme/widgets"),
-  );
-  expect(thing(serving(false, true, false))).toEqual(
-    offered("give it acme/widgets"),
-  );
-  expect(thing(serving(true, false, true))).toEqual(
-    offered("let your own runners take acme/widgets's work"),
-  );
 });
 
-test("a person who cannot administer a project naming no owner fallback is offered serve for the project alone, and told an admin sets Personal runners on its Placement page", () => {
-  const admin = `Your own runners take its work only once an admin of the project sets Personal runners on its Placement page, ${servingPlacement}.`;
-  expect(thing(serving(false, false, false))).toEqual({
-    thing: "Offer",
-    command: "Serve",
-    tell: `Your runner is registered and does not take acme/widgets's work yet. With your yes I will give it acme/widgets. ${admin} Tell me yes to go ahead.`,
-    when: servingWhen,
-    workspace: "acme",
-    project: "widgets",
-  });
-  expect(thing(serving(true, false, false))).toEqual(
-    hand(
-      `Your runner is registered and given acme/widgets, and does not take its work yet. ${admin} Tell me once they have.`,
-      "once the person says an admin of the project set Personal runners",
-    ),
-  );
-});
-
-test("serve is due only where the runner step lacks Serving and writes only what the person may and what is lacking: the project given where it is not, and Preferred where no fallback is named and the person administers", () => {
-  const partition = { tenant: "acme", project: "widgets" };
+test("serve is due only where the runner step lacks Serving, and names the project to give", () => {
   const due = (lack: SetupLack) => setupServeDue(lacking_(lack));
-  expect(due(serving(false, false, true))).toEqual({
-    partition,
-    give: true,
-    allow: true,
+  expect(due(serving)).toEqual({
+    partition: { tenant: "acme", project: "widgets" },
   });
-  expect(due(serving(false, true, true))).toEqual({
-    partition,
-    give: true,
-    allow: false,
-  });
-  expect(due(serving(false, false, false))).toEqual({
-    partition,
-    give: true,
-    allow: false,
-  });
-  expect(due(serving(true, false, true))).toEqual({
-    partition,
-    give: false,
-    allow: true,
-  });
-  expect(due(serving(true, false, false))).toBeUndefined();
   expect(due({ lacks: "Runner", chat: false })).toBeUndefined();
-  expect(setupRunnerDue(lacking_(serving(false, false, true)))).toBeUndefined();
+  expect(setupRunnerDue(lacking_(serving))).toBeUndefined();
 });

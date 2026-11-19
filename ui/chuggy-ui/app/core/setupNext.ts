@@ -75,7 +75,7 @@ import type { SetupPlatform } from "./setupPorts.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
 import type { SetupFit } from "./setupFit.ts";
-import type { SetupRunnerHeld, SetupRunnerHere } from "./setupRunnerMachine.ts";
+import type { SetupRunnerHere } from "./setupRunnerMachine.ts";
 import { setupTicketAgentsPath } from "./setupTicket.ts";
 import type { SetupTicketOffers } from "./setupTicket.ts";
 import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
@@ -108,7 +108,6 @@ import type { WorkspaceNamed } from "./workspaceNames.ts";
  */
 export const setupPressed = {
   runner: { id: "runners-register" },
-  fallback: { id: "runners-fallback-title" },
   ticket: { id: "ticket-authoring-create-ticket" },
   dispatch: { id: "setup-pressed-dispatch" },
 } as const satisfies Readonly<Record<string, Copy>>;
@@ -623,11 +622,10 @@ function setupFitToldMend(
   );
 }
 
-/** A runner registered and not running where this machine holds a registration: started here unless the person objects where it is the person's runner's, and registered again as theirs where it is only the project's pool's. */
+/** A runner registered and not running where this machine holds the person's runner's registration: started here unless the person objects. */
 function setupRunnerLiveMend(
   at: SetupAt,
   here: SetupRunnerHere,
-  held: SetupRunnerHeld,
   chat: boolean,
   instead: Copy,
 ): SetupThing {
@@ -636,10 +634,7 @@ function setupRunnerLiveMend(
     setupFitToldMend(here.fit, instead) ??
     setupOffer(
       {
-        id:
-          held === "Personal"
-            ? "setup-mend-runner-live-offer"
-            : "setup-mend-runner-pool-offer",
+        id: "setup-mend-runner-live-offer",
         args: {
           project: setupNamed(at),
           runs: setupRunsOn(here.claude),
@@ -654,43 +649,15 @@ function setupRunnerLiveMend(
   );
 }
 
-/**
- * A personal runner of the person's that does not take the project's work.
- * `serve` gives it the project where it is not given, and names Preferred
- * where the project names no owner fallback and the person may name one;
- * where they may not, the tell names the project's Placement page, where an
- * admin of it does, and where the project is given already that is all there
- * is to do.
- */
-function setupServingMend(
-  lack: Extract<SetupLack, { readonly lacks: "Serving" }>,
-  at: SetupAt,
-): SetupThing {
-  const project = setupNamed(at);
-  const setting = setupPressed.fallback;
-  const placement = setupPage(at, settingsRoutes.project.placement);
-  const allow = !lack.named && lack.administers;
-  const admin = !lack.named && !lack.administers;
-  if (lack.given && !allow)
-    return setupHand(
-      {
-        id: "setup-mend-serving-admin-tell",
-        args: { project, setting, placement },
-      },
-      { id: "setup-mend-serving-admin-when", args: { setting } },
-    );
+/** A personal runner of the person's that the project is not given, which
+ * `serve` gives it. */
+function setupServingMend(at: SetupAt): SetupThing {
   return {
     thing: "Offer",
     command: "Serve",
     tell: {
       id: "setup-mend-serving-offer",
-      args: {
-        project,
-        does: lack.given ? "allow" : allow ? "both" : "give",
-        admin: admin ? "admin" : "none",
-        setting,
-        placement,
-      },
+      args: { project: setupNamed(at) },
     },
     when: { id: "setup-offer-serve-when" },
     workspace: at.workspace,
@@ -724,7 +691,7 @@ function setupRunnerMend(
   };
   const live = lack.lacks === "RunnerLive";
   if (live && here?.held !== undefined)
-    return setupRunnerLiveMend(at, here, here.held, lack.chat, instead);
+    return setupRunnerLiveMend(at, here, lack.chat, instead);
   if (here === undefined)
     return live
       ? setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning)
@@ -857,9 +824,9 @@ function setupBriefAsked(
   };
 }
 
-/** What a ticket's starting execution waits on of the person's runners or the project's pools, as the finalization tell says it: the fact, and no remedy. */
+/** What a ticket's starting execution waits on of the person's runners, as the finalization tell says it: the fact, and no remedy. */
 function setupWaitSaid(wait: SetupRunnerWait | undefined): {
-  readonly wait: "room" | "pool-room" | "offline" | "unable" | "none";
+  readonly wait: "room" | "offline" | "unable" | "none";
   readonly free: CopyArgument;
   readonly needed: CopyArgument;
 } {
@@ -867,12 +834,6 @@ function setupWaitSaid(wait: SetupRunnerWait | undefined): {
     case "Room":
       return {
         wait: "room",
-        free: quantityFigureCopy(memoryMibFigure(wait.freeMib)),
-        needed: quantityFigureCopy(memoryMibFigure(wait.neededMib)),
-      };
-    case "PoolRoom":
-      return {
-        wait: "pool-room",
         free: quantityFigureCopy(memoryMibFigure(wait.freeMib)),
         needed: quantityFigureCopy(memoryMibFigure(wait.neededMib)),
       };
@@ -1021,7 +982,7 @@ function setupMend(
     case "RunnerLive":
       return setupRunnerMend(lack, at, here, mcp.platform);
     case "Serving":
-      return setupServingMend(lack, at);
+      return setupServingMend(at);
     case "Ticket":
     case "Release":
     case "Dispatch":
@@ -1280,23 +1241,17 @@ export function setupConnectDue(standing: SetupStanding): string | undefined {
       );
 }
 
-/** What `serve` writes for a project: the project given to the person's runners, and Preferred named as its owner fallback. */
+/** What `serve` writes for a project: the project given to the person's runners. */
 export interface SetupServeDue {
   readonly partition: PartitionIdentity;
-  readonly give: boolean;
-  readonly allow: boolean;
 }
 
-/** What `serve` writes where a personal runner of the person's taking the project's work is the one next thing, and something of it is theirs to write. */
+/** What `serve` writes where a personal runner of the person's taking the project's work is the one next thing. */
 export function setupServeDue(
   standing: SetupStanding,
 ): SetupServeDue | undefined {
   const partition = setupDue(standing, ["Serving"]);
-  const lack = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
-  if (partition === undefined || lack?.lacks !== "Serving") return undefined;
-  const give = !lack.given;
-  const allow = !lack.named && lack.administers;
-  return give || allow ? { partition, give, allow } : undefined;
+  return partition === undefined ? undefined : { partition };
 }
 
 /** The project of a checklist whose every step is done. */

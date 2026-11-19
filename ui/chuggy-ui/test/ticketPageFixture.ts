@@ -57,21 +57,23 @@ export function ticketDispatchViewOf(
   };
 }
 
-/** Every route the page reads, the dispatch one being the case's own. */
+/** Every route the page reads, the dispatch one being the case's own, and the
+ * ticket the one above unless the case names another. */
 export function ticketPageRoutes(
   partition: PartitionIdentity,
   dispatch: () => unknown,
+  ticket: unknown = ticketPageTicket,
 ): (url: string) => Response {
   return (url) => {
     if (url.includes("/dispatch-view")) return answer(dispatch());
     if (url.includes("/native-actions")) return answer({ actions: [] });
     if (url.includes("/executions")) return answer({ executions: [] });
     if (url.includes("/drafts/")) return answer({}, 404);
-    if (url.includes("/tickets/")) return answer(ticketPageTicket);
+    if (url.includes("/tickets/")) return answer(ticket);
     return answer({
       partition,
       sequence: 8,
-      tickets: [ticketPageTicket],
+      tickets: [ticket],
     });
   };
 }

@@ -220,8 +220,6 @@ setup-read-repositories = its { -repository(form: "plural") } were
 # spells -run: to run is a verb here
 setup-read-work = where its work runs was
 setup-read-placement = its { -runner(form: "plural") } were
-# spells -work-stage: the work in general
-setup-read-fallback = whether { -personal-runner(form: "plural") } take its work was
 setup-read-personal = your { -personal-runner(form: "plural") } were
 setup-read-tickets = its { -ticket(form: "plural") } were
 setup-read-drafts = its { -draft(form: "plural") } were
@@ -398,8 +396,6 @@ setup-merge-refusal-forbidden = only the { -project }'s { -role-admin(form: "plu
 setup-serve-none = nothing to change: the next thing is not your { -runner } taking the { -project }'s work
 setup-serve-given = gave your { -personal-runner(form: "plural") } { $project }
 setup-serve-given-failed = { -brand-name } did not give your { -personal-runner(form: "plural") } { $project }: { $failure }
-setup-serve-allowed = set { -personal-runner(case: "upper", form: "plural") } on { $project } to { $preferred }
-setup-serve-allowed-failed = { -brand-name } did not set { -personal-runner(case: "upper", form: "plural") } on { $project }: { $failure }
 
 ## The MCP step, which the mcp command does on this machine with the
 ## person's yes.
@@ -479,10 +475,6 @@ setup-mend-package-newer = If the { -runner } package here, { $program }, is old
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
 setup-mend-runner-live-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds the registration of { -runner(form: "a") }. I'll check it and start it here as a background service of yours that starts when you log in, registering this machine again as yours alone first if the { -site } no longer knows that registration, so work on your { -ticket(form: "plural") } runs on this machine { $runs }.{ $found }{ $fit }{ $chat } Your { -runner } will take work for { $project }. Say if you'd rather it didn't. It can live on another machine instead; say so if you want that.
-# spells -brief-check: to check is a verb here
-# spells -work-stage: the work in general
-# spells -run: to run is a verb here
-setup-mend-runner-pool-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds the registration of { -runner(form: "a") } of the { -project }'s rather than yours. I'll leave that registration as it is and register this machine again as yours alone, then check your { -runner } and start it here as a background service of yours that starts when you log in, so work on your { -ticket(form: "plural") } runs on this machine { $runs }.{ $found }{ $fit }{ $chat } Your { -runner } will take work for { $project }. Say if you'd rather it didn't. It can live on another machine instead; say so if you want that.
 setup-mend-runner-live-tell = { -runner(case: "upper", form: "a") } is registered and is not running. Start it on its machine and tell me once it is running.
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
@@ -513,18 +505,7 @@ setup-mend-runner-offer = { $chat ->
    *[without] I'll install your { -runner } on this machine, as yours alone. Say if you'd rather not have it here, or want it on another machine.
 }{ $found } { $put }{ $fit } Your { -runner } will take work for { $project }. Say if you'd rather it didn't.
 # spells -work-stage: the work in general
-setup-mend-serving-offer = Your { -runner } is registered and does not take { $project }'s work yet. With your yes I will { $does ->
-    [both] give it { $project } and let your own { -runner(form: "plural") } take its work
-    [allow] let your own { -runner(form: "plural") } take { $project }'s work
-   *[give] give it { $project }
-}.{ $admin ->
-    [admin] { " " }{ setup-mend-serving-admin }
-   *[none] { "" }
-} Tell me yes to go ahead.
-# spells -work-stage: the work in general
-setup-mend-serving-admin = Your own { -runner(form: "plural") } take its work only once { -role-admin(form: "a") } of the { -project } sets { $setting } on its { -placement(case: "upper") } page, { $placement }.
-# spells -work-stage: the work in general
-setup-mend-serving-admin-tell = Your { -runner } is registered and given { $project }, and does not take its work yet. { setup-mend-serving-admin } Tell me once they have.
+setup-mend-serving-offer = Your { -runner } is registered and does not take { $project }'s work yet. With your yes I will give it { $project }. Tell me yes to go ahead.
 # spells -work-stage: the work in general
 setup-offer-serve-when = once the person says yes to their { -runner } taking the { -project }'s work
 # spells -run: to run is a verb here
@@ -535,7 +516,6 @@ setup-mend-merge-offer = { -ticket(case: "upper") } { $ticket } opened { -pull-r
    *[ask] { "" }
 } If you merge it yourself, setup is done now, and the { -configuration } is in place once it is merged.
 setup-offer-merge-when = once the person says yes to { -brand-name } merging that { -pull-request }
-setup-mend-serving-admin-when = once the person says { -role-admin(form: "a") } of the { -project } set { $setting }
 # spells -run: to run is a verb here
 setup-mend-runner-serviceless = { setup-next-runner }. { setup-program } runs one as a background service of yours, and this machine's user services did not answer, so it cannot set one up here. { $elsewhere }
 setup-mend-runner-engineless = { setup-next-runner }, in containers. This machine cannot be one yet: { $none } here without a password. { setup-runner-engine-needs-password } Tell me once one answers you here. { $instead }
@@ -620,7 +600,6 @@ setup-mend-dispatch-when = once the person says { -ticket } { $ticket } has star
 # spells -run: to run is a verb here
 setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $phase }.{ $wait ->
     [room] { " " }{ setup-mend-wait-room }
-    [pool-room] { " " }{ setup-mend-wait-pool-room }
     [offline] { " " }{ setup-mend-wait-offline }
     [unable] { " " }{ setup-mend-wait-unable }
    *[none] { "" }
@@ -632,7 +611,6 @@ setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $p
    *[finish] Setup is done when it finishes.
 } { $page } shows where it is. I'll keep watching it and tell you what changes.
 setup-mend-wait-room = It is waiting on your { -personal-runner }, which has { $free } free; this { -run } needs { $needed }.
-setup-mend-wait-pool-room = It is waiting on this { -project }'s { -runner(form: "plural") }, which have { $free } free; this { -run } needs { $needed }.
 setup-mend-wait-offline = It is waiting on your { -personal-runner }, which is offline.
 # spells -run: to run is a verb here
 setup-mend-wait-unable = It is waiting on your { -personal-runner(form: "plural") }, and none of them can run it.
