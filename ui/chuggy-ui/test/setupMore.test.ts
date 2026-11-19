@@ -10,6 +10,7 @@
 
 import { expect, test } from "vitest";
 
+import { chuggyDocsIndex } from "../../../src/contract/sessionTools.ts";
 import { setupAsked } from "../app/core/setupArguments.ts";
 import { setupDocsPages } from "../app/core/setupNext.ts";
 import { setupNextStop, setupReportLines } from "../app/core/setupReport.ts";
@@ -186,6 +187,12 @@ test("the checklist's steps are the same whichever offer is taken, so none of th
 test("a step not done is what is next whatever offer is taken", async () => {
   const { after } = await ran(setupSiteAt("Live"), more("review"));
   expect(after.join("\n")).not.toContain("What else you can set");
+});
+
+test("every docs page the offers name is a page of the docs the index sits beside", () => {
+  const root = new URL(".", chuggyDocsIndex).href;
+  for (const page of Object.values(setupDocsPages))
+    expect(new URL(page).href.startsWith(root), page).toBe(true);
 });
 
 test("--more is read only by the bare command, and only as one of the offers", () => {

@@ -27,6 +27,9 @@ import {
   saidLandingSite,
   saidMember,
   saidMemberSite,
+  saidMoreCommand,
+  saidMoreOffered,
+  saidMoreRule,
   saidPluginOn,
   saidRunnable,
   saidStages,
@@ -148,7 +151,10 @@ test("a site set up one thing further at a time, from nothing to a landed first 
     }
     const [tell = ""] = said(done, "tell");
     assert.equal(tell.includes(`${session.installation.site}/`), true, tell);
-    if (stage === "Landed") assert.deepEqual(said(done, "rule"), []);
+    if (stage === "Landed")
+      assert.deepEqual(said(done, "rule"), [
+        saidMoreRule(program).slice("rule: ".length),
+      ]);
     else assert.deepEqual(await ruled(done), [], stage);
   }
 });
@@ -193,7 +199,7 @@ test("signed in where Claude Code here has no chuggy plugin, the plugin is offer
   }
 });
 
-test("where the repository holds only the bootstrap, a run set up to a done ticket whose pull request is still to merge offers merging that pull request, having read the done ticket's landings, and a run where it holds its own reads none and closes as it did", async () => {
+test("where the repository holds only the bootstrap, a run set up to a done ticket whose pull request is still to merge offers merging that pull request, having read the done ticket's landings, and a run where it holds its own reads none and closes offering what more there is", async () => {
   const session = await signed();
   const { installation } = session;
   const url = "https://github.com/acme-org/widgets/pull/2";
@@ -202,7 +208,9 @@ test("where the repository holds only the bootstrap, a run set up to a done tick
     landed.projects[0]?.landings.set(1, [setupSiteOpened(url)]);
     return landed;
   };
-  const closing = `chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${installation.site}/acme/widgets/tickets/new.`;
+  const closing = saidMoreOffered(
+    `chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${installation.site}/acme/widgets/tickets/new.`,
+  );
   const landings = `GET ${installation.site}/api/v1/tenants/acme/projects/widgets/tickets/1/landings`;
   const bootstrapped = await read(session, setupSiteBootstrap(world()));
   assert.equal(bootstrapped.code, 0, bootstrapped.stdout);
@@ -217,6 +225,7 @@ test("where the repository holds only the bootstrap, a run set up to a done tick
   );
   assert.deepEqual(said(bootstrapped, "rule"), [
     `Run node ${program} merge --workspace acme --project widgets only once the person says yes to chuggy merging that pull request.`,
+    `Run ${saidMoreCommand(program, "offer")} only if the person would rather merge it themselves.`,
   ]);
   assert.equal(bootstrapped.lines.at(-1), "next: stop");
   assert.ok(

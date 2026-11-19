@@ -64,7 +64,6 @@ import { repositoryConfigurationRoot } from "../../../../src/contract/configurat
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { RepositoryConfigurationImportAttemptResponse } from "../../../../src/contract/responses.ts";
 import { forgeApps } from "../../../../src/contract/rosters.ts";
-import { chuggyDocsIndex } from "../../../../src/contract/sessionTools.ts";
 import type { Copy, CopyArgument } from "./copy.ts";
 import { instantText, memoryMibFigure, quantityFigureCopy } from "./figures.ts";
 import { claudeCodeLine, claudeCodeRunnerLine } from "./claudeCodeLine.ts";
@@ -1158,17 +1157,16 @@ export const setupMergeUnseen: SetupMergeSeen = {
   history: "Unread",
 };
 
-/** A page of chuggy's docs, by the address the docs' own index gives it. */
-function setupDocsPage(path: string): string {
-  return new URL(path, chuggyDocsIndex).href;
-}
-
-/** The docs pages the offers after setup's last step name. */
+/** The docs pages the offers after setup's last step name, by the addresses the docs' own index, `chuggyDocsIndex`, gives them. */
 export const setupDocsPages = {
-  configuration: setupDocsPage("docs/configuration.md"),
-  image: setupDocsPage("docs/jobs/image.md"),
-  sizing: setupDocsPage("docs/jobs/sizing.md"),
-  runners: setupDocsPage("docs/runners.md"),
+  configuration:
+    "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/docs/configuration.md",
+  image:
+    "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/docs/jobs/image.md",
+  sizing:
+    "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/docs/jobs/sizing.md",
+  runners:
+    "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/docs/runners.md",
 } as const;
 
 /** What else can be set and where, each by its address: the project's settings pages, the repository's configuration and the docs on it and on sizing a stage, and the settings file of the runner package of `platform`, by the part of its README that says it. */
