@@ -3161,7 +3161,7 @@ export function accessTokenMintedResponse(
         403,
         nativeHttpError(
           accessTokenMintForbiddenCode,
-          "Making an access token needs the project's make_access_tokens permit, which its administrators hold.",
+          "Making an access token needs the project's make_access_tokens permit, which its administrators hold and so does a reader the tenant lets register a personal runner.",
         ),
       );
     case "LimitReached":
