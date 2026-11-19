@@ -1338,10 +1338,10 @@ function workerHeldCredentialsAnswer(
 
 /**
  * The credentials one attempt is served, resolved from the names it asks for
- * against the names its configuration listed and its grant carries. The grant,
- * the listed names, the project and the repository its input bundle pinned
- * are what its own task read found, so nothing the pod sends but the names it
- * asks for is weighed.
+ * against the names its configuration listed, its grant and its project's
+ * connectors. The grant, the listed names, the project and the repository its
+ * input bundle pinned are what its own task read found, so nothing the pod
+ * sends but the names it asks for is weighed.
  */
 function workerHeldCredentialsRoute(
   register: WorkerJobRegistrar,

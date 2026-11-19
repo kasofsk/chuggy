@@ -7,6 +7,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { WorkerHeldCredentialBundle } from "../../src/contract/workerPlane.ts";
+import {
+  connectorCredentialOf,
+  connectorCredentialPrefix,
+} from "../../src/contract/workerEnvironment.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import {
   credentialResolver,
@@ -14,7 +18,12 @@ import {
   type CredentialIssuer,
   type CredentialRequester,
 } from "../../src/interpreter/credentialIssuers.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import type { ProjectConnectorRead } from "../../src/interpreter/projectConnectors.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
 
 const requester: CredentialRequester = {
   partition: { tenant: asTenantId("tenant"), project: asProjectId("project") },
@@ -136,4 +145,147 @@ test("a resolver over no issuers names every listed and granted name not held", 
       absent: [{ credential: "d", reason: "NotHeld" }],
     },
   );
+});
+
+const deploy = connectorCredentialOf("deploy");
+const other = { ...requester.partition, project: asProjectId("other") };
+
+/** A connector read holding `deploy` in `holder`'s project, recording each name it was asked. */
+function connectorRead(
+  asked: string[] = [],
+  holder: Partition = requester.partition,
+): ProjectConnectorRead {
+  return {
+    connector: (partition, name) => {
+      asked.push(name);
+      return Promise.resolve(
+        partition.tenant === holder.tenant &&
+          partition.project === holder.project &&
+          name === "deploy"
+          ? {
+              connector: {
+                name,
+                kind: "Anthropic",
+                settings: { organizationId: "org", federationRuleId: "rule" },
+              },
+              revision: 1,
+            }
+          : undefined,
+      );
+    },
+  };
+}
+
+test("a listed connector name its project holds reaches the issuers although the grant does not carry it", async () => {
+  const lookups: string[] = [];
+  const asked: string[] = [];
+  const resolver = credentialResolver(
+    [issuer({}, asked)],
+    connectorRead(lookups),
+  );
+  assert.deepEqual(
+    await resolver.resolve({
+      requester,
+      listed: [deploy],
+      granted: [],
+      asked: [deploy, deploy],
+    }),
+    {
+      resolved: "Credentials",
+      credentials: [],
+      absent: [{ credential: deploy, reason: "NotHeld" }],
+    },
+  );
+  assert.deepEqual(asked, [deploy]);
+  assert.deepEqual(lookups, ["deploy"]);
+});
+
+test("a listed connector name its project does not hold is not enabled, and no issuer is asked for it", async () => {
+  for (const [why, credential, read] of [
+    ["held nowhere", connectorCredentialOf("absent"), connectorRead()],
+    ["held by another project", deploy, connectorRead([], other)],
+    ["no connector read", deploy, undefined],
+  ] as const) {
+    const asked: string[] = [];
+    const resolver = credentialResolver([issuer({}, asked)], read);
+    assert.deepEqual(
+      await resolver.resolve({
+        requester,
+        listed: [credential],
+        granted: [credential],
+        asked: [credential],
+      }),
+      {
+        resolved: "Credentials",
+        credentials: [],
+        absent: [{ credential, reason: "NotEnabled" }],
+      },
+      why,
+    );
+    assert.deepEqual(asked, [], why);
+  }
+});
+
+test("a name in the connector prefix that is no connector name is not enabled, and nothing is looked up", async () => {
+  const malformed = `${connectorCredentialPrefix}not a name`;
+  const lookups: string[] = [];
+  const asked: string[] = [];
+  const resolver = credentialResolver(
+    [issuer({}, asked)],
+    connectorRead(lookups),
+  );
+  assert.deepEqual(
+    await resolver.resolve({
+      requester,
+      listed: [malformed],
+      granted: [malformed],
+      asked: [malformed],
+    }),
+    {
+      resolved: "Credentials",
+      credentials: [],
+      absent: [{ credential: malformed, reason: "NotEnabled" }],
+    },
+  );
+  assert.deepEqual([lookups, asked], [[], []]);
+});
+
+test("an unlisted connector name is left out, and nothing is looked up, where its project holds it", async () => {
+  const lookups: string[] = [];
+  const resolver = credentialResolver([issuer({})], connectorRead(lookups));
+  assert.deepEqual(
+    await resolver.resolve({
+      requester,
+      listed: [],
+      granted: [deploy],
+      asked: [deploy],
+    }),
+    { resolved: "Credentials", credentials: [], absent: [] },
+  );
+  assert.deepEqual(lookups, []);
+});
+
+test("a connector read that raises is an outage of the whole answer", async () => {
+  const resolver = credentialResolver(
+    [issuer({ a: { issued: "Bundle", bundle: bundle("a") } })],
+    { connector: () => Promise.reject(new Error("unreachable")) },
+  );
+  assert.deepEqual(
+    await resolver.resolve({
+      requester,
+      listed: ["a", deploy],
+      granted: ["a"],
+      asked: ["a", deploy],
+    }),
+    { resolved: "Unavailable" },
+  );
+});
+
+test("a connector's name is looked up again on each ask, never kept", async () => {
+  const lookups: string[] = [];
+  const resolver = credentialResolver([], connectorRead(lookups));
+  const ask = { requester, listed: [deploy], granted: [], asked: [deploy] };
+  await resolver.resolve(ask);
+  await resolver.resolve(ask);
+  assert.deepEqual(lookups, ["deploy", "deploy"]);
 });
