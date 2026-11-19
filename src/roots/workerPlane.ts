@@ -21,6 +21,7 @@ import {
 import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
 import { postgresForgeInstallations } from "../adapters/postgres/forgeInstallation.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
+import { postgresProjectConnectors } from "../adapters/postgres/projectConnectors.ts";
 import { postgresProjectRepositoryLanding } from "../adapters/postgres/repositoryBinding.ts";
 import { workerPlaneRole } from "../adapters/postgres/schema.ts";
 import { reporterSecretBytes } from "../adapters/reporters/secretFile.ts";
@@ -348,6 +349,7 @@ async function main(): Promise<void> {
     ...(forge === undefined ? {} : { credentials: forge.minting }),
     heldCredentials: credentialResolver(
       forge === undefined ? held : [...held, forge.workflowRuns],
+      postgresProjectConnectors(pool),
     ),
     uploadBytesMax,
     ready: async () => {

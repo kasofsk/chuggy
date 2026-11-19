@@ -32,6 +32,7 @@ import {
   workerPlaneRoutes,
   type WorkerPlaneRouteName,
 } from "../../src/contract/workerPlane.ts";
+import { connectorCredentialOf } from "../../src/contract/workerEnvironment.ts";
 import { resultManifestTextCharsMax } from "../../src/contract/workerDocuments.ts";
 import {
   nativeHttpPageItemsMax,
@@ -2791,4 +2792,62 @@ test("a workflow runs mint the forge refuses is absent, and one it could not ans
     ),
     { status: 503, body: JSON.stringify({ action: "retry" }) },
   );
+});
+
+test("a listed connector credential is weighed against the attempt's own project's connectors, never its grant", async () => {
+  const holding = connectorCredentialOf("deploy");
+  const lacking = connectorCredentialOf("absent");
+  const looked: unknown[] = [];
+  const granted = heldTask([]);
+  assert.ok(granted.invocation !== undefined);
+  const found: WorkerTaskRead = {
+    ...granted,
+    invocation: {
+      ...granted.invocation,
+      credentialsListed: [holding, lacking],
+    },
+  };
+  const app = createWorkerPlaneApp({
+    ...inertWorkerPlane(workerPlaneUploadBytesMax),
+    tasks: { ...inertTasks, work: () => Promise.resolve(found) },
+    heldCredentials: credentialResolver([], {
+      connector: (partition, name) => {
+        looked.push([partition, name]);
+        return Promise.resolve(
+          name === "deploy"
+            ? {
+                connector: {
+                  name,
+                  kind: "Anthropic",
+                  settings: { organizationId: "org", federationRuleId: "rule" },
+                },
+                revision: 1,
+              }
+            : undefined,
+        );
+      },
+    }),
+  });
+  assert.deepEqual(
+    await heldAsked(
+      app,
+      { credentials: [holding, lacking] },
+      { ...held, [workerContractHeader]: workerContractRelease },
+    ),
+    {
+      status: 200,
+      body: JSON.stringify({
+        credentials: [],
+        absent: [
+          { credential: holding, reason: "NotHeld" },
+          { credential: lacking, reason: "NotEnabled" },
+        ],
+      }),
+    },
+  );
+  assert.deepEqual(looked, [
+    [authority.partition, "deploy"],
+    [authority.partition, "absent"],
+  ]);
+  await app.close();
 });

@@ -10,17 +10,25 @@
  * THE RESOLVER DECIDES WHAT NO ISSUER MAY. A name the configuration did not
  * list is left out, as it was never the job's to ask for; a listed name the
  * grant does not carry is absent as `NotGranted` before any issuer is asked;
- * and a name no issuer serves is absent as `NotHeld`. An outage anywhere is an
- * outage of the whole answer, because a job answered nothing for a credential
- * could not tell that from one never held.
+ * and a name no issuer serves is absent as `NotHeld`. A connector's name is
+ * chosen by its project, so no grant can carry one: it is weighed against the
+ * requester's project's connectors instead, and absent as `NotEnabled` where
+ * that project holds none of the name. An outage anywhere, the connector read's
+ * included, is an outage of the whole answer, because a job answered nothing
+ * for a credential could not tell that from one never held.
  */
 
 import type {
   WorkerHeldCredentialAbsent,
   WorkerHeldCredentialBundle,
 } from "../contract/workerPlane.ts";
+import {
+  connectorCredentialPrefix,
+  connectorNameOf,
+} from "../contract/workerEnvironment.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { RepositoryId } from "./finalizer.ts";
+import type { ProjectConnectorRead } from "./projectConnectors.ts";
 import type { Partition } from "./projectStore.ts";
 
 /** Who a credential is issued to: the project it is for and the task in it that asks. */
@@ -90,9 +98,45 @@ async function credentialResolverIssued(
   return { issued: "NotServed" };
 }
 
-/** Resolves each listed name asked, once each and in the order asked, through `issuers` in their order. */
+/**
+ * Whether `credential` may go on to the issuers: `Within` where the grant or
+ * the requester's project's connectors allow it, else the absence or outage.
+ */
+async function credentialResolverCeiling(
+  connectors: ProjectConnectorRead | undefined,
+  ask: CredentialsAsk,
+  granted: ReadonlySet<string>,
+  credential: string,
+): Promise<
+  | { readonly ceiling: "Within" }
+  | { readonly ceiling: "Absent"; readonly reason: "NotGranted" | "NotEnabled" }
+  | { readonly ceiling: "Unavailable" }
+> {
+  if (!credential.startsWith(connectorCredentialPrefix))
+    return granted.has(credential)
+      ? { ceiling: "Within" }
+      : { ceiling: "Absent", reason: "NotGranted" };
+  const name = connectorNameOf(credential);
+  if (name === undefined || connectors === undefined)
+    return { ceiling: "Absent", reason: "NotEnabled" };
+  try {
+    return (await connectors.connector(ask.requester.partition, name)) ===
+      undefined
+      ? { ceiling: "Absent", reason: "NotEnabled" }
+      : { ceiling: "Within" };
+  } catch {
+    return { ceiling: "Unavailable" };
+  }
+}
+
+/**
+ * Resolves each listed name asked, once each and in the order asked, through
+ * `issuers` in their order, a connector's name within `connectors` where the
+ * resolver has them.
+ */
 export function credentialResolver(
   issuers: readonly CredentialIssuer[],
+  connectors?: ProjectConnectorRead,
 ): CredentialResolver {
   return {
     resolve: async (ask) => {
@@ -102,8 +146,16 @@ export function credentialResolver(
       const absent: WorkerHeldCredentialAbsent[] = [];
       for (const credential of new Set(ask.asked)) {
         if (!listed.has(credential)) continue;
-        if (!granted.has(credential)) {
-          absent.push({ credential, reason: "NotGranted" });
+        const ceiling = await credentialResolverCeiling(
+          connectors,
+          ask,
+          granted,
+          credential,
+        );
+        if (ceiling.ceiling === "Unavailable")
+          return { resolved: "Unavailable" };
+        if (ceiling.ceiling === "Absent") {
+          absent.push({ credential, reason: ceiling.reason });
           continue;
         }
         const issued = await credentialResolverIssued(
