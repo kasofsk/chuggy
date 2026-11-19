@@ -927,22 +927,6 @@ test("for every route a project's work can take and every standing the person's 
   });
 });
 
-/** A project's pool takes no one's work, so however it stands it is not the
- * runner the step reads. */
-test("a project's pool, live or not, is no runner of the person's, and the step reads their own alone", async () => {
-  for (const pool of sessionRunnerStandings)
-    for (const own of sessionRunnerStandings) {
-      const { site, project } = saidRunnable();
-      project.runner = pool;
-      ownRunner(site, own);
-      const alone = saidRunnable();
-      ownRunner(alone.site, own);
-      expect((await column(site))[5], `${pool} ${own}`).toEqual(
-        (await column(alone.site))[5],
-      );
-    }
-});
-
 /** A chat host runs the person's threads and takes no work, and a personal
  * runner takes only the work of the projects it is given. */
 test("neither the person's chat host nor a personal runner given only another project is the project's runner", async () => {
@@ -966,15 +950,12 @@ test("neither the person's chat host nor a personal runner given only another pr
 });
 
 test("the person's personal runners unread leave the runner step unread where the project's work goes to runners, so a person holding one is never told to register one", async () => {
-  for (const pool of sessionRunnerStandings) {
-    const { site, project } = saidRunnable();
-    project.runner = pool;
-    site.fates.set("personal", "Failed");
-    expect((await column(site))[5], pool).toEqual([
-      "unread",
-      "your personal runners were not answered (Fault)",
-    ]);
-  }
+  const { site } = saidRunnable();
+  site.fates.set("personal", "Failed");
+  expect((await column(site))[5]).toEqual([
+    "unread",
+    "your personal runners were not answered (Fault)",
+  ]);
 });
 
 /** Whether the person administers the project does not change what the step

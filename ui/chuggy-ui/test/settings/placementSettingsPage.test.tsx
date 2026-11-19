@@ -62,7 +62,7 @@ const sessionsGranted = {
   leadOffering: "Own",
   leadOfferings: ["Own"],
   choices: ["InCluster", "Pool"],
-  runners: { mine: "Offline", project: "Live" },
+  runners: { mine: "Offline", project: "Unregistered" },
 };
 
 interface Drawing {
@@ -150,7 +150,7 @@ test("chat says the reader's own runner, one word", async () => {
   await drawPage({
     sessions: {
       ...sessionsGranted,
-      runners: { mine: "Unregistered", project: "Live" },
+      runners: { mine: "Unregistered", project: "Unregistered" },
     },
   });
   expect(placementRows().slice(3)).toStrictEqual(["ChatRunnersDefaultNone"]);

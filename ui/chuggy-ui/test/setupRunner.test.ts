@@ -841,7 +841,6 @@ test("the one write a run makes is the mint, naming no capabilities and a life f
   expect(setupMintLifetimeSecs * 2).toBeLessThan(runnerTokenLifetimeSecs);
   await ran(machine);
   expect(writes(machine)).toEqual([mint, ...serve]);
-  expect(machine.world.projects[0]?.tokens).toEqual([]);
 });
 
 test("the registration token is one word of register's arguments, which are the console's own command run by the installed program's whole path, and is in no other word of anything run", async () => {

@@ -8,9 +8,9 @@
  * the site answers each read from it, to whoever holds a token the issuer
  * handed out. Every request either server was sent is kept with its method.
  * The site takes the writes the model does: a registration token minted for
- * whoever it admits, and a runner's redemption of a token, a pool's or the
- * person's chat host's, which carries no sign-in and is known by the token
- * alone. Each is kept with who sent it, the
+ * whoever it admits, and a runner's redemption of a token, the person's own
+ * runner's or their chat host's, which carries no sign-in and is known by the
+ * token alone. Each is kept with who sent it, the
  * program or a runner, which a runner says of itself. What happens on the
  * machine reaches the site only where a case says how: it is asked before
  * every answer.
@@ -262,9 +262,8 @@ function issuerHandler(standIn: StandIn, issuer: Issuer) {
   };
 }
 
-/** Where a runner redeems a registration token, a pool's or the person's chat host's, which it is let do by the token alone. */
+/** Where a runner redeems a registration token, the person's own runner's or their chat host's, which it is let do by the token alone. */
 const redemptions: readonly string[] = [
-  "/api/v1/worker-pool-registrations",
   "/api/v1/personal-runner-registrations",
 ];
 

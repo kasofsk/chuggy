@@ -58,7 +58,7 @@ const sessions: SessionPlacementResponse = {
   leadOffering: "Own",
   leadOfferings: ["Own"],
   choices: ["InCluster", "Pool"],
-  runners: { mine: "Live", project: "Live" },
+  runners: { mine: "Live", project: "Unregistered" },
 };
 
 /** A route the reader may not choose is where the kind runs until they choose
@@ -299,17 +299,21 @@ test("the register command names the package's program, the console's own origin
       runnerPackages.linux,
       "https://chuggy.test",
       "tok_en-1",
-      "Pool",
+      "ChatHost",
     ),
-  ).toBe("chuggy-linux register --api https://chuggy.test --token=tok_en-1");
+  ).toBe(
+    "chuggy-linux register --api https://chuggy.test --token=tok_en-1 --chat",
+  );
   expect(
     runnerRegisterCommand(
       runnerPackages.darwin,
       "https://chuggy.test",
       "tok_en-1",
-      "Pool",
+      "ChatHost",
     ),
-  ).toBe("chuggy-darwin register --api https://chuggy.test --token=tok_en-1");
+  ).toBe(
+    "chuggy-darwin register --api https://chuggy.test --token=tok_en-1 --chat",
+  );
   expect(
     runnerRegisterCommand(
       runnerPackages.darwin,
@@ -326,11 +330,11 @@ test("the register command names the package's program, the console's own origin
       runnerPackages.linux,
       "https://chuggy.test",
       "tok_en-1",
-      "Pool",
+      "ChatHost",
       { host: true, capabilities: [] },
     ),
   ).toBe(
-    "chuggy-linux register --api https://chuggy.test --token=tok_en-1 --host",
+    "chuggy-linux register --api https://chuggy.test --token=tok_en-1 --chat --host",
   );
 });
 
@@ -355,9 +359,11 @@ test("a token that starts with a dash stays the token's value", () => {
       runnerPackages.linux,
       "https://chuggy.test",
       "-tok",
-      "Pool",
+      "Personal",
     ),
-  ).toBe("chuggy-linux register --api https://chuggy.test --token=-tok");
+  ).toBe(
+    "chuggy-linux register --personal --api https://chuggy.test --token=-tok",
+  );
 });
 
 test("a platform is drawn by its parts and any other capability as spelled", () => {
