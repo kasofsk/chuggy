@@ -92,6 +92,7 @@ import type {
   TicketResponse,
   WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
+import type { AccessTokenMintRequest } from "../../../../src/contract/accessToken.ts";
 import type { epicWriteRequestSchema } from "../../../../src/contract/epics.ts";
 import type {
   agentAccountSettingsSchema,
@@ -1267,6 +1268,37 @@ export const apiProjectAbilities = apiProjectEndpoint(
   nativeHttpEndpoints.abilities,
   (partition) => ({ parameters: partition }),
 );
+
+/** The project's access tokens the reader may see, newest first. */
+export const apiAccessTokens = apiProjectEndpoint(
+  nativeHttpEndpoints.accessTokens,
+  (partition) => ({ parameters: partition }),
+);
+
+/** One access token made, answered with its secret this once. */
+export const apiMintAccessToken = apiProjectEndpoint(
+  nativeHttpEndpoints.mintAccessToken,
+  (partition, request: AccessTokenMintRequest) => ({
+    parameters: partition,
+    body: request,
+  }),
+);
+
+/** One access token deleted, which revokes it. */
+export function apiDeleteAccessToken(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  token: string,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "DELETE",
+      path: endpointPath(nativeHttpRoutes.accessToken, { ...partition, token }),
+    },
+    () => undefined,
+  );
+}
 
 export interface SessionTranscriptPage {
   readonly stream?: string | undefined;

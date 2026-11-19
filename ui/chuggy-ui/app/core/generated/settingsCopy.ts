@@ -8,6 +8,7 @@ export interface SettingsCopy {
   readonly "settings-nav-threads": Record<never, never>;
   readonly "settings-nav-placement": Record<never, never>;
   readonly "settings-nav-permissions": Record<never, never>;
+  readonly "settings-nav-access-tokens": Record<never, never>;
   readonly "settings-nav-workspace": Record<never, never>;
   readonly "settings-nav-people": Record<never, never>;
   readonly "settings-nav-accounts": Record<never, never>;
@@ -177,6 +178,44 @@ export interface SettingsCopy {
   readonly "settings-invite-link-used": Record<never, never>;
   readonly "settings-invite-link-revoked": Record<never, never>;
   readonly "settings-invite-link-expired": Record<never, never>;
+  readonly "settings-access-tokens-title": Record<never, never>;
+  readonly "settings-access-tokens-about": Record<never, never>;
+  readonly "settings-access-tokens-none": Record<never, never>;
+  readonly "settings-access-tokens-create": Record<never, never>;
+  readonly "settings-access-tokens-name": Record<never, never>;
+  readonly "settings-access-tokens-name-long": {
+    readonly chars: unknown;
+  };
+  readonly "settings-access-tokens-access": Record<never, never>;
+  readonly "settings-access-tokens-read": Record<never, never>;
+  readonly "settings-access-tokens-write": Record<never, never>;
+  readonly "settings-access-tokens-expires": Record<never, never>;
+  readonly "settings-access-tokens-lifetime-days": {
+    readonly days: unknown;
+  };
+  readonly "settings-access-tokens-lifetime-year": Record<never, never>;
+  readonly "settings-access-tokens-own": Record<never, never>;
+  readonly "settings-access-tokens-send": Record<never, never>;
+  readonly "settings-access-tokens-secret": Record<never, never>;
+  readonly "settings-access-tokens-copy": Record<never, never>;
+  readonly "settings-access-tokens-shown-once": Record<never, never>;
+  readonly "settings-access-tokens-created": Record<never, never>;
+  readonly "settings-access-tokens-status": Record<never, never>;
+  readonly "settings-access-tokens-maker": Record<never, never>;
+  readonly "settings-access-tokens-days-left": {
+    readonly days: unknown;
+  };
+  readonly "settings-access-tokens-active": Record<never, never>;
+  readonly "settings-access-tokens-expiring": Record<never, never>;
+  readonly "settings-access-tokens-expired": Record<never, never>;
+  readonly "settings-access-tokens-delete": Record<never, never>;
+  readonly "settings-access-tokens-delete-question": {
+    readonly name: unknown;
+  };
+  readonly "settings-access-tokens-delete-line": Record<never, never>;
+  readonly "settings-access-tokens-forbidden": Record<never, never>;
+  readonly "settings-access-tokens-limit": Record<never, never>;
+  readonly "settings-access-tokens-name-taken": Record<never, never>;
   readonly "settings-invite-brand": Record<never, never>;
   readonly "settings-invite-needed": Record<never, never>;
   readonly "settings-invite-reading": Record<never, never>;

@@ -15,6 +15,7 @@ import {
   ticketLandingStates,
 } from "../../../src/contract/rosters.ts";
 import {
+  accessTokenStatusTone,
   actionReachArm,
   conversationStandingArm,
   inviteLinkStateTone,
@@ -24,6 +25,7 @@ import {
   ticketLandingTone,
   verdictTone,
 } from "../app/core/tones.ts";
+import { accessTokenStatuses } from "../app/core/accessTokens.ts";
 import type { SetVerdict } from "../app/core/ticketLedger.ts";
 import type { Tone } from "../app/core/tones.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
@@ -73,6 +75,16 @@ test("every state of an invite link draws a tone the pill knows, an open one liv
   expect(inviteLinkStateTone("Used")).toBe("pass");
   expect(inviteLinkStateTone("Revoked")).toBe("retired");
   expect(inviteLinkStateTone("Expired")).toBe("retired");
+});
+
+test("every standing of an access token draws a tone the pill knows, an active one live as an open link is and an expiring one parked", () => {
+  for (const status of accessTokenStatuses)
+    expect(pillTones).toContain(accessTokenStatusTone(status));
+  expect(accessTokenStatusTone("Active")).toBe(inviteLinkStateTone("Open"));
+  expect(accessTokenStatusTone("Active")).toBe("live");
+  expect(accessTokenStatusTone("Expiring")).toBe(phaseTone("Escalated"));
+  expect(accessTokenStatusTone("Expiring")).toBe("parked");
+  expect(accessTokenStatusTone("Expired")).toBe("retired");
 });
 
 test("the machine's own meanings keep their own hues", () => {

@@ -3419,6 +3419,7 @@
                     "ProjectPlacement",
                     "ProjectPools",
                     "ProjectPermissions",
+                    "ProjectAccessTokens",
                     "WorkspacePeople",
                     "WorkspaceAccounts",
                     "WorkspacePermissions",

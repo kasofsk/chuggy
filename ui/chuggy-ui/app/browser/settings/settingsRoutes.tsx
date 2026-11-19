@@ -20,6 +20,7 @@ import type { ReactNode } from "react";
 
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import { ProjectlessFrame } from "../ProjectCreation.tsx";
+import { AccessTokensPage } from "./AccessTokensPage.tsx";
 import { ThreadSettingsPage } from "./ThreadSettingsPage.tsx";
 import { MyRunnerPage } from "./MyRunnerPage.tsx";
 import { PlacementSettingsPage } from "./PlacementSettingsPage.tsx";
@@ -49,6 +50,11 @@ function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
       getParentRoute,
       path: "/permissions",
       component: ProjectPermissionsPage,
+    }),
+    createRoute({
+      getParentRoute,
+      path: "/access-tokens",
+      component: AccessTokensPage,
     }),
   ] as const;
 }
