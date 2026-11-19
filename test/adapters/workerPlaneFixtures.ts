@@ -104,6 +104,7 @@ export const inertRunEvidence: WorkerRunEvidencePorts = {
 /** A task port that finds no attempt, for a case that never fetches one. */
 export const inertTasks: WorkerTaskPort = {
   work: () => Promise.resolve(undefined),
+  workload: () => Promise.resolve(undefined),
   session: () => Promise.resolve(undefined),
 };
 
