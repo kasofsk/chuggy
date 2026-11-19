@@ -21,6 +21,9 @@ import { apiRole, boundaryOwnerRole, type Migration } from "../shared.ts";
 import { migration015 } from "./015-ticket-commands.ts";
 import { migration181 } from "./181-finalizer-approval-retired.ts";
 
+/** The longest a token's name may be, as `accessTokenNameCharsMax` stood here. */
+export const accessTokenNameCharsMaxAt212 = 64;
+
 const parametersBefore = "in_hard_limit bigint, in_via_session text)";
 const parametersAfter =
   "in_hard_limit bigint, in_via_session text, in_via_token text DEFAULT NULL, in_via_token_name text DEFAULT NULL)";
@@ -101,7 +104,7 @@ export const migration212: Migration = {
          CHECK (via_token ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'),
        ADD COLUMN via_token_name text
          CONSTRAINT operation_via_token_name_is_bounded
-         CHECK (char_length(via_token_name) BETWEEN 1 AND 64),
+         CHECK (char_length(via_token_name) BETWEEN 1 AND ${String(accessTokenNameCharsMaxAt212)}),
        ADD CONSTRAINT operation_via_token_is_named
          CHECK ((via_token IS NULL) = (via_token_name IS NULL)),
        ADD CONSTRAINT operation_via_one_bearer

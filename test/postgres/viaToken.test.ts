@@ -13,7 +13,9 @@ import { after, before, test } from "node:test";
 import type pg from "pg";
 
 import { postgresOperationInbox } from "../../src/adapters/postgres/operationInbox.ts";
+import { accessTokenNameCharsMaxAt212 } from "../../src/adapters/postgres/schema/migrations/212-operation-via-token.ts";
 import { apiRole } from "../../src/adapters/postgres/schema/shared.ts";
+import { accessTokenNameCharsMax } from "../../src/contract/accessToken.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { id } from "../domain/fixtures.ts";
 import {
@@ -236,11 +238,15 @@ test("the row refuses a token without its name, a token beside a session, and an
     /operation_via_token_is_drawn/u,
   );
   await assert.rejects(
-    set("via_token_name=$4", ["n".repeat(65)]),
+    set("via_token_name=$4", ["n".repeat(accessTokenNameCharsMax + 1)]),
     /operation_via_token_name_is_bounded/u,
   );
   await assert.rejects(
     set("via_session=$4", ["session"]),
     /operation_via_one_bearer/u,
   );
+});
+
+test("the row bounds a token's name where the contract bounds it", () => {
+  assert.equal(accessTokenNameCharsMaxAt212, accessTokenNameCharsMax);
 });
