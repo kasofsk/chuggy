@@ -86,7 +86,7 @@ export const runnerPackages = {
     program: "chuggy-linux",
     needs: { id: "runners-package-needs-linux" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.61.0/chuggy-linux-0.61.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.62.0/chuggy-linux-0.62.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
     /** `RestartSec=` of the unit `serviceUnit` writes, in chuggy-linux's `systemdUnit.mjs`. */
     restartIntervalSecs: 10,
@@ -102,7 +102,7 @@ export const runnerPackages = {
     program: "chuggy-darwin",
     needs: { id: "runners-package-needs-darwin" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.31.0/chuggy-darwin-0.31.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.32.0/chuggy-darwin-0.32.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
     /** `restartIntervalSecs`, the agent's `ThrottleInterval`, in chuggy-darwin's `launchAgent.mjs`. */
     restartIntervalSecs: 10,
