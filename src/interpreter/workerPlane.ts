@@ -263,9 +263,19 @@ export interface SessionTaskRead {
   readonly launch?: SessionTaskLaunch;
 }
 
+/** Which task of its ticket an attempt runs, and the name of the workload it runs, present only where that is one workload of a catalog. */
+export type WorkerTaskWorkload = (
+  | { readonly taskKind: "Work" }
+  | { readonly taskKind: "Evaluation"; readonly evaluator: number }
+) & { readonly workload?: string };
+
 /** The task either kind of bearer fetches, each read through its own bearer's digest. */
 export interface WorkerTaskPort {
   work(secret: AttemptCapabilitySecret): Promise<WorkerTaskRead | undefined>;
+  /** Found for the attempts `work` finds, from the revision the attempt pins. */
+  workload(
+    secret: AttemptCapabilitySecret,
+  ): Promise<WorkerTaskWorkload | undefined>;
   session(secret: SessionBearerSecret): Promise<SessionTaskRead | undefined>;
 }
 

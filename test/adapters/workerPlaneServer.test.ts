@@ -349,6 +349,7 @@ test("a bearer written in the session language is never offered to the attempt a
         offered.push(secret);
         return Promise.resolve(undefined);
       },
+      workload: () => Promise.resolve(undefined),
       session: (secret) => {
         offered.push(secret);
         return Promise.resolve(undefined);
@@ -559,6 +560,7 @@ test("a session bearer fetches its task through the session authority, and neith
         offered.push(secret);
         return Promise.resolve(undefined);
       },
+      workload: () => Promise.resolve(undefined),
       session: (secret) => Promise.resolve(found[secret]),
     },
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
