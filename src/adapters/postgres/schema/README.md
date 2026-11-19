@@ -101,7 +101,10 @@ and permanent, which is what makes a retry find its original rather than
 create a second. It is changed by acceptance, by cancellation and by the
 decision transaction, and a trigger refuses any later change at all to a row
 already terminal. Unfinished work is found by selecting `Pending` operations
-for a partition.
+for a partition. `via_session`, and `via_token` with `via_token_name`, record
+the session or the access token a command came through, never both and outside
+the idempotency scope; the token columns point at nothing, so a deleted
+token's operations keep its identity and name.
 
 WHY NO ROLE MAY WRITE A SETTLEMENT, BY EITHER VERB, AND CANCELLATION IS A
 FUNCTION. 006 lets the API insert authorized operations and decide none of

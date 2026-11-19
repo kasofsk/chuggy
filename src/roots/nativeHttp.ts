@@ -46,8 +46,10 @@ import {
   oidcAuthentication,
   type OidcAuthenticationConfig,
 } from "../adapters/http/oidc.ts";
-import { twoBearerAuthentication } from "../adapters/http/sessionBearer.ts";
+import { threeBearerAuthentication } from "../adapters/http/sessionBearer.ts";
 import { postgresSessionBearerAuthority } from "../adapters/postgres/sessionPlane.ts";
+import { postgresAccessTokenBearerAuthority } from "../adapters/postgres/accessToken.ts";
+import { accessTokenSecretDigest } from "../adapters/crypto/accessTokenMint.ts";
 import {
   composeApiRepositoryCredentials,
   composeForgeCredentialMinting,
@@ -1329,17 +1331,18 @@ export function nativeStopping(
 }
 
 /**
- * The two bearer kinds this API accepts: the issuer's, and the session bearers
+ * The three bearer kinds this API accepts: the issuer's, the session bearers
  * the API pool is the authority on, through its `EXECUTE` on
- * `authenticate_session_bearer`.
+ * `authenticate_session_bearer`, and the access tokens it reads by digest.
  */
 export function nativeAuthentication(
   oidc: PrincipalAuthentication,
   pools: NativePools,
 ): PrincipalAuthentication {
-  return twoBearerAuthentication(
+  return threeBearerAuthentication(
     oidc,
     postgresSessionBearerAuthority(pools.pool),
+    postgresAccessTokenBearerAuthority(pools.pool, accessTokenSecretDigest),
   );
 }
 

@@ -11,8 +11,9 @@
  * decides nothing.
  *
  * A PERSON ANSWERS AN EVALUATION APPROVAL, NEVER AN AGENT. A request a session
- * bearer carried is a session's, whichever principal it is authorized as, and
- * does not answer one, whatever permits it holds.
+ * bearer or an access token carried is a session's or a script's, whichever
+ * principal it is authorized as, and does not answer one, whatever permits it
+ * holds.
  *
  * NOT FOUND IS WHAT A CALLER WHO MAY NOT READ IS TOLD. Every other refusal is
  * named, so a member who may write the project but is not an approver is told
@@ -24,17 +25,18 @@ import type {
   NativeActionKind,
 } from "../contract/rosters.ts";
 import type { SessionId } from "./agentSession.ts";
-import type { Authority } from "./operationInbox.ts";
+import type { AccessTokenVia, Authority } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { NativeActionResolution } from "./projectCommand.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ApprovalApprovers } from "../contract/workloadConfiguration.ts";
 
-/** Who is asking: the principal a request authenticated as, and the session that carried it where one did. */
+/** Who is asking: the principal a request authenticated as, and the session or access token that carried it where one did. */
 export interface NativeActionCaller {
   readonly principal: Principal;
   readonly viaSession?: SessionId;
+  readonly viaToken?: AccessTokenVia;
 }
 
 /** What one action asks, as far as who may answer it: its kind, and an evaluation approval's approvers. */
@@ -57,9 +59,9 @@ export type NativeActionAnswerer =
       >;
     };
 
-/** Whether a session carried the caller's request, which a person's approval is not asked of. */
+/** Whether a session or an access token carried the caller's request, which a person's approval is not asked of. */
 function nativeActionAnswererIsAgent(caller: NativeActionCaller): boolean {
-  return caller.viaSession !== undefined;
+  return caller.viaSession !== undefined || caller.viaToken !== undefined;
 }
 
 /** The authority under which a caller who reads the project is one of the approvers, or none. */
@@ -128,12 +130,17 @@ export function nativeActionFeedbackRefusal(
     : undefined;
 }
 
-/** The caller a request names, with the session that carried it where one did. */
+/** The caller a request names, with the session or access token that carried it where one did. */
 export function nativeActionCallerOf(
   principal: Principal,
   viaSession: SessionId | undefined,
+  viaToken: AccessTokenVia | undefined,
 ): NativeActionCaller {
-  return viaSession === undefined ? { principal } : { principal, viaSession };
+  return {
+    principal,
+    ...(viaSession === undefined ? {} : { viaSession }),
+    ...(viaToken === undefined ? {} : { viaToken }),
+  };
 }
 
 /** What a read action asks of whoever answers it, refusing an evaluation approval that names no approvers. */
