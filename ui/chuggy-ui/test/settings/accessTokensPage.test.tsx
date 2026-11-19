@@ -1,9 +1,9 @@
 /**
- * The Access tokens settings page, mounted: New token only for a reader who
- * may make one, a mint whose secret is shown once and held by nothing once
- * its dialog is put away, each refusal's line, each token's standing drawn on
- * the page's own clock, deletion through a Confirm, and Maker only in an
- * administrator's list.
+ * The Access tokens settings page, mounted: New token hidden only where the
+ * abilities read answers no, a mint whose secret is shown once and held by
+ * nothing once its dialog is put away, each refusal's line, each token's
+ * standing drawn on the page's own clock, deletion through a Confirm, and
+ * Maker only in an administrator's list.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -107,7 +107,7 @@ const minted: AccessTokenMintedResponse = {
 };
 
 interface TokensDrawing {
-  readonly abilities?: ProjectAbilitiesResponse;
+  readonly abilities?: ProjectAbilitiesResponse | "Failed";
   readonly tokens?: () => readonly AccessTokenResponse[];
   readonly mint?: (request: SentRequest) => Response;
   readonly deletion?: (request: SentRequest) => Response;
@@ -124,7 +124,9 @@ async function drawTokens(drawing: TokensDrawing = {}): Promise<DrawnStrict> {
   );
   return drawnStrict(page, (request) => {
     if (request.url.endsWith("/abilities"))
-      return answer(drawing.abilities ?? reader);
+      return drawing.abilities === "Failed"
+        ? answer({}, 500)
+        : answer(drawing.abilities ?? reader);
     if (request.url.endsWith(tokensPath)) {
       if (request.method === "POST")
         return (drawing.mint ?? (() => answer(minted, 201)))(request);
@@ -164,7 +166,7 @@ function headings(): readonly (string | null)[] {
     .map((header) => header.textContent);
 }
 
-test("New token is drawn only for a reader the abilities say may make one, and an empty list says No tokens", async () => {
+test("New token is hidden only where the abilities say no, and an empty list says No tokens", async () => {
   await drawTokens({ abilities: abilitiesNone });
   const section = sectionOf("Access tokens");
   expect(within(section).getByText("No tokens")).toBeTruthy();
@@ -176,6 +178,9 @@ test("New token is drawn only for a reader the abilities say may make one, and a
   expect(
     within(sectionOf("Access tokens")).getByText("No tokens"),
   ).toBeTruthy();
+  cleanup();
+  await drawTokens({ abilities: "Failed" });
+  expect(screen.getByRole("button", { name: "New token" })).toBeTruthy();
 });
 
 test("the dialog opens on Read for thirty days, says the token is the reader's own, and sends what was chosen", async () => {

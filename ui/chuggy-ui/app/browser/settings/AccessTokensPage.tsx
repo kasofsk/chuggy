@@ -1,7 +1,7 @@
 /**
  * A project's access tokens: the reader's own, or every one to a reader who
  * administers the project, each drawn on the page's own clock, and New token
- * to a reader the abilities read says may make one.
+ * to every reader unless the abilities read answers that they may not.
  *
  * Every reader of the project sees the page, because a token made while they
  * held the permit stands after they lose it, and they delete it here.
@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { accessTokensWords } from "../../core/accessTokens.ts";
+import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useNowMs } from "../Freshness.tsx";
@@ -60,9 +61,9 @@ export function AccessTokensPage(): ReactNode {
           heading={title}
           about={text(accessTokensWords.about)}
           action={
-            abilities?.makeAccessTokens === true ? (
+            projectAbilityRefused(abilities, "makeAccessTokens") ? undefined : (
               <AccessTokenMint partition={partition} />
-            ) : undefined
+            )
           }
         >
           <AccessTokensRead
