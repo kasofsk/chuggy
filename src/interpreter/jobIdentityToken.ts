@@ -96,6 +96,10 @@ export function jobIdentityIssuer(
   issuerBaseUrl: string,
   tenant: string,
 ): JobIdentityIssuerBuilt {
+  if (issuerBaseUrl === "" || issuerBaseUrl.endsWith("/"))
+    throw new RangeError(
+      "job identity: an issuer base URL is empty or ends in a slash",
+    );
   if (!isJobIdentitySafeName(tenant))
     return { result: "Refused", refusal: { reason: "TenantUnsafe" } };
   const issuer = `${issuerBaseUrl}/${tenant}`;

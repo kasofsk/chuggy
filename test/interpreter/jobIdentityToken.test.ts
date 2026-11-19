@@ -200,6 +200,11 @@ test("the issuer is the base, a slash and the tenant", () => {
   });
 });
 
+test("a base URL ending in a slash is never joined into an issuer", () => {
+  assert.throws(() => jobIdentityIssuer(`${base}/`, "acme"), RangeError);
+  assert.throws(() => jobIdentityIssuer("", "acme"), RangeError);
+});
+
 test("the discovery document's issuer is byte-equal to a token's `iss` for the same tenant and base", () => {
   const built = jobIdentityIssuer(base, work.tenant);
   assert.equal(built.result, "Issuer");
