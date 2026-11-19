@@ -96,27 +96,32 @@ export const connectorSettingsSchemas = {
   Anthropic: anthropicConnectorSettingsSchema,
 } as const satisfies Record<ConnectorKind, z.ZodType>;
 
+/** One variant per kind, each holding that kind's settings beside `shape`. */
+export function connectorVariants<Shape extends z.ZodRawShape>(shape: Shape) {
+  return z.discriminatedUnion("kind", [
+    z.strictObject({
+      ...shape,
+      kind: z.literal("Aws"),
+      settings: awsConnectorSettingsSchema,
+    }),
+    z.strictObject({
+      ...shape,
+      kind: z.literal("Gcp"),
+      settings: gcpConnectorSettingsSchema,
+    }),
+    z.strictObject({
+      ...shape,
+      kind: z.literal("Azure"),
+      settings: azureConnectorSettingsSchema,
+    }),
+    z.strictObject({
+      ...shape,
+      kind: z.literal("Anthropic"),
+      settings: anthropicConnectorSettingsSchema,
+    }),
+  ]);
+}
+
 /** One connector, whose settings are its kind's. */
-export const connectorSchema = z.discriminatedUnion("kind", [
-  z.strictObject({
-    name: connectorNameSchema,
-    kind: z.literal("Aws"),
-    settings: awsConnectorSettingsSchema,
-  }),
-  z.strictObject({
-    name: connectorNameSchema,
-    kind: z.literal("Gcp"),
-    settings: gcpConnectorSettingsSchema,
-  }),
-  z.strictObject({
-    name: connectorNameSchema,
-    kind: z.literal("Azure"),
-    settings: azureConnectorSettingsSchema,
-  }),
-  z.strictObject({
-    name: connectorNameSchema,
-    kind: z.literal("Anthropic"),
-    settings: anthropicConnectorSettingsSchema,
-  }),
-]);
+export const connectorSchema = connectorVariants({ name: connectorNameSchema });
 export type Connector = z.infer<typeof connectorSchema>;

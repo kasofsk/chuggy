@@ -170,6 +170,10 @@ import {
   projectRepositoryBindResponse,
   projectRepositoryConfigureResponse,
   projectRepositoryLandingResponse,
+  connectorsResponse,
+  connectorHistoryResponse,
+  connectorWrittenResponse,
+  connectorRemovedResponse,
   projectRepositoryRetirementResponse,
   inventoryResponse,
   nativeActionsResponse,
@@ -271,6 +275,11 @@ import type {
   AccessTokenService,
 } from "../../interpreter/accessToken.ts";
 import { accessTokenExpiresHeader } from "../../contract/accessToken.ts";
+import {
+  connectorNameSchema,
+  connectorSchema,
+} from "../../contract/connectors.ts";
+import type { ProjectConnectorAdministration } from "../../interpreter/projectConnectors.ts";
 import type { ThreadLimitAdministration } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
@@ -2460,7 +2469,7 @@ function registerDraftDeletion(
 function registerEndpoint<Value>(
   app: FastifyInstance,
   endpoint: {
-    readonly method: "GET" | "POST";
+    readonly method: "GET" | "POST" | "PUT" | "DELETE";
     readonly path: string;
     readonly body?: z.ZodType;
     readonly bodyLimit?: number;
@@ -2627,6 +2636,65 @@ function registerAccessTokens(
       ),
     );
   });
+}
+
+function registerConnectorsName(request: FastifyRequest): string {
+  return connectorNameSchema.parse(textField(record(request.params), "name"));
+}
+
+/**
+ * A project's connectors. `history` is a route of its own rather than a
+ * connector's name, the router taking a fixed segment before a parameter.
+ */
+function registerConnectors(
+  app: FastifyInstance,
+  connectors: ProjectConnectorAdministration,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.connectors,
+    (_request, principal, partition) => connectors.listed(principal, partition),
+    connectorsResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.connectorHistory,
+    (request, principal, partition) =>
+      connectors.history(
+        principal,
+        partition,
+        nativeHttpEndpoints.connectorHistory.query.parse(request.query).before,
+      ),
+    connectorHistoryResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.writeConnector,
+    (request, principal, partition) => {
+      const name = registerConnectorsName(request);
+      const { expectedRevision, ...written } =
+        nativeHttpEndpoints.writeConnector.body.parse(request.body);
+      return connectors.written(principal, partition, {
+        connector: connectorSchema.parse({ ...written, name }),
+        ...(expectedRevision === undefined ? {} : { expectedRevision }),
+      });
+    },
+    connectorWrittenResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.removeConnector,
+    (request, principal, partition) => {
+      const name = registerConnectorsName(request);
+      const { expectedRevision } =
+        nativeHttpEndpoints.removeConnector.query.parse(request.query);
+      return connectors.removed(principal, partition, {
+        name,
+        ...(expectedRevision === undefined ? {} : { expectedRevision }),
+      });
+    },
+    connectorRemovedResponse,
+  );
 }
 
 /** A project made, and one that never ran work deleted. */
@@ -3041,7 +3109,7 @@ async function serveThreadLive(
 function registerChatEndpoint<Value>(
   app: FastifyInstance,
   endpoint: {
-    readonly method: "GET" | "POST";
+    readonly method: "GET" | "POST" | "PUT" | "DELETE";
     readonly path: string;
     readonly body?: z.ZodType;
   },
@@ -3383,6 +3451,7 @@ export function createNativeHttpApp(
   takes?: TicketTakes,
   proposalMerges?: TicketProposalMerges,
   accessTokens?: AccessTokenService,
+  connectors?: ProjectConnectorAdministration,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   registerCapacity(app, limits.concurrentRequestsMax);
@@ -3394,6 +3463,7 @@ export function createNativeHttpApp(
   registerHostedRuns(app, web);
   registerProjectAbilities(app, web);
   if (accessTokens !== undefined) registerAccessTokens(app, accessTokens);
+  if (connectors !== undefined) registerConnectors(app, connectors);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
   if (inbox !== undefined) registerInbox(app, inbox);

@@ -6,6 +6,12 @@ import {
 } from "./accessToken.ts";
 import { ticketActionReachResponseSchema } from "./actionReach.ts";
 import {
+  connectorHistoryResponseSchema,
+  connectorStandingSchema,
+  connectorWriteRequestSchema,
+  connectorsResponseSchema,
+} from "./connectorAdministration.ts";
+import {
   epicHistoryQuerySchema,
   epicListQuerySchema,
   epicWriteRequestSchema,
@@ -398,6 +404,30 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.ticketProposalMerge,
     body: emptyBody,
     response: ticketProposalMergeResponseSchema,
+  },
+  connectors: {
+    method: "GET",
+    path: nativeHttpRoutes.connectors,
+    response: connectorsResponseSchema,
+  },
+  writeConnector: {
+    method: "PUT",
+    path: nativeHttpRoutes.connector,
+    body: connectorWriteRequestSchema,
+    response: connectorStandingSchema,
+  },
+  removeConnector: {
+    method: "DELETE",
+    path: nativeHttpRoutes.connector,
+    query: endpointQuery({
+      expectedRevision: endpointInteger("expectedRevision").optional(),
+    }),
+  },
+  connectorHistory: {
+    method: "GET",
+    path: nativeHttpRoutes.connectorHistory,
+    query: endpointQuery({ before: endpointInteger("before").optional() }),
+    response: connectorHistoryResponseSchema,
   },
 } as const;
 

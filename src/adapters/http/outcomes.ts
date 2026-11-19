@@ -8,7 +8,25 @@ import {
   type AccessTokenResponse,
   type AccessTokensResponse,
 } from "../../contract/accessToken.ts";
+import {
+  connectorLimitReachedCode,
+  connectorNotFoundCode,
+  connectorStaleCode,
+  type ConnectorChangeResponse,
+  type ConnectorHistoryResponse,
+  type ConnectorStaleResponse,
+  type ConnectorStandingResponse,
+  type ConnectorsResponse,
+} from "../../contract/connectorAdministration.ts";
 import { assertNever } from "../../domain/assertNever.ts";
+import type {
+  ProjectConnectorChange,
+  ProjectConnectorHistoryRead,
+  ProjectConnectorRemoved,
+  ProjectConnectorStanding,
+  ProjectConnectorWritten,
+  ProjectConnectorsListed,
+} from "../../interpreter/projectConnectors.ts";
 import type {
   AccessTokenDeleted,
   AccessTokenMinted,
@@ -3211,6 +3229,122 @@ export function accessTokenDeletedResponse(
       return noContent();
     case "NotFound":
       return notFound();
+    default:
+      return assertNever(result);
+  }
+}
+
+function connectorStandingBody(
+  standing: ProjectConnectorStanding,
+): ConnectorStandingResponse {
+  return { ...standing.connector, revision: standing.revision };
+}
+
+/** A write or removal refused for the revision it named, answering the one that stands. */
+function connectorStale(standing: number | undefined): NativeHttpResponse {
+  const refused = nativeHttpError(
+    connectorStaleCode,
+    "The connector's revision is not the one this request was made against.",
+  );
+  return response(409, {
+    ...refused,
+    ...(standing === undefined ? {} : { standing }),
+  } satisfies ConnectorStaleResponse);
+}
+
+/** A project's connectors, ordered by name, each with the revision a write against it names. */
+export function connectorsResponse(
+  result: ProjectConnectorsListed,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, {
+        connectors: result.connectors.map(connectorStandingBody),
+      } satisfies ConnectorsResponse);
+    default:
+      return assertNever(result);
+  }
+}
+
+/** One connector as written, `201` where the write created it, or a refusal by name. */
+export function connectorWrittenResponse(
+  result: ProjectConnectorWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Created":
+    case "Changed":
+      return response(
+        result.result === "Created" ? 201 : 200,
+        connectorStandingBody(result.standing),
+      );
+    case "Stale":
+      return connectorStale(result.standing);
+    case "LimitReached":
+      return response(
+        409,
+        nativeHttpError(
+          connectorLimitReachedCode,
+          "The project holds as many connectors as it may.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
+/** One connector removed, or a refusal by name. */
+export function connectorRemovedResponse(
+  result: ProjectConnectorRemoved,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Removed":
+      return noContent();
+    case "Absent":
+      return response(
+        404,
+        nativeHttpError(
+          connectorNotFoundCode,
+          "The project holds no connector of that name.",
+        ),
+      );
+    case "Stale":
+      return connectorStale(result.standing);
+    default:
+      return assertNever(result);
+  }
+}
+
+function connectorChangeBody(
+  change: ProjectConnectorChange,
+): ConnectorChangeResponse {
+  const recorded = {
+    change: change.change,
+    changedAt: change.changedAt,
+    author: change.authority,
+  };
+  return change.action === "Removed"
+    ? { ...recorded, name: change.name, action: change.action }
+    : { ...recorded, ...change.connector, action: change.action };
+}
+
+/** One page of a project's connector history, newest first. */
+export function connectorHistoryResponse(
+  result: ProjectConnectorHistoryRead,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, {
+        changes: result.changes.map(connectorChangeBody),
+        ...(result.next === undefined ? {} : { next: result.next }),
+      } satisfies ConnectorHistoryResponse);
     default:
       return assertNever(result);
   }

@@ -27,8 +27,8 @@
  * tools make it, so a write no session's tool makes is `Refused`. So is
  * everything addressed to no partition, and inside one deleting the project,
  * because that is provisioning rather than work; every route of a project's
- * access tokens, a read included; every write of a personal runner, its allowlist
- * among them;
+ * access tokens and of its connectors, a read included; every write of a
+ * personal runner, its allowlist among them;
  * a reply to a thread's offer, a person's word on what a session put to them;
  * and every write of a thread or a member's own chat, which is its owner's. The confinement is by route and
  * method, so a route two capabilities' tools write admits either's whole body:
@@ -175,6 +175,9 @@ export const sessionBearerRouteClasses = {
   projectRepositoryLanding: refusedReplace,
   projectRepositoryRetirement: refusedReplace,
   projectRepositoryConfigurations: refusedReplace,
+  connectors: { GET: "Refused" },
+  connectorHistory: { GET: "Refused" },
+  connector: { PUT: "Refused", DELETE: "Refused" },
   executionPlacement: readRefusedReplace,
   sessionPlacement: readRefusedReplace,
   hostedRuns: partitionRead,
