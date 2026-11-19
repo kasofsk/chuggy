@@ -62,5 +62,6 @@ export function recordedPorts(
     port("takes"),
     port("proposalMerges"),
     port("accessTokens"),
+    port("connectors"),
   ];
 }

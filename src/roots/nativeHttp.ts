@@ -59,6 +59,7 @@ import {
   composeProjectInbox,
   composeTicketTakes,
   composeAccessTokens,
+  composeProjectConnectors,
   composeTicketProposalMerges,
   composeThreadLimits,
   composeMemberChat,
@@ -1526,6 +1527,7 @@ async function main(): Promise<void> {
     composeTicketTakes(pool, access),
     forge.proposalMerges,
     composeAccessTokens(pool, access),
+    composeProjectConnectors(pool, access),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

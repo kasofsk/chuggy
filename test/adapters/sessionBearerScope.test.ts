@@ -533,12 +533,10 @@ test("merge_pull_request's route is refused every project session bearer as out 
   }
 });
 
-test("a project's access token routes are refused every session bearer, of every kind and holding every capability its scope may, before any port", async () => {
-  const routes = [
-    `GET ${nativeHttpRoutes.accessTokens}`,
-    `POST ${nativeHttpRoutes.accessTokens}`,
-    `DELETE ${nativeHttpRoutes.accessToken}`,
-  ];
+/** Asserts each of `routes` is refused every project session bearer, of every kind and holding every capability its scope may, before any port. */
+async function refusedEverySessionBearer(
+  routes: readonly string[],
+): Promise<void> {
   for (const route of routes)
     assert.equal(sessionBearerMethodClasses.get(route), "Refused", route);
   for (const kind of sessionKinds)
@@ -556,6 +554,23 @@ test("a project's access token routes are refused every session bearer, of every
       assert.ok(scopeRefused(answered), `${kind} ${route}`);
       assert.deepEqual(reached, [], `${kind} ${route}`);
     }
+}
+
+test("a project's access token routes are refused every session bearer, of every kind and holding every capability its scope may, before any port", async () => {
+  await refusedEverySessionBearer([
+    `GET ${nativeHttpRoutes.accessTokens}`,
+    `POST ${nativeHttpRoutes.accessTokens}`,
+    `DELETE ${nativeHttpRoutes.accessToken}`,
+  ]);
+});
+
+test("a project's connector routes are refused every session bearer, of every kind and holding every capability its scope may, before any port", async () => {
+  await refusedEverySessionBearer([
+    `GET ${nativeHttpRoutes.connectors}`,
+    `GET ${nativeHttpRoutes.connectorHistory}`,
+    `PUT ${nativeHttpRoutes.connector}`,
+    `DELETE ${nativeHttpRoutes.connector}`,
+  ]);
 });
 
 test("no session capability admits a tool the person's own agent alone may call", () => {

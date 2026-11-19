@@ -64,6 +64,7 @@
   "ticketTake": "a member who may file drafts takes a released ticket that is neither Done nor Revoked, which makes them its owner, the member its next execution is placed for: a take names no member but its caller, replaces a taker before them, and answers AlreadyOwner where the caller owns it already; its taker alone returns it, to its creator; an execution keeps the owner it was registered under; a draft never released is refused Unreleased, a Done or Revoked ticket TicketDone or TicketRevoked, a return by anyone but the taker NotTaker, and every session bearer but a thread's, which takes and returns as its member; every take and return is kept",
   "accessTokens": "a caller holding the project's make_access_tokens permit, which its administrators hold and so does a reader the tenant lets register a personal runner, makes an access token that acts as them in the project until it is deleted or expires: it names a name of at most 64 characters on one line and not blank, Read or Write access, and lifetimeDays from 1 to 366, and is answered 201 with the token and its secret, which no other answer holds; a reader of the project without the permit is refused 403 AccessTokenMintForbidden, a name the caller already holds in the project 409 AccessTokenNameTaken, and a caller holding 16 tokens in the project, or a project holding 64, 409 AccessTokenLimitReached, expired tokens counting until they are deleted; a reader lists their own tokens and an administrator every one, newest first, each with its maker; a token's maker or an administrator deletes it, which answers 204 and revokes it; a caller who may not read the project, or may not see the token, is answered not found, and every session bearer is refused",
   "ticketProposalMerge": "a caller holding the project's merge_proposals permit, which its administrators hold, has this deployment's portal app merge the pull request the ticket's newest successful landing opened, at the head that landing evaluated; the pull request is read first, and one merged already answers Merged, so a second press changes nothing; one closed unmerged is refused Closed, one conflicting with its base Conflicting, one the forge's own rules block Blocked, one its base has moved past Behind, a head pushed since HeadMoved, one the forge would not merge for a reason it did not name NotMergeable, and a refusal of the app AppDenied, each 409 with the pull request's link; a caller who may read the ticket and not merge is refused 403 ProposalMergeForbidden, a ticket whose newest success opened no pull request is not found, a deployment holding no portal key or a forge that cannot be reached answers 503, and every session bearer is refused; nothing is recorded and no ticket moves, since the merge is the forge's and is read as one a person made there",
+  "connectors": "a project's connectors are the integrations its jobs may be issued, each of kind Aws, Gcp, Azure, Anthropic and holding that kind's settings and no secret, named by at most 40 lower-case letters, digits and inner hyphens; whoever may read the project's repositories lists them, ordered by name, each with its revision, and reads their history, newest first in pages of 100, each change with its author, its instant, the connector's name, whether it Created, Changed or Removed it, and the kind and settings it left, resumed by passing a page's next as before; whoever may write a repository's landing writes one whole by its name, creating it where expectedRevision is absent and replacing it where expectedRevision is the revision standing, answered 201 or 200 with the connector as written, and removes one by naming the revision standing as the expectedRevision query parameter, answered 204; any other revision, or none, is refused 409 ConnectorStale with the revision standing as standing, absent where none stands, but a removal of a name the project does not hold, which is 404 ConnectorNotFound; a create into a project holding 32 is refused 409 ConnectorLimitReached; settings that are not their kind's, or a name that is not a connector's, are refused 400; a refusal changes nothing, a caller who may not is answered not found, and every session bearer is refused",
   "repositoryBinding": "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
   "repositoryLanding": "a repository's landing default is the finalization a ticket in it lands by unless its brief or its finalizer names one: a GitMerge by its mode and its policy, a PullRequest, or None, and never a reference, which stays the brief's; a binding answers it as finalization and its mode alone as landing, a write names it either way, one named by its mode alone ordered Direct, and it is written whole against the value the writer read; a ticket whose landing is None names no reference to land on",
   "repositoryRetirement": "a retired repository stays readable by name, stops being the one a session is placed against, the importer or the import route reads, a brief may name or the credential route mints for, and is free for any project to bind; this route only retires and repeating it changes nothing, and binding the repository again here reinstates it unless another project now holds it",
@@ -129,6 +130,9 @@
     "projectRepositoryLanding": "/api/v1/tenants/:tenant/projects/:project/repositories/landing",
     "projectRepositoryRetirement": "/api/v1/tenants/:tenant/projects/:project/repositories/retirement",
     "projectRepositoryConfigurations": "/api/v1/tenants/:tenant/projects/:project/repositories/configurations",
+    "connectors": "/api/v1/tenants/:tenant/projects/:project/connectors",
+    "connectorHistory": "/api/v1/tenants/:tenant/projects/:project/connectors/history",
+    "connector": "/api/v1/tenants/:tenant/projects/:project/connectors/:name",
     "executionPlacement": "/api/v1/tenants/:tenant/projects/:project/execution-placement",
     "sessionPlacement": "/api/v1/tenants/:tenant/projects/:project/session-placement",
     "hostedRuns": "/api/v1/tenants/:tenant/projects/:project/hosted-runs",
@@ -3167,6 +3171,192 @@
       },
       "required": ["threadsMax"],
       "additionalProperties": false
+    },
+    "connectorWrite": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "kind": {
+              "type": "string",
+              "const": "Aws"
+            },
+            "settings": {
+              "type": "object",
+              "properties": {
+                "roleArn": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "allOf": [
+                    {
+                      "pattern": "^[!-z|~]+$"
+                    },
+                    {
+                      "pattern": "^arn:.*"
+                    }
+                  ]
+                },
+                "sessionTags": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["roleArn"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["kind", "settings"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "kind": {
+              "type": "string",
+              "const": "Gcp"
+            },
+            "settings": {
+              "type": "object",
+              "properties": {
+                "projectNumber": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "allOf": [
+                    {
+                      "pattern": "^[!-z|~]+$"
+                    },
+                    {
+                      "pattern": "^[0-9]+$"
+                    }
+                  ]
+                },
+                "pool": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-z|~]+$"
+                },
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-z|~]+$"
+                },
+                "serviceAccount": {
+                  "type": "string",
+                  "maxLength": 256,
+                  "allOf": [
+                    {
+                      "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                    },
+                    {
+                      "pattern": "^[!-z|~]+$"
+                    }
+                  ]
+                }
+              },
+              "required": ["projectNumber", "pool", "provider"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["kind", "settings"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "kind": {
+              "type": "string",
+              "const": "Azure"
+            },
+            "settings": {
+              "type": "object",
+              "properties": {
+                "tenantId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-z|~]+$"
+                },
+                "clientId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-z|~]+$"
+                }
+              },
+              "required": ["tenantId", "clientId"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["kind", "settings"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "kind": {
+              "type": "string",
+              "const": "Anthropic"
+            },
+            "settings": {
+              "type": "object",
+              "properties": {
+                "organizationId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-z|~]+$"
+                },
+                "federationRuleId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-z|~]+$"
+                },
+                "serviceAccountId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-z|~]+$"
+                },
+                "workspaceId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[!-z|~]+$"
+                }
+              },
+              "required": ["organizationId", "federationRuleId"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["kind", "settings"],
+          "additionalProperties": false
+        }
+      ]
     },
     "accessTokenMint": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

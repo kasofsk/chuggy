@@ -13,6 +13,12 @@ import {
   accessTokensProjectMax,
 } from "./accessToken.ts";
 import { nativeHttpEndpoints } from "./endpoints.ts";
+import {
+  connectorChangesPageMax,
+  connectorKinds,
+  connectorNameCharsMax,
+  connectorsProjectMax,
+} from "./connectors.ts";
 
 import {
   inboxPhases,
@@ -100,6 +106,9 @@ function nativeHttpContractDocumentSchemas(): unknown {
       nativeHttpEndpoints.openThread.body,
     ),
     threadLimit: nativeHttpContractDocumentInput(threadLimitSchema),
+    connectorWrite: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.writeConnector.body,
+    ),
     accessTokenMint: nativeHttpContractDocumentInput(
       accessTokenMintRequestSchema,
     ),
@@ -250,6 +259,7 @@ export function nativeHttpContractDocument(): unknown {
     accessTokens: `a caller holding the project's make_access_tokens permit, which its administrators hold and so does a reader the tenant lets register a personal runner, makes an access token that acts as them in the project until it is deleted or expires: it names a name of at most ${String(accessTokenNameCharsMax)} characters on one line and not blank, Read or Write access, and lifetimeDays from 1 to ${String(accessTokenLifetimeDaysMax)}, and is answered 201 with the token and its secret, which no other answer holds; a reader of the project without the permit is refused 403 AccessTokenMintForbidden, a name the caller already holds in the project 409 AccessTokenNameTaken, and a caller holding ${String(accessTokensHeldMax)} tokens in the project, or a project holding ${String(accessTokensProjectMax)}, 409 AccessTokenLimitReached, expired tokens counting until they are deleted; a reader lists their own tokens and an administrator every one, newest first, each with its maker; a token's maker or an administrator deletes it, which answers 204 and revokes it; a caller who may not read the project, or may not see the token, is answered not found, and every session bearer is refused`,
     ticketProposalMerge:
       "a caller holding the project's merge_proposals permit, which its administrators hold, has this deployment's portal app merge the pull request the ticket's newest successful landing opened, at the head that landing evaluated; the pull request is read first, and one merged already answers Merged, so a second press changes nothing; one closed unmerged is refused Closed, one conflicting with its base Conflicting, one the forge's own rules block Blocked, one its base has moved past Behind, a head pushed since HeadMoved, one the forge would not merge for a reason it did not name NotMergeable, and a refusal of the app AppDenied, each 409 with the pull request's link; a caller who may read the ticket and not merge is refused 403 ProposalMergeForbidden, a ticket whose newest success opened no pull request is not found, a deployment holding no portal key or a forge that cannot be reached answers 503, and every session bearer is refused; nothing is recorded and no ticket moves, since the merge is the forge's and is read as one a person made there",
+    connectors: `a project's connectors are the integrations its jobs may be issued, each of kind ${connectorKinds.join(", ")} and holding that kind's settings and no secret, named by at most ${String(connectorNameCharsMax)} lower-case letters, digits and inner hyphens; whoever may read the project's repositories lists them, ordered by name, each with its revision, and reads their history, newest first in pages of ${String(connectorChangesPageMax)}, each change with its author, its instant, the connector's name, whether it Created, Changed or Removed it, and the kind and settings it left, resumed by passing a page's next as before; whoever may write a repository's landing writes one whole by its name, creating it where expectedRevision is absent and replacing it where expectedRevision is the revision standing, answered 201 or 200 with the connector as written, and removes one by naming the revision standing as the expectedRevision query parameter, answered 204; any other revision, or none, is refused 409 ConnectorStale with the revision standing as standing, absent where none stands, but a removal of a name the project does not hold, which is 404 ConnectorNotFound; a create into a project holding ${String(connectorsProjectMax)} is refused 409 ConnectorLimitReached; settings that are not their kind's, or a name that is not a connector's, are refused 400; a refusal changes nothing, a caller who may not is answered not found, and every session bearer is refused`,
     repositoryBinding:
       "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
     repositoryLanding:
