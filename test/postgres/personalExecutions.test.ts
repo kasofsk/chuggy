@@ -183,11 +183,11 @@ async function imagePinned(
   );
 }
 
-/** A project of `member`'s, its executions registered as the scheduler registers them and then carrying `fallback`, as one registered before every execution was pinned `Strict` may. */
+/** A project of `member`'s, its executions registered as the scheduler registers them and then carrying `fallback`, NULL where it is null, as one registered before every execution was pinned `Strict` may. */
 async function ownedProject(
   label: string,
   member: Principal,
-  fallback: WorkerPoolOwnerFallback,
+  fallback: WorkerPoolOwnerFallback | null,
   tasks: number,
   partition?: Partition,
   image?: string,
@@ -451,7 +451,7 @@ async function runnerPolledOf(
 async function waitingProject(
   label: string,
   member: Principal,
-  fallback: WorkerPoolOwnerFallback,
+  fallback: WorkerPoolOwnerFallback | null,
 ): Promise<SchedulerProject> {
   const project = await ownedProject(label, member, fallback, 1);
   await opened(project, spendingClaude);
@@ -505,6 +505,17 @@ test("an owner's waiting run waits on a live runner of theirs offered its agent,
       reader === member ? "Live" : undefined,
       "another member's run answers nothing of the owner's runners",
     );
+});
+
+test("an owner's run pinned with no fallback waits on their live runner, and that runner claims it", async () => {
+  const member = principal("member");
+  const project = await waitingProject("wait-unpinned", member, null);
+  assert.deepEqual(await pinned(project), [
+    { owner: member, owner_fallback: null },
+  ]);
+  const runner = await runnerPolledOf(project, member, { live: true });
+  assert.equal((await listedAs(project, member))?.personalRunnerWait, "Live");
+  assert.notEqual(await claimed(runner, [project.partition]), undefined);
 });
 
 test("a live runner not offered the run's agent waits on nothing under Preferred and under Strict holds it on runners none of which can run it, and an offline one offered it beside that holds it offline", async () => {

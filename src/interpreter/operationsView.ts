@@ -176,9 +176,8 @@ export interface ExecutionSummary {
   readonly terminalAt?: PublicInstant;
   readonly runTotals?: RunTotals;
   /**
-   * The fallback its owner's personal runner may take it under, absent where no
-   * personal runner may: routed in cluster, owned by nobody, or registered
-   * while its project named no fallback.
+   * The fallback it was pinned with, absent where it is routed in cluster,
+   * owned by nobody, or was pinned with none.
    */
   readonly ownerFallback?: WorkerPoolOwnerFallback;
   /** Whether the reader is the member who owns it. */

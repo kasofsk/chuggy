@@ -9,8 +9,8 @@
  * nothing replays against it. Instead this reads out of the model's own
  * source its rosters, the terms `canAssign` conjoins with each predicate it
  * calls opened, `policyConfigures` as `policyAllows` without drain, the
- * owner's runners and their liveness, the arms of `placementOutcome` and the
- * terms of each block they test, and the runs of
+ * arms of `placementOutcome` and the terms of each block they test, and the
+ * runs of
  * `model/tests/runner_test.qnt` that call a guard. A constructor of a roster it
  * reads, a term or an arm changed there, or a run added, removed or renamed, is
  * a failure here until the refinement answers it.
@@ -59,8 +59,6 @@ import {
   type ExecutionStatus,
 } from "../../src/interpreter/executionScheduler.ts";
 import {
-  allWorkerPoolClasses,
-  allWorkerPoolOwnerFallbacks,
   allWorkerPoolPlacementOutcomes,
   allWorkerPoolPlacementPhases,
   workerPoolCanAssign,
@@ -322,7 +320,6 @@ const runnerOutcome = {
   ],
   placeable: [
     "policyAllows(s.runners.get(rid), e, p.profile)",
-    "ownerFallbackAllows(s, s.runners.get(rid), e, p)",
     "sessionIsCurrent(s.runners.get(rid), s.sessions.get(rid))",
     "sessionHasSlot(s.sessions.get(rid))",
     "inventoryMatches(p.requirement, s.sessions.get(rid).inventory)",
@@ -420,19 +417,9 @@ function runnerGuardRuns(): readonly string[] {
     .map((run) => run.slice(0, run.indexOf(" ")));
 }
 
-test("the class roster is the one model/runner.qnt declares", () => {
-  assert.deepEqual(runnerRoster("RunnerClass"), [...allWorkerPoolClasses]);
-});
-
 test("the outcome roster is the one model/runner.qnt declares", () => {
   assert.deepEqual(runnerRoster("PlacementOutcome"), [
     ...allWorkerPoolPlacementOutcomes,
-  ]);
-});
-
-test("the owner fallback roster is the one model/runner.qnt declares", () => {
-  assert.deepEqual(runnerRoster("OwnerFallback"), [
-    ...allWorkerPoolOwnerFallbacks,
   ]);
 });
 
@@ -502,17 +489,6 @@ test("policyConfigures is policyAllows without drain, which is posture and not i
   );
 });
 
-test("the owner's runners are the Personal ones configured for the placement, and live is a current session not draining", () => {
-  assert.equal(
-    runnerDefinition("ownerRunners"),
-    "s.runners.keys().filter(rid => and { s.runners.get(rid).class == Personal, policyConfigures(s.runners.get(rid), e, p.profile), inventoryMatches(p.requirement, s.runners.get(rid).retainedInventory), sizeFits(p, s.runners.get(rid).retainedInventory) })",
-  );
-  assert.equal(
-    runnerDefinition("runnerIsLive"),
-    "if (s.sessions.keys().contains(rid)) and { not(s.runners.get(rid).draining), sessionIsCurrent(s.runners.get(rid), s.sessions.get(rid)) } else false",
-  );
-});
-
 test("placementOutcome takes the arms, and tests the terms, the decider restates", () => {
   const { skeleton, blocks } = runnerBlocks(
     runnerDefinition("placementOutcome"),
@@ -567,12 +543,10 @@ test("every case is named once, and falsifies a term exactly when it is refused"
 for (const each of populated(runnerCases, "the runner cases")) {
   test(each.name, () => {
     const enrolment = { pool: each.pool, session: each.session };
-    const registry = [enrolment, ...each.others];
     assert.equal(
       workerPoolCanAssign(
         each.placement,
         enrolment,
-        registry,
         runnerCaseAssignment,
         new Set(each.assignmentsBound),
       ),
@@ -580,7 +554,7 @@ for (const each of populated(runnerCases, "the runner cases")) {
       "canAssign",
     );
     assert.equal(
-      workerPoolPlacementOutcome(each.placement, registry),
+      workerPoolPlacementOutcome(each.placement, [enrolment]),
       each.placementOutcome,
       "placementOutcome",
     );
@@ -599,10 +573,9 @@ test("an execution is placeable while any configured pool can take it, and unava
   const foreign = {
     pool: {
       ...ordinary.pool,
-      partition: {
-        ...placement.partition,
-        project: asProjectId("project-two"),
-      },
+      allowlist: [
+        { ...placement.partition, project: asProjectId("project-two") },
+      ],
     },
     session: ordinary.session,
   };

@@ -3,8 +3,8 @@
  * members and written by its administrators.
  *
  * IT DECIDES NOTHING. The scheduler pins every execution it registers with
- * `Strict`, the model's `personalRunnerAllowed` with that `ownerFallback`,
- * whatever this names or whether it names one.
+ * `Strict`, whatever this names or whether it names one, and no claim reads
+ * what an execution is pinned with.
  */
 
 import type { Authority } from "./operationInbox.ts";
@@ -13,12 +13,12 @@ import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 
-/** The model's `OwnerFallback`: whether a pool other than a personal one may take an owned execution while its owner has a personal pool for it. */
+/** The fallbacks a project may name. */
 export const allWorkerPoolOwnerFallbacks = ["Strict", "Preferred"] as const;
 export type WorkerPoolOwnerFallback =
   (typeof allWorkerPoolOwnerFallbacks)[number];
 
-/** Narrows text to the fallback it names, refusing one the model does not know. */
+/** Narrows text to the fallback it names, refusing one not on the roster. */
 export function asWorkerPoolOwnerFallback(
   value: string,
 ): WorkerPoolOwnerFallback {

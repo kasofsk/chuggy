@@ -523,7 +523,7 @@ async function executionPage(
 
 interface ExecutionRunnerRow {
   readonly execution: string;
-  readonly owner_fallback: string;
+  readonly owner_fallback: string | null;
   readonly live: boolean | null;
   readonly offered: boolean | null;
   readonly paused_until: string | null;
@@ -587,7 +587,6 @@ async function executionsRunnerRows(
            AND e.execution=ANY(${[...executions]}::text[]) AND e.owner=${reader}
            AND a.state='Placing' AND a.pool IS NULL AND a.invoked
            AND e.placement='Pool' AND e.status='Launching'
-           AND e.owner_fallback IS NOT NULL
            AND a.recovery_epoch=(SELECT p.epoch FROM recovery_epoch p ORDER BY p.ordinal DESC LIMIT 1)
            AND EXISTS(SELECT 1 FROM project p
              WHERE p.tenant=e.tenant AND p.project=e.project AND p.lifecycle='Active')
@@ -668,7 +667,10 @@ function executionRunnerWaitOf(
     const room = executionRunnerWaitRoom(live);
     return { wait: "Live", ...(room === undefined ? {} : { room }) };
   }
-  if (asWorkerPoolOwnerFallback(first.owner_fallback) !== "Strict")
+  if (
+    first.owner_fallback === null ||
+    asWorkerPoolOwnerFallback(first.owner_fallback) !== "Strict"
+  )
     return undefined;
   return {
     wait: rows.some((row) => row.offered === true) ? "Offline" : "Unable",

@@ -421,7 +421,7 @@ async function personalRunnersWaiting(
         WHERE q.tenant=l.tenant AND q.project=l.project
           AND q.state='Placing' AND q.pool IS NULL AND q.invoked
           AND x.placement='Pool' AND x.status='Launching'
-          AND x.owner_fallback IS NOT NULL AND x.owner=l.owner
+          AND x.owner=l.owner
           AND q.recovery_epoch=(SELECT e.epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1)
           AND EXISTS(SELECT 1 FROM personal_runner r
             CROSS JOIN LATERAL (SELECT h.paused_until,h.admitted_by_press FROM agent_account_pause(r.owner,q.agent) h

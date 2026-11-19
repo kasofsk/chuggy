@@ -479,7 +479,7 @@ export interface LogicalExecution {
   readonly route: ExecutionRoute;
   /** Who created its ticket, absent where no member did or it was registered before owners were recorded. */
   readonly owner?: Principal;
-  /** The fallback it was pinned with when it was registered, absent where it allows no personal runner. */
+  /** The fallback it was pinned with when it was registered, absent where it was pinned with none. */
   readonly ownerFallback?: WorkerPoolOwnerFallback;
   readonly ticket: TicketId;
   readonly task: TaskId;
