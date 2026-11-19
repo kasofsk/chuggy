@@ -193,6 +193,12 @@ export const allOperationStates: readonly OperationState[] = [
   "Cancelled",
 ];
 
+/** The token a request came through, as the operation it submits records it. */
+export interface AccessTokenVia {
+  readonly token: string;
+  readonly name: string;
+}
+
 /** One authorized mutation, offered for durable acceptance into a project's inbox. */
 export interface Submission {
   readonly partition: Partition;
@@ -207,6 +213,8 @@ export interface Submission {
    * retrying, and merging them is right.
    */
   readonly viaSession?: SessionId;
+  /** The access token a command came through, recorded and kept outside the idempotency scope as `viaSession` is. */
+  readonly viaToken?: AccessTokenVia;
 }
 
 /** The immutable scheduling class trusted ingress derives from a typed command. */

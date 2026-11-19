@@ -277,10 +277,10 @@ async function operationsAcceptCall(
     submission.command.command === "ProposeDispatch";
   return dispatch
     ? client.query<AcceptanceRow>(
-        sql`SELECT * FROM accept_dispatch_operation(${tenant},${project},${operation},${authorityKind},${authoritySubject},${keyVersion},${keyDigest},${payloadDigest},${retained.keys}::text[],${retained.payloads}::text[],${command},${config.ordinarySoftLimit},${config.mailboxHardLimit},${submission.viaSession ?? null})`,
+        sql`SELECT * FROM accept_dispatch_operation(${tenant},${project},${operation},${authorityKind},${authoritySubject},${keyVersion},${keyDigest},${payloadDigest},${retained.keys}::text[],${retained.payloads}::text[],${command},${config.ordinarySoftLimit},${config.mailboxHardLimit},${submission.viaSession ?? null},${submission.viaToken?.token ?? null},${submission.viaToken?.name ?? null})`,
       )
     : client.query<AcceptanceRow>(
-        sql`SELECT * FROM accept_operation(${tenant},${project},${operation},${authorityKind},${authoritySubject},${keyVersion},${keyDigest},${payloadDigest},${retained.keys}::text[],${retained.payloads}::text[],${command},${config.ordinarySoftLimit},${config.mailboxHardLimit},${submission.viaSession ?? null})`,
+        sql`SELECT * FROM accept_operation(${tenant},${project},${operation},${authorityKind},${authoritySubject},${keyVersion},${keyDigest},${payloadDigest},${retained.keys}::text[],${retained.payloads}::text[],${command},${config.ordinarySoftLimit},${config.mailboxHardLimit},${submission.viaSession ?? null},${submission.viaToken?.token ?? null},${submission.viaToken?.name ?? null})`,
       );
 }
 

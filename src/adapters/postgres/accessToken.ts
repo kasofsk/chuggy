@@ -7,6 +7,10 @@
  * it see every mint committed while it waited, and neither
  * `accessTokensHeldMax` nor `accessTokensProjectMax` is passed by two mints
  * racing. Expired tokens count until they are deleted.
+ *
+ * A PRESENTED TOKEN IS READ BY ITS DIGEST ON EVERY REQUEST, never cached, and
+ * answers only while it is unexpired on the database's clock and its recovery
+ * epoch is the newest, so a deletion or a restore refuses the next request.
  */
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
@@ -17,13 +21,19 @@ import {
   accessTokensProjectMax,
 } from "../../contract/accessToken.ts";
 import type {
+  AccessTokenBearerAuthority,
+  AccessTokenBearerSecret,
   AccessTokenMinting,
   AccessTokenRecord,
   AccessTokenStore,
   AccessTokenWritten,
 } from "../../interpreter/accessToken.ts";
 import { asPrincipal } from "../../interpreter/principal.ts";
-import type { Partition } from "../../interpreter/projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type Partition,
+} from "../../interpreter/projectStore.ts";
 import { postgresTransaction } from "./pool.ts";
 
 interface AccessTokenRow {
@@ -124,6 +134,47 @@ export function postgresAccessTokens(pool: pg.Pool): AccessTokenStore {
                     OR t.maker=${maker ?? null})`,
       );
       return (deleted.rowCount ?? 0) === 1;
+    },
+  };
+}
+
+interface AccessTokenBearerRow extends AccessTokenRow {
+  tenant: string;
+  project: string;
+}
+
+/**
+ * The API's side of a presented token: its maker and project, or nothing.
+ * `digest` is the one the mint keeps, which is all the row holds of a secret.
+ */
+export function postgresAccessTokenBearerAuthority(
+  pool: pg.Pool,
+  digest: (secret: AccessTokenBearerSecret) => string,
+): AccessTokenBearerAuthority {
+  return {
+    authenticate: async (secret) => {
+      const found = await pool.query<AccessTokenBearerRow>(
+        sql`SELECT t.tenant,t.project,t.token,t.name,t.access,t.maker,t.created_at,t.expires_at
+              FROM access_token t
+             WHERE t.secret_digest=${digest(secret)}
+               AND t.expires_at > now()
+               AND t.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r
+                                      ORDER BY r.ordinal DESC LIMIT 1)`,
+      );
+      const row = found.rows[0];
+      if (row === undefined) return undefined;
+      const record = accessTokenRecord(row);
+      return {
+        partition: {
+          tenant: asTenantId(row.tenant),
+          project: asProjectId(row.project),
+        },
+        token: record.token,
+        name: record.name,
+        access: record.access,
+        principal: record.maker,
+        expiresAt: record.expiresAt,
+      };
     },
   };
 }
