@@ -17,7 +17,7 @@
  * deletion.
  *
  * `delete_unrun_project` IS REPLACED by 211's with both relations among those
- * it empties, `projectDeletionRelationsAt214`.
+ * it empties, `projectDeletionRelationsAt215`.
  */
 
 import {
@@ -36,7 +36,7 @@ import {
 import { projectDeletionRelationsAt211 } from "./211-access-tokens.ts";
 
 /** Every relation keyed by a project that its deletion empties, children before the relations they point at. */
-export const projectDeletionRelationsAt214 = [
+export const projectDeletionRelationsAt215 = [
   "project_connector_change",
   "project_connector",
   ...projectDeletionRelationsAt211,
@@ -50,7 +50,7 @@ const changes = `public.${connectorChangesListFunction}(in_tenant text, in_proje
 const projectDelete = `public.${projectDeleteFunction}(in_tenant text, in_project text)`;
 
 /** The statements that own one door and grant it to exactly the roles named. */
-function migration214Owned(
+function migration215Owned(
   signature: string,
   roles: readonly string[],
 ): readonly string[] {
@@ -127,7 +127,7 @@ const readStatements: readonly string[] = [
          FROM project_connector c
         WHERE c.tenant=in_tenant AND c.project=in_project AND c.name=in_name
      $$`,
-  ...migration214Owned(read, [apiRole, workerPlaneRole]),
+  ...migration215Owned(read, [apiRole, workerPlaneRole]),
   `CREATE FUNCTION ${list}
      RETURNS TABLE(name text, kind text, settings jsonb, revision bigint)
      LANGUAGE sql STABLE SECURITY DEFINER
@@ -139,7 +139,7 @@ const readStatements: readonly string[] = [
         ORDER BY c.name COLLATE "C"
         LIMIT 32
      $$`,
-  ...migration214Owned(list, [apiRole]),
+  ...migration215Owned(list, [apiRole]),
   `CREATE FUNCTION ${changes}
      RETURNS TABLE(change bigint, changed_at timestamptz, authority_kind text,
                    authority_subject text, name text, action text, kind text,
@@ -155,7 +155,7 @@ const readStatements: readonly string[] = [
         ORDER BY h.change DESC
         LIMIT least(coalesce(in_max, 100), 100)
      $$`,
-  ...migration214Owned(changes, [apiRole]),
+  ...migration215Owned(changes, [apiRole]),
 ];
 
 const writeStatements: readonly string[] = [
@@ -199,7 +199,7 @@ const writeStatements: readonly string[] = [
            in_name,'Changed',in_kind,in_settings);
        RETURN QUERY SELECT 'Changed'::text, standing+1;
      END $$`,
-  ...migration214Owned(write, [apiRole]),
+  ...migration215Owned(write, [apiRole]),
   `CREATE FUNCTION ${remove}
      RETURNS TABLE(outcome text, connector_revision bigint)
      LANGUAGE plpgsql SECURITY DEFINER
@@ -221,7 +221,7 @@ const writeStatements: readonly string[] = [
            in_name,'Removed');
        RETURN QUERY SELECT 'Removed'::text, standing;
      END $$`,
-  ...migration214Owned(remove, [apiRole]),
+  ...migration215Owned(remove, [apiRole]),
 ];
 
 const projectDeletion = `CREATE OR REPLACE FUNCTION ${projectDelete} RETURNS TABLE(outcome text, held text[])
@@ -246,7 +246,7 @@ const projectDeletion = `CREATE OR REPLACE FUNCTION ${projectDelete} RETURNS TAB
            DELETE FROM public.project_creation_grant g WHERE g.operation IN (
              SELECT o.operation FROM public.project_creation_operation o
               WHERE o.tenant=in_tenant AND o.project=in_project);
-           ${projectDeletionRelationsAt214
+           ${projectDeletionRelationsAt215
              .map(
                (relation) =>
                  `DELETE FROM public.${relation} d WHERE d.tenant=in_tenant AND d.project=in_project;`,
@@ -262,8 +262,8 @@ const projectDeletion = `CREATE OR REPLACE FUNCTION ${projectDelete} RETURNS TAB
            RETURN QUERY SELECT 'Deleted'::text, ARRAY[]::text[];
          END $$`;
 
-export const migration214: Migration = {
-  version: 214,
+export const migration215: Migration = {
+  version: 215,
   name: "a project's connectors and the history of their changes",
   statements: [
     ...tableStatements,

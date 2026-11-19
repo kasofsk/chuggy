@@ -27,7 +27,7 @@ import {
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { projectDeletionHoldingsAt174 } from "../../src/adapters/postgres/schema/migrations/174-unrun-deletion.ts";
-import { projectDeletionRelationsAt214 } from "../../src/adapters/postgres/schema/migrations/214-project-connectors.ts";
+import { projectDeletionRelationsAt215 } from "../../src/adapters/postgres/schema/migrations/215-project-connectors.ts";
 import {
   asForgeAccount,
   asForgeApp,
@@ -214,7 +214,7 @@ async function tenantRows(tenant: TenantId): Promise<number> {
 
 test("every relation keyed by a project is emptied by its deletion or reached only beneath what holds it", async () => {
   const keyed = await projectKeyedRelations();
-  const deleted: readonly string[] = projectDeletionRelationsAt214;
+  const deleted: readonly string[] = projectDeletionRelationsAt215;
   const holdings: readonly string[] = Object.values(
     projectDeletionHoldingsAt174,
   );
