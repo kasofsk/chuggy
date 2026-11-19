@@ -217,7 +217,7 @@ test("the Linux package: what it needs, the command that installs its pinned rel
     program: "chuggy-linux",
     needs: { id: "runners-package-needs-linux" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.61.0/chuggy-linux-0.61.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.62.0/chuggy-linux-0.62.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
     restartIntervalSecs: 10,
     exitsMeant: { 3: "Unrestarted", 75: "Updated" },
@@ -234,7 +234,7 @@ test("a Mac's package is the reader's other choice, and what they ask of either 
     program: "chuggy-darwin",
     needs: { id: "runners-package-needs-darwin" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.31.0/chuggy-darwin-0.31.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.32.0/chuggy-darwin-0.32.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
     restartIntervalSecs: 10,
     exitsMeant: { 0: "Unrestarted", 75: "Updated" },
