@@ -101,6 +101,14 @@ export type SaidThing =
       readonly project: string;
     }
   | {
+      readonly thing: "Usage";
+      readonly tell: string;
+      readonly over: Extract<SetupThing, { readonly thing: "Usage" }>["over"];
+      readonly then: "Status" | "Watch";
+      readonly workspace: string;
+      readonly project: string;
+    }
+  | {
       readonly thing: "Failed";
       readonly found: string;
       readonly stale: boolean;
@@ -111,6 +119,7 @@ export function saidThing(thing: SetupThing): SaidThing {
     case "Done":
     case "Configure":
     case "First":
+    case "Usage":
       return { ...thing, tell: copyTextEn(thing.tell) };
     case "Hand":
     case "Offer":

@@ -93,12 +93,14 @@ export interface SetupCopy {
     readonly filed: unknown;
     readonly watched: unknown;
     readonly plugged: unknown;
+    readonly used: unknown;
   };
   readonly "setup-asked-flag": {
     readonly site: unknown;
     readonly workspace: unknown;
     readonly project: unknown;
     readonly plugin: unknown;
+    readonly usage: unknown;
     readonly wait: unknown;
     readonly name: unknown;
     readonly made: unknown;
@@ -118,6 +120,9 @@ export interface SetupCopy {
     readonly toolchains: unknown;
     readonly chosen: unknown;
     readonly filed: unknown;
+    readonly fiveHour: unknown;
+    readonly sevenDay: unknown;
+    readonly used: unknown;
     readonly start: unknown;
   };
   readonly "setup-asked-site": {
@@ -187,6 +192,15 @@ export interface SetupCopy {
   readonly "setup-asked-start": {
     readonly flag: unknown;
     readonly yes: unknown;
+  };
+  readonly "setup-asked-usage": {
+    readonly flag: unknown;
+    readonly keep: unknown;
+  };
+  readonly "setup-asked-percent": {
+    readonly used: unknown;
+    readonly fiveHour: unknown;
+    readonly sevenDay: unknown;
   };
   readonly "setup-platforms-and": {
     readonly one: unknown;
@@ -927,12 +941,62 @@ export interface SetupCopy {
   };
   readonly "setup-mend-wait-offline": Record<never, never>;
   readonly "setup-mend-wait-unable": Record<never, never>;
+  readonly "setup-mend-wait-paused": Record<never, never>;
+  readonly "setup-mend-wait-limited": Record<never, never>;
+  readonly "setup-mend-wait-limited-paused": Record<never, never>;
   readonly "setup-mend-decision-tell": {
     readonly ticket: unknown;
     readonly page: unknown;
   };
   readonly "setup-mend-decision-when": {
     readonly ticket: unknown;
+  };
+  readonly "setup-usage-window-five-hour": Record<never, never>;
+  readonly "setup-usage-window-seven-day": Record<never, never>;
+  readonly "setup-usage-over": {
+    readonly reading: unknown;
+    readonly window: unknown;
+    readonly threshold: unknown;
+    readonly offered: unknown;
+    readonly held: unknown;
+  };
+  readonly "setup-usage-over-both": {
+    readonly reading: unknown;
+    readonly window: unknown;
+    readonly readingOther: unknown;
+    readonly windowOther: unknown;
+    readonly threshold: unknown;
+    readonly thresholdOther: unknown;
+    readonly offered: unknown;
+    readonly offeredOther: unknown;
+    readonly held: unknown;
+  };
+  readonly "setup-usage-full": {
+    readonly reading: unknown;
+    readonly window: unknown;
+    readonly resets: unknown;
+    readonly starts: unknown;
+  };
+  readonly "setup-usage-limit": {
+    readonly resets: unknown;
+    readonly at: unknown;
+    readonly starts: unknown;
+  };
+  readonly "setup-rule-usage": {
+    readonly command: unknown;
+  };
+  readonly "setup-rule-usage-keep": {
+    readonly command: unknown;
+  };
+  readonly "setup-usage-raised": {
+    readonly percent: unknown;
+    readonly window: unknown;
+  };
+  readonly "setup-usage-refused": {
+    readonly refusal: unknown;
+  };
+  readonly "setup-usage-failed": {
+    readonly failure: unknown;
   };
   readonly "setup-mend-unread-found": {
     readonly step: unknown;

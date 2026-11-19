@@ -32,7 +32,9 @@
  * saying what she wants done, or, under the bootstrap, on the agent having
  * said the worker image and the ticket and on no objection from her. `watch`
  * only reads, so it is named to run at once while her first ticket is on its
- * way, and again where its wait ran out first. `plugin` installs chuggy's Claude Code
+ * way, and again where its wait ran out first. `usage` raises where chuggy
+ * pauses the person's work, and is named only under a rule that waits on her
+ * yes, beside one that names the way past it on her no. `plugin` installs chuggy's Claude Code
  * plugin, and is named only under a rule that waits on her yes, beside one
  * that names the way past it on her no; once it has left the plugin on, the
  * checklist is named under a rule that waits on her reloading the plugins or
@@ -55,19 +57,25 @@
  * of the program has been evaluated.
  */
 
-import type { ProposalMergeRefusal } from "../../../../src/contract/rosters.ts";
+import type {
+  ProposalMergeRefusal,
+  RunUsageWindow,
+} from "../../../../src/contract/rosters.ts";
 import type { ApiFailure } from "./apiRequest.ts";
 import { copyOrDataText } from "./copy.ts";
 import type { Copy, CopyArgument, CopyOrData, CopyText } from "./copy.ts";
 import {
   setupAnswerArguments,
   setupAnswersNone,
-  setupAnswersPlugin,
+  setupAnswersCarried,
   setupChatHostAnswers,
   setupApiKeyFileFlag,
   setupChatHostFlag,
   setupTokenFileFlag,
   setupCommandArguments,
+  setupUsageFlag,
+  setupUsageKeep,
+  setupUsagePercentFlag,
   setupConfigurationFlag,
   setupImageFlag,
   setupIntentFlag,
@@ -121,6 +129,7 @@ import type {
   SetupServerEnded,
 } from "./setupRunnerSaid.ts";
 import { setupCommandLine, setupFlat } from "./setupText.ts";
+import type { SetupUsageAnswered, SetupUsageOver } from "./setupUsage.ts";
 
 /** How a sign-in in the browser ended, in the order a person could meet them. */
 export const setupSignInEndings = [
@@ -272,6 +281,16 @@ export type SetupThing =
       readonly project: string;
     }
   | {
+      readonly thing: "Usage";
+      readonly tell: Copy;
+      /** Each window over its threshold, with the threshold `usage` is named with in its place. */
+      readonly over: readonly SetupUsageOver[];
+      /** The command the checklist is read past the offer with on the person's no. */
+      readonly then: "Status" | "Watch";
+      readonly workspace: string;
+      readonly project: string;
+    }
+  | {
       readonly thing: "Failed";
       readonly found: Copy;
       readonly stale: boolean;
@@ -361,6 +380,8 @@ export interface SetupNext {
   /** The workspace and project every command the checklist prints carries. */
   readonly carried: SetupAnswers;
   readonly thing: SetupThing;
+  /** What the person's usage holds their work to where raising a threshold would not help, said before the next thing. */
+  readonly usage?: Copy;
 }
 
 export type SetupReport =
@@ -544,6 +565,15 @@ export type SetupReport =
       >;
     }
   | {
+      /** A run of `usage`: what it wrote of the person's settings, and the checklist read after. */
+      readonly report: "Usage";
+      readonly answered: SetupUsageAnswered;
+      readonly checklist: Extract<
+        SetupReport,
+        { readonly report: "Checklist" }
+      >;
+    }
+  | {
       /** A run of `runner` or `chat-host` whose sign-in the site stopped taking part-way: what it had found and done by then, and the report that ends it. */
       readonly report: "RunnerOut";
       readonly workspace: string;
@@ -658,6 +688,7 @@ function setupCommandWords() {
     filed = "",
     watched = "",
     plugged = "",
+    used = "",
   ] = [
     ...setupCommandArguments("SignIn"),
     ...setupCommandArguments("SignOut"),
@@ -674,6 +705,7 @@ function setupCommandWords() {
     ...setupCommandArguments("Ticket"),
     ...setupCommandArguments("Watch"),
     ...setupCommandArguments("Plugin"),
+    ...setupCommandArguments("Usage"),
   ];
   return {
     signIn,
@@ -691,12 +723,13 @@ function setupCommandWords() {
     filed,
     watched,
     plugged,
+    used,
   };
 }
 
 /** Every flag the program takes, each with the command it alone is read by. */
 function setupAskFlagSaid(words: ReturnType<typeof setupCommandWords>): Copy {
-  const { made, runner, chatHost, configuration, filed, bound } = words;
+  const { made, runner, chatHost, configuration, filed, bound, used } = words;
   return {
     id: "setup-asked-flag",
     args: {
@@ -724,6 +757,10 @@ function setupAskFlagSaid(words: ReturnType<typeof setupCommandWords>): Copy {
       opened: setupOpenedFlag,
       bound,
       start: setupStartFlag,
+      usage: setupUsageFlag,
+      fiveHour: setupUsagePercentFlag("five_hour"),
+      sevenDay: setupUsagePercentFlag("seven_day"),
+      used,
     },
   };
 }
@@ -824,7 +861,27 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
         id: "setup-asked-opened",
         args: { flag: setupOpenedFlag, github: setupOpenedGithub, bound },
       };
+    case "Usage":
+    case "Percent":
+      return setupAskUsageSaid(fault, words.used);
   }
+}
+
+/** A `--usage` that is not the no it carries, and a `usage` given no whole-number threshold. */
+function setupAskUsageSaid(fault: "Usage" | "Percent", used: string): Copy {
+  return fault === "Usage"
+    ? {
+        id: "setup-asked-usage",
+        args: { flag: setupUsageFlag, keep: setupUsageKeep },
+      }
+    : {
+        id: "setup-asked-percent",
+        args: {
+          used,
+          fiveHour: setupUsagePercentFlag("five_hour"),
+          sevenDay: setupUsagePercentFlag("seven_day"),
+        },
+      };
 }
 
 const setupPlatformNames: Readonly<Record<SetupPlatform, string>> = {
@@ -1397,7 +1454,7 @@ function setupSayingOf(saying: SetupSaying, named: SetupRunnerAt): SetupSaying {
     answers: {
       workspace,
       project,
-      ...setupAnswersPlugin(saying.answers),
+      ...setupAnswersCarried(saying.answers),
       ...(saying.answers.chatHost === undefined
         ? {}
         : { chatHost: saying.answers.chatHost }),
@@ -1563,7 +1620,7 @@ function setupThingLines(
       const answers = {
         workspace,
         project,
-        ...setupAnswersPlugin(saying.answers),
+        ...setupAnswersCarried(saying.answers),
       };
       return [
         ["ask", thing.ask],
@@ -1590,9 +1647,45 @@ function setupThingLines(
         ["tell", thing.tell],
         ...setupConfigureRule(setupSayingOf(saying, thing)),
       ];
+    case "Usage":
+      return setupUsageOfferLines(thing, saying);
     case "Failed":
       return setupFailedLines(report.site, thing, saying);
   }
+}
+
+/** The person's usage over a threshold, and the offer: `usage` named with each threshold offered under a rule that waits on her yes, and the checklist read past it with her no carried, under one that says what her no means once. */
+function setupUsageOfferLines(
+  thing: Extract<SetupThing, { readonly thing: "Usage" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  const of = setupSayingOf(saying, thing);
+  const percents = thing.over.flatMap((over) => [
+    setupUsagePercentFlag(over.window),
+    String(over.offered),
+  ]);
+  const kept: SetupSaying = {
+    ...of,
+    answers: { ...of.answers, usage: setupUsageKeep },
+  };
+  return [
+    ["ask", thing.tell],
+    [
+      "rule",
+      {
+        id: "setup-rule-usage",
+        args: { command: setupCommandOf(of, "Usage", percents) },
+      },
+    ],
+    [
+      "rule",
+      {
+        id: "setup-rule-usage-keep",
+        args: { command: setupCommandOf(kept, thing.then) },
+      },
+    ],
+    ["next", setupNextStop],
+  ];
 }
 
 /** What the person wants done first, asked, and the rule `ticket` is named under: with the configuration they choose where they must choose one, and, where some offer is a bootstrap, the worker image to recommend and the one chosen. */
@@ -2041,6 +2134,60 @@ function setupTicketLines(
   ];
 }
 
+/** A window as a sentence about the person's plan names it. */
+export function setupUsageWindowSaid(window: RunUsageWindow): Copy {
+  switch (window) {
+    case "five_hour":
+      return { id: "setup-usage-window-five-hour" };
+    case "seven_day":
+      return { id: "setup-usage-window-seven-day" };
+  }
+}
+
+/** What `usage` wrote of the person's settings, or why it wrote nothing. */
+function setupUsageSaid(answered: SetupUsageAnswered): readonly SetupLine[] {
+  switch (answered.answered) {
+    case "Raised":
+      return answered.raised.map(({ window, percent }): SetupLine => [
+        "did",
+        {
+          id: "setup-usage-raised",
+          args: {
+            window: setupUsageWindowSaid(window),
+            percent: String(percent),
+          },
+        },
+      ]);
+    case "Refused":
+      return [
+        [
+          "found",
+          { id: "setup-usage-refused", args: { refusal: answered.refusal } },
+        ],
+      ];
+    case "Failed":
+      return [
+        [
+          "found",
+          { id: "setup-usage-failed", args: { failure: answered.failure } },
+        ],
+      ];
+  }
+}
+
+/** A run of `usage`: the checklist read after it, with what it wrote after the site's own line. */
+function setupUsageLines(
+  report: Extract<SetupReport, { readonly report: "Usage" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  const [site, ...rest] = setupLines(report.checklist, saying);
+  return [
+    ...(site === undefined ? [] : [site]),
+    ...setupUsageSaid(report.answered),
+    ...rest,
+  ];
+}
+
 /** A run of `import`: the checklist read after it, with what it asked and what the site answered after the site's own line. */
 function setupImportLines(
   report: Extract<SetupReport, { readonly report: "Import" }>,
@@ -2062,6 +2209,9 @@ function setupChecklistLines(
     setupSignedInSaid(report.site, report.login),
     ...report.found.map((found): SetupLine => ["found", found]),
     ...report.steps.map((step): SetupLine => ["step", step]),
+    ...(report.next.usage === undefined
+      ? []
+      : [["tell", report.next.usage] as const]),
     ...setupThingLines(report, saying),
   ];
 }
@@ -2167,7 +2317,7 @@ function setupProjectLines(
   saying: SetupSaying,
 ): readonly SetupLine[] {
   const { workspace, ended } = report;
-  const plugin = setupAnswersPlugin(saying.answers);
+  const carried = setupAnswersCarried(saying.answers);
   const head = setupSignedInSaid(report.site, report.login);
   if (ended.ended === "Made")
     return [
@@ -2185,7 +2335,7 @@ function setupProjectLines(
       setupNextLine(
         {
           ...saying,
-          answers: { workspace, project: ended.project, ...plugin },
+          answers: { workspace, project: ended.project, ...carried },
         },
         "Status",
       ),
@@ -2199,13 +2349,13 @@ function setupProjectLines(
             workspace,
             project: report.project,
             name: report.name,
-            ...plugin,
+            ...carried,
           },
         },
         "Project",
       )
     : setupCommandOf(
-        { ...saying, answers: { workspace, project: undefined, ...plugin } },
+        { ...saying, answers: { workspace, project: undefined, ...carried } },
         "Status",
       );
   return [
@@ -2362,11 +2512,7 @@ function setupLines(
     case "WorkspacesUnread":
       return setupUnreadLines(report, saying);
     case "SignInWaiting":
-      return [
-        setupSiteSaid(report.site, "setup-site-signed-out"),
-        ...setupWaitingLines(report),
-        setupNextLine(saying, "SignIn"),
-      ];
+      return setupSignInWaitingLines(report, saying);
     case "SignInEnded":
       return setupEndedLines(report, saying);
     case "SignedOutHere":
@@ -2397,6 +2543,8 @@ function setupLines(
       return setupServeLines(report, saying);
     case "Ticket":
       return setupTicketLines(report, saying);
+    case "Usage":
+      return setupUsageLines(report, saying);
     case "Mcp":
       return setupServerLines(report, saying);
     case "Plugin":
@@ -2409,6 +2557,17 @@ function setupLines(
         ...setupLines(report.out, { ...saying, partWay: true }),
       ];
   }
+}
+
+function setupSignInWaitingLines(
+  report: Extract<SetupReport, { readonly report: "SignInWaiting" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  return [
+    setupSiteSaid(report.site, "setup-site-signed-out"),
+    ...setupWaitingLines(report),
+    setupNextLine(saying, "SignIn"),
+  ];
 }
 
 /** The spaces between a column's longest word and the next column. */
@@ -2497,6 +2656,7 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
     case "Merge":
     case "Serve":
     case "Ticket":
+    case "Usage":
       return setupReportExit(report.checklist);
     case "Plugin":
       return 0;

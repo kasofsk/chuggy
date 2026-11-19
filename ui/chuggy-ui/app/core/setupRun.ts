@@ -48,9 +48,10 @@ import {
   setupRunnerDue,
   setupServeDue,
   setupTicketDue,
+  setupUsageDue,
   setupWatchAwaited,
 } from "./setupNext.ts";
-import type { SetupMergeSeen } from "./setupNext.ts";
+import type { SetupMergeSeen, SetupUsageRead } from "./setupNext.ts";
 import type { SetupPacing } from "./setupPacing.ts";
 import {
   SetupMachineError,
@@ -103,6 +104,11 @@ import {
   setupTicketWrites,
 } from "./setupTicket.ts";
 import type { SetupStanding } from "./setupStanding.ts";
+import {
+  setupUsageRaise,
+  setupUsageRead,
+  setupUsageWrites,
+} from "./setupUsage.ts";
 import {
   setupLockHeldBy,
   setupLockReleased,
@@ -248,9 +254,10 @@ function setupBusy(
  * list of plugins is read where the plugin step was not passed over, the agent's
  * configuration is read for the project chosen, where the MCP step or the
  * runner's is the one next the machine is looked at and not touched, where
- * the project's first ticket is, what it may be drawn under is read, and where
- * the merge is offered and `merged` says nothing of one, the folder's history
- * is counted.
+ * the project's first ticket is, what it may be drawn under is read, where
+ * that ticket is next or waits on the person's account paused, the person's
+ * own usage is read, and where the merge is offered and `merged` says nothing
+ * of one, the folder's history is counted.
  */
 async function setupChecklist(
   ports: SetupPorts,
@@ -275,6 +282,7 @@ async function setupChecklist(
           setupReadPorts(signed.opened.api, signed.bearer),
           filing,
         );
+  const usage = await setupChecklistUsage(ports, signed, standing);
   const merge =
     merged ??
     (setupMergeDue(standing) === undefined
@@ -301,8 +309,24 @@ async function setupChecklist(
       packaged,
       offers,
       merge,
+      usage,
     ),
   };
+}
+
+/** The person's own usage as read now, where `setupUsageDue` names where it is said and it holds their work to something. */
+async function setupChecklistUsage(
+  ports: SetupPorts,
+  signed: Extract<SetupSigned, { readonly signed: "In" }>,
+  standing: SetupStanding,
+): Promise<SetupUsageRead | undefined> {
+  if (setupUsageDue(standing) === undefined) return undefined;
+  const nowMs = ports.nowMs();
+  const usage = await setupUsageRead(
+    setupReadPorts(signed.opened.api, signed.bearer),
+    nowMs,
+  );
+  return usage === undefined ? undefined : { usage, nowMs };
 }
 
 /** Where the person stands, from one bundle of reads sent through ports that can only read. */
@@ -744,6 +768,31 @@ async function setupTicket(
 }
 
 /**
+ * `usage` works under the remembered sign-in as `import` does. It writes the
+ * person's own settings for the agent their runner works as with each
+ * threshold it was given, the one write its ports let through, on their yes
+ * to the offer the checklist made, and reads the checklist again.
+ */
+async function setupUsageRun(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Usage" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const held = await setupEntered(ports, asked.site, "Usage");
+  if (held === undefined) return setupBusy(ports, "Usage", asked.site);
+  if (held.signed === "Out") return held.report;
+  const answered = await setupUsageRaise(
+    setupWritePorts(held.opened.api, held.bearer, setupUsageWrites()),
+    asked.raised,
+  );
+  return {
+    report: "Usage",
+    answered,
+    checklist: await setupChecklist(ports, held, asked.answers, pacing),
+  };
+}
+
+/**
  * `watch` works under the remembered sign-in as the bare command does, and
  * reads the checklist again at `pacing.watchPollMs`, entered again at each
  * look, while its next thing is the first ticket on its way to its landing and
@@ -983,6 +1032,8 @@ export async function setupRun(
         return await setupTicket(ports, asked, pacing);
       case "Watch":
         return await setupWatch(ports, asked, pacing);
+      case "Usage":
+        return await setupUsageRun(ports, asked, pacing);
       case "Listen":
         return await setupListened(ports, asked.site, asked.lifeSecs);
     }

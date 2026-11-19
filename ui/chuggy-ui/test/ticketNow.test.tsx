@@ -351,17 +351,6 @@ function otherRunAnswered(over: Record<string, unknown>): RunPageServed {
   };
 }
 
-/** A project's pools take no one's work, so a room the server still answers
- * of them is not drawn. */
-test("another member's run says nothing of runners, whatever room the server answers of its project's pools", async () => {
-  await runPageDrawn(
-    atlas,
-    otherRunAnswered({ poolRoom: { freeMib: 3_686, neededMib: 4_096 } }),
-  );
-  expect(nowCard().textContent).not.toContain("Waiting on");
-  expect(nowCard().textContent).not.toContain("GiB");
-});
-
 test("another member's run that has not begun is not read again on the clock", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   try {

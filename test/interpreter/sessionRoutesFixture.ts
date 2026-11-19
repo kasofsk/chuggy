@@ -13,7 +13,6 @@ export function sessionRoutesAt(
   runners: SessionRunners = {
     mine: "Unregistered",
     inquiry: "Unregistered",
-    project: "Unregistered",
   },
 ): SessionRouteReads {
   return {
