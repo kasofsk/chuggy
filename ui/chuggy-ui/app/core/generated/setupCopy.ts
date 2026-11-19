@@ -1077,6 +1077,7 @@ export interface SetupCopy {
     readonly configuration: unknown;
     readonly image: unknown;
     readonly check: unknown;
+    readonly import: unknown;
     readonly press: unknown;
     readonly page: unknown;
   };

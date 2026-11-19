@@ -188,6 +188,9 @@ export interface SetupStepSaid {
   readonly detail: CopyOrData | undefined;
 }
 
+/** Which offer after setup's last step a run gives: the three offered together, or the one the person took. */
+export type SetupMore = "Offer" | "Runners" | "Configuration" | "Review";
+
 /**
  * The one next thing a checklist ends on: nothing, where setup is done and
  * the person wants nothing more; what is offered once its last step is done,
@@ -212,9 +215,6 @@ export interface SetupStepSaid {
  * read that failed, `stale` where this copy of the program could not read what
  * the site sent.
  */
-/** Which offer after setup's last step a run gives: the three offered together, or the one the person took. */
-export type SetupMore = "Offer" | "Runners" | "Configuration" | "Review";
-
 export type SetupThing =
   | { readonly thing: "Done"; readonly tell: Copy }
   | {
@@ -1619,7 +1619,8 @@ function setupMoreCommands(
  * last step, the three together, under a rule naming the bare command for
  * each and for none, or the one the person took, under a rule naming those
  * they may have taken beside it, and for the person's configuration, one
- * naming the commands it is changed and judged by.
+ * naming the commands it is changed and judged by, and `import` as one not
+ * to run, there being nothing left for it to import.
  */
 function setupEndLines(
   thing: Extract<SetupThing, { readonly thing: "Done" | "More" }>,
@@ -1658,6 +1659,7 @@ function setupEndLines(
                   configuration: setupCommandOf(of, "Configuration"),
                   image: thing.image,
                   check: setupCommandOf(of, "Check"),
+                  import: setupCommandOf(of, "Import"),
                   page: thing.page,
                   press: setupImportPressed,
                 },

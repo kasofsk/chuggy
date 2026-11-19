@@ -12,6 +12,10 @@ import { expect, test } from "vitest";
 
 import { chuggyDocsIndex } from "../../../src/contract/sessionTools.ts";
 import { setupAsked } from "../app/core/setupArguments.ts";
+import {
+  setupConfigurationPath,
+  setupConfigurationStarting,
+} from "../app/core/setupConfiguration.ts";
 import { setupDocsPages } from "../app/core/setupNext.ts";
 import { setupNextStop, setupReportLines } from "../app/core/setupReport.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
@@ -22,6 +26,7 @@ import {
   machineSignedIn,
   machineSite,
 } from "./setupMachine.ts";
+import { boxFolder } from "./setupRunnerBox.ts";
 import { saidMoreCommand, saidMoreOffered, saidMoreRule } from "./setupSaid.ts";
 import {
   setupSiteAt,
@@ -66,6 +71,15 @@ async function ran(
     ),
     writes: machine.sent.filter((sent) => !sent.startsWith("GET ")),
   };
+}
+
+/** A starting configuration as written, with its image filled in. */
+function filled(text: string): string {
+  const envelope = JSON.parse(text) as {
+    configuration: Record<string, unknown>;
+  };
+  envelope.configuration["image"] = "node:22";
+  return JSON.stringify(envelope, undefined, 2);
 }
 
 /** The bare command for acme/widgets taking `more`. */
@@ -129,13 +143,45 @@ test("their own configuration asks what they want different, and its rule names 
   const { after } = await ran(setupSiteAt("Landed"), more("configuration"));
   expect(after).toEqual([
     "tell: Your repository's configuration is under .chug/configurations/. What would you like different: the image your tickets run in, the checks they run, or the model?",
-    `rule: Read each file under .chug/configurations/ in this checkout, ask the person what they want different, and change it with them; where the checkout holds none there, pull its default branch, and where that brings none either, run node ${machineScript} configuration --workspace acme --project widgets to write a starting one. Where they want an image of their own, read ${setupDocsPages.image} first for what an image needs and how a configuration names it. Then run node ${machineScript} check --workspace acme --project widgets, fix each fault it names, and commit and push the change to the default branch; chuggy imports it at its next import, or at once where Import now is pressed on the repository's page, from ${pages}/repositories.`,
+    `rule: Read each file under .chug/configurations/ in this checkout, ask the person what they want different, and change it with them; where the checkout holds none there, pull its default branch, and where that brings none either, run node ${machineScript} configuration --workspace acme --project widgets to write a starting one. Where they want an image of their own, read ${setupDocsPages.image} first for what an image needs and how a configuration names it. Then run node ${machineScript} check --workspace acme --project widgets, fix each fault it names, and commit and push the change to the default branch. Do not run node ${machineScript} import --workspace acme --project widgets, though node ${machineScript} check --workspace acme --project widgets names it once clean: with every step done it has nothing to import. Tell the person chuggy imports the push at its next import, or at once where Import now is pressed on the repository's page, from ${pages}/repositories.`,
     moreNext,
     stop,
   ]);
   expect(setupDocsPages.image).toBe(
     "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/docs/jobs/image.md",
   );
+});
+
+test("followed through check, the configuration offer stops at the push: check's clean result names import, which with every step done has nothing to import and gives the offer again, so the offer's rule says not to run it", async () => {
+  const machine = await machineSignedIn(setupSiteAt("Landed"));
+  machine.top = boxFolder;
+  const rule = lines(await machine.command(more("configuration"))).find(
+    (line) => line.startsWith("rule: Read each file"),
+  );
+  const importing = `node ${machineScript} import ${flags.join(" ")}`;
+  expect(rule).toContain(`Do not run ${importing}`);
+
+  machine.box.paths.set(
+    `${boxFolder}/${setupConfigurationPath}`,
+    filled(setupConfigurationStarting("npm test").text),
+  );
+  const checked = lines(await machine.command(["check", ...flags]));
+  expect(checked[0]).toBe(
+    `found: ${setupConfigurationPath} imports as it stands`,
+  );
+  expect(checked).toContain(
+    `rule: Run ${importing} only once the commit holding it is pushed to the default branch.`,
+  );
+
+  machine.sent.length = 0;
+  const imported = lines(await machine.command(["import", ...flags]));
+  expect(imported).toContain(
+    "found: nothing to import: the next thing is not the configuration of a repository",
+  );
+  expect(imported.at(-3)).toMatch(
+    /^tell: .* A few more things you might want: /u,
+  );
+  expect(machine.sent.filter((sent) => !sent.startsWith("GET "))).toEqual([]);
 });
 
 test("the review lists what else can be set, each with its address, and asks nothing", async () => {
