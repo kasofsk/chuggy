@@ -83,10 +83,6 @@ test("a route is the page the contract names for it, with what its address carri
   expect(
     consolePageOf(matched("/$tenant/$project/settings/placement")),
   ).toEqual({ page: "Settings", section: "ProjectPlacement" });
-  expect(consolePageOf(matched("/$tenant/$project/settings/pools"))).toEqual({
-    page: "Settings",
-    section: "ProjectPools",
-  });
   expect(
     consolePageOf(matched("/$tenant/$project/settings/workspace/runner")),
   ).toEqual({ page: "Settings", section: "WorkspaceRunners" });
@@ -157,6 +153,17 @@ test("a Runners page a thread still names moves the console to the old runners a
   expect(consolePageOf(matched(runnersRedirectRouteId))).toBeUndefined();
 });
 
+test("a Pools section a thread still names moves the console to the settings' own address, named as the settings, and the old pools address is no page", () => {
+  const pools: ConsolePage = { page: "Settings", section: "ProjectPools" };
+  expect(consolePageHref({ tenant: "acme", project: "atlas" }, pools)).toBe(
+    "/acme/atlas/settings",
+  );
+  expect(copyTextEn(consolePageLabel(pools))).toBe("Settings");
+  expect(
+    consolePageOf(matched("/$tenant/$project/settings/pools")),
+  ).toBeUndefined();
+});
+
 test("an address the contract would refuse, or a route it does not know, is no page", () => {
   expect(
     consolePageOf(
@@ -225,7 +232,7 @@ test("a page is named in the console's own words for it", () => {
     "Repository acme/atlas",
     "Settings · Project · Chats",
     "Settings · Project · Placement",
-    "Settings · Project · Pools",
+    "Settings",
     "Settings · Project · Permissions",
     "Settings · Workspace · People",
     "Settings · Workspace · GitHub accounts",
@@ -258,9 +265,17 @@ function consolePageLeaf(page: ConsolePage) {
 /** The address the Runners page was at only redirects, so no route is named it. */
 const runnersRedirectRouteId = `${partitionRouteId}/runners`;
 
+/** Whether a page is one the console draws no route for any more. */
+function consolePageRetired(page: ConsolePage): boolean {
+  return (
+    page.page === "Runners" ||
+    (page.page === "Settings" && page.section === "ProjectPools")
+  );
+}
+
 test("every page's address is matched by the console's router as that page", () => {
   for (const page of consolePagesEvery.filter(
-    (named) => named.page !== "Runners",
+    (named) => !consolePageRetired(named),
   )) {
     const { href, search, leaf } = consolePageLeaf(page);
     expect(leaf?.params, href).toMatchObject({

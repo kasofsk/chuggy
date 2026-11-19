@@ -26,7 +26,7 @@ import { setupPressed } from "../../ui/chuggy-ui/app/core/setupNext.ts";
 type SetupPressed = keyof typeof setupPressed;
 
 /** The names a page draws from the catalog. */
-type SetupPressedCatalogued = "ticket" | "runner" | "fallback";
+type SetupPressedCatalogued = "ticket" | "runner";
 
 const myRunnerPage = "ui/chuggy-ui/app/browser/settings/MyRunnerPage.tsx";
 
@@ -48,10 +48,6 @@ const drawnFromCatalog: Readonly<
     id: "ticket-authoring-create-ticket",
   },
   runner: { page: myRunnerPage, id: "runners-register" },
-  fallback: {
-    page: "ui/chuggy-ui/app/browser/settings/OwnerFallbackSection.tsx",
-    id: "runners-fallback-title",
-  },
 };
 
 const ticketPage = "ui/chuggy-ui/app/browser/TicketActions.tsx";

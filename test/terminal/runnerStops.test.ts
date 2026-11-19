@@ -349,10 +349,9 @@ test("a runner that is started and that the site does not see live within the wa
   on.machine.tell({ polls: true });
   cleared(on);
   const done = await ran(on);
-  assert.deepEqual(done.lines.slice(-5), [
+  assert.deepEqual(done.lines.slice(-4), [
     lines(on).found.running,
     lines(on).found.given,
-    lines(on).found.allowed,
     lines(on).found.live,
     next,
   ]);

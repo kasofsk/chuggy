@@ -64,13 +64,22 @@ type ConsolePagePlain = keyof typeof consolePagePlainPaths;
  * redirects and so is no page this table reads a match as. */
 const consolePageRunnersPath = "runners";
 
+/** A settings section the contract still names as ProjectPools, which no
+ * console names any more and so is the settings' own address and words. */
+type ConsolePageSettingsRetired = "ProjectPools";
+
+/** A settings section the console draws a page for. */
+type ConsolePageSettingsDrawn = Exclude<
+  ConsolePageSettingsSection,
+  ConsolePageSettingsRetired
+>;
+
 /** Each settings section, by where under the project its page is. */
 const consolePageSettingsPaths: Readonly<
-  Record<ConsolePageSettingsSection, string>
+  Record<ConsolePageSettingsDrawn, string>
 > = {
   ProjectLead: "settings/threads",
   ProjectPlacement: "settings/placement",
-  ProjectPools: "settings/pools",
   ProjectPermissions: "settings/permissions",
   WorkspacePeople: "settings/workspace/people",
   WorkspaceAccounts: "settings/workspace/accounts",
@@ -155,7 +164,7 @@ const consolePageRoutes: ReadonlyMap<
     ([section, path]) =>
       [
         consolePageRouteId(path),
-        consolePageSettings(section as ConsolePageSettingsSection),
+        consolePageSettings(section as ConsolePageSettingsDrawn),
       ] as const,
   ),
 ]);
@@ -185,7 +194,7 @@ function consolePagePathOf(page: ConsolePage): string {
         ? "tickets/new"
         : `tickets/new?from=${String(page.from)}`;
     case "Settings":
-      return page.section === undefined
+      return page.section === undefined || page.section === "ProjectPools"
         ? "settings"
         : consolePageSettingsPaths[page.section];
   }
@@ -218,14 +227,13 @@ export function consolePageOf(
 /** The settings section's words, as the settings' side navigation draws its
  * level and its page. */
 const consolePageSectionWords: Readonly<
-  Record<ConsolePageSettingsSection, readonly [Copy, Copy]>
+  Record<ConsolePageSettingsDrawn, readonly [Copy, Copy]>
 > = {
   ProjectLead: [{ id: "settings-nav-project" }, { id: "settings-nav-threads" }],
   ProjectPlacement: [
     { id: "settings-nav-project" },
     { id: "settings-nav-placement" },
   ],
-  ProjectPools: [{ id: "settings-nav-project" }, { id: "settings-nav-pools" }],
   ProjectPermissions: [
     { id: "settings-nav-project" },
     { id: "settings-nav-permissions" },
@@ -323,7 +331,8 @@ export function consolePageLabel(page: ConsolePage): Copy {
         args: { repository: repositoryLabel(page.repository) },
       };
     case "Settings": {
-      if (page.section === undefined) return { id: "pages-settings" };
+      if (page.section === undefined || page.section === "ProjectPools")
+        return { id: "pages-settings" };
       const [level, section] = consolePageSectionWords[page.section];
       return { id: "pages-settings-section", args: { level, section } };
     }

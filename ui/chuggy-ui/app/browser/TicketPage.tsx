@@ -41,6 +41,7 @@ import {
   ticketOffers,
   ticketOffersAllowed,
   ticketOffersStartable,
+  ticketRunnerOwner,
   ticketTakeOffer,
 } from "../core/ticketOffers.ts";
 import type { TicketOffers } from "../core/ticketOffers.ts";
@@ -228,7 +229,11 @@ function useTicketStanding(
   props: StandingProps & { readonly acting: TicketActing },
 ) {
   const abilities = useProjectAbilities(props.partition);
-  const runner = useWorkRunner(props.partition, "Unknown");
+  const ticket = readValue(props.reads.ticketState);
+  const runner = useWorkRunner(
+    props.partition,
+    ticketRunnerOwner(ticket?.owner, abilities),
+  );
   const text = useCopyText();
   const { slot, fence, ...standing } = standingOf(
     props,
@@ -240,7 +245,6 @@ function useTicketStanding(
     runner,
   );
   const parked = useParkedStanding(props, fence);
-  const ticket = readValue(props.reads.ticketState);
   const actions: TicketHeaderActionsProps = {
     partition: props.partition,
     ticket: props.ticket,

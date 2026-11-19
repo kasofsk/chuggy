@@ -277,13 +277,7 @@ const things: {
       command: "Serve",
       tell: {
         id: "setup-mend-serving-offer",
-        args: {
-          project: "acme/widgets",
-          does: "both",
-          admin: "none",
-          setting: { id: "runners-fallback-title" },
-          placement: "https://chuggy.example/acme/widgets/settings/placement",
-        },
+        args: { project: "acme/widgets" },
       },
       when: { id: "setup-offer-serve-when" },
       workspace: "acme",
@@ -613,16 +607,11 @@ const ticketAnswers: readonly (SetupTicketAnswered | undefined)[] = [
   },
 ];
 
-/** What a run of `serve` can have had answered: nothing asked, each write written, and each refused. */
+/** What a run of `serve` can have had answered: nothing asked, the project given, and the give refused. */
 const serveAnswers: readonly (SetupServeAnswered | undefined)[] = [
   undefined,
-  { given: { written: true }, allowed: { written: true } },
-  { given: { written: true }, allowed: undefined },
-  { given: undefined, allowed: { written: true } },
-  {
-    given: { written: false, failure: { id: "failure-refused" } },
-    allowed: { written: false, failure: { id: "failure-no-connection" } },
-  },
+  { given: { written: true } },
+  { given: { written: false, failure: { id: "failure-refused" } } },
 ];
 
 /** What a run of `bind` can have had answered: nothing asked, bound, and refused. */
@@ -2542,12 +2531,8 @@ function named(name: string): readonly string[] {
         thing: {
           thing: "Hand",
           tell: {
-            id: "setup-mend-serving-admin-tell",
-            args: {
-              project: name,
-              setting: "Personal runners",
-              placement: `${site}/placement`,
-            },
+            id: "setup-mend-admin-tell",
+            args: { workspace: name, people: `${site}/people` },
           },
           when: { id: "setup-mend-admin-when", args: { workspace: name } },
         },
@@ -2563,7 +2548,7 @@ function flat(name: string): readonly string[] {
     `site: ${site}, signed in`,
     `found: this folder's remote ${name} is added to no project the site shows you, so it proposes none`,
     `step: workspace   done     ${name}`,
-    `tell: Your runner is registered and given ${name}, and does not take its work yet. Your own runners take its work only once an admin of the project sets Personal runners on its Placement page, ${site}/placement. Tell me once they have.`,
+    `tell: Setting chuggy up takes an admin of the workspace, and you are not one in ${name}. Ask an admin of ${name} to make you one on its People page, ${site}/people. Tell me once you are an admin.`,
     `rule: Run node ${machineScript} --workspace '${name}' only once the person says they are an admin of ${name}.`,
     stop,
   ];

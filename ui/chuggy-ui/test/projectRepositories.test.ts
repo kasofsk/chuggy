@@ -55,13 +55,11 @@ import {
 import { workRunner } from "../app/core/workRunner.ts";
 import type { WorkRunner } from "../app/core/workRunner.ts";
 import { copiedWords } from "./copiedWords.ts";
-import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import {
   executionPlacementBody,
   workRunnerAnswered,
   workRunnerFailed,
   workRunnerNoPersonal,
-  workRunnerUnnamed,
   workRunnerUnread,
 } from "./workRunnerFixture.ts";
 
@@ -832,41 +830,28 @@ test.each(steps)(
  * the page holds when it comes back. */
 function bindStep(
   placement: Parameters<typeof workRunner>[0],
-  runners: Parameters<typeof workRunner>[1],
+  personal: Parameters<typeof workRunner>[1],
 ): RepositoryNextStep | undefined {
   const note = repositoryBindNote(
     repositoryBindOutcome(answered({ result: "Bootstrapped", revision: "r1" })),
   );
   return repositoryNextStep(
     note.ticketOffered,
-    workRunner(
-      placement,
-      runners,
-      workRunnerUnnamed,
-      workRunnerNoPersonal,
-      "Reader",
-    ),
+    workRunner(placement, personal, "Reader"),
   );
 }
 
 const toRunners = workRunnerAnswered(executionPlacementBody("Pool"));
-const noneRegistered = workRunnerAnswered(
-  sessionPlacementBody({ project: "Unregistered" }),
-);
+const noneRegistered = workRunnerNoPersonal;
 
-test("a bind in a project with no runner leads to adding one", () => {
+test("a bind in a project where the reader holds no runner leads to adding one", () => {
   expect(bindStep(toRunners, noneRegistered)).toBe("AddRunner");
 });
 
 test.each(["Offline", "Live"] as const)(
-  "a bind in a project with a runner that is %s leads to a first ticket",
-  (project) => {
-    expect(
-      bindStep(
-        toRunners,
-        workRunnerAnswered(sessionPlacementBody({ project })),
-      ),
-    ).toBe("NewTicket");
+  "a bind in a project the reader's own runner serves, %s, leads to a first ticket",
+  (standing) => {
+    expect(bindStep(toRunners, workRunnerAnswered(standing))).toBe("NewTicket");
   },
 );
 

@@ -11,11 +11,10 @@
  * it waits on of their runners: a live one, one coming back online, or
  * runners none of which can run it, or their own account's agent where a
  * pause holds the live ones, or how much memory the live ones have free and
- * the run needs where every one is short of it. Any reader's run that has not
- * begun says, where it waits on none of the reader's runners, how much memory
- * the live pools of its project have free and it needs where every one is
- * short of it. Only a run that has not begun is read again on the clock a
- * session's standing is, since no frame says a runner polled or a pause ended.
+ * the run needs where every one is short of it. A run that is not the
+ * reader's says nothing of runners. Only a run of the reader's that has not
+ * begun is read again on the clock a session's standing is, since no frame
+ * says a runner polled or a pause ended.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -32,8 +31,6 @@ import {
   runnerWait,
   runnerWaitLine,
   runnerWaitPause,
-  runnerWaitPoolRoom,
-  runnerWaitPoolsLine,
   runnerWaitRoom,
   runnerWaitRoomLine,
   runnerWaitWord,
@@ -136,9 +133,9 @@ function TicketNowLine(props: {
 }
 
 /** A run of the reader's held for their own runners, the line itself a link to
- * where they are managed, with the memory the live ones are short of; or, where their own account holds the live ones paused, the pause
- * and where it is set; or else a run held by the memory its project's live
- * pools are short of, the line a link to where they are managed. */
+ * where they are managed, with the memory the live ones are short of; or,
+ * where their own account holds the live ones paused, the pause and where it
+ * is set. */
 function TicketNowRunnerWait(props: {
   readonly partition: PartitionIdentity;
   readonly execution: ExecutionSummary;
@@ -155,10 +152,7 @@ function TicketNowRunnerWait(props: {
   const text = useCopyText();
   const execution = state.state === "Ready" ? state.value : props.execution;
   const wait = runnerWait(execution);
-  if (wait === undefined)
-    return (
-      <TicketNowPoolWait partition={props.partition} execution={execution} />
-    );
+  if (wait === undefined) return null;
   const paused = runnerWaitPause(execution, wait);
   if (paused !== undefined)
     return (
@@ -183,27 +177,6 @@ function TicketNowRunnerWait(props: {
       {room === undefined ? null : (
         <LinePart>{text(runnerWaitRoomLine(room))}</LinePart>
       )}
-    </Notice>
-  );
-}
-
-/** A run held by the memory the live pools of its project are short of, the
- * line a link to where they are managed, with what they have free and it needs. */
-function TicketNowPoolWait(props: {
-  readonly partition: PartitionIdentity;
-  readonly execution: ExecutionSummary;
-}): ReactNode {
-  const text = useCopyText();
-  const room = runnerWaitPoolRoom(props.execution);
-  if (room === undefined) return null;
-  return (
-    <Notice tone="parked" inline>
-      <LinePart first>
-        <Link to={settingsRoutes.project.pools} params={props.partition}>
-          {text(runnerWaitPoolsLine)}
-        </Link>
-      </LinePart>
-      <LinePart>{text(runnerWaitRoomLine(room))}</LinePart>
     </Notice>
   );
 }
@@ -247,7 +220,7 @@ export function TicketNow(props: {
           highWaterBatch={transcript.highWaterBatch}
         />
       )}
-      {executionStarting(summary) ? (
+      {executionStarting(summary) && summary.mine === true ? (
         <TicketNowRunnerWait
           partition={partition}
           execution={summary}

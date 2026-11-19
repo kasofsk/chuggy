@@ -23,7 +23,7 @@ import { projectAbilityRefused } from "./projectAbilities.ts";
 import type { ProjectAbilities } from "./projectAbilities.ts";
 import { actionsFor, ticketRevisable } from "./ticketActions.ts";
 import type { TicketAction } from "./ticketActions.ts";
-import type { WorkRunner } from "./workRunner.ts";
+import type { WorkRunner, WorkRunnerOwner } from "./workRunner.ts";
 
 /** The buttons to draw and whether the edit screen is offered beside them, or
  * the read whose state is drawn in their place. */
@@ -123,6 +123,17 @@ export function ticketTaker(
   ticket: Pick<TicketResponse, "creator" | "owner">,
 ): string | undefined {
   return ticket.owner === ticket.creator ? undefined : ticket.owner;
+}
+
+/** Whose work a ticket's next execution is: the reader's where its owner is
+ * the principal the abilities read names, and otherwise not known to be
+ * theirs, an owner absent or a reader not yet named included. */
+export function ticketRunnerOwner(
+  owner: string | undefined,
+  abilities: ProjectAbilities,
+): WorkRunnerOwner {
+  const reader = abilities?.principal;
+  return reader !== undefined && owner === reader ? "Reader" : "Unknown";
 }
 
 /** The take a ticket's header offers its reader, for themselves alone. */

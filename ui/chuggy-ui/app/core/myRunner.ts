@@ -1,10 +1,9 @@
 /**
- * What a member's own runners are drawn as, derived: the words for a project's
- * fallback, how a runner is told from another, what it is running and how
- * many wait in a project it serves, whether one more may be
- * registered, the projects they may be given, what the server says a run of
- * the reader's waits on of them and the pause holding them, and what taking a
- * member's runners off came to.
+ * What a member's own runners are drawn as, derived: how a runner is told from
+ * another, what it is running and how many wait in a project it serves,
+ * whether one more may be registered, the projects they may be given, what the
+ * server says a run of the reader's waits on of them and the pause holding
+ * them, and what taking a member's runners off came to.
  *
  * WHETHER A RUN IS THE READER'S IS THE SERVER'S ANSWER. Nothing here decodes a
  * token, so a run says it is theirs by `mine`, and one whose read predates the
@@ -19,12 +18,8 @@ import type {
   PersonalRunnerResponse,
   TaskIdentity,
 } from "../../../../src/contract/responses.ts";
-import {
-  ownerFallbacks,
-  personalRunnerPriorities,
-} from "../../../../src/contract/rosters.ts";
+import { personalRunnerPriorities } from "../../../../src/contract/rosters.ts";
 import type {
-  OwnerFallback,
   PersonalRunnerPriority,
   PersonalRunnerWait,
 } from "../../../../src/contract/rosters.ts";
@@ -87,58 +82,6 @@ export function myRunnerPriorityChosen(
   return personalRunnerPriorities.find((each) => each === value);
 }
 
-/** The radio value a project naming no fallback is chosen by. */
-export const ownerFallbackNone = "None";
-
-/** Every value the setting is chosen from, none first. */
-export const ownerFallbackChoices: readonly (OwnerFallback | undefined)[] = [
-  undefined,
-  ...ownerFallbacks,
-];
-
-export function ownerFallbackValue(
-  fallback: OwnerFallback | undefined,
-): string {
-  return fallback ?? ownerFallbackNone;
-}
-
-/** The fallback a radio group answered, where it is one this wire knows. */
-export function ownerFallbackChosen(
-  value: string,
-): { readonly fallback: OwnerFallback | undefined } | undefined {
-  if (value === ownerFallbackNone) return { fallback: undefined };
-  const fallback = ownerFallbacks.find((each) => each === value);
-  return fallback === undefined ? undefined : { fallback };
-}
-
-export function ownerFallbackLabel(fallback: OwnerFallback | undefined): Copy {
-  switch (fallback) {
-    case undefined:
-      return { id: "runners-fallback-none" };
-    case "Strict":
-      return { id: "runners-fallback-strict" };
-    case "Preferred":
-      return { id: "runners-fallback-preferred" };
-  }
-}
-
-/** The section's line: whose work the setting takes, and that a change
- * reaches only work started after it, since an execution keeps the fallback
- * it was registered under. */
-export const ownerFallbackAboutSection: Copy = { id: "runners-fallback-about" };
-
-/** One plain line for what each value does to a member's own work. */
-export function ownerFallbackAbout(fallback: OwnerFallback | undefined): Copy {
-  switch (fallback) {
-    case undefined:
-      return { id: "runners-fallback-none-about" };
-    case "Strict":
-      return { id: "runners-fallback-strict-about" };
-    case "Preferred":
-      return { id: "runners-fallback-preferred-about" };
-  }
-}
-
 /** The start of a runner's id where it ends in a UUID, which tells it from another of the reader's, and the whole id where it does not. */
 export function myRunnerShort(id: string): string {
   return /([0-9a-f]{8})(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u.exec(id)?.[1] ?? id;
@@ -194,14 +137,14 @@ export type RunnerWait = PersonalRunnerWait;
 
 /**
  * What a run of the reader's, admitted but not begun, waits on of their own
- * runners, by the server's answer, which states the claims' terms. A queued
- * run waits on capacity rather than on a runner.
+ * runners, by the server's answer, which states the claims' terms and is
+ * answered only for the reader's own run routed to runners. A queued run
+ * waits on capacity rather than on a runner.
  */
 export function runnerWait(
   execution: ExecutionSummary,
 ): RunnerWait | undefined {
-  if (execution.mine !== true || execution.ownerFallback === undefined)
-    return undefined;
+  if (execution.mine !== true) return undefined;
   if (execution.status === "Queued" || !executionStarting(execution))
     return undefined;
   return execution.personalRunnerWait;
@@ -227,17 +170,6 @@ export function runnerWaitRoom(
   return execution.personalRunnerRoom;
 }
 
-/** The memory the server answered the live pools of a run's project it waits
- * on are short of, said to any reader of a run admitted but not begun and not
- * queued, since a queued run waits on capacity rather than on a pool. */
-export function runnerWaitPoolRoom(
-  execution: ExecutionSummary,
-): ExecutionSummary["poolRoom"] {
-  if (execution.status === "Queued" || !executionStarting(execution))
-    return undefined;
-  return execution.poolRoom;
-}
-
 /**
  * What taking a member's runners off came to, in one line: taken off, none the
  * caller may take, or why it was refused. The server answers a caller it will
@@ -252,12 +184,9 @@ export function memberRunnerRemoved(result: ApiResult<undefined>): CopyOrData {
 /** What a run of the reader's waits on: their personal runners. */
 export const runnerWaitLine: Copy = { id: "runners-wait-waiting" };
 
-/** What a run waits on where it waits on none of the reader's: its project's pools. */
-export const runnerWaitPoolsLine: Copy = { id: "runners-wait-pools" };
-
 /** How much memory the runners a run waits on have free and it needs. */
 export function runnerWaitRoomLine(
-  room: NonNullable<ExecutionSummary["poolRoom"]>,
+  room: NonNullable<ExecutionSummary["personalRunnerRoom"]>,
 ): Copy {
   return {
     id: "runners-wait-room",

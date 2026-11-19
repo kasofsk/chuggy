@@ -21,7 +21,6 @@ import {
   executionPlacementResponseSchema,
   personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
-  projectOwnerFallbackResponseSchema,
   projectDeletionResponseSchema,
   tenantDeletionResponseSchema,
   executionsResponseSchema,
@@ -50,7 +49,6 @@ import {
   sessionPlacementResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
-  workerPoolsResponseSchema,
   workerPoolTokenResponseSchema,
 } from "../../../../src/contract/responses.ts";
 import type {
@@ -67,7 +65,6 @@ import type {
   ExecutionPlacementResponse,
   PersonalRunnerPermitResponse,
   PersonalRunnerResponse,
-  ProjectOwnerFallbackResponse,
   ExecutionsResponse,
   ForgeAppsResponse,
   ForgeAuthorizationResponse,
@@ -93,7 +90,6 @@ import type {
   SessionPlacementResponse,
   TicketNativeActionsResponse,
   TicketResponse,
-  WorkerPoolsResponse,
   WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
 import type { epicWriteRequestSchema } from "../../../../src/contract/epics.ts";
@@ -103,7 +99,6 @@ import type {
   draftRevisionSchema,
   executionPlacementSchema,
   personalRunnerProjectSchema,
-  projectOwnerFallbackSchema,
   forgeAuthorizationSchema,
   projectCreationSchema,
   projectRepositoryBindSchema,
@@ -502,60 +497,6 @@ export function apiWriteSessionPlacement(
       body: written,
     },
     (value) => sessionPlacementResponseSchema.parse(value),
-  );
-}
-
-/** The pools registered to one project, in name order. */
-export function apiWorkerPools(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-): Promise<ApiResult<WorkerPoolsResponse>> {
-  return apiGet(ports, apiSegments(partition, "worker-pools"), (value) =>
-    workerPoolsResponseSchema.parse(value),
-  );
-}
-
-/** A single-use token a machine registers one of this project's pools with. */
-export function apiMintWorkerPoolToken(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  request: RegistrationTokenRequest,
-): Promise<ApiResult<WorkerPoolTokenResponse>> {
-  return apiRead(
-    ports,
-    {
-      method: "POST",
-      path: apiSegments(partition, "worker-pool-registration-tokens"),
-      body: request,
-    },
-    (value) => workerPoolTokenResponseSchema.parse(value),
-  );
-}
-
-/** Who may take a project's owned work beside the pools, and whether the reader may change it. */
-export function apiOwnerFallback(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-): Promise<ApiResult<ProjectOwnerFallbackResponse>> {
-  return apiGet(ports, apiSegments(partition, "owner-fallback"), (value) =>
-    projectOwnerFallbackResponseSchema.parse(value),
-  );
-}
-
-/** A project's fallback written whole; an absent one is cleared. */
-export function apiWriteOwnerFallback(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  written: z.infer<typeof projectOwnerFallbackSchema>,
-): Promise<ApiResult<ProjectOwnerFallbackResponse>> {
-  return apiRead(
-    ports,
-    {
-      method: "PUT",
-      path: apiSegments(partition, "owner-fallback"),
-      body: written,
-    },
-    (value) => projectOwnerFallbackResponseSchema.parse(value),
   );
 }
 

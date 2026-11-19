@@ -44,6 +44,12 @@ export interface ProjectTableRow {
   readonly epics?: ProjectTicket["epics"] | undefined;
 }
 
+/** The member a row's ticket's next execution is placed for: its taker, else
+ * its creator, as the wire's `owner` is. */
+export function projectTableRowOwner(row: ProjectTableRow): string | undefined {
+  return row.owner ?? row.creator;
+}
+
 /** The later of two instants a row's activity might carry, compared as
  * instants rather than as strings, because a lexical compare gets a
  * timezone-shifted wire string wrong. */

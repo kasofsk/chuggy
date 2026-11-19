@@ -56,10 +56,9 @@ export const user = "1000";
 export const mint =
   "program POST /api/v1/tenants/acme/personal-runner-registration-tokens";
 export const redemption = "runner POST /api/v1/personal-runner-registrations";
-/** The writes that let the person's runner take the project's work: the project given to it, and Preferred named as the project's owner fallback. */
+/** The write that lets the person's runner take the project's work: the project given to it. */
 export const serve = [
   "program PUT /api/v1/tenants/acme/personal-runner/projects/widgets",
-  "program PUT /api/v1/tenants/acme/projects/widgets/owner-fallback",
 ];
 export const chatFile = `acme.${machineNamePart(setupSiteMember)}.chat.host.json`;
 export const chatUnit = `chuggy-linux-acme.${machineNamePart(setupSiteMember)}.chat.host.service`;

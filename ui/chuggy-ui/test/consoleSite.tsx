@@ -74,7 +74,6 @@ import {
   personalRunnerResponseSchema,
   projectAbilitiesResponseSchema,
   projectInventoryResponseSchema,
-  projectOwnerFallbackResponseSchema,
   projectRepositoriesResponseSchema,
   projectResponseSchema,
   selectorProjectSettingsResponseSchema,
@@ -380,11 +379,6 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadAt(`${projectPath}/execution-placement`),
     schema: executionPlacementResponseSchema,
     body: () => executionPlacementBody(),
-  },
-  {
-    path: consoleReadAt(`${projectPath}/owner-fallback`),
-    schema: projectOwnerFallbackResponseSchema,
-    body: () => ({ administers: false }),
   },
   {
     path: consoleReadAt(`${projectPath}/deletion`),

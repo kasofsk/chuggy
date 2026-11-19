@@ -8,15 +8,14 @@
  * whether a service is there and running. Nothing of that is kept by this
  * program, so every run reads it again. The names are the runner package's
  * own, since it has no command that says them: where it keeps its settings,
- * its Claude login, its registrations and its services' files, how it names a
- * pool file for a project and the file of the person's chat host in a
- * workspace, and the service of either: a systemd user unit on Linux, a
- * launchd agent on a Mac. A settings file is read for the engine, the Claude
- * credential and the chat host's size it names and for nothing else, the
- * engine for the memory it reports and for what its running containers take
- * of it, the chat host's file for the id
- * the site holds that host by and for nothing else, and a pool's registration
- * and the runner's Claude credential are never read at all, only looked for.
+ * its Claude login, its registrations and its services' files, how it names
+ * the file of the person's own runner and of their chat host in a workspace,
+ * and the service of either: a systemd user unit on Linux, a launchd agent on
+ * a Mac. A settings file is read for the engine, the Claude credential and the
+ * chat host's size it names and for nothing else, the engine for the memory it
+ * reports and for what its running containers take of it, either file for the
+ * id the site holds its runner by and for nothing else, and the runner's
+ * Claude credential is never read at all, only looked for.
  * A file the person names as their credential is read only to be refused or
  * copied into the runner's place for it, and never said. The package is
  * installed by the console's own install command, under the person's own
@@ -96,8 +95,9 @@ function setupPath(...parts: readonly string[]): string {
 /**
  * The package's places: on Linux under the person's configuration directory,
  * the one they set where it is a whole path and the usual one in their home
- * otherwise. On a Mac under their Library, but for the pool files, which
- * chuggy-darwin keeps in `~/.config` whatever configuration directory is set.
+ * otherwise. On a Mac under their Library, but for the registrations' files,
+ * which chuggy-darwin keeps in `~/.config` whatever configuration directory is
+ * set.
  */
 export function setupRunnerPlaces(
   surroundings: SetupSurroundings,
@@ -985,7 +985,7 @@ export function setupRegisterCommand(
   return [command, ...rest];
 }
 
-/** What the bare command reads of this machine where the runner's step is the one next: whether a runner could be put here, and whether it holds a registration as the person's runner or the project's and one as the person's chat host in its workspace, each a file's name and not yet whether the site knows it. */
+/** What the bare command reads of this machine where the runner's step is the one next: whether a runner could be put here, and whether it holds a registration as the person's runner and one as the person's chat host in its workspace, each a file's name and not yet whether the site knows it. */
 export interface SetupRunnerHere {
   readonly room: SetupRunnerRoom;
   readonly held: SetupRunnerHeld | undefined;
@@ -1014,48 +1014,14 @@ function setupPoolNamePart(text: string): string {
     .join("");
 }
 
-/** What every pool file of a project is named from, whatever the pool. */
-export function setupPoolFilePrefix(partition: PartitionIdentity): string {
-  return `${setupPoolNamePart(partition.tenant)}.${setupPoolNamePart(partition.project)}.`;
-}
-
 const setupPoolFileSuffix = ".json";
 
 /** What the package ends a chat host's file's name with, after the workspace and the member. */
 const setupChatFileSuffix = ".chat.host.json";
 
-/** A pool's name as the package takes one, which a pool file's name carries as itself. */
-const setupPoolNamed = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
-
 /** A registration of this machine, by the file it left. */
 export interface SetupFile {
   readonly path: string;
-}
-
-/** A registration of this machine as a pool of the project, by the file it left and the pool's name. */
-export interface SetupPoolFile extends SetupFile {
-  readonly pool: string;
-}
-
-/** The pool files this machine has for a project, found by their names and never opened, in the order of those names. */
-export function setupPoolFiles(
-  ports: SetupPorts,
-  places: SetupRunnerPlaces,
-  partition: PartitionIdentity,
-): readonly SetupPoolFile[] {
-  const prefix = setupPoolFilePrefix(partition);
-  return ports.disk
-    .names(places.pools)
-    .toSorted()
-    .flatMap((name) => {
-      if (!name.startsWith(prefix) || !name.endsWith(setupPoolFileSuffix))
-        return [];
-      const pool = name.slice(prefix.length, -setupPoolFileSuffix.length);
-      const path = setupPath(places.pools, name);
-      return setupPoolNamed.test(pool) && ports.disk.kind(path) === "File"
-        ? [{ path, pool }]
-        : [];
-    });
 }
 
 /** Every octet of a name part said as itself or by its number, and no `.`, which parts the name. */
@@ -1156,18 +1122,16 @@ function setupClaudeHere(
   }
 }
 
-/** The registration of a runner this machine holds: the person's own, which `runner` checks and starts, or only the project's pool, which it leaves as it is and registers this machine beside as the person's own. */
-export type SetupRunnerHeld = "Personal" | "Pool";
+/** The registration of a runner this machine holds: the person's own, which `runner` checks and starts. */
+export type SetupRunnerHeld = "Personal";
 
 function setupRunnerHeld(
   ports: SetupPorts,
   places: SetupRunnerPlaces,
-  partition: PartitionIdentity,
+  tenant: string,
 ): SetupRunnerHeld | undefined {
-  if (setupPersonalFiles(ports, places, partition.tenant).length > 0)
-    return "Personal";
-  return setupPoolFiles(ports, places, partition).length > 0
-    ? "Pool"
+  return setupPersonalFiles(ports, places, tenant).length > 0
+    ? "Personal"
     : undefined;
 }
 
@@ -1192,7 +1156,7 @@ export async function setupRunnerHere(
         : undefined;
   return {
     room,
-    held: open ? setupRunnerHeld(ports, places, partition) : undefined,
+    held: open ? setupRunnerHeld(ports, places, partition.tenant) : undefined,
     chat: open && setupChatFiles(ports, places, partition.tenant).length > 0,
     claude: setupClaudeHere(ports, places, settings),
     settings:

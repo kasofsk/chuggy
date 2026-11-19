@@ -102,18 +102,8 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Again",
     ],
     [
-      "the site did not say of acme/widgets whether it lets your own runners take its work (Fault)",
-      1,
-      "Again",
-    ],
-    [
       "the site did not say of acme/widgets which runners of yours it knows (Cut)",
       1,
-      "Again",
-    ],
-    [
-      "the site does not show you acme/widgets or whether it lets your own runners take its work",
-      0,
       "Again",
     ],
     [
@@ -146,14 +136,7 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   ],
   ServeRefused: [
     ["the site did not give your runners acme/widgets (Rejected)", 1, "Again"],
-    [
-      "the site did not let your own runners take your work in acme/widgets (Fault)",
-      1,
-      "Again",
-    ],
-  ],
-  NotAdmin: [
-    ["the site says you are not an admin of acme/widgets", 0, "Again"],
+    ["the site did not give your runners acme/widgets (Fault)", 1, "Again"],
   ],
   Serviceless: [
     [
@@ -653,14 +636,12 @@ test("only a stop made before the run's first act says nothing was changed, whic
     "DockerBarred",
     "Engineless",
     "LoginMissing",
-    "NotAdmin",
     "Npmless",
     "Rebuild",
     "Rosettaless",
     "Serviceless",
     "SettingsUnread",
     "Unpackaged",
-    "fallback Refused",
     "threads Refused",
     "work Refused",
   ]);
@@ -668,13 +649,7 @@ test("only a stop made before the run's first act says nothing was changed, whic
     saying(
       "so I cannot say the runner is set up. What was done before stays done.",
     ),
-  ).toEqual([
-    "chat Fault",
-    "fallback Fault",
-    "permit Fault",
-    "personal Cut",
-    "personal Refused",
-  ]);
+  ).toEqual(["chat Fault", "permit Fault", "personal Cut", "personal Refused"]);
   const unread = runnerStops.Unread.map(
     (stop) => setupRunnerStopSaid(stop, widgets).tell,
   );
@@ -825,11 +800,9 @@ test("each thing a run found is said as found and each thing it did as did, in w
   expect(lines("PersonalGone")).toEqual([
     `found: ${rosterPersonal} registered this machine as your runner, and the site no longer knows that registration`,
   ]);
-  expect([...lines("Given"), ...lines("Allowed")]).toEqual([
+  expect(lines("Given")).toEqual([
     "found: your runners are given acme/widgets",
     "did: gave your runners acme/widgets",
-    "found: acme/widgets lets your own runners take your work in it",
-    "did: set acme/widgets to let your own runners take your work in it while one is online, and a shared runner while none is",
   ]);
   expect(lines("Checked")).toEqual([
     "found: the runner's own check passed",
@@ -868,7 +841,6 @@ test("each kind of note is said as found, as did or as a tell, by its kind alone
     PersonalGone: ["found"],
     PersonalRegistered: ["did"],
     Given: ["found", "did"],
-    Allowed: ["found", "did"],
     Checked: ["found"],
     Unit: ["found"],
     UnitWritten: ["did"],
@@ -1060,12 +1032,13 @@ test("the package refusing the Node it was run under is a refusal that lasts, wh
     when: "once the person says node on this machine is newer",
     again: "Again",
   };
+  const registered: SetupRunnerStop = {
+    stop: "Act",
+    act: "Register",
+    failed: { how: "ExitUnquoted", exit: 1, refusal: "needs Node" },
+  };
   const stops: readonly SetupRunnerStop[] = [
-    {
-      stop: "Act",
-      act: "Register",
-      failed: { how: "ExitUnquoted", exit: 1, refusal: "needs Node" },
-    },
+    registered,
     {
       stop: "Act",
       act: "Check",
@@ -1082,9 +1055,7 @@ test("the package refusing the Node it was run under is a refusal that lasts, wh
     expect(setupRunnerStopSaid(stop, widgets), stop.stop).toMatchObject(
       lasting,
     );
-  expect(
-    setupRunnerStopSaid(stops[0] ?? { stop: "NotAdmin" }, widgets).found,
-  ).toBe(
+  expect(setupRunnerStopSaid(registered, widgets).found).toBe(
     "registering this machine ended with exit 1: the runner package needs a newer Node than the node this machine's PATH finds first",
   );
 });

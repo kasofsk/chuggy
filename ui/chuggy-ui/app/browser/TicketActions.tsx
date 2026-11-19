@@ -82,6 +82,7 @@ import type {
 import {
   ticketOffersAllowed,
   ticketOffersStartable,
+  ticketRunnerOwner,
 } from "../core/ticketOffers.ts";
 import type { TicketOffers, TicketTakeOffer } from "../core/ticketOffers.ts";
 import { useApiOnline } from "./api.ts";
@@ -816,6 +817,34 @@ export interface TicketRowDispatch {
   readonly press: () => void;
 }
 
+/** The Dispatch a ready row's reader and runner leave it offering, if any. */
+function useRowDispatchOffered(row: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+  readonly sequence: number;
+  readonly owner: string | undefined;
+}): TicketAction | undefined {
+  const abilities = useProjectAbilities(row.partition);
+  const runner = useWorkRunner(
+    row.partition,
+    ticketRunnerOwner(row.owner, abilities),
+  );
+  const { offers } = ticketOffersStartable(
+    ticketOffersAllowed(
+      {
+        offers: "Actions",
+        editable: false,
+        actions: [manualDispatchAction(row.ticket, row.sequence)],
+      },
+      abilities,
+    ),
+    runner,
+  );
+  return offers.offers === "Actions"
+    ? offers.actions.find((action) => action.action === "Dispatch")
+    : undefined;
+}
+
 /**
  * The Dispatch a ready row of the ticket list offers, expecting the version the
  * row was drawn at, as the press its state chip answers and the notes its
@@ -828,31 +857,18 @@ export function TicketRowDispatchScope(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
   readonly sequence: number;
+  /** The member the ticket's next execution is placed for, as its read names
+   * it, absent where it names none. */
+  readonly owner: string | undefined;
   readonly children: (
     dispatch: TicketRowDispatch | undefined,
     notes: ReactNode,
   ) => ReactNode;
 }): ReactNode {
-  const abilities = useProjectAbilities(props.partition);
-  const runner = useWorkRunner(props.partition, "Unknown");
+  const offered = useRowDispatchOffered(props);
   const online = useApiOnline();
   const text = useCopyText();
   const [asking, setAsking] = useState(false);
-  const { offers } = ticketOffersStartable(
-    ticketOffersAllowed(
-      {
-        offers: "Actions",
-        editable: false,
-        actions: [manualDispatchAction(props.ticket, props.sequence)],
-      },
-      abilities,
-    ),
-    runner,
-  );
-  const offered =
-    offers.offers === "Actions"
-      ? offers.actions.find((action) => action.action === "Dispatch")
-      : undefined;
   if (offered === undefined) return props.children(undefined, null);
   const effect = text(
     ticketActionEffect("Dispatch", { kind: "NoPoint" }).effect,

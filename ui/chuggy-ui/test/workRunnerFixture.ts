@@ -1,14 +1,11 @@
 /**
  * The reads a project's runner for work is decided from, as a case names
- * them: where its work runs, the runners registered to it, its owner fallback,
- * the reader's own personal runners, and each read as a screen holds one — answered, not yet back, failed, or
- * asked again after failing.
+ * them: where its work runs and the reader's own personal runners, each read
+ * as a screen holds one — answered, not yet back, failed, or asked again after
+ * failing.
  */
 
-import type {
-  ExecutionPlacementResponse,
-  ProjectOwnerFallbackResponse,
-} from "../../../src/contract/responses.ts";
+import type { ExecutionPlacementResponse } from "../../../src/contract/responses.ts";
 import type {
   PlacementRoute,
   SessionRunnerStanding,
@@ -32,10 +29,6 @@ export function workRunnerAnswered<T>(value: T): WorkRunnerRead<T> {
     settled: true,
   };
 }
-
-/** A project naming no owner fallback, so no owner's runner takes its work. */
-export const workRunnerUnnamed: WorkRunnerRead<ProjectOwnerFallbackResponse> =
-  workRunnerAnswered({ administers: false });
 
 /** A reader holding no personal runner that serves the project. */
 export const workRunnerNoPersonal: WorkRunnerRead<SessionRunnerStanding> =

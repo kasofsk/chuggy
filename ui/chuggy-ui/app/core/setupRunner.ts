@@ -1,8 +1,7 @@
 /**
  * `runner`: the person's own runner installed, registered and started on the
- * machine the program is run on, given one project, with the project letting
- * their own runners take its work, and said to be done only once the site sees
- * it live and given the project; then, where the person's chats in the project run on runners
+ * machine the program is run on, given one project, and said to be done only
+ * once the site sees it live and given the project; then, where the person's chats in the project run on runners
  * and the run is named with the chat host flag's yes, which is what setup
  * names unless the person objects, the same machine made their chat host, which takes
  * their chats in every project of the workspace, and said to be done only
@@ -19,8 +18,7 @@
  * nothing; so the command is run again after any failure, at any point, and
  * picks up where things stand. Whatever could stop a run without anything
  * having been changed is looked at before the first act: where the project's
- * work runs and whether it lets this person's runner take it, whether the
- * workspace lets them register one where this machine holds none the site
+ * work runs, whether the workspace lets them register one where this machine holds none the site
  * lists, the machine's user services, a container engine the package takes from this user, the
  * runner's settings and its Claude credential, and whether the package could be
  * installed at all. Named the file of the person's Claude credential where the
@@ -32,11 +30,8 @@
  * and handed to the package's own `register` as one word of its arguments and
  * nowhere else. The package's own check then runs before its service is
  * started, so nothing is started that the package says cannot work. The
- * project is given to the person's runners and Preferred named as its owner
- * fallback, each a write made only where the site does not say it is so
- * already, and the person's runner takes the project's work only where its
- * fallback is named, so a run stops before touching anything where none is
- * and the person may not name one. This machine is the person's chat host
+ * project is given to the person's runners, a write made only where the site
+ * does not say it is so already. This machine is the person's chat host
  * where it holds a file of the one the site holds for them; otherwise it is
  * registered as theirs the same way, where the workspace lets them. A member has
  * one chat host, so where theirs is another machine `runner` never replaces
@@ -65,7 +60,6 @@ import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
 import type {
   ChatHostResponse,
   PersonalRunnerResponse,
-  ProjectOwnerFallbackResponse,
   WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
 import type { PlacementRoute } from "../../../../src/contract/rosters.ts";
@@ -76,12 +70,10 @@ import {
   apiExecutionPlacement,
   apiMintChatHostToken,
   apiMintPersonalRunnerToken,
-  apiOwnerFallback,
   apiPersonalRunner,
   apiPersonalRunnerPermit,
   apiPersonalRunnerServes,
   apiSessionPlacement,
-  apiWriteOwnerFallback,
 } from "./apiRoutes.ts";
 import { myRunnerShort } from "./myRunner.ts";
 import { runnerPackages, runnerTokenLifetimeSecs } from "./runners.ts";
@@ -299,25 +291,17 @@ export function setupChatHostWrites(tenant: string): readonly string[] {
   return [`POST ${route}`];
 }
 
-/** Each write `serve` makes for what is due, by its method and its address: the project given to the person's runners, and Preferred named as its owner fallback. */
+/** Each write `serve` makes for what is due, by its method and its address: the project given to the person's runners. */
 export function setupServeWrites(due: {
   readonly partition: PartitionIdentity;
-  readonly give: boolean;
-  readonly allow: boolean;
 }): readonly string[] {
-  const filled = (route: string): string =>
-    route
-      .replace(":tenant", encodeURIComponent(due.partition.tenant))
-      .replace(":project", encodeURIComponent(due.partition.project));
-  return [
-    ...(due.give
-      ? [`PUT ${filled(nativeHttpRoutes.personalRunnerProject)}`]
-      : []),
-    ...(due.allow ? [`PUT ${filled(nativeHttpRoutes.ownerFallback)}`] : []),
-  ];
+  const route = nativeHttpRoutes.personalRunnerProject
+    .replace(":tenant", encodeURIComponent(due.partition.tenant))
+    .replace(":project", encodeURIComponent(due.partition.project));
+  return [`PUT ${route}`];
 }
 
-/** Each write `runner` makes for a project, by its method and its address: the mint of a registration token for the person's own runner, the project given to their runners and Preferred named as its owner fallback, and the mint for the person's chat host where `chat` says this machine is made it. */
+/** Each write `runner` makes for a project, by its method and its address: the mint of a registration token for the person's own runner, the project given to their runners, and the mint for the person's chat host where `chat` says this machine is made it. */
 export function setupRunnerWrites(
   partition: PartitionIdentity,
   chat: boolean,
@@ -328,7 +312,7 @@ export function setupRunnerWrites(
   );
   return [
     `POST ${route}`,
-    ...setupServeWrites({ partition, give: true, allow: true }),
+    ...setupServeWrites({ partition }),
     ...(chat ? setupChatHostWrites(partition.tenant) : []),
   ];
 }
@@ -424,21 +408,6 @@ async function setupProjectAsked(
   return read.read === "Got"
     ? { route: read.value }
     : setupUnread("work", read);
-}
-
-/** Whether the project lets the person's own runner take their work, read before anything is touched: it names an owner fallback, or the person may name one. */
-async function setupFallbackAsked(
-  run: ProjectRun,
-): Promise<ProjectOwnerFallbackResponse | Halt> {
-  const fallback = await setupSiteAsked(run, setupRunnerReads, (ports) =>
-    apiOwnerFallback(ports, run.partition),
-  );
-  if ("reported" in fallback) return fallback;
-  const read = setupGot(fallback, (answered) => answered, setupWhole);
-  if (read.read !== "Got") return setupUnread("fallback", read);
-  return read.value.fallback === undefined && !read.value.administers
-    ? halt({ stop: "NotAdmin" })
-    : read.value;
 }
 
 /** A room a runner cannot be put in, as the stop it is, with the guide of the package `offered` where it names one. */
@@ -1186,11 +1155,8 @@ async function setupPersonalLooked(
     : { unseen: { listed: runner !== undefined } };
 }
 
-/** The writes that let the person's own runner take their work in the project, each made only where the site does not say it is so already. */
-async function setupServed(
-  run: ProjectRun,
-  fallback: ProjectOwnerFallbackResponse,
-): Promise<Halt | undefined> {
+/** The write that lets the person's own runner take their work in the project, made only where the site does not say it is so already. */
+async function setupServed(run: ProjectRun): Promise<Halt | undefined> {
   const read = await setupPersonalRead(run);
   if (halted(read)) return read;
   const given =
@@ -1203,27 +1169,9 @@ async function setupServed(
     );
     if ("reported" in written) return written;
     if (written.outcome !== "Ok")
-      return halt({
-        stop: "ServeRefused",
-        write: "Give",
-        outcome: written.outcome,
-      });
+      return halt({ stop: "ServeRefused", outcome: written.outcome });
   }
   run.notes.push({ note: "Given", now: !given });
-  const named = fallback.fallback !== undefined;
-  if (!named) {
-    const written = await setupSiteAsked(run, setupRunWrites(run), (ports) =>
-      apiWriteOwnerFallback(ports, run.partition, { fallback: "Preferred" }),
-    );
-    if ("reported" in written) return written;
-    if (written.outcome !== "Ok")
-      return halt({
-        stop: "ServeRefused",
-        write: "Allow",
-        outcome: written.outcome,
-      });
-  }
-  run.notes.push({ note: "Allowed", now: !named });
   return undefined;
 }
 
@@ -1646,8 +1594,6 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   if (halted(asked)) return asked;
   const { chats } = asked;
   if (setupHosted(project.route)) return setupHostedWalked(run, chats);
-  const fallback = await setupFallbackAsked(run);
-  if (halted(fallback)) return fallback;
   const personal = await setupPersonalAsked(run);
   if (halted(personal)) return personal;
   if (run.credential !== undefined)
@@ -1664,7 +1610,7 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   if (halted(packaged)) return packaged;
   const done = await setupPersonalDone(run, packaged, personal);
   if (halted(done)) return done;
-  const served = await setupServed(run, fallback);
+  const served = await setupServed(run);
   if (halted(served)) return served;
   const seen = await setupWaited(
     run,

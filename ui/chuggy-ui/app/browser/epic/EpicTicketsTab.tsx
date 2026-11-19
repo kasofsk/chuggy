@@ -26,7 +26,10 @@ import type {
   EpicTicketsGroup,
   EpicTicketsMember,
 } from "../../core/epicTickets.ts";
-import { projectTableRow } from "../../core/projectTableRows.ts";
+import {
+  projectTableRow,
+  projectTableRowOwner,
+} from "../../core/projectTableRows.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketStateStanding } from "../../core/ticketHeader.ts";
 import { ConsoleWriteRefusedWords } from "../consoleWrite.tsx";
@@ -120,6 +123,7 @@ function EpicTicketsState(props: {
       partition={props.partition}
       ticket={row.ticket}
       sequence={row.sequence}
+      owner={projectTableRowOwner(row)}
     >
       {(dispatch, notes) =>
         dispatch === undefined ? (

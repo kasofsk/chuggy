@@ -4,8 +4,8 @@
  * screen's own line and no toast; a screen that comes back while the write is
  * in flight draws it as pending; and a write is sent once, whatever it answers.
  *
- * Drawn over the owner fallback's section, which is the plainest write the
- * console has, beside the toasts the shell mounts once.
+ * Drawn over the placement settings, a write of evaluation's route alone,
+ * beside the toasts the shell mounts once.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -16,7 +16,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { ConsoleWriteToasts } from "../app/browser/consoleWrite.tsx";
-import { OwnerFallbackSection } from "../app/browser/settings/OwnerFallbackSection.tsx";
+import { PlacementSettingsPage } from "../app/browser/settings/PlacementSettingsPage.tsx";
 import {
   consoleQueryClient,
   consoleWriteWatchOf,
@@ -41,6 +41,14 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
 }));
+
+vi.mock("@tanstack/react-router", () => ({
+  createLink: (component: unknown) => component,
+  Link: (props: { readonly children?: ReactNode }) => (
+    <a href="/">{props.children}</a>
+  ),
+  useParams: () => ({ ...projectPartition }),
+}));
 // jscpd:ignore-end -- the case's own doubles resume here
 
 afterEach(() => {
@@ -48,7 +56,28 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const sectionTitle = "Personal runners";
+const sectionTitle = "Placement";
+
+const placement = {
+  work: { route: "Pool", source: "Project" },
+  evaluation: { route: "Pool", source: "Project" },
+  choices: ["Pool", "InCluster"],
+};
+
+/** The placement once evaluation is written hosted. */
+const placementWritten = {
+  ...placement,
+  evaluation: { route: "InCluster", source: "Project" },
+};
+
+const sessions = {
+  thread: { route: "Pool", source: "Default" },
+  lead: { route: "InCluster", source: "Default" },
+  leadOffering: "Own",
+  leadOfferings: ["Own"],
+  choices: ["InCluster", "Pool"],
+  runners: { mine: "Live", project: "Unregistered" },
+};
 
 /** The sentence the section draws for the refusal every case is answered. */
 const refusedSentence = "Server error";
@@ -61,15 +90,17 @@ interface Drawn {
 }
 
 /** The section and the toasts under one cache, every write answered by
- * `written` and every read by an administered fallback of `Strict`. */
+ * `written` and every read as the placement on runners. */
 async function drawn(
   client: QueryClient,
   written: () => Response | Promise<Response>,
 ): Promise<Drawn> {
   const scripted = scriptedFetch((request) =>
-    request.method === "GET"
-      ? answer({ fallback: "Strict", administers: true })
-      : written(),
+    request.method !== "GET"
+      ? written()
+      : answer(
+          request.url.endsWith("/session-placement") ? sessions : placement,
+        ),
   );
   vi.stubGlobal("fetch", scripted.fetch);
   const tree = (shown: boolean): ReactNode => (
@@ -78,7 +109,7 @@ async function drawn(
       client={client}
       transport={openedStream().ports.fetch}
     >
-      {shown ? <OwnerFallbackSection partition={projectPartition} /> : null}
+      {shown ? <PlacementSettingsPage /> : null}
       <ConsoleWriteToasts />
     </ScreenHarness>
   );
@@ -104,14 +135,14 @@ async function pressInSection(name: string): Promise<void> {
   });
 }
 
-/** Preferred chosen and saved, which is one write. */
+/** Evaluation moved to hosted runs and saved, which is one write. */
 async function saved(): Promise<void> {
   await pressInSection("Edit");
   await turned(() => {
     fireEvent.click(
-      within(screen.getByRole("radiogroup", { name: sectionTitle })).getByRole(
+      within(screen.getByRole("radiogroup", { name: "Evaluation" })).getByRole(
         "radio",
-        { name: "Preferred" },
+        { name: "Hosted runs" },
       ),
     );
   });
@@ -170,12 +201,16 @@ test("a screen drawn again while its write is in flight draws it pending, then a
   expect(within(sectionOf(sectionTitle)).getByText("Writing")).toBeDefined();
 
   await turned(() => {
-    held.release(answer({ fallback: "Preferred", administers: true }));
+    held.release(answer(placementWritten));
   });
   await settled();
 
   expect(within(sectionOf(sectionTitle)).getByText("Written")).toBeDefined();
-  expect(within(sectionOf(sectionTitle)).getByText("Preferred")).toBeDefined();
+  expect(
+    within(sectionOf(sectionTitle)).getByText("Hosted runs", {
+      selector: "td",
+    }),
+  ).toBeDefined();
   expect(writesSent(page.sent)).toBe(1);
   expect(toastLines()).toStrictEqual([]);
 });

@@ -9,9 +9,6 @@ export interface SetupRunnerCopy {
   readonly "setup-runner-when-try-again": Record<never, never>;
   readonly "setup-runner-when-look-again": Record<never, never>;
   readonly "setup-runner-when-elsewhere": Record<never, never>;
-  readonly "setup-runner-when-admin": {
-    readonly project: unknown;
-  };
   readonly "setup-runner-versioned": {
     readonly program: unknown;
     readonly version: unknown;
@@ -113,12 +110,6 @@ export interface SetupRunnerCopy {
     readonly project: unknown;
   };
   readonly "setup-runner-note-given-now": {
-    readonly project: unknown;
-  };
-  readonly "setup-runner-note-allowed": {
-    readonly project: unknown;
-  };
-  readonly "setup-runner-note-allowed-now": {
     readonly project: unknown;
   };
   readonly "setup-runner-note-checked": Record<never, never>;
@@ -264,7 +255,6 @@ export interface SetupRunnerCopy {
   };
   readonly "setup-runner-read-work": Record<never, never>;
   readonly "setup-runner-read-threads": Record<never, never>;
-  readonly "setup-runner-read-fallback": Record<never, never>;
   readonly "setup-runner-read-personal": Record<never, never>;
   readonly "setup-runner-read-permit": Record<never, never>;
   readonly "setup-runner-read-chat": Record<never, never>;
@@ -288,12 +278,6 @@ export interface SetupRunnerCopy {
     readonly outcome: unknown;
   };
   readonly "setup-runner-unread-tell": Record<never, never>;
-  readonly "setup-runner-not-admin-found": {
-    readonly project: unknown;
-  };
-  readonly "setup-runner-not-admin-tell": {
-    readonly project: unknown;
-  };
   readonly "setup-runner-serviceless-found": {
     readonly command: unknown;
   };
@@ -490,12 +474,10 @@ export interface SetupRunnerCopy {
   };
   readonly "setup-runner-mint-tell": Record<never, never>;
   readonly "setup-runner-serve-refused-found": {
-    readonly write: unknown;
     readonly project: unknown;
     readonly outcome: unknown;
   };
   readonly "setup-runner-serve-refused-tell": {
-    readonly write: unknown;
     readonly project: unknown;
   };
   readonly "setup-runner-chat-mint-found": {
