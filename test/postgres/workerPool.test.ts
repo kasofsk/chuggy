@@ -21,7 +21,6 @@ import {
   poolPlaneRole,
   statusMoveFunction,
   workerPlaneRole,
-  workerPoolReleaseFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
@@ -621,18 +620,13 @@ test("the plane serving pools cannot write an attempt's outcome", async () => {
   );
 });
 
-/**
- * A release ends an attempt, which the plane does through the one function it
- * is granted for it; nothing it runs moves an execution's status.
- */
-test("the plane serving pools ends an attempt only by releasing it, and moves no execution", async () => {
+test("the plane serving pools moves no execution", async () => {
   const [granted] = (
     await planePool.query(
-      `SELECT has_function_privilege('${workerPoolReleaseFunction}(text,text,text,text,text)', 'EXECUTE') AS releases,
-              has_function_privilege('${statusMoveFunction}(text,text,boolean)', 'EXECUTE') AS moves_status`,
+      `SELECT has_function_privilege('${statusMoveFunction}(text,text,boolean)', 'EXECUTE') AS moves_status`,
     )
-  ).rows as { releases: boolean; moves_status: boolean }[];
-  assert.deepEqual(granted, { releases: true, moves_status: false });
+  ).rows as { moves_status: boolean }[];
+  assert.deepEqual(granted, { moves_status: false });
 });
 
 /** Every column the plane serving pools is granted, by relation and privilege. */

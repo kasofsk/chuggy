@@ -108,14 +108,13 @@ const workers = {
 
 type Worker = keyof typeof workers | "NotWritten";
 
-/** Who claimed an attempt: a member's personal runner, a pool a member registered, a pool nobody did, or the cluster. */
+/** Who claimed an attempt: a member's personal runner, or the cluster. */
 type Claim =
   | {
       readonly by: "Personal";
       readonly owner: string;
       readonly benchesCredential?: boolean;
     }
-  | { readonly by: "Pool"; readonly registeredBy: string | null }
   | { readonly by: "Cluster" };
 
 /** One placed, live attempt on its own project, invoked with `worker` and claimed as `claim` says. */
@@ -132,7 +131,6 @@ async function spendingAttempt(label: string, worker: Worker, claim: Claim) {
     schedulerInCluster,
   );
   const { attempt } = await schedulerPlacedAttempt(rig, project, label);
-  const { tenant, project: partition } = attempt.partition;
   if (worker !== "NotWritten") {
     const configured = workers[worker].worker;
     await rig.harness.query(
@@ -160,17 +158,6 @@ async function spendingAttempt(label: string, worker: Worker, claim: Claim) {
           principal,
           claim.benchesCredential === true,
         ],
-      );
-      break;
-    case "Pool":
-      await rig.harness.query(
-        `INSERT INTO worker_pool(tenant,project,pool,principal,client_id,class,registered_by)
-         VALUES($1,$2,'pool',$3,$3,'Dedicated',$4)`,
-        [tenant, partition, principal, claim.registeredBy],
-      );
-      await rig.harness.query(
-        `UPDATE execution_attempt SET pool='pool',pool_principal=$2,assignment=$2 WHERE attempt=$1`,
-        [attempt.attempt, principal],
       );
       break;
     case "Cluster":
@@ -261,26 +248,20 @@ test("an attempt spends the agent its invocation names, Claude for the arguments
   }
 });
 
-test("a personal runner's reading is kept under its owner and a registered pool's under the member who registered it", async () => {
+test("a personal runner's reading is kept under its owner", async () => {
   const owner = `owner-${randomUUID()}`;
-  const member = `member-${randomUUID()}`;
   const resetsAt = secondsFromNow(3_600);
   const observedAt = secondsFromNow(-60);
   const personal = await spendingAttempt("account-personal", "Claude", {
     by: "Personal",
     owner,
   });
-  const pooled = await spendingAttempt("account-pool", "Codex", {
-    by: "Pool",
-    registeredBy: member,
-  });
-  for (const attempt of [personal, pooled])
-    assert.equal(
-      await totalsPosted(attempt, {
-        five_hour: { utilization: 0.25, resetsAt, observedAt },
-      }),
-      "Stored",
-    );
+  assert.equal(
+    await totalsPosted(personal, {
+      five_hour: { utilization: 0.25, resetsAt, observedAt },
+    }),
+    "Stored",
+  );
   assert.deepEqual(await readingsOf(owner), [
     {
       agent: "Claude",
@@ -289,16 +270,6 @@ test("a personal runner's reading is kept under its owner and a registered pool'
       resets_at: String(resetsAt),
       observed_at: String(observedAt),
       attempt: personal.attempt,
-    },
-  ]);
-  assert.deepEqual(await readingsOf(member), [
-    {
-      agent: "Codex",
-      usage_window: "five_hour",
-      utilization: 0.25,
-      resets_at: String(resetsAt),
-      observed_at: String(observedAt),
-      attempt: pooled.attempt,
     },
   ]);
 });
@@ -314,7 +285,6 @@ test("an attempt with no account or no agent stores its totals and keeps no read
   };
   for (const [label, worker, claim] of [
     ["unaccounted-cluster", "Claude", { by: "Cluster" }],
-    ["unaccounted-unregistered", "Claude", { by: "Pool", registeredBy: null }],
     [
       "unaccounted-commands",
       "Commands",
@@ -523,7 +493,6 @@ test("a run ended rate limited keeps the limit it named against its attempt, who
   const claims: readonly Claim[] = [
     { by: "Personal", owner: `owner-${randomUUID()}` },
     { by: "Personal", owner: `owner-${randomUUID()}`, benchesCredential: true },
-    { by: "Pool", registeredBy: `member-${randomUUID()}` },
     { by: "Cluster" },
   ];
   for (const [index, claim] of claims.entries()) {
@@ -568,7 +537,7 @@ test("a run ended rate limited keeps the limit it named against its attempt, who
   assert.deepEqual(await attemptLimitOf(failed), []);
 });
 
-test("a limit benched by the personal runner that handed its job the credential pauses no account, where a pool's and an earlier runner's pause theirs as before", async () => {
+test("a limit benched by the personal runner that handed its job the credential pauses no account, where an earlier runner's pauses its own as before", async () => {
   const resetsAt = secondsFromNow(7_200);
   const limit = { window: "five_hour", resetsAt } as const;
   const benching = `owner-${randomUUID()}`;
@@ -589,27 +558,16 @@ test("a limit benched by the personal runner that handed its job the credential 
     (await limitsOf(earlier)).map((kept) => kept["attempt"]),
     [unbenched.attempt],
   );
-  const registrant = `member-${randomUUID()}`;
-  const pooled = await spendingAttempt("pooled", "Claude", {
-    by: "Pool",
-    registeredBy: registrant,
-  });
-  assert.equal(await endPosted(pooled, "RunRateLimited", limit), true);
-  assert.deepEqual(
-    (await limitsOf(registrant)).map((kept) => kept["attempt"]),
-    [pooled.attempt],
-  );
 });
 
 test("only a personal runner's claim is recorded as benching its credential", async () => {
-  const pooled = await spendingAttempt("bench-pool", "Claude", {
-    by: "Pool",
-    registeredBy: `member-${randomUUID()}`,
+  const clustered = await spendingAttempt("bench-cluster", "Claude", {
+    by: "Cluster",
   });
   await assert.rejects(
     rig.harness.query(
       `UPDATE execution_attempt SET runner_benches_credential=true WHERE attempt=$1`,
-      [pooled.attempt],
+      [clustered.attempt],
     ),
     /execution_attempt_benches_credential_is_personal/u,
   );

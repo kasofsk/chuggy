@@ -121,7 +121,7 @@ test("a name no credential of the agent is held under is not held, and nothing i
 
 test("a credential a live runner of the account names is refused, and retired once that runner stops being live", async () => {
   const owner = member();
-  for (const kind of ["Personal", "Pool", "ChatHost"] as const) {
+  for (const kind of ["Personal", "ChatHost"] as const) {
     await agentAccountHarnessCommitted(
       harness,
       owner,
@@ -152,7 +152,7 @@ test("a credential a live runner of the account names is refused, and retired on
         polledSecs: -(agentAccountRunnerPolledSecsMaxAt171 + 60),
         named: { Claude: ["work"] },
       },
-      { kind: "Pool", polledSecs: -5, named: { Codex: ["work"] } },
+      { kind: "ChatHost", polledSecs: -5, named: { Codex: ["work"] } },
     ]),
   );
   assert.equal(await accounts.retire(owner, "Claude", "work"), "Retired");
@@ -178,7 +178,9 @@ test("retiring a credential leaves another person's credential of the same name 
 test("an off credential a live runner names retires, and stays off", async () => {
   const owner = member();
   await agentAccountHarnessCommitted(harness, owner, "Claude", {
-    ...kept([{ kind: "Pool", polledSecs: -5, named: { Claude: ["work"] } }]),
+    ...kept([
+      { kind: "Personal", polledSecs: -5, named: { Claude: ["work"] } },
+    ]),
     off: ["work"],
   });
   assert.equal(await accounts.retire(owner, "Claude", "work"), "Retired");

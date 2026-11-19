@@ -356,7 +356,7 @@ unique globally. `holder_kind` names what holds a runner's attempt, `Pool`,
 `session_attempt_personal_is_finished` holds it to, and is NULL exactly where
 `pool` is, the cluster's; `idle_secs` is the idle bound a chat host declared
 for its own attempt. It is changed by opening, placing, ending, the two
-reapers and the fences of the epoch, a pool and a chat host, and
+reapers and the fences of the epoch and a chat host, and
 `session_attempt_is_fenced` refuses a finished attempt any change but its
 cleanup acknowledgement. Unfinished work is found by selecting live attempts
 whose lease has expired by database time, whose epoch is not the current one,
@@ -445,13 +445,11 @@ project's placement from it. It has no unfinished work: the scheduler decides
 from its own routing, so a row older than the process only misreports.
 
 `project_owner_fallback` — the owner fallback one project's administrators
-named, `Strict` or `Preferred`, and who set it. Owned by the boundary owner,
-which is what `set_project_owner_fallback` runs as; the API role is granted
-that door and SELECT on the table. Its key and identity are
-`(tenant, project)` and it points at `project`. It is changed by that door
-alone, which answers `Unchanged` where nothing moved; a row naming no fallback
-is a project that took it out. Nothing calls that door or reads the table, and
-it has no unfinished work.
+named, `Strict` or `Preferred`, and who set it. Owned by the boundary owner;
+the API role is granted SELECT on it. Its key and identity are
+`(tenant, project)` and it points at `project`; a row naming no fallback is a
+project that took it out. Nothing writes or reads it but a project's deletion,
+which empties it, and it has no unfinished work.
 
 `member_thread_limit` — how many threads one member may hold open in one
 project, and who set it. Owned by the boundary owner, which is what
@@ -672,8 +670,8 @@ credential is where they name none;
 `agent_account_credential_standing` answers the API each credential's own
 pause, `agent_account_named_pause` of its one name.
 `agent_account_named_pause`, which the pool plane and the API may call, answers
-`agent_account_pause`'s columns for the credentials a runner, a pool or a chat
-host named:
+`agent_account_pause`'s columns for the credentials a runner or a chat host
+named:
 paused only while every one of them is, until the earliest of those ends, a
 name that never reported being free. A credential in
 `agent_account_credential_off` is paused by `off` alone, whatever its readings

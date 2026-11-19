@@ -74,8 +74,6 @@ import {
   ticketServiceRole,
   ticketUsageResumeFunction,
   workerPlaneRole,
-  workerPoolFenceFunction,
-  workerPoolReleaseFunction,
   workerRunLimitFunction,
   workerRunUsageFunction,
 } from "../../src/adapters/postgres/schema.ts";
@@ -579,16 +577,6 @@ function boundaryGrantsDoor(
 
 /** The doors and functions a role reaches the schema through, and the roles each is shut to. */
 const boundaryGrantsDoors: readonly DoorDeclared[] = [
-  boundaryGrantsDoor(
-    `${workerPoolFenceFunction}(text,text,text)`,
-    [apiRole],
-    [schedulerRole, workerPlaneRole, poolPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${workerPoolReleaseFunction}(text,text,text,text,text)`,
-    [poolPlaneRole],
-    [schedulerRole, workerPlaneRole, apiRole],
-  ),
   {
     signature: `${statusMoveFunction}(text,text,boolean)`,
     definer: false,

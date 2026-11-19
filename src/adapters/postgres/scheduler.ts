@@ -448,8 +448,6 @@ interface ExecutionCreateInput {
 /**
  * Registers one task that runs on a runner, queued for admission, with the
  * requirement and size its release stored, and answers how many rows it made.
- * Both registrations pin the execution `Strict`, which the database's
- * definer functions still test.
  */
 async function schedulerCreatePlaced(
   client: pg.PoolClient,
@@ -473,14 +471,13 @@ async function schedulerCreatePlaced(
        (tenant,project,execution,ticket,task,source_request,account,cluster,
         configuration_revision,configuration_digest,requirement_identity,requirement_value,
         requirement_digest,requirement_source,platform_default_version,placement,
-        owner,owner_fallback,cpu_millis,memory_mib,workload_digest)
+        owner,cpu_millis,memory_mib,workload_digest)
        VALUES (${claim.partition.tenant},${claim.partition.project},${execution},${claim.ticket},
         ${task},${claim.request},${input.capacity_account},${input.cluster},
         ${input.configuration_revision},${input.configuration_digest},${execution},
         ${requirementValue}::jsonb,${materialized.digest},${materialized.source},
         ${materialized.platformDefaultVersion},${route},
-        ${input.owner},'Strict',
-        ${resources?.cpuMillis ?? null},${resources?.memoryMib ?? null},
+        ${input.owner},${resources?.cpuMillis ?? null},${resources?.memoryMib ?? null},
         ${workloadDigest ?? null})
        ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
   return inserted.rowCount ?? 0;
@@ -506,11 +503,11 @@ async function schedulerCreateAwaiting(
   const inserted = await client.query(sql`INSERT INTO execution
        (tenant,project,execution,ticket,task,source_request,account,cluster,
         configuration_revision,configuration_digest,requirement_identity,
-        placement,owner,owner_fallback)
+        placement,owner)
        VALUES (${claim.partition.tenant},${claim.partition.project},${execution},${claim.ticket},
         ${task},${claim.request},${input.capacity_account},${input.cluster},
         ${input.configuration_revision},${input.configuration_digest},${execution},
-        ${route},${input.owner},'Strict')
+        ${route},${input.owner})
        ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
   return inserted.rowCount ?? 0;
 }

@@ -156,26 +156,6 @@ test("a write that changes the thread's route is written, and the route reads ba
   }
 });
 
-test("a project's pool is no runner of its threads, even one polling now: the read names a member's chat hosts alone", async () => {
-  const partition = await postgresHarnessProject(harness.store, "runners");
-  const member = asPrincipal("https://issuer.invalid#a-member");
-  const reads = postgresSessionPlacement(apiPool);
-  const unregistered = { mine: "Unregistered", inquiry: "Unregistered" };
-  assert.deepEqual(await reads.runners(partition, member), unregistered);
-  await harness.query(
-    `INSERT INTO worker_pool(tenant,project,pool,principal,client_id,class,last_polled_at)
-     VALUES($1,$2,'laptop',$3,$4,'Dedicated',now())`,
-    [
-      partition.tenant,
-      partition.project,
-      `https://issuer.invalid#pool-${randomUUID()}`,
-      `chuggy-pool-${randomUUID()}`,
-    ],
-  );
-  for (const elsewhere of [member, undefined])
-    assert.deepEqual(await reads.runners(partition, elsewhere), unregistered);
-});
-
 /** A member's standing for their thread and their inquiry. */
 function hosted(
   mine: string,

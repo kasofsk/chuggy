@@ -427,7 +427,6 @@ function runner(
 
 const runnerKinds: readonly AgentAccountHarnessRunner["kind"][] = [
   "Personal",
-  "Pool",
   "ChatHost",
 ];
 
@@ -446,7 +445,7 @@ test("a credential no live runner names pauses neither the agent, nor the accoun
       weekly("max-1", 0.98),
       weekly("max-2", 0.12),
     ],
-    runners: [runner(["claude", "max-2"]), runner(["max-2"], "Pool")],
+    runners: [runner(["claude", "max-2"]), runner(["max-2"], "ChatHost")],
   });
   const [row] = await harness.query(
     "SELECT paused_until,reasons,admitted_by_press FROM agent_account_pause($1,'Claude')",
@@ -516,7 +515,7 @@ test("where no live runner names a credential of the agent, it is paused while a
       readings: [weekly("work", 0.95, 900), weekly("home", 0.1, 600)],
       runners: [
         runner([]),
-        { kind: "Pool", polledSecs: -10, named: { Codex: ["home"] } },
+        { kind: "ChatHost", polledSecs: -10, named: { Codex: ["home"] } },
         runner(["home"], "ChatHost", -agentAccountRunnerPolledSecsMaxAt170 - 1),
       ],
     }),
