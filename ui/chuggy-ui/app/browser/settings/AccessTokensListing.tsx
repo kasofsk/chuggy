@@ -266,9 +266,15 @@ function AccessTokensHead(props: { readonly administer: boolean }): ReactNode {
     <thead>
       <tr>
         <th scope="col">{text(accessTokensWords.name)}</th>
-        <th scope="col">{text(accessTokensWords.access)}</th>
-        <th scope="col">{text(accessTokensWords.created)}</th>
-        <th scope="col">{text(accessTokensWords.expires)}</th>
+        <th scope="col" className="people-col-access">
+          {text(accessTokensWords.access)}
+        </th>
+        <th scope="col" className="people-col-when">
+          {text(accessTokensWords.created)}
+        </th>
+        <th scope="col" className="people-col-when">
+          {text(accessTokensWords.expires)}
+        </th>
         <th scope="col" className="people-col-status">
           {text(accessTokensWords.status)}
         </th>
