@@ -101,6 +101,11 @@ import { postgresExecutionPlacement } from "./adapters/postgres/executionPlaceme
 import { postgresTicketTakes } from "./adapters/postgres/ticketTake.ts";
 import { ticketTakes, type TicketTakes } from "./interpreter/ticketTake.ts";
 import { postgresAccessTokens } from "./adapters/postgres/accessToken.ts";
+import { postgresProjectConnectors } from "./adapters/postgres/projectConnectors.ts";
+import {
+  projectConnectorAdministration,
+  type ProjectConnectorAdministration,
+} from "./interpreter/projectConnectors.ts";
 import { accessTokenSecrets } from "./adapters/crypto/accessTokenMint.ts";
 import {
   accessTokenService,
@@ -293,6 +298,17 @@ export function composeAccessTokens(
     access,
     store: postgresAccessTokens(apiPool),
     secrets: accessTokenSecrets(),
+  });
+}
+
+/** Wires a project's connectors to API-role credentials and the access that gates them. */
+export function composeProjectConnectors(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+): ProjectConnectorAdministration {
+  return projectConnectorAdministration({
+    access,
+    store: postgresProjectConnectors(apiPool),
   });
 }
 

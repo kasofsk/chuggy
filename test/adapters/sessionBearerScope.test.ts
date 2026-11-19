@@ -558,6 +558,32 @@ test("a project's access token routes are refused every session bearer, of every
     }
 });
 
+test("a project's connector routes are refused every session bearer, of every kind and holding every capability its scope may, before any port", async () => {
+  const routes = [
+    `GET ${nativeHttpRoutes.connectors}`,
+    `GET ${nativeHttpRoutes.connectorHistory}`,
+    `PUT ${nativeHttpRoutes.connector}`,
+    `DELETE ${nativeHttpRoutes.connector}`,
+  ];
+  for (const route of routes)
+    assert.equal(sessionBearerMethodClasses.get(route), "Refused", route);
+  for (const kind of sessionKinds)
+    for (const route of routes) {
+      const reached: string[] = [];
+      await using app = scopedApp(
+        reached,
+        undefined,
+        kind,
+        "Project",
+        true,
+        projectCapabilities,
+      );
+      const answered = await app.inject(routeRequest(route, own, sessionToken));
+      assert.ok(scopeRefused(answered), `${kind} ${route}`);
+      assert.deepEqual(reached, [], `${kind} ${route}`);
+    }
+});
+
 test("no session capability admits a tool the person's own agent alone may call", () => {
   for (const capability of personalAgentCapabilities)
     for (const tool of chuggyToolCapabilities[capability])

@@ -18,6 +18,7 @@ import type { LandingQueueReads } from "../../src/interpreter/landingQueues.ts";
 import type { TicketProposalMerges } from "../../src/interpreter/ticketProposalMerge.ts";
 import type { TicketTakes } from "../../src/interpreter/ticketTake.ts";
 import type { AccessTokenService } from "../../src/interpreter/accessToken.ts";
+import type { ProjectConnectorAdministration } from "../../src/interpreter/projectConnectors.ts";
 import { unservedNativeWeb } from "./threadFixtures.ts";
 
 /** The services one app serves, each absent where its suite composes none. */
@@ -32,6 +33,7 @@ export interface CallerAppServices {
   readonly takes?: TicketTakes;
   readonly proposalMerges?: TicketProposalMerges;
   readonly accessTokens?: AccessTokenService;
+  readonly connectors?: ProjectConnectorAdministration;
 }
 
 /** The app serving `services`, where `Bearer valid` authenticates `caller` and any other bearer nobody. */
@@ -79,5 +81,6 @@ export function callerApp(caller: Principal, services: CallerAppServices) {
     services.takes,
     services.proposalMerges,
     services.accessTokens,
+    services.connectors,
   );
 }

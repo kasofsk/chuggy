@@ -1051,6 +1051,24 @@ async function boundRepository(
   }
 }
 
+/** The authority a change to a project's repository settings is made under, or none for a caller who may not make one. */
+export function repositorySettingsAuthority(
+  access: ProjectAccess,
+  principal: Principal,
+  partition: Partition,
+): Promise<Authority | undefined> {
+  return access.authorize(principal, partition, "Administer");
+}
+
+/** The authority a read of a project's repositories is made under, or none for a caller who may not read them. */
+export function repositoryReaderAuthority(
+  access: ProjectAccess,
+  principal: Principal,
+  partition: Partition,
+): Promise<Authority | undefined> {
+  return access.authorize(principal, partition, "Read");
+}
+
 /**
  * One binding's settings written, behind the permit that binds: what a
  * repository lands by and whether its jobs may write its pipeline definitions
@@ -1063,10 +1081,10 @@ async function setLanding(
   partition: Partition,
   write: ProjectRepositoryLandingWrite,
 ): Promise<ProjectRepositoryLandingResult> {
-  const authority = await ports.access.authorize(
+  const authority = await repositorySettingsAuthority(
+    ports.access,
     principal,
     partition,
-    "Administer",
   );
   if (authority === undefined) return { result: "NotFound" };
   const written = await ports.landing.setLanding({ ...write, partition });
@@ -1186,7 +1204,8 @@ async function projectRepositories(
   query: ProjectRepositoriesQuery,
 ): Promise<ProjectRepositoriesResult> {
   if (
-    (await ports.access.authorize(principal, partition, "Read")) === undefined
+    (await repositoryReaderAuthority(ports.access, principal, partition)) ===
+    undefined
   )
     return { result: "NotFound" };
   const bound = await ports.bindings.bindings(partition);
