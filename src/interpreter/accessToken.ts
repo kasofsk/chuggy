@@ -15,6 +15,10 @@
  * NOTHING DELETES A TOKEN WHEN ITS MAKER LOSES ACCESS. It is refused because
  * Keto refuses them, works again if they are re-added, and its expiry bounds
  * both. Whoever removes a person may delete their tokens in Settings.
+ *
+ * A PRESENTED TOKEN IS ITS MAKER, IN ITS PROJECT. `AccessTokenBearerAuthority`
+ * answers whose it is, and what it carries onto an operation is `AccessTokenVia`:
+ * it is recorded beside the maker and is never a principal of its own.
  */
 
 import {
@@ -25,9 +29,50 @@ import {
   type AccessTokenMintRequest,
 } from "../contract/accessToken.ts";
 import { assertNever } from "../domain/assertNever.ts";
+import type { AccessTokenVia } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
+
+declare const accessTokenBearerSecretBrand: unique symbol;
+
+/** A presented secret, branded once it is inside the language the API routes on. */
+export type AccessTokenBearerSecret = string & {
+  readonly [accessTokenBearerSecretBrand]: true;
+};
+
+/** Brands a presented secret, refusing text outside the token language. */
+export function asAccessTokenBearerSecret(
+  value: string,
+): AccessTokenBearerSecret {
+  if (!accessTokenPattern.test(value))
+    throw new RangeError(
+      "access token secret: text outside the token language is no token",
+    );
+  return value as AccessTokenBearerSecret;
+}
+
+/** Whose authority one presented token carries, where, and until when. */
+export interface AccessTokenBearerIdentity extends AccessTokenVia {
+  readonly partition: Partition;
+  readonly access: AccessTokenAccess;
+  /** The token's maker, whom it is authorized as. */
+  readonly principal: Principal;
+  readonly expiresAt: string;
+}
+
+/**
+ * What the durable side answers about one presented token: its row where the
+ * token is unexpired and of the newest recovery epoch, and nothing for a
+ * token deleted, expired, older than a restore or never minted — all the
+ * token's own fault and indistinguishable from outside, so raising is left to
+ * a durable side that could not be asked at all.
+ */
+export interface AccessTokenBearerAuthority {
+  authenticate(
+    secret: AccessTokenBearerSecret,
+  ): Promise<AccessTokenBearerIdentity | undefined>;
+}
 
 /** One token as it is kept, without its digest. */
 export interface AccessTokenRecord {

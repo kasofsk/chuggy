@@ -1778,6 +1778,27 @@ export function sessionBearerRefusedResponse(): NativeHttpResponse {
   );
 }
 
+/** What an access token is answered on a route no token may reach, RFC 6750's `insufficient_scope`. */
+export function accessTokenRefusedResponse(): NativeHttpResponse {
+  return response(
+    403,
+    nativeHttpError(
+      "InsufficientScope",
+      "An access token is not admitted to this route.",
+    ),
+    { "www-authenticate": 'Bearer error="insufficient_scope"' },
+  );
+}
+
+/** What a token that may only read is answered on a write in its own project. */
+export function accessTokenReadOnlyResponse(): NativeHttpResponse {
+  return response(
+    403,
+    nativeHttpError("InsufficientScope", "This access token may only read."),
+    { "www-authenticate": 'Bearer error="insufficient_scope"' },
+  );
+}
+
 /**
  * A deployment holding no key for the app asked about has no app to describe
  * rather than one it is hiding, so that is 404 and not a refusal. A forge that

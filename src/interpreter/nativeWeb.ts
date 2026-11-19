@@ -8,6 +8,7 @@
  * project actor nor owns a database transaction.
  */
 
+import type { AccessTokenAccess } from "../contract/accessToken.ts";
 import { isSessionStoreStream } from "../contract/sessionPlane.ts";
 import {
   asSessionStoreStream,
@@ -62,7 +63,7 @@ import type {
   OperationState,
   Submission,
 } from "./operationInbox.ts";
-import type { OperationInbox } from "./operationInbox.ts";
+import type { AccessTokenVia, OperationInbox } from "./operationInbox.ts";
 import type { NamedPartition, Partition } from "./projectStore.ts";
 import type {
   NativeActionKind,
@@ -769,6 +770,8 @@ export interface NativeSubmission {
   readonly command: NativeSubmittedCommand;
   /** The session a command came through, where a session bearer is what carried it. */
   readonly viaSession?: SessionId;
+  /** The access token a command came through, where one is what carried it. */
+  readonly viaToken?: AccessTokenVia;
 }
 
 /**
@@ -838,12 +841,14 @@ export interface NativeWeb extends NativeEpics {
     partition: Partition,
     ticket: TicketId,
     viaSession?: SessionId,
+    viaToken?: AccessTokenVia,
   ): Promise<readonly TicketNativeAction[] | undefined>;
   nativeActions(
     principal: Principal,
     partition: Partition,
     query: NativeActionPageQuery,
     viaSession?: SessionId,
+    viaToken?: AccessTokenVia,
   ): Promise<AuthorizedResult<NativeActionPage>>;
   ticketNativeActionHistory(
     principal: Principal,
@@ -859,9 +864,11 @@ export interface NativeWeb extends NativeEpics {
     principal: Principal,
     partition: Partition,
   ): Promise<AuthorizedResult<boolean>>;
+  /** What the caller may do in the project, narrowed to what an access token of `viaToken` may where one carried the read. */
   abilities(
     principal: Principal,
     partition: Partition,
+    viaToken?: AccessTokenAccess,
   ): Promise<AuthorizedResult<ProjectAbilitiesResponse>>;
   executions(
     principal: Principal,
@@ -1579,7 +1586,7 @@ async function nativeSubmitAuthority(
   }
   const answerer = await nativeActionAnswerer(
     access,
-    nativeActionCallerOf(principal, submission.viaSession),
+    nativeActionCallerOf(principal, submission.viaSession, submission.viaToken),
     submission.partition,
     asked,
   );
@@ -1923,7 +1930,13 @@ function nativeTicketMethods(
             ticket,
             checkedNativeActionPageQuery(query),
           ),
-    ticketNativeActions: async (principal, partition, ticket, viaSession) => {
+    ticketNativeActions: async (
+      principal,
+      partition,
+      ticket,
+      viaSession,
+      viaToken,
+    ) => {
       if ((await access.authorize(principal, partition, "Read")) === undefined)
         return undefined;
       const actions = await reads.ticketNativeActions(partition, ticket);
@@ -1931,12 +1944,18 @@ function nativeTicketMethods(
         ? undefined
         : nativeActionsAnswerable(
             access,
-            nativeActionCallerOf(principal, viaSession),
+            nativeActionCallerOf(principal, viaSession, viaToken),
             partition,
             actions,
           );
     },
-    nativeActions: async (principal, partition, query, viaSession) => {
+    nativeActions: async (
+      principal,
+      partition,
+      query,
+      viaSession,
+      viaToken,
+    ) => {
       if ((await access.authorize(principal, partition, "Read")) === undefined)
         return { result: "NotFound" };
       const page = await reads.nativeActions(
@@ -1949,7 +1968,7 @@ function nativeTicketMethods(
           ...page,
           actions: await nativeActionsAnswerable(
             access,
-            nativeActionCallerOf(principal, viaSession),
+            nativeActionCallerOf(principal, viaSession, viaToken),
             partition,
             page.actions,
           ),
@@ -2804,8 +2823,8 @@ export function nativeWeb(
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
     ...nativeThreadMethods(access, threads, sessionRoutes, projectArtifacts),
     hostedRuns: nativeHostedRunsMethod(access),
-    abilities: (principal, partition) =>
-      projectAbilities(access, principal, partition),
+    abilities: (principal, partition, viaToken) =>
+      projectAbilities(access, principal, partition, viaToken),
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
       access,
       repositoryConfigurationImports,

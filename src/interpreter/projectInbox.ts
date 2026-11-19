@@ -18,6 +18,7 @@ import {
   type TicketResource,
 } from "./nativeWeb.ts";
 import type { OperationalReadStore } from "./operationsView.ts";
+import type { AccessTokenVia } from "./operationInbox.ts";
 import type { SessionId } from "./agentSession.ts";
 import {
   nativeActionCallerOf,
@@ -69,6 +70,7 @@ export interface ProjectInbox {
     partition: Partition,
     query: ProjectInboxQuery,
     viaSession?: SessionId,
+    viaToken?: AccessTokenVia,
   ): Promise<AuthorizedResult<ProjectInboxPage>>;
 }
 
@@ -114,7 +116,7 @@ export function projectInbox(
   ports: ProjectInboxPorts,
 ): ProjectInbox {
   return {
-    read: async (principal, partition, query, viaSession) => {
+    read: async (principal, partition, query, viaSession, viaToken) => {
       const asked = checkedProjectInboxQuery(query);
       if ((await access.authorize(principal, partition, "Read")) === undefined)
         return { result: "NotFound" };
@@ -137,7 +139,7 @@ export function projectInbox(
       );
       const actions = await nativeActionsAnswerable(
         access,
-        nativeActionCallerOf(principal, viaSession),
+        nativeActionCallerOf(principal, viaSession, viaToken),
         partition,
         page.actions,
       );

@@ -100,6 +100,56 @@ test("composed with a double for the authentication, the root serves its probe a
   assert.deepEqual(JSON.parse(answered.stdout), [200, { status: "live" }, 401]);
 });
 
+/**
+ * The plane composed over the issuer's own authentication, its discovery
+ * answered here and its key set never fetched, so a bearer refused is refused
+ * by the shape of the token and not by a key.
+ */
+const tokenOffered = `
+  const { accessPlaneEnvironment, accessPlaneComposed } = await import('./src/roots/accessPlane.ts');
+  const { oidcAuthentication } = await import('./src/adapters/http/oidc.ts');
+  const { accessTokenPrefix } = await import('./src/contract/accessToken.ts');
+  const environment = accessPlaneEnvironment();
+  const fetched = [];
+  const authentication = await oidcAuthentication(environment.oidc, async (url) => {
+    fetched.push(String(url));
+    return Response.json({
+      issuer: environment.oidc.issuer,
+      jwks_uri: 'https://issuer.invalid/jwks',
+    });
+  });
+  const app = accessPlaneComposed(environment, authentication);
+  const answered = [];
+  for (const bearer of [accessTokenPrefix + 'k'.repeat(43), 'forged']) {
+    const reply = await app.inject({
+      url: '/access/v1/tenants/acme/people',
+      headers: { authorization: 'Bearer ' + bearer },
+    });
+    answered.push([reply.statusCode, reply.headers['www-authenticate'], reply.json()]);
+  }
+  process.stdout.write(JSON.stringify({ answered, fetched: fetched.length }));
+  await app.close();
+`;
+
+test("an access token on the access plane is refused as any bearer that is not a JWS is", async () => {
+  const answered = await ran(["--input-type=module", "--eval", tokenOffered], {
+    ...required,
+    CHUG_ACCESS_PLANE_OIDC_ISSUER: "https://issuer.invalid",
+  });
+  assert.equal(answered.code, 0, answered.stderr);
+  const read = JSON.parse(answered.stdout) as {
+    readonly answered: readonly [unknown, unknown];
+    readonly fetched: number;
+  };
+  const [token, forged] = read.answered;
+  assert.deepEqual(token, forged);
+  assert.deepEqual((token as readonly unknown[]).slice(0, 2), [
+    401,
+    'Bearer error="invalid_token"',
+  ]);
+  assert.equal(read.fetched, 1, "only the discovery was fetched");
+});
+
 const invited = `
   const { accessPlaneEnvironment, accessPlaneComposed } = await import('./src/roots/accessPlane.ts');
   const { oidcPrincipal } = await import('./src/interpreter/principal.ts');

@@ -25,7 +25,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
-import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
+import { threeBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import {
   sessionBearerAdmission,
   sessionBearerMethodClasses,
@@ -70,6 +70,7 @@ import {
 import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
 import { threadCapabilitiesDefault } from "../../src/interpreter/thread.ts";
 import { routerServed } from "./routerFixtures.ts";
+import { recordedPort, recordedPorts } from "./recordedPortsFixture.ts";
 import { unservedNativeWeb } from "./threadFixtures.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
@@ -110,22 +111,9 @@ const elsewhere: readonly Partition[] = [
 const sessionToken = `${sessionBearerPrefix}${randomUUID()}${randomUUID()}`;
 const oidcToken = "issued";
 
-/** A port no case writes, recording each call and failing it. */
-function recorded(reached: string[], port: string): never {
-  return new Proxy(
-    {},
-    {
-      get: (_target, method) => () => {
-        reached.push(`${port}.${String(method)}`);
-        return Promise.reject(new Error(`${port} is not served here`));
-      },
-    },
-  ) as never;
-}
-
 /** A member's chat whose tenant answers `opens` as `granted` without counting as a port reached, recording every other door. */
 function memberChatRecorded(reached: string[], granted: boolean): never {
-  const doors: Record<string | symbol, unknown> = recorded(reached, "chat");
+  const doors: Record<string | symbol, unknown> = recordedPort(reached, "chat");
   return new Proxy(
     {},
     {
@@ -147,8 +135,8 @@ function scopedApp(
     : projectCapabilities,
 ) {
   return createNativeHttpApp(
-    web ?? recorded(reached, "web"),
-    twoBearerAuthentication(
+    web ?? recordedPort(reached, "web"),
+    threeBearerAuthentication(
       {
         authenticateBearer: (token) =>
           Promise.resolve(
@@ -172,36 +160,9 @@ function scopedApp(
               : undefined,
           ),
       },
+      { authenticate: () => Promise.resolve(undefined) },
     ),
-    recorded(reached, "readiness"),
-    recorded(reached, "installation"),
-    undefined,
-    recorded(reached, "events"),
-    recorded(reached, "selectorSettings"),
-    recorded(reached, "forgeCredentials"),
-    recorded(reached, "onboarding"),
-    recorded(reached, "creation"),
-    recorded(reached, "placement"),
-    recorded(reached, "sessionPlacement"),
-    recorded(reached, "threadLive"),
-    recorded(reached, "actionReports"),
-    recorded(reached, "actionReach"),
-    recorded(reached, "landings"),
-    recorded(reached, "personalRunners"),
-    recorded(reached, "ownerFallback"),
-    recorded(reached, "threadLimits"),
-    memberChatRecorded(reached, granted),
-    recorded(reached, "inbox"),
-    recorded(reached, "agentAccounts"),
-    undefined,
-    recorded(reached, "landingQueues"),
-    {
-      projects: recorded(reached, "projectDeletion"),
-      tenants: recorded(reached, "tenantDeletion"),
-    },
-    recorded(reached, "takes"),
-    recorded(reached, "proposalMerges"),
-    recorded(reached, "accessTokens"),
+    ...recordedPorts(reached, memberChatRecorded(reached, granted)),
   );
 }
 
@@ -871,7 +832,7 @@ test("a session bearer is refused a route addressed to no partition, and one tha
     { method: "GET" as const, url: "/api/v1/tenants/acme/forge-installations" },
     {
       method: "POST" as const,
-      url: `/api/v1/tenants/${own.tenant}/personal-runner-registration-tokens`,
+      url: `${projectPath(own)}/worker-pool-registration-tokens`,
       headers: { "content-type": nativeHttpMediaType },
       payload: { lifetimeSecs: 900 },
     },
@@ -943,7 +904,7 @@ function revokingWeb(authorized: string[], accepted: Submission[]) {
       authorizeTenant: () => Promise.resolve(undefined),
       authorizeSite: projectAccessSiteRefused,
     },
-    recorded([], "reads"),
+    recordedPort([], "reads"),
     {
       accept: (submission) => {
         accepted.push(submission);
@@ -963,8 +924,8 @@ function revokingWeb(authorized: string[], accepted: Submission[]) {
       cancel: () => Promise.resolve({ cancelled: "Unknown" }),
       operation: () => Promise.resolve(undefined),
     },
-    recorded([], "authoring"),
-    recorded([], "notifications"),
+    recordedPort([], "authoring"),
+    recordedPort([], "notifications"),
     openExecutionBacklogGuard,
   );
 }
