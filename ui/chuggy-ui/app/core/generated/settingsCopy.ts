@@ -199,6 +199,8 @@ export interface SettingsCopy {
   readonly "settings-access-tokens-secret": Record<never, never>;
   readonly "settings-access-tokens-copy": Record<never, never>;
   readonly "settings-access-tokens-shown-once": Record<never, never>;
+  readonly "settings-access-tokens-use": Record<never, never>;
+  readonly "settings-access-tokens-how": Record<never, never>;
   readonly "settings-access-tokens-created": Record<never, never>;
   readonly "settings-access-tokens-status": Record<never, never>;
   readonly "settings-access-tokens-maker": Record<never, never>;

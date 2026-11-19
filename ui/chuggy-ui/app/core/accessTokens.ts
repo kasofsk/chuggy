@@ -202,7 +202,13 @@ export const accessTokenMintWords = {
   secret: { id: "settings-access-tokens-secret" },
   copy: { id: "settings-access-tokens-copy" },
   shownOnce: { id: "settings-access-tokens-shown-once" },
+  use: { id: "settings-access-tokens-use" },
+  how: { id: "settings-access-tokens-how" },
 } as const satisfies Readonly<Record<string, Copy>>;
+
+/** chuggy-docs' page on using a token. */
+export const accessTokenDocsAddress =
+  "https://github.com/kasofsk/chuggy-docs/blob/main/docs/access-tokens.md";
 
 export function accessTokenDaysLeftLabel(days: number): Copy {
   return {
