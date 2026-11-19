@@ -403,13 +403,12 @@ async function releasedUnder(
   return project;
 }
 
-/** The owner an execution is planted with and the fallback its project named, each NULL where the case's demand has none. */
+/** The owner an execution is planted with, NULL where the case's demand has none. */
 interface Owned {
   readonly owner: string | null;
-  readonly fallback: string | null;
 }
 
-const unowned: Owned = { owner: null, fallback: null };
+const unowned: Owned = { owner: null };
 
 /** An invocation whose worker spends each agent, Claude by the bare arguments that predate modes too, or none where it runs commands. */
 const spending = {
@@ -467,14 +466,13 @@ async function opened(
     throw new Error("worker pool claim suite: nothing was admitted");
   if (!inCluster)
     await rig.harness.query(
-      `UPDATE execution SET placement='Pool',owner=$4,owner_fallback=$5
+      `UPDATE execution SET placement='Pool',owner=$4
         WHERE tenant=$1 AND project=$2 AND execution=$3`,
       [
         project.partition.tenant,
         project.partition.project,
         admitted.execution,
         owned.owner,
-        owned.fallback,
       ],
     );
   const attempt = await rig.store.openAttempt({
@@ -726,12 +724,11 @@ async function statusPlanted(
   );
 }
 
-/** The owner the case's execution is pinned with, and `Strict`, as the scheduler pins every execution. */
+/** The owner the case's execution is planted with. */
 function ownedAs(c: RunnerCase, named: Planted): Owned {
   const { ownerOf } = c.placement.demand;
   return {
     owner: ownerOf === undefined ? null : named.principal(ownerOf),
-    fallback: "Strict",
   };
 }
 
@@ -986,7 +983,7 @@ async function ownersRunner(
 test("a runner that reports holding nothing is held to what the database says it holds", async () => {
   const project = await releasedUnder("claim-under-report", pinned, 2);
   const runner = await ownersRunner(project, "under-report");
-  const strict = { owner: runner.owner, fallback: "Strict" };
+  const strict = { owner: runner.owner };
   await opened(project, false, strict);
   await claimedBy(runner, `held-${randomUUID()}`, project.partition);
   await opened(project, false, strict);
@@ -1022,7 +1019,7 @@ test("a runner that reports holding nothing is held to what the database says it
 test("a claim made while the same runner's last is still open waits for it and counts it", async () => {
   const project = await releasedUnder("claim-racing", pinned, 2);
   const runner = await ownersRunner(project, "racing");
-  const strict = { owner: runner.owner, fallback: "Strict" };
+  const strict = { owner: runner.owner };
   await opened(project, false, strict);
   await opened(project, false, strict);
   const terms = { leaseSecs, heldMax: 1, memoryMibDefault };
@@ -1076,7 +1073,7 @@ async function handedOut(
   await plantedRunnerRows(runner, declaringAll(requirement), 0, [
     project.partition.project,
   ]);
-  await opened(project, false, { owner: runner.owner, fallback: "Strict" });
+  await opened(project, false, { owner: runner.owner });
   const answered = await workerPoolReconcile(
     pollingRead(() => randomUUID()),
     runner,
@@ -1097,7 +1094,7 @@ test("an execution naming no memory meets a ceiling at the plane's size for it",
     const label = `claim-unsized-${String(ceiling)}`;
     const owned = await releasedUnder(label, pinned, 1);
     const runner = await ownersRunner(owned, label, ceiling);
-    await opened(owned, false, { owner: runner.owner, fallback: "Strict" });
+    await opened(owned, false, { owner: runner.owner });
     assert.equal(
       await takes(runner, owned.partition),
       fits,
@@ -1118,7 +1115,7 @@ test("a claim takes no job larger than the room its poll named, a job naming no 
     const resources = memoryMib === undefined ? undefined : { memoryMib };
     const owned = await releasedUnder(label, pinned, 1, resources);
     const runner = await ownersRunner(owned, label);
-    await opened(owned, false, { owner: runner.owner, fallback: "Strict" });
+    await opened(owned, false, { owner: runner.owner });
     assert.equal(
       await takes(runner, owned.partition, undefined, room),
       fits,
@@ -1132,7 +1129,7 @@ test("a poll's claims together fit the room it named, and it is told whether one
   const project = await releasedUnder(label, pinned, 3, { memoryMib: 3_000 });
   const runner = await ownersRunner(project, label);
   for (let opening = 0; opening < 3; opening += 1)
-    await opened(project, false, { owner: runner.owner, fallback: "Strict" });
+    await opened(project, false, { owner: runner.owner });
   const runners = postgresWorkerPoolRunners(planePool);
   const poll = (wanted: number, memoryRoomMib: number) =>
     workerPoolReconcile(
@@ -1175,7 +1172,7 @@ test("a job naming no memory is claimed at 2,048 MiB where the plane names no si
     const label = `claim-default-${String(sized)}`;
     const project = await releasedUnder(label, pinned, 1, resources);
     const runner = await ownersRunner(project, label);
-    await opened(project, false, { owner: runner.owner, fallback: "Strict" });
+    await opened(project, false, { owner: runner.owner });
     const polled = await workerPoolReconcile(
       pollingRead(() => randomUUID()),
       runner,
@@ -1226,7 +1223,7 @@ test("a claim and its probe take nothing of a project that is not Active, nor an
   const owned = await releasedUnder(label, pinned, 2);
   const runner = await ownersRunner(owned, label);
   for (let opening = 0; opening < 2; opening += 1)
-    await opened(owned, false, { owner: runner.owner, fallback: "Strict" });
+    await opened(owned, false, { owner: runner.owner });
   for (const [lifecycle, taken] of [
     ["Suspended", false],
     ["Active", true],
@@ -1303,14 +1300,13 @@ const runnerTakesNothing: readonly (readonly [
       const { project, owned } = planted;
       const target = await opened(project);
       await rig.harness.query(
-        `UPDATE execution SET placement='InCluster',owner=$4,owner_fallback=$5
+        `UPDATE execution SET placement='InCluster',owner=$4
           WHERE tenant=$1 AND project=$2 AND execution=$3`,
         [
           project.partition.tenant,
           project.partition.project,
           target.execution,
           owned.owner,
-          owned.fallback,
         ],
       );
       return runnerAsked(planted);
@@ -1398,7 +1394,7 @@ test("an owner's runner's claim and its probe take nothing it cannot run, routed
   for (const [why, requirement, arranged] of runnerTakesNothing) {
     const project = await releasedUnder(`${label}-${why}`, requirement, 2);
     const runner = await ownersRunner(project, `${label}-${why}`);
-    const owned = { owner: runner.owner, fallback: "Strict" };
+    const owned = { owner: runner.owner };
     assert.equal(await arranged({ project, runner, owned }), false, why);
   }
 });
@@ -1449,7 +1445,7 @@ test("an execution released with a size is claimed asking for it by its owner's 
   await plantedRunnerRows(runner, declaringAll(pinned), 0, [
     project.partition.project,
   ]);
-  await opened(project, false, { owner: runner.owner, fallback: "Strict" });
+  await opened(project, false, { owner: runner.owner });
   const ports = polling(() => randomUUID());
   const answered = await workerPoolReconcile(
     {
@@ -1535,7 +1531,7 @@ async function spendingEach(
   owner: Principal,
 ): Promise<SchedulerProject> {
   const project = await releasedUnder(label, pinned, 3);
-  const owned: Owned = { owner, fallback: "Strict" };
+  const owned: Owned = { owner };
   for (const invocation of [spending.Claude, spending.Codex, spending.Commands])
     await opened(project, false, owned, invocation);
   return project;
@@ -1563,7 +1559,7 @@ test("a runner passes over a job of its account's paused agent and takes the oth
 test("a press lets exactly one claim of the agent through its limit, and a second press one more", async () => {
   const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
   const project = await releasedUnder("claim-pressed", pinned, 3);
-  const owned = { owner: member, fallback: "Strict" };
+  const owned = { owner: member };
   for (let attempt = 0; attempt < 3; attempt++)
     await opened(project, false, owned, spending.Claude);
   const runner = await ownedRunner(project, "pressed", member);
@@ -1586,12 +1582,7 @@ test("a press lets exactly one claim of the agent through its limit, and a secon
 test("a press lets no claim through a threshold its account is over", async () => {
   const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
   const project = await releasedUnder("claim-pressed-soft", pinned, 1);
-  await opened(
-    project,
-    false,
-    { owner: member, fallback: "Strict" },
-    spending.Claude,
-  );
+  await opened(project, false, { owner: member }, spending.Claude);
   const runner = await ownedRunner(project, "pressed-soft", member);
   await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
     readings: [
@@ -1677,12 +1668,7 @@ for (const [why, agents, advertised, taken] of [
       spending.Commands,
       spending.BareArguments,
     ])
-      await opened(
-        project,
-        false,
-        { owner: member, fallback: "Strict" },
-        invocation,
-      );
+      await opened(project, false, { owner: member }, invocation);
     const runner = await advertisingRunner(project, label, member);
     await runnerAdvertised(runner, agents, advertised);
     assert.deepEqual(
@@ -1694,12 +1680,7 @@ for (const [why, agents, advertised, taken] of [
 test("every poll writes afresh whether its runner advertises its agents, so a runner moved back to an earlier release is read as one", async () => {
   const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
   const project = await releasedUnder("claim-agents-moved", pinned, 1);
-  await opened(
-    project,
-    false,
-    { owner: member, fallback: "Strict" },
-    spending.Claude,
-  );
+  await opened(project, false, { owner: member }, spending.Claude);
   const runner = await advertisingRunner(project, "claim-agents-moved", member);
   const kept = async () =>
     (
@@ -1759,12 +1740,7 @@ async function namingRunner(
 }> {
   const project = await releasedUnder(label, pinned, attempts);
   for (let attempt = 0; attempt < attempts; attempt++)
-    await opened(
-      project,
-      false,
-      { owner: member, fallback: "Strict" },
-      spending.Claude,
-    );
+    await opened(project, false, { owner: member }, spending.Claude);
   const claimant = await ownedRunner(project, label, member);
   await credentialsNamed(claimant, credentials);
   return { project, claimant };
@@ -2103,7 +2079,7 @@ async function prioritizedRunner(
     );
   return {
     runner,
-    owned: { owner: runner.owner, fallback: "Strict" },
+    owned: { owner: runner.owner },
     projects,
   };
 }
@@ -2181,7 +2157,7 @@ test("an execution an earlier attempt of was claimed is started, and one whose e
     const label = `order-reopened-${String(claimed)}`;
     const project = await releasedUnder(label, pinned, 2);
     const runner = await ownersRunner(project, label);
-    const owned = { owner: runner.owner, fallback: "Strict" };
+    const owned = { owner: runner.owner };
     const fresh = (await opened(project, false, owned)).execution;
     await registeredAs(project, fresh, 7_200, project.ticket + 1);
     const first = await opened(project, false, owned);
@@ -2249,7 +2225,7 @@ async function contendedRunners(
     project.partition.project,
   ]);
   await plantedRunnerRows(idle, declaringAll(pinned), 0, []);
-  return { project, busy, idle, owned: { owner, fallback: "Strict" } };
+  return { project, busy, idle, owned: { owner } };
 }
 
 /** What the owner's read answers of one runner, found by its principal. */

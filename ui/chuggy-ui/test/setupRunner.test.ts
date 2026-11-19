@@ -351,7 +351,7 @@ test("where the person's chats run on a chat host and they have none, runner mak
   );
 });
 
-test("a fresh Linux box and a fresh Mac each end with the person's own runner and chat host live, both tokens minted by the run itself, the project given to the runner and the project's owner fallback left as it was", async () => {
+test("a fresh Linux box and a fresh Mac each end with the person's own runner and chat host live, both tokens minted by the run itself and the project given to the runner", async () => {
   const macBoth = async () => {
     const machine = await machineSignedIn(setupSiteAt("Configured"), false);
     machine.platform = "darwin";
