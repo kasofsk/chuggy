@@ -75,7 +75,6 @@ import { bootstrapConfigurationRevisionPrefix } from "../../../src/contract/resp
 import type {
   AccountAgent,
   ForgeAppName,
-  OwnerFallback,
   PersonalRunnerWait,
   PlacementRoute,
   ProposalMergeRefusal,
@@ -128,8 +127,6 @@ export interface SetupSiteProject {
   work: PlacementRoute;
   threads: PlacementRoute;
   runner: SessionRunnerStanding;
-  /** The owner fallback the project names, where it names one. */
-  fallback: OwnerFallback | undefined;
   /** Most lately moved first. */
   tickets: SetupSiteTicket[];
   drafts: number[];
@@ -297,7 +294,6 @@ export function setupSiteProject(
     work: "Pool",
     threads: "Pool",
     runner: "Unregistered",
-    fallback: undefined,
     tickets: [],
     drafts: [],
     landings: new Map(),
@@ -1232,13 +1228,6 @@ function projectAnswered(
       return executions(site, project, query);
     case "/session-placement":
       return fated(site, "placement") ?? answered(placement(site, project));
-    case "/owner-fallback":
-      return answered({
-        ...(project.fallback === undefined
-          ? {}
-          : { fallback: project.fallback }),
-        administers: project.administer,
-      });
     case "/abilities":
       return abilities(site, project);
     case "/configurations":
@@ -1611,27 +1600,7 @@ function personalServed(
   return answered({});
 }
 
-/** A project's owner fallback named whole, by a caller who administers it. */
-function fallbackWritten(
-  project: SetupSiteProject,
-  body: string | undefined,
-): SetupSiteAnswer {
-  if (!project.administer)
-    return {
-      status: 403,
-      body: { error: { code: "Forbidden", message: "Forbidden." } },
-    };
-  const asked = JSON.parse(body ?? "{}") as {
-    readonly fallback?: OwnerFallback;
-  };
-  project.fallback = asked.fallback;
-  return answered({
-    ...(asked.fallback === undefined ? {} : { fallback: asked.fallback }),
-    administers: true,
-  });
-}
-
-/** A write within a workspace: the mint for a project the caller is shown, the mint for their chat host, the caller's runners given a project, a project's owner fallback named, or nothing the site answers. */
+/** A write within a workspace: the mint for a project the caller is shown, the mint for their chat host, the caller's runners given a project, or nothing the site answers. */
 function tenantWritten(
   site: SetupSite,
   tenant: string,
@@ -1653,12 +1622,6 @@ function tenantWritten(
   if (sent.method === "POST" && within?.[2] === "/repositories") {
     const project = projectOf(site, tenant, within[1]);
     return project === undefined ? refused() : bound(site, project, sent.body);
-  }
-  if (sent.method === "PUT" && within?.[2] === "/owner-fallback") {
-    const project = projectOf(site, tenant, within[1]);
-    return project === undefined
-      ? refused()
-      : fallbackWritten(project, sent.body);
   }
   if (sent.method === "POST" && within?.[2] === "/drafts") {
     const project = projectOf(site, tenant, within[1]);

@@ -2,8 +2,7 @@
  * A personal runner of the person's, registered by hand, made to take the
  * project's work by the setup program itself: where the runner is not given
  * the project, the checklist offers `serve`, and one yes gives it the project,
- * with nothing else written, whatever the project names as its owner fallback
- * and whether or not the person administers it.
+ * with nothing else written, whether or not the person administers it.
  *
  * @vitest-environment node
  */
@@ -13,7 +12,6 @@ import { expect, test } from "vitest";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
-import type { OwnerFallback } from "../../../src/contract/rosters.ts";
 import {
   machineScript,
   machineServing,
@@ -35,7 +33,6 @@ const offerRule = `rule: Run node ${machineScript} serve ${at} only once the per
 
 interface Held {
   readonly given: boolean;
-  readonly fallback: OwnerFallback | undefined;
   readonly administer: boolean;
 }
 
@@ -45,7 +42,6 @@ function held(given: Held): { site: SetupSite; project: SetupSiteProject } {
   const [project] = site.projects;
   if (project === undefined) throw new Error("the stage has no project");
   project.threads = "InCluster";
-  project.fallback = given.fallback;
   project.administer = given.administer;
   site.personal.set("acme", {
     live: [true],
@@ -69,24 +65,17 @@ function writes(machine: SetupMachine): readonly string[] {
 }
 
 const holdings: readonly (readonly [string, Held])[] = [
+  ["an administrator of the project", { given: false, administer: true }],
   [
-    "an administrator of a project naming no fallback",
-    { given: false, fallback: undefined, administer: true },
-  ],
-  [
-    "a member who does not administer a project naming no fallback",
-    { given: false, fallback: undefined, administer: false },
-  ],
-  [
-    "an administrator of a project naming Strict",
-    { given: false, fallback: "Strict", administer: true },
+    "a member who does not administer the project",
+    { given: false, administer: false },
   ],
 ];
 
 test.each(holdings)(
   "%s, with a personal runner not given the project, is offered serve, and one yes gives the runner the project, the only write made, and the step is done",
   async (_who, holding) => {
-    const { site, project } = held(holding);
+    const { site } = held(holding);
     const machine = await machineSignedIn(site);
     const asked = lines(await machine.command(flags));
     expect(asked.slice(-3)).toEqual([offered, offerRule, "next: stop"]);
@@ -97,7 +86,6 @@ test.each(holdings)(
     const said = lines(report);
     expect(said[1]).toBe("did: gave your personal runners widgets");
     expect(writes(machine)).toEqual([`PUT ${givePath}`]);
-    expect(project.fallback).toBe(holding.fallback);
     expect(site.personal.get("acme")?.projects).toEqual(["widgets"]);
     expect(runnerStep(said)).toBe("step: runner      done     live");
     expect(setupReportExit(report)).toBe(0);
@@ -107,7 +95,6 @@ test.each(holdings)(
 test("a runner given the project that is offline waits, and serve is not offered", async () => {
   const { site, project } = held({
     given: true,
-    fallback: undefined,
     administer: false,
   });
   site.personal.set("acme", { live: [false], projects: [project.project] });
@@ -122,7 +109,6 @@ test("a runner given the project that is offline waits, and serve is not offered
 test("serve writes nothing where its runner taking the project's work is not the next thing, and says so", async () => {
   const { site } = held({
     given: true,
-    fallback: undefined,
     administer: false,
   });
   const machine = await machineSignedIn(site);
@@ -136,7 +122,6 @@ test("serve writes nothing where its runner taking the project's work is not the
 test("a give the site refuses is said as refused, and the step stays to do", async () => {
   const { site } = held({
     given: false,
-    fallback: undefined,
     administer: true,
   });
   site.fates.set("serve", "Failed");
@@ -152,7 +137,6 @@ test("a give the site refuses is said as refused, and the step stays to do", asy
 test("a person with no personal runner is offered one on this machine, and serve is not offered", async () => {
   const { site } = held({
     given: false,
-    fallback: undefined,
     administer: true,
   });
   site.personal.clear();

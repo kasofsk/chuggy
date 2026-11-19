@@ -13,7 +13,6 @@ import { expect, test } from "vitest";
 
 import type { TicketLandingResponse } from "../../../src/contract/responses.ts";
 import {
-  ownerFallbacks,
   placementRoutes,
   sessionRunnerStandings,
   ticketLandingStates,
@@ -978,40 +977,30 @@ test("the person's personal runners unread leave the runner step unread where th
   }
 });
 
-/** Whether a member's own runner takes their work is no longer the project's
- * to say, so neither what it names nor whether the person administers it
- * changes what the step lacks. */
-test("the runner step lacks a runner where the person holds no personal runner and lacks it serving the project where they hold one not given it, whatever owner fallback the project names and whether or not the person administers it", async () => {
+/** Whether the person administers the project does not change what the step
+ * lacks. */
+test("the runner step lacks a runner where the person holds no personal runner and lacks it serving the project where they hold one not given it, whether or not the person administers it", async () => {
   const lacks: Record<string, unknown> = {};
   for (const held of ["none", "another project", "given"] as const)
-    for (const fallback of [undefined, ...ownerFallbacks])
-      for (const administer of [true, false]) {
-        const { site, project } = saidRunnable();
-        project.fallback = fallback;
-        project.administer = administer;
-        site.chat.clear();
-        site.personal.delete("acme");
-        if (held !== "none")
-          site.personal.set("acme", {
-            live: [true],
-            projects: [held === "given" ? project.project : "gadgets"],
-          });
-        lacks[`${held} ${fallback ?? "None"} ${String(administer)}`] = (
-          await stood(site)
-        ).steps[6]?.lacks;
-      }
-  const expected: Record<string, unknown> = {};
-  for (const fallback of ["None", ...ownerFallbacks])
-    for (const administer of ["true", "false"]) {
-      expected[`none ${fallback} ${administer}`] = {
-        lacks: "Runner",
-        chat: true,
-      };
-      expected[`another project ${fallback} ${administer}`] = {
-        lacks: "Serving",
-      };
-      expected[`given ${fallback} ${administer}`] = undefined;
+    for (const administer of [true, false]) {
+      const { site, project } = saidRunnable();
+      project.administer = administer;
+      site.chat.clear();
+      site.personal.delete("acme");
+      if (held !== "none")
+        site.personal.set("acme", {
+          live: [true],
+          projects: [held === "given" ? project.project : "gadgets"],
+        });
+      lacks[`${held} ${String(administer)}`] = (await stood(site)).steps[6]
+        ?.lacks;
     }
+  const expected: Record<string, unknown> = {};
+  for (const administer of ["true", "false"]) {
+    expected[`none ${administer}`] = { lacks: "Runner", chat: true };
+    expected[`another project ${administer}`] = { lacks: "Serving" };
+    expected[`given ${administer}`] = undefined;
+  }
   expect(lacks).toEqual(expected);
 });
 

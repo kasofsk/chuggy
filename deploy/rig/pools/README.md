@@ -38,11 +38,9 @@ an attempt routed to a runner after the same policy check as one it places,
 and does not place it: the runner claims it.
 
 A `Pool` execution is taken by a personal runner of the member who wrote its
-ticket, one serving the project and able to run it, and by nothing else. The
-scheduler pins every execution `Strict` as it registers it, whatever the
-project's owner fallback names, so that setting decides nothing. An execution
-with no owner, or whose owner has no runner configured for it, is blocked; one
-whose owner's runner is configured and not polling waits for it.
+ticket, one serving the project and able to run it, and by nothing else. An
+execution with no owner, or whose owner has no runner configured for it, is
+blocked; one whose owner's runner is configured and not polling waits for it.
 
 **A runner's refusal is final.** The scheduler withdraws the refused attempt
 without spending the retry budget and blocks the execution; it does not offer

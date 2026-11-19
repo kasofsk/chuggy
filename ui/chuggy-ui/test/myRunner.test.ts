@@ -213,15 +213,6 @@ test("a run of the reader's waiting on their live runners says the memory they a
   expect(runnerWaitRoom({ ...short, mine: false })).toBeUndefined();
 });
 
-/** Whether a run is the reader's own is the server's to say, so a run naming
- * a fallback says its wait as one naming none does. */
-test("a run of the reader's says its wait whatever fallback it names", () => {
-  for (const ownerFallback of [undefined, "Strict", "Preferred"] as const)
-    expect(
-      runnerWait({ ...waiting, ownerFallback, personalRunnerWait: "Offline" }),
-    ).toBe("Offline");
-});
-
 test("the memory a run's runners are short of is said in GiB", () => {
   expect(
     copyOrDataText(

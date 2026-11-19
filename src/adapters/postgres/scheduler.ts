@@ -161,7 +161,6 @@ import type {
   RecoveryEpoch,
 } from "../../interpreter/projectStore.ts";
 import { runStepEvidences } from "../../interpreter/runEvidence.ts";
-import type { WorkerPoolOwnerFallback } from "../../interpreter/projectOwnerFallback.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import { postgresProjectPlacement } from "./executionPlacement.ts";
@@ -447,15 +446,10 @@ interface ExecutionCreateInput {
 }
 
 /**
- * The owner's fallback every execution is pinned with, whatever its project's
- * setting names: the one under which nothing but its owner's personal runner
- * takes it.
- */
-const schedulerOwnerFallbackPinned: WorkerPoolOwnerFallback = "Strict";
-
-/**
  * Registers one task that runs on a runner, queued for admission, with the
  * requirement and size its release stored, and answers how many rows it made.
+ * Both registrations pin the execution `Strict`, which the database's
+ * definer functions still test.
  */
 async function schedulerCreatePlaced(
   client: pg.PoolClient,
@@ -485,7 +479,7 @@ async function schedulerCreatePlaced(
         ${input.configuration_revision},${input.configuration_digest},${execution},
         ${requirementValue}::jsonb,${materialized.digest},${materialized.source},
         ${materialized.platformDefaultVersion},${route},
-        ${input.owner},${schedulerOwnerFallbackPinned},
+        ${input.owner},'Strict',
         ${resources?.cpuMillis ?? null},${resources?.memoryMib ?? null},
         ${workloadDigest ?? null})
        ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
@@ -516,7 +510,7 @@ async function schedulerCreateAwaiting(
        VALUES (${claim.partition.tenant},${claim.partition.project},${execution},${claim.ticket},
         ${task},${claim.request},${input.capacity_account},${input.cluster},
         ${input.configuration_revision},${input.configuration_digest},${execution},
-        ${route},${input.owner},${schedulerOwnerFallbackPinned})
+        ${route},${input.owner},'Strict')
        ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
   return inserted.rowCount ?? 0;
 }
@@ -949,7 +943,7 @@ async function schedulerLockForLaunch(
   opening: AttemptOpening,
 ): Promise<LaunchRow> {
   const found = await client.query<LaunchRow>(
-    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.owner_fallback, e.ticket::text AS ticket, e.task::text AS task,
+    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.ticket::text AS ticket, e.task::text AS task,
             t.kind AS task_kind, t.stage::text AS stage, t.evaluator::text AS evaluator, e.source_request,
             q.input_bundle, q.input_bundle_digest,
             q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
@@ -1435,7 +1429,7 @@ async function schedulerUnlaunched(
   schedulerRequirePositive(executionsMax, "executionsMax");
   if ((await postgresOwnershipEpoch(client)) !== epoch) return [];
   const waiting = await client.query<ExecutionRow>(
-    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.owner_fallback, e.ticket::text AS ticket, e.task::text AS task,
+    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.ticket::text AS ticket, e.task::text AS task,
             t.kind AS task_kind, t.stage::text AS stage, t.evaluator::text AS evaluator, e.source_request,
             q.input_bundle, q.input_bundle_digest,
             q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
@@ -1561,7 +1555,7 @@ async function schedulerExecution(
   execution: ExecutionId,
 ): Promise<LogicalExecution | undefined> {
   const found = await pool.query<ExecutionRow>(
-    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.owner_fallback, e.ticket::text AS ticket,
+    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.ticket::text AS ticket,
                e.task::text AS task, t.kind AS task_kind, t.stage::text AS stage, t.evaluator::text AS evaluator,
                e.source_request, q.input_bundle, q.input_bundle_digest,
                q.authorizing_seq::text AS source_seq,

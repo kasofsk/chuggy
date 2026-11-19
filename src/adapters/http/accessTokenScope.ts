@@ -133,7 +133,6 @@ export const accessTokenRouteClasses = {
   projectRepositoryConfigurations: refusedReplace,
   executionPlacement: readRefusedReplace,
   sessionPlacement: readRefusedReplace,
-  ownerFallback: readRefusedReplace,
   hostedRuns: read,
   abilities: read,
   accessTokens: refusedReadWrite,

@@ -16,7 +16,6 @@ import type {
 import type { ExecutionRunResource, RunTotals } from "./runEvidence.ts";
 import { allExecutionStandings } from "./executionScheduler.ts";
 import type { Principal } from "./principal.ts";
-import type { WorkerPoolOwnerFallback } from "./projectOwnerFallback.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import type { AttemptId, ClusterId, ExecutionId } from "./schedulerIdentity.ts";
@@ -175,11 +174,6 @@ export interface ExecutionSummary {
   readonly carrier?: BriefingCarrier;
   readonly terminalAt?: PublicInstant;
   readonly runTotals?: RunTotals;
-  /**
-   * The fallback it was pinned with, absent where it is routed in cluster,
-   * owned by nobody, or was pinned with none.
-   */
-  readonly ownerFallback?: WorkerPoolOwnerFallback;
   /** Whether the reader is the member who owns it. */
   readonly mine: boolean;
   /** What the reader's own execution, its attempt waiting unclaimed, waits on of their runners, absent where nothing of theirs holds it. */

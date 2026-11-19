@@ -364,10 +364,6 @@ test("a fresh Linux box and a fresh Mac each end with the person's own runner an
     expect(writes(machine)).toEqual([mint, ...serve, chatMint]);
     expect(machine.world.personal.get("acme")?.live).toEqual([true]);
     expect(machine.world.personal.get("acme")?.projects).toContain("widgets");
-    expect(
-      machine.world.projects.find((held) => held.project === "widgets")
-        ?.fallback,
-    ).toBeUndefined();
     expect(machine.world.chat.get("acme")?.live).toBe(true);
   }
 });
@@ -2051,7 +2047,7 @@ test("a project whose work the cluster runs needs no runner, and the machine is 
 
 /** A member's own runner takes their work wherever they are given the
  * project, so whether they administer it is not asked. */
-test("a member who does not administer a project naming no owner fallback is not stopped, and the run gives their runner the project and writes nothing of a fallback", async () => {
+test("a member who does not administer the project is not stopped, and the run gives their runner the project", async () => {
   const viewer = await fresh();
   for (const held of viewer.world.projects) held.administer = false;
   const done = await ran(viewer);
@@ -2061,9 +2057,6 @@ test("a member who does not administer a project naming no owner fallback is not
     "found: the site says you are not an admin of acme/widgets",
   );
   expect(writes(viewer)).toEqual([mint, ...serve]);
-  expect(
-    viewer.sent.filter((asked) => asked.includes("/owner-fallback")),
-  ).toEqual([]);
   expect(viewer.world.personal.get("acme")?.projects).toContain("widgets");
 });
 
@@ -3003,7 +2996,6 @@ test("the ports the writes go out through pass the mint for the person's runner 
   const pool = `${tenant}/projects/a%2Fb/worker-pool-registration-tokens`;
   const hosting = `${tenant}/chat-host-registration-tokens`;
   const project = `${tenant}/personal-runner/projects/a%2Fb`;
-  const fallback = `${tenant}/projects/a%2Fb/owner-fallback`;
   const init = (method: string) => ({
     method,
     headers: {},
@@ -3027,11 +3019,8 @@ test("the ports the writes go out through pass the mint for the person's runner 
     ["POST", "/api/v1/personal-runner-registrations"],
     ["POST", "/api/v1/tenants/acme/chat-host-registration-tokens"],
     ["PUT", `${tenant}/personal-runner/projects/other`],
-    ["PUT", fallback],
-    ["PUT", `${tenant}/projects/other/owner-fallback`],
     ["DELETE", `${tenant}/chat-host`],
     ["DELETE", project],
-    ["DELETE", fallback],
     ["DELETE", `${tenant}/personal-runner`],
     ["DELETE", path],
     ["PUT", path],

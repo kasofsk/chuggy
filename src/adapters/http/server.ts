@@ -119,7 +119,6 @@ import {
   parseProjectRepositoryLanding,
   parseExecutionPlacement,
   parsePersonalRunnerProject,
-  parseProjectOwnerFallback,
   parseThreadLimit,
   parseAccountAgent,
   parseAgentAccountSettings,
@@ -243,7 +242,6 @@ import {
   chatHostDeregisteredResponse,
   chatHostResponse,
   executionPlacementBody,
-  ownerFallbackBody,
   threadLimitBody,
   placementReadResponse,
   placementWriteResponse,
@@ -266,7 +264,6 @@ import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegi
 import type { AgentAccountService } from "../../interpreter/agentAccount.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
-import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
 import type { TicketTakes } from "../../interpreter/ticketTake.ts";
 import type { TicketProposalMerges } from "../../interpreter/ticketProposalMerge.ts";
 import type {
@@ -3318,17 +3315,7 @@ function registerPlacements(
   app: FastifyInstance,
   placement: ExecutionPlacementAdministration | undefined,
   sessionPlacement: SessionPlacementAdministration | undefined,
-  ownerFallback: ProjectOwnerFallbackAdministration | undefined,
 ): void {
-  if (ownerFallback !== undefined)
-    registerPlacement(
-      app,
-      nativeHttpRoutes.ownerFallback,
-      ownerFallback,
-      parseProjectOwnerFallback,
-      ownerFallbackBody,
-      (result) => placementWriteResponse(result, ownerFallbackBody),
-    );
   if (placement !== undefined)
     registerPlacement(
       app,
@@ -3386,7 +3373,6 @@ export function createNativeHttpApp(
   actionReach?: TicketActionReaches,
   landings?: TicketLandingReads,
   personalRunners?: PersonalRunnerService,
-  ownerFallback?: ProjectOwnerFallbackAdministration,
   threadLimits?: ThreadLimitAdministration,
   chat?: MemberChat,
   inbox?: ProjectInbox,
@@ -3429,7 +3415,7 @@ export function createNativeHttpApp(
   registerProjectViews(app, web);
   if (personalRunners !== undefined)
     registerPersonalRunners(app, personalRunners);
-  registerPlacements(app, placement, sessionPlacement, ownerFallback);
+  registerPlacements(app, placement, sessionPlacement);
   registerActions(app, actionReports, actionReach);
   registerTicketDoors(app, landings, landingQueues, takes, proposalMerges);
   if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);

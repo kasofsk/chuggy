@@ -177,7 +177,6 @@ export const sessionBearerRouteClasses = {
   projectRepositoryConfigurations: refusedReplace,
   executionPlacement: readRefusedReplace,
   sessionPlacement: readRefusedReplace,
-  ownerFallback: readRefusedReplace,
   hostedRuns: partitionRead,
   abilities: partitionRead,
   accessTokens: { GET: "Refused", POST: "Refused" },

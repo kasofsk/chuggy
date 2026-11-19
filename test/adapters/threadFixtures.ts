@@ -156,7 +156,6 @@ export function servedNativeHttpApp(
     undefined,
     undefined,
     undefined,
-    undefined,
     inbox,
   );
 }
