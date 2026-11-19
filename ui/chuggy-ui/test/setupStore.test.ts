@@ -13,7 +13,6 @@ import {
   signInStoreLockSecsMax,
   signInStoreLockStale,
   signInStoreLockWord,
-  signInStorePendingName,
   signInStoreText,
 } from "../../../src/contract/signInStore.ts";
 import { sessionRefreshTokenKey } from "../app/core/sessionHolder.ts";
@@ -355,13 +354,11 @@ const other = "https://other.example";
 const records = [
   signInStoreAccessName(site),
   signInStoreEndedName(site),
-  signInStorePendingName(site),
   signInStoreAccessName(other),
   signInStoreEndedName(other),
-  signInStorePendingName(other),
 ] as const;
 
-/** A machine whose store holds every record for `site` and for `other`, beside whatever `held` is given. */
+/** A machine whose store holds both records for `site` and for `other`, beside whatever `held` is given. */
 function recorded(session?: string, token?: string): Held {
   const kept = held(session, token);
   for (const name of records) kept.stored.set(name, "record\n");
@@ -376,10 +373,9 @@ function recordsLeft(kept: Held): readonly string[] {
 const otherRecords = [
   signInStoreAccessName(other),
   signInStoreEndedName(other),
-  signInStorePendingName(other),
 ];
 
-test("every write or removal of a site's token through the holder's store leaves no record for the site, and the other sites' alone", () => {
+test("every write or removal of a site's token through the holder's store leaves neither record for the site, and the other sites' alone", () => {
   for (const step of [
     (store: ReturnType<typeof setupTokenStore>) => {
       store.write(sessionRefreshTokenKey, "renewal-2");
@@ -394,13 +390,12 @@ test("every write or removal of a site's token through the holder's store leaves
     expect(recordsLeft(kept)).toEqual(otherRecords);
     expect(kept.writes.slice(1)).toEqual([
       signInStoreAccessName(site),
-      signInStorePendingName(site),
       signInStoreEndedName(site),
     ]);
   }
 });
 
-test("a token an older copy kept, moved into the shared store, leaves no record for the site, and one the store already held leaves them all", () => {
+test("a token an older copy kept, moved into the shared store, leaves neither record for the site, and one the store already held leaves both", () => {
   const kept = recorded(JSON.stringify({ site, refreshToken: "renewal-old" }));
   setupSessionMoved(kept.files, kept.store);
   expect(recordsLeft(kept)).toEqual(otherRecords);
@@ -412,7 +407,7 @@ test("a token an older copy kept, moved into the shared store, leaves no record 
   expect(recordsLeft(holding)).toEqual(records);
 });
 
-test("a sign-out removes every record for the site whether or not it held a token, and says only whether it held one", () => {
+test("a sign-out removes both records for the site whether or not it held a token, and says only whether it held one", () => {
   const holding = recorded(undefined, signInStoreText("renewal-1"));
   expect(setupTokenRemoved(holding.store, site)).toBe(true);
   expect(holding.stored.has(siteFile)).toBe(false);
@@ -458,26 +453,6 @@ test("an access record the machine would not remove is no fault, since the token
   signingOut.refuses = { removing: signInStoreAccessName(site) };
   expect(setupTokenRemoved(signingOut.store, site)).toBe(false);
   expect(signingOut.stored.has(signInStoreEndedName(site))).toBe(false);
-});
-
-test("a pending device sign-in the machine would not remove after a renewal was written, or at a sign-out, is no fault, and the other records are removed all the same", () => {
-  const kept = recorded(undefined, signInStoreText("renewal-1"));
-  const store = setupTokenStore(kept.store, site, "renewal-1");
-  kept.refuses = { removing: signInStorePendingName(site) };
-  store.write(sessionRefreshTokenKey, "renewal-2");
-  expect(fault(store.kept)).toBeUndefined();
-  expect(kept.stored.get(siteFile)).toBe(signInStoreText("renewal-2"));
-  expect(recordsLeft(kept)).toEqual([
-    signInStorePendingName(site),
-    ...otherRecords,
-  ]);
-  const signingOut = recorded(undefined, signInStoreText("renewal-1"));
-  signingOut.refuses = { removing: signInStorePendingName(site) };
-  expect(setupTokenRemoved(signingOut.store, site)).toBe(true);
-  expect(recordsLeft(signingOut)).toEqual([
-    signInStorePendingName(site),
-    ...otherRecords,
-  ]);
 });
 
 const nowMs = 5_000_000;
