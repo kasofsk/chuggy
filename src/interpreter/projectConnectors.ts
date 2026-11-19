@@ -147,10 +147,10 @@ export type ProjectConnectorHistoryRead =
     };
 
 /**
- * A project's connectors for a caller. Whoever may read the project's
- * repositories reads them, and whoever may change a repository's settings
- * writes and removes them, each change recorded under the authority that
- * permit answered. A caller who may not is answered `NotFound`.
+ * A project's connectors for a caller: read by whoever may read its
+ * repositories, and changed by whoever may change a repository's settings,
+ * under the authority that permit answered. A caller who may not is answered
+ * `NotFound`.
  */
 export interface ProjectConnectorAdministration {
   listed(

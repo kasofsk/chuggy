@@ -36,9 +36,7 @@ export const connectorStandingSchema = connectorVariants({
   name: connectorNameSchema,
   revision: connectorRevisionSchema,
 });
-export type ConnectorStandingResponse = z.infer<
-  typeof connectorStandingSchema
->;
+export type ConnectorStandingResponse = z.infer<typeof connectorStandingSchema>;
 
 /** A project's connectors, ordered by name. */
 export const connectorsResponseSchema = z.strictObject({
