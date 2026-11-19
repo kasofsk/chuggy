@@ -18,9 +18,8 @@
  * ONLY A MEMBER'S RUNNER CLAIMS, since the pool plane admits no pool's poll. A
  * case's runner is a pool with an owner, planted as its row and its allowlist
  * in its partition's tenant and claimed as one. An execution's owner is its
- * column, and it is pinned `Strict` as the scheduler pins every one. A runner
- * is live where it makes a poll whose token is open, which is a last poll the
- * claim reads as recent.
+ * column. A runner is live where it makes a poll whose token is open, which is
+ * a last poll the claim reads as recent.
  *
  * A CASE THE DATABASE CANNOT EXPRESS IS NAMED WITH THE REASON, derived from
  * the case rather than listed, so a case added to the table is planted or
@@ -1726,8 +1725,8 @@ async function credentialsKept(
 }
 
 /**
- * A project with Claude attempts of `member`'s, `Strict`, and their live
- * runner of it naming `credentials` of Claude on their account.
+ * A project with Claude attempts of `member`'s, and their live runner of it
+ * naming `credentials` of Claude on their account.
  */
 async function namingRunner(
   label: string,

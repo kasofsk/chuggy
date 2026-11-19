@@ -141,15 +141,15 @@ async function registered(
   );
 }
 
-/** The owner and `owner_fallback` every execution of the project was registered with. */
-async function pinned(
+/** The owner every execution of the project was registered with. */
+async function owned(
   project: SchedulerProject,
-): Promise<readonly { owner: string | null; owner_fallback: string | null }[]> {
+): Promise<readonly { owner: string | null }[]> {
   return (await rig.harness.query(
-    `SELECT DISTINCT owner, owner_fallback FROM execution
+    `SELECT DISTINCT owner FROM execution
       WHERE tenant=$1 AND project=$2`,
     [project.partition.tenant, project.partition.project],
-  )) as readonly { owner: string | null; owner_fallback: string | null }[];
+  )) as readonly { owner: string | null }[];
 }
 
 /** Has every task of the project's ticket run a container of `image`, written into the release before registration copies it out. */
@@ -268,14 +268,12 @@ async function claimed(
   return taken === undefined ? undefined : assignment;
 }
 
-test("an execution is registered owned by the member who first drafted its ticket and pinned Strict", async () => {
+test("an execution is registered owned by the member who first drafted its ticket", async () => {
   const member = principal("member");
   const project = await schedulerProject(rig, "pinned", { tasks: 1 });
   await draftedBy(project, member);
   await registered(project, "pinned");
-  assert.deepEqual(await pinned(project), [
-    { owner: member, owner_fallback: "Strict" },
-  ]);
+  assert.deepEqual(await owned(project), [{ owner: member }]);
 });
 
 test("a personal runner claims its owner's newly registered execution, and nothing of another owner's, of nobody's, or in a project it does not allowlist", async () => {
@@ -688,9 +686,7 @@ test("a run waiting on offline runners says so and no pause", async () => {
 test("an execution whose ticket was first drafted under another kind of authority is owned by nobody", async () => {
   const project = await schedulerProject(rig, "owned-by-none", { tasks: 1 });
   await registered(project, "owned-by-none");
-  assert.deepEqual(await pinned(project), [
-    { owner: null, owner_fallback: "Strict" },
-  ]);
+  assert.deepEqual(await owned(project), [{ owner: null }]);
 });
 
 test("a runner's claim returns the runtime its attempt was opened under, and stamps when it claimed an attempt that waited unleased", async () => {

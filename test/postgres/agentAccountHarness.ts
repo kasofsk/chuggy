@@ -43,7 +43,7 @@ export interface AgentAccountHarnessLimit {
 
 /** A runner of the account, last polling `polledSecs` from now and naming each agent's credentials as `named` does. */
 export interface AgentAccountHarnessRunner {
-  readonly kind: "Personal" | "Pool" | "ChatHost";
+  readonly kind: "Personal" | "ChatHost";
   readonly polledSecs: number;
   readonly named: Readonly<
     Partial<Record<AgentAccountHarnessAgent, readonly string[]>>
@@ -118,16 +118,13 @@ async function agentAccountHarnessChosen(
     );
 }
 
-/** The account's runners, each its own personal runner, pool it registered or chat host, replacing every one it held. */
+/** The account's runners, each its own personal runner or chat host, replacing every one it held. */
 async function agentAccountHarnessRunners(
   transaction: PostgresTransaction,
   principal: string,
   runners: readonly AgentAccountHarnessRunner[],
 ): Promise<void> {
   await transaction.query("DELETE FROM personal_runner WHERE owner=$1", [
-    principal,
-  ]);
-  await transaction.query("DELETE FROM worker_pool WHERE registered_by=$1", [
     principal,
   ]);
   await transaction.query("DELETE FROM chat_host WHERE owner=$1", [principal]);
@@ -142,15 +139,6 @@ async function agentAccountHarnessRunners(
              (tenant,owner,capabilities,principal,client_id,last_polled_at,credentials_named)
            VALUES($1,$2,'{}',$3,$3,now()+make_interval(secs=>$4),$5::jsonb)`,
           [tenant, principal, randomUUID(), polled, named],
-        );
-        break;
-      case "Pool":
-        await transaction.query(
-          `INSERT INTO worker_pool
-             (tenant,project,pool,principal,client_id,class,registered_by,
-              executions_polled_at,credentials_named)
-           VALUES($1,'project',$2,$2,$2,'Dedicated',$3,now()+make_interval(secs=>$4),$5::jsonb)`,
-          [tenant, randomUUID(), principal, polled, named],
         );
         break;
       case "ChatHost":

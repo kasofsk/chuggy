@@ -227,7 +227,8 @@ test("a project that released nothing is deleted with its drafts, bindings, conf
   );
   await fixtureBoundRepository(harness, apiPool, partition, "unrun");
   await harness.query(
-    `SELECT set_project_owner_fallback($1,$2,'Strict','Member','alice')`,
+    `INSERT INTO project_owner_fallback(tenant,project,fallback,set_by_kind,set_by_subject,set_at)
+     VALUES($1,$2,'Strict','Member','alice',now())`,
     [partition.tenant, partition.project],
   );
   await harness.query(
