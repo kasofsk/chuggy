@@ -217,7 +217,7 @@ test("a renewal the issuer refuses is not signed in and not a failure, and the n
   });
 });
 
-test("a renewal, a renewal the issuer refuses and a sign-out each leave no record beside the site's token", async () => {
+test("a renewal, a renewal the issuer refuses and a sign-out each leave neither record beside the site's token", async () => {
   const renewed = await signedIn();
   machineRecording(renewed);
   expect(await renewed.command([])).toMatchObject({ report: "Checklist" });
