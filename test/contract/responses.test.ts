@@ -52,7 +52,6 @@ import {
   submissionResponse,
   ticketNativeActionsResponse,
   ticketResponse,
-  workerPoolRedemptionResponse,
 } from "../../src/adapters/http/outcomes.ts";
 import { operationResponseSchema as decodedOperationResponseSchema } from "../../src/adapters/http/codecs.ts";
 import {
@@ -2656,23 +2655,19 @@ test("a ticket is read at the revision an update is written against, and zero is
   );
 });
 
-test("a redemption's pool file parses as the file a runner keeps, and an address a runner would refuse does not", () => {
-  const redeemed = workerPoolRedemptionResponse({
-    result: "Registered",
-    value: {
-      partition,
-      pool: "shame",
-      capabilities: ["Platform:Linux:Amd64"],
-      tokenUrl: "https://auth.chuggy.test/oauth2/token",
-      audience: "https://chuggy.test/api",
-      planeUrl: "https://chuggy-pool.chuggy.test/",
-      registryHost: "chuggy-registry.chuggy.test",
-      clientId: "chuggy-pool-1",
-      clientSecret: "a-secret",
-    },
+test("a pool file parses as the file a runner keeps, and an address a runner would refuse does not", () => {
+  const file = workerPoolCredentialsSchema.parse({
+    tenant: partition.tenant,
+    project: partition.project,
+    pool: "shame",
+    capabilities: ["Platform:Linux:Amd64"],
+    tokenUrl: "https://auth.chuggy.test/oauth2/token",
+    audience: "https://chuggy.test/api",
+    planeUrl: "https://chuggy-pool.chuggy.test/",
+    registryHost: "chuggy-registry.chuggy.test",
+    clientId: "chuggy-pool-1",
+    clientSecret: "a-secret",
   });
-  assert.equal(redeemed.status, 201);
-  const file = workerPoolCredentialsSchema.parse(redeemed.body);
   for (const refused of [
     { tokenUrl: "http://auth.chuggy.test/oauth2/token" },
     { planeUrl: "ftp://chuggy-pool.chuggy.test/" },

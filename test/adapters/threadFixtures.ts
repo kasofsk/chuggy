@@ -146,7 +146,6 @@ export function servedNativeHttpApp(
     undefined,
     undefined,
     onboarding,
-    undefined,
     creation,
     undefined,
     sessionPlacement,

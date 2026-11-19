@@ -227,10 +227,7 @@ function chatOf(
   const chat = memberChat(
     accessOf(answers, asked),
     portsOf(kept, calls),
-    sessionRoutesAt(
-      { Thread: "InCluster" },
-      { mine: "Live", inquiry: host, project: "Live" },
-    ),
+    sessionRoutesAt({ Thread: "InCluster" }, { mine: "Live", inquiry: host }),
     {
       projects: (asking, after, limit) => {
         calls.push(`projects:${asking}:${String(after)}:${String(limit)}`);

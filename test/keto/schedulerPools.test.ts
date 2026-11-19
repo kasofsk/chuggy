@@ -6,9 +6,8 @@
  * grants every runner's owner from memory, and `./workerPoolAdmission.test.ts`
  * asks the authority with no row behind it. Whether the owner a personal
  * runner's row names is the one its owner's tuples name, so that taking a
- * tuple away revokes the runner for the scheduler as it does for a poll, and
- * whether a registered pool's tuple counts for nothing, are claims about the
- * join.
+ * tuple away revokes the runner for the scheduler as it does for a poll, is a
+ * claim about the join.
  */
 
 import assert from "node:assert/strict";
@@ -17,7 +16,6 @@ import { after, test } from "node:test";
 
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
-import { postgresWorkerPoolRegistry } from "../../src/adapters/postgres/workerPool.ts";
 import { executionSchedulerLaunch } from "../../src/interpreter/executionSchedulerRun.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import type { ProjectAccess } from "../../src/interpreter/projectAccess.ts";
@@ -51,35 +49,8 @@ after(async () => {
   await rig.close();
 });
 
-const registry = postgresWorkerPoolRegistry(apiPool);
 const personalRegistry = postgresPersonalRunnerRegistry(apiPool);
 const grants = ketoHarnessGrants();
-
-/** Registers one pool of the routed execution's project able to run its work, and writes the `pools` tuple that grants it `Execute`. */
-async function poolRegistered(routed: PoolRouted): Promise<void> {
-  const { partition } = routed.project;
-  const subject = `chuggy-pool-${randomUUID()}`;
-  assert.equal(
-    await registry.register({
-      partition,
-      pool: "amd",
-      capabilities: ["Platform:Linux:Amd64"],
-      class: "Dedicated",
-      clientId: subject,
-      principal: oidcPrincipal(ketoHarnessIssuer, subject),
-    }),
-    true,
-  );
-  await grants.write(
-    projectPrincipalGrant({
-      issuer: ketoHarnessIssuer,
-      subject,
-      tenant: partition.tenant,
-      project: partition.project,
-      relation: "pools",
-    }),
-  );
-}
 
 /** Makes a fresh member the routed execution's owner, answering their subject. */
 async function ownerMade(routed: PoolRouted): Promise<string> {
@@ -179,17 +150,15 @@ const waiting = {
   attempts: [{ state: "Placing", evidence: null, pool: null }],
 };
 
-test("a registered pool whose tuple stands runs nothing, so work its owner has no runner for is blocked", async () => {
+test("work whose owner's tuples stand but who has no runner for it is blocked", async () => {
   const routed = await poolRoutedExecution(rig, "keto-pools-refused");
-  await poolRegistered(routed);
   for (const grant of ownerGrants(routed, await ownerMade(routed)))
     await grants.write(grant);
   assert.deepEqual(await launched(routed, ketoHarnessAccess()), blocked);
 });
 
-test("an execution with no owner is blocked though a pool whose tuple stands could run it", async () => {
+test("an execution with no owner is blocked", async () => {
   const routed = await poolRoutedExecution(rig, "keto-pools-ownerless");
-  await poolRegistered(routed);
   assert.deepEqual(await launched(routed, ketoHarnessAccess()), blocked);
 });
 

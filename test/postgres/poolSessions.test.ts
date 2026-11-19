@@ -30,7 +30,6 @@ import { postgresThreads } from "../../src/adapters/postgres/thread.ts";
 import { postgresWorkerTasks } from "../../src/adapters/postgres/workerPlane.ts";
 import {
   postgresWorkerPoolAssignments,
-  postgresWorkerPoolRegistry,
   postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
 import { postgresWorkerPoolSessions } from "../../src/adapters/postgres/workerPoolSessions.ts";
@@ -195,48 +194,7 @@ function principal(label: string): Principal {
   return asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`);
 }
 
-/** One registered pool: its project, its name, and the principal it was registered under. */
-interface PoolRegistered {
-  readonly partition: Partition;
-  readonly pool: string;
-  readonly principal: Principal;
-}
-
-/** A pool `member` registered on the project, or one no person registered, under the name given or one of its own. */
-async function runner(
-  partition: Partition,
-  member: Principal | undefined,
-  pool = `runner-${randomUUID()}`,
-  registered: Principal = principal("pool"),
-): Promise<PoolRegistered> {
-  assert.equal(
-    await postgresWorkerPoolRegistry(apiPool).register({
-      partition,
-      pool,
-      capabilities: [],
-      class: "Dedicated",
-      clientId: `chuggy-pool-${randomUUID()}`,
-      principal: registered,
-      ...(member === undefined ? {} : { registeredBy: member }),
-    }),
-    true,
-  );
-  return { partition, pool, principal: registered };
-}
-
-/** A project whose sessions run on runners, with a member and a pool that member registered. */
-async function routedProject(label: string): Promise<{
-  readonly partition: Partition;
-  readonly member: Principal;
-  readonly pool: PoolRegistered;
-}> {
-  const partition = await sessionRigProject(rig, label);
-  await sessionRigRouted(rig, partition, "Pool");
-  const member = principal(`member-${label}`);
-  return { partition, member, pool: await runner(partition, member) };
-}
-
-/** A project whose sessions run on runners, with a member and no pool. */
+/** A project whose sessions run on runners, with a member. */
 async function hostedProject(label: string): Promise<{
   readonly partition: Partition;
   readonly member: Principal;
@@ -946,23 +904,10 @@ test("an accepted session writes nothing, an unavailable one is withdrawn with i
 });
 
 test("only a poll that could take a session marks a runner live, and a member's own runner is their chat host alone, never their personal runner however live it is", async () => {
-  const { partition, member, pool } = await routedProject("pool-live");
+  const { partition, member } = await hostedProject("pool-live");
   const standing = () =>
     postgresSessionPlacement(apiPool).runners(partition, member);
-  assert.deepEqual(await standing(), {
-    mine: "Unregistered",
-    inquiry: "Unregistered",
-    project: "Offline",
-  });
-  await rig.harness.query(
-    `UPDATE worker_pool SET last_polled_at=now() WHERE tenant=$1 AND project=$2 AND pool=$3`,
-    [partition.tenant, partition.project, pool.pool],
-  );
-  const unregistered = {
-    mine: "Unregistered",
-    inquiry: "Unregistered",
-    project: "Live",
-  };
+  const unregistered = { mine: "Unregistered", inquiry: "Unregistered" };
   assert.deepEqual(await standing(), unregistered);
 
   const runs = await personal(partition, member);
@@ -974,7 +919,7 @@ test("only a poll that could take a session marks a runner live, and a member's 
   );
 
   const host = await chatHost(partition, member);
-  const hosted = { mine: "Offline", inquiry: "Offline", project: "Live" };
+  const hosted = { mine: "Offline", inquiry: "Offline" };
   assert.deepEqual(await standing(), hosted);
   await polled(host, 0);
   assert.deepEqual(await standing(), hosted, "a chat host with no room");

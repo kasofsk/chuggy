@@ -30,7 +30,6 @@ import { postgresWorkerPoolSessions } from "../../src/adapters/postgres/workerPo
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
   postgresWorkerPoolAssignments,
-  postgresWorkerPoolRegistry,
   postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
@@ -1085,37 +1084,6 @@ test("a runner's poll naming capabilities replaces what it registered with, so w
   );
   await runners.named(runner, undefined, [platform]);
   assert.notEqual(await claimed(runner, [project.partition]), undefined);
-});
-
-test("a pool registered again fences none of a runner's attempts, even under a name the runner's owner shares", async () => {
-  const member = principal("member");
-  const project = await ownedProject("pool-fence", member, "Strict", 1);
-  const attempt = await opened(project);
-  const runner = await runnerOf(project.partition, member);
-  const held = await claimed(runner, [project.partition]);
-  assert.ok(held !== undefined);
-  const pools = postgresWorkerPoolRegistry(apiPool);
-  for (const registeredAs of [principal("pool"), principal("pool")])
-    assert.equal(
-      await pools.register({
-        partition: project.partition,
-        pool: member,
-        capabilities: [platform],
-        class: "Dedicated",
-        clientId: `chuggy-pool-${randomUUID()}`,
-        principal: registeredAs,
-      }),
-      true,
-    );
-  assert.equal(await assignments.renew(runner, held, leaseSecs), true);
-  assert.notDeepEqual(
-    await rig.harness.query(
-      `SELECT capability_secret_digest FROM execution_attempt
-        WHERE tenant=$1 AND project=$2 AND attempt=$3`,
-      [project.partition.tenant, project.partition.project, attempt],
-    ),
-    [{ capability_secret_digest: null }],
-  );
 });
 
 test("a runner's poll is stamped under its own registration alone, and as one for executions only where it could take one, apart from another runner of its owner's", async () => {

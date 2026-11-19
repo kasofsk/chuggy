@@ -88,7 +88,6 @@ import {
   landingQueuesResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
-  workerPoolsResponseSchema,
 } from "../../../src/contract/responses.ts";
 import type { InboxResponse } from "../../../src/contract/responses.ts";
 import { InviteProvider } from "../app/browser/InvitePage.tsx";
@@ -449,11 +448,6 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadAt(`${projectPath}/executions`),
     schema: executionsResponseSchema,
     body: () => ({ executions: [] }),
-  },
-  {
-    path: consoleReadAt(`${projectPath}/worker-pools`),
-    schema: workerPoolsResponseSchema,
-    body: () => ({ pools: [], truncated: false }),
   },
   {
     path: consoleReadAt(`${projectPath}/dispatch-view`),

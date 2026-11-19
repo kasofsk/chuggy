@@ -77,7 +77,6 @@ import {
   threadTurnRecordedCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
-  workerPoolsAnsweredMax,
   ticketLandingsAnsweredMax,
   ticketLandingStackDepthMax,
   ticketLandingStacksAnsweredMax,
@@ -1069,14 +1068,6 @@ export const executionSummarySchema = z.object({
    * nothing and below that, and none is paused.
    */
   personalRunnerRoom: z
-    .strictObject({ freeMib: countSchema, neededMib: countSchema })
-    .optional(),
-  /**
-   * The largest memory room, in MiB, of the live pools of its project it waits
-   * on and the memory it needs, present only where every one of them named a
-   * room above nothing and below that.
-   */
-  poolRoom: z
     .strictObject({ freeMib: countSchema, neededMib: countSchema })
     .optional(),
   /**
@@ -2377,9 +2368,10 @@ export type ExecutionPlacementResponse = z.infer<
 /**
  * Where a project's threads run and what decided it, the routes this caller
  * may choose, and the runners a thread would run on: `mine` the caller's chat
- * host for the project's threads, `inquiry` theirs for their own chat's, and
- * `project` whether any of the project's pools is live. `lead`, `leadOffering`
- * and `leadOfferings` are fixed values for older clients: there is no lead.
+ * host for the project's threads and `inquiry` theirs for their own chat's.
+ * `project` is always `Unregistered`, and `lead`, `leadOffering` and
+ * `leadOfferings` fixed values too, for older clients: there is no project
+ * pool and no lead.
  */
 export const sessionPlacementResponseSchema = z.object({
   thread: placementRouteResolvedSchema,
@@ -2691,35 +2683,11 @@ export type WorkerPoolCredentialsResponse = z.infer<
   typeof workerPoolCredentialsSchema
 >;
 
-/** The runner a pool's or a member's newest poll named, and the version chuggy pins for its package where it pins one. */
+/** The runner a member's runner's or chat host's newest poll named, and the version chuggy pins for its package where it pins one. */
 export const runnerListedSchema = workerRunnerSchema.extend({
   pinned: workerRunnerVersionSchema.optional(),
 });
 export type RunnerListedResponse = z.infer<typeof runnerListedSchema>;
-
-/**
- * A project's registered pools in name order, `truncated` where it holds more
- * than one read answers, each with its runner where its newest poll named one.
- * `polledAt` is a pool's newest poll, absent until it polls, and `live` whether
- * that poll is recent enough for the pool to be taking work, as a member's
- * runner's is.
- */
-export const workerPoolsResponseSchema = z.object({
-  pools: z
-    .array(
-      z.object({
-        pool: identitySchema,
-        capabilities: z.array(z.string().min(1)),
-        registeredAt: instantSchema,
-        polledAt: instantSchema.optional(),
-        live: z.boolean(),
-        runner: runnerListedSchema.optional(),
-      }),
-    )
-    .max(workerPoolsAnsweredMax),
-  truncated: z.boolean(),
-});
-export type WorkerPoolsResponse = z.infer<typeof workerPoolsResponseSchema>;
 
 /**
  * What a personal redemption answers, once: a pool's file with the pool's
