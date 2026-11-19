@@ -90,9 +90,8 @@ async function sessionRunners(
   const found = await pool.query<{
     member_standing: string | null;
     inquiry_standing: string | null;
-    project_standing: string | null;
   }>(
-    sql`SELECT member_standing, inquiry_standing, project_standing
+    sql`SELECT member_standing, inquiry_standing
           FROM session_runner_standing(${partition.tenant},${partition.project},
                                        ${member ?? null}::text,
                                        ${sessionRunnerPolledSecsMax})`,
@@ -107,11 +106,6 @@ async function sessionRunners(
     inquiry: sessionRowMember(
       sessionRunnerStandings,
       row?.inquiry_standing ?? null,
-      "runner standing",
-    ),
-    project: sessionRowMember(
-      sessionRunnerStandings,
-      row?.project_standing ?? null,
       "runner standing",
     ),
   };

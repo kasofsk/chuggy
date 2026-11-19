@@ -93,9 +93,9 @@
  * pool that wants no job because it is full waits out its whole poll. A poll may name how long it
  * waits for an answer with nothing in it, up to the plane's own longest wait.
  *
- * A PROJECT'S POOL IS ADMITTED BY NOTHING. Its registration and its `Execute`
- * still stand, but its principal is neither a personal runner nor a chat host,
- * so its poll is answered as one nobody registered.
+ * A PROJECT'S POOL IS ADMITTED BY NOTHING. Nothing registers one, and a
+ * principal that is neither a personal runner nor a chat host has its poll
+ * answered as one nobody registered.
  */
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -111,7 +111,6 @@ import {
   type WorkerRunnerCredentials,
 } from "../contract/workerPool.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
-export { workerPoolsAnsweredMax } from "../contract/http.ts";
 import type { ThreadTicketWakeSetting } from "../contract/threadWake.ts";
 import type { SessionCapability } from "./agentSession.ts";
 import type { ExecutionRequirement } from "../contract/executionRequirement.ts";
@@ -123,10 +122,7 @@ import {
   workerPoolImageHosted,
   type WorkerPoolImageHosts,
 } from "./workerPoolImagePull.ts";
-import {
-  workerPoolPlatformToken,
-  type WorkerPoolClass,
-} from "./workerPoolAssignment.ts";
+import { workerPoolPlatformToken } from "./workerPoolAssignment.ts";
 import type { WorkerContractPeer } from "../contract/workerContract.ts";
 import {
   workerContractAccepted,
@@ -153,7 +149,6 @@ import {
   type WorkerPoolSessionClaimant,
   type WorkerPoolSessionPorts,
 } from "./workerPoolSessions.ts";
-import type { WorkerRunnerListed } from "./workerRunnerRelease.ts";
 
 /**
  * The worker contract versions the pool plane serves, from the first in which
@@ -196,59 +191,6 @@ export type WorkerPoolAskedQuery = Pick<
 
 /** The memory, in MiB, an execution naming none runs with on a pool, where the plane names no size of its own. */
 export const workerPoolMemoryMibDefault = 2_048;
-
-/** What registering one pool records: who it is at the issuer, what it declared, and its class. */
-export interface WorkerPoolRegistration {
-  readonly partition: Partition;
-  readonly pool: string;
-  readonly capabilities: readonly string[];
-  readonly class: WorkerPoolClass;
-  readonly clientId: string;
-  readonly principal: Principal;
-  /** The person whose token registered the pool, recorded as who registered it. */
-  readonly registeredBy?: Principal;
-}
-
-/**
- * Registration and deregistration; no secret passes through here, because a
- * pool authenticates as an OAuth2 client of the issuer this installation
- * already runs and a row keeps only the principal that client's subject
- * resolves to. Taking a pool off is a read of the client its row names and a
- * delete conditional on that client, so the command that has to remove the
- * client and the relation before the row can do so in that order, and a pool
- * registered again in between keeps its newer one.
- */
-export interface WorkerPoolRegistry {
-  /** Records the pool under this registration's principal, and fences the live attempts an older registration of its name claimed. */
-  register(registration: WorkerPoolRegistration): Promise<boolean>;
-  clientOf(partition: Partition, pool: string): Promise<string | undefined>;
-  deregister(
-    partition: Partition,
-    pool: string,
-    clientId: string,
-  ): Promise<boolean>;
-}
-
-/** One registered pool as a project's members read it: its newest poll where it has polled, whether that poll is recent enough for it to be taking work, and the runner it named where it named one. */
-export interface WorkerPoolListed {
-  readonly pool: string;
-  readonly capabilities: readonly string[];
-  readonly registeredAt: string;
-  readonly polledAt?: string;
-  readonly live: boolean;
-  readonly runner?: WorkerRunnerListed;
-}
-
-/** One project's registered pools as its members read them, `truncated` saying it holds more than this answers. */
-export interface WorkerPoolListing {
-  readonly pools: readonly WorkerPoolListed[];
-  readonly truncated: boolean;
-}
-
-/** The registry as the API reads it for a project's members. */
-export interface WorkerPoolDirectory {
-  listed(partition: Partition): Promise<WorkerPoolListing>;
-}
 
 /** The registry as the scheduler reads it, which is a member's personal runners, and nothing a registration or a poll writes. */
 export interface WorkerPoolRoster {
@@ -299,8 +241,8 @@ async function workerPoolMemberPermitted(
 
 /**
  * The personal runner or chat host one authenticated principal acts as, and
- * nothing where the authority says it may not, or where it is neither, as a
- * registered pool's principal is: the permit of both is their owner's
+ * nothing where the authority says it may not, or where it is neither: the
+ * permit of both is their owner's
  * `RegisterPersonalRunner` in their tenant, so revoking it is a revocation
  * like any other and needs no row deleted here. An authority that could not
  * answer throws `ProjectAccessUnavailable` through this function rather than

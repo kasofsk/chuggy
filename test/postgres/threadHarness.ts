@@ -370,7 +370,6 @@ export function threadRigApp(input: {
     undefined,
     undefined,
     undefined,
-    undefined,
     input.threadLive,
     undefined,
     undefined,

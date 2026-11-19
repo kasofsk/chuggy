@@ -24,12 +24,24 @@ import type {
   WorkerPoolClients,
   WorkerPoolClientSecret,
 } from "./workerPool.ts";
-import type { WorkerPoolSite } from "./workerPoolRegistrationToken.ts";
 import {
   workerRunnerListed,
   type WorkerRunnerListed,
   type WorkerRunnerReleases,
 } from "./workerRunnerRelease.ts";
+
+/**
+ * Where a registered runner or chat host meets this deployment: the issuer its client is
+ * minted at, the endpoint and audience it asks tokens of, the plane it polls,
+ * and the registry it pulls from where the deployment names one of its own.
+ */
+export interface WorkerPoolSite {
+  readonly issuer: string;
+  readonly tokenUrl: string;
+  readonly audience: string;
+  readonly planeUrl: string;
+  readonly registryHost?: string;
+}
 
 /** Whose chat host a row is: a member, in one tenant. */
 export interface ChatHostKey {

@@ -88,13 +88,8 @@ import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.t
 import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
 import { unservedEpics, unservedThreads } from "./threadFixtures.ts";
-import type { WorkerPoolRegistrationService } from "../../src/interpreter/workerPoolRegistrationToken.ts";
 import type { ExecutionPlacementAdministration } from "../../src/interpreter/executionPlacement.ts";
-import {
-  executionPlacementResponseSchema,
-  workerPoolCredentialsSchema,
-  workerPoolsResponseSchema,
-} from "../../src/contract/responses.ts";
+import { executionPlacementResponseSchema } from "../../src/contract/responses.ts";
 import { hostedRunsNotGrantedCode } from "../../src/contract/rosters.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
@@ -594,84 +589,6 @@ function fakeForgeCredentials(calls: string[]): ForgeCredentialMinting {
   };
 }
 
-/** The runner the listed pool's newest poll named, beside the version pinned for its package. */
-const shameRunner = {
-  package: "chuggy-linux",
-  version: "0.14.0",
-  pinned: "0.14.1",
-};
-
-/** Registration as the routes see it: one token stands for one project, and a mint is recorded as the service was asked it. */
-function fakeWorkerPools(calls: string[]): WorkerPoolRegistrationService {
-  return {
-    registered: (_principal, partition) => {
-      calls.push(`worker-pools:${partition.project}`);
-      return Promise.resolve(
-        partition.project === "atlas"
-          ? {
-              result: "Found",
-              value: {
-                pools: [
-                  {
-                    pool: "shame",
-                    capabilities: ["Platform:Linux:Amd64"],
-                    registeredAt: "2026-09-30T12:00:00.000Z",
-                    polledAt: "2026-09-30T12:01:00.000Z",
-                    live: true,
-                    runner: shameRunner,
-                  },
-                  {
-                    pool: "spare",
-                    capabilities: [],
-                    registeredAt: "2026-09-30T12:00:00.000Z",
-                    live: false,
-                  },
-                ],
-                truncated: false,
-              },
-            }
-          : { result: "NotFound" },
-      );
-    },
-    mint: (_principal, partition, request) => {
-      calls.push(
-        `worker-pool-token:${partition.project}:${JSON.stringify(request)}`,
-      );
-      if (partition.project === "full")
-        return Promise.resolve({ result: "LimitReached" });
-      return Promise.resolve(
-        partition.project === "atlas"
-          ? {
-              result: "Minted",
-              value: { token: "a-token", expiresAtMs: 1_757_500_000_000 },
-            }
-          : { result: "NotFound" },
-      );
-    },
-    redeem: (offered) => {
-      calls.push(`worker-pool-redeem:${offered.pool}`);
-      if (offered.pool === "spent")
-        return Promise.resolve({ result: "NotFound" });
-      return Promise.resolve({
-        result: "Registered",
-        value: {
-          partition: {
-            tenant: asTenantId("acme"),
-            project: asProjectId("atlas"),
-          },
-          pool: offered.pool,
-          capabilities: offered.capabilities,
-          tokenUrl: "https://issuer.invalid/oauth2/token",
-          audience: "https://api.invalid",
-          planeUrl: "https://plane.invalid/",
-          clientId: "chuggy-pool-one",
-          clientSecret: "a-secret",
-        },
-      });
-    },
-  };
-}
-
 /**
  * Placement as the routes see it: `atlas` is administered under the hosted
  * grant, `pooled` without it, and every other project is not found.
@@ -736,7 +653,6 @@ function appOf(
     fakeSelectorSettings(calls),
     minting ?? fakeForgeCredentials(calls),
     undefined,
-    fakeWorkerPools(calls),
     undefined,
     fakeExecutionPlacement(calls),
   );
@@ -1132,7 +1048,6 @@ function appPinning(calls: string[], releases = pinnedFixture) {
     },
     { ready: () => Promise.resolve(true) },
     authority,
-    undefined,
     undefined,
     undefined,
     undefined,
@@ -2500,9 +2415,6 @@ test("a malformed session bearer is refused, and never reported as an outage", a
   }
 });
 
-const workerPoolTokenPath =
-  "/api/v1/tenants/acme/projects/atlas/worker-pool-registration-tokens";
-const workerPoolRedemptionPath = "/api/v1/worker-pool-registrations";
 const workerPoolJson = { "content-type": "application/vnd.chuggy.v1+json" };
 
 const placementPath = (project: string) =>
@@ -2569,158 +2481,33 @@ test("a placement is written whole, and a hosted route the tenant has not grante
   );
 });
 
-test("a project's registered pools are listed to a reader with each one's newest poll, whether it is live and the runner it named, and another project's are not found", async () => {
+test("a project's pools are neither listed, minted a token nor registered: each path answers as one the API does not serve", async () => {
   const calls: string[] = [];
   await using app = appOf(calls);
-  const listed = await app.inject({
-    url: "/api/v1/tenants/acme/projects/atlas/worker-pools",
-    headers: { authorization: "Bearer valid" },
-  });
-  assert.equal(listed.statusCode, 200);
-  assert.deepEqual(workerPoolsResponseSchema.parse(listed.json()), {
-    pools: [
-      {
-        pool: "shame",
-        capabilities: ["Platform:Linux:Amd64"],
-        registeredAt: "2026-09-30T12:00:00.000Z",
-        polledAt: "2026-09-30T12:01:00.000Z",
-        live: true,
-        runner: {
-          package: "chuggy-linux",
-          version: "0.14.0",
-          pinned: "0.14.1",
-        },
-      },
-      {
-        pool: "spare",
-        capabilities: [],
-        registeredAt: "2026-09-30T12:00:00.000Z",
-        live: false,
-      },
-    ],
-    truncated: false,
-  });
-  const absent = await app.inject({
-    url: "/api/v1/tenants/acme/projects/other/worker-pools",
-    headers: { authorization: "Bearer valid" },
-  });
-  assert.equal(absent.statusCode, 404);
-});
-
-test("an owner mints a registration token and a project they may not administer is not found", async () => {
-  const calls: string[] = [];
-  await using app = appOf(calls);
-  const minted = await app.inject({
-    method: "POST",
-    url: workerPoolTokenPath,
-    headers: { authorization: "Bearer valid", ...workerPoolJson },
-    payload: JSON.stringify({ lifetimeSecs: 900 }),
-  });
-  assert.equal(minted.statusCode, 201);
-  assert.deepEqual(minted.json(), {
-    token: "a-token",
-    expiresAtMs: 1_757_500_000_000,
-  });
-  const absent = await app.inject({
-    method: "POST",
-    url: "/api/v1/tenants/acme/projects/other/worker-pool-registration-tokens",
-    headers: { authorization: "Bearer valid", ...workerPoolJson },
-    payload: JSON.stringify({ lifetimeSecs: 900 }),
-  });
-  assert.equal(absent.statusCode, 404);
-  assert.deepEqual(
-    calls.filter((call) => call.startsWith("worker-pool-")),
+  const asked = (method: "GET" | "POST", url: string) =>
+    app.inject({
+      method,
+      url,
+      headers: { authorization: "Bearer valid", ...workerPoolJson },
+      ...(method === "POST" ? { payload: "{}" } : {}),
+    });
+  for (const [method, url] of [
+    ["GET", "/api/v1/tenants/acme/projects/atlas/worker-pools"],
     [
-      'worker-pool-token:atlas:{"lifetimeSecs":900}',
-      'worker-pool-token:other:{"lifetimeSecs":900}',
+      "POST",
+      "/api/v1/tenants/acme/projects/atlas/worker-pool-registration-tokens",
     ],
-  );
-});
-
-test("a mint still naming capabilities mints, and the service is asked only for the lifetime", async () => {
-  const calls: string[] = [];
-  await using app = appOf(calls);
-  const minted = await app.inject({
-    method: "POST",
-    url: workerPoolTokenPath,
-    headers: { authorization: "Bearer valid", ...workerPoolJson },
-    payload: JSON.stringify({
-      capabilities: ["Platform:Linux:Amd64"],
-      lifetimeSecs: 900,
-    }),
-  });
-  assert.equal(minted.statusCode, 201);
-  assert.deepEqual(
-    calls.filter((call) => call.startsWith("worker-pool-")),
-    ['worker-pool-token:atlas:{"lifetimeSecs":900}'],
-  );
-});
-
-test("a project already holding its bound of live tokens is answered a conflict", async () => {
-  await using app = appOf([]);
-  const refused = await app.inject({
-    method: "POST",
-    url: "/api/v1/tenants/acme/projects/full/worker-pool-registration-tokens",
-    headers: { authorization: "Bearer valid", ...workerPoolJson },
-    payload: JSON.stringify({ lifetimeSecs: 900 }),
-  });
-  assert.equal(refused.statusCode, 409);
-  assert.equal(
-    refused.json<HttpErrorEnvelope>().error.code,
-    "TokenLimitReached",
-  );
-});
-
-test("minting a registration token needs a bearer, and redeeming one needs none", async () => {
-  const calls: string[] = [];
-  await using app = appOf(calls);
-  const unauthenticated = await app.inject({
-    method: "POST",
-    url: workerPoolTokenPath,
-    headers: workerPoolJson,
-    payload: JSON.stringify({ lifetimeSecs: 60 }),
-  });
-  assert.equal(unauthenticated.statusCode, 401);
-  const redeemed = await app.inject({
-    method: "POST",
-    url: workerPoolRedemptionPath,
-    headers: workerPoolJson,
-    payload: JSON.stringify({
-      token: "a-token",
-      pool: "pool-one",
-      capabilities: ["linux-containers"],
-    }),
-  });
-  assert.equal(redeemed.statusCode, 201);
-  assert.deepEqual(redeemed.json(), {
-    tenant: "acme",
-    project: "atlas",
-    pool: "pool-one",
-    capabilities: ["linux-containers"],
-    tokenUrl: "https://issuer.invalid/oauth2/token",
-    audience: "https://api.invalid",
-    planeUrl: "https://plane.invalid/",
-    clientId: "chuggy-pool-one",
-    clientSecret: "a-secret",
-  });
-  workerPoolCredentialsSchema.parse(redeemed.json());
-  assert.deepEqual(
-    calls.filter((call) => call.startsWith("worker-pool-")),
-    ["worker-pool-redeem:pool-one"],
-  );
-});
-
-test("a spent token is not found", async () => {
-  await using app = appOf([]);
-  const answered = await app.inject({
-    method: "POST",
-    url: workerPoolRedemptionPath,
-    headers: workerPoolJson,
-    payload: JSON.stringify({
-      token: "a-token",
-      pool: "spent",
-      capabilities: [],
-    }),
-  });
-  assert.equal(answered.statusCode, 404);
+    ["POST", "/api/v1/worker-pool-registrations"],
+  ] as const) {
+    const unserved = await asked(method, `${url}-unserved`);
+    assert.equal(unserved.statusCode, 404, url);
+    const answered = await asked(method, url);
+    assert.equal(answered.statusCode, unserved.statusCode, url);
+    assert.deepEqual(
+      answered.json(),
+      JSON.parse(unserved.body.replace(`${url}-unserved`, url)),
+      url,
+    );
+  }
+  assert.deepEqual(calls, []);
 });

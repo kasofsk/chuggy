@@ -173,18 +173,13 @@ import {
 } from "./codecs.ts";
 
 import type {
-  WorkerPoolCredentials,
-  WorkerPoolsListed,
-  WorkerPoolTokenMinted,
-  WorkerPoolTokenRedeemed,
-} from "../../interpreter/workerPoolRegistrationToken.ts";
-import type {
   PersonalRunnerAllowed,
   PersonalRunnerCredentials,
   PersonalRunnerDeregistered,
   PersonalRunnerDisallowed,
   PersonalRunnerRead,
   PersonalRunnerTokenRedeemed,
+  WorkerPoolTokenMinted,
 } from "../../interpreter/personalRunnerRegistration.ts";
 import type {
   ChatHostCredentials,
@@ -200,6 +195,7 @@ import type { ProjectOwnerFallbackView } from "../../interpreter/projectOwnerFal
 import type { ThreadLimitView } from "../../interpreter/threadLimit.ts";
 import {
   sessionPlacementLeadCompatibility,
+  sessionPlacementProjectRunnersCompatibility,
   type SessionPlacementView,
   type SessionPlacementWritten,
 } from "../../interpreter/sessionPlacement.ts";
@@ -223,8 +219,6 @@ import type {
   ThreadLimitResponse,
   RunnerListedResponse,
   SessionPlacementResponse,
-  WorkerPoolCredentialsResponse,
-  WorkerPoolsResponse,
 } from "../../contract/responses.ts";
 import {
   agentAccountCredentialInUseCode,
@@ -1117,54 +1111,6 @@ export function forgeCredentialResponse(
   }
 }
 
-/**
- * A minted registration token, answered once. A caller the authority does not
- * admit is told nothing more than that there is nothing there, which is what
- * every other project-scoped refusal here answers.
- */
-export function workerPoolTokenResponse(
-  result: WorkerPoolTokenMinted,
-): NativeHttpResponse {
-  switch (result.result) {
-    case "NotFound":
-      return response(404, nativeHttpError("NotFound", "Resource not found."));
-    case "LimitReached":
-      return response(
-        409,
-        nativeHttpError(
-          "TokenLimitReached",
-          "The project already holds its bound of live registration tokens.",
-        ),
-      );
-    case "Minted":
-      return response(201, {
-        token: result.value.token,
-        expiresAtMs: result.value.expiresAtMs,
-      });
-    default:
-      return assertNever(result);
-  }
-}
-
-function workerPoolCredentialsBody(
-  credentials: WorkerPoolCredentials,
-): WorkerPoolCredentialsResponse {
-  return {
-    tenant: credentials.partition.tenant,
-    project: credentials.partition.project,
-    pool: credentials.pool,
-    capabilities: [...credentials.capabilities],
-    tokenUrl: credentials.tokenUrl,
-    audience: credentials.audience,
-    planeUrl: credentials.planeUrl,
-    ...(credentials.registryHost === undefined
-      ? {}
-      : { registryHost: credentials.registryHost }),
-    clientId: credentials.clientId,
-    clientSecret: credentials.clientSecret,
-  };
-}
-
 /** A runner as a read names it, where its newest poll named one. */
 function runnerListedBody(runner: WorkerRunnerListed | undefined): {
   runner?: RunnerListedResponse;
@@ -1178,32 +1124,6 @@ function runnerListedBody(runner: WorkerRunnerListed | undefined): {
           ...(runner.pinned === undefined ? {} : { pinned: runner.pinned }),
         },
       };
-}
-
-/** A project's registered pools, or the same miss as a project the caller may not see. */
-export function workerPoolsResponse(
-  result: WorkerPoolsListed,
-): NativeHttpResponse {
-  switch (result.result) {
-    case "NotFound":
-      return notFound();
-    case "Found":
-      return response(200, {
-        pools: result.value.pools.map((listed) => ({
-          pool: listed.pool,
-          capabilities: [...listed.capabilities],
-          registeredAt: listed.registeredAt,
-          ...(listed.polledAt === undefined
-            ? {}
-            : { polledAt: listed.polledAt }),
-          live: listed.live,
-          ...runnerListedBody(listed.runner),
-        })),
-        truncated: result.value.truncated,
-      } satisfies WorkerPoolsResponse);
-    default:
-      return assertNever(result);
-  }
 }
 
 export function executionPlacementBody(
@@ -1228,7 +1148,7 @@ export function sessionPlacementBody(
     runners: {
       mine: view.runners.mine,
       inquiry: view.runners.inquiry,
-      project: view.runners.project,
+      project: sessionPlacementProjectRunnersCompatibility,
     },
   };
 }
@@ -1298,20 +1218,6 @@ export function sessionPlacementWriteResponse(
   return placementWriteResponse(result, sessionPlacementBody);
 }
 
-/** A redemption, answered with the pool file once, the client's secret in it. */
-export function workerPoolRedemptionResponse(
-  result: WorkerPoolTokenRedeemed,
-): NativeHttpResponse {
-  switch (result.result) {
-    case "NotFound":
-      return response(404, nativeHttpError("NotFound", "Resource not found."));
-    case "Registered":
-      return response(201, workerPoolCredentialsBody(result.value));
-    default:
-      return assertNever(result);
-  }
-}
-
 /** A write that answers nothing but that it was made. */
 function noContent(): NativeHttpResponse {
   return {
@@ -1321,18 +1227,33 @@ function noContent(): NativeHttpResponse {
   };
 }
 
-/** A personal mint, answered as a pool's but bounded per member rather than per project. */
+/**
+ * A minted registration token, answered once and bounded per member. A caller
+ * the authority does not admit is told nothing more than that there is nothing
+ * there, which is what every other scoped refusal here answers.
+ */
 export function personalRunnerTokenResponse(
   result: WorkerPoolTokenMinted,
 ): NativeHttpResponse {
-  if (result.result !== "LimitReached") return workerPoolTokenResponse(result);
-  return response(
-    409,
-    nativeHttpError(
-      "TokenLimitReached",
-      "The caller already holds their bound of live registration tokens in this tenant.",
-    ),
-  );
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "LimitReached":
+      return response(
+        409,
+        nativeHttpError(
+          "TokenLimitReached",
+          "The caller already holds their bound of live registration tokens in this tenant.",
+        ),
+      );
+    case "Minted":
+      return response(201, {
+        token: result.value.token,
+        expiresAtMs: result.value.expiresAtMs,
+      });
+    default:
+      return assertNever(result);
+  }
 }
 
 function personalRunnerCredentialsBody(
@@ -1360,7 +1281,7 @@ export function personalRunnerRedemptionResponse(
 ): NativeHttpResponse {
   switch (result.result) {
     case "NotFound":
-      return workerPoolRedemptionResponse(result);
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "LimitReached":
       return response(
         409,

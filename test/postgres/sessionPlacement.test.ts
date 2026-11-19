@@ -15,7 +15,6 @@ import {
 } from "../../src/adapters/postgres/sessionPlacement.ts";
 import { postgresChatHostRegistry } from "../../src/adapters/postgres/chatHost.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
-import { postgresWorkerPoolRegistry } from "../../src/adapters/postgres/workerPool.ts";
 import {
   apiRole,
   configurationImporterRole,
@@ -157,60 +156,32 @@ test("a write that changes the thread's route is written, and the route reads ba
   }
 });
 
-test("a pool counts as live for the project only while its last poll is recent, and is no runner of its registering member's inquiries", async () => {
+test("a project's pool is no runner of its threads, even one polling now: the read names a member's chat hosts alone", async () => {
   const partition = await postgresHarnessProject(harness.store, "runners");
   const member = asPrincipal("https://issuer.invalid#a-member");
-  const other = asPrincipal("https://issuer.invalid#another");
   const reads = postgresSessionPlacement(apiPool);
-  assert.deepEqual(await reads.runners(partition, member), {
-    mine: "Unregistered",
-    inquiry: "Unregistered",
-    project: "Unregistered",
-  });
-  assert.equal(
-    await postgresWorkerPoolRegistry(apiPool).register({
-      partition,
-      pool: "laptop",
-      capabilities: [],
-      class: "Dedicated",
-      clientId: `chuggy-pool-${randomUUID()}`,
-      principal: asPrincipal("https://issuer.invalid#pool-laptop"),
-      registeredBy: member,
-    }),
-    true,
+  const unregistered = { mine: "Unregistered", inquiry: "Unregistered" };
+  assert.deepEqual(await reads.runners(partition, member), unregistered);
+  await harness.query(
+    `INSERT INTO worker_pool(tenant,project,pool,principal,client_id,class,last_polled_at)
+     VALUES($1,$2,'laptop',$3,$4,'Dedicated',now())`,
+    [
+      partition.tenant,
+      partition.project,
+      `https://issuer.invalid#pool-${randomUUID()}`,
+      `chuggy-pool-${randomUUID()}`,
+    ],
   );
-  const polled = async (secondsAgo: number) =>
-    harness.query(
-      `UPDATE worker_pool SET last_polled_at=now()-make_interval(secs=>$3)
-        WHERE tenant=$1 AND project=$2`,
-      [partition.tenant, partition.project, secondsAgo],
-    );
-  assert.deepEqual(await reads.runners(partition, member), {
-    mine: "Unregistered",
-    inquiry: "Unregistered",
-    project: "Offline",
-  });
-  await polled(1);
-  for (const elsewhere of [member, other, undefined])
-    assert.deepEqual(await reads.runners(partition, elsewhere), {
-      mine: "Unregistered",
-      inquiry: "Unregistered",
-      project: "Live",
-    });
-  await polled(sessionRunnerPolledSecsMax + 1);
-  assert.deepEqual(await reads.runners(partition, member), {
-    mine: "Unregistered",
-    inquiry: "Unregistered",
-    project: "Offline",
-  });
+  for (const elsewhere of [member, undefined])
+    assert.deepEqual(await reads.runners(partition, elsewhere), unregistered);
 });
 
-/** A member's standing for their thread and their inquiry, where the project has no pool. */
+/** A member's standing for their thread and their inquiry. */
 function hosted(
   mine: string,
   inquiry = mine,
 ): Readonly<Record<string, string>> {
-  return { mine, inquiry, project: "Unregistered" };
+  return { mine, inquiry };
 }
 
 test("a member's chat host is their own runner and their inquiries' in every project of its tenant, live only while its last poll is recent", async () => {

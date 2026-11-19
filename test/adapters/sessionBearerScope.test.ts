@@ -180,7 +180,6 @@ function scopedApp(
     recorded(reached, "selectorSettings"),
     recorded(reached, "forgeCredentials"),
     recorded(reached, "onboarding"),
-    recorded(reached, "workerPools"),
     recorded(reached, "creation"),
     recorded(reached, "placement"),
     recorded(reached, "sessionPlacement"),
@@ -872,7 +871,7 @@ test("a session bearer is refused a route addressed to no partition, and one tha
     { method: "GET" as const, url: "/api/v1/tenants/acme/forge-installations" },
     {
       method: "POST" as const,
-      url: `${projectPath(own)}/worker-pool-registration-tokens`,
+      url: `/api/v1/tenants/${own.tenant}/personal-runner-registration-tokens`,
       headers: { "content-type": nativeHttpMediaType },
       payload: { lifetimeSecs: 900 },
     },

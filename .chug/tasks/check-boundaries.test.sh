@@ -297,16 +297,16 @@ check "importing a process root is a finding" 1 "$RC" "nothing-imports-a-process
 # --- pool-plane-mints-no-credential -------------------------------------------
 
 # The allowed shape first: the plane's root reaches a registry adapter and the
-# owner's command reaches the issuer's admin adapter. A red here would mean the
-# rule refuses the one root that exists to hold that privilege.
+# API's root reaches the issuer's admin adapter. A red here would mean the rule
+# refuses the root that holds that privilege.
 fixture
 mkdir -p "$R/src/roots" "$R/src/adapters/hydra" "$R/src/adapters/postgres"
 printf '%s\n' 'export const clients = 1' > "$R/src/adapters/hydra/clients.ts"
 printf '%s\n' 'export const registry = 1' > "$R/src/adapters/postgres/registry.ts"
 printf '%s\n' 'import { registry } from "../adapters/postgres/registry.ts"' 'export const plane = registry' > "$R/src/roots/poolPlane.ts"
-printf '%s\n' 'import { clients } from "../adapters/hydra/clients.ts"' 'export const registered = clients' > "$R/src/roots/registerWorkerPool.ts"
+printf '%s\n' 'import { clients } from "../adapters/hydra/clients.ts"' 'export const registered = clients' > "$R/src/roots/nativeHttp.ts"
 seal
-check "the plane's root may reach a registry, and the owner's command the issuer" 0 "$RC" "graph clean"
+check "the plane's root may reach a registry, and the API's root the issuer" 0 "$RC" "graph clean"
 
 fixture
 mkdir -p "$R/src/roots" "$R/src/adapters/hydra"

@@ -144,7 +144,6 @@ import {
   parseEpicList,
   parseEpicWrite,
   parsePersonalRunnerRedemption,
-  parseWorkerPoolRedemption,
   parseRegistrationTokenRequest,
 } from "./contract.ts";
 import {
@@ -221,9 +220,6 @@ import {
   threadsResponse,
   type NativeHttpResponse,
   authorityRetryAfterSeconds,
-  workerPoolRedemptionResponse,
-  workerPoolTokenResponse,
-  workerPoolsResponse,
   personalRunnerAllowedResponse,
   agentAccountPressedResponse,
   agentAccountRetiredResponse,
@@ -264,7 +260,6 @@ import type { ActionReports } from "../../interpreter/actionReport.ts";
 import type { TicketActionReaches } from "../../interpreter/ticketActionReach.ts";
 import type { TicketLandingReads } from "../../interpreter/ticketLandings.ts";
 import type { LandingQueueReads } from "../../interpreter/landingQueues.ts";
-import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegistration.ts";
 import type { AgentAccountService } from "../../interpreter/agentAccount.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
@@ -1302,57 +1297,6 @@ function registerForgeCredentials(
             partitionOf(request),
             parseForgeCredentialRequest(request.body),
           ),
-        ),
-      );
-    },
-  );
-}
-
-/**
- * The two doors a pool is registered through: an owner with `Administer` on the
- * project mints a single-use token for it, and whoever holds that token redeems
- * it once for a client and its secret. The redemption carries no bearer and is
- * declared `public` because it is authenticated by the token in its body — a
- * machine being configured has no principal yet, which is the whole reason an
- * owner had to mint the token for it.
- */
-function registerWorkerPools(
-  app: FastifyInstance,
-  pools: WorkerPoolRegistrationService,
-  partitionRoot: string,
-): void {
-  app.get(`${partitionRoot}/worker-pools`, async (request, reply) => {
-    nativeHttpSend(
-      reply,
-      workerPoolsResponse(
-        await pools.registered(principalOf(request), partitionOf(request)),
-      ),
-    );
-  });
-  app.post(
-    `${partitionRoot}/worker-pool-registration-tokens`,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      nativeHttpSend(
-        reply,
-        workerPoolTokenResponse(
-          await pools.mint(
-            principalOf(request),
-            partitionOf(request),
-            parseRegistrationTokenRequest(request.body),
-          ),
-        ),
-      );
-    },
-  );
-  app.post(
-    "/api/v1/worker-pool-registrations",
-    { config: { public: true }, preValidation: requireVersionedJson },
-    async (request, reply) => {
-      nativeHttpSend(
-        reply,
-        workerPoolRedemptionResponse(
-          await pools.redeem(parseWorkerPoolRedemption(request.body)),
         ),
       );
     },
@@ -3305,19 +3249,6 @@ export function nativeHttpMediaTypeServed(app: FastifyInstance): void {
   });
 }
 
-/** The registrations of both kinds of runner, each where its service is composed. */
-function registerRunners(
-  app: FastifyInstance,
-  partitionRoot: string,
-  workerPools: WorkerPoolRegistrationService | undefined,
-  personalRunners: PersonalRunnerService | undefined,
-): void {
-  if (workerPools !== undefined)
-    registerWorkerPools(app, workerPools, partitionRoot);
-  if (personalRunners !== undefined)
-    registerPersonalRunners(app, personalRunners);
-}
-
 function registerPlacements(
   app: FastifyInstance,
   placement: ExecutionPlacementAdministration | undefined,
@@ -3372,9 +3303,6 @@ function registerFailures(app: FastifyInstance): void {
   });
 }
 
-/** The path every project route is under. */
-const nativeHttpPartitionRoot = "/api/v1/tenants/:tenant/projects/:project";
-
 export function createNativeHttpApp(
   web: InitialNativeWeb,
   authentication: PrincipalAuthentication,
@@ -3385,7 +3313,6 @@ export function createNativeHttpApp(
   selectorSettings?: SelectorProjectSettingsAdministration,
   forgeCredentials?: ForgeCredentialMinting,
   onboarding?: RepositoryOnboarding,
-  workerPools?: WorkerPoolRegistrationService,
   creation?: ProjectCreation,
   placement?: ExecutionPlacementAdministration,
   sessionPlacement?: SessionPlacementAdministration,
@@ -3435,7 +3362,8 @@ export function createNativeHttpApp(
   if (threadLimits !== undefined) registerThreadLimits(app, threadLimits);
   if (chat !== undefined) registerMemberChat(app, chat, threadLive);
   registerProjectViews(app, web);
-  registerRunners(app, nativeHttpPartitionRoot, workerPools, personalRunners);
+  if (personalRunners !== undefined)
+    registerPersonalRunners(app, personalRunners);
   registerPlacements(app, placement, sessionPlacement, ownerFallback);
   registerActions(app, actionReports, actionReach);
   registerTicketDoors(app, landings, landingQueues, takes, proposalMerges);

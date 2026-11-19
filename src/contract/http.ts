@@ -455,9 +455,6 @@ export const projectRepositoriesAnsweredMax = 200;
 /** How many of a refused import's refusals its kept attempt holds, in the order they were found. */
 export const repositoryConfigurationImportRefusalsKeptMax = 5;
 
-/** How many registered pools one project's listing answers with, in name order. */
-export const workerPoolsAnsweredMax = 64;
-
 /** How many projects one member's personal runners may serve in a tenant, which their read answers whole. */
 export const personalRunnerProjectsMax = 64;
 
@@ -617,9 +614,6 @@ export const nativeHttpRoutes = {
   abilities: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/abilities`,
   accessTokens: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/access-tokens`,
   accessToken: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/access-tokens/:token`,
-  workerPools: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pools`,
-  workerPoolRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pool-registration-tokens`,
-  workerPoolRegistrations: `${nativeHttpBasePath}/worker-pool-registrations`,
   personalRunnerRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/personal-runner-registration-tokens`,
   personalRunnerRegistrations: `${nativeHttpBasePath}/personal-runner-registrations`,
   personalRunnerPermit: `${nativeHttpBasePath}/tenants/:tenant/personal-runner-permit`,

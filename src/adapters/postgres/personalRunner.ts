@@ -62,6 +62,7 @@ import {
   type PersonalRunnerTokenTerms,
   type PersonalRunnerWritten,
   type RegistrationTokenKind,
+  type WorkerPoolTokenWritten,
 } from "../../interpreter/personalRunnerRegistration.ts";
 import { asPrincipal, type Principal } from "../../interpreter/principal.ts";
 import {
@@ -75,7 +76,6 @@ import {
   workerPoolMemoryMibDefault,
   type PersonalRunnerPlaneRegistry,
 } from "../../interpreter/workerPool.ts";
-import type { WorkerPoolTokenWritten } from "../../interpreter/workerPoolRegistrationToken.ts";
 import {
   executionIdentity,
   executionRunnerPause,
@@ -536,7 +536,7 @@ function registrationTokenKindOf(kind: string): RegistrationTokenKind {
  * One mint under the member's bound in the tenant, serialized on an advisory
  * lock per member and tenant, sweeping that member's expired tokens, and
  * refused by its foreign key where the tenant is no row. A spent token stays until it expires,
- * as a pool token does, because its redemption may still give it back.
+ * because its redemption may still give it back.
  */
 async function personalRunnerTokenMinted(
   client: pg.PoolClient,
