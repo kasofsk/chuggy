@@ -1,12 +1,12 @@
 {
   "chuggy-darwin": {
-    "version": "0.29.0",
-    "url": "https://github.com/kasofsk/chuggy-darwin/releases/download/v0.29.0/chuggy-darwin-0.29.0.tgz",
-    "integrity": "sha512-f44tVryCL17OqWMu/v724AjozvrUdSBwg1DERid2nH0C54xYvaRpNNGtQ6rZr0dRUU0VREVPrHuvZqBrByjNUA=="
+    "version": "0.31.0",
+    "url": "https://github.com/kasofsk/chuggy-darwin/releases/download/v0.31.0/chuggy-darwin-0.31.0.tgz",
+    "integrity": "sha512-z8LA0hvXR3REz7D/I1NciroO6cdp+kS09hTlkj1AvojksDKV/Oslm4fr9w0ekI4jQOpRhssvlTZirYPFHlnu2Q=="
   },
   "chuggy-linux": {
-    "version": "0.59.0",
-    "url": "https://github.com/kasofsk/chuggy-linux/releases/download/v0.59.0/chuggy-linux-0.59.0.tgz",
-    "integrity": "sha512-VTXE7BqyLiOiwNViW0nDTPi5F41S2vbk7w+FBxQLX4MK2NabIhbO7ZIYUXei+MiweOqdyqcJCrV3D7xLcyZcSg=="
+    "version": "0.61.0",
+    "url": "https://github.com/kasofsk/chuggy-linux/releases/download/v0.61.0/chuggy-linux-0.61.0.tgz",
+    "integrity": "sha512-DvWJFT3LSTupqVS+/i+x9BwqGdXxbG46aXoNDwz4mLbQT/znSCFgIXOkxVFoWN+yALW4ulow/5EetDKGJPAdaA=="
   }
 }
