@@ -101,6 +101,9 @@ export interface ConsoleWrite<V, T> {
     variables: V,
   ) => Promise<unknown>;
   readonly refused?: (error: ConsoleWriteRefused, variables: V) => void;
+  /** How long an answer is kept once no screen holds it; query-core's default
+   * where absent. */
+  readonly gcTime?: number;
 }
 
 export const consoleMutationDefaults = { retry: 0 } as const;

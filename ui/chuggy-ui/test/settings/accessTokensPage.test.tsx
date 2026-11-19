@@ -1,9 +1,9 @@
 /**
  * The Access tokens settings page, mounted: New token hidden only where the
  * abilities read answers no, a mint whose secret is shown once and held by
- * nothing once its dialog is put away, each refusal's line, each token's
- * standing drawn on the page's own clock, deletion through a Confirm, and
- * Maker only in an administrator's list.
+ * nothing once its dialog is put away or its page left, each refusal's line,
+ * each token's standing drawn on the page's own clock, deletion through a
+ * Confirm, and Maker only in an administrator's list.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -109,7 +109,7 @@ const minted: AccessTokenMintedResponse = {
 interface TokensDrawing {
   readonly abilities?: ProjectAbilitiesResponse | "Failed";
   readonly tokens?: () => readonly AccessTokenResponse[];
-  readonly mint?: (request: SentRequest) => Response;
+  readonly mint?: (request: SentRequest) => Response | Promise<Response>;
   readonly deletion?: (request: SentRequest) => Response;
   readonly copied?: CopyWrite;
 }
@@ -164,6 +164,16 @@ function headings(): readonly (string | null)[] {
   return within(sectionOf("Access tokens"))
     .getAllByRole("columnheader")
     .map((header) => header.textContent);
+}
+
+/** Every answer the cache's writes still hold, as one string to search. */
+function writesHeld(drawn: DrawnStrict): string {
+  return JSON.stringify(
+    drawn.client
+      .getMutationCache()
+      .getAll()
+      .map((one) => one.state.data),
+  );
 }
 
 test("New token is hidden only where the abilities say no, and an empty list says No tokens", async () => {
@@ -246,20 +256,44 @@ test("a token made shows its secret once beside Copy, and once put away nothing 
   await press("Done");
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(tokenHeldOutside(minted.secret, [])).toStrictEqual([]);
-  expect(
-    JSON.stringify(
-      drawn.client
-        .getMutationCache()
-        .getAll()
-        .map((one) => one.state.data),
-    ),
-  ).not.toContain(minted.secret);
+  expect(writesHeld(drawn)).not.toContain(minted.secret);
   await press("New token");
   expect(
     within(dialog()).getByRole<HTMLInputElement>("textbox", { name: "Name" })
       .value,
   ).toBe("");
   expect(dialog().textContent).not.toContain(minted.secret);
+});
+
+test("a page left with the secret shown holds it nowhere", async () => {
+  const drawn = await drawTokens();
+  await named();
+  await press("Create token");
+  expect(writesHeld(drawn)).toContain(minted.secret);
+  cleanup();
+  expect(writesHeld(drawn)).not.toContain(minted.secret);
+});
+
+test("a mint that lands after its page was left is held nowhere", async () => {
+  let landed: (response: Response) => void = () => undefined;
+  const drawn = await drawTokens({
+    mint: () =>
+      new Promise<Response>((resolve) => {
+        landed = resolve;
+      }),
+  });
+  await named();
+  await press("Create token");
+  expect(
+    drawn.client
+      .getMutationCache()
+      .getAll()
+      .map((one) => one.state.status),
+  ).toStrictEqual(["pending"]);
+  cleanup();
+  landed(answer(minted, 201));
+  await settled();
+  expect(writesHeld(drawn)).not.toContain(minted.secret);
 });
 
 test("each of the mint's refusals is one line in the dialog, read by its code, with what was typed kept", async () => {

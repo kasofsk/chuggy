@@ -6,13 +6,15 @@
  * is shown this once.
  *
  * CLOSING FORGETS THE SECRET. The dialog's state holds the mint's answer, and
- * closing it drops that answer from the write and from the cache the write
- * kept it in, so nothing holds the secret once it is put away.
+ * closing it, or the dialog going away, drops that answer from the write and
+ * from the cache the write kept it in. The write keeps no answer once no
+ * screen holds it, so a mint that lands after the dialog went is dropped too,
+ * and nothing holds the secret once it is put away.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type {
@@ -67,6 +69,7 @@ function accessTokenMintWrite(
       apiMintAccessToken(ports, partition, accessTokenMintBody(form)),
     refusal: (failure) => text(accessTokenMintRefusal(failure)),
     landed: (client) => accessTokensReread(client, partition),
+    gcTime: 0,
   };
 }
 
@@ -104,6 +107,13 @@ function useAccessTokenMint(
   const write = accessTokenMintWrite(partition, text);
   const [form, setForm] = useState(accessTokenFormBlank);
   const minting = useConsoleWrite(write, { drawn: open });
+  useEffect(
+    () => () => {
+      accessTokenMintForgotten(client, write);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the write is forgotten by its key, which a fresh write of the same partition keeps
+    [client, partition.tenant, partition.project],
+  );
   return {
     form,
     made: minting.isSuccess ? minting.data : undefined,
@@ -224,7 +234,6 @@ function AccessTokenFields(props: {
   );
 }
 
-/** Drawn only where the reader may make a token. */
 export function AccessTokenMint(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
