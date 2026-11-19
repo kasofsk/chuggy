@@ -210,9 +210,9 @@
     --ring-focus: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--focus);
 
     /* stacking — the band a Radix portal draws in, above every page layer's
-       own z-index: a menu, a picker or a tooltip takes this value directly,
-       and a toast or a dialog, which already drew above a menu, keeps that
-       order by building on top of it rather than beside it. */
+       own z-index. Each overlay builds on it, lowest first: a toast, a
+       dialog's scrim, its frame, then a menu, a picker or a tooltip, which
+       draw on top because one can be anchored to a control inside a dialog. */
     --z-overlay: 10;
 
     /* motion */
