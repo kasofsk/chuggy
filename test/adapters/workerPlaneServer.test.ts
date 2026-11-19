@@ -332,24 +332,32 @@ test("an unknown or oversized bearer reaches no attempt act", async () => {
   await app.close();
 });
 
+/** The attempt authority and the task port's attempt reads, each recording every secret it is offered. */
+function attemptPortsRecording(offered: string[]) {
+  const recorded = (secret: string) => {
+    offered.push(secret);
+    return Promise.resolve(undefined);
+  };
+  return {
+    authority: {
+      authenticate: (secret: string) => {
+        offered.push(secret);
+        return Promise.resolve(authority);
+      },
+    },
+    tasks: { work: recorded, workload: recorded },
+  };
+}
+
 test("a bearer written in the session language is never offered to the attempt authority", async () => {
   const offered: string[] = [];
   const app = createWorkerPlaneApp({
     ...projectArtifactsService,
     ...heartbeatService,
     ...runEvidenceService,
-    authority: {
-      authenticate: (secret) => {
-        offered.push(secret);
-        return Promise.resolve(authority);
-      },
-    },
+    authority: attemptPortsRecording(offered).authority,
     tasks: {
-      work: (secret) => {
-        offered.push(secret);
-        return Promise.resolve(undefined);
-      },
-      workload: () => Promise.resolve(undefined),
+      ...attemptPortsRecording(offered).tasks,
       session: (secret) => {
         offered.push(secret);
         return Promise.resolve(undefined);
@@ -549,18 +557,9 @@ test("a session bearer fetches its task through the session authority, and neith
     ...projectArtifactsService,
     ...heartbeatService,
     ...runEvidenceService,
-    authority: {
-      authenticate: (secret) => {
-        offered.push(secret);
-        return Promise.resolve(authority);
-      },
-    },
+    authority: attemptPortsRecording(offered).authority,
     tasks: {
-      work: (secret) => {
-        offered.push(secret);
-        return Promise.resolve(undefined);
-      },
-      workload: () => Promise.resolve(undefined),
+      ...attemptPortsRecording(offered).tasks,
       session: (secret) => Promise.resolve(found[secret]),
     },
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
