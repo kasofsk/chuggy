@@ -227,7 +227,7 @@ function handles(label: string): { assignment: string; bearer: string } {
   };
 }
 
-/** A project `poolProject` releases, every execution of it owned by `owner` under a fallback that lets their runners take it. */
+/** A project `poolProject` releases, every execution of it owned by `owner`. */
 async function ownedProject(
   label: string,
   tasks = 1,
@@ -238,7 +238,7 @@ async function ownedProject(
 ): Promise<SchedulerProject & { readonly owner: Principal }> {
   const project = await poolProject(label, tasks, configuration);
   await rig.harness.query(
-    `UPDATE execution SET owner=$3, owner_fallback='Strict' WHERE tenant=$1 AND project=$2`,
+    `UPDATE execution SET owner=$3 WHERE tenant=$1 AND project=$2`,
     [project.partition.tenant, project.partition.project, owner],
   );
   return { ...project, owner };

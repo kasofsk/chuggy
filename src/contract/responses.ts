@@ -2702,9 +2702,9 @@ const personalRunnerHeldSchema = z.strictObject({
  * One of a member's runners, named by `id`, the client its registration made.
  * `polledAt` is its newest poll, absent until it polls, and `live` whether that
  * poll is recent enough for the runner to be taking work; `executionsLive` is
- * the same of its newest poll for executions alone, which is what a pool's
- * claim defers to under Preferred; `held` is what it holds, the earliest
- * claimed first, and `heldTruncated` says it holds more than one read answers.
+ * the same of its newest poll for executions alone; `held` is what it holds,
+ * the earliest claimed first, and `heldTruncated` says it holds more than one
+ * read answers.
  */
 const personalRunnerListedSchema = z.strictObject({
   id: identitySchema,
