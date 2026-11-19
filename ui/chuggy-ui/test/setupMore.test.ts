@@ -152,6 +152,18 @@ test("their own configuration asks what they want different, and its rule names 
   );
 });
 
+test("while the person has yet to merge the first ticket's pull request themselves, their own configuration has nothing changed or written until it is merged, and names the bare command that takes it then", async () => {
+  const { after, writes } = await ran(unmerged(), more("configuration"));
+  expect(after).toEqual([
+    `tell: Your repository's configuration is in ${pullRequest}, which is not merged yet. Once you have merged it, ask for this again and it is changed with you then.`,
+    `rule: Change nothing under .chug/configurations/ and run nothing for it now: the default branch holds no configuration until the person merges ${pullRequest}. Once they say they have merged it, run ${saidMoreCommand(machineScript, "configuration")}.`,
+    moreNext,
+    stop,
+  ]);
+  expect(after.join("\n")).not.toContain(" configuration --workspace");
+  expect(writes).toEqual([]);
+});
+
 test("followed through check, the configuration offer stops at the push: check's clean result names import, which with every step done has nothing to import and gives the offer again, so the offer's rule says not to run it", async () => {
   const machine = await machineSignedIn(setupSiteAt("Landed"));
   machine.top = boxFolder;

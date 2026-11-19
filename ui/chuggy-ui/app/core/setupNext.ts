@@ -55,7 +55,8 @@
  * they merge it themselves, and on every bare run after, setup is said to be
  * done with three things offered after it, none of them a step: more runners,
  * by the line that makes another machine one; the repository's configuration
- * changed with the person's agent and judged by `check`; and where else
+ * changed with the person's agent and judged by `check`, once the pull request
+ * holding it is merged; and where else
  * chuggy is set, each by its address. On none of them, setup ends saying how
  * to have them offered again.
  */
@@ -1188,15 +1189,53 @@ function setupReviewTell(at: SetupAt, platform: SetupPlatform): Copy {
 }
 
 /**
+ * The repository's configuration offered to be changed with the person; or,
+ * where the first ticket's pull request holding it is `merging` by the
+ * person's hand, left as it is until they have merged it, since the default
+ * branch holds none for the change to start from.
+ */
+function setupMoreConfigurationThing(
+  at: SetupAt,
+  merging: string | undefined,
+): SetupThing {
+  const { workspace, project } = at;
+  if (merging !== undefined)
+    return {
+      thing: "More",
+      more: "Merging",
+      tell: { id: "setup-more-configuration-merging", args: { url: merging } },
+      url: merging,
+      directory: repositoryConfigurationRoot,
+      workspace,
+      project,
+    };
+  return {
+    thing: "More",
+    more: "Configuration",
+    tell: {
+      id: "setup-more-configuration",
+      args: { directory: repositoryConfigurationRoot },
+    },
+    directory: repositoryConfigurationRoot,
+    image: setupDocsPages.image,
+    page: setupPage(at, navRoutes.repositories),
+    workspace,
+    project,
+  };
+}
+
+/**
  * Setup's last step behind it, said by `done`: the three things offered after
- * it, or the one the person took, `more` naming which; on none of them, setup
- * ended with how to be offered them again.
+ * it, or the one the person took, `more` naming which, with the first ticket's
+ * pull request where the person is `merging` it themselves; on none of them,
+ * setup ended with how to be offered them again.
  */
 function setupMoreThing(
   done: Copy,
   at: SetupAt,
   more: SetupMoreAnswer | undefined,
   platform: SetupPlatform,
+  merging: string | undefined,
 ): SetupThing {
   const { workspace, project } = at;
   switch (more) {
@@ -1224,19 +1263,7 @@ function setupMoreThing(
         project,
       };
     case "configuration":
-      return {
-        thing: "More",
-        more: "Configuration",
-        tell: {
-          id: "setup-more-configuration",
-          args: { directory: repositoryConfigurationRoot },
-        },
-        directory: repositoryConfigurationRoot,
-        image: setupDocsPages.image,
-        page: setupPage(at, navRoutes.repositories),
-        workspace,
-        project,
-      };
+      return setupMoreConfigurationThing(at, merging);
     case "review":
       return {
         thing: "More",
@@ -1276,6 +1303,7 @@ function setupDoneThing(
       at,
       more,
       platform,
+      configuration.configuration === "merging" ? configuration.url : undefined,
     );
   if (merge.seen === "Refused") return done({ configuration: "none" });
   if (merge.seen === "Offered") {

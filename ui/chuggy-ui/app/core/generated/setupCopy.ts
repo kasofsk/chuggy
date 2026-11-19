@@ -1081,6 +1081,14 @@ export interface SetupCopy {
     readonly press: unknown;
     readonly page: unknown;
   };
+  readonly "setup-more-configuration-merging": {
+    readonly url: unknown;
+  };
+  readonly "setup-rule-more-configuration-merging": {
+    readonly directory: unknown;
+    readonly url: unknown;
+    readonly command: unknown;
+  };
   readonly "setup-more-review": {
     readonly permissions: unknown;
     readonly placement: unknown;

@@ -188,8 +188,9 @@ export interface SetupStepSaid {
   readonly detail: CopyOrData | undefined;
 }
 
-/** Which offer after setup's last step a run gives: the three offered together, or the one the person took. */
-export type SetupMore = "Offer" | "Runners" | "Configuration" | "Review";
+/** Which offer after setup's last step a run gives: the three offered together, or the one the person took, their configuration being `Merging` while the first ticket's pull request holding it waits on their own merge. */
+export type SetupMore =
+  "Offer" | "Runners" | "Configuration" | "Merging" | "Review";
 
 /**
  * The one next thing a checklist ends on: nothing, where setup is done and
@@ -219,7 +220,7 @@ export type SetupThing =
   | { readonly thing: "Done"; readonly tell: Copy }
   | {
       readonly thing: "More";
-      readonly more: Exclude<SetupMore, "Configuration">;
+      readonly more: Exclude<SetupMore, "Configuration" | "Merging">;
       readonly tell: Copy;
       readonly workspace: string;
       readonly project: string;
@@ -234,6 +235,17 @@ export type SetupThing =
       readonly image: string;
       /** The repositories page, from whose page of the repository the configuration pushed is imported at once. */
       readonly page: string;
+      readonly workspace: string;
+      readonly project: string;
+    }
+  | {
+      readonly thing: "More";
+      readonly more: "Merging";
+      readonly tell: Copy;
+      /** The first ticket's pull request, holding the configuration, that the person merges themselves. */
+      readonly url: string;
+      /** Where the checkout holds the repository's configuration. */
+      readonly directory: string;
       readonly workspace: string;
       readonly project: string;
     }
@@ -1620,7 +1632,8 @@ function setupMoreCommands(
  * each and for none, or the one the person took, under a rule naming those
  * they may have taken beside it, and for the person's configuration, one
  * naming the commands it is changed and judged by, and `import` as one not
- * to run, there being nothing left for it to import.
+ * to run, there being nothing left for it to import, or, while the pull
+ * request holding it is unmerged, one to change nothing until it is merged.
  */
 function setupEndLines(
   thing: Extract<SetupThing, { readonly thing: "Done" | "More" }>,
@@ -1645,34 +1658,59 @@ function setupEndLines(
       ],
       ["next", setupNextStop],
     ];
-  const own: readonly SetupLine[] =
-    thing.more === "Runners"
-      ? [["rule", { id: "setup-rule-more-runners" }]]
-      : thing.more === "Configuration"
-        ? [
-            [
-              "rule",
-              {
-                id: "setup-rule-more-configuration",
-                args: {
-                  directory: thing.directory,
-                  configuration: setupCommandOf(of, "Configuration"),
-                  image: thing.image,
-                  check: setupCommandOf(of, "Check"),
-                  import: setupCommandOf(of, "Import"),
-                  page: thing.page,
-                  press: setupImportPressed,
-                },
-              },
-            ],
-          ]
-        : [];
   return [
     ["tell", thing.tell],
-    ...own,
+    ...setupEndOwnLines(thing, of, commands.configuration),
     ["rule", { id: "setup-rule-more-next", args: commands }],
     ["next", setupNextStop],
   ];
+}
+
+/** The rule of the one offer taken after setup's last step, where it has one of its own; `configuration` is the bare command taking the configuration offer. */
+function setupEndOwnLines(
+  thing: Extract<SetupThing, { readonly thing: "More" }>,
+  of: SetupSaying,
+  configuration: string,
+): readonly SetupLine[] {
+  switch (thing.more) {
+    case "Offer":
+    case "Review":
+      return [];
+    case "Runners":
+      return [["rule", { id: "setup-rule-more-runners" }]];
+    case "Merging":
+      return [
+        [
+          "rule",
+          {
+            id: "setup-rule-more-configuration-merging",
+            args: {
+              directory: thing.directory,
+              url: thing.url,
+              command: configuration,
+            },
+          },
+        ],
+      ];
+    case "Configuration":
+      return [
+        [
+          "rule",
+          {
+            id: "setup-rule-more-configuration",
+            args: {
+              directory: thing.directory,
+              configuration: setupCommandOf(of, "Configuration"),
+              image: thing.image,
+              check: setupCommandOf(of, "Check"),
+              import: setupCommandOf(of, "Import"),
+              page: thing.page,
+              press: setupImportPressed,
+            },
+          },
+        ],
+      ];
+  }
 }
 
 /** `bind` to run at once, beside what the tell says of GitHub, and again where a wait of its own ran out first; `merge` run again, beside setup said to be done; or `watch` run at once and again, beside where the first ticket is. */
