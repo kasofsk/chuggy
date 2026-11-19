@@ -50,9 +50,21 @@ import type {
   WorkerPlaneAuthority,
   WorkerTaskPort,
   WorkerTaskRead,
+  WorkerTaskWorkload,
 } from "../../interpreter/workerPlane.ts";
+import {
+  catalogNamedWorkloadTask,
+  workloadTaskPositionOf,
+  type WorkloadTaskPosition,
+} from "../../interpreter/workloadTask.ts";
+import { declaredConfigurationIsCatalog } from "../../interpreter/authoring.ts";
 import { projectRowCounter } from "./rows.ts";
-import { executionRowTaskKind, taskRowStage } from "./schedulerRows.ts";
+import {
+  executionRowTaskKind,
+  taskRowEvaluator,
+  taskRowStage,
+} from "./schedulerRows.ts";
+import { storedOverridesOf, storedSelectionOf } from "./ticketBrief.ts";
 import { sessionRowMember, sessionRowText } from "./sessionRows.ts";
 import { postgresTransaction } from "./pool.ts";
 
@@ -269,6 +281,62 @@ async function workerTask(
   };
 }
 
+interface WorkerTaskWorkloadRow {
+  readonly task_kind: string | null;
+  readonly stage: string | null;
+  readonly evaluator: string | null;
+  readonly canonical: string | null;
+  readonly overrides: string | null;
+  readonly selection: string | null;
+}
+
+/** The name of the one workload of a catalog a task runs, or none where the revision is no catalog or names none there. */
+function workerTaskWorkloadName(
+  canonical: string,
+  row: Pick<WorkerTaskWorkloadRow, "overrides" | "selection">,
+  position: WorkloadTaskPosition,
+): string | undefined {
+  const configuration = JSON.parse(canonical) as unknown;
+  if (!declaredConfigurationIsCatalog(configuration)) return undefined;
+  return catalogNamedWorkloadTask(
+    configuration,
+    storedOverridesOf(row.overrides),
+    storedSelectionOf(row.selection),
+    position,
+  )?.name;
+}
+
+async function workerTaskWorkload(
+  pool: pg.Pool,
+  secret: AttemptCapabilitySecret,
+): Promise<WorkerTaskWorkload | undefined> {
+  const found = await pool.query<WorkerTaskWorkloadRow>(
+    sql`SELECT task_kind,stage::text AS stage,evaluator::text AS evaluator,
+               canonical,overrides,selection
+          FROM read_worker_task_workload(${workerSecretDigest(secret)})`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  if (row.task_kind === null || row.canonical === null)
+    throw new Error(
+      "postgres worker plane: task workload has an invalid shape",
+    );
+  const position = workloadTaskPositionOf(
+    executionRowTaskKind(row.task_kind),
+    taskRowStage(row.stage).stage,
+    taskRowEvaluator(row.evaluator).evaluator,
+  );
+  if (position === undefined)
+    throw new Error("postgres worker plane: evaluation names no evaluator");
+  const workload = workerTaskWorkloadName(row.canonical, row, position);
+  return {
+    ...(position.taskKind === "Work"
+      ? { taskKind: "Work" as const }
+      : { taskKind: "Evaluation" as const, evaluator: position.evaluator }),
+    ...(workload === undefined ? {} : { workload }),
+  };
+}
+
 interface SessionTaskRow {
   readonly tenant: string | null;
   readonly project: string | null;
@@ -340,6 +408,7 @@ async function sessionTask(
 export function postgresWorkerTasks(pool: pg.Pool): WorkerTaskPort {
   return {
     work: (secret) => workerTask(pool, secret),
+    workload: (secret) => workerTaskWorkload(pool, secret),
     session: (secret) => sessionTask(pool, secret),
   };
 }

@@ -154,6 +154,8 @@ export const sessionClaimableSinceFunction = "session_turn_claimable_since";
 export const configurationImporterRole = "chuggy_configuration_importer";
 export const workerAttemptReadFunction = "read_worker_attempt";
 export const workerTaskReadFunction = "read_worker_task";
+/** What an attempt's workload is derived from: its task's position, the revision it pins and its ticket's overrides and selection. */
+export const workerTaskWorkloadReadFunction = "read_worker_task_workload";
 export const workerAttemptHeartbeatFunction = "heartbeat_worker_attempt";
 export const workerAttemptLostFunction = "lose_worker_attempt";
 export const workerAttemptWithdrawFunction = "withdraw_worker_attempt";

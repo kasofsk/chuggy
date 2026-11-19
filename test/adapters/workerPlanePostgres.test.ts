@@ -106,6 +106,7 @@ test("the worker role can execute its boundaries and read forge installations", 
     "record_worker_run_usage",
     "record_worker_run_limit",
     "read_worker_task",
+    "read_worker_task_workload",
     "read_session_task",
   ])
     assert.ok(
