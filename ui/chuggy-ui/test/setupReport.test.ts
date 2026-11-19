@@ -206,6 +206,7 @@ const things: {
           detail: "",
           configuration: "none",
           last: "",
+          url: "",
           page: `${site}/acme/widgets/tickets/new`,
         },
       },
@@ -220,9 +221,61 @@ const things: {
           detail: "",
           configuration: "imported",
           last: "",
+          url: "",
           page: `${site}/acme/widgets/tickets/new`,
         },
       },
+    },
+  ],
+  More: [
+    {
+      thing: "More",
+      more: "Offer",
+      tell: { id: "setup-more-offer", args: { done: "Done." } },
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "More",
+      more: "Runners",
+      tell: {
+        id: "setup-more-runners",
+        args: { line: "the line", runners: "the runners page" },
+      },
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "More",
+      more: "Configuration",
+      tell: {
+        id: "setup-more-configuration",
+        args: { directory: ".chug/configurations/" },
+      },
+      directory: ".chug/configurations/",
+      image: "the image page",
+      page: "the page",
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "More",
+      more: "Review",
+      tell: {
+        id: "setup-more-review",
+        args: {
+          permissions: "p",
+          placement: "q",
+          usage: "u",
+          directory: ".chug/configurations/",
+          configuration: "c",
+          sizing: "s",
+          program: "chuggy-linux",
+          guide: "g",
+        },
+      },
+      workspace: "acme",
+      project: "widgets",
     },
   ],
   Hand: [
@@ -351,6 +404,7 @@ const things: {
           detail: "",
           configuration: "importing",
           last: "",
+          url: "",
           page: `${site}/acme/widgets/tickets/new`,
         },
       },
@@ -1648,10 +1702,18 @@ test("no checklist but bind's, merge's and watch's ends on a command: whatever e
     const imageRecommended =
       thing.thing === "First" ||
       (thing.thing === "Brief" && thing.bootstrapOffered);
+    if (thing.thing === "More") {
+      expect(rules, said).toHaveLength(
+        thing.more === "Runners" || thing.more === "Configuration" ? 2 : 1,
+      );
+      expect(lines.at(-2), said).toBe(rules.at(-1));
+      continue;
+    }
     expect(rules, said).toHaveLength(
       thing.thing === "Done"
         ? 0
-        : (thing.thing === "Offer" && thing.command === "Plugin") ||
+        : (thing.thing === "Offer" &&
+              (thing.command === "Plugin" || thing.command === "Merge")) ||
             thing.thing === "Usage" ||
             imageRecommended
           ? 2
@@ -3167,6 +3229,7 @@ test("the merge is offered under one rule naming merge, once the person says yes
   );
   expect(lines.slice(1)).toEqual([
     `rule: Run node ${machineScript} merge ${flags} only once the person says yes to chuggy merging that pull request.`,
+    `rule: Run node ${machineScript} ${flags} --more offer only if the person would rather merge it themselves.`,
     stop,
   ]);
 });

@@ -46,6 +46,7 @@ import {
   setupSiteTwo,
 } from "./setupSite.ts";
 import type { SetupSiteRead } from "./setupSite.ts";
+import { saidMoreOffered, saidMoreRule } from "./setupSaid.ts";
 
 interface Printed {
   readonly lines: readonly string[];
@@ -156,7 +157,8 @@ test("a person fully set up is shown every step done, and nothing is named to ru
       "step: repository  done     acme-org/widgets",
       "step: runner      done     live",
       "step: ticket      done     ticket 1 is done",
-      `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
+      `tell: ${saidMoreOffered(`chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`)}`,
+      saidMoreRule(machineScript),
       "next: stop",
     ],
   });
@@ -169,9 +171,10 @@ test("a first ticket that opened a pull request is said to have done that, in th
   const url = "https://github.com/acme-org/widgets/pull/1";
   project?.landings.set(1, [setupSiteProposed(url)]);
   const done = await printed(await machineSignedIn(world));
-  expect(done.lines.slice(-3)).toEqual([
+  expect(done.lines.slice(-4)).toEqual([
     "step: ticket      done     ticket 1 opened a pull request",
-    `tell: chuggy is set up for acme/widgets: ticket 1 opened a pull request. The next ticket is made at ${pages}/tickets/new.`,
+    `tell: ${saidMoreOffered(`chuggy is set up for acme/widgets: ticket 1 opened a pull request. The next ticket is made at ${pages}/tickets/new.`)}`,
+    saidMoreRule(machineScript),
     "next: stop",
   ]);
   expect(done.lines.join("\n")).not.toContain("finalized");
@@ -202,10 +205,11 @@ test("a project whose work the cluster runs, with a ticket landed and no runner,
     held.runner = "Unregistered";
   }
   const done = await printed(await machineSignedIn(world));
-  expect(done.lines.slice(-4)).toEqual([
+  expect(done.lines.slice(-5)).toEqual([
     "step: runner      done     hosted runs take its work",
     "step: ticket      done     ticket 1 is done",
-    `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
+    `tell: ${saidMoreOffered(`chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`)}`,
+    saidMoreRule(machineScript),
     "next: stop",
   ]);
   expect(done.lines.join("\n")).not.toContain("/settings/workspace/runner");
@@ -243,8 +247,8 @@ test("a person whose one project is on a later page of the site's list is asked 
   const later = setupSiteAt("Landed");
   for (const held of later.projects) held.page = 3;
   const found = await printed(await machineSignedIn(later));
-  expect(found.lines.at(-2)).toBe(
-    `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
+  expect(found.lines.at(-3)).toBe(
+    `tell: ${saidMoreOffered(`chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`)}`,
   );
   later.fates.set("inventory", "Cut");
   for (const held of later.projects) held.page = projectInventoryPagesMax;
@@ -255,8 +259,8 @@ test("a person whose one project is on a later page of the site's list is asked 
     "next: stop",
   ]);
   const named = ["--workspace", "acme", "--project", "widgets"];
-  expect((await printed(machine, named)).lines.at(-2)).toBe(
-    `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
+  expect((await printed(machine, named)).lines.at(-3)).toBe(
+    `tell: ${saidMoreOffered(`chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`)}`,
   );
 });
 

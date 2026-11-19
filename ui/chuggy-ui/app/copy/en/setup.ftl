@@ -69,7 +69,7 @@ setup-rule-ticket = Run { $command } with { $title } and a short title for what 
 # spells -run: to run is a verb here
 setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $signOut }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $merged }, as { $served }, as { $filed }, as { $watched }, as { $plugged } or as { $used }
 # spells -run: to run is a verb here
-setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin }, { $usage } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag }, { $tokenFile } and { $apiKeyFile } with { $runner }, { $test } with { $configuration }, { $title }, { $intent }, { $image }, { $toolchains } and { $chosen } with { $filed }, { $fiveHour } and { $sevenDay } with { $used }, { $start } when run bare, each once with a value, and no other flag
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin }, { $usage } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag }, { $tokenFile } and { $apiKeyFile } with { $runner }, { $test } with { $configuration }, { $title }, { $intent }, { $image }, { $toolchains } and { $chosen } with { $filed }, { $fiveHour } and { $sevenDay } with { $used }, { $start } and { $more } when run bare, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
@@ -85,6 +85,7 @@ setup-asked-credential = { $token } and { $apiKey } each take the path of a file
 setup-asked-plugin = { $flag } takes only { $skip }
 setup-asked-opened = { $flag } takes only { $github }, with { $bound }
 setup-asked-start = { $flag } takes only { $yes }, once the person has said yes to setup
+setup-asked-more = { $flag } takes one of { $answers }: which of the things offered once setup is done the person wants next
 # spells -work-stage: the work in general
 setup-asked-usage = { $flag } takes only { $keep }, once the person has said no to raising where { -brand-name } pauses their work
 setup-asked-percent = { $used } takes { $fiveHour }, { $sevenDay } or both, each a whole percentage in digits
@@ -704,8 +705,38 @@ setup-done = { -brand-name } is set up for { $project }{ $how ->
     [imported] { " " }The { -repository }'s own { -configuration } is in place, and later { -ticket(form: "plural") } run on it.
     [importing] { " " }{ -brand-name } is importing the { -repository }'s own { -configuration }, and later { -ticket(form: "plural") } run on it once it is in place.
     [refused] { " " }{ -brand-name } did not import the { -repository }'s own { -configuration } ({ $last }), so later { -ticket(form: "plural") } run on the bootstrap until it does.
+    [merging] { " " }The { -repository }'s own { -configuration } is in place once you merge { $url }, and later { -ticket(form: "plural") } run on it then.
    *[none] { "" }
 } The next { -ticket } is made at { $page }.
+
+## What is offered once setup's last step is done: more runners, the
+## repository's configuration changed with the person, and where else
+## chuggy is set. None of them is a step.
+
+# spells -run: to run is a verb here
+setup-more-offer = { $done } A few more things you might want: 1. Add more { -runner(form: "plural") }, on another machine. 2. Customize your default { -ticket } { -configuration }, including your own image for your { -ticket(form: "plural") } to run in. 3. Review what else you can configure. Want any of these?
+# spells -run: to run is a verb here
+setup-rule-more = Run { $runners } where the person wants more { -runner(form: "plural") }, { $configuration } where they want their { -configuration } different, and { $review } where they want to see what else they can set, one at a time in the order they named them. Run { $none } where they want none of these.
+# spells -run: to run is a verb here
+setup-rule-more-next = Once that is done, run { $runners } where the person also wanted more { -runner(form: "plural") }, { $configuration } where they also wanted their { -configuration } different, and { $review } where they also wanted to see what else they can set, each that has not been run yet, one at a time; where none is left, setup is done and nothing more is run.
+setup-more-runners = To add { -runner(form: "a") } on another machine, paste this into { -claude-code } on that machine: { $line } It makes that machine one of your { -personal-runner(form: "plural") } for this { -project }. { $runners } says more about { -runner(form: "plural") }.
+# spells -run: to run is a verb here
+setup-rule-more-runners = Give the person that line as it is, for the other machine, and run nothing here for it.
+# spells -brief-check: the checks a configuration's stages run
+# spells -run: to run is a verb here
+setup-more-configuration = Your { -repository }'s { -configuration } is under { $directory }. What would you like different: the image your { -ticket(form: "plural") } run in, the checks they run, or the model?
+# spells -run: to run is a verb here
+setup-rule-more-configuration = Read each file under { $directory } in this checkout, ask the person what they want different, and change it with them; where the checkout holds none there, pull its default branch, and where that brings none either, run { $configuration } to write a starting one. Where they want an image of their own, read { $image } first for what an image needs and how a { -configuration } names it. Then run { $check }, fix each fault it names, and commit and push the change to the default branch. Do not run { $import }, though { $check } names it once clean: with every step done it has nothing to import. Tell the person { -brand-name } imports the push at its next import, or at once where { $press } is pressed on the { -repository }'s page, from { $page }.
+setup-more-configuration-merging = Your { -repository }'s { -configuration } is in { $url }, which is not merged yet. Once you have merged it, ask for this again and it is changed with you then.
+# spells -run: to run is a verb here
+setup-rule-more-configuration-merging = Change nothing under { $directory } and run nothing for it now: the default branch holds no { -configuration } until the person merges { $url }. Once they say they have merged it, run { $command }.
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+# spells -runner: runner.json is a file's name
+setup-more-review = What else you can set, and where: who may { -dispatch } { -ticket(form: "plural") }, at { $permissions }; where work is placed, at { $placement }; the usage thresholds { -brand-name } pauses your work at, at { $usage }; the { -repository }'s { -configuration } under { $directory }, with its image, { -workload(form: "plural") }, plans and { -finalizer(form: "plural") }, at { $configuration }; sizing a { -stage }, at { $sizing }; and your { -runner }'s own settings file on a machine that runs one, { $program }'s runner.json, at { $guide }.
+setup-more-none = Setup is done; whenever you want any of these later, paste the line you set { -brand-name } up with into { -claude-code } again: { $line }
+# spells -run: to run is a verb here
+setup-rule-merge-self = Run { $command } only if the person would rather merge it themselves.
 
 ## The page a sign-in returns to unless it ends signed in, in the person's
 ## browser: the program's name, what happened as its heading, and what to do

@@ -54,7 +54,10 @@
  * raising one, and every command the program prints carries it as it carries
  * `--plugin`. `--start yes` is the
  * person's yes to setup itself, read only by the bare command and carried
- * only by it.
+ * only by it. `--more`, read only by the bare command and carried by none,
+ * is which of the offers after setup's last step the person took: the offer
+ * itself, more runners, their configuration, the review of what else is set,
+ * or none.
  */
 
 import type { RunUsageWindow } from "../../../../src/contract/rosters.ts";
@@ -107,7 +110,8 @@ export type SetupAskFault =
   | "Opened"
   | "Start"
   | "Usage"
-  | "Percent";
+  | "Percent"
+  | "More";
 
 /** The commands a person or an agent runs, as a report names them. */
 export type SetupCommand =
@@ -141,6 +145,8 @@ export interface SetupAnswers {
   readonly start?: SetupStartAnswer;
   /** What `runner` was told of making this machine the person's chat host too, carried into every `runner` printed again. */
   readonly chatHost?: SetupChatHostAnswer;
+  /** Which offer after setup's last step the person took, which only the bare command reads. */
+  readonly more?: SetupMoreAnswer;
 }
 
 /** The one value `--plugin` takes: the plugin step passed over without the plugin. */
@@ -183,6 +189,18 @@ export function setupAnswersCarried(
     ...(answers.usage === undefined ? {} : { usage: answers.usage }),
   };
 }
+
+/** The flag the bare command is told in which offer after setup's last step the person took, and the values it takes: the offer itself, each of the three, and none of them. */
+export const setupMoreFlag = "--more";
+export const setupMoreAnswers = [
+  "offer",
+  "runners",
+  "configuration",
+  "review",
+  "none",
+] as const;
+
+export type SetupMoreAnswer = (typeof setupMoreAnswers)[number];
 
 /** The flag the bare command is told the person's yes to setup in, and the one value it takes. */
 export const setupStartFlag = "--start";
@@ -402,13 +420,14 @@ const setupFlags = [
   "usage",
   "five-hour-percent",
   "seven-day-percent",
+  "more",
 ] as const;
 
 type SetupFlag = (typeof setupFlags)[number];
 
 /** The flags each command reads; one it does not read is asked wrongly. */
 const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
-  Status: ["site", "workspace", "project", "plugin", "usage", "start"],
+  Status: ["site", "workspace", "project", "plugin", "usage", "start", "more"],
   SignIn: ["site", "wait-secs", "workspace", "project", "plugin", "usage"],
   SignOut: ["site", "workspace", "project", "plugin", "usage"],
   Project: ["site", "workspace", "project", "name", "plugin", "usage"],
@@ -550,9 +569,13 @@ function setupAnswersRead(
   const usage: Pick<SetupAnswers, "usage"> = flags.has("usage")
     ? { usage: setupUsageKeep }
     : {};
+  const given = flags.get("more");
+  const chosen = setupMoreAnswers.find((answer) => answer === given);
+  const more: Pick<SetupAnswers, "more"> =
+    chosen === undefined ? {} : { more: chosen };
   return name === undefined
-    ? { workspace, project, ...plugin, ...usage, ...start }
-    : { workspace, project, name, ...plugin, ...usage, ...start };
+    ? { workspace, project, ...plugin, ...usage, ...start, ...more }
+    : { workspace, project, name, ...plugin, ...usage, ...start, ...more };
 }
 
 /** A name is carried back in the command that retries it, so it is one a line prints as it is. */
@@ -737,6 +760,9 @@ function setupAskedOf(
   const usage = flags.get("usage");
   if (usage !== undefined && usage !== setupUsageKeep)
     return { asked: "Wrongly", fault: "Usage" };
+  const more = flags.get("more");
+  if (more !== undefined && !setupMoreAnswers.some((answer) => answer === more))
+    return { asked: "Wrongly", fault: "More" };
   const answers = setupAnswersRead(flags);
   if (answers === undefined) return { asked: "Wrongly", fault: "Name" };
   const wait = setupSecsRead(
