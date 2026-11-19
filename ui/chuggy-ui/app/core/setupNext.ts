@@ -36,8 +36,8 @@
  * ticket is next, or waits on the person's account paused, and their usage
  * is over a threshold raising would lift, that is said first and `usage`
  * offered on their yes, and on their no the checklist is read past it and
- * never asks again; where raising would not help, that is said beside the
- * next thing, with when the ticket starts by itself.
+ * never asks again; what raising would not lift is said beside the next
+ * thing, with when it lifts and whether the ticket starts by itself then.
  * `setupMend` is where each thing a step can lack is turned into its next
  * thing; the slice that gives a step its command changes that step's line
  * there and nowhere else. A tell says of a page only what is pressed there:
@@ -102,6 +102,7 @@ import { setupAppNames, setupPhaseSaid } from "./setupStanding.ts";
 import type {
   SetupAppReached,
   SetupLack,
+  SetupRunnerPausedBy,
   SetupRunnerWait,
   SetupStanding,
   SetupStep,
@@ -835,9 +836,21 @@ function setupBriefAsked(
   };
 }
 
+/** What holds the person's account paused, as the finalization tell's wait says it. */
+const setupWaitPausedSaid = {
+  Threshold: "paused",
+  Limit: "limited",
+  Both: "limited-paused",
+} as const satisfies Record<SetupRunnerPausedBy, string>;
+
 /** What a ticket's starting execution waits on of the person's runners, as the finalization tell says it: the fact, and no remedy. */
 function setupWaitSaid(wait: SetupRunnerWait | undefined): {
-  readonly wait: "room" | "offline" | "unable" | "paused" | "none";
+  readonly wait:
+    | "room"
+    | "offline"
+    | "unable"
+    | (typeof setupWaitPausedSaid)[SetupRunnerPausedBy]
+    | "none";
   readonly free: CopyArgument;
   readonly needed: CopyArgument;
 } {
@@ -853,7 +866,7 @@ function setupWaitSaid(wait: SetupRunnerWait | undefined): {
     case "Unable":
       return { wait: "unable", free: "", needed: "" };
     case "Paused":
-      return { wait: "paused", free: "", needed: "" };
+      return { wait: setupWaitPausedSaid[wait.by], free: "", needed: "" };
     case undefined:
       return { wait: "none", free: "", needed: "" };
   }
@@ -1321,11 +1334,15 @@ export function setupUsageDue(
     : undefined;
 }
 
-/** The windows over their thresholds, each figure said whole, and the threshold offered in place of each, as one sentence says one or both. */
-function setupUsageOverSaid(over: readonly SetupUsageOver[]): Copy {
+/** The windows over their thresholds, each figure said whole, and the threshold offered in place of each, as one sentence says one or both; `held` is whether something no threshold lifts holds the work too. */
+function setupUsageOverSaid(
+  over: readonly SetupUsageOver[],
+  held: boolean,
+): Copy {
   const [first, second] = over;
   if (first === undefined) throw new Error("a usage over names a window");
   const one = {
+    held: held ? "yes" : "no",
     reading: String(first.reading),
     window: setupUsageWindowSaid(first.window),
     threshold: String(first.threshold),
@@ -1344,33 +1361,37 @@ function setupUsageOverSaid(over: readonly SetupUsageOver[]): Copy {
   };
 }
 
-/** What the person's usage holds their work to, said where raising a threshold would not help, with when it lifts where the read says. */
-function setupUsageUnraisedSaid(
-  usage: Exclude<SetupUsage, { readonly usage: "Over" }>,
+/** What holds the person's work that raising a threshold would not lift, said with when it lifts where the read says, and whether the work starts by itself then. */
+function setupUsageHeldSaid(
+  held: NonNullable<SetupUsage["held"]>,
   nowMs: number,
 ): Copy {
   const now = new Date(nowMs);
-  if (usage.usage === "Full")
+  const starts = held.starts ? "yes" : "no";
+  const { by } = held;
+  if (by.held === "Full")
     return {
       id: "setup-usage-full",
       args: {
-        reading: String(usage.reading),
-        window: setupUsageWindowSaid(usage.window),
-        resets: instantText(new Date(usage.resetsAt), now),
+        reading: String(by.reading),
+        window: setupUsageWindowSaid(by.window),
+        resets: instantText(new Date(by.resetsAt), now),
+        starts,
       },
     };
-  return usage.resetsAt === undefined
-    ? { id: "setup-usage-limit", args: { resets: "unknown", at: "" } }
+  return by.resetsAt === undefined
+    ? { id: "setup-usage-limit", args: { resets: "unknown", at: "", starts } }
     : {
         id: "setup-usage-limit",
         args: {
           resets: "known",
-          at: instantText(new Date(usage.resetsAt), now),
+          at: instantText(new Date(by.resetsAt), now),
+          starts,
         },
       };
 }
 
-/** What the person's usage says beside the next thing: where raising would lift it and they have not said no, the offer, which is the next thing; where raising would not help, a line said before it. */
+/** What the person's usage says beside the next thing: where raising would lift a window and they have not said no, the offer, which is the next thing; where something raising would not lift holds the work, a line said before it. */
 interface SetupUsageThing {
   readonly thing: SetupThing | undefined;
   readonly said: Copy | undefined;
@@ -1391,20 +1412,26 @@ function setupUsageThing(
   if (read === undefined || due === undefined)
     return { thing: undefined, said: undefined };
   const { usage, nowMs } = read;
-  if (usage.usage !== "Over")
-    return { thing: undefined, said: setupUsageUnraisedSaid(usage, nowMs) };
-  if (answers.usage === setupUsageKeep || standing.choice.choice === "Open")
-    return { thing: undefined, said: undefined };
+  const said =
+    usage.held === undefined
+      ? undefined
+      : setupUsageHeldSaid(usage.held, nowMs);
+  if (
+    usage.over.length === 0 ||
+    answers.usage === setupUsageKeep ||
+    standing.choice.choice === "Open"
+  )
+    return { thing: undefined, said };
   return {
     thing: {
       thing: "Usage",
-      tell: setupUsageOverSaid(usage.over),
+      tell: setupUsageOverSaid(usage.over, usage.held !== undefined),
       over: usage.over,
       then: due === "Ticket" ? "Status" : "Watch",
       workspace: standing.choice.workspace ?? "",
       project: standing.choice.project ?? "",
     },
-    said: undefined,
+    said,
   };
 }
 

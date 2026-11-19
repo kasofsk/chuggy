@@ -5,16 +5,17 @@
  * Read only where the checklist's next thing is the project's first ticket,
  * or that ticket waiting on a pause of the person's account, from the read
  * the console's Usage page makes of the person's own agent accounts, of the
- * agent the runner setup puts in place works as. A provider's own limit
- * holding the account is said first, since no threshold lifts it; then a
- * window whose newest reading, its reset still ahead, is at or over its
- * threshold, by the comparison `agent_account_pause` makes. A reading at
+ * agent the runner setup puts in place works as. A window whose newest
+ * reading, its reset still ahead, is at or over its threshold holds the work,
+ * by the comparison `agent_account_pause` makes. A reading at
  * `setupUsageFullPercent` or more of its window leaves no threshold under
- * which a run could finish, so it is said as that rather than offered. Every
- * other window over is offered a threshold above its reading: the reading
- * rounded up to the next `setupUsageOfferedStep`, one step more, and never
- * past the whole window. No reading and no pause, a read that was not got,
- * and every window under its threshold say nothing.
+ * which a run could finish, and a provider's own limit is no threshold at
+ * all, so of those, the one that lifts last is said rather than offered,
+ * with whether the work starts by itself once it lifts. Every other window
+ * over is offered a threshold above its reading: the reading rounded up to
+ * the next `setupUsageOfferedStep`, one step more, and never past the whole
+ * window. No reading and no pause, a read that was not got, and every window
+ * under its threshold say nothing.
  *
  * `usage` writes the person's settings for that agent whole, as the Usage
  * page does: each threshold it was given in place of the one read, and every
@@ -62,21 +63,27 @@ export interface SetupUsageOver {
   readonly offered: number;
 }
 
-/**
- * What the person's usage holds their work to: windows over their
- * thresholds, which raising them lifts; a window so near its whole that
- * raising would not help, until it resets; or the provider's own limit, until
- * it lifts where the read says when.
- */
-export type SetupUsage =
-  | { readonly usage: "Over"; readonly over: readonly SetupUsageOver[] }
+/** What holds the person's work that raising a threshold would not lift: a window so near its whole that no threshold helps, until it resets, or the provider's own limit, until it lifts where the read says when. */
+export type SetupUsageHeld =
   | {
-      readonly usage: "Full";
+      readonly held: "Full";
       readonly window: RunUsageWindow;
       readonly reading: number;
       readonly resetsAt: string;
     }
-  | { readonly usage: "Limit"; readonly resetsAt: string | undefined };
+  | { readonly held: "Limit"; readonly resetsAt: string | undefined };
+
+/**
+ * What the person's usage holds their work to: what no threshold lifts, where
+ * something does, with whether nothing else holds the work once it lifts; and
+ * each window over its threshold that raising it lifts. At least one of the
+ * two is there.
+ */
+export interface SetupUsage {
+  readonly held:
+    { readonly by: SetupUsageHeld; readonly starts: boolean } | undefined;
+  readonly over: readonly SetupUsageOver[];
+}
 
 /** What `usage` came to: each threshold written, the figure the site would not take, or the read or the write not answered, in the word a failed request is drawn as. */
 export type SetupUsageAnswered =
@@ -126,28 +133,57 @@ function setupUsageOverOf(
   });
 }
 
+/** When a hold lifts, in epoch milliseconds, where the read says. */
+function setupUsageLiftMs(held: SetupUsageHeld): number | undefined {
+  return held.resetsAt === undefined ? undefined : Date.parse(held.resetsAt);
+}
+
+/** Of what no threshold lifts, the one that lifts last, and whether every other is known to lift by then, which no lift the read does not name is. */
+function setupUsageHeldOf(
+  holds: readonly SetupUsageHeld[],
+): { readonly by: SetupUsageHeld; readonly before: boolean } | undefined {
+  const unnamed = holds.filter((held) => setupUsageLiftMs(held) === undefined);
+  const named = holds
+    .filter((held) => setupUsageLiftMs(held) !== undefined)
+    .toSorted(
+      (one, other) =>
+        (setupUsageLiftMs(one) ?? 0) - (setupUsageLiftMs(other) ?? 0),
+    );
+  const last = unnamed[0] ?? named.at(-1);
+  if (last === undefined) return undefined;
+  return { by: last, before: unnamed.length === 0 || holds.length === 1 };
+}
+
 /** What the person's usage holds their work to at `nowMs`, or nothing where it holds nothing. */
 export function setupUsageOf(
   account: AgentAccount,
   nowMs: number,
 ): SetupUsage | undefined {
-  if (account.pause !== undefined && agentPauseHard(account.pause))
-    return { usage: "Limit", resetsAt: account.limit?.resetsAt };
-  const over = setupUsageOverOf(account, nowMs);
-  if (over.length === 0) return undefined;
-  const full = over.find((each) => each.reading >= setupUsageFullPercent);
-  if (full !== undefined)
-    return {
-      usage: "Full",
-      window: full.window,
-      reading: full.reading,
-      resetsAt: full.resetsAt,
-    };
+  const overAll = setupUsageOverOf(account, nowMs);
+  const full = overAll.filter((each) => each.reading >= setupUsageFullPercent);
+  const over = overAll.filter((each) => each.reading < setupUsageFullPercent);
+  const limit: readonly SetupUsageHeld[] =
+    account.pause !== undefined && agentPauseHard(account.pause)
+      ? [{ held: "Limit", resetsAt: account.limit?.resetsAt }]
+      : [];
+  const held = setupUsageHeldOf([
+    ...limit,
+    ...full.map(({ window, reading, resetsAt }): SetupUsageHeld => ({
+      held: "Full",
+      window,
+      reading,
+      resetsAt,
+    })),
+  ]);
+  if (held === undefined && over.length === 0) return undefined;
   for (const each of over)
     if (each.offered <= each.reading || each.offered <= each.threshold)
       throw new Error("a threshold offered is above the reading it lifts");
   return {
-    usage: "Over",
+    held:
+      held === undefined
+        ? undefined
+        : { by: held.by, starts: held.before && over.length === 0 },
     over: over.map(({ window, reading, threshold, offered }) => ({
       window,
       reading,

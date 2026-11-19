@@ -2,7 +2,8 @@
  * The person's own usage before their first ticket and while it waits: a
  * window at or over its threshold is told with the threshold offered in its
  * place, and `usage` raises it on their yes; a window too near its whole, or
- * the provider's own limit, is told without an offer; their no is said once
+ * the provider's own limit, is told without an offer, and as lifting by
+ * itself only where nothing else holds the work; their no is said once
  * and never asked again; and a person under both thresholds, or with no
  * reading, is told nothing.
  *
@@ -160,7 +161,7 @@ test.each([
 
 test("a window whose reading is too near all of it is told with when it resets and that the ticket starts by itself then, and nothing is offered", async () => {
   const { said } = await bare(
-    due({ readings: [reading("five_hour", 0.97), reading("seven_day", 0.92)] }),
+    due({ readings: [reading("five_hour", 0.97), reading("seven_day", 0.5)] }),
   );
   expect(said.slice(0, 2)).toEqual([
     `tell: Your Claude plan is at 97% of its 5-hour limit, too near all of it for a ticket to finish under any threshold, so raising where chuggy pauses your work would not help. That limit resets at ${resets()}, and your tickets will start by themselves then.`,
@@ -169,31 +170,98 @@ test("a window whose reading is too near all of it is told with when it resets a
   expect(said.join("\n")).not.toMatch(/ usage /u);
 });
 
+test("a window too near all of it beside another over its threshold is told without the ticket starting by itself, and the other window is offered", async () => {
+  const { said } = await bare(
+    due({ readings: [reading("five_hour", 0.97), reading("seven_day", 0.92)] }),
+  );
+  expect(said).toEqual([
+    `tell: Your Claude plan is at 97% of its 5-hour limit, too near all of it for a ticket to finish under any threshold, so raising where chuggy pauses your work would not help. That limit resets at ${resets()}.`,
+    "ask: Your Claude plan is at 92% of its weekly limit, and chuggy pauses your work at 90%, so your tickets won't run right now. I can raise that to 100% so it no longer holds them once that other limit lifts. Want me to?",
+    accepted("--seven-day-percent 100"),
+    declined(`${at} `),
+    "next: stop",
+  ]);
+  expect(said.join("\n")).not.toMatch(/start by themselves/u);
+});
+
+test("of two windows too near all of them, the one that resets last is told, and the ticket starts by itself then", async () => {
+  const later = iso(resetsMs + hourMs);
+  const { said } = await bare(
+    due({
+      readings: [
+        reading("five_hour", 0.97),
+        { ...reading("seven_day", 0.96), resetsAt: later },
+      ],
+    }),
+  );
+  const resetsLater = copyOrDataText(
+    copyTextEn,
+    instantText(new Date(later), new Date(startMs)),
+  );
+  expect(said.slice(0, 2)).toEqual([
+    `tell: Your Claude plan is at 96% of its weekly limit, too near all of it for a ticket to finish under any threshold, so raising where chuggy pauses your work would not help. That limit resets at ${resetsLater}, and your tickets will start by themselves then.`,
+    brief,
+  ]);
+});
+
+const limitPause = {
+  until: iso(resetsMs),
+  reasons: ["limit" as const],
+  pressed: false,
+};
+
 test.each([
   [
     "a reopening it names",
     { window: "five_hour", resetsAt: iso(resetsMs), observedAt: iso(startMs) },
     (): string =>
-      `It lifts at ${resets()}, and your tickets will start by themselves then.`,
+      ` It lifts at ${resets()}, and your tickets will start by themselves then.`,
   ],
   [
     "no reopening",
     { observedAt: iso(startMs) },
-    (): string => "Your tickets will start by themselves once it lifts.",
+    (): string => " Your tickets will start by themselves once it lifts.",
   ],
 ] as const)(
   "a provider's own limit, with %s, is told as no threshold of chuggy's, with when it lifts where that is known, and nothing is offered",
   async (_, limit, lifts) => {
     const { said } = await bare(
       due({
-        readings: [reading("five_hour", 0.83)],
+        readings: [reading("five_hour", 0.5)],
         limit,
-        pause: { until: iso(resetsMs), reasons: ["limit"], pressed: false },
+        pause: limitPause,
       }),
     );
     expect(said.slice(0, 2)).toEqual([
-      `tell: Your Claude plan has reached a limit of its own, not where chuggy pauses your work, so raising that would not help. ${lifts()}`,
+      `tell: Your Claude plan has reached a limit of its own, not where chuggy pauses your work, so raising that would not help.${lifts()}`,
       brief,
+    ]);
+  },
+);
+
+test.each([
+  [
+    "a reopening it names",
+    { window: "five_hour", resetsAt: iso(resetsMs), observedAt: iso(startMs) },
+    (): string => ` It lifts at ${resets()}.`,
+  ],
+  ["no reopening", { observedAt: iso(startMs) }, (): string => ""],
+] as const)(
+  "a provider's own limit, with %s, beside a window over its threshold is told without the ticket starting by itself, and that window is offered",
+  async (_, limit, lifts) => {
+    const { said } = await bare(
+      due({
+        readings: [reading("five_hour", 0.83)],
+        limit,
+        pause: limitPause,
+      }),
+    );
+    expect(said).toEqual([
+      `tell: Your Claude plan has reached a limit of its own, not where chuggy pauses your work, so raising that would not help.${lifts()}`,
+      "ask: Your Claude plan is at 83% of its 5-hour limit, and chuggy pauses your work at 80%, so your tickets won't run right now. I can raise that to 90% so it no longer holds them once that other limit lifts. Want me to?",
+      accepted("--five-hour-percent 90"),
+      declined(`${at} `),
+      "next: stop",
     ]);
   },
 );
@@ -288,15 +356,19 @@ test("on a no, the person is told once that the ticket waits, and the run that c
   expect(machineWrites(machine)).toEqual([]);
 });
 
-/** A site whose first ticket waits on the person's live runner, held by a pause of their account on its 5-hour window. */
-function waiting(): SetupSite {
-  const pause = {
-    until: iso(resetsMs),
-    reasons: ["five_hour" as const],
-    pressed: false,
-  };
+type Pause = NonNullable<AgentAccount["pause"]>;
+
+/** A site whose first ticket waits on the person's live runner, held by a pause of their account for `reasons`, with `readings` read of it. */
+function waiting(
+  reasons: Pause["reasons"] = ["five_hour"],
+  readings: readonly Reading[] = [reading("five_hour", 0.83)],
+): SetupSite {
+  const pause: Pause = { until: iso(resetsMs), reasons, pressed: false };
   const site = setupSiteClaude(setupSiteAt("Moving"), {
-    readings: [reading("five_hour", 0.83)],
+    readings: [...readings],
+    limit: reasons.includes("limit")
+      ? { resetsAt: iso(resetsMs), observedAt: iso(startMs) }
+      : undefined,
     pause,
   });
   site.projects[0]?.executions.set(1, [
@@ -321,6 +393,37 @@ test("a first ticket waiting because the person's account paused on usage gives 
   );
   expect(kept.at(-1)).toBe(`next: ${program} watch ${at} --usage keep`);
 });
+
+test.each([
+  [
+    "the provider's own limit",
+    ["limit"] as const,
+    [reading("five_hour", 0.5)],
+    (): string =>
+      `Your Claude plan has reached a limit of its own, not where chuggy pauses your work, so raising that would not help. It lifts at ${resets()}, and your tickets will start by themselves then.`,
+    "It is waiting until your Claude plan's own limit lifts.",
+  ],
+  [
+    "the provider's own limit and a threshold",
+    ["five_hour", "limit"] as const,
+    [reading("five_hour", 0.97)],
+    (): string =>
+      `Your Claude plan is at 97% of its 5-hour limit, too near all of it for a ticket to finish under any threshold, so raising where chuggy pauses your work would not help. That limit resets at ${resets()}, and your tickets will start by themselves then.`,
+    "It is waiting until your Claude plan's own limit lifts and its usage falls under where chuggy pauses your work.",
+  ],
+] as const)(
+  "a first ticket waiting because %s paused the person's account says what it waits on, and offers nothing",
+  async (_, reasons, readings, held, wait) => {
+    const { machine, said } = await bare(waiting([...reasons], readings));
+    expect(said[0]).toBe(`tell: ${held()}`);
+    expect(said[1]).toBe(
+      `tell: Ticket 1 is in Work. ${wait} Setup is done when it finishes. https://chuggy.example/acme/widgets/tickets/1 shows where it is. I'll keep watching it and tell you what changes.`,
+    );
+    expect(said.at(-1)).toBe(`next: ${program} watch ${at}`);
+    expect(said.join("\n")).not.toMatch(/Want me to\?/u);
+    expect(machineWrites(machine)).toEqual([]);
+  },
+);
 
 test("a first ticket waiting on a live runner with no pause reads no usage and says nothing of it", async () => {
   const site = setupSiteAt("Moving");
@@ -351,9 +454,9 @@ test("every threshold offered is above both the reading and the threshold it rep
       readings: [reading("five_hour", percent / 100)],
     });
     const usage = setupUsageOf(account, startMs);
-    expect(usage?.usage, String(percent)).toBe("Over");
-    if (usage?.usage !== "Over") continue;
-    for (const over of usage.over) {
+    expect(usage?.held, String(percent)).toBeUndefined();
+    expect(usage?.over, String(percent)).toHaveLength(1);
+    for (const over of usage?.over ?? []) {
       expect(over.offered).toBeGreaterThan(over.reading);
       expect(over.offered).toBeGreaterThan(over.threshold);
     }

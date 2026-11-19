@@ -42,6 +42,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type {
+  AgentPauseReason,
   ForgeAppName,
   PlacementRoute,
   SessionRunnerStanding,
@@ -175,7 +176,10 @@ export type SetupRunnerWait =
     }
   | { readonly wait: "Offline" }
   | { readonly wait: "Unable" }
-  | { readonly wait: "Paused" };
+  | { readonly wait: "Paused"; readonly by: SetupRunnerPausedBy };
+
+/** What holds the person's agent account paused: a window's reading at or over its threshold, the provider's own limit, or both. */
+export type SetupRunnerPausedBy = "Threshold" | "Limit" | "Both";
 
 /**
  * One app that is not granted the folder's repository, and where it is given
@@ -1053,6 +1057,18 @@ function setupRunnerWaitOf(
   return setupRunnerWaitPersonal(held.executions.value);
 }
 
+/** What of `reasons` holds the person's account paused on its usage or its provider's limit, or nothing where only credentials turned off do. */
+function setupRunnerPausedBy(
+  reasons: readonly AgentPauseReason[],
+): SetupRunnerPausedBy | undefined {
+  const limit = reasons.includes("limit");
+  const threshold = reasons.some(
+    (reason) => reason !== "limit" && reason !== "off",
+  );
+  if (limit) return threshold ? "Both" : "Limit";
+  return threshold ? "Threshold" : undefined;
+}
+
 /** What the starting execution of `executions` waits on of the person's runners, by the console's own decider. */
 function setupRunnerWaitPersonal(
   executions: readonly ExecutionSummary[],
@@ -1062,8 +1078,8 @@ function setupRunnerWaitPersonal(
   );
   if (starting === undefined) return undefined;
   const paused = runnerWaitPause(starting, runnerWait(starting));
-  if (paused?.reasons.some((reason) => reason !== "off") === true)
-    return { wait: "Paused" };
+  const pausedBy = setupRunnerPausedBy(paused?.reasons ?? []);
+  if (pausedBy !== undefined) return { wait: "Paused", by: pausedBy };
   const room = runnerWaitRoom(starting);
   if (room !== undefined)
     return { wait: "Room", freeMib: room.freeMib, neededMib: room.neededMib };

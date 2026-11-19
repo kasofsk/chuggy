@@ -603,6 +603,8 @@ setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $p
     [offline] { " " }{ setup-mend-wait-offline }
     [unable] { " " }{ setup-mend-wait-unable }
     [paused] { " " }{ setup-mend-wait-paused }
+    [limited] { " " }{ setup-mend-wait-limited }
+    [limited-paused] { " " }{ setup-mend-wait-limited-paused }
    *[none] { "" }
 } { $ends ->
     [pull] It ends in { -pull-request(form: "a") }{ $bootstrap ->
@@ -617,6 +619,9 @@ setup-mend-wait-offline = It is waiting on your { -personal-runner }, which is o
 setup-mend-wait-unable = It is waiting on your { -personal-runner(form: "plural") }, and none of them can run it.
 # spells -work-stage: the work in general
 setup-mend-wait-paused = It is waiting until your { -claude } plan's usage falls under where { -brand-name } pauses your work.
+setup-mend-wait-limited = It is waiting until your { -claude } plan's own limit lifts.
+# spells -work-stage: the work in general
+setup-mend-wait-limited-paused = It is waiting until your { -claude } plan's own limit lifts and its usage falls under where { -brand-name } pauses your work.
 setup-mend-decision-tell = { -ticket(case: "upper") } { $ticket } is { -escalation }: it waits on a decision of yours at { $page }. Tell me once it is moving again.
 setup-mend-decision-when = once the person says { -ticket } { $ticket } is moving again
 
@@ -628,16 +633,31 @@ setup-usage-window-five-hour = 5-hour
 setup-usage-window-seven-day = weekly
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-usage-over = Your { -claude } plan is at { $reading }% of its { $window } limit, and { -brand-name } pauses your work at { $threshold }%, so your { -ticket(form: "plural") } won't run right now. I can raise that to { $offered }% so they do. Want me to?
+setup-usage-over = Your { -claude } plan is at { $reading }% of its { $window } limit, and { -brand-name } pauses your work at { $threshold }%, so your { -ticket(form: "plural") } won't run right now. I can raise that to { $offered }% so { $held ->
+    [yes] it no longer holds them once that other limit lifts
+   *[no] they do
+}. Want me to?
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-usage-over-both = Your { -claude } plan is at { $reading }% of its { $window } limit and { $readingOther }% of its { $windowOther } limit, and { -brand-name } pauses your work at { $threshold }% and { $thresholdOther }%, so your { -ticket(form: "plural") } won't run right now. I can raise those to { $offered }% and { $offeredOther }% so they do. Want me to?
+setup-usage-over-both = Your { -claude } plan is at { $reading }% of its { $window } limit and { $readingOther }% of its { $windowOther } limit, and { -brand-name } pauses your work at { $threshold }% and { $thresholdOther }%, so your { -ticket(form: "plural") } won't run right now. I can raise those to { $offered }% and { $offeredOther }% so { $held ->
+    [yes] they no longer hold them once that other limit lifts
+   *[no] they do
+}. Want me to?
 # spells -work-stage: the work in general
-setup-usage-full = Your { -claude } plan is at { $reading }% of its { $window } limit, too near all of it for { -ticket(form: "a") } to finish under any threshold, so raising where { -brand-name } pauses your work would not help. That limit resets at { $resets }, and your { -ticket(form: "plural") } will start by themselves then.
+setup-usage-full = Your { -claude } plan is at { $reading }% of its { $window } limit, too near all of it for { -ticket(form: "a") } to finish under any threshold, so raising where { -brand-name } pauses your work would not help. That limit resets at { $resets }{ $starts ->
+    [yes] , and your { -ticket(form: "plural") } will start by themselves then.
+   *[no] .
+}
 # spells -work-stage: the work in general
-setup-usage-limit = Your { -claude } plan has reached a limit of its own, not where { -brand-name } pauses your work, so raising that would not help. { $resets ->
-    [known] It lifts at { $at }, and your { -ticket(form: "plural") } will start by themselves then.
-   *[unknown] Your { -ticket(form: "plural") } will start by themselves once it lifts.
+setup-usage-limit = Your { -claude } plan has reached a limit of its own, not where { -brand-name } pauses your work, so raising that would not help.{ $resets ->
+    [known] { " " }It lifts at { $at }{ $starts ->
+        [yes] , and your { -ticket(form: "plural") } will start by themselves then.
+       *[no] .
+    }
+   *[unknown] { $starts ->
+        [yes] { " " }Your { -ticket(form: "plural") } will start by themselves once it lifts.
+       *[no] { "" }
+    }
 }
 # spells -run: to run is a verb here
 setup-rule-usage = Run { $command } only once the person says yes, with the figure they name in place of the one offered where they name another.

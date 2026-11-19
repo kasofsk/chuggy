@@ -942,6 +942,8 @@ export interface SetupCopy {
   readonly "setup-mend-wait-offline": Record<never, never>;
   readonly "setup-mend-wait-unable": Record<never, never>;
   readonly "setup-mend-wait-paused": Record<never, never>;
+  readonly "setup-mend-wait-limited": Record<never, never>;
+  readonly "setup-mend-wait-limited-paused": Record<never, never>;
   readonly "setup-mend-decision-tell": {
     readonly ticket: unknown;
     readonly page: unknown;
@@ -956,6 +958,7 @@ export interface SetupCopy {
     readonly window: unknown;
     readonly threshold: unknown;
     readonly offered: unknown;
+    readonly held: unknown;
   };
   readonly "setup-usage-over-both": {
     readonly reading: unknown;
@@ -966,15 +969,18 @@ export interface SetupCopy {
     readonly thresholdOther: unknown;
     readonly offered: unknown;
     readonly offeredOther: unknown;
+    readonly held: unknown;
   };
   readonly "setup-usage-full": {
     readonly reading: unknown;
     readonly window: unknown;
     readonly resets: unknown;
+    readonly starts: unknown;
   };
   readonly "setup-usage-limit": {
     readonly resets: unknown;
     readonly at: unknown;
+    readonly starts: unknown;
   };
   readonly "setup-rule-usage": {
     readonly command: unknown;

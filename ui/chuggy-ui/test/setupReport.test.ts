@@ -474,6 +474,7 @@ const things: {
       tell: {
         id: "setup-usage-over",
         args: {
+          held: "no",
           reading: "83",
           window: { id: "setup-usage-window-five-hour" },
           threshold: "80",
@@ -490,6 +491,7 @@ const things: {
       tell: {
         id: "setup-usage-over-both",
         args: {
+          held: "no",
           reading: "83",
           window: { id: "setup-usage-window-five-hour" },
           threshold: "80",
