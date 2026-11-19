@@ -1035,14 +1035,13 @@ interface SchedulerOwnerRunners {
   readonly runners: readonly PersonalRunnerRegistered[];
 }
 
-/** The owner's runners where the execution allows one, and nothing where it allows none, it has no owner, or the owner has no runner. */
+/** The owner's runners, and nothing where the execution has no owner or the owner has no runner. */
 async function schedulerOwnerRunners(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
 ): Promise<SchedulerOwnerRunners | undefined> {
   const owner = execution.owner;
-  if (execution.ownerFallback === undefined || owner === undefined)
-    return undefined;
+  if (owner === undefined) return undefined;
   const runners = await service.workerPools.personal(
     execution.partition,
     owner,
@@ -1067,8 +1066,7 @@ async function schedulerOwnerRunnersAnswered(
     principal: runner.principal,
     capabilities: runner.capabilities,
     memoryCeilingMib: runner.memoryCeilingMib,
-    class: "Personal",
-    dedicatedOwner: owner,
+    owner,
     allowlist: runner.allowlist,
     revoked,
   }));

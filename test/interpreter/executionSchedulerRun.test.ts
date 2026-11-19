@@ -2604,8 +2604,7 @@ test("an incompatible execution is blocked for its memory exactly where some per
     principal: memberRunner.principal,
     capabilities,
     memoryCeilingMib,
-    class: "Personal",
-    dedicatedOwner: member,
+    owner: member,
     allowlist: memberRunner.allowlist,
     revoked: false,
   });
@@ -2644,10 +2643,10 @@ test("a failed read of the owner's runner fails the pass rather than holding the
   assert.ok(!calls.some((call) => call.startsWith("ended:")));
 });
 
-test("an owner's execution pinned to no fallback never reads the owner's runner, and is blocked", async () => {
+test("an owner's execution pinned to no fallback reads the owner's runner, and is held while it could run it", async () => {
   const calls: string[] = [];
   await ownedLaunch(calls, undefined, [memberRunner], ownerAccess(true, true));
-  assert.deepEqual(calls, blocked);
+  assert.deepEqual(calls, ["personal:member-one"]);
 });
 
 test("an attempt a pool refused is withdrawn and its execution blocked before any lease is reaped, and the refusal is counted", async () => {

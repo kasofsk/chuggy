@@ -16,11 +16,11 @@
  * owner the case does not name.
  *
  * ONLY A MEMBER'S RUNNER CLAIMS, since the pool plane admits no pool's poll. A
- * case's runner is a personal pool with an owner, planted as its row and its
- * allowlist in its partition's tenant and claimed as one; nothing registers a
- * project's pool, so none is planted beside it. An execution's owner and its project's fallback
- * are its columns. A runner beside the case's is live where it makes a poll
- * whose token is open, which is a last poll the claim reads as recent.
+ * case's runner is a pool with an owner, planted as its row and its allowlist
+ * in its partition's tenant and claimed as one. An execution's owner is its
+ * column, and it is pinned `Strict` as the scheduler pins every one. A runner
+ * is live where it makes a poll whose token is open, which is a last poll the
+ * claim reads as recent.
  *
  * A CASE THE DATABASE CANNOT EXPRESS IS NAMED WITH THE REASON, derived from
  * the case rather than listed, so a case added to the table is planted or
@@ -97,10 +97,12 @@ import {
   workerPoolAgentOffered,
   workerPoolCanAssign,
   workerPoolDemandRouted,
-  workerPoolIsLive,
-  workerPoolOwnerPools,
+  workerPoolInventoryMatches,
   workerPoolPlatformToken,
+  workerPoolPolicyConfigures,
   workerPoolPolicyRegistered,
+  workerPoolSessionIsCurrent,
+  workerPoolSizeFits,
   type WorkerPoolDemand,
   type WorkerPoolEnrolment,
   type WorkerPoolPolicy,
@@ -225,16 +227,14 @@ async function runnerAlone(identity: PersonalRunnerIdentity): Promise<boolean> {
   return row?.held === 1;
 }
 
-/** Whether a pool is planted as a member's runner rather than a registry row. */
+/** Whether a pool owns something, which is what makes it a member's runner. */
 function runnerOwned(pool: WorkerPoolRunner): boolean {
-  return pool.class === "Personal" && pool.dedicatedOwner !== undefined;
+  return pool.owner !== undefined;
 }
 
 /** The policy a pool varies that its row has no column for. */
 function policyUnplanted(pool: WorkerPoolRunner): readonly string[] {
-  const columns: readonly (keyof WorkerPoolPolicy)[] = runnerOwned(pool)
-    ? ["class", "dedicatedOwner", "allowlist"]
-    : ["class"];
+  const columns: readonly (keyof WorkerPoolPolicy)[] = ["owner", "allowlist"];
   return (
     Object.keys(workerPoolPolicyRegistered) as (keyof WorkerPoolPolicy)[]
   ).filter(
@@ -244,12 +244,8 @@ function policyUnplanted(pool: WorkerPoolRunner): readonly string[] {
   );
 }
 
-/** The demand an execution carries columns for: its owner, and whether and how its project allows a personal pool. */
-const demandPlanted: readonly (keyof WorkerPoolDemand)[] = [
-  "personalRunnerAllowed",
-  "ownerOf",
-  "ownerFallback",
-];
+/** The demand an execution carries a column for: its owner. */
+const demandPlanted: readonly (keyof WorkerPoolDemand)[] = ["ownerOf"];
 
 /** Why a member's runner cannot be planted as the case states it, or undefined where it can. */
 function runnerUnplanted(
@@ -274,33 +270,6 @@ function runnerUnplanted(
   return undefined;
 }
 
-/** Why the pools beside the case's cannot be planted, or undefined where they can. */
-function othersUnplanted(c: RunnerCase): string | undefined {
-  const home = c.placement.partition;
-  const owners = new Set(
-    [c.pool, ...c.others.map(({ pool }) => pool)]
-      .filter(runnerOwned)
-      .map((pool) => `${pool.partition.tenant}/${String(pool.dedicatedOwner)}`),
-  );
-  if (
-    owners.size !==
-    [c.pool, ...c.others.map(({ pool }) => pool)].filter(runnerOwned).length
-  )
-    return "a member has one runner in a tenant";
-  for (const other of c.others) {
-    if (other.pool.class === "Personal" && !runnerOwned(other.pool))
-      return "a personal pool owning nothing beside the case's is no member's runner";
-    if (!runnerOwned(other.pool))
-      return "nothing registers a project's pool, so none stands beside the case's";
-    const policy = policyUnplanted(other.pool);
-    if (policy.length > 0)
-      return `the pool beside the case's varies ${policy.join(", ")}, which no row carries`;
-    const reason = runnerUnplanted(other, home);
-    if (reason !== undefined) return reason;
-  }
-  return undefined;
-}
-
 /** Why the claim cannot be asked a case, or undefined where it can. */
 function inexpressible(c: RunnerCase): string | undefined {
   if (c.session === undefined)
@@ -308,9 +277,7 @@ function inexpressible(c: RunnerCase): string | undefined {
   if (!c.session.leaseOpen)
     return "a poll's lease is its token, verified before any claim is asked for";
   if (!runnerOwned(c.pool))
-    return c.pool.class === "Personal"
-      ? "a personal pool owning nothing is no member's runner, and the plane admits no other"
-      : "the pool plane refuses a pool's poll, so only a member's runner claims";
+    return "a pool owning nothing is no member's runner, and the plane admits no other";
   if (c.pool.revoked)
     return "a member's permit and Read are the authority's, asked before any claim";
   const policy = policyUnplanted(c.pool);
@@ -330,7 +297,7 @@ function inexpressible(c: RunnerCase): string | undefined {
   );
   if (demand.length > 0)
     return `the execution has no column for ${demand.join(", ")}, which every routed execution is pinned with`;
-  return othersUnplanted(c);
+  return undefined;
 }
 
 /** The case's names made concrete in the project planted for it. */
@@ -551,12 +518,12 @@ async function plantedRunner(
   polledSecsAgo: number,
 ): Promise<PersonalPlaneIdentity> {
   const home = named.project.partition;
-  if (pool.dedicatedOwner === undefined)
+  if (pool.owner === undefined)
     throw new Error("worker pool claim suite: a runner owning nothing");
   const identity: PersonalPlaneIdentity = {
     kind: "Personal",
     tenant: named.partition(pool.partition).tenant,
-    owner: named.principal(pool.dedicatedOwner),
+    owner: named.principal(pool.owner),
     principal: named.principal(pool.principal),
   };
   const allowed = pool.allowlist.map((project) => named.partition(project));
@@ -727,30 +694,18 @@ function declaringAll(requirement: ExecutionRequirement): readonly string[] {
   ];
 }
 
-/** One member's runner beside the case's. */
-async function plantedBeside(
-  named: Planted,
-  { pool, session }: WorkerPoolEnrolment,
-  polledSecsAgo: number,
-): Promise<void> {
-  await plantedRunner(named, pool, session?.leaseOpen === true, polledSecsAgo);
-}
-
-/** The case's runner as planted, and every pool beside it. */
+/** The case's runner as planted. */
 async function plantedPools(
   c: RunnerCase,
   named: Planted,
   polledSecsAgo: number,
 ): Promise<PersonalPlaneIdentity> {
-  const runner = await plantedRunner(
+  return plantedRunner(
     named,
     c.pool,
     c.session?.leaseOpen === true,
     polledSecsAgo,
   );
-  for (const beside of c.others)
-    await plantedBeside(named, beside, polledSecsAgo);
-  return runner;
 }
 
 /** Moves an execution to a status no attempt is opened under, which only standing its trigger down can plant. */
@@ -771,12 +726,12 @@ async function statusPlanted(
   );
 }
 
-/** The owner and fallback the case's execution is pinned with. */
+/** The owner the case's execution is pinned with, and `Strict`, as the scheduler pins every execution. */
 function ownedAs(c: RunnerCase, named: Planted): Owned {
-  const { ownerOf, personalRunnerAllowed, ownerFallback } = c.placement.demand;
+  const { ownerOf } = c.placement.demand;
   return {
     owner: ownerOf === undefined ? null : named.principal(ownerOf),
-    fallback: personalRunnerAllowed ? ownerFallback : null,
+    fallback: "Strict",
   };
 }
 
@@ -846,20 +801,21 @@ async function waitingCountedProbed(
   );
 }
 
-/** Whether the case's run waits on a live runner of its owner's offered its agent, by the model's terms and a poll `polledSecsAgo` before now. */
+/** Whether the case's run waits on its owner's runner, live under a current poll and not draining, configured for it and offered its agent, by the model's terms and a poll `polledSecsAgo` before now. */
 function waitsOnLive(c: RunnerCase, polledSecsAgo: number): boolean {
-  const { placement } = c;
-  const registry = [{ pool: c.pool, session: c.session }, ...c.others];
+  const { placement, pool, session } = c;
   return (
     placement.route === "Pool" &&
     placement.status === "Launching" &&
     placement.phase === "Waiting" &&
     polledSecsAgo < sessionRunnerPolledSecsMax &&
-    workerPoolOwnerPools(placement, registry).some(
-      (owner) =>
-        workerPoolIsLive(owner) &&
-        workerPoolAgentOffered(placement, owner.pool),
-    )
+    workerPoolPolicyConfigures(pool, placement) &&
+    workerPoolInventoryMatches(placement.requirement, pool) &&
+    workerPoolSizeFits(placement, pool) &&
+    !pool.draining &&
+    session !== undefined &&
+    workerPoolSessionIsCurrent(pool, session) &&
+    workerPoolAgentOffered(placement, pool)
   );
 }
 
@@ -877,15 +833,10 @@ async function runnerWaitRead(
 ): Promise<void> {
   const owner = c.placement.demand.ownerOf;
   if (owner === undefined) return;
-  const registry = [{ pool: c.pool, session: c.session }, ...c.others];
+  const { pool, session } = c;
   if (
-    registry.some(
-      ({ pool, session }) =>
-        pool.revoked ||
-        (runnerOwned(pool) &&
-          session !== undefined &&
-          session.principal !== pool.principal),
-    )
+    pool.revoked ||
+    (session !== undefined && session.principal !== pool.principal)
   )
     return;
   const read = await operationalReads.execution(
@@ -951,7 +902,6 @@ async function claimTook(
       ? workerPoolCanAssign(
           c.placement,
           { pool: c.pool, session },
-          [{ pool: c.pool, session }, ...c.others],
           runnerCaseAssignment,
           new Set(),
         )
@@ -970,7 +920,6 @@ for (const c of runnerCases) {
       workerPoolCanAssign(
         c.placement,
         { pool: c.pool, session: c.session },
-        [{ pool: c.pool, session: c.session }, ...c.others],
         runnerCaseAssignment,
         new Set(c.assignmentsBound),
       ),
