@@ -18,13 +18,12 @@
  * wrong answer. A token an older copy of this program kept beside the site it
  * remembers is moved into the shared store once, by the first run that holds
  * the lock, and is kept only where the store holds none for that site. The
- * program writes none of the records the contract keeps beside a site's
+ * program writes neither of the records the contract keeps beside a site's
  * token, and never reads them, but each write or removal of the token removes
- * all three in the same hold, after it. An access record left behind is
- * retired by its digest already, and a pending device sign-in by the token
- * beside it or else by its own expiry, so failing to remove either is no
- * fault; an ended record that cannot be removed is the path that would not
- * change, never the token lost.
+ * both in the same hold, after it: an access record left behind is retired by
+ * its digest already, so failing to remove it is no fault, and an ended record
+ * that cannot be removed is the path that would not change, never the token
+ * lost.
  *
  * The lock is one word, its holder's or none, and it changes hands only by a
  * swap that names the word it is changed from. So a lock whose holder is gone
@@ -43,7 +42,6 @@ import {
   signInStoreLockHolder,
   signInStoreLockStale,
   signInStoreLockWord,
-  signInStorePendingName,
   signInStoreText,
   signInStoreTokenRead,
 } from "../../../../src/contract/signInStore.ts";
@@ -119,15 +117,11 @@ export function setupTokenRead(
 
 /** Removes the records the shared store keeps beside a site's token, after a write or removal of that token. The caller holds the lock. */
 function setupTokenRecordsRemoved(store: SetupStorePort, site: string): void {
-  for (const name of [
-    signInStoreAccessName(site),
-    signInStorePendingName(site),
-  ])
-    try {
-      store.remove(name);
-    } catch (failure: unknown) {
-      if (!(failure instanceof SetupMachineError)) throw failure;
-    }
+  try {
+    store.remove(signInStoreAccessName(site));
+  } catch (failure: unknown) {
+    if (!(failure instanceof SetupMachineError)) throw failure;
+  }
   store.remove(signInStoreEndedName(site));
 }
 

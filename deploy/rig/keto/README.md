@@ -140,8 +140,7 @@ pages fails the run before anything is written, and
 ## Grant a project access
 
 The API writes the tuples its own routes create — a new tenant's `admins` and
-defaults, a created project's `tenant` and defaults, and a registered pool's
-`pools` — when
+defaults and a created project's `tenant` and defaults — when
 `CHUG_API_KETO_WRITE_URL` names Keto's **write** port. The access plane,
 `src/roots/accessPlane.ts`, grants and removes a person's `admins` and
 `members` on a tenant and `admins`, `developers`, `dispatchers` and `viewers`
@@ -174,7 +173,7 @@ CHUG_PROVISION_ACTION=grant npm run provision:project-access
 
 `CHUG_PROVISION_RELATION` names one relation, and the model is what turns it
 into the permits a route asks for: `admins`, `developers`, `dispatchers`,
-`viewers`, `agents` and `pools` are the project's, and `admins`, `members`,
+`viewers` and `agents` are the project's, and `admins`, `members`,
 `hosted_execution`, `personal_runners` and `unscoped_chat_revoked` are the
 tenant's. A grant with
 `CHUG_PROVISION_PROJECT` absent is a tenant grant, and one whose relation is `tenant` names the tenant

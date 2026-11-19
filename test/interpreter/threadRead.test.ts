@@ -1086,7 +1086,7 @@ test("a thread routed to the member's runner opens and takes a message without t
     ["Read", "Mutate"],
     sessionRoutesAt(
       { Thread: "Pool" },
-      { mine: "Offline", inquiry: "Unregistered", project: "Offline" },
+      { mine: "Offline", inquiry: "Unregistered" },
     ),
   );
 
@@ -1127,13 +1127,13 @@ test("a thread routed to runners where the member has registered none is refused
   );
 });
 
-test("a thread routed to runners is refused where the member's only runners are pools, their own among them", async () => {
+test("a thread routed to runners is refused where the member's only chat host is their own chat's", async () => {
   const { web } = boundary(
     {},
     ["Read", "Mutate"],
     sessionRoutesAt(
       { Thread: "Pool" },
-      { mine: "Unregistered", inquiry: "Live", project: "Live" },
+      { mine: "Unregistered", inquiry: "Live" },
     ),
   );
 
@@ -1149,7 +1149,6 @@ test("a message is stamped with the route its admission was asked of, however th
     sessionRoutesFlipping("Pool", {
       mine: "Offline",
       inquiry: "Unregistered",
-      project: "Offline",
     }),
   );
 

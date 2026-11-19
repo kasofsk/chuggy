@@ -41,7 +41,6 @@ function storeRecording(
       Promise.resolve({
         mine: member === caller ? "Live" : "Unregistered",
         inquiry: member === caller ? "Offline" : "Unregistered",
-        project: "Unregistered",
       }),
     write: (_partition, placement) => {
       written.push(placement);
@@ -71,7 +70,7 @@ function appOver(
   );
 }
 
-test("a reader reads the thread's route and source, the runners it would run on, and the fixed lead and offering, and chooses nothing", async () => {
+test("a reader reads the thread's route and source, the runners it would run on, the fixed project runners, lead and offering, and chooses nothing", async () => {
   await using app = appOver(["Read"], true);
   const found = await app.inject({ url, headers: authorized });
   assert.equal(found.statusCode, 200);

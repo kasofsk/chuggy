@@ -456,8 +456,8 @@ export const personalRunnerRedemptionSchema = z.strictObject({
 });
 
 /**
- * What an owner asks a registration token for, a pool's or their own runner's:
- * how long it stands. A token permits registering and nothing about what the
+ * What a member asks a registration token for, their runner's or their chat
+ * host's: how long it stands. A token permits registering and nothing about what the
  * runner declares, so capabilities a request still names are ignored.
  */
 export const registrationTokenRequestSchema = z.strictObject({

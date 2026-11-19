@@ -137,9 +137,6 @@ const documentRouteNames = [
   "ticketReturn",
   "ticketTake",
   "tickets",
-  "workerPoolRegistrationTokens",
-  "workerPoolRegistrations",
-  "workerPools",
 ];
 
 test("the golden names every route and not an empty stand-in", () => {
@@ -176,7 +173,6 @@ test("the golden names every request schema", () => {
     "threadOfferReply",
     "threadOpen",
     "threadRename",
-    "workerPoolRedemption",
     "workerPoolRegistrationToken",
   ]);
 });

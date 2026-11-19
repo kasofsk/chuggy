@@ -54,6 +54,56 @@ test("a pool names the one class a registered pool has, and no default names it"
   });
 });
 
+test("a pool's row keeps a runner only whole, and only in the header's grammar", async () => {
+  await migratedDatabase("pool_runner_grammar", async (subject) => {
+    await subject.query(deletionPartition);
+    await subject.query(
+      `INSERT INTO worker_pool(tenant,project,pool,class,principal,client_id)
+       VALUES('tenant-5','project-5','pool-5','Dedicated','pool-5','pool-5')`,
+    );
+    for (const [runnerPackage, version, refusal] of [
+      ["Chuggy-linux", "0.14.0", /worker_pool_runner_package_is_a_package/u],
+      ["chuggy-linux", "0.14", /worker_pool_runner_version_is_a_release/u],
+      ["chuggy-linux", "01.14.0", /worker_pool_runner_version_is_a_release/u],
+      ["chuggy-linux", null, /worker_pool_runner_is_named_whole/u],
+      [null, "0.14.0", /worker_pool_runner_is_named_whole/u],
+    ] as const)
+      await assert.rejects(
+        subject.query(
+          `UPDATE worker_pool SET runner_package=$1,runner_version=$2`,
+          [runnerPackage, version],
+        ),
+        refusal,
+        `${String(runnerPackage)}/${String(version)}`,
+      );
+    assert.equal(
+      (
+        await subject.query(
+          `UPDATE worker_pool
+              SET runner_package='chuggy-linux',runner_version='0.14.0'`,
+        )
+      ).rowCount,
+      1,
+    );
+  });
+});
+
+test("a pool's row keeps credentials only as an object", async () => {
+  await migratedDatabase("pool_credentials_named", async (subject) => {
+    await subject.query(deletionPartition);
+    await subject.query(
+      `INSERT INTO worker_pool(tenant,project,pool,class,principal,client_id)
+       VALUES('tenant-5','project-5','pool-5','Dedicated','pool-5','pool-5')`,
+    );
+    await assert.rejects(
+      subject.query(
+        `UPDATE worker_pool SET credentials_named='["work"]'::jsonb`,
+      ),
+      /worker_pool_credentials_named_is_an_object/u,
+    );
+  });
+});
+
 test("an attempt names the principal of the pool holding it, and none while no pool does", async () => {
   await migratedDatabase("pool_principal", async (subject) => {
     await releasedSeeded(subject);

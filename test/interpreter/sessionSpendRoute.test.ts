@@ -45,7 +45,7 @@ test("a member's own turn is spent on their chat host whatever the site routes, 
         refusingEverything(asked),
         sessionRoutesAt(
           { Thread: "InCluster" },
-          { mine: "Live", inquiry: host, project: "Live" },
+          { mine: "Live", inquiry: host },
         ),
         member,
         own,
@@ -103,7 +103,6 @@ test("a project's thread on Pool is spent on its member's chat host, and refused
           {
             mine,
             inquiry: mine === "Unregistered" ? "Live" : "Unregistered",
-            project: "Live",
           },
         ),
         member,

@@ -4,14 +4,13 @@
  * attempt waits for a runner, what the reaper does with one whose lease ran
  * out, what a pass does with one a runner refused, and that every other end of
  * one a runner claimed concludes its execution with no attempt opened again.
- * The runner is a personal runner of the execution's owner; a pool registered
- * to the project beside it is asked nothing.
+ * The runner is a personal runner of the execution's owner.
  *
  * Everything but the authority is the role a deployment runs: the store and
  * the registry read are the scheduler's, a registration is the API's and a
  * claim is the pool plane's. The authority holds its grants in memory: every
- * pool registered here is granted `Execute`, and every runner's owner what
- * admits it and `Read` of its project; `test/keto/` asks a real one.
+ * runner's owner holds what admits it and `Read` of its project; `test/keto/`
+ * asks a real one.
  *
  * A PASS IS INSTALLATION-WIDE and the cases share one database, so each reads
  * back only its own project's rows.
@@ -38,8 +37,6 @@ import { workerPoolEvidenceCharsMax } from "../../src/contract/workerPool.ts";
 import type { WorkerImageFault } from "../../src/contract/workerEnvironment.ts";
 import {
   postgresWorkerPoolAssignments,
-  postgresWorkerPoolDirectory,
-  postgresWorkerPoolRegistry,
   postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
 import {
@@ -54,18 +51,9 @@ import {
   asPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
-import {
-  asProjectId,
-  type Partition,
-  type RecoveryEpoch,
-} from "../../src/interpreter/projectStore.ts";
+import type { RecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import type { PersonalRunnerIdentity } from "../../src/interpreter/workerPool.ts";
-import { workerPoolsAnsweredMax } from "../../src/interpreter/workerPool.ts";
-import {
-  postgresHarnessNewEpoch,
-  postgresHarnessProject,
-  postgresHarnessRolePool,
-} from "./harness.ts";
+import { postgresHarnessNewEpoch, postgresHarnessRolePool } from "./harness.ts";
 import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import {
   schedulerClaimFor,
@@ -98,9 +86,7 @@ after(async () => {
   await rig.close();
 });
 
-const registry = postgresWorkerPoolRegistry(apiPool);
 const personalRegistry = postgresPersonalRunnerRegistry(apiPool);
-const directory = postgresWorkerPoolDirectory(apiPool);
 const assignments = postgresWorkerPoolAssignments(planePool);
 const access = memoryProjectAccess();
 const service = poolRoutedService(rig, access);
@@ -121,29 +107,6 @@ async function routedAttempt(routed: PoolRouted) {
       `scheduler pools suite: ${routed.execution} opened no attempt`,
     );
   return opened.attempt;
-}
-
-/** Registers one pool under the API's role, declaring `capabilities`, and grants it `Execute`. */
-async function poolRegistered(
-  partition: Partition,
-  pool: string,
-  capabilities: readonly string[],
-): Promise<void> {
-  const principal = asPrincipal(
-    `https://issuer.invalid#${pool}-${randomUUID()}`,
-  );
-  assert.equal(
-    await registry.register({
-      partition,
-      pool,
-      capabilities,
-      class: "Dedicated",
-      clientId: `chuggy-pool-${randomUUID()}`,
-      principal,
-    }),
-    true,
-  );
-  access.grant({ partition, principal, access: new Set(["Execute"]) });
 }
 
 /** Runs out the lease of every live attempt of this execution, as the owner. */
@@ -316,12 +279,9 @@ function incompatibleStanding(reason: string) {
   };
 }
 
-test("an execution routed to pools whose owner has no runner is blocked, and never placed, though a pool of its project is configured to run it", async () => {
+test("an execution routed to pools whose owner has no runner is blocked, and never placed", async () => {
   const routed = await poolRoutedExecution(rig, "pools-no-runner");
   await executionOwned(routed);
-  await poolRegistered(routed.project.partition, "amd", [
-    "Platform:Linux:Amd64",
-  ]);
   await executionSchedulerLaunch(service, routed.project.epoch);
   assert.deepEqual(
     await poolRoutedStanding(rig, routed),
@@ -329,11 +289,8 @@ test("an execution routed to pools whose owner has no runner is blocked, and nev
   );
 });
 
-test("an execution routed to pools with no owner is blocked, and never placed, though a pool of its project is configured to run it", async () => {
+test("an execution routed to pools with no owner is blocked, and never placed", async () => {
   const routed = await poolRoutedExecution(rig, "pools-no-owner");
-  await poolRegistered(routed.project.partition, "amd", [
-    "Platform:Linux:Amd64",
-  ]);
   await executionSchedulerLaunch(service, routed.project.epoch);
   assert.deepEqual(
     await poolRoutedStanding(rig, routed),
@@ -831,58 +788,6 @@ test("an attempt routed in the cluster keeps its lease once invoked, and is lost
     },
     attempts: [{ state: "Lost", evidence: "LeaseExpired", pool: null }],
   });
-});
-
-test("a member reads the project's own pools in name order, and is told when there are more than one read answers", async () => {
-  const partition = await postgresHarnessProject(
-    rig.harness.store,
-    "pools-roster",
-  );
-  await poolRegistered(
-    await postgresHarnessProject(rig.harness.store, "pools-roster-elsewhere"),
-    "elsewhere",
-    [],
-  );
-  const sibling = {
-    tenant: partition.tenant,
-    project: asProjectId(`project-pools-roster-sibling-${randomUUID()}`),
-  };
-  await rig.harness.store.createProject(sibling);
-  await poolRegistered(sibling, "sibling", []);
-  const names = Array.from(
-    { length: workerPoolsAnsweredMax + 1 },
-    (_, index) => `pool-${String(index).padStart(4, "0")}`,
-  );
-  for (const name of names.slice(0, workerPoolsAnsweredMax).reverse())
-    await poolRegistered(partition, name, [name]);
-  const answered = names
-    .slice(0, workerPoolsAnsweredMax)
-    .map((name) => ({ pool: name, capabilities: [name] }));
-  const listed = await directory.listed(partition);
-  assert.equal(listed.truncated, false);
-  assert.deepEqual(
-    listed.pools.map(({ pool, capabilities }) => ({ pool, capabilities })),
-    answered,
-  );
-  const stamped = (await rig.harness.query(
-    `SELECT pool, registered_at FROM worker_pool
-      WHERE tenant=$1 AND project=$2 ORDER BY pool`,
-    [partition.tenant, partition.project],
-  )) as readonly { pool: string; registered_at: Date }[];
-  assert.deepEqual(
-    listed.pools.map(({ pool, registeredAt }) => ({ pool, registeredAt })),
-    stamped.map((row) => ({
-      pool: row.pool,
-      registeredAt: row.registered_at.toISOString(),
-    })),
-  );
-  await poolRegistered(partition, names[workerPoolsAnsweredMax] ?? "", []);
-  const listedCut = await directory.listed(partition);
-  assert.equal(listedCut.truncated, true);
-  assert.deepEqual(
-    listedCut.pools.map(({ pool }) => pool),
-    names.slice(0, workerPoolsAnsweredMax),
-  );
 });
 
 /** Registers a runner of a routed execution's owner, opens and invokes its attempt, and has the runner claim it, answering the runner and the assignment it claimed under. */

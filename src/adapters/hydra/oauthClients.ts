@@ -134,7 +134,7 @@ async function hydraRequest(input: {
 
 /**
  * The registration body, which is the whole of what this tree decides about a
- * pool's client. `response_types` is empty and `redirect_uris` is absent
+ * runner's client. `response_types` is empty and `redirect_uris` is absent
  * because a machine completes no browser flow.
  */
 function hydraPoolClientBody(

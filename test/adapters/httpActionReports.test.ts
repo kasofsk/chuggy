@@ -240,7 +240,7 @@ test("the route's parsers are its own: every other route reads a body as it did"
   const post = (media: string, payload: string) =>
     app.inject({
       method: "POST",
-      url: nativeHttpRoutes.workerPoolRegistrations,
+      url: nativeHttpRoutes.personalRunnerRegistrations,
       headers: { "content-type": media },
       payload,
     });
@@ -254,13 +254,12 @@ test("the route's parsers are its own: every other route reads a body as it did"
     nativeHttpMediaType,
     JSON.stringify({
       token: "a-token",
-      pool: "pool-one",
       capabilities: ["linux-containers"],
     }),
   );
   assert.deepEqual(
     calls,
-    ["workerPools.redeem"],
+    ["personalRunners.redeem"],
     "a body the server's own parser reads still reaches its route",
   );
 });

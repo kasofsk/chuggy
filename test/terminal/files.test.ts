@@ -34,7 +34,6 @@ import {
   signInStoreAccessName,
   signInStoreDraftName,
   signInStoreEndedName,
-  signInStorePendingName,
 } from "../../src/contract/signInStore.ts";
 import { SetupMachineError } from "../../ui/chuggy-ui/app/core/setupPorts.ts";
 import type { SetupMachineFault } from "../../ui/chuggy-ui/app/core/setupPorts.ts";
@@ -632,13 +631,12 @@ test("what a write that was killed part-way left of the sign-in is gone after th
   assert.deepEqual(readdirSync(machine.store).toSorted(), [token, "lock"]);
 });
 
-test("what a write that was killed part-way left of any record beside the sign-in is gone after the next run", async () => {
+test("what a write that was killed part-way left of either record beside the sign-in is gone after the next run", async () => {
   const { installation, machine } = await signedIn();
   const gone = departed();
   for (const record of [
     signInStoreAccessName(installation.site),
     signInStoreEndedName(installation.site),
-    signInStorePendingName(installation.site),
   ])
     writeFileSync(
       join(machine.store, signInStoreDraftName(record, gone)),
