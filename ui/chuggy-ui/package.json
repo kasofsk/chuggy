@@ -4,10 +4,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tools.json && tsc --noEmit -p tsconfig.terminal.json",
-    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tools.json && tsc --noEmit -p tsconfig.rendered.json && tsc --noEmit -p tsconfig.terminal.json",
+    "lint": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --max-old-space-size=4096\" eslint .",
     "test": "vitest run",
-    "build": "vite build && vite build --config vite.terminal.config.ts && node ../../scripts/check-console-policy.ts dist && node terminal/built.ts dist"
+    "build": "vite build && vite build --config vite.terminal.config.ts && node ../../scripts/check-console-policy.ts dist && node terminal/built.ts dist",
+    "render": "node tools/rendered/run.ts"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.15.18",
@@ -42,11 +43,13 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@fluent/syntax": "^0.19.0",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.0",
+    "axe-core": "^4.14.1",
     "eslint": "^10.8.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^29.1.1",

@@ -22,7 +22,7 @@ import { Button } from "./Button.tsx";
 import { Figure } from "./Figure.tsx";
 import { Identity } from "./Identity.tsx";
 import { Notice } from "./Notice.tsx";
-import { Pill } from "./Pill.tsx";
+import { StatusBadge } from "./StatusBadge.tsx";
 
 import "./Ledger.css";
 
@@ -71,9 +71,12 @@ export function LedgerGroup(props: {
       <summary>
         <span className="ledger-group-head">
           <h3>{props.title}</h3>
-          <Pill tone={props.standing === "Current" ? "live" : "retired"}>
+          <StatusBadge
+            tone={props.standing === "Current" ? "live" : "retired"}
+            size="small"
+          >
             {text(ledgerStandingWords[props.standing])}
-          </Pill>
+          </StatusBadge>
           <span className="ledger-group-summary">{props.summary}</span>
         </span>
         {props.rollup === undefined ? null : (
@@ -96,7 +99,9 @@ export function LedgerBlock(props: {
         <p className="ledger-eyebrow">
           <span className="eyebrow">{props.eyebrow}</span>
           {props.pill === undefined ? null : (
-            <Pill tone={props.pill.tone}>{props.pill.text}</Pill>
+            <StatusBadge tone={props.pill.tone} size="small">
+              {props.pill.text}
+            </StatusBadge>
           )}
         </p>
       )}
@@ -170,7 +175,9 @@ export function LedgerRow(props: LedgerRowProps): ReactNode {
         )}
       </span>
       <span className="ledger-pill">
-        <Pill tone={props.pill.tone}>{props.pill.text}</Pill>
+        <StatusBadge tone={props.pill.tone} size="small">
+          {props.pill.text}
+        </StatusBadge>
       </span>
       <span className="ledger-when">
         {props.when === undefined ? null : <Figure figure={props.when} />}

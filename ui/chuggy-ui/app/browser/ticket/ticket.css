@@ -441,7 +441,7 @@
   /* Narrow, the heading's links take a line of their own, and a row stacks:
      its step and model on one line, what runs it on the next, and its
      overrides under that. */
-  @media (max-width: 40em) {
+  @container page (max-width: 40em) {
     .config-heading-title {
       flex-basis: 100%;
     }
@@ -488,43 +488,8 @@
     }
   }
 
-  /* The header: the title, the state label with its one fragment, the
-     actions, and the tabs under them. */
-  .ticket-header {
-    display: grid;
-    gap: var(--space-3);
-    min-width: 0;
-  }
-
-  .ticket-header-title {
-    min-width: 0;
-    font-size: var(--text-xl);
-    font-weight: var(--weight-strong);
-    line-height: var(--leading-tight);
-    color: var(--ink-1);
-    overflow-wrap: anywhere;
-  }
-
-  .ticket-header-number {
-    font-weight: var(--weight-regular);
-    color: var(--ink-3);
-  }
-
-  .ticket-header-standing {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
-  .ticket-header-state {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2) var(--space-3);
-    min-width: 0;
-  }
-
+  /* The header is `PageHeader`'s; what is the ticket's own in it is the
+     fragment beside the state, the actions' lines, and the notes. */
   .ticket-header-fragment,
   .ticket-header-fragment .fig {
     color: var(--ink-2);
@@ -535,20 +500,17 @@
     vertical-align: -0.125em;
   }
 
-  /* A place in a landing queue: the merge mark and its figure, as wide as
-     its figure whatever row or header it stands in. */
+  /* A place in a landing queue: its badge, as wide as its figure whatever
+     row or header it stands in. */
   .finalization-queue-chip {
+    display: inline-flex;
     flex: none;
     font-variant-numeric: tabular-nums;
   }
 
+  /* The actions stand in the primitive's row as its own children. */
   .ticket-header-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--space-2);
-    margin-inline-start: auto;
+    display: contents;
   }
 
   .ticket-header-actions .act {
@@ -569,11 +531,6 @@
     white-space: nowrap;
   }
 
-  .ticket-header-actions [class*="btn-"] {
-    box-sizing: border-box;
-    height: var(--height-icon);
-  }
-
   .ticket-header-notes {
     display: flex;
     flex-wrap: wrap;
@@ -585,251 +542,7 @@
     display: none;
   }
 
-  .ticket-tabs {
-    min-width: 0;
-    overflow-x: auto;
-    border-bottom: var(--hairline) solid var(--edge);
-  }
-
-  .ticket-tabs ul {
-    display: flex;
-    gap: var(--space-1);
-  }
-
-  .ticket-tab {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    color: var(--ink-3);
-    font-size: var(--text-md);
-    white-space: nowrap;
-    text-decoration: none;
-  }
-
-  .ticket-tab:hover {
-    color: var(--ink-1);
-  }
-
-  .ticket-tab[aria-current="page"] {
-    color: var(--ink-1);
-    font-weight: var(--weight-medium);
-  }
-
-  .ticket-tab[aria-current="page"]::after {
-    content: "";
-    position: absolute;
-    inset-inline: 0;
-    bottom: 0;
-    height: var(--rail);
-    background: var(--ink-1);
-  }
-
-  @media (max-width: 40em) {
-    .ticket-tab {
-      padding-inline: var(--space-2);
-    }
-  }
-
-  .ticket-tab-count {
-    padding: 0 var(--space-2);
-    border-radius: var(--radius-3);
-    background: var(--surface-2);
-    color: var(--ink-2);
-    font-size: var(--text-xs);
-    line-height: var(--leading-dense);
-  }
-
-  /* The bar that stands in for the header once it has scrolled away. It is
-     a child of the page itself, so it sticks for the page's whole length, and
-     takes no room in the page's flow: its own height and the gap after it
-     are given back. */
-  .ticket-sticky {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    height: 0;
-    margin-bottom: calc(-1 * var(--space-4));
-  }
-
-  .ticket-sticky-bar {
-    position: absolute;
-    inset-inline: calc(-1 * var(--space-4));
-    top: 0;
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-4);
-    background: var(--surface-0);
-    border-bottom: var(--hairline) solid var(--edge);
-  }
-
-  .ticket-sticky-bar[hidden] {
-    display: none;
-  }
-
-  .ticket-sticky-title {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: var(--weight-strong);
-    color: var(--ink-1);
-  }
-
-  /* The state label: filled is the tone as the ground under inverse ink,
-     tinted its wash inside an edge of the tone, outlined a dashed edge. */
-  .ticket-state {
-    --state-tone: var(--ink-3);
-    --state-fill: var(--fill-retired);
-    --state-wash: var(--surface-2);
-    display: inline-flex;
-    flex: none;
-    align-items: center;
-    gap: var(--space-2);
-    box-sizing: border-box;
-    height: var(--height-state);
-    padding-inline: var(--space-3);
-    border: var(--hairline) solid transparent;
-    border-radius: var(--radius-3);
-    font-size: var(--text-md);
-    font-weight: var(--weight-strong);
-    line-height: 1;
-    white-space: nowrap;
-  }
-
-  .ticket-state[data-size="small"] {
-    height: var(--height-state-small);
-    padding-inline: var(--space-2);
-    gap: var(--space-1);
-    font-size: var(--text-sm);
-  }
-
-  .ticket-state[data-size="small"] .ticket-state-word {
-    text-align: center;
-  }
-
-  /* A small label's word is as wide as the widest it could say: every word,
-     a line each, stacked under it with no height and no text to read. */
-  .ticket-state-word[data-words]::before {
-    content: attr(data-words);
-    content: attr(data-words) / "";
-    display: block;
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
-    white-space: pre;
-  }
-
-  .ticket-state[data-tone="pass"] {
-    --state-tone: var(--tone-pass);
-    --state-fill: var(--fill-pass);
-    --state-wash: var(--wash-pass);
-  }
-
-  .ticket-state[data-tone="queued"] {
-    --state-tone: var(--tone-queued);
-    --state-wash: var(--wash-queued);
-  }
-
-  .ticket-state[data-tone="live"] {
-    --state-tone: var(--tone-live);
-    --state-fill: var(--fill-live);
-  }
-
-  .ticket-state[data-tone="evaluation"] {
-    --state-tone: var(--tone-evaluation);
-    --state-fill: var(--fill-evaluation);
-  }
-
-  .ticket-state[data-tone="finalization"] {
-    --state-tone: var(--tone-finalization);
-    --state-fill: var(--fill-finalization);
-  }
-
-  .ticket-state[data-tone="parked"] {
-    --state-tone: var(--tone-parked);
-    --state-fill: var(--fill-parked);
-  }
-
-  .ticket-state[data-form="filled"] {
-    background: var(--state-fill);
-    color: var(--ink-inverse);
-  }
-
-  .ticket-state[data-form="tinted"] {
-    background: var(--state-wash);
-    border-color: color-mix(in srgb, var(--state-tone) 45%, transparent);
-    color: var(--state-tone);
-  }
-
-  .ticket-state[data-form="outlined"] {
-    background: transparent;
-    border: var(--hairline) dashed var(--edge-control);
-    color: var(--ink-2);
-  }
-
-  .ticket-state-mark {
-    flex: none;
-    width: 1em;
-    height: 1em;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.6;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  /* A mark or a word drawn apart from the label takes its tone's ink itself. */
-  .ticket-state-ink {
-    color: var(--ink-3);
-  }
-
-  .ticket-state-ink[data-tone="pass"] {
-    color: var(--tone-pass);
-  }
-
-  .ticket-state-ink[data-tone="queued"] {
-    color: var(--tone-queued);
-  }
-
-  .ticket-state-ink[data-tone="live"] {
-    color: var(--tone-live);
-  }
-
-  .ticket-state-ink[data-tone="evaluation"] {
-    color: var(--tone-evaluation);
-  }
-
-  .ticket-state-ink[data-tone="finalization"] {
-    color: var(--tone-finalization);
-  }
-
-  .ticket-state-ink[data-tone="parked"] {
-    color: var(--tone-parked);
-  }
-
-  .ticket-state-filled-path {
-    fill: currentColor;
-    stroke: none;
-  }
-
-  .ticket-state-track {
-    opacity: 0.35;
-  }
-
-  .ticket-state-mark[data-spins] {
-    animation: ticket-state-spin var(--duration-spin) linear infinite;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .ticket-state-mark[data-spins] {
-      animation: none;
-    }
-  }
-
-  @keyframes ticket-state-spin {
+  @keyframes ticket-run-spin {
     to {
       transform: rotate(1turn);
     }
@@ -854,7 +567,7 @@
   }
 
   .ticket-run-mark[data-mark="Spin"] {
-    animation: ticket-state-spin var(--duration-spin) linear infinite;
+    animation: ticket-run-spin var(--duration-spin) linear infinite;
   }
 
   .ticket-run-track {
@@ -989,7 +702,7 @@
     color: var(--ink-3);
   }
 
-  @media (max-width: 40em) {
+  @container page (max-width: 40em) {
     .ticket-runs-row {
       grid-template-columns: auto minmax(0, 1fr) auto auto;
       row-gap: 0;
@@ -1054,6 +767,12 @@
     border-left-color: var(--ink-1);
     background: var(--surface-1);
     color: var(--ink-1);
+  }
+
+  @media (forced-colors: active) {
+    .ticket-rail-row[aria-current="page"] {
+      border-left-color: var(--forced-current);
+    }
   }
 
   .ticket-rail-name {
@@ -1164,7 +883,7 @@
     white-space: pre-wrap;
   }
 
-  @media (max-width: 60em) {
+  @container page (max-width: 60em) {
     .ticket-run-frame {
       grid-template-columns: minmax(0, 1fr);
       gap: var(--space-3);
@@ -1266,7 +985,7 @@
     gap: var(--space-2);
   }
 
-  @media (max-width: 60em) {
+  @container page (max-width: 60em) {
     .ticket-overview {
       grid-template-columns: minmax(0, 1fr);
       gap: var(--space-5);
@@ -1420,10 +1139,13 @@
     text-decoration: none;
   }
 
+  /* A cell's two rows, its phase's heading and its body, are the grid's, so
+     a heading that wraps lowers every box in the row with it. */
   .ticket-steps-grid {
     display: grid;
     grid-auto-flow: column;
     grid-auto-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
     background: var(--surface-1);
     border: var(--hairline) solid var(--edge);
     border-radius: var(--radius-2);
@@ -1454,6 +1176,8 @@
   .ticket-steps-cell {
     position: relative;
     display: grid;
+    grid-row: span 2;
+    grid-template-rows: subgrid;
     align-content: start;
     gap: var(--space-2);
     min-width: 0;
@@ -1469,15 +1193,21 @@
     border-left: var(--hairline) solid var(--edge-strong);
   }
 
+  .ticket-steps-body {
+    display: grid;
+    align-content: start;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
   .ticket-steps-phase {
     min-height: 1lh;
-    overflow: hidden;
     color: var(--ink-3);
     font-size: var(--text-xs);
     font-weight: var(--weight-strong);
     letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 
   .ticket-steps-order {
@@ -1575,13 +1305,16 @@
     flex: none;
   }
 
-  @media (max-width: 40em) {
+  @container page (max-width: 40em) {
     .ticket-steps-grid {
       grid-auto-flow: row;
       grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: none;
     }
 
     .ticket-steps-cell {
+      grid-row: auto;
+      grid-template-rows: none;
       border-top: none;
       padding-block: var(--space-2);
     }
@@ -1622,7 +1355,8 @@
   }
 
   /* Usage: the tiles over the by-step and by-model tables, each table boxed
-     and scrolling inside its box rather than the page. */
+     and stacking into cards in its box where it is narrow, rather than
+     scrolling. */
   .ticket-usage {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -1660,7 +1394,7 @@
   }
 
   .ticket-usage-tile-figure .fig,
-  .ticket-usage-section .tabular tfoot .fig {
+  .ticket-usage-steps tbody tr:last-child .fig {
     color: var(--ink-1);
   }
 
@@ -1692,16 +1426,25 @@
     font-weight: var(--weight-regular);
   }
 
-  .ticket-usage-section .tabular tfoot > tr > * {
-    border-top: var(--hairline) solid var(--edge);
-    border-bottom: 0;
+  /* The by-step table's last row is its total. */
+  .ticket-usage-steps tbody tr:last-child > *,
+  .ticket-usage-steps tbody tr:last-child .tabular-value {
     color: var(--ink-1);
     font-weight: var(--weight-strong);
   }
 
+  @container not (max-width: 40em) {
+    .ticket-usage-steps tbody tr:last-child > * {
+      border-top: var(--hairline) solid var(--edge);
+    }
+  }
+
+  /* A model's name wraps rather than widening its table. */
   .ticket-usage-section .tabular code {
     font-family: var(--font-mono);
     font-size: var(--mono-optical);
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .ticket-usage-minor {

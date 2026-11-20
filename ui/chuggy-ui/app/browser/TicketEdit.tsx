@@ -98,6 +98,7 @@ import {
 import type { Attempt } from "./TicketCreation.tsx";
 import type { CopyText } from "../core/copy.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
+import "./DataPanel.css";
 
 /** What the edit is written against: the ticket as read, and its draft. */
 interface EditSubject {
@@ -138,7 +139,8 @@ function editAttemptOf(
  * An edit through the ports the form was handed. Whatever it ends in, the
  * ticket and its draft are read again before it is over: a revision the
  * update did not land has moved the draft's version, and a refusal for a
- * stale revision is answered by the one the ticket is at now.
+ * stale revision is answered by the one the ticket is at now; and one that
+ * lands says so, since the form is left for the ticket's page.
  */
 function editWrite(
   ports: ApiPorts,
@@ -187,6 +189,10 @@ function editWrite(
     },
     refusal: (failure) => text(operationFailureSentence(failure)),
     landed: reread,
+    landedUnseen: (updated) => ({
+      id: "ticket-authoring-edit-saved",
+      args: { ticket: updated },
+    }),
   };
 }
 

@@ -14,6 +14,7 @@ import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
+import { ConsoleWriteToasts } from "../../app/browser/consoleWrite.tsx";
 import { PlacementSettingsPage } from "../../app/browser/settings/PlacementSettingsPage.tsx";
 import {
   answer,
@@ -29,6 +30,8 @@ import type { SentRequest } from "../screenHarness.tsx";
 import { projectPartition } from "../projectFixture.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { renderCopied } from "../copied.tsx";
+import { tableCards, tableText } from "../tableText.ts";
+import { toastsDrawn } from "../toastsDrawn.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -105,6 +108,7 @@ async function drawPage(
       transport={openedStream().ports.fetch}
     >
       <PlacementSettingsPage />
+      <ConsoleWriteToasts />
     </ScreenHarness>,
   );
   await settled();
@@ -129,9 +133,7 @@ async function choose(kind: string, name: string): Promise<void> {
 }
 
 function placementRows(): readonly (string | null)[] {
-  return within(sectionOf("Placement"))
-    .getAllByRole("row")
-    .map((row) => row.textContent);
+  return within(sectionOf("Placement")).getAllByRole("row").map(tableText);
 }
 
 /** A session's runner is said only where it runs on runners. */
@@ -143,6 +145,29 @@ test("each kind is drawn with where it runs, what decided it, and a session's ru
     "EvaluationHosted runsSite",
     "ChatRunnersDefaultOffline",
   ]);
+});
+
+test("each kind is a card titled by its name, where it runs and what decided it labelled, and a runner only where one is said", async () => {
+  await drawPage();
+  const table = within(sectionOf("Placement")).getByRole("table", {
+    name: "Placement",
+  });
+  expect(tableCards(table).map((card) => card.title)).toStrictEqual([
+    "Work",
+    "Evaluation",
+    "Chat",
+  ]);
+  expect(tableCards(table)[0]?.labels).toStrictEqual([
+    "Runs on",
+    "Set by",
+    "Runner",
+  ]);
+  expect(
+    Array.from(
+      table.querySelectorAll("[data-empty]"),
+      (cell) => cell.parentElement?.firstElementChild?.textContent,
+    ),
+  ).toStrictEqual(["Work", "Evaluation"]);
 });
 
 /** Chat reads the reader's own runner, never the project's. */
@@ -185,7 +210,9 @@ test("a reader the tenant granted hosted runs is offered both routes, and a save
       { thread: "InCluster", lead: "InCluster", leadOffering: "Own" },
     ],
   ]);
-  expect(screen.getByText("Written")).toBeTruthy();
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Placement saved" },
+  ]);
   expect(placementRows()).toContain("EvaluationRunnersProject");
   expect(placementRows()).toContain("ChatHosted runsProject");
 });
@@ -220,8 +247,8 @@ function radio(kind: string, name: string): HTMLElement {
 }
 
 /** A hosted kind the reader may not choose stays where it is, drawn as such,
- * and a save that moved nothing writes nothing. */
-test("a reader without the hosted grant sees hosted kinds as they stand, and an untouched save writes nothing", async () => {
+ * and Save is not offered until something moved. */
+test("a reader without the hosted grant sees hosted kinds as they stand, and Save waits for a move", async () => {
   const sent = await drawPage(grantless);
   await press("Edit");
   for (const kind of ["Work", "Chat"]) {
@@ -233,9 +260,15 @@ test("a reader without the hosted grant sees hosted kinds as they stand, and an 
     expect(radio(kind, "Runners").hasAttribute("disabled")).toBe(false);
   }
   expect(offered("Evaluation")).toStrictEqual(["Pool"]);
-  await press("Save changes");
+  const save = screen.getByRole<HTMLButtonElement>("button", {
+    name: "Save changes",
+  });
+  expect(save.disabled).toBe(true);
+  await choose("Work", "Runners");
+  expect(save.disabled).toBe(false);
+  await press("Cancel");
   expect(puts(sent)).toStrictEqual([]);
-  expect(screen.queryByText("Written")).toBeNull();
+  expect(toastsDrawn()).toStrictEqual([]);
   expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
 });
 
@@ -256,7 +289,9 @@ test("a reader without the hosted grant who moves work alone writes work's place
   expect(puts(sent)).toStrictEqual([
     ["execution-placement", { work: "Pool", evaluation: "Pool" }],
   ]);
-  expect(screen.getByText("Written")).toBeTruthy();
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Placement saved" },
+  ]);
   expect(placementRows()).toContain("ChatHosted runsDefault");
 });
 
@@ -281,7 +316,9 @@ test("a reader who moves chat alone writes the session placement alone, naming t
       { thread: "InCluster", lead: "InCluster", leadOffering: "Own" },
     ],
   ]);
-  expect(screen.getByText("Written")).toBeTruthy();
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Placement saved" },
+  ]);
 });
 
 /** The lead is neither drawn nor chosen here, and the session placement's
@@ -477,6 +514,8 @@ test("a write the hosted grant refuses says so and stays open", async () => {
   expect(screen.getByText("Needs hosted runs")).toBeTruthy();
   expect(screen.queryByText("Work and evaluation saved")).toBeNull();
   expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
+  expect(document.activeElement?.textContent).toContain("Needs hosted runs");
+  expect(toastsDrawn()).toStrictEqual([]);
 });
 
 /** The sessions are written second, so their refusal stops the save there,

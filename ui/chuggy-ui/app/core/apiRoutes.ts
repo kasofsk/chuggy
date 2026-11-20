@@ -13,9 +13,13 @@ import type {
   ConnectorsResponse,
 } from "../../../../src/contract/connectorAdministration.ts";
 import { partitionPath } from "../../../../src/contract/http.ts";
-import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type {
+  PartitionIdentity,
+  ProjectImageRole,
+} from "../../../../src/contract/http.ts";
 import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
 import {
+  ownedThemeSchema,
   agentAccountsResponseSchema,
   chatHostResponseSchema,
   configurationResponseSchema,
@@ -39,6 +43,8 @@ import {
   operationResponseSchema,
   outputContentResponseSchema,
   projectArtifactResponseSchema,
+  projectImagesResponseSchema,
+  projectThemeResponseSchema,
   projectArtifactUploadedResponseSchema,
   projectCreatedSchema,
   projectInventoryResponseSchema,
@@ -78,12 +84,15 @@ import type {
   ForgeInstallationsResponse,
   ForgeRepositoriesResponse,
   OperationAcceptance,
+  OwnedThemeResponse,
   OperationResponse,
   OutputContentResponse,
   ProjectArtifactResponse,
+  ProjectImagesResponse,
+  ProjectThemeResponse,
   ProjectArtifactUploadedResponse,
   ProjectCreatedResponse,
-  NamedProject,
+  InventoryProject,
   ProjectInventoryResponse,
   ProjectRepositoriesResponse,
   ProjectRepositoryAlreadyBoundResponse,
@@ -121,6 +130,10 @@ import type {
   chatThreadMessageSchema,
   threadOfferReplyRequestSchema,
 } from "../../../../src/contract/requests.ts";
+import type {
+  ThemeChoice,
+  ThemeDocument,
+} from "../../../../src/contract/appearance.ts";
 import type {
   AccountAgent,
   PersonalRunnerPriority,
@@ -628,6 +641,133 @@ export function apiDeleteTenant(
   );
 }
 
+/** The reader's global theme choice, written whole. */
+export function apiWriteThemeChoice(
+  ports: ApiPorts,
+  choice: ThemeChoice,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    { method: "PUT", path: nativeHttpRoutes.themeChoice, body: choice },
+    () => undefined,
+  );
+}
+
+/** A theme of the reader's own made from `document`, answered with the
+ * number it is known by. */
+export function apiCreateOwnTheme(
+  ports: ApiPorts,
+  document: ThemeDocument,
+): Promise<ApiResult<OwnedThemeResponse>> {
+  return apiRead(
+    ports,
+    { method: "POST", path: nativeHttpRoutes.ownThemes, body: document },
+    (value) => ownedThemeSchema.parse(value),
+  );
+}
+
+/** A theme of the reader's own, written whole. */
+export function apiWriteOwnTheme(
+  ports: ApiPorts,
+  theme: number,
+  document: ThemeDocument,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "PUT",
+      path: endpointPath(nativeHttpRoutes.ownTheme, { theme }),
+      body: document,
+    },
+    () => undefined,
+  );
+}
+
+/** A theme of the reader's own deleted, and with it the choice naming it. */
+export function apiDeleteOwnTheme(
+  ports: ApiPorts,
+  theme: number,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "DELETE",
+      path: endpointPath(nativeHttpRoutes.ownTheme, { theme }),
+    },
+    () => undefined,
+  );
+}
+
+/** The reader's own theme for one project, written whole, or cleared where
+ * `choice` is none so the project's own resolution applies. */
+export function apiWriteProjectThemeOverride(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  choice: ThemeChoice | undefined,
+): Promise<ApiResult<undefined>> {
+  const path = endpointPath(nativeHttpRoutes.projectThemeOverride, partition);
+  return apiRead(
+    ports,
+    choice === undefined
+      ? { method: "DELETE", path }
+      : { method: "PUT", path, body: choice },
+    () => undefined,
+  );
+}
+
+/** The project's default theme, the document written whole, or cleared where
+ * `document` is none. */
+export function apiWriteProjectTheme(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  document: ThemeDocument | undefined,
+): Promise<ApiResult<ProjectThemeResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "PUT",
+      path: endpointPath(nativeHttpRoutes.projectTheme, partition),
+      body: document === undefined ? {} : { document },
+    },
+    (value) => projectThemeResponseSchema.parse(value),
+  );
+}
+
+/** The artifacts the project names its icon and its banner. */
+export function apiProjectImages(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  signal?: AbortSignal,
+): Promise<ApiResult<ProjectImagesResponse>> {
+  return apiGet(
+    ports,
+    endpointPath(nativeHttpRoutes.projectImages, partition),
+    (value) => projectImagesResponseSchema.parse(value),
+    signal,
+  );
+}
+
+/** One of the project's own artifacts named its icon or its banner, or that
+ * role cleared where `artifact` is none. */
+export function apiWriteProjectImage(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  role: ProjectImageRole,
+  artifact: string | undefined,
+): Promise<ApiResult<ProjectImagesResponse>> {
+  const path = endpointPath(nativeHttpRoutes.projectImage, {
+    ...partition,
+    role,
+  });
+  return apiRead(
+    ports,
+    artifact === undefined
+      ? { method: "DELETE", path }
+      : { method: "PUT", path, body: { artifact } },
+    (value) => projectImagesResponseSchema.parse(value),
+  );
+}
+
 /** The reader's chat host in a tenant taken off. */
 export function apiDeregisterChatHost(
   ports: ApiPorts,
@@ -847,8 +987,8 @@ export function apiCreateProject(
  */
 export async function apiProjectInventoryAll(
   ports: ApiPorts,
-): Promise<ApiResult<readonly NamedProject[]>> {
-  const partitions: NamedProject[] = [];
+): Promise<ApiResult<readonly InventoryProject[]>> {
+  const partitions: InventoryProject[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < projectInventoryPagesMax; page += 1) {
     const answered = await apiProjectInventory(ports, { cursor });

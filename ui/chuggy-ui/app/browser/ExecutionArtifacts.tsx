@@ -24,6 +24,7 @@ import { Disclosure } from "./ui/Disclosure.tsx";
 import { Lightbox } from "./ui/Lightbox.tsx";
 import { MarkdownReport } from "./ui/MarkdownReport.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
+import "./ExecutionArtifacts.css";
 
 type ResultArtifact = NonNullable<
   ExecutionResponse["result"]
@@ -119,6 +120,7 @@ function Artifact(props: {
               ? { id: "ticket-artifact-hide" }
               : { id: "ticket-artifact-preview" },
           )}
+          look={{ variant: "quiet", size: "sm" }}
         >
           <div className="basis-full">
             <ArtifactPreview

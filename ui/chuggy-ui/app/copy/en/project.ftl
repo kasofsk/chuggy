@@ -9,11 +9,10 @@ project-creation-project-label = { -project(case: "upper") }
 project-creation-submit = Create { -project }
 project-creation-name-rule = Lowercase letters, digits, inner hyphens
 project-creation-name-too-long = Too long
-project-creation-display-name-rule = Any name; its address is made from it
+project-creation-display-name-rule = Any name, shown in the { -project } menu; its address is made from it
 project-creation-display-name-control = No control characters
 project-creation-address-label = Address
 project-creation-address-made = Address: { $address }
-project-creation-address-edit = Edit address
 project-creation-address-none = Makes no address; type one
 project-creation-tenant-reserved = Reserved
 project-creation-tenant-needs-invite = New { -workspace } needs { -invite(form: "a") } link
@@ -27,6 +26,11 @@ project-creation-refusal-unreachable = Unreachable
 project-creation-refusal-unreadable = Unreadable
 project-creation-refusal-refused = Refused
 project-creation-workspace-new = New { -workspace }
+project-creation-workspace-name-label = { -workspace(case: "upper") } name
+project-creation-address-hint = Lowercase letters, digits, inner hyphens. Every link to the { -project } names it
+project-creation-more = More options
+project-creation-more-about = The { -project }'s address, which its name makes unless you type one
+project-creation-creating = Creating { -project }…
 project-creation-workspace-unheld-label = No { -workspace }
 project-creation-workspace-unheld-detail = A new { -workspace } needs { -invite(form: "a") } link
 project-creation-workspace-unadmin-label = Not { -workspace(form: "a") } { -role-admin }
@@ -35,10 +39,8 @@ project-creation-workspace-unadmin-detail = { -workspace(case: "upper", form: "a
 ## The ticket table.
 
 project-table-title = { -ticket(case: "upper", form: "plural") }
-project-table-new-ticket = New { -ticket }
-project-table-empty = No { -ticket(form: "plural") }
+project-table-empty = No { -ticket(form: "plural") } yet. Ask in a { -thread } to make one.
 project-table-aria-tickets = { -ticket(case: "upper", form: "plural") }
-project-table-aria-by-state = { -ticket(case: "upper", form: "plural") } by state
 project-table-waits-on = Waits on
 project-table-creator-label = Creator
 project-table-creator-anyone = Anyone
@@ -47,15 +49,14 @@ project-table-owner-label = Owner
 project-table-sort-label = Sort
 project-table-filter-label = Filter
 project-table-filter-all = All states
+project-table-state-label = State
+# The marks under the bar, one for each filter that is set.
+project-table-filters-set = Filters set
 project-table-search = Search { -ticket(form: "plural") }
 project-table-search-placeholder = Search titles or #number…
 project-table-show-more = Show more
-project-table-loading = Loading…
+project-table-clear-filters = Clear filters
 project-table-more-failed = More
-project-table-blocked-hint = Blocked · { $count ->
-    [one] { $count } unfinished { -dependency }
-   *[other] { $count } unfinished { -dependency(form: "plural") }
-}
 project-table-status-matched = { $matched ->
     [one] { $matched } matching { -ticket }
    *[other] { $matched } matching { -ticket(form: "plural") }

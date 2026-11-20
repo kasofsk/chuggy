@@ -125,7 +125,7 @@ function ticketRunsStep(
   };
 }
 
-/** A verdict as the one word its pill says, an approval's in a person's terms. */
+/** A verdict as the one word its badge says, an approval's in a person's terms. */
 export function ticketRunVerdictLabel(
   verdict: SetVerdict,
   approval: boolean,

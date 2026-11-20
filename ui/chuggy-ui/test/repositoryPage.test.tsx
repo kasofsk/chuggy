@@ -17,6 +17,7 @@ import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
+import { ConsoleWriteToasts } from "../app/browser/consoleWrite.tsx";
 import { RepositoryPage } from "../app/browser/repositories/RepositoryPage.tsx";
 import {
   answer,
@@ -32,6 +33,7 @@ import {
   abilitiesUnrefusing,
 } from "./projectAbilitiesFixture.ts";
 import { styleless } from "./styleless.ts";
+import { toastsDrawn } from "./toastsDrawn.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -242,6 +244,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
       transport={openedStream().ports.fetch}
     >
       <RepositoryPage />
+      <ConsoleWriteToasts />
     </ScreenHarness>,
   );
   await settled();
@@ -314,7 +317,7 @@ test("the page reads its own binding, and says what it lands as", async () => {
   expect(screen.getByRole("heading", { name: "kasofsk/chuggy" })).toBeTruthy();
   expect(
     screen.getByRole("link", { name: "Repositories" }).getAttribute("href"),
-  ).toBe("/$tenant/$project/repositories");
+  ).toBe("/$tenant/$project/settings/repositories");
   expect(chosenFinalization()).toBe("Pull request");
   expect(
     within(finalization)
@@ -333,17 +336,18 @@ test("a repository this project does not bind draws nothing but Not bound", asyn
   expect(screen.queryByRole("region", { name: /^Configurations/u })).toBeNull();
 });
 
-/** A retired binding's page, reached by its address, says beside its name
- * that it is unbound; a live one's says nothing. */
+/** A retired binding's page, reached by its address, says under its name
+ * that it is unbound; a live one's says nothing. Either says its whole address
+ * under the name, which is only the address's last two segments. */
 test.each([
   [
     "a retired",
     "2026-09-14T00:00:00Z",
-    "Repositories/kasofsk/chuggyDisconnected",
+    `Repositories/kasofsk/chuggy${chuggy}Disconnected`,
   ],
-  ["a live", undefined, "Repositories/kasofsk/chuggy"],
+  ["a live", undefined, `Repositories/kasofsk/chuggy${chuggy}`],
 ])(
-  "%s binding's top bar says beside its name whether it is unbound",
+  "%s binding's head says under its name whether it is unbound, and its whole address",
   async (_which, retiredAt, drawn) => {
     await drawPage({
       bound: [
@@ -359,12 +363,30 @@ test.each([
         },
       ],
     });
-    expect(
-      screen.getByRole("heading", { name: "kasofsk/chuggy" }).parentElement
-        ?.textContent,
-    ).toBe(drawn);
+    const title = screen.getByRole("heading", {
+      level: 1,
+      name: "kasofsk/chuggy",
+    });
+    expect(title.closest("header")?.textContent).toBe(drawn);
   },
 );
+
+/** The page is headed once, by the repository, and each section of it is a
+ * heading at the level under that. */
+test("the page has one h1, the repository, and its sections are headed under it", async () => {
+  await drawPage();
+  expect(
+    screen.getAllByRole("heading", { level: 1 }).map((one) => one.textContent),
+  ).toStrictEqual(["kasofsk/chuggy"]);
+  expect(
+    screen.getAllByRole("heading", { level: 2 }).map((one) => one.textContent),
+  ).toStrictEqual([
+    "Finalization",
+    "Workflow files",
+    "Workflow runs",
+    "Configurations",
+  ]);
+});
 
 test("a saved finalization is written against the one the page read", async () => {
   const sent = await drawPage({
@@ -384,7 +406,9 @@ test("a saved finalization is written against the one the page read", async () =
     pipelinesWritable: { expected: false, wanted: false },
     pipelinesRunnable: { expected: false, wanted: false },
   });
-  expect(screen.getByText("Written")).toBeTruthy();
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Finalization saved" },
+  ]);
   expect(chosenFinalization()).toBe("Pull request");
   expect(
     within(sectionOf("Finalization")).getByRole("button", { name: "Edit" }),
@@ -526,7 +550,9 @@ test("allowing workflow files writes them against what the page read, the finali
     pipelinesWritable: { expected: false, wanted: true },
     pipelinesRunnable: { expected: false, wanted: false },
   });
-  expect(within(sectionOf("Workflow files")).getByText("Written")).toBeTruthy();
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Workflow files saved" },
+  ]);
   expect(chosenWorkflowFiles()).toBe("On");
   expect(chosenFinalization()).toBe("Pull request");
 });
@@ -637,12 +663,32 @@ test("the configurations are this repository's own, incomplete rows saying so", 
   await drawPage();
   const rows = within(sectionOf("Configurations")).getAllByRole("row");
   expect(
-    rows.map((row) => [...row.children].map((cell) => cell.textContent)),
+    rows.map((row) =>
+      [...row.children].map(
+        (cell) => (cell.querySelector(".tabular-value") ?? cell).textContent,
+      ),
+    ),
   ).toStrictEqual([
     ["Configuration", "Workload worker", "Stages"],
     ["chuggy #12", "worker:1", "2"],
-    ["nightly #12", "Incomplete"],
+    ["nightly #12", "Incomplete", ""],
   ]);
+});
+
+/** On a narrow container a configuration is a card, so the table is the
+ * stacked one: the configuration titles its card, and every other cell carries
+ * its column's label. */
+test("the configurations are a table that stacks into cards", async () => {
+  await drawPage();
+  const section = sectionOf("Configurations");
+  expect(within(section).getByRole("table").classList).toContain(
+    "tabular-stacked",
+  );
+  const [first] = within(section).getAllByRole("rowheader");
+  expect(first?.querySelector(".tabular-label")).toBeNull();
+  expect(
+    first?.parentElement?.querySelector("td .tabular-label")?.textContent,
+  ).toBe("Workload worker");
 });
 
 /**
@@ -744,7 +790,9 @@ test("allowing workflow runs writes them against what the page read, the other s
     pipelinesWritable: { expected: true, wanted: true },
     pipelinesRunnable: { expected: false, wanted: true },
   });
-  expect(within(sectionOf("Workflow runs")).getByText("Written")).toBeTruthy();
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Workflow runs saved" },
+  ]);
   expect(chosenSwitch("Workflow runs")).toBe("On");
   expect(chosenWorkflowFiles()).toBe("On");
 });

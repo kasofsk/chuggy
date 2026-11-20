@@ -146,6 +146,9 @@ export const invitePageWords = {
   retry: { id: "settings-invite-retry" },
 } as const satisfies Readonly<Record<string, Copy>>;
 
+/** The title of a card whose link no redemption could take. */
+const inviteEndedTitle: Copy = { id: "settings-invite-not-valid-title" };
+
 /** What the card of a holder signed out says of their link: being read, what
  * an open one gives and from whom, an ended one, or a read that failed. */
 export interface InviteSummaryCard {
@@ -197,7 +200,7 @@ export function inviteSummaryCard(
       return result.value.state === "Ended"
         ? {
             card: "Ended",
-            title: invitePageWords.notValid,
+            title: inviteEndedTitle,
             line: invitePageWords.ended,
           }
         : inviteSummaryOpen(result.value);
@@ -205,7 +208,7 @@ export function inviteSummaryCard(
     case "Rejected":
       return {
         card: "Ended",
-        title: invitePageWords.notValid,
+        title: inviteEndedTitle,
         line: invitePageWords.ended,
       };
     case "Conflict":

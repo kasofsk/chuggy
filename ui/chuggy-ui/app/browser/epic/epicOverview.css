@@ -230,7 +230,7 @@
     overflow-wrap: anywhere;
   }
 
-  @media (max-width: 40em) {
+  @container page (max-width: 40em) {
     .epic-overview {
       grid-template-columns: minmax(0, 1fr);
       grid-template-areas:

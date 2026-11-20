@@ -17,6 +17,7 @@ import {
   type AccessTenantAbilities,
   type AccessTenantPeople,
 } from "../../../../src/contract/accessPlane.ts";
+import { ConsoleWriteToasts } from "../../app/browser/consoleWrite.tsx";
 import { TenantPeoplePage } from "../../app/browser/settings/TenantPeoplePage.tsx";
 import {
   answer,
@@ -26,6 +27,7 @@ import {
   turned,
 } from "../screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
+import { textSaid } from "../textSaid.ts";
 
 export const peopleTenant = "acme-co";
 
@@ -195,6 +197,8 @@ export interface PeopleDrawing {
   readonly inventory?: () => Response;
   /** What a grant, a removal, an invitation, a link made or one revoked is answered with. */
   readonly changed?: (request: SentRequest) => Response | Promise<Response>;
+  /** Whether the shell's toasts are drawn beside the page. */
+  readonly toasts?: boolean;
 }
 
 export function drawPeople(drawing: PeopleDrawing = {}): Promise<DrawnStrict> {
@@ -217,7 +221,16 @@ export function drawPeople(drawing: PeopleDrawing = {}): Promise<DrawnStrict> {
         ],
         truncated: false,
       }));
-  return drawnStrict(<TenantPeoplePage />, (request: SentRequest) => {
+  const page =
+    drawing.toasts === true ? (
+      <>
+        <TenantPeoplePage />
+        <ConsoleWriteToasts />
+      </>
+    ) : (
+      <TenantPeoplePage />
+    );
+  return drawnStrict(page, (request: SentRequest) => {
     if (request.url === peoplePath && request.method === "GET")
       return listing();
     if (request.url === abilitiesPath && request.method === "GET")
@@ -270,7 +283,7 @@ export function linksReads(drawn: DrawnStrict): number {
 /** One person's row, in either table, found by what it draws them as. */
 export function personRow(name: string): HTMLElement {
   const row = screen
-    .getAllByRole("rowheader")
+    .getAllByRole("rowheader", { hidden: true })
     .find((header) => within(header).queryByText(name) !== null)
     ?.closest("tr");
   if (row === null || row === undefined)
@@ -295,7 +308,7 @@ export function namedIn(table: string): readonly string[] {
 /** The chips a row draws: what its person holds in the workspace. */
 export function heldIn(row: HTMLElement): readonly string[] {
   return within(row)
-    .queryAllByRole("listitem")
+    .queryAllByRole("listitem", { hidden: true })
     .map((chip) => chip.textContent);
 }
 
@@ -342,9 +355,7 @@ export function boxesIn(editor: HTMLElement, group: string): readonly string[] {
 export function projectsOffered(dialog: HTMLElement): readonly string[] {
   const grid = within(dialog).queryByRole("table", { name: "Projects" });
   if (grid === null) return [];
-  return within(grid)
-    .getAllByRole("rowheader")
-    .map((header) => header.textContent);
+  return within(grid).getAllByRole("rowheader").map(textSaid);
 }
 
 /** One box of a dialog pressed, and what the press set off flushed. */

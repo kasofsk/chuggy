@@ -27,9 +27,7 @@ export interface ShellCrumb {
 /** The screens that sit directly under a project, by their address segment. */
 const screenRoutes: Readonly<Record<string, NavRoute>> = {
   inbox: navRoutes.inbox,
-  catalog: navRoutes.catalog,
   settings: navRoutes.settings,
-  repositories: navRoutes.repositories,
 };
 
 /** What the workspace's and the project's crumbs are called, each its id or address where its reader's list gives no name. */

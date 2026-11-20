@@ -3,13 +3,14 @@
  * and what its own last write answered.
  *
  * The chrome is `SettingsSection`'s and only what is the selector's is here:
- * the Default pill, and the notice this route's five answers are drawn as.
+ * the Default badge, and the line this route's refusals are drawn as.
  */
 
 import type { ReactNode } from "react";
 
 import { instantFigure } from "../../../core/figures.ts";
 import type { SelectorSettingsConflictResponse } from "../../../../../../src/contract/responses.ts";
+import type { ConsoleWriteRefused } from "../../../core/consoleWrite.ts";
 import { selectorSettingsConflictOf } from "../../../core/selectorSettingsForm.ts";
 import { useCopyText } from "../../../copy/CopyProvider.tsx";
 import { ConsoleWriteRefusedWords } from "../../consoleWrite.tsx";
@@ -18,8 +19,9 @@ import type { SelectorSettingsShown } from "../../selectorSettingsWriting.ts";
 import { Figure } from "../../ui/Figure.tsx";
 import { Identity } from "../../ui/Identity.tsx";
 import { Notice } from "../../ui/Notice.tsx";
-import { Pill } from "../../ui/Pill.tsx";
+import { StatusBadge } from "../../ui/StatusBadge.tsx";
 import { SettingsSection } from "../../ui/SettingsSection.tsx";
+import type { SettingsSectionRefusal } from "../../ui/SettingsSection.tsx";
 
 import "./selector.css";
 
@@ -48,61 +50,40 @@ export function selectorSettingsConflicted(
   return selectorSettingsConflictOf(saved?.error?.failure) !== undefined;
 }
 
-/** What the last write did, in the one line a form says it in. */
-export function SelectorSettingsSavedNotice(props: {
-  readonly saved: SelectorSettingsShown | undefined;
+/** A refusal of the shown write in the one line a section says it in: who
+ * moved the revision where the fence was lost to a write the route names. */
+export function SelectorSettingsRefusedLine(props: {
+  readonly refused: ConsoleWriteRefused;
 }): ReactNode {
-  const text = useCopyText();
-  const saved = props.saved;
-  if (saved === undefined) return null;
-  if (saved.isPending)
+  const conflict = selectorSettingsConflictOf(props.refused.failure);
+  if (conflict === undefined)
     return (
-      <Notice
-        tone="info"
-        inline
-        detail={text({ id: "settings-threads-writing" })}
-      />
-    );
-  if (saved.error !== null) {
-    const conflict = selectorSettingsConflictOf(saved.error.failure);
-    if (conflict === undefined)
-      return (
-        <Notice tone="danger" inline>
-          <ConsoleWriteRefusedWords refused={saved.error} />
-        </Notice>
-      );
-    return conflict.movedBy === undefined ? (
-      <Notice tone="parked" inline>
-        <ConsoleWriteRefusedWords refused={saved.error} />
+      <Notice tone="danger" inline>
+        <ConsoleWriteRefusedWords refused={props.refused} />
       </Notice>
-    ) : (
-      <Notice tone="parked" inline>
+    );
+  return (
+    <Notice tone="parked" inline>
+      {conflict.movedBy === undefined ? (
+        <ConsoleWriteRefusedWords refused={props.refused} />
+      ) : (
         <SelectorSettingsMovedBy movedBy={conflict.movedBy} />
-      </Notice>
-    );
-  }
-  if (saved.isSuccess && saved.data !== undefined)
-    return (
-      <Notice
-        tone="live"
-        inline
-        detail={text({
-          id: "settings-threads-written",
-          args: { revision: String(saved.data.revision) },
-        })}
-      />
-    );
-  return null;
+      )}
+    </Notice>
+  );
 }
 
-/** Whether there is a line to draw for the shown write at all. */
-export function selectorSettingsNoticed(
+/** The shown write's refusal as its section draws it, of no one field. */
+function selectorSettingsRefusalOf(
   saved: SelectorSettingsShown | undefined,
-): boolean {
-  return (
-    saved !== undefined &&
-    (saved.isPending || saved.error !== null || saved.isSuccess)
-  );
+): SettingsSectionRefusal | undefined {
+  const refused = saved?.error ?? null;
+  if (refused === null) return undefined;
+  return {
+    at: "Section",
+    refused,
+    line: <SelectorSettingsRefusedLine refused={refused} />,
+  };
 }
 
 export function SelectorSection(props: {
@@ -111,7 +92,8 @@ export function SelectorSection(props: {
   readonly inherited: boolean;
   readonly editing: boolean;
   readonly editable: boolean;
-  readonly savable: boolean;
+  readonly changed: boolean;
+  readonly ready: boolean;
   readonly saved: SelectorSettingsShown | undefined;
   readonly footLead: ReactNode;
   readonly onEdit: () => void;
@@ -128,20 +110,20 @@ export function SelectorSection(props: {
         <span className="flex items-center gap-2">
           {props.title}
           {props.inherited ? (
-            <Pill tone="neutral">
+            <StatusBadge tone="neutral" size="small">
               {text({ id: "settings-threads-default" })}
-            </Pill>
+            </StatusBadge>
           ) : null}
         </span>
       }
       about={props.about}
       editing={props.editing}
       editable={props.editable}
-      savable={props.savable}
+      changed={props.changed}
+      ready={props.ready}
+      saving={saved?.isPending === true}
+      refusal={selectorSettingsRefusalOf(saved)}
       footLead={props.footLead}
-      {...(selectorSettingsNoticed(saved)
-        ? { notice: <SelectorSettingsSavedNotice saved={saved} /> }
-        : {})}
       {...(selectorSettingsConflicted(saved)
         ? { onReload: props.onReload }
         : {})}

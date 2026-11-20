@@ -1,0 +1,198 @@
+/**
+ * The settings at a phone's width and at the desk's with the chat pane open.
+ * On the phone the settings' own address is the index, listing every section
+ * the navigation model gives the stub's member, and a section is drawn alone:
+ * its heading is within the first screen, under the link back to the index.
+ * At the desk the settings' own address is its first section, with the
+ * navigation beside it and the chat pane beside both, and nothing scrolls the
+ * page sideways. On a wide screen the catalog, a browser, is wider than a
+ * form: its list is a list's width and its code breaks its lines rather than
+ * scroll. A form there keeps the settings' width, and the navigation stands
+ * where it stood beside the catalog. A prose setting on Chats runs the width
+ * of its card, so the card ends as far past its words as it starts before
+ * them.
+ */
+
+import { copyTextEn } from "../../app/copy/catalog.ts";
+import { settingsNav } from "../../app/core/settingsNav.ts";
+import {
+  expect,
+  renderedNoOverflow,
+  renderedNoViolations,
+  renderedOpen,
+  renderedTokenPixels,
+  renderedTouchTargets,
+  renderedViewports,
+  test,
+} from "./driver.ts";
+import { stubApiProject, stubApiTenant } from "./stubApi.ts";
+
+const zodProbeViolation = { directive: "script-src", blocked: "eval" };
+
+const settingsRoot = `/${stubApiTenant}/${stubApiProject}/settings`;
+
+/** Every section's name, in order, as the stub's member is drawn them: none
+ * of the site's, whose abilities the stub answers with none, and not the
+ * project's appearance, which the stub says they do not administer. */
+const settingsSectionNames = settingsNav({
+  tenant: stubApiTenant,
+  tenantName: stubApiTenant,
+  project: {
+    address: stubApiProject,
+    name: stubApiProject,
+    administers: false,
+  },
+  site: { workspaces: false, permissions: false },
+}).flatMap((group) => group.entries.map((entry) => copyTextEn(entry.label)));
+
+test("on the phone the settings' own address is the index of every section, each a row the touch height", async ({
+  browser,
+  served,
+}) => {
+  const rendered = await renderedOpen(browser, served.origin, {
+    route: settingsRoot,
+    viewport: "phone",
+    signedIn: true,
+    ready: (page) => page.getByRole("navigation", { name: "Settings" }),
+  });
+  const page = rendered.page;
+  const nav = page.getByRole("navigation", { name: "Settings" });
+  await expect(nav.getByRole("link")).toHaveText(settingsSectionNames);
+  for (const link of await nav.getByRole("link").all())
+    await expect(link).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe(settingsRoot);
+  await renderedNoOverflow(page);
+  await renderedTouchTargets(page, nav);
+  renderedNoViolations(rendered, [zodProbeViolation]);
+  expect(served.unanswered).toEqual([]);
+});
+
+test("on the phone a section is drawn alone, its heading within the first screen under the link back to the index", async ({
+  browser,
+  served,
+}) => {
+  const rendered = await renderedOpen(browser, served.origin, {
+    route: `${settingsRoot}/placement`,
+    viewport: "phone",
+    signedIn: true,
+    touch: true,
+    ready: (page) => page.getByRole("rowheader", { name: /^Work/u }).first(),
+  });
+  const page = rendered.page;
+  await expect(page.getByRole("navigation", { name: "Settings" })).toBeHidden();
+  const back = page.getByRole("link", { name: "All settings" });
+  await expect(back).toBeVisible();
+  await renderedTouchTargets(page, back.locator(".."));
+  const heading = page.getByRole("heading", { level: 1, name: "Placement" });
+  const box = await heading.boundingBox();
+  expect(box, "the section's heading is drawn").not.toBeNull();
+  expect(box?.y ?? Infinity).toBeLessThan(renderedViewports.phone.height);
+  await renderedNoOverflow(page);
+  await back.click();
+  await expect(
+    page.getByRole("navigation", { name: "Settings" }),
+  ).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe(settingsRoot);
+  renderedNoViolations(rendered, [zodProbeViolation]);
+  expect(served.unanswered).toEqual([]);
+});
+
+test("at the desk with the chat pane open the settings' own address is its first section beside the navigation, and nothing scrolls sideways", async ({
+  browser,
+  served,
+}) => {
+  const rendered = await renderedOpen(browser, served.origin, {
+    route: settingsRoot,
+    viewport: "desk",
+    signedIn: true,
+    ready: (page) =>
+      page.getByRole("complementary", { name: "Chat", exact: true }),
+  });
+  const page = rendered.page;
+  await expect(page).toHaveURL(`${served.origin}${settingsRoot}/threads`);
+  const nav = page.getByRole("navigation", { name: "Settings" });
+  await expect(nav).toBeVisible();
+  await expect(
+    nav.getByRole("link", { name: "Chats", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("link", { name: "All settings" })).toBeHidden();
+  await renderedNoOverflow(page);
+  renderedNoViolations(rendered, [zodProbeViolation]);
+  expect(served.unanswered).toEqual([]);
+});
+
+test("on a wide screen the catalog is wider than a form, its list a list's width and its code no wider than its panel, and a form beside the same navigation keeps the settings' width", async ({
+  browser,
+  served,
+}) => {
+  const entry = "build";
+  const rendered = await renderedOpen(browser, served.origin, {
+    route: `${settingsRoot}/catalog?${new URLSearchParams({ configuration: "revision-coding", entry: `workloads/${entry}` }).toString()}`,
+    viewport: "wide",
+    signedIn: true,
+    ready: (page) => page.getByRole("article", { name: entry, exact: true }),
+  });
+  const page = rendered.page;
+  const form = await renderedTokenPixels(page, "--width-settings");
+  const list = await renderedTokenPixels(page, "--width-settings-list");
+  const nav = page.getByRole("navigation", { name: "Settings" });
+  const section = page.locator(".settings-section");
+  const beside = await nav.boundingBox();
+  const browsed = await section.boundingBox();
+  const listed = await page.locator(".catalog-groups").boundingBox();
+  if (beside === null || browsed === null || listed === null)
+    throw new Error("the navigation, the catalog and its list are drawn");
+  expect(browsed.width).toBeGreaterThan(form);
+  expect(listed.width).toBeCloseTo(list, 0);
+  const code = page
+    .getByRole("article", { name: entry, exact: true })
+    .locator("pre");
+  const lines = await code.evaluate((pre) => ({
+    written: (pre.textContent ?? "").split("\n").length,
+    drawn: Math.round(
+      pre.clientHeight / Number.parseFloat(getComputedStyle(pre).lineHeight),
+    ),
+    past: pre.scrollWidth - pre.clientWidth,
+  }));
+  expect(lines.past).toBe(0);
+  expect(lines.drawn).toBeGreaterThan(lines.written);
+  await renderedNoOverflow(page);
+  await nav.getByRole("link", { name: "Placement", exact: true }).click();
+  await expect(section.getByRole("table")).toBeVisible();
+  const formed = await section.boundingBox();
+  const still = await nav.boundingBox();
+  if (formed === null || still === null)
+    throw new Error("the navigation and the form are drawn");
+  expect(formed.width).toBeLessThanOrEqual(form + 0.5);
+  expect(still.x).toBeCloseTo(beside.x, 0);
+  renderedNoViolations(rendered, [zodProbeViolation]);
+  expect(served.unanswered).toEqual([]);
+});
+
+test("on a wide screen each prose setting on Chats runs the width of its card", async ({
+  browser,
+  served,
+}) => {
+  const rendered = await renderedOpen(browser, served.origin, {
+    route: `${settingsRoot}/threads`,
+    viewport: "wide",
+    signedIn: true,
+    ready: (page) => page.locator(".selector-prose").first(),
+  });
+  const page = rendered.page;
+  const cards = page.locator("section", {
+    has: page.locator(".selector-prose"),
+  });
+  await expect(cards).toHaveCount(2);
+  for (const card of await cards.all()) {
+    const drawn = await card.boundingBox();
+    const prose = await card.locator(".selector-prose").boundingBox();
+    if (drawn === null || prose === null)
+      throw new Error("a prose setting's card and its words are drawn");
+    const before = prose.x - drawn.x;
+    const after = drawn.x + drawn.width - (prose.x + prose.width);
+    expect(after).toBeCloseTo(before, 0);
+  }
+  renderedNoViolations(rendered, [zodProbeViolation]);
+  expect(served.unanswered).toEqual([]);
+});

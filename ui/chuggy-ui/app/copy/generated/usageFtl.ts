@@ -38,8 +38,7 @@ usage-threads = { -thread(case: "upper", form: "plural") }
 usage-threads-pause = { usage-threads } pause with it
 usage-threads-pause-with = Pause with it
 usage-threads-keep-running = Keep running
-usage-writing = Writing
-usage-written = Written
+usage-saved = { $agent } account settings saved
 
 ## Retiring a credential the account no longer spends.
 

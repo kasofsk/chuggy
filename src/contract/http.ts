@@ -270,6 +270,30 @@ export const projectArtifactEncoding = "base64";
 export const projectArtifactUploadBytesMax = 4_194_304;
 
 /**
+ * The image media types a project-owned artifact may be named a project's icon
+ * or banner in: the admitted roster without GIF.
+ */
+export const projectImageMediaTypes = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const satisfies readonly ImageMediaType[];
+
+/** The largest artifact a project may name its icon. */
+export const projectIconBytesMax = 262_144;
+
+/** The largest artifact a project may name its banner. */
+export const projectBannerBytesMax = 2_097_152;
+
+/** What a project names an image of its own as: the mark shown wherever it is named, and the image above its tickets. */
+export const projectImageRoles = ["icon", "banner"] as const;
+export type ProjectImageRole = (typeof projectImageRoles)[number];
+
+/** The largest artifact each role may name. */
+export const projectImageBytesMax: Readonly<Record<ProjectImageRole, number>> =
+  { icon: projectIconBytesMax, banner: projectBannerBytesMax };
+
+/**
  * Where an attempt that ended without a result leaves its worker's own text
  * saying why, uploaded as an artifact. The worker core writes it under the
  * same name in kasofsk/chuggy-common's `runEvidence.mjs`.
@@ -612,6 +636,11 @@ export const nativeHttpRoutes = {
   connector: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/connectors/:name`,
   executionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/execution-placement`,
   sessionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/session-placement`,
+  projectTheme: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance/theme`,
+  projectThemeOverride: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance/override`,
+  projectAppearance: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance`,
+  projectImages: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance/images`,
+  projectImage: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance/images/:role`,
   hostedRuns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/hosted-runs`,
   abilities: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/abilities`,
   accessTokens: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/access-tokens`,
@@ -628,6 +657,9 @@ export const nativeHttpRoutes = {
   agentAccountPresses: `${nativeHttpBasePath}/agent-accounts/:agent/presses`,
   agentAccountCredential: `${nativeHttpBasePath}/agent-accounts/:agent/credentials/:credential`,
   agentAccountCredentialOff: `${nativeHttpBasePath}/agent-accounts/:agent/credentials/:credential/off`,
+  ownThemes: `${nativeHttpBasePath}/appearance/themes`,
+  ownTheme: `${nativeHttpBasePath}/appearance/themes/:theme`,
+  themeChoice: `${nativeHttpBasePath}/appearance/choice`,
   chatHostRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/chat-host-registration-tokens`,
   chatHost: `${nativeHttpBasePath}/tenants/:tenant/chat-host`,
   chatAbilities: `${nativeHttpBasePath}/tenants/:tenant/chat/abilities`,

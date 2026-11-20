@@ -9,6 +9,10 @@ settings-nav-threads = { -thread(case: "upper", form: "plural") }
 settings-nav-placement = { -placement(case: "upper") }
 settings-nav-permissions = Permissions
 settings-nav-access-tokens = Access tokens
+settings-nav-repositories = { -repository(case: "upper", form: "plural") }
+settings-nav-connectors = { -connector(case: "upper", form: "plural") }
+settings-nav-catalog = { -catalog(case: "upper") }
+settings-nav-appearance = Appearance
 settings-nav-workspace = { -workspace(case: "upper") }
 settings-nav-people = People
 settings-nav-accounts = { -github } accounts
@@ -16,6 +20,142 @@ settings-nav-personal-runners = { -personal-runner(case: "upper", form: "plural"
 settings-nav-usage = Usage
 settings-nav-site = { -site(case: "upper") }
 settings-nav-workspaces = { -workspace(case: "upper", form: "plural") }
+settings-nav-person = You
+settings-nav-preferences = Preferences
+settings-nav-index = All settings
+settings-nav-threads-summary = The settings this { -project }'s { -thread(form: "plural") } keep
+settings-nav-placement-summary = The image each { -stage } is given, and what it requires
+settings-nav-permissions-summary = Who may do what in this { -project }
+settings-nav-access-tokens-summary = The tokens your own scripts act as you with in this { -project }
+settings-nav-repositories-summary = The { -repository(form: "plural") } this { -project } works in
+settings-nav-connectors-summary = The cloud identities this { -project }'s { -run(form: "plural") } may be issued
+settings-nav-catalog-summary = The { -configuration(form: "plural") } { -ticket(form: "a") } can be given
+settings-nav-appearance-summary = This { -project }'s default theme, its icon and its banner
+settings-nav-people-summary = Who is in this { -workspace }, and their roles
+settings-nav-accounts-summary = The { -github } accounts this { -workspace } is installed on
+settings-nav-workspace-permissions-summary = Who may do what across this { -workspace }
+settings-nav-usage-summary = What this { -workspace }'s { -run(form: "plural") } have spent
+settings-nav-site-workspaces-summary = Every { -workspace } on this { -site }, and a way to start one
+settings-nav-site-permissions-summary = Who may administer this { -site }
+settings-nav-personal-runners-summary = The { -personal-runner(form: "plural") } you have registered
+settings-nav-preferences-summary = How the console looks and reads for you
+
+settings-preferences-appearance = Appearance
+settings-preferences-scheme = Light or dark
+settings-preferences-scheme-system = System
+settings-preferences-scheme-light = Light
+settings-preferences-scheme-dark = Dark
+settings-preferences-banners = { -project(case: "upper") } banners
+settings-preferences-banners-shown = Shown
+settings-preferences-banners-hidden = Hidden
+settings-preferences-theme = Theme
+settings-preferences-theme-covered = This { -project } shows its own default theme in place of yours.
+settings-preferences-theme-here = In this { -project }
+settings-preferences-theme-here-override = Your choice for this { -project }
+settings-preferences-theme-here-default = The { -project }'s default
+settings-preferences-theme-here-global = Your own theme
+settings-preferences-theme-here-built-in = The console's default
+settings-preferences-theme-here-project-default = Use the { -project }'s default
+settings-preferences-theme-unsaved = Theme not saved
+settings-preferences-theme-not-found = that theme is no longer one of yours
+settings-preferences-theme-new = New theme
+settings-preferences-theme-edit = Edit
+settings-preferences-theme-edit-named = Edit { $name }
+settings-theme-editor-copy-name = { $name } copy
+settings-theme-editor-name = Name
+settings-theme-editor-name-refused = A name of up to { $most } characters
+settings-theme-editor-scheme = Editing
+settings-theme-editor-group = { $group ->
+    [Surfaces] Surfaces
+    [Text] Text
+    [Edges] Edges
+   *[Accent] Accent
+}
+settings-theme-editor-more = More colours
+settings-theme-editor-colour = { $colour ->
+    [surface-0] Page
+    [surface-1] Panel
+    [surface-2] Sunken
+    [surface-inverse] Inverse surface
+    [bubble] Bubble
+    [ink-1] Main text
+    [ink-2] Body text
+    [ink-3] Quiet text
+    [ink-inverse] Inverse text
+    [edge] Edge
+    [edge-strong] Strong edge
+    [edge-control] Control edge
+    [accent] Accent
+    [ink-on-accent] Text on accent
+    [tone-pass] Passed
+    [tone-fail] Failed
+    [tone-live] Working
+    [tone-evaluation] Evaluating
+    [tone-finalization] Finishing
+    [tone-parked] Waiting
+    [tone-queued] Queued
+    [syntax-key] Code key
+    [syntax-string] Code string
+    [syntax-value] Code value
+    [fill-pass] Passed fill
+    [fill-live] Working fill
+    [fill-evaluation] Evaluating fill
+    [fill-finalization] Finishing fill
+    [fill-parked] Waiting fill
+    [wash-pass] Passed wash
+    [wash-fail] Failed wash
+    [wash-live] Working wash
+    [wash-evaluation] Evaluating wash
+    [wash-finalization] Finishing wash
+    [wash-parked] Waiting wash
+   *[wash-queued] Queued wash
+}
+settings-theme-editor-colour-pick = Pick { $name }
+settings-theme-editor-colour-unread = Six hex digits after a #
+settings-theme-editor-font = Font
+settings-theme-editor-font-choice = { $font ->
+    [System] System
+    [Humanist] Humanist
+   *[Serif] Serif
+}
+settings-theme-editor-size = Text size
+settings-theme-editor-size-choice = { $size ->
+    [Small] Small
+    [Standard] Standard
+    [Large] Large
+   *[Larger] Larger
+}
+settings-theme-editor-contrast = { $foreground } on { $background }
+settings-theme-editor-ratio = { $ratio }:1
+settings-theme-editor-passes = Passes
+settings-theme-editor-fails = Needs { $least }:1
+settings-theme-editor-failing = Not saved until every pairing passes:
+settings-theme-editor-failing-role = { $name }, { $scheme }
+settings-theme-editor-nearest = Use { $colour }
+settings-theme-editor-nearest-none = No value near this one passes
+settings-theme-editor-unread = Not saved until every colour reads as one:
+settings-theme-editor-preview = Preview
+settings-theme-editor-preview-title = Tidy the changelog headings
+settings-theme-editor-preview-surface = A line on the { $surface }
+settings-theme-editor-preview-button = { $variant ->
+    [default] Default
+    [primary] Primary
+    [danger] Danger
+    [danger-filled] Confirm
+   *[quiet] Quiet
+}
+settings-theme-editor-save = Save
+settings-theme-editor-delete = Delete
+settings-theme-editor-delete-title = Delete { $name }?
+settings-theme-editor-delete-about = It is taken off wherever you chose it, and the theme below it applies there instead.
+settings-preferences-wording = Wording
+settings-preferences-wording-standard = Standard
+settings-preferences-wording-pseudo = Pseudo
+settings-preferences-wording-vernacular = { $name }
+settings-preferences-chat = { -thread(case: "upper") } position
+settings-preferences-chat-right = Right
+settings-preferences-chat-left = Left
+settings-preferences-chat-bottom = Bottom
 
 settings-cancel = Cancel
 settings-done = Done
@@ -29,6 +169,7 @@ settings-creating = Creating…
 settings-threads-title = { -thread(case: "upper", form: "plural") }
 settings-threads-revision = { -revision(case: "upper") } { $revision }
 settings-threads-default = Default
+settings-threads-edited = Edited
 settings-threads-effective-none = None
 
 settings-threads-fault-invalid = Invalid
@@ -58,6 +199,7 @@ settings-threads-reset-default = Reset to default
 
 settings-threads-writing = Writing
 settings-threads-written = Written · { $revision }
+settings-threads-saved = { $section } saved · { -revision(case: "upper") } { $revision }
 settings-threads-changed-by = Changed by
 settings-threads-changed-at = at
 settings-threads-conflict-moved-by = Changed by { $subject } at { $time }
@@ -67,6 +209,7 @@ settings-threads-history-no-change = No change
 settings-threads-history-diff = Diff
 settings-threads-history-hide-diff = Hide diff
 settings-threads-history-restore = Restore
+settings-threads-history-restored = Restored as { -revision } { $revision }
 settings-threads-history-show-all = Show all { $count }
 settings-threads-history-none-recorded = No { -revision(form: "plural") }
 settings-threads-history-title = { -revision(case: "upper", form: "plural") }
@@ -121,6 +264,7 @@ settings-people-person = Person
 settings-people-identities = Other identities
 settings-people-identity = Identity
 settings-people-workspace = { -workspace(case: "upper") }
+settings-people-applied = Each box takes effect as it is pressed.
 settings-people-projects = { -project(case: "upper", form: "plural") }
 settings-people-every-project = All { -project(form: "plural") }
 settings-people-edit-named = Edit { $name }
@@ -218,7 +362,9 @@ settings-access-tokens-name-taken = Name already in use
 ## The page an invite link is opened at.
 
 settings-invite-brand = { -brand-name }
-settings-invite-needed = { -invite(case: "upper") } needed
+settings-invite-needed-title = { -invite(case: "upper", form: "a") } is needed
+settings-invite-needed = This account has no { -invite } to { -brand-name }. Ask for { -invite(form: "a") } link, then sign in again.
+settings-invite-joining-title = Joining { -brand-name }
 settings-invite-reading = Reading the link…
 settings-invite-own-title = Your own { -brand-name } { -workspace }
 # spells -invite: to invite is a verb here
@@ -238,7 +384,11 @@ settings-invite-join = This link makes you { $role ->
 settings-invite-ended = This link has been used or revoked, has expired, or was never made. Ask whoever sent it for a new one.
 settings-invite-sign-in-github = Sign in with { -github }
 settings-invite-joining = Joining…
-settings-invite-not-valid = Link not valid
+settings-invite-not-valid-title = This link can no longer be used
+settings-invite-not-valid = It may have expired or been used already. Ask whoever sent it for a new one.
+settings-invite-failed-title = The { -invite } was not accepted
+settings-invite-failed-next = Retry. If it keeps failing, ask whoever sent the link.
+settings-invite-naming-title = Name your { -workspace }
 settings-invite-sign-in = Sign in
 settings-invite-open = Open { -brand-name }
 settings-invite-retry = Retry
@@ -320,9 +470,7 @@ settings-delete-project-done = { $project } is deleted.
 settings-rename-workspace-title = Name
 settings-rename-workspace-about = What this { -workspace } is called wherever it is shown. Its address stays { $workspace }.
 settings-rename-workspace-label = { -workspace(case: "upper") } name
-settings-rename-workspace = Save name
-settings-rename-workspace-writing = Saving the name…
-settings-rename-workspace-written = The name is saved.
+settings-rename-workspace-saved = { -workspace(case: "upper") } name saved
 settings-delete-workspace-title = Delete this { -workspace }
 settings-delete-workspace-about = Only { -workspace(form: "a") } that holds no { -project } and no { -runner } can be deleted. Its people, { -invite } links and settings go with it, and its name can be taken again.
 settings-delete-workspace = Delete { -workspace }
@@ -340,4 +488,44 @@ settings-delete-held-project = it holds { -project(form: "a") }
 settings-delete-held-personal-runner = { -personal-runner(form: "a") } is registered in it
 settings-delete-held-chat-host = { -chat-host(form: "a") } is registered in it
 settings-delete-held-joined = { $lead }, { $rest }
+
+## A project's appearance: its default theme, its icon and its banner.
+
+settings-appearance-theme = Default theme
+settings-appearance-theme-none = None
+settings-appearance-theme-kept = { $name }, as this { -project } keeps it
+settings-appearance-theme-copied = This { -project } keeps its own copy of the theme chosen, so later edits to your theme do not change it.
+settings-appearance-theme-own = Each person can still choose their own theme for this { -project }.
+settings-appearance-theme-drifted = Your theme { $name } has changed since this { -project } kept it.
+settings-appearance-theme-update = Update from my theme
+settings-appearance-theme-saved = Default theme saved
+settings-appearance-theme-cleared = Default theme cleared
+settings-appearance-theme-unsaved = Default theme not saved
+settings-appearance-icon = Icon
+settings-appearance-banner = Banner
+settings-appearance-icon-hint = { $types }, up to { $size }. A square image suits it best.
+settings-appearance-banner-hint = { $types }, up to { $size }. A wide image suits it best.
+settings-appearance-image-size = { $count } { $unit }
+settings-appearance-image-type = Not saved: only { $types } can be used.
+settings-appearance-image-large = Not saved: the file is larger than { $size }.
+settings-appearance-image-unsaved = Not saved
+settings-appearance-image-uploading = Uploading
+settings-appearance-icon-none = No icon
+settings-appearance-banner-none = No banner
+settings-appearance-image-choose = Choose file
+settings-appearance-icon-choose = Choose an icon file
+settings-appearance-banner-choose = Choose a banner file
+settings-appearance-image-clear = Clear
+settings-appearance-icon-clear = Clear the icon
+settings-appearance-banner-clear = Clear the banner
+settings-appearance-icon-saved = Icon saved
+settings-appearance-icon-cleared = Icon cleared
+settings-appearance-banner-saved = Banner saved
+settings-appearance-banner-cleared = Banner cleared
+settings-appearance-icon-preview = The icon as it is drawn
+settings-appearance-banner-preview = The banner above the { -ticket(form: "plural") }
+settings-appearance-preview-light = Light
+settings-appearance-preview-dark = Dark
+settings-appearance-preview-phone = Phone
+settings-appearance-preview-desk = Desktop
 `;

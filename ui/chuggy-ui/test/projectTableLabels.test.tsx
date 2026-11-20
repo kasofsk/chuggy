@@ -35,8 +35,17 @@ import {
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import listSheet from "../app/browser/ProjectTable.css?raw";
+import filterSheet from "../app/browser/ui/ListFilter.css?raw";
 import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import {
+  ticketListFilterChosen,
+  ticketListFilterClosed,
+  ticketListFilterControl,
+  ticketListFilterHeld,
+  ticketListFilterMarks,
+  ticketListFilterOpened,
+} from "./ticketListFilter.ts";
 import {
   abilitiesEvery,
   abilitiesOver,
@@ -220,17 +229,24 @@ function rowsDrawn(): HTMLElement {
   return screen.getByRole("list", { name: "Tickets" });
 }
 
-test("the title is on the card whole and unclipped, links, and leads the ticket number", async () => {
+test("the title is on the card whole and unclipped, is the row's one link, and leads the ticket number", async () => {
   await drawTable();
-  const titleAnchor = screen.getByText(title);
-  expect(titleAnchor.tagName).toBe("A");
+  const titleAnchor = screen.getByText(title).closest("a");
+  if (titleAnchor === null) throw new Error("no link around the title");
   expect(titleAnchor.className).not.toContain("truncate");
   expect(titleAnchor.className).not.toContain("max-w-aside");
   expect(titleAnchor.className).not.toContain("whitespace-nowrap");
 
-  const numberLink = screen.getByRole("link", { name: "11" });
+  const card = titleAnchor.closest("li");
+  if (card === null) throw new Error("no card around the title");
+  expect([...card.querySelectorAll("a")]).toEqual([titleAnchor]);
+  expect(titleAnchor.textContent).toBe(title);
+  expect(titleAnchor.querySelector("a, button, [tabindex]")).toBeNull();
+  expect(titleAnchor.closest("h3")).not.toBeNull();
+  const number = within(card).getByText("#11");
+  expect(number.closest("a")).toBeNull();
   expect(
-    titleAnchor.compareDocumentPosition(numberLink) &
+    titleAnchor.compareDocumentPosition(number) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 
@@ -240,7 +256,7 @@ test("the title is on the card whole and unclipped, links, and leads the ticket 
 
 test("the title heads its row in the list's title, which the sheet clamps", async () => {
   await drawTable();
-  const drawn = screen.getByText(title).closest(".ticket-list-title");
+  const drawn = screen.getByText(title).closest(".record-row-title");
   expect(drawn?.tagName).toBe("H3");
   expect(drawn?.textContent).toBe(title);
 });
@@ -388,37 +404,48 @@ test("a row names its creator by the GitHub login the project's people hold for 
   ]);
 });
 
-test("a row draws its state as the small state label, in its phase's tone", async () => {
+test("a row draws its state as a status badge in its phase's tone, in the slot every row's state stands in", async () => {
   await drawTable();
-  const label = within(rowsDrawn())
+  const badge = within(rowsDrawn())
     .getByText("Working")
-    .closest<HTMLElement>(".ticket-state");
-  expect(label?.parentElement?.className).toBe("ticket-list-standing");
-  expect(label?.dataset["size"]).toBe("small");
-  expect(label?.dataset["tone"]).toBe("live");
+    .closest<HTMLElement>(".status-badge");
+  expect(badge?.parentElement?.className).toBe("ticket-list-standing");
+  expect(badge?.dataset["tone"]).toBe("live");
+  expect(rowsDrawn().querySelector(".ticket-state")).toBeNull();
 });
 
-test("a ready row's label is tinted and a done row's filled, each with its own mark", async () => {
-  await drawTableWith([finished, pending(24, [])], []);
-  const labelOf = (word: string): HTMLElement | null =>
-    within(rowsDrawn()).getByText(word).closest<HTMLElement>(".ticket-state");
-  const ready = labelOf("Ready");
-  const done = labelOf("Done");
-  expect(ready?.dataset["form"]).toBe("tinted");
-  expect(done?.dataset["form"]).toBe("filled");
+test("a ready row's badge is in the tone of a done row's and a blocked row's in its own, each with its tone's mark", async () => {
+  await drawTableWith(
+    [
+      finished,
+      pending(24, []),
+      pending(25, [{ ticket: 24, phase: "Pending" }]),
+    ],
+    [],
+  );
+  const badgeOf = (word: string): HTMLElement | null =>
+    within(rowsDrawn()).getByText(word).closest<HTMLElement>(".status-badge");
+  const ready = badgeOf("Ready");
+  const blocked = badgeOf("Blocked");
+  expect(ready?.dataset["tone"]).toBe("pass");
+  expect(badgeOf("Done")?.dataset["tone"]).toBe("pass");
+  expect(blocked?.dataset["tone"]).toBe("queued");
   expect(ready?.querySelector("svg")?.innerHTML).not.toBe(
-    done?.querySelector("svg")?.innerHTML,
+    blocked?.querySelector("svg")?.innerHTML,
   );
 });
-
-test("an escalated row answers its kind on the phase chip's hover", async () => {
+test("an escalated row says its kind in its meta line, in the document without a hover", async () => {
   await drawTableWith([escalated], []);
-  const trigger = within(rowsDrawn())
-    .getByText("Escalated")
-    .closest('[tabindex="0"]');
-  if (trigger === null) throw new Error("no tooltip trigger around Escalated");
-  fireEvent.focus(trigger);
-  expect((await screen.findByRole("tooltip")).textContent).toBe("Work failed");
+  const kind = within(rowsDrawn()).getByText("Work failed");
+  expect(kind.className).toBe("ticket-list-escalation");
+  expect(kind.closest(".record-row-meta")).not.toBeNull();
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+test("a row escalated with no read of its escalation says its phase once, in its chip", async () => {
+  await drawTableWith([{ ...escalated, escalation: undefined }], []);
+  expect(within(rowsDrawn()).getAllByText("Escalated")).toHaveLength(1);
+  expect(document.querySelector(".ticket-list-escalation")).toBeNull();
 });
 
 test("opening the list issues no executions read, and no sentence names a page budget", async () => {
@@ -448,14 +475,18 @@ test("nothing the project table draws is a runtime style element", async () => {
   expect(document.querySelectorAll("style").length).toBe(0);
 });
 
-/** A project with no ticket at all is one empty state offering the first,
- * with no section and no filter to choose between. */
-test("a project with no ticket draws one empty state that offers a new one", async () => {
+const projectEmpty = "No tickets yet. Ask in a chat to make one.";
+
+/** A project with no ticket at all is one line sending the reader to a chat,
+ * with no section, no filter to choose between and nothing to press. */
+test("a project with no ticket says so in one line that sends the reader to a chat, under the page's one top-level heading", async () => {
   await drawTableWith([], []);
-  expect(screen.getByRole("heading", { name: "No tickets" })).toBeDefined();
-  const offer = screen.getByText("New ticket");
-  expect(offer.tagName).toBe("A");
-  expect(offer.closest(".empty")).not.toBeNull();
+  const empty = screen.getByText(projectEmpty);
+  expect(empty.tagName).toBe("P");
+  expect(empty.className).toBe("empty");
+  expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  expect(document.querySelectorAll("a")).toHaveLength(0);
+  expect(screen.queryAllByRole("button")).toEqual([]);
   expect(screen.queryByRole("list", { name: "Tickets" })).toBeNull();
   expect(screen.queryByLabelText("Search tickets")).toBeNull();
 });
@@ -494,29 +525,16 @@ const finished = {
   ...ticketInstants,
 };
 
-function newTicketOffers(): number {
-  return screen.queryAllByText("New ticket").length;
-}
-
-test("a reader who may not mutate is offered no new ticket in the empty state", async () => {
-  await drawTableWith(
-    [],
-    [],
-    abilitiesOver({ ...abilitiesEvery, mutate: false }),
-  );
-  expect(screen.getByRole("heading", { name: "No tickets" })).toBeDefined();
-  expect(newTicketOffers()).toBe(0);
-});
-
 test.each(abilitiesUnrefusing)(
-  "a reader the abilities read %s is offered a new ticket in the empty state, and never above the list",
+  "a reader the abilities read %s may author is offered no new ticket, empty or not",
   async (_said, abilities) => {
     const over = abilitiesOver(abilities);
     await drawTableWith([], [], over);
-    expect(newTicketOffers()).toBe(1);
+    expect(screen.getByText(projectEmpty)).toBeDefined();
+    expect(screen.queryByText("New ticket")).toBeNull();
     cleanup();
     await drawTableWith([ticket], [execution], over);
-    expect(newTicketOffers()).toBe(0);
+    expect(screen.queryByText("New ticket")).toBeNull();
   },
 );
 
@@ -560,26 +578,6 @@ test("pending rows are drawn nearest to dispatchable first, ready ones as Ready"
       .getAllByText(/^(Ready|Blocked)$/u)
       .map((chip) => chip.textContent),
   ).toEqual(["Ready", "Blocked", "Blocked", "Blocked"]);
-});
-
-test("the counts above the list name each unfinished state the rows stand in, in order, and no finished one", async () => {
-  await drawTableWith(
-    [
-      finished,
-      escalated,
-      ticket,
-      pending(23, [{ ticket: 11, phase: "Work" }]),
-      pending(24, []),
-      pending(25, []),
-    ],
-    [execution],
-  );
-  const counts = screen.getByRole("list", { name: "Tickets by state" });
-  expect(
-    within(counts)
-      .getAllByRole("listitem")
-      .map((item) => item.textContent),
-  ).toEqual(["Blocked1", "Ready2", "Working1", "Escalated1"]);
 });
 
 /** Each dependency chip of the row that waits on it, by the number it shows. */
@@ -653,7 +651,7 @@ test("a ready row's chip is the dispatch, and no row offers resume or revoke", a
   });
   expect(ready.textContent).toBe("Ready");
   expect(ready.className).toBe("ticket-list-standing");
-  expect(ready.firstElementChild?.className).toBe("ticket-state");
+  expect(ready.firstElementChild?.className).toBe("status-badge");
 });
 
 test("a reader who may not dispatch sees a ready row's chip, not a button", async () => {
@@ -710,42 +708,11 @@ test("a project with no tickets still carries the notice of a refused import", a
     [],
     repositoryImportListedOver([repositoryImportRefusedBinding(repository)]),
   );
-  expect(screen.getByText("No tickets")).toBeDefined();
+  expect(screen.getByText(projectEmpty)).toBeDefined();
   expect(screen.getByText(/^Import refused/u).textContent).toBe(
     "Import refused · acme/widgets",
   );
 });
-
-/** Each count above the list, by what it says, with whether it is pressed
- * or dimmed. */
-function countsDrawn(): readonly string[] {
-  const counts = screen.getByRole("list", { name: "Tickets by state" });
-  return within(counts)
-    .getAllByRole("button")
-    .map(
-      (count) =>
-        `${count.textContent ?? ""}${count.getAttribute("aria-pressed") === "true" ? " pressed" : ""}${count.hasAttribute("data-dimmed") ? " dimmed" : ""}`,
-    );
-}
-
-async function countTapped(standing: RegExp): Promise<void> {
-  const counts = screen.getByRole("list", { name: "Tickets by state" });
-  fireEvent.click(within(counts).getByRole("button", { name: standing }));
-  await settled();
-}
-
-function filterDrawn(): string | null {
-  return screen.getByRole("button", { name: /^Filter/u }).textContent;
-}
-
-async function filterChosen(choice: string): Promise<void> {
-  fireEvent.keyDown(screen.getByRole("button", { name: /^Filter/u }), {
-    key: "ArrowDown",
-  });
-  await settled();
-  fireEvent.click(screen.getByRole("menuitemradio", { name: choice }));
-  await settled();
-}
 
 const countedTickets = [
   ticket,
@@ -756,161 +723,155 @@ const countedTickets = [
   pending(26, [], [9]),
 ];
 
-test("a state's count filters the list to that state and is pressed, every other count still drawn dimmed, and tapped again draws every ticket", async () => {
+/** What the bar holds, by each control's name, in order. */
+function barDrawn(): readonly string[] {
+  const bar = document.querySelector<HTMLElement>(".list-controls");
+  if (bar === null) throw new Error("the bar is drawn");
+  return within(bar)
+    .getAllByRole("button")
+    .map(
+      (control) =>
+        control.getAttribute("aria-label") ?? control.textContent ?? "",
+    );
+}
+
+test("the bar holds the search, the one Filter control and the sort, and nothing is drawn under it while no filter is set", async () => {
   await drawTableWith(countedTickets, [execution]);
-  expect(countsDrawn()).toEqual([
-    "Blocked2",
-    "Ready2",
-    "Working1",
-    "Escalated1",
+  expect(barDrawn()).toStrictEqual(["Search tickets", "Filter", "Sort State"]);
+  expect(screen.queryByRole("list", { name: "Filters set" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Ready/u })).toBeNull();
+});
+
+test("the panel offers every state, Pending's standings, the creator and the owner, each once", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  const panel = await ticketListFilterOpened(settled);
+  const fields = within(panel).getAllByRole<HTMLSelectElement>("combobox");
+  expect(fields.map((field) => field.labels?.[0]?.textContent)).toStrictEqual([
+    "State",
+    "Creator",
+    "Owner",
   ]);
-  await countTapped(/^Working/u);
-  expect(titlesDrawn()).toEqual([title]);
-  expect(countsDrawn()).toEqual([
-    "Blocked2 dimmed",
-    "Ready2 dimmed",
-    "Working1 pressed",
-    "Escalated1 dimmed",
+  expect(
+    [...(fields[0]?.options ?? [])].map((option) => option.textContent),
+  ).toStrictEqual([
+    "All states",
+    "Pending",
+    "Ready",
+    "Blocked",
+    "Working",
+    "Evaluating",
+    "Finalizing",
+    "Done",
+    "Escalated",
+    "Revoked",
   ]);
-  expect(filterDrawn()).toContain("Working");
-  await countTapped(/^Working/u);
+  for (const field of fields.slice(1))
+    expect(field.options[0]?.textContent).toBe("Anyone");
+  expect(
+    within(panel).getByRole("button", { name: "Clear all" }),
+  ).toBeDefined();
+});
+
+test("a state chosen in the panel draws its tickets, counts one on the control, and is a mark that takes it away in one press", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  await ticketListFilterChosen("State", "Ready", settled);
+  expect(titlesDrawn()).toStrictEqual(["Pending 25", "Pending 24"]);
+  expect(ticketListFilterControl().textContent).toContain("1 set");
+  expect(ticketListFilterMarks()).toStrictEqual(["Remove State: Ready"]);
+  await ticketListFilterChosen("State", "Blocked", settled);
+  expect(titlesDrawn()).toStrictEqual(["Pending 23", "Pending 26"]);
+  expect(ticketListFilterMarks()).toStrictEqual(["Remove State: Blocked"]);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Remove State: Blocked" }),
+  );
+  await settled();
   expect(titlesDrawn()).toHaveLength(countedTickets.length);
-  expect(countsDrawn()).toEqual([
-    "Blocked2",
-    "Ready2",
-    "Working1",
-    "Escalated1",
-  ]);
-  expect(filterDrawn()).toContain("All states");
+  expect(ticketListFilterMarks()).toStrictEqual([]);
+  expect(screen.queryByRole("list", { name: "Filters set" })).toBeNull();
+  expect(ticketListFilterControl().textContent).not.toContain("set");
   expect(localStorage.getItem("chug.ticket-list.filter")).toBe("All");
 });
 
-test("Ready and Blocked each filter the list to the pending tickets of their own standing", async () => {
+test("Clear all takes away every filter set, and is not offered while none is", async () => {
   await drawTableWith(countedTickets, [execution]);
-  await countTapped(/^Ready/u);
-  expect(titlesDrawn()).toEqual(["Pending 25", "Pending 24"]);
-  expect(countsDrawn()).toEqual([
-    "Blocked2 dimmed",
-    "Ready2 pressed",
-    "Working1 dimmed",
-    "Escalated1 dimmed",
-  ]);
-  expect(filterDrawn()).toContain("Ready");
-  await countTapped(/^Ready/u);
-  await countTapped(/^Blocked/u);
-  expect(titlesDrawn()).toEqual(["Pending 23", "Pending 26"]);
-  expect(countsDrawn()).toEqual([
-    "Blocked2 pressed",
-    "Ready2 dimmed",
-    "Working1 dimmed",
-    "Escalated1 dimmed",
-  ]);
-  expect(filterDrawn()).toContain("Blocked");
+  const clear = async (): Promise<HTMLButtonElement> =>
+    within(await ticketListFilterOpened(settled)).getByRole<HTMLButtonElement>(
+      "button",
+      { name: "Clear all" },
+    );
+  expect((await clear()).disabled).toBe(true);
+  await ticketListFilterChosen("State", "Escalated", settled);
+  expect(titlesDrawn()).toStrictEqual(["Escalated ticket"]);
+  const offered = await clear();
+  expect(offered.disabled).toBe(false);
+  fireEvent.click(offered);
+  await settled();
+  expect(offered.disabled).toBe(true);
+  await ticketListFilterClosed(settled);
+  expect(titlesDrawn()).toHaveLength(countedTickets.length);
+  expect(await ticketListFilterHeld("State", settled)).toBe("All states");
+  expect(ticketListFilterMarks()).toStrictEqual([]);
+  expect(localStorage.getItem("chug.ticket-list.filter")).toBe("All");
 });
 
-test("a dimmed count tapped moves the filter to its state, and the counts stay those of every ticket", async () => {
+test("the panel is reached from the keyboard: it opens on the control's focus into its first field, and Escape closes it back onto the control", async () => {
   await drawTableWith(countedTickets, [execution]);
-  await countTapped(/^Working/u);
-  await countTapped(/^Escalated/u);
-  expect(titlesDrawn()).toEqual(["Escalated ticket"]);
-  expect(countsDrawn()).toEqual([
-    "Blocked2 dimmed",
-    "Ready2 dimmed",
-    "Working1 dimmed",
-    "Escalated1 pressed",
-  ]);
-  expect(filterDrawn()).toContain("Escalated");
-});
-
-test("the Filter picker and the counts are one filter, each drawing what the other chose", async () => {
-  await drawTableWith(countedTickets, [execution]);
-  await filterChosen("Blocked");
-  expect(countsDrawn()).toEqual([
-    "Blocked2 pressed",
-    "Ready2 dimmed",
-    "Working1 dimmed",
-    "Escalated1 dimmed",
-  ]);
-  await filterChosen("Pending");
-  expect(countsDrawn()).toEqual([
-    "Blocked2",
-    "Ready2",
-    "Working1 dimmed",
-    "Escalated1 dimmed",
-  ]);
-  await countTapped(/^Ready/u);
-  expect(filterDrawn()).toContain("Ready");
-  await filterChosen("Escalated");
-  expect(countsDrawn()).toEqual([
-    "Blocked2 dimmed",
-    "Ready2 dimmed",
-    "Working1 dimmed",
-    "Escalated1 pressed",
-  ]);
-  await filterChosen("All states");
-  expect(countsDrawn()).toEqual([
-    "Blocked2",
-    "Ready2",
-    "Working1",
-    "Escalated1",
-  ]);
-});
-
-/** What the list's sheet gives a count for its shadow while a keyboard focuses
- * it. Whether jsdom counts a focus as a keyboard's depends on what an earlier
- * case pressed, so the focus is named by an attribute the sheet is read with. */
-function countFocusedShadow(count: Element): string {
-  const focused = "data-keyboard-focused";
-  const rules = sheetRules(
-    listSheet.replaceAll(":focus-visible", `[${focused}]`),
-    [],
+  const control = ticketListFilterControl();
+  control.focus();
+  expect(control.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(control);
+  await settled();
+  const panel = screen.getByRole("dialog", { name: "Filter" });
+  expect(control.getAttribute("aria-expanded")).toBe("true");
+  expect(document.activeElement).toBe(
+    within(panel).getByRole("combobox", { name: "State" }),
   );
-  const held = count.cloneNode() as Element;
-  held.setAttribute(focused, "");
-  return sheetDeclared(rules, held, "box-shadow");
-}
-
-test("a dimmed count is faded, and still a button that can be pressed", async () => {
-  await drawTableWith(countedTickets, [execution]);
-  await countTapped(/^Working/u);
-  const counts = screen.getByRole("list", { name: "Tickets by state" });
-  const rules = sheetRules(listSheet, []);
-  const faded = (count: HTMLElement): string =>
-    sheetDeclared(rules, count.firstElementChild as Element, "opacity");
-  const ready = within(counts).getByRole<HTMLButtonElement>("button", {
-    name: /^Ready/u,
-  });
-  const working = within(counts).getByRole<HTMLButtonElement>("button", {
-    name: /^Working/u,
-  });
-  expect(ready.disabled).toBe(false);
-  expect(Number(faded(ready))).toBeLessThan(1);
-  expect(faded(working)).toBe("");
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  await settled();
+  expect(screen.queryByRole("dialog", { name: "Filter" })).toBeNull();
+  expect(document.activeElement).toBe(ticketListFilterControl());
 });
 
-test("a count a keyboard focuses is ringed, pressed or not", async () => {
+test("on a narrow page the panel is a sheet from the screen's foot, and on a wide one a popover beside the control", async () => {
   await drawTableWith(countedTickets, [execution]);
-  const counts = screen.getByRole("list", { name: "Tickets by state" });
-  const working = (): Element =>
-    within(counts).getByRole("button", { name: /^Working/u });
-  expect(countFocusedShadow(working())).toBe("var(--ring-focus)");
-  await countTapped(/^Working/u);
-  expect(working().getAttribute("aria-pressed")).toBe("true");
-  expect(countFocusedShadow(working())).toContain("var(--ring-focus)");
+  const sheet = await ticketListFilterOpened(settled);
+  expect(sheet.classList.contains("list-filter-sheet")).toBe(true);
+  cleanup();
+  const wide = vi
+    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+    .mockImplementation(function (this: HTMLElement) {
+      return DOMRect.fromRect({
+        width: this.classList.contains("ticket-list-page") ? 1_200 : 0,
+      });
+    });
+  const computed = window.getComputedStyle.bind(window);
+  const rooted = vi
+    .spyOn(window, "getComputedStyle")
+    .mockImplementation((element, pseudo) =>
+      element === document.documentElement
+        ? ({ fontSize: "16px" } as CSSStyleDeclaration)
+        : computed(element, pseudo),
+    );
+  try {
+    await drawTableWith(countedTickets, [execution]);
+    const popover = await ticketListFilterOpened(settled);
+    expect(popover.classList.contains("list-filter-sheet")).toBe(false);
+    expect(popover.classList.contains("list-filter-panel")).toBe(true);
+  } finally {
+    wide.mockRestore();
+    rooted.mockRestore();
+  }
 });
 
-test("on a phone a count shows only its number, its label's mark and word hidden", async () => {
-  await drawTableWith(countedTickets, [execution]);
-  const counts = screen.getByRole("list", { name: "Tickets by state" });
-  const working = within(counts).getByRole("button", { name: /^Working/u });
-  const rules = sheetRules(listSheet, [sheetNarrowCondition]);
-  const shown = (selector: string): boolean =>
-    sheetDeclared(
-      rules,
-      working.querySelector(selector) as Element,
-      "display",
-    ) !== "none";
-  expect(shown(".ticket-state-mark")).toBe(false);
-  expect(shown(".ticket-state-word")).toBe(false);
-  expect(shown(".num")).toBe(true);
+/** The sheet's own rules, under the narrow width a phone is drawn at. */
+test("in the sheet every field and the foot's buttons are a finger's height", () => {
+  const rules = sheetRules(filterSheet, [sheetNarrowCondition]);
+  const sheet = document.createElement("div");
+  sheet.className = "list-filter-panel list-filter-sheet";
+  const select = document.createElement("select");
+  select.className = "select";
+  sheet.append(select);
+  expect(sheetDeclared(rules, select, "min-height")).toBe(
+    "var(--height-touch)",
+  );
 });

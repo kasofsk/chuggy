@@ -6,8 +6,9 @@
  * written, the longest chain and its toggle, the ticket selected and how it is
  * cleared, the side panel with a ticket and without one, its dispatch and the
  * question it asks, the sheet in its place on a phone with its pills, the room it leaves and the
- * scroll a pill makes, the key, the toggle for the tickets outside the epic, the states before and
- * without a graph, and the reads that draw it again.
+ * scroll a pill makes, the key, the toggle for the tickets outside the epic,
+ * the way to the same tickets as a list, the states before and without a
+ * graph, and the reads that draw it again.
  */
 
 import { onlineManager } from "@tanstack/react-query";
@@ -199,9 +200,11 @@ test("a card is a button holding its state's mark and its number, then its title
   expect(
     [...(head?.children ?? [])].map((child) => child.className),
   ).toStrictEqual(["epic-card-mark", "epic-card-number"]);
-  expect(
-    head?.querySelector(".epic-card-mark svg.ticket-state-mark"),
-  ).not.toBeNull();
+  const mark = head?.querySelector<HTMLElement>(
+    ".epic-card-mark .status-badge[data-compact]",
+  );
+  expect(mark?.dataset["tone"]).toBe("live");
+  expect(mark?.textContent).toBe("Working");
   expect(running.querySelector(".epic-card-number")?.textContent).toBe("5");
   expect(running.querySelector(".epic-card-title")?.textContent).toBe("Refund");
   expect(running.dataset["standing"]).toBe("Work");
@@ -643,14 +646,19 @@ test("with nothing selected the side panel lists the longest chain, what is runn
     ),
   ).toStrictEqual(["Longest chain4", "Running2", "Ready1"]);
   expect(listed(panel, "Longest chain")).toStrictEqual([
-    "#2 Schema",
-    "#5 Refund",
-    "#6 Ledger",
-    "#7 Report",
+    "Working #2 Schema",
+    "Working #5 Refund",
+    "Blocked #6 Ledger",
+    "Blocked #7 Report",
   ]);
-  expect(listed(panel, "Running")).toStrictEqual(["#2 Schema", "#5 Refund"]);
-  expect(listed(panel, "Ready")).toStrictEqual(["#9 Audit"]);
-  fireEvent.click(within(panel).getByRole("button", { name: "#9 Audit" }));
+  expect(listed(panel, "Running")).toStrictEqual([
+    "Working #2 Schema",
+    "Working #5 Refund",
+  ]);
+  expect(listed(panel, "Ready")).toStrictEqual(["Ready #9 Audit"]);
+  fireEvent.click(
+    within(panel).getByRole("button", { name: "Ready #9 Audit" }),
+  );
   expect(side().dataset["ticket"]).toBe("9");
   expect(written).toStrictEqual([9]);
 });
@@ -671,7 +679,7 @@ test("with nothing running the summary leaves Running out, and with nothing Read
   await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
   await graphic();
   expect(within(summary()).queryByRole("list", { name: "Running" })).toBeNull();
-  expect(listed(summary(), "Ready")).toStrictEqual(["#6 Ledger"]);
+  expect(listed(summary(), "Ready")).toStrictEqual(["Ready #6 Ledger"]);
   cleanup();
   epicServing.graph = {
     nodes: [{ ticket: 4, title: "Charge", phase: "Done", member: true }],
@@ -766,7 +774,10 @@ test("the selected ticket's panel says its layer and step, and how many it depen
       (heading) => heading.textContent,
     ),
   ).toStrictEqual(["Depends on1 of 2 done", "Blocks"]);
-  expect(listed(panel, "Blocks")).toStrictEqual(["#6 Ledger", "#8 Export"]);
+  expect(listed(panel, "Blocks")).toStrictEqual([
+    "Blocked #6 Ledger",
+    "Blocked #8 Export",
+  ]);
   expect(
     within(panel)
       .getByRole("link", { name: "Open ticket" })
@@ -786,12 +797,16 @@ test("a ticket the side panel lists selects that ticket when pressed", async () 
   });
   await graphic();
   const dependsOn = within(side()).getByRole("list", { name: "Depends on" });
-  fireEvent.click(within(dependsOn).getByRole("button", { name: "#5 Refund" }));
+  fireEvent.click(
+    within(dependsOn).getByRole("button", {
+      name: "Working #5 Refund",
+    }),
+  );
   expect(side().dataset["ticket"]).toBe("5");
   fireEvent.click(
     within(within(side()).getByRole("list", { name: "Depends on" })).getByRole(
       "button",
-      { name: /^#2 / },
+      { name: /^Working #2 / },
     ),
   );
   expect(side().dataset["ticket"]).toBe("2");
@@ -799,7 +814,7 @@ test("a ticket the side panel lists selects that ticket when pressed", async () 
   expect(written).toStrictEqual([5, 2]);
 });
 
-test("dispatch is offered for a Ready ticket to a reader who may dispatch, and nowhere else", async () => {
+test("dispatch is offered for a Ready ticket to a reader who may dispatch, says why it waits while offline, and is nowhere else", async () => {
   epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
   await epicPageDrawn(abilitiesEvery, {
     tab: <EpicGraphTabAddressed ticket={5} />,
@@ -809,10 +824,14 @@ test("dispatch is offered for a Ready ticket to a reader who may dispatch, and n
     name: "Dispatch",
   });
   expect(dispatch.hasAttribute("disabled")).toBe(false);
+  expect(side().textContent).not.toContain("Offline");
   act(() => {
     onlineManager.setOnline(false);
   });
   expect(dispatch.hasAttribute("disabled")).toBe(true);
+  expect(side().textContent).toContain(
+    "Offline: dispatch waits until this tab reconnects",
+  );
   act(() => {
     onlineManager.setOnline(true);
   });
@@ -898,7 +917,10 @@ test("on a phone the graph takes the screen at rest, and a tapped card rises in 
   const pills = (name: string) =>
     within(within(sheet()).getByRole("list", { name }))
       .getAllByRole("button")
-      .map((button) => [button.textContent, button.getAttribute("aria-label")]);
+      .map((button) => [
+        button.querySelector(".epic-graph-sheet-number")?.textContent,
+        button.getAttribute("aria-label"),
+      ]);
   expect(pills("Depends on")).toStrictEqual([
     ["2", "#2 Schema: Working"],
     ["4", "#4 Charge: Done"],
@@ -1156,7 +1178,8 @@ test("a queued member's card draws its place in the landing queue", async () => 
   await graphic();
   const chip = card(5).querySelector<HTMLElement>(".finalization-queue-chip");
   expect(chip?.textContent).toBe("2/2");
-  expect(chip?.getAttribute("title")).toBe(
+  expect(chip?.hasAttribute("title")).toBe(false);
+  expect(chip?.getAttribute("aria-label")).toBe(
     "Waiting 2 of 2 to finalize: #9 holds https://forge.test/acme/billing's default branch",
   );
   expect(card(4).querySelector(".finalization-queue-chip")).toBeNull();
@@ -1208,10 +1231,27 @@ test("the rendered graph carries no style attribute", async () => {
   }
 });
 
+test("a drawn graph offers its tickets as a list on the Tickets tab, which the sheet shows where the page is narrow, and its drawing stands in the box that pans", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  const link = screen.getByRole("link", {
+    name: "Read these tickets as a list",
+  });
+  expect(link.closest(".epic-graph-as-list")).not.toBeNull();
+  expect(link.getAttribute("href")).toBe(
+    `/${projectPartition.tenant}/${projectPartition.project}/epics/7/tickets`,
+  );
+  expect(
+    document.querySelector(".epic-graph-pan > .epic-graph-drawing"),
+  ).not.toBeNull();
+});
+
 test("an epic with no tickets draws no graph and says there is nothing to draw", async () => {
   epicServing.graph = { nodes: [], edges: [] };
   await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
   expect(screen.getByText("This epic has no tickets to draw")).toBeTruthy();
+  expect(document.querySelector(".epic-graph-as-list")).toBeNull();
   expect(
     screen.queryByRole("list", { name: /^Tickets of the epic/u }),
   ).toBeNull();

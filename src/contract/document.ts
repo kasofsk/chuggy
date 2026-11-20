@@ -20,6 +20,7 @@ import {
   connectorsProjectMax,
 } from "./connectors.ts";
 
+import { themesOwnedMax } from "./appearance.ts";
 import {
   inboxPhases,
   nativeHttpBasePath,
@@ -27,6 +28,9 @@ import {
   nativeHttpRoutes,
   nativeHttpVersion,
   personalRunnersMax,
+  projectBannerBytesMax,
+  projectIconBytesMax,
+  projectImageMediaTypes,
   threadsOpenDefault,
   ticketActiveFinishedHours,
   ticketSearchCharsMax,
@@ -53,6 +57,8 @@ import {
   threadLimitSchema,
   personalRunnerProjectSchema,
   personalRunnerRedemptionSchema,
+  projectThemeSchema,
+  projectImageSchema,
   registrationTokenRequestSchema,
 } from "./requests.ts";
 import { epicWriteRequestSchema } from "./epics.ts";
@@ -77,6 +83,8 @@ function nativeHttpContractDocumentSchemas(): unknown {
       executionPlacementSchema,
     ),
     sessionPlacement: nativeHttpContractDocumentInput(sessionPlacementSchema),
+    projectTheme: nativeHttpContractDocumentInput(projectThemeSchema),
+    projectImage: nativeHttpContractDocumentInput(projectImageSchema),
     personalRunnerProject: nativeHttpContractDocumentInput(
       personalRunnerProjectSchema,
     ),
@@ -112,9 +120,7 @@ function nativeHttpContractDocumentSchemas(): unknown {
     accessTokenMint: nativeHttpContractDocumentInput(
       accessTokenMintRequestSchema,
     ),
-    agentAccountSettings: nativeHttpContractDocumentInput(
-      agentAccountSettingsSchema,
-    ),
+    ...nativeHttpContractDocumentSchemasPerson(),
     threadMessage: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.sendThreadMessage.body,
     ),
@@ -132,6 +138,21 @@ function nativeHttpContractDocumentSchemas(): unknown {
       nativeHttpEndpoints.hideThread.body,
     ),
     ...nativeHttpContractDocumentSchemasMachine(),
+  };
+}
+
+/** The request bodies a person sends of what is theirs alone, in no workspace. */
+function nativeHttpContractDocumentSchemasPerson(): Record<string, unknown> {
+  return {
+    agentAccountSettings: nativeHttpContractDocumentInput(
+      agentAccountSettingsSchema,
+    ),
+    themeDocument: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.createOwnTheme.body,
+    ),
+    themeChoice: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.writeThemeChoice.body,
+    ),
   };
 }
 
@@ -156,6 +177,23 @@ const ticketSubReadNotes = {
     "every native action a ticket has had, open and settled, oldest fence first, resumed by the cursor a page answers, which names the ticket and no other read takes: its kind, its state, Open, Resolved or Withdrawn, the answer a Resolved one was given, the execution an EvaluationApproval asked about, and who answered it and when where that is recorded, which is on an answered EvaluationApproval alone; it is read as the ticket is",
   ticketLandings:
     "each finalization a ticket has had, oldest first and the newest of them where it has had more than one read answers, as what is recorded of it: Running, Held at the last hold recorded, Failed where it sent the ticket back to work, Unavailable where it escalated, Landed with the commit it landed at, Proposed where it concluded at an open pull request, or Invalidated; with its newest attempt, the paths a conflict its manifest records named, and its pull request; one that landed nothing and tried nothing is left out; it is read as the ticket is, written with no event, and polled",
+};
+
+/** What the document says of how a console looks: a person's own themes and a project's. */
+const appearanceNotes = {
+  appearance: `a caller reads and writes their own themes and their own global choice alone, keyed by their principal and no workspace, and no route names another principal: a theme is a document, created under a number never given to another theme and answered with it, read, written whole, which is also how it is renamed, and deleted; a caller holds at most ${String(themesOwnedMax)}, and a creation past that is refused ThemeLimitReached; a document is refused InvalidRequest where it fails its schema and ThemeContrastInsufficient where it draws a pair below the contrast the pair needs; the choice is a built-in by its id or a theme of the caller's by its number, written whole, refused ThemeNotFound where it names none of theirs, and cleared; deleting the theme it names clears it, and a caller holding none reads no choice`,
+  projectAppearance:
+    "a project wears for each reader the first theme of four layers that names one: their own for the project, the project's default, their global choice, and the built-in default; the project's default is a document the project keeps, not a reference, read by anyone who may read the project, written whole and cleared by an administrator, and refused as a theme of a person's own is; a reader's own for the project is a built-in by its id or a theme of theirs by its number, written whole, refused ThemeNotFound where it names none of theirs, cleared, and read and written by that reader alone; deleting the theme it names clears it; the resolved read answers the document that applies, the layer it came from and each layer's own value, a layer naming a theme that no longer exists answered as unset",
+  projectImages: `a project names an image artifact of its own its icon and another its banner, each read by anyone who may read the project and named or cleared by an administrator; naming one is refused ImageNotFound where the project holds no such artifact, ImageTypeNotAdmitted where it is not one of ${projectImageMediaTypes.join(", ")}, and ImageTooLarge past ${String(projectIconBytesMax)} bytes for an icon or ${String(projectBannerBytesMax)} for a banner; the inventory lists each project with the icon it names, and the bytes are read through the artifact route`,
+};
+
+/** The project's writes no session bearer may make: its access tokens, the
+ * merge of a ticket's proposal, and its connectors. */
+const sessionRefusedNotes = {
+  accessTokens: `a caller holding the project's make_access_tokens permit, which its administrators hold and so does a reader the tenant lets register a personal runner, makes an access token that acts as them in the project until it is deleted or expires: it names a name of at most ${String(accessTokenNameCharsMax)} characters on one line and not blank, Read or Write access, and lifetimeDays from 1 to ${String(accessTokenLifetimeDaysMax)}, and is answered 201 with the token and its secret, which no other answer holds; a reader of the project without the permit is refused 403 AccessTokenMintForbidden, a name the caller already holds in the project 409 AccessTokenNameTaken, and a caller holding ${String(accessTokensHeldMax)} tokens in the project, or a project holding ${String(accessTokensProjectMax)}, 409 AccessTokenLimitReached, expired tokens counting until they are deleted; a reader lists their own tokens and an administrator every one, newest first, each with its maker; a token's maker or an administrator deletes it, which answers 204 and revokes it; a caller who may not read the project, or may not see the token, is answered not found, and every session bearer is refused`,
+  ticketProposalMerge:
+    "a caller holding the project's merge_proposals permit, which its administrators hold, has this deployment's portal app merge the pull request the ticket's newest successful landing opened, at the head that landing evaluated; the pull request is read first, and one merged already answers Merged, so a second press changes nothing; one closed unmerged is refused Closed, one conflicting with its base Conflicting, one the forge's own rules block Blocked, one its base has moved past Behind, a head pushed since HeadMoved, one the forge would not merge for a reason it did not name NotMergeable, and a refusal of the app AppDenied, each 409 with the pull request's link; a caller who may read the ticket and not merge is refused 403 ProposalMergeForbidden, a ticket whose newest success opened no pull request is not found, a deployment holding no portal key or a forge that cannot be reached answers 503, and every session bearer is refused; nothing is recorded and no ticket moves, since the merge is the forge's and is read as one a person made there",
+  connectors: `a project's connectors are the integrations its jobs may be issued, each of kind ${connectorKinds.join(", ")} and holding that kind's settings and no secret, named by at most ${String(connectorNameCharsMax)} lower-case letters, digits and inner hyphens; whoever may read the project's repositories lists them, ordered by name, each with its revision, and reads their history, newest first in pages of ${String(connectorChangesPageMax)}, each change with its author, its instant, the connector's name, whether it Created, Changed or Removed it, and the kind and settings it left, resumed by passing a page's next as before; whoever may write a repository's landing writes one whole by its name, creating it where expectedRevision is absent and replacing it where expectedRevision is the revision standing, answered 201 or 200 with the connector as written, and removes one by naming the revision standing as the expectedRevision query parameter, answered 204; any other revision, or none, is refused 409 ConnectorStale with the revision standing as standing, absent where none stands, but a removal of a name the project does not hold, which is 404 ConnectorNotFound; a create into a project holding ${String(connectorsProjectMax)} is refused 409 ConnectorLimitReached; settings that are not their kind's, or a name that is not a connector's, are refused 400; a refusal changes nothing, a caller who may not is answered not found, and every session bearer is refused`,
 };
 
 /** Where a project's work and sessions run, and the runners that take it. */
@@ -256,10 +294,7 @@ export function nativeHttpContractDocument(): unknown {
       "a tenant's administrator deletes a project that has never run work, and the site's administrator then a workspace holding no project: GET on the deletion route answers held, what keeps it — for a project a ReleasedTicket, an Execution, a Session, a WorkerPool or an ActionObservation, for a workspace a Project, a PersonalRunner, a ChatHost or a Session — empty where DELETE would delete it, which answers 204, or 409 DeletionHeld with held; a project's deletion removes its drafts, epics, bound repositories, imported configurations, settings and grants, and a workspace's its grants, invite links, forge claims and row, so its name may be taken again; a caller who may not delete it is answered not found",
     ticketTake:
       "a member who may file drafts takes a released ticket that is neither Done nor Revoked, which makes them its owner, the member its next execution is placed for: a take names no member but its caller, replaces a taker before them, and answers AlreadyOwner where the caller owns it already; its taker alone returns it, to its creator; an execution keeps the owner it was registered under; a draft never released is refused Unreleased, a Done or Revoked ticket TicketDone or TicketRevoked, a return by anyone but the taker NotTaker, and every session bearer but a thread's, which takes and returns as its member; every take and return is kept",
-    accessTokens: `a caller holding the project's make_access_tokens permit, which its administrators hold and so does a reader the tenant lets register a personal runner, makes an access token that acts as them in the project until it is deleted or expires: it names a name of at most ${String(accessTokenNameCharsMax)} characters on one line and not blank, Read or Write access, and lifetimeDays from 1 to ${String(accessTokenLifetimeDaysMax)}, and is answered 201 with the token and its secret, which no other answer holds; a reader of the project without the permit is refused 403 AccessTokenMintForbidden, a name the caller already holds in the project 409 AccessTokenNameTaken, and a caller holding ${String(accessTokensHeldMax)} tokens in the project, or a project holding ${String(accessTokensProjectMax)}, 409 AccessTokenLimitReached, expired tokens counting until they are deleted; a reader lists their own tokens and an administrator every one, newest first, each with its maker; a token's maker or an administrator deletes it, which answers 204 and revokes it; a caller who may not read the project, or may not see the token, is answered not found, and every session bearer is refused`,
-    ticketProposalMerge:
-      "a caller holding the project's merge_proposals permit, which its administrators hold, has this deployment's portal app merge the pull request the ticket's newest successful landing opened, at the head that landing evaluated; the pull request is read first, and one merged already answers Merged, so a second press changes nothing; one closed unmerged is refused Closed, one conflicting with its base Conflicting, one the forge's own rules block Blocked, one its base has moved past Behind, a head pushed since HeadMoved, one the forge would not merge for a reason it did not name NotMergeable, and a refusal of the app AppDenied, each 409 with the pull request's link; a caller who may read the ticket and not merge is refused 403 ProposalMergeForbidden, a ticket whose newest success opened no pull request is not found, a deployment holding no portal key or a forge that cannot be reached answers 503, and every session bearer is refused; nothing is recorded and no ticket moves, since the merge is the forge's and is read as one a person made there",
-    connectors: `a project's connectors are the integrations its jobs may be issued, each of kind ${connectorKinds.join(", ")} and holding that kind's settings and no secret, named by at most ${String(connectorNameCharsMax)} lower-case letters, digits and inner hyphens; whoever may read the project's repositories lists them, ordered by name, each with its revision, and reads their history, newest first in pages of ${String(connectorChangesPageMax)}, each change with its author, its instant, the connector's name, whether it Created, Changed or Removed it, and the kind and settings it left, resumed by passing a page's next as before; whoever may write a repository's landing writes one whole by its name, creating it where expectedRevision is absent and replacing it where expectedRevision is the revision standing, answered 201 or 200 with the connector as written, and removes one by naming the revision standing as the expectedRevision query parameter, answered 204; any other revision, or none, is refused 409 ConnectorStale with the revision standing as standing, absent where none stands, but a removal of a name the project does not hold, which is 404 ConnectorNotFound; a create into a project holding ${String(connectorsProjectMax)} is refused 409 ConnectorLimitReached; settings that are not their kind's, or a name that is not a connector's, are refused 400; a refusal changes nothing, a caller who may not is answered not found, and every session bearer is refused`,
+    ...sessionRefusedNotes,
     repositoryBinding:
       "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
     repositoryLanding:
@@ -269,6 +304,7 @@ export function nativeHttpContractDocument(): unknown {
     repositoryConfigurations:
       "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it, and is asked for again through its own route, which runs it for a live binding the project holds no configuration from and no bootstrap of its own that still releases and otherwise answers what the project holds; a bootstrap is one revision per repository, named for it, and never rewritten, so two requests racing author it once and a repository meeting its own whose text differs, worded otherwise or outgrown by the release rule, defers as BootstrapDiffers until it declares its own; a ticket releases under a repository's bootstrap in that repository alone",
     ...runnerNotes,
+    ...appearanceNotes,
     actionReports:
       "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, a verified request its scheme reads no outcome in is answered Ignored and records nothing, and a request that proves nothing is not found",
     ...ticketSubReadNotes,

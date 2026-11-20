@@ -8,6 +8,10 @@ conversation-loading = Loading…
 conversation-bottom = Scroll to bottom
 conversation-earlier = Earlier
 
+## What the conversation says aloud as it changes: \`app/core/conversationAnnounced.ts\`.
+
+conversation-announced-replying = { -agent(case: "upper") } is replying
+
 ## The composer.
 
 conversation-message = Message

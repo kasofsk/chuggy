@@ -246,7 +246,7 @@ export async function threadClearedThenOpened<T>(
   return { cleared: "Closed", opened: await open() };
 }
 
-/** Why a `/clear` opened nothing, and what that carries beyond it on hover. */
+/** Why a `/clear` opened nothing, and what that carries beyond it. */
 export interface ThreadClearedWords {
   readonly word: CopyOrData;
   readonly detail?: CopyOrData;

@@ -26,7 +26,6 @@ import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
 import {
   ticketFilterAll,
-  ticketFilterIsStanding,
   ticketFilterOf,
   ticketFilterStandingOf,
 } from "./projectTableFilters.ts";
@@ -109,6 +108,17 @@ export function ticketListQueryWith(
     ...(filter === undefined ? {} : { filter }),
     ...(creator === undefined ? {} : { creator }),
     ...(owner === undefined ? {} : { owner }),
+  };
+}
+
+/** The address with every narrowing cleared and its sort kept: every ticket,
+ * no search, no creator and no owner. All is written, as any filter is. */
+export function ticketListQueryCleared(
+  query: TicketListQuery,
+): TicketListQuery {
+  return {
+    ...(query.sort === undefined ? {} : { sort: query.sort }),
+    filter: ticketFilterAll,
   };
 }
 
@@ -199,23 +209,61 @@ export function ticketListFiltered(
   return rows.filter((row) => ticketListStandingOf(row) === standing);
 }
 
-/** The filter a state's count leaves once tapped: that state, or every ticket
- * where that state was already the filter. */
-export function ticketListCountTapped(
-  filter: TicketFilter,
-  standing: TicketListStanding,
-): TicketFilter {
-  return filter === standing ? ticketFilterAll : standing;
+/** A narrowing the Filter control holds, as one mark under the bar draws it:
+ * the state, the creator and the owner, each only where one is chosen. */
+export type TicketListFilterActive =
+  | {
+      readonly kind: "filter";
+      readonly filter: Exclude<TicketFilter, typeof ticketFilterAll>;
+    }
+  | { readonly kind: "creator"; readonly principal: string }
+  | { readonly kind: "owner"; readonly principal: string };
+
+/** What the Filter control narrows the list by, in the order its panel holds
+ * them; its length is the count the control shows. */
+export function ticketListFiltersActive(chosen: {
+  readonly filter: TicketFilter;
+  readonly creator?: string | undefined;
+  readonly owner?: string | undefined;
+}): readonly TicketListFilterActive[] {
+  return [
+    ...(chosen.filter === ticketFilterAll
+      ? []
+      : [{ kind: "filter" as const, filter: chosen.filter }]),
+    ...(chosen.creator === undefined
+      ? []
+      : [{ kind: "creator" as const, principal: chosen.creator }]),
+    ...(chosen.owner === undefined
+      ? []
+      : [{ kind: "owner" as const, principal: chosen.owner }]),
+  ];
 }
 
-/** Whether a state's count is drawn dimmed: a filter is set and the list it
- * draws holds none of that state's tickets. */
-export function ticketListCountDimmed(
-  filter: TicketFilter,
-  standing: TicketListStanding,
-): boolean {
-  if (filter === ticketFilterAll || filter === standing) return false;
-  return !(filter === "Pending" && ticketFilterIsStanding(standing));
+/** The address with one of the Filter control's narrowings taken away. */
+export function ticketListQueryWithout(
+  query: TicketListQuery,
+  kind: TicketListFilterActive["kind"],
+): TicketListQuery {
+  switch (kind) {
+    case "filter":
+      return ticketListQueryWith(query, { filter: ticketFilterAll });
+    case "creator":
+      return ticketListQueryWith(query, { creator: undefined });
+    case "owner":
+      return ticketListQueryWith(query, { owner: undefined });
+  }
+}
+
+/** The address with every narrowing the Filter control holds taken away, and
+ * its search and its sort kept. All is written, as any filter is. */
+export function ticketListQueryFiltersCleared(
+  query: TicketListQuery,
+): TicketListQuery {
+  return {
+    ...(query.q === undefined ? {} : { q: query.q }),
+    ...(query.sort === undefined ? {} : { sort: query.sort }),
+    filter: ticketFilterAll,
+  };
 }
 
 /** The phases in the order the State sort draws them. */

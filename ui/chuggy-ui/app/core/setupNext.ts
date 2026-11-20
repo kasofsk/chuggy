@@ -230,7 +230,7 @@ function setupProjectMend(at: SetupAt): SetupThing {
 /** The repositories page's connect flow, opened on the folder's repository where it has one, and on naming one where it has none. */
 function setupConnectPage(at: SetupAt, mine: string | undefined): string {
   return repositoryConnectSetupAddress(
-    setupPage(at, navRoutes.repositories),
+    setupPage(at, settingsRoutes.project.repositories),
     mine,
     repositoryAddAnchor,
   );
@@ -1218,7 +1218,7 @@ function setupMoreConfigurationThing(
     },
     directory: repositoryConfigurationRoot,
     image: setupDocsPages.image,
-    page: setupPage(at, navRoutes.repositories),
+    page: setupPage(at, settingsRoutes.project.repositories),
     workspace,
     project,
   };

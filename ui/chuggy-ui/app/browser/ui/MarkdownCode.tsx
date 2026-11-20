@@ -4,7 +4,9 @@
  *
  * A LONG LINE SCROLLS INSIDE THE PANEL. Code is not wrapped, because where a
  * line breaks is part of what it says, and the panel is what scrolls so the
- * column around it keeps its width.
+ * column around it keeps its width. A report drawn `wrapped` breaks a long
+ * line where the panel ends instead, for code read rather than worked from;
+ * what is copied is the code as it was written either way.
  *
  * THE BAR IS THERE WHETHER OR NOT A LANGUAGE WAS NAMED, so a block being
  * written does not change height when its fence's line ends and the language

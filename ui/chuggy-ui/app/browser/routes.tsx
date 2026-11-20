@@ -41,7 +41,7 @@ import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
 import { memberChatRoutes } from "../core/memberChat.ts";
-import { settingsRoutes } from "../core/settingsNav.ts";
+import { navMoved } from "../core/shellNav.ts";
 import {
   projectCreationQueryOf,
   projectCreationRoutePath,
@@ -54,7 +54,6 @@ import type { TicketCreationQuery } from "../core/ticketCreationQuery.ts";
 import { ticketListQueryOf } from "../core/ticketListView.ts";
 import type { TicketListQuery } from "../core/ticketListView.ts";
 import { usePanelState } from "./api.ts";
-import { CatalogPage } from "./catalog/CatalogPage.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import { EpicPage } from "./EpicPage.tsx";
 import { EpicEditPage } from "./epic/EpicEditPage.tsx";
@@ -71,9 +70,6 @@ import { MemberChatPage } from "./MemberChatPage.tsx";
 import { persistentStore } from "./ports.ts";
 import { ProjectCreationPage, ProjectlessFrame } from "./ProjectCreation.tsx";
 import { ProjectTable } from "./ProjectTable.tsx";
-import { RepositoriesPage } from "./RepositoriesPage.tsx";
-import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
-import { ConnectorsPage } from "./connectors/ConnectorsPage.tsx";
 import {
   projectSettingsRoutes,
   workspaceSettingsRoutes,
@@ -84,6 +80,7 @@ import { ThreadPage } from "./ThreadPage.tsx";
 import { TicketCreationFrom } from "./TicketCreationStart.tsx";
 import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
+import { ThemeFollowed } from "./ThemeFollowed.tsx";
 import { TicketLandingTab } from "./ticket/TicketLandingPage.tsx";
 import { TicketRunTab } from "./ticket/TicketRunPage.tsx";
 import { Welcome } from "./Welcome.tsx";
@@ -95,6 +92,7 @@ import {
 } from "./ticket/TicketPageTabs.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
+import "./DataPanel.css";
 
 /** The root: the project last opened or else the first, and for a reader
  * with none the welcome page. */
@@ -135,7 +133,17 @@ function PartitionLayout(): ReactNode {
   );
 }
 
-const rootRoute = createRootRoute({ component: Outlet });
+/** Every screen, under the theme its route wears. */
+function ConsoleRoot(): ReactNode {
+  return (
+    <>
+      <ThemeFollowed />
+      <Outlet />
+    </>
+  );
+}
+
+const rootRoute = createRootRoute({ component: ConsoleRoot });
 
 const landingRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -273,38 +281,73 @@ const epicEditRoute = createRoute({
   component: EpicEditPage,
 });
 
-function CatalogRoute(): ReactNode {
-  return <CatalogPage query={catalogRoute.useSearch()} />;
-}
-
-const catalogRoute = createRoute({
+const catalogMovedRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/catalog",
-  component: CatalogRoute,
   validateSearch: (search: Readonly<Record<string, unknown>>): CatalogQuery =>
     catalogQueryOf(search),
+  beforeLoad: ({ params, search }) => {
+    redirect({
+      to: navMoved["/$tenant/$project/catalog"],
+      params,
+      search,
+      replace: true,
+      throw: true,
+    });
+  },
 });
 
-const repositoriesRoute = createRoute({
+/** An address a setup program handed out keeps its query and anchor, which
+ * open the picker on the repository it named. */
+const repositoriesMovedRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/repositories",
-  component: RepositoriesPage,
+  beforeLoad: ({ params }) => {
+    redirect({
+      to: navMoved["/$tenant/$project/repositories"],
+      params,
+      search: true,
+      hash: true,
+      replace: true,
+      throw: true,
+    });
+  },
 });
 
-const connectorsRoute = createRoute({
+const repositoryMovedRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/repositories/$repository",
+  beforeLoad: ({ params }) => {
+    redirect({
+      to: navMoved["/$tenant/$project/repositories/$repository"],
+      params,
+      replace: true,
+      throw: true,
+    });
+  },
+});
+
+const connectorsMovedRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/connectors",
-  component: ConnectorsPage,
+  beforeLoad: ({ params }) => {
+    redirect({
+      to: navMoved["/$tenant/$project/connectors"],
+      params,
+      search: true,
+      hash: true,
+      replace: true,
+      throw: true,
+    });
+  },
 });
 
-/** The address the project's runners were once at, which replaces itself
- * with the reader's own, where a runner is added now. */
-const runnersRoute = createRoute({
+const runnersMovedRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/runners",
   beforeLoad: ({ params }) => {
     redirect({
-      to: settingsRoutes.project.myRunner,
+      to: navMoved["/$tenant/$project/runners"],
       params,
       replace: true,
       throw: true,
@@ -356,14 +399,6 @@ const memberChatThreadRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: memberChatRoutes.thread,
   component: MemberChatThreadRoute,
-});
-
-/** One binding's own page. The repository is an address, which the router
- * encodes into the segment and decodes back out of it. */
-const repositoryRoute = createRoute({
-  getParentRoute: () => partitionRoute,
-  path: "/repositories/$repository",
-  component: RepositoryPage,
 });
 
 /**
@@ -514,12 +549,12 @@ const routeTree = rootRoute.addChildren([
       epicHistoryRoute,
       epicEditRoute,
     ]),
-    catalogRoute,
+    catalogMovedRoute,
     projectSettingsRoutes(partitionRoute),
-    repositoriesRoute,
-    repositoryRoute,
-    connectorsRoute,
-    runnersRoute,
+    repositoriesMovedRoute,
+    repositoryMovedRoute,
+    connectorsMovedRoute,
+    runnersMovedRoute,
     threadRoute,
     ticketCreationRoute,
     ticketRoute.addChildren([
@@ -543,6 +578,7 @@ function RouteFailed(props: ErrorComponentProps): ReactNode {
   return (
     <EmptyState
       variant="page"
+      level={1}
       label={text({ id: "shell-page-failed" })}
       action={
         <Button
@@ -561,7 +597,11 @@ function RouteFailed(props: ErrorComponentProps): ReactNode {
 function RouteNotFound(): ReactNode {
   const text = useCopyText();
   return (
-    <EmptyState variant="page" label={text({ id: "shell-page-absent" })} />
+    <EmptyState
+      variant="page"
+      level={1}
+      label={text({ id: "shell-page-absent" })}
+    />
   );
 }
 

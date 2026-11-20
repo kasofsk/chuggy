@@ -19,7 +19,7 @@ import {
   actionReachArm,
   conversationStandingArm,
   inviteLinkStateTone,
-  pillTones,
+  toneRoster,
   phaseTone,
   threadStandingTone,
   ticketLandingTone,
@@ -31,7 +31,7 @@ import type { Tone } from "../app/core/tones.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import type { Copy } from "../app/core/copy.ts";
 
-/** An arm as a pill draws it: its word in the base language, and its tone. */
+/** An arm as a badge draws it: its word in the base language, and its tone. */
 function drawn(arm: { readonly word: Copy; readonly tone: Tone }) {
   return { word: copyTextEn(arm.word), tone: arm.tone };
 }
@@ -45,41 +45,41 @@ const verdicts: readonly SetVerdict[] = [
   "Blocked",
 ];
 
-test("every phase and verdict draws a tone the pill knows", () => {
+test("every phase and verdict draws a tone the badge knows", () => {
   for (const phase of phaseRoster)
-    expect(pillTones).toContain(phaseTone(phase));
+    expect(toneRoster).toContain(phaseTone(phase));
   for (const verdict of verdicts)
-    expect(pillTones).toContain(verdictTone(verdict));
+    expect(toneRoster).toContain(verdictTone(verdict));
 });
 
-test("every landing state draws a tone the pill knows, a failure in the failure's", () => {
+test("every landing state draws a tone the badge knows, a failure in the failure's", () => {
   for (const state of ticketLandingStates)
-    expect(pillTones).toContain(ticketLandingTone(state));
+    expect(toneRoster).toContain(ticketLandingTone(state));
   expect(ticketLandingTone("Failed")).toBe("fail");
   expect(ticketLandingTone("Landed")).toBe("pass");
   expect(ticketLandingTone("Running")).toBe("live");
 });
 
-test("every standing of a thread draws a tone the pill knows, and one held by a member who is gone is not retired", () => {
+test("every standing of a thread draws a tone the badge knows, and one held by a member who is gone is not retired", () => {
   for (const standing of threadStandings)
-    expect(pillTones).toContain(threadStandingTone(standing));
+    expect(toneRoster).toContain(threadStandingTone(standing));
   expect(threadStandingTone("Open")).toBe("live");
   expect(threadStandingTone("Closed")).toBe("retired");
   expect(threadStandingTone("Orphaned")).toBe("parked");
 });
 
-test("every state of an invite link draws a tone the pill knows, an open one live and a used one passed", () => {
+test("every state of an invite link draws a tone the badge knows, an open one live and a used one passed", () => {
   for (const state of accessInviteLinkStates)
-    expect(pillTones).toContain(inviteLinkStateTone(state));
+    expect(toneRoster).toContain(inviteLinkStateTone(state));
   expect(inviteLinkStateTone("Open")).toBe("live");
   expect(inviteLinkStateTone("Used")).toBe("pass");
   expect(inviteLinkStateTone("Revoked")).toBe("retired");
   expect(inviteLinkStateTone("Expired")).toBe("retired");
 });
 
-test("every standing of an access token draws a tone the pill knows, an active one live as an open link is and an expiring one parked", () => {
+test("every standing of an access token draws a tone the badge knows, an active one live as an open link is and an expiring one parked", () => {
   for (const status of accessTokenStatuses)
-    expect(pillTones).toContain(accessTokenStatusTone(status));
+    expect(toneRoster).toContain(accessTokenStatusTone(status));
   expect(accessTokenStatusTone("Active")).toBe(inviteLinkStateTone("Open"));
   expect(accessTokenStatusTone("Active")).toBe("live");
   expect(accessTokenStatusTone("Expiring")).toBe(phaseTone("Escalated"));
@@ -196,5 +196,5 @@ test("each place a declared action stands is its own word in its own tone", () =
     arms.length,
   );
   expect(new Set(arms.map((arm) => arm.tone)).size).toBe(arms.length);
-  for (const arm of arms) expect(pillTones).toContain(arm.tone);
+  for (const arm of arms) expect(toneRoster).toContain(arm.tone);
 });

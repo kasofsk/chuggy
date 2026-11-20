@@ -1,0 +1,17 @@
+/* A run's output drawn as it was written, in a framed box that scrolls past
+   its own height: an artifact's preview, the transcript's raw text, and a
+   command's output. */
+
+@layer page {
+  .preview {
+    max-height: var(--height-preview);
+    overflow: auto;
+    margin: 0;
+    padding: var(--space-2);
+    background: var(--surface-2);
+    border: 1px solid var(--edge);
+    border-radius: var(--radius-2);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}

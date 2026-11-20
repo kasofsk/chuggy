@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 
 import {
   selectorSettingsSection,
+  selectorSettingsSectionChangedCount,
   selectorSettingsSectionInherited,
   selectorSettingsTextOverriddenAtRead,
   selectorSettingsTextTyped,
@@ -33,7 +34,8 @@ export function SelectorTextSection(props: {
   readonly effective: string;
   readonly editing: boolean;
   readonly editable: boolean;
-  readonly savable: boolean;
+  /** The draft can be written as it stands. */
+  readonly ready: boolean;
   readonly saved: SelectorSettingsShown | undefined;
   readonly onChange: (draft: SelectorSettingsDraft) => void;
   readonly onEdit: () => void;
@@ -58,7 +60,8 @@ export function SelectorTextSection(props: {
       inherited={selectorSettingsSectionInherited(props.draft, props.name)}
       editing={props.editing}
       editable={props.editable}
-      savable={props.savable}
+      changed={selectorSettingsSectionChangedCount(props.draft, props.name) > 0}
+      ready={props.ready}
       saved={props.saved}
       onEdit={props.onEdit}
       onCancel={props.onCancel}
@@ -72,6 +75,7 @@ export function SelectorTextSection(props: {
     >
       {props.editing ? (
         <Textarea
+          labelShown
           label={title}
           value={props.draft[props.name]}
           {...(placeholder === undefined ? {} : { placeholder })}

@@ -10,6 +10,8 @@ chat-new = New { -thread }
 chat-fill = Full screen
 chat-restore = Exit full screen
 chat-collapse = Collapse
+chat-back = Back
+chat-more = { -thread(case: "upper") } menu
 chat-expand = Expand { -thread }
 chat-strip = { -thread(case: "upper") }
 chat-heading = { -thread(case: "upper") }
@@ -24,7 +26,6 @@ chat-standing-orphaned = Orphaned
 chat-kept-running = Kept running
 chat-kept-running-detail = This { -thread } holds processes your { -chat-host } restarts each time it starts again, so it is kept up. Close it, or ask it to stop them, to end that.
 chat-host-capabilities = On your { -chat-host }
-chat-host-capabilities-detail = On your { -chat-host }, this { -thread } may: { $capabilities }
 
 ## What a chat may do, as its roster and its chat host's setting name it.
 
@@ -52,8 +53,6 @@ chat-history-row = { $title }, { $standing }, { $ago }
 chat-history-row-undated = { $title }, { $standing }
 chat-history-elsewhere = { $project } · { $title }
 chat-history-elsewhere-row = { $project } · { $title }, { $standing }
-chat-actions = { -thread(case: "upper") } actions
-chat-actions-none = No active { -thread }
 chat-open = Open
 chat-copy-link = Copy link
 chat-copied = Copied
@@ -64,6 +63,14 @@ chat-close-confirm = Close { -thread }
 chat-close-not-mine = Not your { -thread } · Ends it for its owner too
 chat-close-kept = Stays in { chat-history } · Takes no more messages
 chat-close-final = Drops any reply in progress · Cannot be undone
+
+## What a chat's own page says over and under its conversation.
+
+chat-page-project = In { $project }
+chat-page-host = Your { -chat-host }
+chat-page-standing = { $standing } · Takes no more messages
+chat-page-not-mine = Not your { -thread } · { shell-view-only }
+chat-page-back = Back to { $project }
 
 ## What a member's own chat outside a project says.
 

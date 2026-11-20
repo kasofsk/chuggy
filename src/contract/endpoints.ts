@@ -5,6 +5,7 @@ import {
   accessTokensResponseSchema,
 } from "./accessToken.ts";
 import { ticketActionReachResponseSchema } from "./actionReach.ts";
+import { themeChoiceSchema, themeDocumentSchema } from "./appearance.ts";
 import {
   connectorHistoryResponseSchema,
   connectorStandingSchema,
@@ -34,6 +35,8 @@ import {
   threadOpenSchema,
   threadRenameRequestSchema,
   threadHideRequestSchema,
+  projectThemeSchema,
+  projectImageSchema,
 } from "./requests.ts";
 import {
   operationalStatusResponseSchema,
@@ -68,6 +71,12 @@ import {
   landingQueuesResponseSchema,
   repositoryConfigurationHeadResponseSchema,
   ticketTakeResponseSchema,
+  ownedThemeSchema,
+  ownedThemesResponseSchema,
+  themeChoiceResponseSchema,
+  projectThemeResponseSchema,
+  projectAppearanceResponseSchema,
+  projectImagesResponseSchema,
   ticketProposalMergeResponseSchema,
 } from "./responses.ts";
 
@@ -398,6 +407,91 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.ticketReturn,
     body: emptyBody,
     response: ticketTakeResponseSchema,
+  },
+  listOwnThemes: {
+    method: "GET",
+    path: nativeHttpRoutes.ownThemes,
+    response: ownedThemesResponseSchema,
+  },
+  createOwnTheme: {
+    method: "POST",
+    path: nativeHttpRoutes.ownThemes,
+    body: themeDocumentSchema,
+    response: ownedThemeSchema,
+  },
+  viewOwnTheme: {
+    method: "GET",
+    path: nativeHttpRoutes.ownTheme,
+    response: ownedThemeSchema,
+  },
+  writeOwnTheme: {
+    method: "PUT",
+    path: nativeHttpRoutes.ownTheme,
+    body: themeDocumentSchema,
+  },
+  deleteOwnTheme: {
+    method: "DELETE",
+    path: nativeHttpRoutes.ownTheme,
+  },
+  viewThemeChoice: {
+    method: "GET",
+    path: nativeHttpRoutes.themeChoice,
+    response: themeChoiceResponseSchema,
+  },
+  writeThemeChoice: {
+    method: "PUT",
+    path: nativeHttpRoutes.themeChoice,
+    body: themeChoiceSchema,
+  },
+  clearThemeChoice: {
+    method: "DELETE",
+    path: nativeHttpRoutes.themeChoice,
+  },
+  viewProjectTheme: {
+    method: "GET",
+    path: nativeHttpRoutes.projectTheme,
+    response: projectThemeResponseSchema,
+  },
+  writeProjectTheme: {
+    method: "PUT",
+    path: nativeHttpRoutes.projectTheme,
+    body: projectThemeSchema,
+    response: projectThemeResponseSchema,
+  },
+  viewProjectThemeOverride: {
+    method: "GET",
+    path: nativeHttpRoutes.projectThemeOverride,
+    response: themeChoiceResponseSchema,
+  },
+  writeProjectThemeOverride: {
+    method: "PUT",
+    path: nativeHttpRoutes.projectThemeOverride,
+    body: themeChoiceSchema,
+  },
+  clearProjectThemeOverride: {
+    method: "DELETE",
+    path: nativeHttpRoutes.projectThemeOverride,
+  },
+  viewProjectAppearance: {
+    method: "GET",
+    path: nativeHttpRoutes.projectAppearance,
+    response: projectAppearanceResponseSchema,
+  },
+  viewProjectImages: {
+    method: "GET",
+    path: nativeHttpRoutes.projectImages,
+    response: projectImagesResponseSchema,
+  },
+  nameProjectImage: {
+    method: "PUT",
+    path: nativeHttpRoutes.projectImage,
+    body: projectImageSchema,
+    response: projectImagesResponseSchema,
+  },
+  clearProjectImage: {
+    method: "DELETE",
+    path: nativeHttpRoutes.projectImage,
+    response: projectImagesResponseSchema,
   },
   ticketProposalMerge: {
     method: "POST",

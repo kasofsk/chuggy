@@ -9,12 +9,14 @@
 
 import { z } from "zod";
 
+import { themeDocumentSchema } from "./appearance.ts";
 import {
   countSchema,
   digestSchema,
   forgeAuthorizationTextCharsMax,
   forgeAuthorizationVerifierCharsMax,
   forgeAuthorizationVerifierCharsMin,
+  identitySchema,
   approvalFeedbackCharsMax,
   isApprovalFeedback,
   selectorSettingsTextCharsMax,
@@ -291,6 +293,16 @@ export const sessionPlacementSchema = z.strictObject({
   thread: z.enum(placementRoutes),
   lead: z.enum(placementRoutes),
   leadOffering: z.enum(leadOfferings).optional(),
+});
+
+/** A project's default theme, the document itself; a body naming none clears it. */
+export const projectThemeSchema = z.strictObject({
+  document: themeDocumentSchema.optional(),
+});
+
+/** The project-owned artifact a project names its icon or its banner, by the identity its upload answered. */
+export const projectImageSchema = z.strictObject({
+  artifact: identitySchema,
 });
 
 /** The priority a project on its member's allowlist is written at; a write with no body adds one at `Normal` and leaves one already there as it was. */

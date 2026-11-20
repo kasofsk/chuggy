@@ -5,10 +5,12 @@
  * and that a text being written and the same text whole are the same elements.
  *
  * Elements and nesting are asserted, and a class only where a class is all the
- * report says a thing in: a column's side, and the mark.
+ * report says a thing in: a column's side, and the mark. A wrapped report's
+ * code is declared to break its lines where an unwrapped one's is not, and
+ * copies as it was written.
  */
 
-import { act, cleanup } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -18,6 +20,7 @@ import {
 } from "../app/browser/ui/MarkdownBlocks.tsx";
 import { markdownCodeLanguageCharsMax } from "../app/browser/ui/MarkdownCode.tsx";
 import { markdownColumnClassNames } from "../app/browser/ui/markdownColumns.ts";
+import { CopyProvider as ClipboardHeld } from "../app/browser/ui/copyHeld.tsx";
 import { MarkdownProvider } from "../app/browser/ui/markdownHeld.ts";
 import {
   MarkdownLine,
@@ -1056,5 +1059,42 @@ describe("a text that is dear to read", () => {
 
   test("is drawn to its end at once when it is whole", () => {
     expect(all(mounted(false, { now: 0, step: 5 }), "p")).toHaveLength(6);
+  });
+});
+
+describe("a wrapped report", () => {
+  const code = [
+    "worker:",
+    "  arguments:",
+    '    - --settings={"permissions":{"defaultMode":"acceptEdits"}}',
+  ].join("\n");
+  const fenced = `\`\`\`yaml\n${code}\n\`\`\``;
+
+  test("breaks a long line of code where its panel ends, where an unwrapped one scrolls, and copies the code as it was written", async () => {
+    const copied: string[] = [];
+    const view = renderCopied(
+      <ClipboardHeld
+        write={(written) => {
+          copied.push(written);
+          return Promise.resolve(true);
+        }}
+      >
+        <MarkdownReport text={fenced} bare wrapped />
+        <MarkdownReport text={fenced} bare />
+      </ClipboardHeld>,
+    );
+    const [wrapped, scrolled] = all(view.container, "pre");
+    if (wrapped === undefined || scrolled === undefined)
+      throw new Error("two blocks of code are drawn");
+    expect(declared(wrapped, "white-space").at(-1)).toBe("pre-wrap");
+    expect(declared(scrolled, "white-space")).toEqual(["pre"]);
+    expect(declared(scrolled, "overflow-x")).toEqual(["auto"]);
+    const [copy] = screen.getAllByRole("button", { name: "Copy code" });
+    if (copy === undefined) throw new Error("the wrapped block has its copy");
+    await act(async () => {
+      fireEvent.click(copy);
+      await Promise.resolve();
+    });
+    expect(copied).toStrictEqual([code]);
   });
 });

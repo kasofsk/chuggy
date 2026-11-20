@@ -1,14 +1,16 @@
 /**
- * Each page's glyph, drawn beside its name in the bar and the gear's menu and
- * alone in the bar on a phone, where the name is kept for a reader who does
- * not see the glyph. They are lucide's, as chuggernaut draws its own.
+ * Each primary place's glyph, and More's, drawn beside its name in the bar
+ * and above it in a phone's. They are lucide's, as chuggernaut draws its own.
  */
 
 import type { ReactNode } from "react";
 
 import type { NavEntryId } from "../../core/shellNav.ts";
 
-const navIconPaths: Readonly<Record<NavEntryId, ReactNode>> = {
+/** What a glyph is drawn for: a primary place, or More on a phone's bar. */
+export type NavIconId = NavEntryId | "more";
+
+const navIconPaths: Readonly<Record<NavIconId, ReactNode>> = {
   overview: (
     <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2ZM13 5v2M13 17v2M13 11v2" />
   ),
@@ -25,35 +27,16 @@ const navIconPaths: Readonly<Record<NavEntryId, ReactNode>> = {
       <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
     </>
   ),
-  catalog: (
+  more: (
     <>
-      <rect width="8" height="18" x="3" y="3" rx="1" />
-      <path d="M7 3v18M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z" />
-    </>
-  ),
-  settings: (
-    <path d="M10 5H3M12 19H3M14 3v4M16 17v4M21 12h-9M21 19h-5M21 5h-7M8 10v4M8 12H3" />
-  ),
-  repositories: (
-    <>
-      <path d="M18 19a5 5 0 0 1-5-5v8M9 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v5" />
-      <circle cx="13" cy="12" r="2" />
-      <circle cx="20" cy="19" r="2" />
-    </>
-  ),
-  connectors: (
-    <path d="M12 22v-5M9 8V2M15 8V2M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" />
-  ),
-  runners: (
-    <>
-      <rect width="20" height="8" x="2" y="2" rx="2" />
-      <rect width="20" height="8" x="2" y="14" rx="2" />
-      <path d="M6 6h.01M6 18h.01" />
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="19" cy="12" r="1" />
+      <circle cx="5" cy="12" r="1" />
     </>
   ),
 };
 
-export function NavIcon(props: { readonly id: NavEntryId }): ReactNode {
+export function NavIcon(props: { readonly id: NavIconId }): ReactNode {
   return (
     <svg
       aria-hidden="true"

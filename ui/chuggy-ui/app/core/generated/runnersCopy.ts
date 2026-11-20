@@ -161,8 +161,6 @@ export interface RunnersCopy {
     readonly free: unknown;
     readonly needed: unknown;
   };
-  readonly "runners-writing": Record<never, never>;
-  readonly "runners-written": Record<never, never>;
   readonly "runners-placement-title": Record<never, never>;
   readonly "runners-placement-about": Record<never, never>;
   readonly "runners-placement-col-kind": Record<never, never>;
@@ -172,6 +170,7 @@ export interface RunnersCopy {
   readonly "runners-placement-work": Record<never, never>;
   readonly "runners-placement-evaluation": Record<never, never>;
   readonly "runners-placement-chat": Record<never, never>;
+  readonly "runners-placement-saved": Record<never, never>;
   readonly "runners-placement-landed": Record<never, never>;
   readonly "runners-placement-unhosted": Record<never, never>;
 }

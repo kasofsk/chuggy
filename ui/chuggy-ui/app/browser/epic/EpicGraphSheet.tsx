@@ -25,6 +25,7 @@ import { epicGraphSheetScrollOf } from "../../core/epicGraphSheet.ts";
 import type { ProjectTableRow } from "../../core/projectTableRows.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import { useViewportMotion } from "../shell/viewport.ts";
+import { TicketStateLabel } from "../ticket/TicketStateLabel.tsx";
 import { Button } from "../ui/Button.tsx";
 import {
   EpicGraphSideActions,
@@ -33,6 +34,7 @@ import {
 } from "./EpicGraphSide.tsx";
 
 import "./epicGraph.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 /** One row of pills under its heading, or the word for none. */
 function EpicGraphSheetRow(props: {
@@ -57,32 +59,33 @@ function EpicGraphSheetRow(props: {
               other?.node.title ?? text({ id: "epics-card-untitled" });
             return (
               <li key={ticket}>
-                <button
-                  type="button"
-                  className="epic-graph-sheet-pill"
-                  aria-label={text({
-                    id: "epics-sheet-ticket",
-                    args: {
-                      ticket: String(ticket),
-                      title,
-                      state:
-                        other === undefined
-                          ? ""
-                          : text(ticketStateLabelOf(other.standing).word),
-                    },
-                  })}
-                  title={title}
-                  onClick={() => {
-                    props.onTicket(ticket);
-                  }}
-                >
-                  {other === undefined ? null : (
-                    <EpicGraphSideMark standing={other.standing} />
-                  )}
-                  <span className="epic-graph-sheet-number">
-                    {String(ticket)}
-                  </span>
-                </button>
+                <Tooltip trigger="control" text={title}>
+                  <button
+                    type="button"
+                    className="epic-graph-sheet-pill"
+                    aria-label={text({
+                      id: "epics-sheet-ticket",
+                      args: {
+                        ticket: String(ticket),
+                        title,
+                        state:
+                          other === undefined
+                            ? ""
+                            : text(ticketStateLabelOf(other.standing).word),
+                      },
+                    })}
+                    onClick={() => {
+                      props.onTicket(ticket);
+                    }}
+                  >
+                    {other === undefined ? null : (
+                      <EpicGraphSideMark standing={other.standing} />
+                    )}
+                    <span className="epic-graph-sheet-number">
+                      {String(ticket)}
+                    </span>
+                  </button>
+                </Tooltip>
               </li>
             );
           })}
@@ -168,9 +171,8 @@ function EpicGraphSheetHead(props: {
   const label = ticketStateLabelOf(standing);
   return (
     <div className="epic-graph-sheet-head" data-tone={label.tone}>
-      <EpicGraphSideMark standing={standing} />
       <span className="epic-graph-sheet-number">{`#${String(node.ticket)}`}</span>
-      <span className="epic-graph-sheet-word">{text(label.word)}</span>
+      <TicketStateLabel standing={standing} size="small" />
       <Button
         size="icon"
         variant="quiet"

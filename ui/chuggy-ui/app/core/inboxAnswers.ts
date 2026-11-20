@@ -74,7 +74,7 @@ export function inboxStepSentence(step: OperationStep, text: CopyText): string {
   }
 }
 
-/** What a reader reporting an abandoned answer reads on hover of its word. */
+/** What a reader reporting an abandoned answer reads after its word. */
 export function inboxStepDetail(step: OperationStep): CopyOrData | undefined {
   return step.step === "Abandoned"
     ? operationAbandonWords(step.cause).detail

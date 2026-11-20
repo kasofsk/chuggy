@@ -39,7 +39,7 @@ const flags = ["--workspace", "acme", "--project", "widgets"];
 const at = flags.join(" ");
 const repository = "acme-org/widgets";
 const bindPath = "/api/v1/tenants/acme/projects/widgets/repositories";
-const flow = `${machineSite}/acme/widgets/repositories?repository=acme-org%2Fwidgets&from=setup#add`;
+const flow = `${machineSite}/acme/widgets/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add`;
 const granting = `Open ${flow}: it opens on ${repository}, and each app it still lacks has one press there that goes to GitHub for it. GitHub may ask you to confirm access first, with a code it emails you.`;
 const runNow =
   "rule: Run the command on the next: line now, without asking the person";
@@ -303,7 +303,7 @@ test("a bind the site refuses as signed out ends at its first look, with no poll
 
 test("a bind whose first look fails while connecting GitHub is next opens the page once, at the look that reads where the person stands", async () => {
   const machine = await machineSignedIn(setupSiteAt("Project"));
-  const connect = `${machineSite}/acme/widgets/repositories?from=setup#add`;
+  const connect = `${machineSite}/acme/widgets/settings/repositories?from=setup#add`;
   const before = machine.launched.length;
   const workspaces = failingOnce(machine, workspacesPath, "Silent");
   const said = lines(
@@ -316,7 +316,7 @@ test("a bind whose first look fails while connecting GitHub is next opens the pa
 
 test("bind run where GitHub is not connected opens the connect flow, with the opener sign-in uses, and says so", async () => {
   const machine = await machineSignedIn(setupSiteAt("Project"));
-  const connect = `${machineSite}/acme/widgets/repositories?from=setup#add`;
+  const connect = `${machineSite}/acme/widgets/settings/repositories?from=setup#add`;
   const before = machine.launched.length;
   const said = lines(
     await machine.command(["bind", ...flags, "--wait-secs", "0"]),
@@ -521,7 +521,7 @@ test("where the deployment offers no install the workspace can claim, an app not
   site.authorizing = false;
   const machine = await inFolder(site);
   expect(lines(await machine.command(flags)).at(-3)).toMatch(
-    /^tell: Open \S+\/repositories\?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org\/widgets, this folder's repository,/u,
+    /^tell: Open \S+\/settings\/repositories\?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org\/widgets, this folder's repository,/u,
   );
 });
 
@@ -540,6 +540,6 @@ test("where what an app grants was not read, the person is sent to the connect f
   const machine = await inFolder(connected({ portal: true, worker: true }));
   machine.world.fates.set("workerGrant", "Failed");
   expect(lines(await machine.command(flags)).at(-3)).toMatch(
-    /^tell: Open \S+\/repositories\?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org\/widgets, this folder's repository,/u,
+    /^tell: Open \S+\/settings\/repositories\?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org\/widgets, this folder's repository,/u,
   );
 });

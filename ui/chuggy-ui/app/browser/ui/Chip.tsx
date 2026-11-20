@@ -1,5 +1,5 @@
 /**
- * One named thing a row holds, in the neutral pill's look: a holder, a member.
+ * One named thing a row holds, never a state: a holder, a member, a tag.
  *
  * Total over a chip that stands and one that can be taken away. The second
  * ends in a round button whose whole accessible name is its caller's, since
@@ -9,9 +9,10 @@
 
 import type { ReactNode } from "react";
 
-import { pillLookClassName } from "./Pill.tsx";
-
 import "./Chip.css";
+
+/** The chip's look as a class name, for a link drawn as one. */
+export const chipClassName = "chip";
 
 export interface ChipRemoval {
   readonly name: string;
@@ -39,7 +40,7 @@ export function Chip(props: {
 }): ReactNode {
   const removal = props.removal;
   return (
-    <span className={`${pillLookClassName({ tone: "neutral" })} chip`}>
+    <span className={chipClassName}>
       <span className="chip-label">{props.children}</span>
       {removal === undefined ? null : (
         <button

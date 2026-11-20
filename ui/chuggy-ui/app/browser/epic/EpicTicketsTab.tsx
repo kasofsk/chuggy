@@ -1,13 +1,14 @@
 /**
  * The epic page's Tickets tab: its members grouped by where each stands, each
  * group in the order the work will happen, under a box that filters them by
- * number or title. A row is its state's mark, its number and its title, what
- * unfinished it comes after and how many members wait on it, and its state,
- * which on a ready row is the ticket list's dispatch.
+ * number or title. A row is the ticket list's record row: its title, its
+ * number and what unfinished it comes after and how many members wait on it,
+ * and in its foot its state's badge, which on a ready row is the ticket
+ * list's dispatch.
  *
  * On an Active epic a reader who may write epics adds tickets here and takes
- * one out from its row's menu, each one revision sent at the revision the page
- * read; one refused as stale reads the epic again.
+ * one out from the menu at the end of its row's line, each one revision sent
+ * at the revision the page read; one refused as stale reads the epic again.
  */
 
 import { DropdownMenu } from "radix-ui";
@@ -34,23 +35,24 @@ import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketStateStanding } from "../../core/ticketHeader.ts";
 import { ConsoleWriteRefusedWords } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
-import { TicketListState } from "../ProjectTable.tsx";
+import { TicketListEscalation, TicketListState } from "../ProjectTable.tsx";
 import { TicketRowDispatchScope } from "../TicketActions.tsx";
-import { TicketTitleNumber, TicketTitleWords } from "../TicketCells.tsx";
-import {
-  TicketStateMark,
-  TicketStateWord,
-} from "../ticket/TicketStateLabel.tsx";
-import { readValue } from "../ticket/TicketPageHeld.tsx";
+import { TicketTitleNumber, cellAbsent } from "../TicketCells.tsx";
+import { readValue } from "../../core/freshness.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
+import { CountBadge } from "../ui/CountBadge.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Input } from "../ui/Input.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
+import { RecordList, RecordRow } from "../ui/RecordList.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { EpicTicketsAdd } from "./EpicTicketsAdd.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";
+import { EpicTabHeading } from "./EpicTabs.tsx";
 import { useEpicTicketsWriting } from "./epicTicketsWriting.ts";
 
 import "../ProjectTable.css";
+import "./epic.css";
 import "./epicTickets.css";
 
 /** The standing a group's head is drawn by: Running is drawn as work is. */
@@ -83,7 +85,7 @@ function EpicTicketsMeta(props: {
   const blocking = blocks !== undefined && blocks > 0;
   if (after.length === 0 && !blocking) return null;
   return (
-    <p className="epic-tickets-meta">
+    <span className="epic-tickets-meta">
       {after.length === 0 ? null : (
         <span>
           {text({ id: "epics-tickets-after" })}{" "}
@@ -104,20 +106,38 @@ function EpicTicketsMeta(props: {
           })}
         </span>
       ) : null}
-    </p>
+    </span>
   );
 }
 
-/** The member's state as its word, which on a ready row is the ticket list's
- * chip with its dispatch where the reader may dispatch it. */
+/** The member's state as the ticket list's badge, which on a ready row is its
+ * dispatch where the reader may dispatch it; a member the list holds no row
+ * of is drawn as the graph says it stands. */
 function EpicTicketsState(props: {
   readonly partition: PartitionIdentity;
   readonly member: EpicTicketsMember;
 }): ReactNode {
+  const text = useCopyText();
   const { member } = props;
   const { row } = member;
-  const word = <TicketStateWord standing={member.standing} />;
-  if (row === undefined || member.standing !== "Ready") return word;
+  if (row === undefined) {
+    const label = ticketStateLabelOf(member.standing);
+    return (
+      <span className="ticket-list-foot-standing">
+        <span className="ticket-list-standing" data-standing={member.standing}>
+          <StatusBadge tone={label.tone} size="regular">
+            {text(label.word)}
+          </StatusBadge>
+        </span>
+      </span>
+    );
+  }
+  if (member.standing !== "Ready")
+    return (
+      <span className="ticket-list-foot-standing">
+        <TicketListState row={row} />
+      </span>
+    );
   return (
     <TicketRowDispatchScope
       partition={props.partition}
@@ -125,16 +145,14 @@ function EpicTicketsState(props: {
       sequence={row.sequence}
       owner={projectTableRowOwner(row)}
     >
-      {(dispatch, notes) =>
-        dispatch === undefined ? (
-          word
-        ) : (
-          <>
+      {(dispatch, notes) => (
+        <>
+          <div className="ticket-list-notes">{notes}</div>
+          <span className="ticket-list-foot-standing">
             <TicketListState row={row} dispatch={dispatch} />
-            <span className="epic-tickets-notes">{notes}</span>
-          </>
-        )
-      }
+          </span>
+        </>
+      )}
     </TicketRowDispatchScope>
   );
 }
@@ -195,43 +213,33 @@ function EpicTicketsRow(props: {
 }): ReactNode {
   const { partition, member } = props;
   return (
-    <li
-      className="epic-tickets-row"
-      data-ticket={member.ticket}
-      data-standing={member.standing}
-    >
-      <span
-        className="epic-tickets-mark ticket-state-ink"
-        data-tone={ticketStateLabelOf(member.standing).tone}
-      >
-        <TicketStateMark standing={member.standing} />
-      </span>
-      <span className="epic-tickets-number">
-        <TicketTitleNumber partition={partition} ticket={member.ticket} />
-      </span>
-      <div className="epic-tickets-body">
-        <h4 className="epic-tickets-title">
-          <TicketTitleWords
-            partition={partition}
-            ticket={member.ticket}
-            title={member.title}
-          />
-        </h4>
-        <EpicTicketsMeta partition={partition} member={member} />
-      </div>
-      <span className="epic-tickets-state">
-        <EpicTicketsState partition={partition} member={member} />
-      </span>
-      {props.onRemove === undefined ? null : (
-        <span className="epic-tickets-actions">
+    <RecordRow
+      title={member.title ?? cellAbsent}
+      link={{
+        to: "/$tenant/$project/tickets/$ticket",
+        params: { ...partition, ticket: String(member.ticket) },
+      }}
+      level={4}
+      meta={
+        <>
+          <span className="ticket-list-number">{`#${String(member.ticket)}`}</span>
+          {member.row === undefined ? null : (
+            <TicketListEscalation row={member.row} />
+          )}
+          <EpicTicketsMeta partition={partition} member={member} />
+        </>
+      }
+      trailing={
+        props.onRemove === undefined ? undefined : (
           <EpicTicketsRowMenu
             ticket={member.ticket}
             onRemove={props.onRemove}
             busy={props.busy}
           />
-        </span>
-      )}
-    </li>
+        )
+      }
+      foot={<EpicTicketsState partition={partition} member={member} />}
+    />
   );
 }
 
@@ -250,18 +258,16 @@ function EpicTicketsGroupList(props: {
   return (
     <section className="epic-tickets-group" data-group={props.group}>
       <h3 className="epic-tickets-group-head">
-        <span
-          className="epic-tickets-group-mark ticket-state-ink"
-          data-tone={ticketStateLabelOf(standing).tone}
-        >
-          <TicketStateMark standing={standing} />
-        </span>
-        <span>{word}</span>
-        <span className="ticket-tab-count">{count}</span>
+        <StatusBadge tone={ticketStateLabelOf(standing).tone} size="regular">
+          {word}
+        </StatusBadge>
+        <CountBadge
+          count={count}
+          name={text({ id: "epics-tickets-group-count", args: { count } })}
+        />
       </h3>
-      <ul
-        className="epic-tickets-rows"
-        aria-label={text({
+      <RecordList
+        label={text({
           id: "epics-tickets-group",
           args: { word, count: String(count) },
         })}
@@ -281,7 +287,7 @@ function EpicTicketsGroupList(props: {
             }
           />
         ))}
-      </ul>
+      </RecordList>
     </section>
   );
 }
@@ -342,6 +348,7 @@ export function EpicTicketsTab(): ReactNode {
       className="epic-tickets"
       aria-label={text({ id: "epics-tab-tickets" })}
     >
+      <EpicTabHeading tab="epics-tab-tickets" />
       <EpicTicketsBar typed={typed} onTyped={setTyped}>
         {changing ? (
           <EpicTicketsAdd

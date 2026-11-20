@@ -39,11 +39,13 @@ import {
 import { PanelUnready } from "../DataPanel.tsx";
 import { Disclosure } from "../ui/Disclosure.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { Copy } from "../../core/copy.ts";
 
-/** A command's end as the one word its pill says. */
+import "../ExecutionArtifacts.css";
+
+/** A command's end as the one word its badge says. */
 function runCommandEndLabel(end: RunCommandEnd): Copy {
   switch (end) {
     case "Passed":
@@ -123,9 +125,9 @@ function RunResultCommand(props: {
   const text = useCopyText();
   return (
     <li className="flex flex-wrap items-baseline gap-2" data-end={command.end}>
-      <Pill tone={runCommandTone(command.end)}>
+      <StatusBadge tone={runCommandTone(command.end)} size="small">
         {text(runCommandEndLabel(command.end))}
-      </Pill>
+      </StatusBadge>
       <Disclosure
         open={shown}
         onOpenChange={setShown}

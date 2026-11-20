@@ -191,6 +191,13 @@ import {
   proposalMergeRefusals,
 } from "./rosters.ts";
 import { accessProjectRoles } from "./accessPlane.ts";
+import {
+  themeChoiceSchema,
+  themeDocumentSchema,
+  themeLayers,
+  themeNumberSchema,
+  themesOwnedMax,
+} from "./appearance.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
   z.array(item).max(nativeHttpPageItemsMax);
@@ -211,8 +218,15 @@ export const namedProjectSchema = z.strictObject({
 });
 export type NamedProject = z.infer<typeof namedProjectSchema>;
 
+/** A project as the inventory lists it: named, and the artifact it names its icon where it names one. */
+export const inventoryProjectSchema = z.strictObject({
+  ...namedProjectSchema.shape,
+  icon: identitySchema.optional(),
+});
+export type InventoryProject = z.infer<typeof inventoryProjectSchema>;
+
 export const projectInventoryResponseSchema = z.strictObject({
-  projects: page(namedProjectSchema),
+  projects: page(inventoryProjectSchema),
   nextCursor: z.string().optional(),
 });
 export type ProjectInventoryResponse = z.infer<
@@ -2816,6 +2830,58 @@ export const agentAccountsResponseSchema = z.strictObject({
   accounts: z.array(agentAccountSchema).length(accountAgents.length),
 });
 export type AgentAccountsResponse = z.infer<typeof agentAccountsResponseSchema>;
+
+/** One theme of the caller's own: the number it is known by and its document. */
+export const ownedThemeSchema = z.strictObject({
+  theme: themeNumberSchema,
+  document: themeDocumentSchema,
+});
+export type OwnedThemeResponse = z.infer<typeof ownedThemeSchema>;
+
+/** Every theme of the caller's own, by number ascending. */
+export const ownedThemesResponseSchema = z.strictObject({
+  themes: z.array(ownedThemeSchema).max(themesOwnedMax),
+});
+export type OwnedThemesResponse = z.infer<typeof ownedThemesResponseSchema>;
+
+/** The caller's own global theme choice, absent where they hold none. */
+export const themeChoiceResponseSchema = z.strictObject({
+  choice: themeChoiceSchema.optional(),
+});
+export type ThemeChoiceResponse = z.infer<typeof themeChoiceResponseSchema>;
+
+/** A project's default theme, absent where it names none, and whether this caller may change it. */
+export const projectThemeResponseSchema = z.strictObject({
+  document: themeDocumentSchema.optional(),
+  administers: z.boolean(),
+});
+export type ProjectThemeResponse = z.infer<typeof projectThemeResponseSchema>;
+
+/**
+ * The theme a project wears for the caller, the layer it came from, and each
+ * layer's own value, absent where it names none or names a theme that no
+ * longer exists, which resolves as that layer unset.
+ */
+export const projectAppearanceResponseSchema = z.strictObject({
+  theme: themeDocumentSchema,
+  layer: z.enum(themeLayers),
+  layers: z.strictObject({
+    override: themeChoiceSchema.optional(),
+    projectDefault: themeDocumentSchema.optional(),
+    global: themeChoiceSchema.optional(),
+  }),
+});
+export type ProjectAppearanceResponse = z.infer<
+  typeof projectAppearanceResponseSchema
+>;
+
+/** The artifacts a project names its icon and its banner, each absent where it names none, and whether this caller may change them. */
+export const projectImagesResponseSchema = z.strictObject({
+  icon: identitySchema.optional(),
+  banner: identitySchema.optional(),
+  administers: z.boolean(),
+});
+export type ProjectImagesResponse = z.infer<typeof projectImagesResponseSchema>;
 
 /**
  * What retiring a credential of the caller's own account is refused with while

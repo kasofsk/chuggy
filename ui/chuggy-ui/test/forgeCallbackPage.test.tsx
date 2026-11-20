@@ -8,7 +8,6 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { ReactNode } from "react";
 
 import { ForgeCallbackPage } from "../app/browser/ForgeCallbackPage.tsx";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
@@ -21,6 +20,7 @@ import {
   settled,
   turned,
 } from "./screenHarness.tsx";
+import { centeredPageSaid } from "./centeredPageDrawn.ts";
 import type { DrawnStrict, SentRequest } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -41,11 +41,8 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   },
 }));
 
-vi.mock("@tanstack/react-router", () => ({
-  createLink: (component: unknown) => component,
-  Link: (props: { readonly to: string; readonly children?: ReactNode }) => (
-    <a href={props.to}>{props.children}</a>
-  ),
+vi.mock("@tanstack/react-router", async () => ({
+  ...(await import("./routerLinkStubbed.tsx")),
   useSearch: () => held.arrived,
   useNavigate: () => (to: unknown) => {
     held.navigated.push(to);
@@ -197,12 +194,15 @@ test("a matching state redeems the code once, for the stored tenant, with the st
 });
 
 /** The accounts page returned to is what says an account connected, so this
- * page says Connecting and nothing else. */
+ * page says it is connecting and nothing else. */
 test("a redeemed authorization replaces this address with where it started, drawing no account and holding no word", async () => {
   await drawCallback();
   expect(held.navigated.at(-1)).toStrictEqual(returned);
   expect(heldWord()).toBeNull();
-  expect(screen.getByRole("main").textContent).toBe("GitHubConnecting");
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "Connecting GitHub",
+    actions: [],
+  });
 });
 
 /** The install comes back through the setup landing, which matches the state on
@@ -221,7 +221,10 @@ test("an authorization reaching no account goes on to the portal's install, hold
   expect(sent.map((request) => request.method)).toStrictEqual(["POST", "GET"]);
   expect(held.navigated).not.toContainEqual(returned);
   expect(heldWord()).toBeNull();
-  expect(screen.getByRole("main").textContent).toBe("GitHubConnecting");
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "Connecting GitHub",
+    actions: [],
+  });
 });
 
 test("an account claimed without the worker app goes on to the worker's install", async () => {
@@ -463,10 +466,14 @@ test("a code the forge spent before it could be read returns with Start again", 
   });
 });
 
-test("a person who declined at the forge returns with Declined and nothing is posted", async () => {
+test("a person who declined at the forge returns with Declined, on the landing's frame, and nothing is posted", async () => {
   held.arrived = { error: "access_denied", state: "a-state" };
   expect((await drawCallback()).sent).toStrictEqual([]);
   expect(held.navigated).toStrictEqual([returned]);
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "Back from GitHub",
+    actions: [],
+  });
   expect(heldWord()).toMatchObject({
     standing: "Unfinished",
     status: "Declined",
@@ -477,7 +484,10 @@ test("a state that is not this tab's redeems nothing, stays and links home", asy
   held.arrived = { ...held.arrived, state: "someone-else" };
   const { sent } = await drawCallback();
   expect(sent).toStrictEqual([]);
-  expect(screen.getByText("Not expected")).toBeTruthy();
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "GitHub sent you back unexpectedly",
+    actions: ["Home"],
+  });
   expect(
     screen.getByRole<HTMLAnchorElement>("link", { name: "Home" }).pathname,
   ).toBe("/");
@@ -488,7 +498,10 @@ test("a state that is not this tab's redeems nothing, stays and links home", asy
 test("a callback carrying no state redeems nothing", async () => {
   held.arrived = { code: "a-code" };
   expect((await drawCallback()).sent).toStrictEqual([]);
-  expect(screen.getByText("Not expected")).toBeTruthy();
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "GitHub sent you back unexpectedly",
+    actions: ["Home"],
+  });
 });
 
 /** A reload is the same address opened a second time, with the transaction
@@ -498,7 +511,10 @@ test("the transaction is spent, and the callback opened again redeems nothing", 
   expect(sessionStorage.getItem(forgeAuthorizeTransactionKey)).toBeNull();
   cleanup();
   expect((await drawCallback()).sent).toStrictEqual([]);
-  expect(screen.getByText("Not expected")).toBeTruthy();
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "GitHub sent you back unexpectedly",
+    actions: ["Home"],
+  });
 });
 
 test("the code is posted once however often the page is drawn", async () => {
@@ -506,7 +522,11 @@ test("the code is posted once however often the page is drawn", async () => {
   landed.redraw();
   await settled();
   expect(posts(landed.sent)).toHaveLength(1);
-  expect(screen.queryByText("Not expected")).toBeNull();
+  expect(
+    screen.queryByRole("heading", {
+      name: "GitHub sent you back unexpectedly",
+    }),
+  ).toBeNull();
 });
 
 test("a press is sent on once however often the page is drawn", async () => {

@@ -40,46 +40,9 @@
     background: var(--surface-1);
   }
 
-  /* Each tone a mark, a word, a wash and an edge are drawn in. */
-  .epic-graph [data-tone] {
-    --epic-tone: var(--ink-3);
-    --epic-wash: var(--surface-1);
-  }
-
-  .epic-graph [data-tone="pass"] {
-    --epic-tone: var(--tone-pass);
-    --epic-wash: var(--wash-pass);
-  }
-
-  .epic-graph [data-tone="queued"] {
-    --epic-tone: var(--tone-queued);
-    --epic-wash: var(--wash-queued);
-  }
-
-  .epic-graph [data-tone="live"] {
-    --epic-tone: var(--tone-live);
-    --epic-wash: var(--wash-live);
-  }
-
-  .epic-graph [data-tone="evaluation"] {
-    --epic-tone: var(--tone-evaluation);
-    --epic-wash: var(--wash-evaluation);
-  }
-
-  .epic-graph [data-tone="finalization"] {
-    --epic-tone: var(--tone-finalization);
-    --epic-wash: var(--wash-finalization);
-  }
-
-  .epic-graph [data-tone="parked"] {
-    --epic-tone: var(--tone-parked);
-    --epic-wash: var(--wash-parked);
-  }
-
   .epic-graph-mark {
     display: inline-flex;
     flex: none;
-    color: var(--epic-tone);
   }
 
   /* The bar over the graph: the key with its counts, and the toggles. */
@@ -288,11 +251,6 @@
     border-color: var(--edge-control);
   }
 
-  .epic-card-button:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
-  }
-
   .epic-card[data-standing="Done"] .epic-card-button {
     border-color: color-mix(in srgb, var(--tone-pass) 35%, var(--edge));
     background: var(--wash-pass);
@@ -346,6 +304,12 @@
     box-shadow: 0 0 0 var(--hairline) var(--ink-1);
   }
 
+  @media (forced-colors: active) {
+    .epic-card .epic-card-button[aria-pressed="true"] {
+      border-color: var(--forced-current);
+    }
+  }
+
   /* Out of the chain of the ticket in focus. */
   .epic-card[data-dim] .epic-card-button {
     border-color: var(--edge);
@@ -353,11 +317,11 @@
     color: var(--ink-3);
   }
 
-  .epic-card[data-dim] :is(.epic-card-mark, .epic-card-number) {
+  .epic-card[data-dim] .epic-card-number {
     color: var(--ink-3);
   }
 
-  .epic-card[data-dim] .epic-card-ports {
+  .epic-card[data-dim] :is(.epic-card-mark, .epic-card-ports) {
     opacity: 0.4;
   }
 
@@ -390,6 +354,12 @@
     background: var(--tone-pass);
   }
 
+  @media (forced-colors: active) {
+    .epic-card-port[data-met] {
+      background: var(--forced-ink);
+    }
+  }
+
   /* A port a strong line lands on. */
   .epic-card-port[data-lit] {
     outline: var(--hairline) solid var(--ink-1);
@@ -412,7 +382,6 @@
   .epic-card-mark {
     display: inline-flex;
     flex: none;
-    color: var(--epic-tone);
   }
 
   .epic-card-number {
@@ -478,9 +447,8 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .epic-graph-side-word {
+  .epic-graph-side-head > .status-badge {
     margin-inline-start: auto;
-    color: var(--epic-tone);
   }
 
   .epic-graph-side-title {
@@ -558,11 +526,6 @@
     background: var(--surface-0);
   }
 
-  .epic-graph-side-ticket:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
-  }
-
   .epic-graph-side-actions {
     display: flex;
     flex-wrap: wrap;
@@ -616,9 +579,8 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .epic-graph-sheet-word {
-    flex: 1;
-    color: var(--epic-tone);
+  .epic-graph-sheet-head > .status-badge {
+    margin-inline-end: auto;
   }
 
   .epic-graph-sheet-title {
@@ -667,15 +629,6 @@
     cursor: pointer;
   }
 
-  .epic-graph-sheet-pill:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
-  }
-
-  .epic-graph-sheet-pill .epic-graph-mark {
-    color: var(--epic-tone);
-  }
-
   .epic-graph-sheet-foot {
     display: flex;
     flex-wrap: wrap;
@@ -684,12 +637,35 @@
     gap: var(--space-2);
   }
 
-  /* At phone width the graph takes the screen, the selected ticket rising
-     in the sheet, and a layer's cards stand two to a row. */
-  @media (max-width: 40em) {
+  /* The way to the Tickets tab, drawn only where the page is narrow. */
+  .epic-graph-as-list {
+    display: none;
+    margin: 0;
+    font-size: var(--text-sm);
+  }
+
+  /* Where the page is narrow the graph takes its width, the side panel under
+     it where the screen is wide enough to draw one rather than the sheet.
+     The drawing keeps a layer's cards in one row at a card's width and pans
+     sideways inside its box; it never scrolls up or down itself, so a swipe
+     up or down scrolls the page. */
+  @container page (max-width: 40em) {
     .epic-graph {
       grid-template-columns: minmax(0, 1fr);
-      grid-template-areas: "graph";
+      grid-template-areas: none;
+    }
+
+    .epic-graph-panel,
+    .epic-graph-side {
+      grid-area: auto;
+    }
+
+    .epic-graph-panel {
+      order: -1;
+    }
+
+    .epic-graph-as-list {
+      display: block;
     }
 
     .epic-graph-toggles .epic-graph-key-count {
@@ -700,21 +676,30 @@
       margin-inline-start: 0;
     }
 
+    .epic-graph-pan {
+      overflow-x: auto;
+      overflow-y: hidden;
+      overscroll-behavior-x: contain;
+    }
+
+    .epic-graph-drawing {
+      width: max-content;
+      min-width: 100%;
+    }
+
     .epic-graph-layers {
       padding-inline: var(--space-2);
     }
 
     .epic-graph-cards {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      flex-wrap: nowrap;
     }
 
-    .epic-graph-cards[data-goal] {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    .epic-graph-cards > li {
-      min-width: 0;
+    .epic-graph-cards > li,
+    .epic-graph-cards[data-goal] > li {
+      flex: none;
+      width: var(--width-epic-graph-card);
+      max-width: none;
     }
   }
 }

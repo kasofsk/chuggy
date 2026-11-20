@@ -957,7 +957,7 @@ const roster: {
     })),
     {
       report: "Bind",
-      opened: `${site}/acme/widgets/repositories?repository=acme-org%2Fwidgets&from=setup#add`,
+      opened: `${site}/acme/widgets/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add`,
       openBefore: false,
       repository: undefined,
       answered: undefined,
@@ -2983,7 +2983,7 @@ test("a bind whose wait ran out before GitHub was done says so, says the page it
   const lines = setupReportLines(waited, machineScript, copyTextEn);
   const alone = setupReportLines(waited.checklist, machineScript, copyTextEn);
   expect(lines.slice(1, 3)).toEqual([
-    `did: opened ${site}/acme/widgets/repositories?repository=acme-org%2Fwidgets&from=setup#add in a browser`,
+    `did: opened ${site}/acme/widgets/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add in a browser`,
     "found: the wait ended before GitHub let both apps into this folder's repository",
   ]);
   expect(lines.slice(3, -2)).toEqual(alone.slice(1, -2));

@@ -31,6 +31,8 @@ import { RunnerSteps } from "./RunnerSteps.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { ToggleGroup } from "./ui/ToggleGroup.tsx";
 
+import "./RunnerMint.css";
+
 const runnerPackageNames = Object.keys(runnerPackages) as RunnerPackageName[];
 
 /** The machine a runner or a chat host is made of. */
@@ -191,7 +193,7 @@ function RunnerAskForm(props: { readonly minting: RunnerMinting }): ReactNode {
   return (
     <form
       aria-label={text({ id: "runners-ask-aria" })}
-      className="grid min-w-0 justify-items-start gap-3"
+      className="runner-mint grid min-w-0 justify-items-start gap-3"
       onSubmit={(event) => {
         event.preventDefault();
         const read = runnerAskRead(chosen, host, typed);

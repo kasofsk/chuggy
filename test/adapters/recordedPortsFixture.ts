@@ -63,5 +63,7 @@ export function recordedPorts(
     port("proposalMerges"),
     port("accessTokens"),
     port("connectors"),
+    port("appearance"),
+    { themes: port("projectAppearance"), images: port("projectImages") },
   ];
 }

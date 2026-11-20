@@ -37,13 +37,13 @@ import type { EpicTicketsMember } from "../../core/epicTickets.ts";
 import { instantFigure } from "../../core/figures.ts";
 import { projectTableRow } from "../../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../../core/projectTableRows.ts";
-import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
-import { readValue } from "../ticket/TicketPageHeld.tsx";
-import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
+import { readValue } from "../../core/freshness.ts";
+import { TicketStateLabel } from "../ticket/TicketStateLabel.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { EpicActor } from "./EpicHistoryTab.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";
+import { EpicTabHeading } from "./EpicTabs.tsx";
 import type { EpicPageHeld } from "./EpicPageHeld.tsx";
 
 import "../ticket/ticket.css";
@@ -63,12 +63,9 @@ function EpicOverviewTicket(props: {
         to="/$tenant/$project/tickets/$ticket"
         params={{ ...props.partition, ticket: String(member.ticket) }}
       >
-        <span
-          className="epic-overview-ticket-mark ticket-state-ink"
-          data-tone={ticketStateLabelOf(member.standing).tone}
-        >
-          <TicketStateMark standing={member.standing} />
-        </span>
+        <span className="epic-overview-ticket-mark">
+          <TicketStateLabel standing={member.standing} size="small" compact />
+        </span>{" "}
         <span className="epic-overview-ticket-title">
           <span className="epic-overview-ticket-number">#{member.ticket}</span>{" "}
           {member.title}
@@ -415,20 +412,23 @@ export function EpicOverviewTab(): ReactNode {
   const view = readValue(held.epicState);
   if (view === undefined) return null;
   return (
-    <div className="epic-overview">
-      <EpicOverviewAside held={held} view={view} />
-      <section
-        className="epic-overview-description"
-        aria-label={text({ id: "epics-overview-description" })}
-      >
-        {view.description === "" ? (
-          <p className="epic-overview-none">
-            {text({ id: "epics-overview-no-description" })}
-          </p>
-        ) : (
-          <MarkdownReport text={view.description} bare />
-        )}
-      </section>
-    </div>
+    <>
+      <EpicTabHeading tab="epics-tab-overview" />
+      <div className="epic-overview">
+        <EpicOverviewAside held={held} view={view} />
+        <section
+          className="epic-overview-description"
+          aria-label={text({ id: "epics-overview-description" })}
+        >
+          {view.description === "" ? (
+            <p className="epic-overview-none">
+              {text({ id: "epics-overview-no-description" })}
+            </p>
+          ) : (
+            <MarkdownReport text={view.description} bare />
+          )}
+        </section>
+      </div>
+    </>
   );
 }

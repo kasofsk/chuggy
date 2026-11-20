@@ -200,7 +200,7 @@ export function finalizationUnavailableKindLabel(
   }
 }
 
-/** Where one landing stands, as the one word its pill says. */
+/** Where one landing stands, as the one word its badge says. */
 export function ticketLandingStateLabel(state: TicketLandingState): Copy {
   switch (state) {
     case "Running":
@@ -824,9 +824,6 @@ export function resumeActionEffect(
   }
 }
 
-/** What the edit screen does, which is revise the draft and release it again. */
-export const ticketEditEffect: Copy = { id: "codes-edit-effect" };
-
 /** An answer a ticket offers, in the word its button says. */
 export function ticketActionLabel(action: TicketActionName): Copy {
   switch (action) {
@@ -1066,7 +1063,7 @@ export function operationFailureLabel(failure: ApiFailure): Copy {
   }
 }
 
-/** The word an abandoned follow is drawn as, and what hovering it says. */
+/** The word an abandoned follow is drawn as, and what is said after it. */
 export interface AbandonWords {
   readonly word: Copy;
   readonly detail?: CopyOrData;
@@ -1074,7 +1071,7 @@ export interface AbandonWords {
 
 /**
  * The word an abandoned follow is drawn as, and the detail a reader reporting
- * it reads on hover. The switch is total over the cause, so a cause gained
+ * it reads after the word. The switch is total over the cause, so a cause gained
  * does not compile until it has a word.
  */
 export function operationAbandonWords(

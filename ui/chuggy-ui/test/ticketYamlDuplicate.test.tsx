@@ -37,6 +37,7 @@ import {
   creationPartition,
 } from "./ticketCreationFixture.ts";
 import { ticketReleasing } from "./ticketReleasing.tsx";
+import { disclosed } from "./creationMore.ts";
 
 vi.mock(
   "../app/browser/editor/TicketEditor.tsx",
@@ -131,8 +132,11 @@ test("a new ticket's kept copy is there, unchanged, after a duplicate is opened,
   draw(held.ports, created, duplicate);
 
   expect(
-    screen.getByPlaceholderText<HTMLInputElement>("what this ticket is called")
-      .value,
+    disclosed(() =>
+      screen.getByPlaceholderText<HTMLInputElement>(
+        "what this ticket is called",
+      ),
+    ).value,
   ).toBe("Ship it");
   fireEvent.click(screen.getByRole("radio", { name: "YAML" }));
   const editor = await yamlBox();

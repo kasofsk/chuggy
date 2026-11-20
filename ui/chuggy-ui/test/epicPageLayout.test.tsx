@@ -15,6 +15,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { nativeHttpPageItemsMax } from "../../../src/contract/http.ts";
 
+import { ConsoleWriteToasts } from "../app/browser/consoleWrite.tsx";
 import { EpicGraphTab } from "../app/browser/epic/EpicGraphTab.tsx";
 import { EpicHistoryTab } from "../app/browser/epic/EpicHistoryTab.tsx";
 import { EpicOverviewTab } from "../app/browser/epic/EpicOverviewTab.tsx";
@@ -57,15 +58,15 @@ test("the tabs are links to the epic's four addresses, Tickets counting its memb
     tabs
       .getAllByRole("link")
       .map((link) => [
-        link.textContent,
-        link.querySelector(".ticket-tab-count")?.textContent,
+        link.firstChild?.textContent,
+        link.querySelector('.count-badge [aria-hidden="true"]')?.textContent,
         link.getAttribute("href"),
       ]),
   ).toStrictEqual([
     ["Overview", undefined, epicPath],
-    ["Tickets2", "2", `${epicPath}/tickets`],
+    ["Tickets", "2", `${epicPath}/tickets`],
     ["Graph", undefined, `${epicPath}/graph`],
-    ["History3", "3", `${epicPath}/history`],
+    ["History", "3", `${epicPath}/history`],
   ]);
 });
 
@@ -100,7 +101,7 @@ test("the overview draws the description and neither the graph nor the summary",
 });
 
 function header(): HTMLElement {
-  const drawn = document.querySelector<HTMLElement>("header.ticket-header");
+  const drawn = document.querySelector<HTMLElement>("header.page-header");
   if (drawn === null) throw new Error("the header is drawn");
   return drawn;
 }
@@ -118,6 +119,23 @@ test("the header draws the title, the status, the summary under them and the bar
     within(header()).getByRole("progressbar", { name: "1 of 2 done" }),
   ).toBeTruthy();
   expect(within(header()).queryByText("Archived")).toBeNull();
+});
+
+test("the page holds one top heading: the epic's title once it is read, and the page's name while it is not", async () => {
+  await epicPageDrawn(abilitiesNone);
+  expect(
+    screen
+      .getAllByRole("heading", { level: 1 })
+      .map((heading) => heading.textContent),
+  ).toStrictEqual(["Billing #7"]);
+  cleanup();
+  epicServing.view = { refused: true };
+  await epicPageDrawn(abilitiesNone);
+  expect(
+    screen
+      .getAllByRole("heading", { level: 1 })
+      .map((heading) => heading.textContent),
+  ).toStrictEqual(["Epic"]);
 });
 
 test("the header draws neither the tickets outside the epic it waits on nor its revision, which the Overview draws", async () => {
@@ -159,7 +177,7 @@ async function menuOpened(): Promise<HTMLElement> {
   return screen.getByRole("menu");
 }
 
-test("an archived epic says so beside its title and offers to reactivate it", async () => {
+test("an archived epic says so beside its status and offers to reactivate it", async () => {
   epicServing.view = { ...epicView, visibility: "Archived" };
   await epicPageDrawn(abilitiesEvery);
   expect(within(header()).getByText("Archived")).toBeTruthy();
@@ -188,6 +206,33 @@ test("the menu's Archive asks first, then revises the epic archived at the revis
     expected: 3,
     content: { visibility: "Archived", tickets: [4, 5] },
   });
+});
+
+test("an archive that lands says so in a success toast, since its question and its menu have closed", async () => {
+  await epicPageDrawn(abilitiesEvery, {
+    written: () => answer({ epic: 7, revision: 4 }),
+    tab: (
+      <>
+        <EpicOverviewTab />
+        <ConsoleWriteToasts />
+      </>
+    ),
+  });
+  fireEvent.click(
+    within(await menuOpened()).getByRole("menuitem", { name: "Archive" }),
+  );
+  await settled();
+  fireEvent.click(
+    within(
+      screen.getByRole("dialog", { name: "Archive this epic?" }),
+    ).getByRole("button", { name: "Archive" }),
+  );
+  await settled();
+  const toast = document.querySelector(".toast");
+  expect(toast?.getAttribute("data-tone")).toBe("Success");
+  expect(toast?.querySelector(".toast-line")?.textContent).toBe(
+    "Epic 7 archived",
+  );
 });
 
 test("a reader who may not write is offered no edit and no archive", async () => {
@@ -222,7 +267,7 @@ test("the notes link the escalated member", async () => {
 test("the sticky bar holding the status and the title shows once the header has scrolled away", async () => {
   const report = intersectionObserverStubbed();
   await epicPageDrawn(abilitiesNone);
-  const bar = document.querySelector<HTMLElement>(".ticket-sticky-bar");
+  const bar = document.querySelector<HTMLElement>(".page-header-sticky-bar");
   expect(bar?.hidden).toBe(true);
   act(() => {
     report(false);
@@ -236,13 +281,18 @@ function memberRows(): readonly HTMLElement[] {
   return [
     ...screen
       .getByRole("region", { name: "Tickets" })
-      .querySelectorAll<HTMLElement>("li[data-ticket]"),
+      .querySelectorAll<HTMLElement>("li.record-list-item"),
   ];
 }
 
+/** The row whose title links to the ticket. */
 function memberRow(ticket: number): HTMLElement {
   const row = memberRows().find(
-    (drawn) => drawn.dataset["ticket"] === String(ticket),
+    (drawn) =>
+      drawn
+        .querySelector(".record-row-title a")
+        ?.getAttribute("href")
+        ?.endsWith(`/tickets/${String(ticket)}`) === true,
   );
   if (row === undefined) throw new Error(`#${String(ticket)} has a row`);
   return row;
@@ -290,6 +340,21 @@ test("a draft member, which has no row, is drawn by its title and the graph's wo
   const draft = memberRow(6);
   expect(draft.textContent).toContain("Ledger");
   expect(draft.textContent).toContain("Draft");
+});
+
+test("each group of the Tickets tab is headed by its word and a count naming what it counts", async () => {
+  epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
+  await epicPageDrawn(abilitiesNone, { tab: <EpicTicketsTab /> });
+  const groups = screen
+    .getAllByRole("heading", { level: 3 })
+    .map((heading) => [
+      heading.querySelector(".count-badge [aria-hidden]")?.textContent,
+      heading.querySelector(".count-badge .visually-hidden")?.textContent,
+    ]);
+  expect(groups).toStrictEqual([
+    ["1", "1 ticket"],
+    ["1", "1 ticket"],
+  ]);
 });
 
 test("the Tickets tab of an epic holding none says so", async () => {

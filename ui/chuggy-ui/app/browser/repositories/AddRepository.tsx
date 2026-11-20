@@ -457,19 +457,16 @@ export function AddRepository(props: {
   readonly asked: RepositoryConnectAsked;
   /** The word the person came back from the forge with, where they did. */
   readonly returned: ForgeReturnWord | undefined;
-  /** The page's own state, because the page opens this from more than its trigger. */
+  /** The page's own state, because the page draws the presses that open it. */
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   /** Told of a bind the route accepted, the picker staying open over what it came to. */
   readonly onBound: () => void;
 }): ReactNode {
   const text = useCopyText();
-  const add = text({ id: "repositories-add" });
   return (
     <Dialog
-      title={add}
-      trigger={add}
-      triggerDisabled={!props.addable}
+      title={text({ id: "repositories-add" })}
       open={props.open && props.addable}
       onOpenChange={props.onOpenChange}
     >

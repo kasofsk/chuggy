@@ -20,9 +20,10 @@ import { epicGraphTitledOf } from "../../core/epicGraphLayers.ts";
 import type { LandingQueuePlace } from "../../core/landingQueues.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import { LandingQueueChip } from "../ticket/LandingQueueChip.tsx";
-import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
+import { TicketStateLabel } from "../ticket/TicketStateLabel.tsx";
 
 import "./epicGraph.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 /** A dependency's dot along a card's top. */
 export interface EpicGraphPort {
@@ -86,7 +87,7 @@ function EpicGraphCardHead(props: {
   return (
     <span className="epic-card-head">
       <span className="epic-card-mark">
-        <TicketStateMark standing={standing} />
+        <TicketStateLabel standing={standing} size="small" compact />
       </span>
       <span className="epic-card-number">{String(node.ticket)}</span>
       {props.kicker === undefined ? null : (
@@ -201,36 +202,37 @@ export function EpicGraphCard(props: {
       data-step={drawn.step}
       data-goal={drawn.goal ? "" : undefined}
     >
-      <button
-        type="button"
-        className="epic-card-button"
-        aria-pressed={drawn.selected}
-        aria-label={text({
-          id: node.member ? "epics-card" : "epics-card-outside",
-          args: {
-            ticket,
-            title,
-            state: text(label.word),
-            done: met,
-            count: props.ports.length,
-          },
-        })}
-        title={title}
-        {...handlers}
-      >
-        <EpicGraphCardPorts ports={props.ports} />
-        <EpicGraphCardHead
-          ticket={props.ticket}
-          kicker={kicker}
-          place={props.place}
-        />
-        <span className="epic-card-title">{titled.rest}</span>
-        <EpicGraphCardFoot
-          drawn={drawn}
-          done={met}
-          count={props.ports.length}
-        />
-      </button>
+      <Tooltip trigger="control" text={title}>
+        <button
+          type="button"
+          className="epic-card-button"
+          aria-pressed={drawn.selected}
+          aria-label={text({
+            id: node.member ? "epics-card" : "epics-card-outside",
+            args: {
+              ticket,
+              title,
+              state: text(label.word),
+              done: met,
+              count: props.ports.length,
+            },
+          })}
+          {...handlers}
+        >
+          <EpicGraphCardPorts ports={props.ports} />
+          <EpicGraphCardHead
+            ticket={props.ticket}
+            kicker={kicker}
+            place={props.place}
+          />
+          <span className="epic-card-title">{titled.rest}</span>
+          <EpicGraphCardFoot
+            drawn={drawn}
+            done={met}
+            count={props.ports.length}
+          />
+        </button>
+      </Tooltip>
     </div>
   );
 }

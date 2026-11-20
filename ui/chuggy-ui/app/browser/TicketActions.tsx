@@ -26,6 +26,7 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import type { MutationKey, QueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
@@ -98,15 +99,15 @@ import {
 } from "./ticketAttempts.ts";
 import type { TicketAttemptPress } from "./ticketAttempts.ts";
 import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
-import { TicketEditOffer } from "./ticket/TicketEditOffer.tsx";
 import { TicketActionConfirm } from "./ticket/TicketActionConfirm.tsx";
 import { ApprovalRejectDialog } from "./ticket/TicketApprovals.tsx";
 import { TicketHeaderMenu } from "./ticket/TicketHeaderMenu.tsx";
-import { TicketTake } from "./ticket/TicketTake.tsx";
+import { useTicketTake } from "./ticket/TicketTake.tsx";
+import type { MoreMenuItem } from "./ui/MoreMenu.tsx";
 import { OfferedAction } from "./ui/OfferedAction.tsx";
 import { Button, ButtonLink } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
-import { Tooltip } from "./ui/Tooltip.tsx";
+import { WordDetail } from "./ui/WordDetail.tsx";
 import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { copyOrDataText } from "../core/copy.ts";
@@ -126,9 +127,7 @@ function StepNote(props: {
   const tone = drawn.wrong ? "danger" : drawn.settled ? "info" : "live";
   return (
     <Notice tone={tone} inline role="status">
-      <Tooltip text={drawn.detail}>
-        <span>{text(drawn.text)}</span>
-      </Tooltip>
+      <WordDetail word={text(drawn.text)} detail={drawn.detail} />
     </Notice>
   );
 }
@@ -422,75 +421,129 @@ function ticketCancelWrite(
   };
 }
 
-/** What the machine charges for, said before it is pressed, the first action
- * drawn being the primary one, Dispatch asking before it submits, and Reject
- * asking for the feedback it is sent with. A
- * resume's effect names the exits it leaves, which are every action offered
- * and not only the ones drawn beside it. */
-function ActionButtons(props: {
+/** Whether a press of the action asks before it submits: Dispatch to be
+ * sure, and Reject for the feedback it is sent with. */
+function ticketActionAsks(action: TicketAction): boolean {
+  return action.action === "Dispatch" || action.action === "Reject";
+}
+
+/** What a header's actions share: the ticket, what answering each would do,
+ * and the one of them whose question is open. A resume's effect names the
+ * exits it leaves, which are every action offered and not only the ones
+ * drawn beside it. */
+interface TicketHeaderPressing {
   readonly ticket: number;
-  readonly actions: readonly TicketAction[];
   readonly exits: readonly TicketActionName[];
-  readonly busy: boolean;
   readonly resume: ResumeOffer;
+  readonly busy: boolean;
+  readonly asking: TicketActionName | undefined;
+  readonly onAsking: (asking: TicketActionName | undefined) => void;
   readonly onChoose: (action: TicketAction) => void;
+}
+
+/** The press of `action`: its question, where it asks one, or its submission. */
+function ticketHeaderPress(
+  pressing: TicketHeaderPressing,
+  action: TicketAction,
+): () => void {
+  return ticketActionAsks(action)
+    ? () => {
+        pressing.onAsking(action.action);
+      }
+    : () => {
+        pressing.onChoose(action);
+      };
+}
+
+/** The question a press of `action` opens before it submits, where it opens
+ * one, wherever the press was drawn. */
+function TicketActionAsk(props: {
+  readonly pressing: TicketHeaderPressing;
+  readonly action: TicketAction;
 }): ReactNode {
-  const [asking, setAsking] = useState<TicketActionName | undefined>(undefined);
+  const { pressing, action } = props;
   const text = useCopyText();
-  return props.actions.map((action, index) => {
-    const effect = ticketActionEffect(action.action, props.resume, props.exits);
-    const asks = action.action === "Dispatch" || action.action === "Reject";
-    const chosen = (): void => {
-      props.onChoose(action);
-    };
+  const open = pressing.asking === action.action;
+  const opened = (next: boolean): void => {
+    pressing.onAsking(next ? action.action : undefined);
+  };
+  if (action.action === "Reject")
     return (
-      <OfferedAction
-        key={nativeActionAnswerKey(action)}
-        action={text(ticketActionLabel(action.action))}
-        effect={text(effect.effect)}
-        {...(effect.more === undefined ? {} : { more: text(effect.more) })}
-        {...(effect.refusedBecause === undefined
-          ? {}
-          : { refusedBecause: effect.refusedBecause })}
-        offered={effect.offered}
-        busy={props.busy}
-        primary={index === 0}
-        onChoose={
-          asks
-            ? () => {
-                setAsking(action.action);
-              }
-            : chosen
-        }
-      >
-        {action.action === "Reject" ? (
-          <ApprovalRejectDialog
-            offer={action}
-            open={asking === action.action}
-            onOpenChange={(open) => {
-              setAsking(open ? action.action : undefined);
-            }}
-            onReject={props.onChoose}
-          />
-        ) : asks ? (
-          <TicketActionConfirm
-            title={text({
-              id: "ticket-dispatch-confirm-title",
-              args: { number: String(props.ticket) },
-            })}
-            confirm={text(ticketActionLabel("Dispatch"))}
-            open={asking === action.action}
-            onOpenChange={(open) => {
-              setAsking(open ? action.action : undefined);
-            }}
-            onConfirm={chosen}
-          >
-            {text(effect.effect)}
-          </TicketActionConfirm>
-        ) : null}
-      </OfferedAction>
+      <ApprovalRejectDialog
+        offer={action}
+        open={open}
+        onOpenChange={opened}
+        onReject={pressing.onChoose}
+      />
     );
-  });
+  if (action.action !== "Dispatch") return null;
+  return (
+    <TicketActionConfirm
+      title={text({
+        id: "ticket-dispatch-confirm-title",
+        args: { number: String(pressing.ticket) },
+      })}
+      confirm={text(ticketActionLabel("Dispatch"))}
+      open={open}
+      onOpenChange={opened}
+      onConfirm={() => {
+        pressing.onChoose(action);
+      }}
+    >
+      {text(
+        ticketActionEffect(action.action, pressing.resume, pressing.exits)
+          .effect,
+      )}
+    </TicketActionConfirm>
+  );
+}
+
+/** The one action the header leads with, and what the machine charges for
+ * it, said before it is pressed. */
+function TicketHeaderPrimary(props: {
+  readonly pressing: TicketHeaderPressing;
+  readonly action: TicketAction;
+}): ReactNode {
+  const { pressing, action } = props;
+  const text = useCopyText();
+  const effect = ticketActionEffect(
+    action.action,
+    pressing.resume,
+    pressing.exits,
+  );
+  return (
+    <OfferedAction
+      action={text(ticketActionLabel(action.action))}
+      effect={text(effect.effect)}
+      {...(effect.more === undefined ? {} : { more: text(effect.more) })}
+      {...(effect.refusedBecause === undefined
+        ? {}
+        : { refusedBecause: effect.refusedBecause })}
+      offered={effect.offered}
+      busy={pressing.busy}
+      primary
+      onChoose={ticketHeaderPress(pressing, action)}
+    />
+  );
+}
+
+/** An action the header offers beside its primary one, as its menu's entry. */
+function ticketHeaderMenuAction(
+  pressing: TicketHeaderPressing,
+  action: TicketAction,
+  text: CopyText,
+): MoreMenuItem {
+  const effect = ticketActionEffect(
+    action.action,
+    pressing.resume,
+    pressing.exits,
+  );
+  return {
+    kind: "action",
+    label: text(ticketActionLabel(action.action)),
+    disabled: pressing.busy || !effect.offered,
+    onSelect: ticketHeaderPress(pressing, action),
+  };
 }
 
 /**
@@ -739,49 +792,85 @@ function headerActionsOf(props: TicketHeaderActionsProps) {
       );
 }
 
-/** The main actions, the edit screen beside them, and the menu holding the
- * rest. */
+/** The edit screen, as the header's menu offers it: a link and not a
+ * submission, because what an update sends is written on that screen. */
+function ticketHeaderEditItem(
+  partition: PartitionIdentity,
+  ticket: number,
+  text: CopyText,
+): MoreMenuItem {
+  return {
+    kind: "link",
+    label: text({ id: "ticket-edit" }),
+    link: (anchor) => (
+      <Link
+        to="/$tenant/$project/tickets/$ticket/edit"
+        params={{ ...partition, ticket: String(ticket) }}
+        {...anchor}
+      />
+    ),
+  };
+}
+
+/** The one primary action that fits the ticket's state, and the menu holding
+ * the rest: the other main actions, Edit, Take or Return, and the menu's own. */
 export function TicketHeaderActions(
   props: TicketHeaderActionsProps,
 ): ReactNode {
+  const [asking, setAsking] = useState<TicketActionName | undefined>(undefined);
+  const text = useCopyText();
+  const take = useTicketTake(props.partition, props.ticket, props.take);
   const laid = headerActionsOf(props);
   if (laid === undefined) return null;
-  const exits =
-    props.offers.offers === "Actions"
-      ? props.offers.actions.map((offered) => offered.action)
-      : [];
+  const pressing: TicketHeaderPressing = {
+    ticket: props.ticket,
+    exits:
+      props.offers.offers === "Actions"
+        ? props.offers.actions.map((offered) => offered.action)
+        : [],
+    resume: props.resume,
+    busy: props.acting.busy,
+    asking,
+    onAsking: setAsking,
+    onChoose: props.acting.submitting.submit,
+  };
+  const [primary, ...others] = laid.main;
   return (
     <div className="ticket-header-actions">
-      <ActionButtons
-        ticket={props.ticket}
-        actions={laid.main}
-        exits={exits}
-        busy={props.acting.busy}
-        resume={props.resume}
-        onChoose={props.acting.submitting.submit}
-      />
+      {primary === undefined ? null : (
+        <TicketHeaderPrimary pressing={pressing} action={primary} />
+      )}
       {laid.duplicate === "Main" ? (
         <TicketDuplicateLink
           partition={props.partition}
           ticket={props.ticket}
         />
       ) : null}
-      {laid.editable ? (
-        <TicketEditOffer partition={props.partition} ticket={props.ticket} />
-      ) : null}
-      <TicketTake
-        partition={props.partition}
-        ticket={props.ticket}
-        offer={props.take}
-      />
       <TicketHeaderMenu
         partition={props.partition}
         ticket={props.ticket}
+        leading={[
+          ...others.map((action) =>
+            ticketHeaderMenuAction(pressing, action, text),
+          ),
+          ...(laid.editable
+            ? [ticketHeaderEditItem(props.partition, props.ticket, text)]
+            : []),
+          ...(take.item === undefined ? [] : [take.item]),
+        ]}
         revoke={laid.revoke}
         duplicate={laid.duplicate === "Menu"}
         busy={props.acting.busy}
         onChoose={props.acting.submitting.submit}
       />
+      {take.refused}
+      {laid.main.map((action) => (
+        <TicketActionAsk
+          key={nativeActionAnswerKey(action)}
+          pressing={pressing}
+          action={action}
+        />
+      ))}
     </div>
   );
 }
@@ -813,8 +902,29 @@ export interface TicketRowDispatch {
   readonly busy: boolean;
   /** This tab does not reach the network, so a press would not be sent. */
   readonly offline: boolean;
-  readonly effect: string;
   readonly press: () => void;
+}
+
+/** The notes beside a row's Dispatch: that it waits while this tab is
+ * offline, and what its follow draws. */
+function TicketRowDispatchNotes(props: {
+  readonly online: boolean;
+  readonly submitting: Submitting;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <>
+      {props.online ? null : (
+        <Notice
+          tone="parked"
+          inline
+          role="status"
+          detail={text({ id: "ticket-dispatch-offline" })}
+        />
+      )}
+      <FollowNotes submitting={props.submitting} />
+    </>
+  );
 }
 
 /** The Dispatch a ready row's reader and runner leave it offering, if any. */
@@ -847,11 +957,11 @@ function useRowDispatchOffered(row: {
 
 /**
  * The Dispatch a ready row of the ticket list offers, expecting the version the
- * row was drawn at, as the press its state chip answers and the notes its
- * follow draws beside it. The reader's abilities and the project's runner take
- * it away as they take it on the ticket page, a press asks the question the
- * ticket page asks, and only its confirm sends the same submission the ticket
- * page would follow.
+ * row was drawn at, as the press its state chip answers and the notes beside
+ * it: that it waits while this tab is offline, and what its follow draws. The
+ * reader's abilities and the project's runner take it away as they take it on
+ * the ticket page, a press asks the question the ticket page asks, and only its
+ * confirm sends the same submission the ticket page would follow.
  */
 export function TicketRowDispatchScope(props: {
   readonly partition: PartitionIdentity;
@@ -870,9 +980,6 @@ export function TicketRowDispatchScope(props: {
   const text = useCopyText();
   const [asking, setAsking] = useState(false);
   if (offered === undefined) return props.children(undefined, null);
-  const effect = text(
-    ticketActionEffect("Dispatch", { kind: "NoPoint" }).effect,
-  );
   return (
     <TicketActingScope partition={props.partition} ticket={props.ticket} drawn>
       {(acting) => (
@@ -881,12 +988,14 @@ export function TicketRowDispatchScope(props: {
             {
               busy: acting.busy,
               offline: !online,
-              effect,
               press: () => {
                 setAsking(true);
               },
             },
-            <FollowNotes submitting={acting.submitting} />,
+            <TicketRowDispatchNotes
+              online={online}
+              submitting={acting.submitting}
+            />,
           )}
           <TicketActionConfirm
             title={text({
@@ -901,7 +1010,7 @@ export function TicketRowDispatchScope(props: {
               acting.submitting.submit(offered);
             }}
           >
-            {effect}
+            {text(ticketActionEffect("Dispatch", { kind: "NoPoint" }).effect)}
           </TicketActionConfirm>
         </>
       )}

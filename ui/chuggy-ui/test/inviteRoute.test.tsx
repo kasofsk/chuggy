@@ -75,6 +75,7 @@ test("a person returning from sign-in to the invite page is drawn it, and their 
   expect(
     scripted.sent.map((request) => [request.url, request.body]),
   ).toStrictEqual([
+    ["/api/v1/appearance/choice", undefined],
     ["/access/v1/invite-links/redemptions", { token: "crossed" }],
   ]);
   expect(browser.left).toStrictEqual(["/acme/atlas"]);
@@ -106,6 +107,8 @@ test("a browser with no session is drawn the invite page at its address, and the
   history.replaceState(null, "", "/acme/atlas");
   renderCopied(tree);
   await settled();
-  expect(screen.getByText("Signed out")).toBeTruthy();
+  expect(
+    screen.getByRole("heading", { name: "Sign in to chuggy" }),
+  ).toBeTruthy();
   expect(screen.queryByText("Your own chuggy workspace")).toBeNull();
 });

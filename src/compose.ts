@@ -98,6 +98,14 @@ import {
 } from "./adapters/postgres/projectInventory.ts";
 import { memberChat, type MemberChat } from "./interpreter/memberChat.ts";
 import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
+import { postgresProjectAppearance } from "./adapters/postgres/projectAppearance.ts";
+import { postgresProjectImages } from "./adapters/postgres/projectImages.ts";
+import {
+  projectImageService,
+  type ProjectAppearanceServices,
+} from "./interpreter/projectImages.ts";
+import { postgresAppearance } from "./adapters/postgres/appearance.ts";
+import { projectAppearanceService } from "./interpreter/projectAppearance.ts";
 import { postgresTicketTakes } from "./adapters/postgres/ticketTake.ts";
 import { ticketTakes, type TicketTakes } from "./interpreter/ticketTake.ts";
 import { postgresAccessTokens } from "./adapters/postgres/accessToken.ts";
@@ -279,6 +287,26 @@ export function composeSessionPlacement(
     access,
     postgresSessionPlacement(apiPool),
   );
+}
+
+/** Wires a project's themes and images to API-role credentials, the access that gates them, each person's own themes, and the project-owned artifacts its images name. */
+export function composeProjectAppearance(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  artifacts: Pick<ProjectArtifactPort, "readArtifact">,
+): ProjectAppearanceServices {
+  return {
+    themes: projectAppearanceService(
+      access,
+      postgresProjectAppearance(apiPool),
+      postgresAppearance(apiPool),
+    ),
+    images: projectImageService({
+      access,
+      store: postgresProjectImages(apiPool),
+      artifacts,
+    }),
+  };
 }
 
 /** Wires a ticket's takes and returns to API-role credentials and the access that gates them. */

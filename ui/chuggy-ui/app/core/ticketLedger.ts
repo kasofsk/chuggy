@@ -545,7 +545,7 @@ export function cycleLabel(ordinal: number): Copy {
   return { id: "ticket-cycle-number", args: { cycle: String(ordinal) } };
 }
 
-/** A set's verdict as the one word its pill says. */
+/** A set's verdict as the one word its badge says. */
 export function setVerdictLabel(verdict: SetVerdict): Copy {
   switch (verdict) {
     case "Passed":
@@ -565,8 +565,8 @@ export function setVerdictLabel(verdict: SetVerdict): Copy {
   }
 }
 
-/** Whether the cycle is the ticket's current one, the one word a pill says
- * beside it where it is; a superseded cycle's pill says nothing. */
+/** Whether the cycle is the ticket's current one, the one word a badge says
+ * beside it where it is; a superseded cycle's badge says nothing. */
 export function cycleStandingLabel(standing: CycleStanding): Copy | undefined {
   switch (standing) {
     case "Current":

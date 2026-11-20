@@ -29,6 +29,9 @@
  * whether they administer it. It names nobody else, so there is nobody it is
  * hidden from, and a caller written into none is answered an empty list.
  *
+ * THE CALLER'S OWN ACCOUNT IS ANSWERED THE SAME WAY: their subject, their
+ * principal, and who the directory says they are, as a people list names them.
+ *
  * A TENANT IS NAMED TO A READER BY ITS DISPLAY NAME, which every answer naming
  * a tenant to a reader carries beside its id, and which its administrators
  * change. The id is what every path and every role names, and nothing changes
@@ -737,13 +740,11 @@ export const accessCallerTenantsSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
-/**
- * Who the caller is, answered to any caller signed in about them alone: the
- * GitHub login their account records, absent where the plane has no
- * directory or the directory records none.
- */
+/** What the caller's own account answers: their subject, their principal encoded as a ticket's `creator` is, and the directory's fields. */
 export const accessCallerAccountSchema = z.strictObject({
-  githubLogin: accessGithubLoginSchema.optional(),
+  subject: z.string().min(1),
+  principal: identitySchema,
+  ...accessAccountFields,
 });
 
 /** How long an invite link stands once made. */

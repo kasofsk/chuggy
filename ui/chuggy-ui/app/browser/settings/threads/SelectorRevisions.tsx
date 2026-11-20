@@ -29,10 +29,7 @@ import { Button, buttonLookClassName } from "../../ui/Button.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
 import { Figure } from "../../ui/Figure.tsx";
 import { Panel } from "../../ui/Panel.tsx";
-import {
-  SelectorSettingsSavedNotice,
-  selectorSettingsNoticed,
-} from "./SelectorSection.tsx";
+import { SelectorSettingsRefusedLine } from "./SelectorSection.tsx";
 
 import "./selector.css";
 
@@ -195,15 +192,16 @@ export function SelectorRevisions(props: {
 }): ReactNode {
   const state = props.state;
   const text = useCopyText();
+  const refused = props.saved?.error ?? null;
   return (
     <Panel
       variant="section"
       title={text({ id: "settings-threads-history-title" })}
       about={text({ id: "settings-threads-history-about" })}
       foot={
-        selectorSettingsNoticed(props.saved) ? (
-          <SelectorSettingsSavedNotice saved={props.saved} />
-        ) : undefined
+        refused === null ? undefined : (
+          <SelectorSettingsRefusedLine refused={refused} />
+        )
       }
     >
       <PanelUnready state={state} />

@@ -33,6 +33,8 @@ import {
   TicketPageEveryTab,
   TicketRunPageAt,
   ticketHeader,
+  ticketHeaderMenuChosen,
+  ticketHeaderMenuEntries,
 } from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -46,8 +48,8 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   sleepMs: () => Promise.resolve(),
 }));
 
-vi.mock("@tanstack/react-router", () => ({
-  createLink: (component: unknown) => component,
+vi.mock("@tanstack/react-router", async () => ({
+  ...(await import("./routerLinkStubbed.tsx")),
   Link: (props: {
     readonly children?: ReactNode;
     readonly ref?: Ref<HTMLAnchorElement>;
@@ -199,7 +201,7 @@ function typed(box: HTMLElement, value: string): void {
   fireEvent.change(box, { target: { value } });
 }
 
-test("the header approves an evaluation approval with no note asked of it", async () => {
+test("the header leads with Approve, keeps Reject in its menu, and approves with no note asked of it", async () => {
   const held = mounted();
   await settled();
   const approve = within(ticketHeader()).getByRole("button", {
@@ -207,8 +209,9 @@ test("the header approves an evaluation approval with no note asked of it", asyn
   });
   expect(approve.classList.contains("btn-primary")).toBe(true);
   expect(
-    within(ticketHeader()).getByRole("button", { name: "Reject" }),
-  ).toBeDefined();
+    within(ticketHeader()).queryByRole("button", { name: "Reject" }),
+  ).toBeNull();
+  expect(await ticketHeaderMenuEntries()).toContain("Reject");
   await turned(() => {
     approve.click();
   });
@@ -247,6 +250,39 @@ test("the card asks the step under evaluation, shows its instructions and who an
   });
 });
 
+test("each answer says what it does under the answers, as its button's description, with no hover", async () => {
+  mounted();
+  await settled();
+  const asked = question();
+  const said = (name: string): HTMLElement | null =>
+    document.getElementById(
+      within(asked)
+        .getByRole("button", { name })
+        .getAttribute("aria-describedby") ?? "",
+    );
+  expect(said("Approve")?.textContent).toMatch(/^pass this evaluator/u);
+  expect(said("Reject")?.textContent).toMatch(/^send this ticket's work back/u);
+  expect(asked.contains(said("Approve"))).toBe(true);
+  expect(asked.contains(said("Reject"))).toBe(true);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+test("an approve the note cannot be sent with says why beside it", async () => {
+  mounted();
+  await settled();
+  const asked = question();
+  expect(asked.textContent).not.toContain("control character");
+  typed(within(asked).getByRole("textbox", { name: "Note" }), "a\u0007b");
+  expect(
+    within(asked)
+      .getByRole("button", { name: "Approve" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  expect(asked.textContent).toContain(
+    "A note with a control character cannot be sent",
+  );
+});
+
 test("the card's rejection asks for feedback, and cannot be sent blank", async () => {
   const held = mounted();
   await settled();
@@ -277,12 +313,10 @@ test("the card's rejection asks for feedback, and cannot be sent blank", async (
   });
 });
 
-test("the header's rejection asks for feedback in a dialog, and cannot be sent blank", async () => {
+test("the header menu's rejection asks for feedback in a dialog, and cannot be sent blank", async () => {
   const held = mounted();
   await settled();
-  await turned(() => {
-    within(ticketHeader()).getByRole("button", { name: "Reject" }).click();
-  });
+  await ticketHeaderMenuChosen("Reject");
   const dialog = screen.getByRole("dialog", { name: "Send this work back?" });
   const send = within(dialog).getByRole("button", { name: "Reject" });
   expect((send as HTMLButtonElement).disabled).toBe(true);
@@ -298,11 +332,15 @@ test("the header's rejection asks for feedback in a dialog, and cannot be sent b
   });
 });
 
-function answersOffered(): number {
-  return [
-    ...screen.queryAllByRole("button", { name: "Approve" }),
-    ...screen.queryAllByRole("button", { name: "Reject" }),
-  ].length;
+/** The answers drawn as buttons, and those the header's menu holds. */
+async function answersOffered(): Promise<number> {
+  const answers = ["Approve", "Reject"];
+  return (
+    answers.flatMap((name) => screen.queryAllByRole("button", { name }))
+      .length +
+    (await ticketHeaderMenuEntries()).filter((entry) => answers.includes(entry))
+      .length
+  );
 }
 
 test("a reader the approval does not ask reads that it is awaited and from whom, and is offered no answer", async () => {
@@ -311,7 +349,7 @@ test("a reader the approval does not ask reads that it is awaited and from whom,
     actions: [asking("action-eval", "e-approval", 1, { answerable: false })],
   });
   await settled();
-  expect(answersOffered()).toBe(0);
+  expect(await answersOffered()).toBe(0);
   expect(screen.queryByRole("status", { name: "Needs you" })).toBeNull();
   const card = screen.getByRole("status", { name: "Awaiting approval" });
   expect(card.textContent).toContain("Awaiting evaluation approval");
@@ -336,7 +374,7 @@ test("a reader the approval lists by name reads the people it names", async () =
   const card = screen.getByRole("status", { name: "Awaiting approval" });
   expect(card.textContent).toContain("dana");
   expect(card.textContent).toContain("eli");
-  expect(answersOffered()).toBe(0);
+  expect(await answersOffered()).toBe(0);
 });
 
 test("the action's flag decides: a reader who may not mutate but whom it asks is offered both answers", async () => {
@@ -363,7 +401,7 @@ test("a frame settling the action takes the offer away, and the execution's fram
   const served: Served = { actions: servedOne.actions, executions };
   const held = mounted(served);
   await settled();
-  expect(answersOffered()).toBeGreaterThan(0);
+  expect(await answersOffered()).toBeGreaterThan(0);
   expect(document.body.textContent).toContain("Waiting on a person");
 
   executions[1] = {
@@ -401,7 +439,7 @@ test("a frame settling the action takes the offer away, and the execution's fram
     );
   });
   await settled();
-  expect(answersOffered()).toBe(0);
+  expect(await answersOffered()).toBe(0);
   expect(screen.queryByRole("status", { name: "Needs you" })).toBeNull();
   expect(document.body.textContent).toContain("Rejected by");
   expect(document.body.textContent).toContain("Needs a migration note.");

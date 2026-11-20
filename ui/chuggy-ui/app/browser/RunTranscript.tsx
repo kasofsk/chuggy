@@ -56,6 +56,7 @@ import { ReadFailed } from "./DataPanel.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
+import "./ExecutionArtifacts.css";
 
 type ExecutionAttempt = ExecutionResponse["attempts"][number];
 

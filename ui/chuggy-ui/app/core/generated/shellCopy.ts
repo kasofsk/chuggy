@@ -6,33 +6,16 @@ export interface ShellCopy {
   readonly "shell-nav": Record<never, never>;
   readonly "shell-nav-tickets": Record<never, never>;
   readonly "shell-nav-epics": Record<never, never>;
-  readonly "shell-nav-catalog": Record<never, never>;
-  readonly "shell-nav-settings": Record<never, never>;
-  readonly "shell-nav-repositories": Record<never, never>;
-  readonly "shell-nav-connectors": Record<never, never>;
-  readonly "shell-nav-runners": Record<never, never>;
+  readonly "shell-nav-more": Record<never, never>;
   readonly "shell-view-only": Record<never, never>;
   readonly "shell-inbox": Record<never, never>;
   readonly "shell-inbox-unread": {
     readonly count: unknown;
   };
   readonly "shell-crumbs": Record<never, never>;
+  readonly "shell-skip": Record<never, never>;
   readonly "shell-details": Record<never, never>;
-  readonly "shell-settings": Record<never, never>;
-  readonly "shell-settings-theme": Record<never, never>;
-  readonly "shell-settings-theme-system": Record<never, never>;
-  readonly "shell-settings-theme-light": Record<never, never>;
-  readonly "shell-settings-theme-dark": Record<never, never>;
-  readonly "shell-settings-wording": Record<never, never>;
-  readonly "shell-settings-wording-standard": Record<never, never>;
-  readonly "shell-settings-wording-pseudo": Record<never, never>;
-  readonly "shell-settings-wording-vernacular": {
-    readonly name: unknown;
-  };
-  readonly "shell-settings-chat": Record<never, never>;
-  readonly "shell-settings-chat-right": Record<never, never>;
-  readonly "shell-settings-chat-left": Record<never, never>;
-  readonly "shell-settings-chat-bottom": Record<never, never>;
+  readonly "shell-account": Record<never, never>;
   readonly "shell-sign-out": Record<never, never>;
   readonly "shell-project": Record<never, never>;
   readonly "shell-projects-unavailable": Record<never, never>;

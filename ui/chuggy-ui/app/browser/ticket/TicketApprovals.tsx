@@ -12,7 +12,7 @@
  */
 
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -39,7 +39,7 @@ import { Dialog } from "../ui/Dialog.tsx";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Input } from "../ui/Input.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
+import { Notice } from "../ui/Notice.tsx";
 
 /** The name a question's group is read by, which tells it from another open one. */
 export function approvalQuestionName(
@@ -160,8 +160,44 @@ export function ApprovalRejectDialog(props: {
   );
 }
 
+/** Under the answers: why an approve waits where the note is one the wire
+ * refuses, and what each answer does, each line the description of its
+ * button. */
+function ApprovalAnswersDoes(props: {
+  readonly answers: readonly TicketAction[];
+  readonly idOf: (index: number) => string;
+  readonly unsendable: boolean;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <>
+      {props.unsendable ? (
+        <Notice
+          tone="parked"
+          inline
+          role="status"
+          detail={text({ id: "ticket-approval-note-unsendable" })}
+        />
+      ) : null}
+      <Fields variant="inline">
+        {props.answers.map((offer, index) => (
+          <Field
+            key={nativeActionAnswerKey(offer)}
+            name={text(ticketActionLabel(offer.action))}
+          >
+            <span id={props.idOf(index)}>
+              {text(ticketActionSentence(offer.action))}
+            </span>
+          </Field>
+        ))}
+      </Fields>
+    </>
+  );
+}
+
 /** One approval's answers: the note an approve may carry, Approve, and Reject,
- * which asks for its feedback before it is sent. */
+ * which asks for its feedback before it is sent; under them what each does,
+ * and why an approve waits where the note is one the wire refuses. */
 export function ApprovalAnswers(props: {
   readonly answers: readonly TicketAction[];
   readonly busy: boolean;
@@ -171,6 +207,11 @@ export function ApprovalAnswers(props: {
   const [note, setNote] = useState("");
   const [rejecting, setRejecting] = useState(false);
   const reject = props.answers.find((offer) => offer.action === "Reject");
+  const does = useId();
+  const doesOf = (index: number): string => `${does}-${String(index)}`;
+  const unsendable = props.answers.some(
+    (offer) => offer !== reject && !approvalAnswerSendable(offer.action, note),
+  );
   return (
     <div className="grid gap-2">
       <Input
@@ -183,32 +224,33 @@ export function ApprovalAnswers(props: {
         }}
       />
       <div className="flex gap-2 items-baseline">
-        {props.answers.map((offer) => (
-          <Tooltip
-            key={nativeActionAnswerKey(offer)}
-            text={ticketActionSentence(offer.action)}
-          >
-            <span>
-              <Button
-                variant={offer === reject ? "quiet" : "primary"}
-                size="sm"
-                disabled={
-                  props.busy ||
-                  (offer !== reject &&
-                    !approvalAnswerSendable(offer.action, note))
-                }
-                {...(offer === reject ? { expanded: rejecting } : {})}
-                onClick={() => {
-                  if (offer === reject) setRejecting(!rejecting);
-                  else props.onAnswer(approvalAnswerWith(offer, note));
-                }}
-              >
-                {text(ticketActionLabel(offer.action))}
-              </Button>
-            </span>
-          </Tooltip>
-        ))}
+        {props.answers.map((offer, index) => {
+          const disabled =
+            props.busy ||
+            (offer !== reject && !approvalAnswerSendable(offer.action, note));
+          return (
+            <Button
+              key={nativeActionAnswerKey(offer)}
+              variant={offer === reject ? "quiet" : "primary"}
+              size="sm"
+              disabled={disabled}
+              describedBy={doesOf(index)}
+              {...(offer === reject ? { expanded: rejecting } : {})}
+              onClick={() => {
+                if (offer === reject) setRejecting(!rejecting);
+                else props.onAnswer(approvalAnswerWith(offer, note));
+              }}
+            >
+              {text(ticketActionLabel(offer.action))}
+            </Button>
+          );
+        })}
       </div>
+      <ApprovalAnswersDoes
+        answers={props.answers}
+        idOf={doesOf}
+        unsendable={unsendable}
+      />
       {reject === undefined || !rejecting ? null : (
         <ApprovalReject
           offer={reject}

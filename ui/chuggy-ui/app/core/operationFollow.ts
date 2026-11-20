@@ -201,7 +201,7 @@ function failureAnswered(failure: ApiFailure): boolean {
 }
 
 /** The outcome the API answered where an abandoned follow carries one, for a
- * refusal that keeps its code on hover. */
+ * refusal that says its code after its sentence. */
 export function operationAbandonFailure(
   step: OperationStep,
 ): ApiFailure | undefined {

@@ -622,37 +622,6 @@ test("a list asks the directory about no more subjects than the bound, and those
   assert.ok(unasked.every((person) => !asked.includes(person.subject)));
 });
 
-test("the caller's own account is the GitHub login the directory records for them alone, and nothing where it records none or cannot be asked", async () => {
-  const { directory, plane } = await accounted();
-  assert.deepEqual(await plane.callerAccount(accessFixturePrincipal(ana)), {
-    githubLogin: "Ana-1",
-  });
-  assert.deepEqual(
-    await plane.callerAccount(accessFixturePrincipal(quiet)),
-    {},
-  );
-  assert.deepEqual(
-    await plane.callerAccount(accessFixturePrincipal(ghost)),
-    {},
-  );
-  assert.deepEqual(await plane.callerAccount(alice), {});
-  assert.deepEqual(
-    await plane.callerAccount(oidcPrincipal("https://other.example", ana)),
-    {},
-  );
-  assert.deepEqual(directory.asked, [
-    `accounts:${ana}`,
-    `accounts:${quiet}`,
-    `accounts:${ghost}`,
-  ]);
-  assert.deepEqual(
-    await accessMemoryPlane(accessMemory()).callerAccount(
-      accessFixturePrincipal(ana),
-    ),
-    {},
-  );
-});
-
 test("a list with no directory answers no directory field", async () => {
   const { memory } = await accounted();
   const people = await accessMemoryPlane(memory).tenantPeople(alice, tenant);

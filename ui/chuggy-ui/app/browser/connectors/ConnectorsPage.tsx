@@ -14,6 +14,7 @@ import { connectorChangeLine } from "../../core/connectors.ts";
 import { instantFigure } from "../../core/figures.ts";
 import { creatorLabel } from "../../core/labels.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
+import { settingsRoutes } from "../../core/settingsNav.ts";
 import {
   connectorHistoryQuery,
   connectorsQuery,
@@ -33,8 +34,6 @@ import { Panel } from "../ui/Panel.tsx";
 import { Table } from "../ui/Table.tsx";
 import { ConnectorsListing } from "./ConnectorsListing.tsx";
 import { ConnectorWrite } from "./ConnectorWrite.tsx";
-
-const connectorsRoutePath = "/$tenant/$project/connectors";
 
 function ConnectorsRead(props: {
   readonly partition: PartitionIdentity;
@@ -158,7 +157,7 @@ function ConnectorHistory(props: {
 
 export function ConnectorsPage(): ReactNode {
   const text = useCopyText();
-  const params = useParams({ from: connectorsRoutePath });
+  const params = useParams({ from: settingsRoutes.project.connectors });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
     project: params.project,

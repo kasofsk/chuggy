@@ -6,7 +6,7 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -24,6 +24,7 @@ import {
   workspacesWithheld,
 } from "./siteWorkspacesFixture.tsx";
 import { readFailedLines } from "../readFailedLines.ts";
+import { tableCards } from "../tableText.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -67,12 +68,36 @@ test("a workspace is a row, in the order answered: its display name, its admins 
     ["Umbrella", "3 unnamed", "New people"],
     ["Initech", "Existing accounts"],
   ]);
-  expect(
-    screen
-      .getAllByRole("rowheader")
-      .map((header) => header.querySelector("[title]")?.getAttribute("title")),
-  ).toStrictEqual(["globex-co", "acme-co", "umbrella-co", "initech-co"]);
+  expect(document.querySelector("[title]")).toBeNull();
+  const addresses: string[] = [];
+  for (const header of screen.getAllByRole("rowheader")) {
+    const name = header.querySelector<HTMLElement>('[tabindex="0"]');
+    if (name === null) throw new Error("no name drawn");
+    fireEvent.focus(name);
+    addresses.push((await screen.findByRole("tooltip")).textContent);
+    fireEvent.keyDown(name, { key: "Escape" });
+    fireEvent.blur(name);
+  }
+  expect(addresses).toStrictEqual([
+    "globex-co",
+    "acme-co",
+    "umbrella-co",
+    "initech-co",
+  ]);
   styleless();
+});
+
+test("each workspace is a card titled by its name, its admins and whom they may invite labelled under it", async () => {
+  await drawWorkspaces();
+  expect(
+    tableCards(screen.getByRole("table", { name: "Workspaces" })),
+  ).toStrictEqual(
+    ["Globex", "Acme", "Umbrella", "Initech"].map((title) => ({
+      title,
+      labels: ["Admins", "Invites"],
+      actionsLast: false,
+    })),
+  );
 });
 
 test("an admin with no account, and one no directory answered for, is their subject in the identity's face", async () => {
@@ -84,22 +109,24 @@ test("an admin with no account, and one no directory answered for, is their subj
   ).toBe(false);
 });
 
-test("a workspace whose admins may make no account says so quietly, one whose may does not, and a stacked row keeps either beside its name", async () => {
+test("a workspace whose admins may make no account says so quietly, and one whose may does not", async () => {
   await drawWorkspaces();
   const invites = (name: string): readonly string[] => [
-    ...(workspaceRow(name).lastElementChild?.classList ?? []),
+    ...(workspaceRow(name).lastElementChild?.querySelector(
+      ".tabular-value > span",
+    )?.classList ?? []),
   ];
-  expect(invites("Globex")).toStrictEqual(["people-beside", "text-ink-3"]);
-  expect(invites("Acme")).toStrictEqual(["people-beside"]);
+  expect(invites("Globex")).toStrictEqual(["text-ink-3"]);
+  expect(invites("Acme")).toStrictEqual([]);
 });
 
-test("a workspace with no admin draws a dash its stacked row leaves out, and no other row does", async () => {
+test("a workspace with no admin draws a dash its card leaves out, and no other row does", async () => {
   await drawWorkspaces();
   const none = within(workspaceRow("Initech")).getByText("None");
-  expect(none.closest("td")?.getAttribute("data-none")).toBe("");
+  expect(none.closest("td")?.getAttribute("data-empty")).toBe("");
   expect(screen.getAllByText("None")).toStrictEqual([none]);
   expect(
-    [...document.querySelectorAll("td[data-none]")].map(
+    [...document.querySelectorAll("td[data-empty]")].map(
       (cell) => cell.closest("tr")?.firstElementChild?.textContent,
     ),
   ).toStrictEqual(["Initech"]);
@@ -148,7 +175,9 @@ test("a list loading or failed is the read's own line, with no table and no acti
   expect(screen.queryAllByRole("button")).toStrictEqual([]);
   cleanup();
   await drawWorkspaces({ listing: () => answer({}, 500) });
-  expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
+  expect(readFailedLines()).toStrictEqual([
+    "Not read · Server error · InternalError",
+  ]);
   expect(screen.queryByRole("table")).toBeNull();
   expect(
     screen.queryAllByRole("button").map((button) => button.textContent),
@@ -194,7 +223,9 @@ test("the abilities loading or failed is the page's unready line, with no list r
   expect(screen.queryByText(workspacesWithheld)).toBeNull();
   cleanup();
   const failed = await drawWorkspaces({ abilities: () => answer({}, 500) });
-  expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
+  expect(readFailedLines()).toStrictEqual([
+    "Not read · Server error · InternalError",
+  ]);
   expect(workspaceListReads(failed)).toBe(0);
   expect(
     screen.queryAllByRole("button").map((button) => button.textContent),

@@ -19,8 +19,9 @@ export const listenerPageTokens: Readonly<Record<string, string>> = {
   "--ink-2": "light-dark(#2b332e, #c9d1cb)",
   "--ink-3": "light-dark(#5b665f, #8a948c)",
   "--edge": "light-dark(#cdd4ca, #262d28)",
-  "--font-prose":
+  "--font-prose-system":
     'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  "--font-prose": "var(--font-prose-system)",
   "--text-sm": "0.75rem",
   "--text-md": "0.875rem",
   "--text-xl": "1.25rem",

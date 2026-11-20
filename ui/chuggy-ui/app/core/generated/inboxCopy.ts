@@ -10,12 +10,17 @@ export interface InboxCopy {
   readonly "inbox-loading": Record<never, never>;
   readonly "inbox-more-failed": Record<never, never>;
   readonly "inbox-answer-unsaid": Record<never, never>;
-  readonly "inbox-col-title": Record<never, never>;
-  readonly "inbox-col-why": Record<never, never>;
-  readonly "inbox-col-last-run": Record<never, never>;
-  readonly "inbox-col-last-activity": Record<never, never>;
-  readonly "inbox-col-answer": Record<never, never>;
-  readonly "inbox-col-happened": Record<never, never>;
+  readonly "inbox-last-run": Record<never, never>;
+  readonly "inbox-group-approvals": Record<never, never>;
+  readonly "inbox-group-questions": Record<never, never>;
+  readonly "inbox-group-count": {
+    readonly count: unknown;
+  };
+  readonly "inbox-ask-approval": Record<never, never>;
+  readonly "inbox-ask-escalation": Record<never, never>;
+  readonly "inbox-asker-evaluation": Record<never, never>;
+  readonly "inbox-asker-escalation": Record<never, never>;
+  readonly "inbox-kind-approval": Record<never, never>;
   readonly "inbox-action-dispatch": Record<never, never>;
   readonly "inbox-action-resume": Record<never, never>;
   readonly "inbox-action-revoke": Record<never, never>;

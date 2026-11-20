@@ -173,15 +173,6 @@ export function apiCallerTenants(
   );
 }
 
-/** Who the caller is: the GitHub login their account records, answered to anyone signed in about themself. */
-export function apiCallerAccount(
-  ports: ApiPorts,
-): Promise<ApiResult<AccessCallerAccount>> {
-  return apiGet(ports, accessPlanePath("callerAccount", {}), (value) =>
-    accessCallerAccountSchema.parse(value),
-  );
-}
-
 /** The workspace's display name changed, for a caller who administers it. */
 export function apiRenameTenant(
   ports: ApiPorts,
@@ -193,6 +184,15 @@ export function apiRenameTenant(
     "tenantDisplayNameChange",
     { tenant },
     { displayName },
+  );
+}
+
+/** The caller's own account, answered to anyone signed in about themself. */
+export function apiCallerAccount(
+  ports: ApiPorts,
+): Promise<ApiResult<AccessCallerAccount>> {
+  return apiGet(ports, accessPlanePath("callerAccount", {}), (value) =>
+    accessCallerAccountSchema.parse(value),
   );
 }
 

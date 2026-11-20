@@ -31,7 +31,7 @@ function TicketRunMarkPaths(props: {
   }
 }
 
-/** A run's status as a mark, its word left to the row or the pill beside it;
+/** A run's status as a mark, its word left to the row or the badge beside it;
  * a step with no state to mark draws none. */
 export function TicketRunMarkDrawn(props: {
   readonly mark: TicketRunMark | undefined;

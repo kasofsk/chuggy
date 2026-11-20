@@ -20,6 +20,7 @@ import {
   apiProjectAbilities,
   apiProjectArtifact,
   apiProjectDeletion,
+  apiProjectImages,
   apiProjectRepositories,
   apiSelectorSettings,
   apiSelectorSettingsHistory,
@@ -174,6 +175,16 @@ export function projectPermissionsQuery(partition: PartitionIdentity) {
 export function projectPeopleQuery(partition: PartitionIdentity) {
   return consolePartitionQuery(partition, "access-people", (ports) =>
     apiProjectPeople(ports, partition.tenant, partition.project),
+  );
+}
+
+/** The artifacts the project names its icon and its banner, and whether the
+ * reader may change them. */
+export function projectImagesQuery(partition: PartitionIdentity) {
+  return consolePartitionQuery(
+    partition,
+    "appearance-images",
+    (ports, signal) => apiProjectImages(ports, partition, signal),
   );
 }
 

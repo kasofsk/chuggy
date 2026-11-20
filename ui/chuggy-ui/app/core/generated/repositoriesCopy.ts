@@ -22,11 +22,14 @@ export interface RepositoriesCopy {
   readonly "repositories-return-partial": Record<never, never>;
   readonly "repositories-return-requested": Record<never, never>;
   readonly "repositories-return-spent": Record<never, never>;
-  readonly "repositories-setup-title": Record<never, never>;
-  readonly "repositories-callback-title": Record<never, never>;
+  readonly "repositories-connecting-title": Record<never, never>;
   readonly "repositories-connecting": Record<never, never>;
+  readonly "repositories-setup-unexpected-title": Record<never, never>;
   readonly "repositories-setup-unexpected": Record<never, never>;
+  readonly "repositories-setup-unexpected-next": Record<never, never>;
   readonly "repositories-setup-updated": Record<never, never>;
+  readonly "repositories-setup-updated-continue": Record<never, never>;
+  readonly "repositories-setup-updated-home": Record<never, never>;
   readonly "repositories-home": Record<never, never>;
   readonly "repositories-continue": Record<never, never>;
   readonly "repositories-connect-github": Record<never, never>;
@@ -41,7 +44,6 @@ export interface RepositoriesCopy {
   readonly "repositories-add": Record<never, never>;
   readonly "repositories-add-how": Record<never, never>;
   readonly "repositories-bound-caption": Record<never, never>;
-  readonly "repositories-col-repository": Record<never, never>;
   readonly "repositories-bound": Record<never, never>;
   readonly "repositories-unbind": Record<never, never>;
   readonly "repositories-offers-withheld": Record<never, never>;
@@ -52,6 +54,11 @@ export interface RepositoriesCopy {
   readonly "repositories-offers-worker-missing": {
     readonly account: unknown;
   };
+  readonly "repositories-steps": Record<never, never>;
+  readonly "repositories-step-connect": Record<never, never>;
+  readonly "repositories-step-install-worker": Record<never, never>;
+  readonly "repositories-step-add": Record<never, never>;
+  readonly "repositories-step-done": Record<never, never>;
   readonly "repositories-worker-missing": Record<never, never>;
   readonly "repositories-reach-unselected": {
     readonly installation: unknown;
@@ -174,8 +181,9 @@ export interface RepositoriesCopy {
     readonly repository: unknown;
   };
   readonly "repositories-not-bound": Record<never, never>;
-  readonly "repositories-writing": Record<never, never>;
-  readonly "repositories-written": Record<never, never>;
+  readonly "repositories-saved": {
+    readonly setting: unknown;
+  };
   readonly "repositories-finalization-title": Record<never, never>;
   readonly "repositories-finalization-about": Record<never, never>;
   readonly "repositories-workflow-files": Record<never, never>;

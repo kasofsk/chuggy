@@ -7,7 +7,7 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -47,6 +47,7 @@ import {
 } from "./siteWorkspacesFixture.tsx";
 import type { WorkspacesDrawing } from "./siteWorkspacesFixture.tsx";
 import { noContent, refused } from "./tenantPeopleFixture.tsx";
+import { tableText } from "../tableText.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -126,19 +127,22 @@ test("a used link names the workspace it made, then who used it and when, a subj
   expect(made?.textContent).toBe(
     `Workspacenorthwind-cos-grace${linkWhen(used.usedAtMs)}`,
   );
-  const name = made?.querySelector(".people-name");
-  expect(name?.textContent).toBe("northwind-co");
-  expect(name?.getAttribute("title")).toBe("northwind-co");
+  const name = made?.querySelector<HTMLElement>(".tabular-cut");
+  if (name === null || name === undefined) throw new Error("no name drawn");
+  expect(name.textContent).toBe("northwind-co");
+  expect(name.hasAttribute("title")).toBe(false);
+  fireEvent.focus(name);
+  expect((await screen.findByRole("tooltip")).textContent).toBe("northwind-co");
   expect(made?.querySelector(".identity")?.textContent).toBe("s-grace");
-  expect(made?.hasAttribute("data-none")).toBe(false);
+  expect(made?.hasAttribute("data-empty")).toBe(false);
 });
 
-test("a link nobody used draws the none-mark where a stacked row leaves the cell out", async () => {
+test("a link nobody used draws the none-mark where its card leaves the cell out", async () => {
   await drawWorkspaces(listed);
   for (const row of [linkRows()[0], linkRows()[2], linkRows()[3]]) {
     const made = row === undefined ? undefined : linkCells(row)["Workspace"];
-    expect(made?.textContent).toBe("—None");
-    expect(made?.getAttribute("data-none")).toBe("");
+    expect(made === undefined ? undefined : tableText(made)).toBe("—None");
+    expect(made?.getAttribute("data-empty")).toBe("");
   }
 });
 
@@ -146,19 +150,16 @@ test("every link names who made it and when", async () => {
   await drawWorkspaces(listed);
   expect(linkColumn("Made by")).toStrictEqual(
     [opened, used, revoked, expired].map(
-      (link) => `Made byada@example.comada-l${linkWhen(link?.mintedAtMs ?? 0)}`,
+      (link) => `ada@example.comada-l${linkWhen(link?.mintedAtMs ?? 0)}`,
     ),
   );
 });
 
-test("the workspace a link made and who made the link carry their column's words for a stacked row, and no other cell does", async () => {
+test("a link's card labels every value but the note heading it and its Revoke", async () => {
   await drawWorkspaces(listed);
-  expect(linkStackedLabels()).toStrictEqual([
-    ["Made by"],
-    ["Workspace", "Made by"],
-    ["Made by"],
-    ["Made by"],
-  ]);
+  expect(linkStackedLabels()).toStrictEqual(
+    Array.from({ length: 4 }, () => ["Status", "Workspace", "Made by"]),
+  );
 });
 
 test("Revoke is offered on an open link and on no other", async () => {

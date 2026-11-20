@@ -11,7 +11,7 @@
  * to, so it stays.
  */
 
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { UseNavigateResult } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -21,7 +21,6 @@ import type {
   ForgeRepositoriesResponse,
 } from "../../../../src/contract/responses.ts";
 import type { ForgeAppName } from "../../../../src/contract/rosters.ts";
-import { useCopyText } from "../copy/CopyProvider.tsx";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import {
   apiForgeApps,
@@ -31,7 +30,6 @@ import {
 } from "../core/apiRoutes.ts";
 import { consoleWriteKey } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
-import type { Copy } from "../core/copy.ts";
 import {
   forgeAuthorizationDeclined,
   forgeAuthorizationInstall,
@@ -56,21 +54,20 @@ import {
 import { forgePressSentOn } from "../core/forgePress.ts";
 import { forgeReturnStatusLabel } from "../core/forgeReturn.ts";
 import type { ForgePress } from "../core/forgePress.ts";
-import { forgeSetupUnexpected } from "../core/forgeSetup.ts";
 import { useApiPorts } from "./api.ts";
 import { useConsoleWrite } from "./consoleWrite.tsx";
-import { Footer } from "./Footer.tsx";
 import { forgeReturnNavigate } from "./forgeReturnNavigate.ts";
+import {
+  ForgeLandingBack,
+  ForgeLandingConnecting,
+  ForgeLandingUnexpected,
+} from "./ForgeSetupPage.tsx";
 import {
   currentOrigin,
   drawBytes,
   replaceLocation,
   transientStore,
 } from "./ports.ts";
-import { Notice } from "./ui/Notice.tsx";
-
-/** What this page says while the code is being redeemed. */
-export const forgeCallbackConnecting: Copy = { id: "repositories-connecting" };
 
 /** What the portal app's installation on `account` was given, nothing where
  * the tenant holds no such claim or either read failed. */
@@ -228,31 +225,17 @@ function forgeCallbackAnswer(
 function ForgeCallbackDrawn(props: {
   readonly decision: ForgeCallbackDecision;
 }): ReactNode {
-  const text = useCopyText();
   switch (props.decision.decision) {
     case "Redeem":
-      return (
-        <Notice
-          tone="info"
-          inline
-          role="status"
-          detail={text(forgeCallbackConnecting)}
-        />
-      );
+      return <ForgeLandingConnecting />;
     case "Declined":
-      return null;
+      return <ForgeLandingBack />;
     case "Unexpected":
-      return (
-        <>
-          <Notice tone="danger" inline detail={text(forgeSetupUnexpected)} />
-          <Link to="/">{text({ id: "repositories-home" })}</Link>
-        </>
-      );
+      return <ForgeLandingUnexpected />;
   }
 }
 
 export function ForgeCallbackPage(): ReactNode {
-  const text = useCopyText();
   const query = useSearch({ from: forgeCallbackRoutePath });
   const navigate = useNavigate();
   const ports = useApiPorts();
@@ -271,15 +254,5 @@ export function ForgeCallbackPage(): ReactNode {
       redeemingMutate(redeem);
     });
   }, [ports, navigate, decision, redeemingMutate]);
-  return (
-    <div className="grid min-h-dvh content-start gap-4 p-4">
-      <main className="grid gap-3">
-        <h1 className="text-md font-strong text-ink-1">
-          {text({ id: "repositories-callback-title" })}
-        </h1>
-        <ForgeCallbackDrawn decision={decision} />
-      </main>
-      <Footer />
-    </div>
-  );
+  return <ForgeCallbackDrawn decision={decision} />;
 }

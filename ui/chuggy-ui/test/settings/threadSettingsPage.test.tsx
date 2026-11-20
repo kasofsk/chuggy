@@ -18,6 +18,7 @@ import { renderCopied } from "../copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
+import { ConsoleWriteToasts } from "../../app/browser/consoleWrite.tsx";
 import { ThreadSettingsPage } from "../../app/browser/settings/ThreadSettingsPage.tsx";
 import {
   answer,
@@ -28,6 +29,7 @@ import {
 } from "../screenHarness.tsx";
 import { projectPartition } from "../projectFixture.ts";
 import { styleless } from "../styleless.ts";
+import { toastsDrawn } from "../toastsDrawn.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
@@ -138,6 +140,7 @@ async function drawSettings(
       transport={openedStream().ports.fetch}
     >
       <ThreadSettingsPage />
+      <ConsoleWriteToasts />
     </ScreenHarness>,
   );
   await settled();
@@ -177,6 +180,41 @@ function box(name: string): HTMLInputElement | HTMLTextAreaElement {
   return screen.getByRole<HTMLInputElement>("textbox", { name });
 }
 
+/** The North Star typed as `value`, which is what offers its Save. */
+function starTyped(value: string): void {
+  fireEvent.change(box("North Star"), { target: { value } });
+}
+
+test("a section's Save is offered once its draft moved, and not once it is moved back", async () => {
+  await drawSettings();
+  await turned(() => {
+    edit("North Star");
+  });
+  const saveButton = () =>
+    within(sectionOf("North Star")).getByRole<HTMLButtonElement>("button", {
+      name: "Save changes",
+    });
+  expect(saveButton().disabled).toBe(true);
+  await turned(() => {
+    starTyped("ship the settings page");
+  });
+  expect(saveButton().disabled).toBe(false);
+  await turned(() => {
+    starTyped("ship the console");
+  });
+  expect(saveButton().disabled).toBe(true);
+});
+
+test("an open section's box is named by the label drawn over it", async () => {
+  await drawSettings();
+  await turned(() => {
+    edit("North Star");
+  });
+  const named = box("North Star");
+  expect(named.labels?.[0]?.htmlFor).toBe(named.id);
+  expect(named.hasAttribute("aria-label")).toBe(false);
+});
+
 test("the top bar names the revision the settings were read at", async () => {
   await drawSettings();
   const revision = screen.getByRole("heading", {
@@ -189,7 +227,10 @@ test("the top bar names the revision the settings were read at", async () => {
 test("the page draws the North Star, the standing rules, the models and the revisions, and reads nothing of the lead", async () => {
   const server = await drawSettings();
   const titles = ["North Star", "Standing rules", "Models", "Revisions"];
-  expect(screen.getAllByRole("region")).toStrictEqual(titles.map(sectionOf));
+  const toasts = screen.getByRole("region", { name: /^Notifications/u });
+  expect(
+    screen.getAllByRole("region").filter((region) => region !== toasts),
+  ).toStrictEqual(titles.map(sectionOf));
   expect(screen.queryByText("Base prompt")).toBeNull();
   expect(screen.queryByText("Limits")).toBeNull();
   expect(screen.queryByText("Lead model")).toBeNull();
@@ -306,7 +347,9 @@ test("saving a section writes every override whole, under the read revision", as
     expectedRevision: 12,
     overrides: { northStar: "ship the settings page" },
   });
-  expect(within(sectionOf("North Star")).getByText("Written · 13"));
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "North Star saved · Revision 13" },
+  ]);
   expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
 });
 
@@ -440,9 +483,14 @@ test("a revision that moved under the write is named and not retried", async () 
   await turned(() => {
     edit("North Star");
   });
+  await turned(() => {
+    starTyped("ship the settings page");
+  });
   await turned(save);
   await settled();
   expect(within(sectionOf("North Star")).getByText("Conflict · 14"));
+  expect(document.activeElement?.textContent).toContain("Conflict · 14");
+  expect(toastsDrawn()).toStrictEqual([]);
   expect(
     (server.written() as { readonly expectedRevision: number })
       .expectedRevision,
@@ -468,6 +516,9 @@ test("a conflict that names its mover reads who and when, not the bare revision"
   await turned(() => {
     edit("North Star");
   });
+  await turned(() => {
+    starTyped("ship the settings page");
+  });
   await turned(save);
   await settled();
   const section = sectionOf("North Star");
@@ -491,16 +542,16 @@ test("a second save is made against the revision the first one produced", async 
       return { body: settingsBody(revision, {}), status: 200 };
     },
   });
-  await turned(() => {
-    edit("North Star");
-  });
-  await turned(save);
-  await settled();
-  await turned(() => {
-    edit("North Star");
-  });
-  await turned(save);
-  await settled();
+  for (const typed of ["first", "second"]) {
+    await turned(() => {
+      edit("North Star");
+    });
+    await turned(() => {
+      starTyped(typed);
+    });
+    await turned(save);
+    await settled();
+  }
   expect(
     server
       .writes()
@@ -649,6 +700,9 @@ test("text typed while a save is in flight survives the answer", async () => {
     edit("North Star");
   });
   await turned(() => {
+    starTyped("ship the settings page");
+  });
+  await turned(() => {
     save();
     fireEvent.change(box("North Star"), {
       target: { value: "typed while the save was in flight" },
@@ -741,6 +795,9 @@ test("Restore writes that revision's overrides under the current revision", asyn
       threadModel: "sonnet",
     },
   });
+  expect(toastsDrawn()).toStrictEqual([
+    { tone: "Success", line: "Restored as revision 16" },
+  ]);
 });
 
 /** Restore is the Revisions card's own write, so a refusal is said on the

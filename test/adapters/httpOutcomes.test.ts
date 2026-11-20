@@ -868,6 +868,35 @@ test("a draft the project's bindings do not answer for is not found", () => {
   );
 });
 
+test("an artifact's bytes are answered with the media type its identity carries, and a browser told not to sniff another", () => {
+  for (const mediaType of imageMediaTypes) {
+    const read = projectArtifactReadResponse({
+      fetched: "Content",
+      content: new Uint8Array(4),
+      mediaType,
+    });
+    assert.equal(read.headers["x-content-type-options"], "nosniff", mediaType);
+    assert.equal(
+      projectArtifactResponseSchema.parse(read.body).mediaType,
+      mediaType,
+    );
+  }
+});
+
+test("inventory lists a project's icon beside its name where it names one, and none where it does not", () => {
+  const icon = asProjectArtifactId("image/png:mark");
+  const found = inventoryResponse({
+    projects: [
+      { ...partition, name: "Acme Atlas", icon },
+      { ...partition, project: asProjectId("plain"), name: "Plain" },
+    ],
+  });
+  assert.deepEqual((found.body as { projects: unknown }).projects, [
+    { ...partition, name: "Acme Atlas", icon },
+    { ...partition, project: "plain", name: "Plain" },
+  ]);
+});
+
 test("the largest image an upload admits is answered within what fetch_image reads and past what an ordinary tool reads, in the encoding it decodes by", () => {
   for (const mediaType of imageMediaTypes) {
     const { body } = projectArtifactReadResponse({

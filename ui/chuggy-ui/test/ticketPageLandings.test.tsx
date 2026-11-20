@@ -227,7 +227,7 @@ function landingRows(scope: HTMLElement): readonly HTMLElement[] {
 function rowSaid(row: HTMLElement): readonly (string | null | undefined)[] {
   return [
     row.querySelector(".ledger-label")?.textContent,
-    row.querySelector(".pill")?.textContent,
+    row.querySelector(".status-badge")?.textContent,
     row.querySelector(".ledger-note")?.textContent,
   ];
 }
@@ -300,7 +300,9 @@ test("a cycle whose landing failed on a conflict draws it failed, and its page e
     "Failed",
     "Merge conflict · 1 file",
   ]);
-  expect(row.querySelector(".pill")?.className).toBe("pill pill-fail");
+  expect(row.querySelector<HTMLElement>(".status-badge")?.dataset["tone"]).toBe(
+    "fail",
+  );
   const detail = await detailOpened(row);
   expect(detail.textContent).toContain(landingConflictPath);
   expect(detail.textContent).toContain("Targetmain");

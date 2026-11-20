@@ -95,7 +95,7 @@ async function pageDrawn(
   });
   await settled();
   const state = document.querySelector<HTMLElement>(
-    "header.ticket-header .ticket-header-state",
+    "header.page-header .page-header-status",
   );
   if (state === null) throw new Error("the header's state is drawn");
   return state;
@@ -123,7 +123,7 @@ test("a queued ticket's header draws its place after its state label's fragment"
   });
   expect(chip.textContent).toBe("2/2");
   expect(state.lastElementChild).toBe(chip);
-  expect(state.querySelector(".ticket-state")).not.toBeNull();
+  expect(state.querySelector(".status-badge")).not.toBeNull();
 });
 
 test("a ticket in no queue draws no chip in its header", async () => {

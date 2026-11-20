@@ -213,6 +213,9 @@ import { migration212 } from "./212-operation-via-token.ts";
 import { migration213 } from "./213-pools-read-by-nothing.ts";
 import { migration214 } from "./214-worker-task-workload.ts";
 import { migration215 } from "./215-project-connectors.ts";
+import { migration216 } from "./216-owned-themes.ts";
+import { migration217 } from "./217-project-themes.ts";
+import { migration218 } from "./218-project-images.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -431,4 +434,7 @@ export const migrations: readonly Migration[] = [
   migration213,
   migration214,
   migration215,
+  migration216,
+  migration217,
+  migration218,
 ];

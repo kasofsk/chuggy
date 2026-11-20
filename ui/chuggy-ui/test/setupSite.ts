@@ -1740,9 +1740,11 @@ export function setupSiteAnswered(
       answered({ tenants: site.tenants, truncated: cut(site, "workspaces") })
     );
   if (url.pathname === "/access/v1/account")
-    return answered(
-      site.login === undefined ? {} : { githubLogin: site.login },
-    );
+    return answered({
+      subject: "0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f",
+      principal: setupSiteMember,
+      ...(site.login === undefined ? {} : { githubLogin: site.login }),
+    });
   if (url.pathname === "/api/v1/forge/github") return appsAnswered(site);
   return url.pathname === "/api/v1/projects"
     ? inventory(site, url.searchParams.get("cursor"))

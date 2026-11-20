@@ -51,7 +51,7 @@ export function RunnerRegister(props: {
       tabIndex={-1}
       role="group"
       aria-label={props.label}
-      className="border-edge grid min-w-0 justify-items-start gap-3 border-b pt-3 pb-4"
+      className="runner-mint border-edge grid min-w-0 justify-items-start gap-3 border-b pt-3 pb-4"
     >
       {props.lead}
       {props.line === undefined ? null : (

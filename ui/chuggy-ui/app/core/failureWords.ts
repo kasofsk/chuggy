@@ -2,8 +2,8 @@
  * The one word a failed request is drawn as, whatever asked for it.
  *
  * A word is what a reader acts on; the code or the reason text behind it is
- * `detail`, for someone reporting the problem, and is drawn only on hover of
- * the word, never in a line. The switch is total over `ApiFailure`, so an
+ * `detail`, for someone reporting the problem, and is drawn after the word in
+ * the quieter ink. The switch is total over `ApiFailure`, so an
  * outcome gained does not compile until it has a word.
  */
 

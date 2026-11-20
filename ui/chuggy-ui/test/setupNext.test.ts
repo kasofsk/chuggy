@@ -183,7 +183,7 @@ const mends: {
   Binding: [
     { lacks: "Binding", reach: undefined },
     hand(
-      `Open ${pages}/repositories?from=setup#add and name your repository there: it then shows both apps, and adds it once both reach it. Tell me once it is added.`,
+      `Open ${pages}/settings/repositories?from=setup#add and name your repository there: it then shows both apps, and adds it once both reach it. Tell me once it is added.`,
       "once the person says the repository is added",
     ),
   ],
@@ -281,19 +281,19 @@ const trips: {
       repository: "acme-org/widgets",
     },
     bindRun(
-      `This project's repository is acme-org/widgets. The worker app is installed on acme-org, and GitHub does not let it in yet. Open ${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, and the worker app's press there goes to GitHub to let it in. I'll wait here.`,
+      `This project's repository is acme-org/widgets. The worker app is installed on acme-org, and GitHub does not let it in yet. Open ${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, and the worker app's press there goes to GitHub to let it in. I'll wait here.`,
     ),
   ],
   Account: [
     { lacks: "Account" },
     bindRun(
-      `Which repository is this project for? I could not tell this folder's, so name it on ${pages}/repositories?from=setup#add. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to your repository. That page then shows both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here and add it once both reach it.`,
+      `Which repository is this project for? I could not tell this folder's, so name it on ${pages}/settings/repositories?from=setup#add. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to your repository. That page then shows both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here and add it once both reach it.`,
     ),
   ],
   App: [
     { lacks: "App", app: "worker", account: "acme-org", repository: undefined },
     bindRun(
-      `Which repository is this project for? I could not tell this folder's, so name it on ${pages}/repositories?from=setup#add. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to your repository. That page then shows both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here and add it once both reach it.`,
+      `Which repository is this project for? I could not tell this folder's, so name it on ${pages}/settings/repositories?from=setup#add. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to your repository. That page then shows both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here and add it once both reach it.`,
     ),
   ],
 };
@@ -545,7 +545,7 @@ test("an app not granted the project's repository is sent to the connect flow on
   const grant = { account: "acme-org", repository: "acme-org/widgets" };
   expect(thing({ lacks: "Grant", app: "portal", ...grant })).toEqual(
     bindRun(
-      `This project's repository is acme-org/widgets. The portal app is installed on acme-org, and GitHub does not let it in yet. Open ${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, and the portal app's press there goes to GitHub to let it in. I'll wait here.`,
+      `This project's repository is acme-org/widgets. The portal app is installed on acme-org, and GitHub does not let it in yet. Open ${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, and the portal app's press there goes to GitHub to let it in. I'll wait here.`,
     ),
   );
 });
@@ -564,7 +564,7 @@ test("an app missing from the owner of the project's repository is sent to the c
     ),
   ).toEqual(
     bindRun(
-      `This project's repository is acme-org/widgets. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to acme-org/widgets. Open ${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets with both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here until both reach it.`,
+      `This project's repository is acme-org/widgets. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to acme-org/widgets. Open ${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets with both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here until both reach it.`,
     ),
   );
 });
@@ -603,7 +603,7 @@ test("the repository to add is named as this folder's where the folder has a rem
   expect(
     thing({ lacks: "Binding", reach: undefined }, { remote }),
   ).toMatchObject({
-    tell: `Open ${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, this folder's repository, shows both apps, and adds it once both reach it. Tell me once it is added.`,
+    tell: `Open ${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, this folder's repository, shows both apps, and adds it once both reach it. Tell me once it is added.`,
   });
 });
 
@@ -616,7 +616,7 @@ test("the repository to add is named on the connect flow where the folder has no
       },
     ),
   ).toMatchObject({
-    tell: `Open ${pages}/repositories?from=setup#add and name your repository there: it then shows both apps, and adds it once both reach it. Tell me once it is added.`,
+    tell: `Open ${pages}/settings/repositories?from=setup#add and name your repository there: it then shows both apps, and adds it once both reach it. Tell me once it is added.`,
   });
 });
 
@@ -625,7 +625,7 @@ test("connecting GitHub asks which repository first, names the folder's, and sen
   const next = thing({ lacks: "Account" }, { remote });
   expect(next).toEqual(
     bindRun(
-      `Which repository is this project for? This folder's is acme-org/widgets. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to acme-org/widgets, this folder's repository. Open ${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets with both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here and add it once both reach it.`,
+      `Which repository is this project for? This folder's is acme-org/widgets. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to acme-org/widgets, this folder's repository. Open ${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets with both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here and add it once both reach it.`,
     ),
   );
 });
@@ -661,7 +661,7 @@ test("every tell of a trip to GitHub says the repository before any app, carries
     expect(repository, lack.lacks).toBeGreaterThanOrEqual(0);
     expect(repository, lack.lacks).toBeLessThan(app);
     expect(tell, lack.lacks).toContain(
-      `${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add`,
+      `${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add`,
     );
     expect(tell, lack.lacks).not.toMatch(
       /All repositories|Only select repositories|pick acme-org/u,
@@ -1599,7 +1599,7 @@ test("both apps are named in one tell, each with whether it reaches the folder's
   };
   expect(thing(lack)).toEqual(
     bindRun(
-      `${reachSaid} 1. Portal: installed, not let into acme-org/widgets yet 2. Worker: not installed on acme-org yet. I'll wait here. Open ${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, and each app it still lacks has one press there that goes to GitHub for it. GitHub may ask you to confirm access first, with a code it emails you.`,
+      `${reachSaid} 1. Portal: installed, not let into acme-org/widgets yet 2. Worker: not installed on acme-org yet. I'll wait here. Open ${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, and each app it still lacks has one press there that goes to GitHub for it. GitHub may ask you to confirm access first, with a code it emails you.`,
     ),
   );
   expect(setupBindDue(lacking(lack))).toBeUndefined();
@@ -1671,7 +1671,7 @@ test("bind waits while the next thing is a trip to GitHub, and on nothing else",
 
 test("the page bind opens is the connect flow, on the folder's repository where it has one, and only where connecting GitHub is next", () => {
   expect(setupConnectDue(lacking({ lacks: "Account" }))).toBe(
-    `${pages}/repositories?from=setup#add`,
+    `${pages}/settings/repositories?from=setup#add`,
   );
   expect(
     setupConnectDue(
@@ -1680,7 +1680,9 @@ test("the page bind opens is the connect flow, on the folder's repository where 
         { remote: setupRepositoryRead("git@github.com:acme-org/widgets.git") },
       ),
     ),
-  ).toBe(`${pages}/repositories?repository=acme-org%2Fwidgets&from=setup#add`);
+  ).toBe(
+    `${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add`,
+  );
   expect(
     setupConnectDue(
       lacking({

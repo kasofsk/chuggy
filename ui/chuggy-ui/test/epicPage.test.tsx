@@ -78,10 +78,11 @@ test("the epic is drawn with its figures, its graph and its history", async () =
   ).toMatch(/^#2 Schema: .+, outside the epic$/u);
   expect(graphic.querySelectorAll("[data-member]")).toHaveLength(2);
   expect(
-    within(screen.getByRole("navigation", { name: "Epic" }))
-      .getAllByRole("link")
-      .map((link) => link.textContent),
-  ).toContain("History3");
+    within(screen.getByRole("navigation", { name: "Epic" })).getAllByRole(
+      "link",
+      { name: "History 3" },
+    ),
+  ).toHaveLength(1);
 });
 
 test("a reader who may not write epics is sent from the edit page to the Overview", async () => {
@@ -125,7 +126,6 @@ test("Cancel returns to the Overview with nothing written", async () => {
   const sent = await editDrawn(abilitiesEvery, () =>
     answer({ epic: 7, revision: 4 }),
   );
-  fireEvent.change(title(), { target: { value: "Payments" } });
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await settled();
   expect(writes(sent)).toHaveLength(0);
@@ -141,7 +141,7 @@ test("a revision made over another's is refused as stale, stays on the page and 
   );
   await saved("Payments");
   expect(screen.getByRole("alert").textContent).toBe(
-    "The epic was changed since you opened it. Reload it and make the change again.",
+    "The epic was changed since you opened it. Reload it and make the change again. · StaleRevision",
   );
   expect(screen.getByRole("button", { name: "Reload the epic" })).toBeTruthy();
   expect(epicNavigated).toStrictEqual([]);

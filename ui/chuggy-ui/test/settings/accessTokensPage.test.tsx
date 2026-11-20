@@ -341,7 +341,7 @@ test("each token's standing is drawn on the page's clock: Active past the warnin
   expect(lasting).not.toMatch(/left/u);
   expect(nearing).toMatch(
     new RegExp(
-      `^nearing.*Read.*${String(accessTokenWarningDays)} days leftExpiring`,
+      `^nearing.*Read.*${String(accessTokenWarningDays)} days left.*Expiring`,
       "u",
     ),
   );

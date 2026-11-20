@@ -264,8 +264,13 @@ export interface ProjectInventory {
   ): Promise<ProjectInventoryPage>;
 }
 
+/** A project as the inventory lists it, with the artifact it names its icon where it names one. */
+export interface InventoryPartition extends NamedPartition {
+  readonly icon?: ProjectArtifactId;
+}
+
 export interface ProjectInventoryPage {
-  readonly projects: readonly NamedPartition[];
+  readonly projects: readonly InventoryPartition[];
   readonly nextAfter?: Partition;
 }
 

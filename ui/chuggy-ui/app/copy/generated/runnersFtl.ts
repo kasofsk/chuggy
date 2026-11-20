@@ -153,11 +153,6 @@ runners-wait-offline = offline
 runners-wait-unable = none can run it
 runners-wait-room = { $free } free, needs { $needed }
 
-## What a write of the project's placement came to.
-
-runners-writing = Writing
-runners-written = Written
-
 ## The project's placement.
 
 runners-placement-title = { -placement(case: "upper") }
@@ -171,6 +166,7 @@ runners-placement-col-runner = { -runner(case: "upper") }
 runners-placement-work = { -work-stage(case: "upper") }
 runners-placement-evaluation = { -evaluation(case: "upper") }
 runners-placement-chat = { -thread(case: "upper") }
+runners-placement-saved = { -placement(case: "upper") } saved
 runners-placement-landed = { -work-stage(case: "upper") } and { -evaluation } saved
 runners-placement-unhosted = Needs { -hosted-runs }
 `;

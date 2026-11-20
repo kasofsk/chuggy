@@ -18,6 +18,8 @@ import type {
 } from "../../../../src/contract/consolePage.ts";
 import type { Copy } from "./copy.ts";
 import { repositoryLabel } from "./projectRepositories.ts";
+import { settingsGroupLabels, settingsSection } from "./settingsNav.ts";
+import type { SettingsSectionId } from "./settingsNav.ts";
 import { ticketCreationQueryOf } from "./ticketCreationQuery.ts";
 
 /** The route a router matched, as plain data: its identity, the parameters
@@ -53,8 +55,8 @@ function consolePageTicketNew(match: ConsolePageMatch): unknown {
 const consolePagePlainPaths = {
   Tickets: "",
   Inbox: "inbox",
-  Catalog: "catalog",
-  Repositories: "repositories",
+  Catalog: "settings/catalog",
+  Repositories: "settings/repositories",
   Epics: "epics",
 } as const satisfies Readonly<Record<string, string>>;
 
@@ -120,7 +122,9 @@ function consolePageRouteId(path: string): string {
 }
 
 /** Each route under a project, by the identity the router gives it, and the
- * page it is. A settings address that only redirects names no section. */
+ * page it is. A settings address that only redirects names no section, and
+ * nor do the reader's preferences or the project's appearance, which the
+ * contract names none for. */
 const consolePageRoutes: ReadonlyMap<
   string,
   (match: ConsolePageMatch) => unknown
@@ -129,7 +133,7 @@ const consolePageRoutes: ReadonlyMap<
     ([page, path]) => [consolePageRouteId(path), () => ({ page })] as const,
   ),
   [
-    "/$tenant/$project/repositories/$repository",
+    "/$tenant/$project/settings/repositories/$repository",
     (match) => ({ page: "Repository", repository: match.params["repository"] }),
   ],
   ["/$tenant/$project/tickets/new", consolePageTicketNew],
@@ -161,6 +165,8 @@ const consolePageRoutes: ReadonlyMap<
   ["/$tenant/$project/settings/", consolePageSettings()],
   ["/$tenant/$project/settings/workspace", consolePageSettings()],
   ["/$tenant/$project/settings/workspace/", consolePageSettings()],
+  ["/$tenant/$project/settings/preferences", consolePageSettings()],
+  ["/$tenant/$project/settings/appearance", consolePageSettings()],
   ...Object.entries(consolePageSettingsPaths).map(
     ([section, path]) =>
       [
@@ -184,7 +190,7 @@ function consolePagePathOf(page: ConsolePage): string {
     case "Epic":
       return `epics/${String(page.epic)}`;
     case "Repository":
-      return `repositories/${encodeURIComponent(page.repository)}`;
+      return `settings/repositories/${encodeURIComponent(page.repository)}`;
     case "Ticket":
       return `tickets/${String(page.ticket)}`;
     case "TicketEdit":
@@ -225,52 +231,21 @@ export function consolePageOf(
   return parsed.success ? parsed.data : undefined;
 }
 
-/** The settings section's words, as the settings' side navigation draws its
- * level and its page. */
-const consolePageSectionWords: Readonly<
-  Record<ConsolePageSettingsDrawn, readonly [Copy, Copy]>
+/** Each section the console draws, by the settings roster's section it is. */
+const consolePageSectionIds: Readonly<
+  Record<ConsolePageSettingsDrawn, SettingsSectionId>
 > = {
-  ProjectLead: [{ id: "settings-nav-project" }, { id: "settings-nav-threads" }],
-  ProjectPlacement: [
-    { id: "settings-nav-project" },
-    { id: "settings-nav-placement" },
-  ],
-  ProjectPermissions: [
-    { id: "settings-nav-project" },
-    { id: "settings-nav-permissions" },
-  ],
-  ProjectAccessTokens: [
-    { id: "settings-nav-project" },
-    { id: "settings-nav-access-tokens" },
-  ],
-  WorkspacePeople: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-people" },
-  ],
-  WorkspaceAccounts: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-accounts" },
-  ],
-  WorkspacePermissions: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-permissions" },
-  ],
-  WorkspaceRunners: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-personal-runners" },
-  ],
-  WorkspaceUsage: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-usage" },
-  ],
-  SiteWorkspaces: [
-    { id: "settings-nav-site" },
-    { id: "settings-nav-workspaces" },
-  ],
-  SitePermissions: [
-    { id: "settings-nav-site" },
-    { id: "settings-nav-permissions" },
-  ],
+  ProjectLead: "threads",
+  ProjectPlacement: "placement",
+  ProjectPermissions: "permissions",
+  ProjectAccessTokens: "access-tokens",
+  WorkspacePeople: "people",
+  WorkspaceAccounts: "accounts",
+  WorkspacePermissions: "workspace-permissions",
+  WorkspaceRunners: "my-runner",
+  WorkspaceUsage: "usage",
+  SiteWorkspaces: "site-workspaces",
+  SitePermissions: "site-permissions",
 };
 
 const consolePageListWords: Readonly<
@@ -338,8 +313,14 @@ export function consolePageLabel(page: ConsolePage): Copy {
     case "Settings": {
       if (page.section === undefined || page.section === "ProjectPools")
         return { id: "pages-settings" };
-      const [level, section] = consolePageSectionWords[page.section];
-      return { id: "pages-settings-section", args: { level, section } };
+      const section = settingsSection(consolePageSectionIds[page.section]);
+      return {
+        id: "pages-settings-section",
+        args: {
+          level: settingsGroupLabels[section.group],
+          section: section.label,
+        },
+      };
     }
   }
 }

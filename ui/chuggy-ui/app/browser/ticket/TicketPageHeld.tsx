@@ -42,10 +42,6 @@ export interface TicketReads {
   readonly queues: LandingQueuesResponse | undefined;
 }
 
-export function readValue<T>(state: PanelState<T>): T | undefined {
-  return state.state === "Ready" ? state.value : undefined;
-}
-
 /** What the layout hands every tab. */
 export interface TicketPageHeld {
   readonly partition: PartitionIdentity;

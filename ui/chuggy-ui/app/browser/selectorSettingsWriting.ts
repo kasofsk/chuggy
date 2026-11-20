@@ -19,7 +19,7 @@ import type { SelectorProjectSettingsResponse } from "../../../../src/contract/r
 import { apiWriteSelectorSettings } from "../core/apiRoutes.ts";
 import { consoleWriteKey } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
-import type { CopyText } from "../core/copy.ts";
+import type { CopyOrData, CopyText } from "../core/copy.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { selectorSettingsQuery } from "../core/projectQueries.ts";
 import {
@@ -73,6 +73,12 @@ export interface SelectorSettingsPressed<TWriter extends string> {
   readonly overrides: SelectorProjectOverrides;
 }
 
+/** The line a landed write's toast says, for a page whose writes say one. */
+export type SelectorSettingsLandedSaid<TWriter extends string> = (
+  settings: SelectorProjectSettingsResponse,
+  pressed: SelectorSettingsPressed<TWriter>,
+) => CopyOrData;
+
 /**
  * The whole override set written under the draft's revision. A write that
  * landed IS the newest read, so it is written into the settings key rather
@@ -83,6 +89,7 @@ export interface SelectorSettingsPressed<TWriter extends string> {
 function selectorSettingsSaveWrite<TWriter extends string>(
   partition: PartitionIdentity,
   text: CopyText,
+  said: SelectorSettingsLandedSaid<TWriter> | undefined,
 ): ConsoleWrite<
   SelectorSettingsPressed<TWriter>,
   SelectorProjectSettingsResponse
@@ -106,6 +113,7 @@ function selectorSettingsSaveWrite<TWriter extends string>(
           settings,
         ),
       ),
+    ...(said === undefined ? {} : { landedUnseen: said }),
   };
 }
 
@@ -141,11 +149,12 @@ export interface SelectorSettingsWriting<TWriter extends string> {
 export function useSelectorSettingsWriting<TWriter extends string>(
   partition: PartitionIdentity,
   held: SelectorSettingsHeld,
+  said?: SelectorSettingsLandedSaid<TWriter>,
 ): SelectorSettingsWriting<TWriter> {
   const client = useQueryClient();
   const text = useCopyText();
   const saving = useConsoleWrite(
-    selectorSettingsSaveWrite<TWriter>(partition, text),
+    selectorSettingsSaveWrite<TWriter>(partition, text, said),
     { drawn: true },
   );
   return {

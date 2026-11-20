@@ -439,6 +439,26 @@ export const ticketTakerFunction = "ticket_taker";
 
 /** The member a ticket's next execution is placed for: its taker, else its creator, else none. */
 export const ticketOwnerFunction = "ticket_owner";
+/** Every theme one person owns, by number. */
+export const ownedThemesFunction = "owned_themes";
+/** One theme created for one person, refused past the bound they are held to. */
+export const ownedThemeCreateFunction = "create_owned_theme";
+/** One theme of one person's written whole. */
+export const ownedThemeWriteFunction = "write_owned_theme";
+/** One theme of one person's deleted, with the choice that names it. */
+export const ownedThemeDeleteFunction = "delete_owned_theme";
+/** One person's global theme choice, none where they hold none. */
+export const themeChoiceReadFunction = "read_theme_choice";
+/** One person's global theme choice written whole, or cleared. */
+export const themeChoiceWriteFunction = "write_theme_choice";
+/** One project's default theme written whole, or cleared, and who set it. */
+export const projectThemeSetFunction = "set_project_theme";
+/** One person's theme for one project, none where they hold none. */
+export const projectThemeOverrideReadFunction = "read_project_theme_override";
+/** One person's theme for one project written whole, or cleared. */
+export const projectThemeOverrideWriteFunction = "write_project_theme_override";
+/** One project's icon or banner named, or cleared, and who named it. */
+export const projectImageSetFunction = "set_project_image";
 
 /** A thread's own choice of ticket wakes and its member's chat host's setting, read by the scheduler beside each wake candidate. */
 export const threadTicketWakesFunction = "thread_ticket_wakes";

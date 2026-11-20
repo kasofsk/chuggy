@@ -38,7 +38,7 @@ import { Button } from "../ui/Button.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 
 /** One Import now: whether its request is out, and the line its refusal left. */
 export interface RepositoryImporting {
@@ -140,9 +140,9 @@ export function RepositoryImportLine(props: {
     <div className="grid gap-1">
       <p className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-ink-3">{text(repositoryImportLabel)}</span>
-        <Pill tone={repositoryImportTone(line.word)}>
+        <StatusBadge tone={repositoryImportTone(line.word)} size="small">
           {text(repositoryImportWordLabel(line.word))}
-        </Pill>
+        </StatusBadge>
         {"attemptedAt" in line ? (
           <Figure figure={agoFigure(line.attemptedAt, nowMs)} />
         ) : null}

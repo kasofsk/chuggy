@@ -2,7 +2,8 @@
  * The watch of a client's writes and the store made over its client: a
  * refusal a screen watching its key draws is that screen's, one no watching
  * screen draws is kept in the store for the shell, and what is kept is
- * bounded, the oldest let go first. The console's cache asks a refusal of the
+ * bounded, the oldest let go first; the last landing a write said is held
+ * beside them and never lets one go. The console's cache asks a refusal of the
  * watch once the cache has told its readers what it held before it. A read
  * whose document the schema refused leaves the store saying the console is
  * outdated. No tree is drawn, so nothing here is kept by a screen.
@@ -14,6 +15,7 @@ import { expect, test } from "vitest";
 
 import { consoleOutdatedOf } from "../app/browser/consoleOutdated.ts";
 import {
+  consoleWriteLandedOf,
   consoleWriteUnseenLetGo,
   consoleWriteUnseenOf,
 } from "../app/browser/consoleWriteUnseen.ts";
@@ -203,4 +205,23 @@ test("the console's cache asks a refusal of the watch once its readers have been
 
   expect(asked).toStrictEqual(["after"]);
   unsubscribed();
+});
+
+test("a landing a write said is held in place of the one before it, lets no refusal go, and goes on its dismissal", async () => {
+  const { client, store } = tab();
+  for (let index = 0; index < consoleWriteUnseenMax; index += 1)
+    await refusedThrough(client, saved, `refused ${String(index)}`);
+  consoleWriteWatchOf(client).landed("Epic 7 archived");
+  consoleWriteWatchOf(client).landed("Epic 7 reactivated");
+
+  expect(consoleWriteLandedOf(store.getState())?.sentence).toBe(
+    "Epic 7 reactivated",
+  );
+  expect(unseen(store)).toHaveLength(consoleWriteUnseenMax);
+
+  const landed = consoleWriteLandedOf(store.getState());
+  if (landed === undefined) throw new Error("no landing was held");
+  store.dispatch(consoleWriteUnseenLetGo(landed.id));
+  expect(consoleWriteLandedOf(store.getState())).toBeUndefined();
+  expect(unseen(store)).toHaveLength(consoleWriteUnseenMax);
 });

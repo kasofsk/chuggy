@@ -162,7 +162,7 @@ export function answerLine(): HTMLElement | null {
   return row === null ? null : within(row).queryByRole("status");
 }
 
-/** The line a box is described by, which is where the rule stands. */
+/** The line a box is described by: its hint, or its fault or refusal. */
 export function ruleUnder(label: string): HTMLElement {
   const box = screen.getByRole("textbox", { name: label });
   const line = document.getElementById(
@@ -170,6 +170,25 @@ export function ruleUnder(label: string): HTMLElement {
   );
   if (line === null) throw new Error(`nothing describes ${label}`);
   return line;
+}
+
+/** Whether what describes the box is a fault or a refusal, not its hint. */
+export function faulted(label: string): boolean {
+  return ruleUnder(label).classList.contains("form-field-error");
+}
+
+/** The fault or refusal drawn under a control, none where its hint or nothing
+ * stands there. */
+export function errorOf(control: HTMLElement): string | null {
+  const lines = (control.getAttribute("aria-describedby") ?? "")
+    .split(" ")
+    .map((id) => document.getElementById(id))
+    .filter((line) => line?.classList.contains("form-field-error") === true);
+  return lines[0]?.textContent ?? null;
+}
+
+export function errorUnder(label: string): string | null {
+  return errorOf(screen.getByRole("textbox", { name: label }));
 }
 
 /** The workspace choice's trigger, whose name ends in the entry it stands on. */

@@ -3,7 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { cleanup, screen, within } from "@testing-library/react";
 import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import {
@@ -36,7 +36,11 @@ import { workRunnerOver, workRunnerUnreadable } from "./workRunnerReads.ts";
 import type { WorkRunnerReads } from "./workRunnerReads.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
-import { TicketPageEveryTab, ticketHeader } from "./ticketPageEveryTab.tsx";
+import {
+  TicketPageEveryTab,
+  ticketHeader,
+  ticketHeaderMenuEntries,
+} from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -51,8 +55,13 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+  Link: (props: {
+    readonly ref?: Ref<HTMLAnchorElement>;
+    readonly children?: ReactNode;
+  }) => (
+    <a href="/" ref={props.ref}>
+      {props.children}
+    </a>
   ),
   useParams: () => ({ ...atlas, ticket: "11" }),
 }));
@@ -173,7 +182,7 @@ test("a reader who may not dispatch is offered no Dispatch", async () => {
     abilitiesOver({ ...abilitiesEvery, dispatch: false }),
   );
   expect(dispatchOffered()).toBe(false);
-  expect(screen.getByText("Edit")).toBeDefined();
+  expect(await ticketHeaderMenuEntries()).toContain("Edit");
 });
 
 test("a reader who may dispatch and not mutate is offered Dispatch alone", async () => {
@@ -182,15 +191,20 @@ test("a reader who may dispatch and not mutate is offered Dispatch alone", async
     abilitiesOver({ ...abilitiesNone, dispatch: true }),
   );
   expect(dispatchOffered()).toBe(true);
-  expect(screen.queryByText("Edit")).toBeNull();
+  expect(await ticketHeaderMenuEntries()).not.toContain("Edit");
 });
 
 test.each(abilitiesUnrefusing)(
-  "a reader the abilities read %s is offered Dispatch",
+  "a reader the abilities read %s is offered Dispatch, as the header's one primary action",
   async (_said, abilities) => {
     await drawnDispatching(true, abilitiesOver(abilities));
     expect(dispatchOffered()).toBe(true);
-    expect(screen.getByText("Edit")).toBeDefined();
+    expect(
+      [...ticketHeader().querySelectorAll(".btn-primary")].map(
+        (primary) => primary.textContent,
+      ),
+    ).toStrictEqual(["Dispatch"]);
+    expect(await ticketHeaderMenuEntries()).toContain("Edit");
   },
 );
 
@@ -226,7 +240,7 @@ test("the reader's own ticket, with no runner of theirs for its work, draws the 
   const line = noRunnerLine();
   expect(line?.textContent).toBe("No runner · Add runner");
   expect(line !== null && ticketHeader().contains(line)).toBe(true);
-  expect(screen.getByText("Edit")).toBeDefined();
+  expect(await ticketHeaderMenuEntries()).toContain("Edit");
 });
 
 /** Another member's runners are not the reader's to read, so their ticket is
@@ -313,5 +327,5 @@ test("a reader who may not dispatch is told nothing of a runner, with none of th
   );
   expect(dispatchOffered()).toBe(false);
   expect(noRunnerLine()).toBeNull();
-  expect(screen.getByText("Edit")).toBeDefined();
+  expect(await ticketHeaderMenuEntries()).toContain("Edit");
 });

@@ -1,12 +1,24 @@
-/* Chip: the pill's own box around a name that clips, and the round button
+/* Chip: a name that clips in a box on the sunken surface, and the round button
    that takes the chip away. The button is the height of the chip's line, so a
    chip with one stands no taller than a chip without, and its press reaches
    past its edge for a finger but never past the chip's end, where the next
-   control stands. The focus ring is the chip's, since the button's own would
-   lie over the name. */
+   control stands: under a coarse pointer it is a square a control's height,
+   centred on the button's line and ending where the chip does. The focus ring
+   is the chip's, since the button's own would lie over the name. */
 
 @layer ui {
   .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-3);
+    background: var(--surface-2);
+    font: var(--weight-medium) var(--text-xs) / var(--leading-dense)
+      var(--font-prose);
+    color: var(--ink-2);
+    white-space: nowrap;
+    vertical-align: baseline;
     min-width: 0;
     max-width: 100%;
   }
@@ -51,11 +63,12 @@
   }
 
   .chip-remove:focus-visible {
-    box-shadow: none;
+    outline: none;
   }
 
   .chip:has(.chip-remove:focus-visible) {
-    box-shadow: var(--ring-focus);
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: var(--focus-offset);
   }
 
   .chip-remove:disabled {
@@ -67,5 +80,16 @@
   .chip-cross {
     width: 0.9em;
     height: 0.9em;
+  }
+
+  @media (pointer: coarse) {
+    .chip-remove::after {
+      inset: auto;
+      inset-inline-end: calc(var(--space-1) * -1);
+      top: 50%;
+      width: var(--height-control);
+      height: var(--height-control);
+      translate: 0 -50%;
+    }
   }
 }

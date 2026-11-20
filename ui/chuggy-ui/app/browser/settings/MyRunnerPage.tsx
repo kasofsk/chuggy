@@ -95,23 +95,26 @@ import {
 import { RunnerRegister } from "../RunnerRegister.tsx";
 import type { RunnerMinting } from "../RunnerAsk.tsx";
 import { RunnerVersion } from "../RunnerVersion.tsx";
-import { HostListingHead, MyChatHost, useChatHost } from "./MyChatHost.tsx";
+import { MyChatHost, useChatHost } from "./MyChatHost.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Picker } from "../ui/Picker.tsx";
-import { Pill } from "../ui/Pill.tsx";
+import { StatusBadge } from "../ui/StatusBadge.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 import {
   SettingsListing,
-  settingsListingNone,
   SettingsListingSection,
-  SettingsListingTable,
+  SettingsListingStacked,
   SettingsListingUnread,
   SettingsListingWithheld,
 } from "./SettingsListing.tsx";
+
+import "./MyRunnerPage.css";
+import "./tenantPeople.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 type PersonalRunnerListed = PersonalRunnerResponse["runners"][number];
 
@@ -323,8 +326,6 @@ function useMyRunnerRemoving(
   };
 }
 
-const myRunnerColumnsCount = 7;
-
 /** What a runner is running: each attempt it holds, by its ticket and what it runs, or Idle where it holds none. */
 function MyRunnerRunning(props: {
   readonly tenant: string;
@@ -333,120 +334,111 @@ function MyRunnerRunning(props: {
   const text = useCopyText();
   const projectNamed = useProjectNamed();
   const { held, heldTruncated } = props.runner;
-  return (
-    <td>
-      <span className="people-stacked-label">
-        {text({ id: "runners-personal-running-col" })}
+  if (held.length === 0)
+    return (
+      <span className="text-ink-3">
+        {text({ id: "runners-personal-running-idle" })}
       </span>
-      {held.length === 0 ? (
-        <span className="text-ink-3">
-          {text({ id: "runners-personal-running-idle" })}
-        </span>
-      ) : (
-        <ul className="grid gap-1">
-          {held.map((attempt) => (
-            <li key={`${attempt.project}/${JSON.stringify(attempt.identity)}`}>
-              <Link
-                to="/$tenant/$project/tickets/$ticket"
-                params={{
+    );
+  return (
+    <ul className="grid gap-1">
+      {held.map((attempt) => (
+        <li key={`${attempt.project}/${JSON.stringify(attempt.identity)}`}>
+          <Link
+            to="/$tenant/$project/tickets/$ticket"
+            params={{
+              tenant: props.tenant,
+              project: attempt.project,
+              ticket: String(attempt.ticket),
+            }}
+          >
+            {text({
+              id: "runners-personal-running-ticket",
+              args: {
+                project: projectNamed({
                   tenant: props.tenant,
                   project: attempt.project,
-                  ticket: String(attempt.ticket),
-                }}
-              >
-                {text({
-                  id: "runners-personal-running-ticket",
-                  args: {
-                    project: projectNamed({
-                      tenant: props.tenant,
-                      project: attempt.project,
-                    }),
-                    ticket: attempt.ticket,
-                  },
-                })}
-              </Link>
-              <span className="block text-sm text-ink-3">
-                {text(myRunnerHeldLabel(attempt.identity))}
-              </span>
-            </li>
-          ))}
-          {heldTruncated ? (
-            <li className="text-sm text-ink-3">
-              {text({ id: "runners-more" })}
-            </li>
-          ) : null}
-        </ul>
-      )}
-    </td>
+                }),
+                ticket: attempt.ticket,
+              },
+            })}
+          </Link>
+          <span className="block text-sm text-ink-3">
+            {text(myRunnerHeldLabel(attempt.identity))}
+          </span>
+        </li>
+      ))}
+      {heldTruncated ? (
+        <li className="text-sm text-ink-3">{text({ id: "runners-more" })}</li>
+      ) : null}
+    </ul>
   );
 }
 
-function MyRunnerRow(props: {
-  readonly tenant: string;
-  readonly runner: PersonalRunnerListed;
-  readonly removing: MyRunnerRemoving;
-  readonly nowMs: number;
-}): ReactNode {
-  const text = useCopyText();
-  const { runner, removing, nowMs } = props;
+type MyRunnerColumn =
+  | "runner"
+  | "status"
+  | "version"
+  | "polled"
+  | "running"
+  | "registered"
+  | "remove";
+
+/** One runner's cells: its name first, then whether it is polling, its version, when it last polled, what it runs, when it registered, and its removal. */
+function myRunnerCells(
+  runner: PersonalRunnerListed,
+  props: {
+    readonly tenant: string;
+    readonly removing: MyRunnerRemoving;
+    readonly nowMs: number;
+    readonly text: ReturnType<typeof useCopyText>;
+  },
+): Readonly<Record<MyRunnerColumn, ReactNode>> {
+  const { removing, nowMs, text } = props;
   const short = myRunnerShort(runner.id);
   const standing = runner.live ? "Live" : "Offline";
-  return (
-    <tr>
-      <th scope="row">
-        <span className="people-name block font-strong text-ink-1">
-          <span title={runner.id}>{short}</span>
-        </span>
-        <span className="block text-sm text-ink-3">
+  return {
+    runner: (
+      <>
+        <Tooltip trigger="abbreviation" text={runner.id}>
+          <span className="block font-medium text-ink-1">{short}</span>
+        </Tooltip>
+        <span className="block text-sm font-regular text-ink-3">
           {runner.capabilities.map(runnerCapabilityLabel).join(", ")}
         </span>
-      </th>
-      <MyRunnerRunning tenant={props.tenant} runner={runner} />
-      <td data-none={settingsListingNone(runner.runner === undefined)}>
-        <span className="people-stacked-label">
-          {text({ id: "runners-col-version" })}
-        </span>
-        <RunnerVersion runner={runner.runner} named />
-      </td>
-      <td>
-        <span className="people-stacked-label">
-          {text({ id: "runners-col-registered" })}
-        </span>
-        <Figure figure={instantFigure(runner.registeredAt, nowMs)} />
-      </td>
-      <td>
-        <span className="people-stacked-label">
-          {text({ id: "runners-col-last-polled" })}
-        </span>
-        {runner.polledAt === undefined ? (
-          text({ id: "runners-never" })
-        ) : (
-          <Figure figure={instantFigure(runner.polledAt, nowMs)} />
-        )}
-      </td>
-      <td>
-        <Pill tone={runnerStandingTone(standing)}>
-          {text(runnerStandingLabel(standing))}
-        </Pill>
-      </td>
-      <td className="people-edit">
-        <Button
-          variant="quiet"
-          size="sm"
-          named={text({ id: "runners-personal-remove-named", args: { short } })}
-          disabled={removing.busy || removing.asking !== undefined}
-          onClick={() => {
-            removing.press(runner.id);
-          }}
-        >
-          {text({ id: "runners-remove" })}
-        </Button>
-      </td>
-    </tr>
-  );
+      </>
+    ),
+    status: (
+      <StatusBadge tone={runnerStandingTone(standing)} size="small">
+        {text(runnerStandingLabel(standing))}
+      </StatusBadge>
+    ),
+    version: <RunnerVersion runner={runner.runner} named />,
+    polled:
+      runner.polledAt === undefined ? (
+        text({ id: "runners-never" })
+      ) : (
+        <Figure figure={instantFigure(runner.polledAt, nowMs)} />
+      ),
+    running: <MyRunnerRunning tenant={props.tenant} runner={runner} />,
+    registered: <Figure figure={instantFigure(runner.registeredAt, nowMs)} />,
+    remove: (
+      <Button
+        variant="quiet"
+        size="sm"
+        named={text({ id: "runners-personal-remove-named", args: { short } })}
+        disabled={removing.busy || removing.asking !== undefined}
+        onClick={() => {
+          removing.press(runner.id);
+        }}
+      >
+        {text({ id: "runners-remove" })}
+      </Button>
+    ),
+  };
 }
 
-/** Under a runner's row, the question its removal waits on. */
+/** Under the roster, the question a runner's removal waits on. */
 function MyRunnerAsked(props: {
   readonly runner: PersonalRunnerListed;
   readonly last: boolean;
@@ -454,53 +446,24 @@ function MyRunnerAsked(props: {
 }): ReactNode {
   const text = useCopyText();
   const { runner, removing } = props;
-  if (removing.asking !== runner.id) return null;
   const short = myRunnerShort(runner.id);
   return (
-    <tr className="people-asked">
-      <td colSpan={myRunnerColumnsCount}>
-        <div className="ms-auto grid max-w-aside gap-2">
-          <Confirm
-            question={text({
-              id: "runners-personal-remove-question",
-              args: { short },
-            })}
-            confirm={text({ id: "runners-remove" })}
-            busy={removing.busy}
-            onConfirm={() => {
-              removing.send(runner.id);
-            }}
-            onCancel={removing.cancel}
-          >
-            {text(myRunnerRemovalLine(short, props.last))}
-          </Confirm>
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-function MyRunnerRows(props: {
-  readonly tenant: string;
-  readonly runner: PersonalRunnerListed;
-  readonly last: boolean;
-  readonly removing: MyRunnerRemoving;
-  readonly nowMs: number;
-}): ReactNode {
-  return (
-    <>
-      <MyRunnerRow
-        tenant={props.tenant}
-        runner={props.runner}
-        removing={props.removing}
-        nowMs={props.nowMs}
-      />
-      <MyRunnerAsked
-        runner={props.runner}
-        last={props.last}
-        removing={props.removing}
-      />
-    </>
+    <div className="ms-auto grid w-full max-w-aside gap-2">
+      <Confirm
+        question={text({
+          id: "runners-personal-remove-question",
+          args: { short },
+        })}
+        confirm={text({ id: "runners-remove" })}
+        busy={removing.busy}
+        onConfirm={() => {
+          removing.send(runner.id);
+        }}
+        onCancel={removing.cancel}
+      >
+        {text(myRunnerRemovalLine(short, props.last))}
+      </Confirm>
+    </div>
   );
 }
 
@@ -512,25 +475,52 @@ function MyRunnersTable(props: {
   const text = useCopyText();
   const nowMs = useNowMs();
   const runners = props.held.runners;
+  const asked = runners.find((runner) => runner.id === props.removing.asking);
   return (
-    <SettingsListingTable caption={text({ id: "runners-title" })}>
-      <HostListingHead
-        name={text({ id: "runners-col-runner" })}
-        running={text({ id: "runners-personal-running-col" })}
+    <>
+      <SettingsListingStacked
+        caption={text({ id: "runners-title" })}
+        columns={[
+          {
+            key: "runner",
+            label: text({ id: "runners-col-runner" }),
+            rowHeader: true,
+          },
+          { key: "status", label: text({ id: "runners-col-status" }) },
+          { key: "version", label: text({ id: "runners-col-version" }) },
+          { key: "polled", label: text({ id: "runners-col-last-polled" }) },
+          {
+            key: "running",
+            label: text({ id: "runners-personal-running-col" }),
+          },
+          {
+            key: "registered",
+            label: text({ id: "runners-col-registered" }),
+          },
+          {
+            key: "remove",
+            label: text({ id: "runners-col-remove" }),
+            actions: true,
+          },
+        ]}
+        rows={runners.map((runner) => ({
+          key: runner.id,
+          cells: myRunnerCells(runner, {
+            tenant: props.tenant,
+            removing: props.removing,
+            nowMs,
+            text,
+          }),
+        }))}
       />
-      <tbody>
-        {runners.map((runner) => (
-          <MyRunnerRows
-            key={runner.id}
-            tenant={props.tenant}
-            runner={runner}
-            last={runners.length === 1}
-            removing={props.removing}
-            nowMs={nowMs}
-          />
-        ))}
-      </tbody>
-    </SettingsListingTable>
+      {asked === undefined ? null : (
+        <MyRunnerAsked
+          runner={asked}
+          last={runners.length === 1}
+          removing={props.removing}
+        />
+      )}
+    </>
   );
 }
 
@@ -588,19 +578,49 @@ function MyRunnerProjectPriority(props: {
   );
 }
 
-/** How many attempts wait in a project for the reader's runners. */
-function MyRunnerProjectWaiting(props: {
-  readonly served: PersonalRunnerProjectListed;
-}): ReactNode {
-  const text = useCopyText();
-  return (
-    <td>
-      <span className="people-stacked-label">
-        {text({ id: "runners-personal-project-waiting-col" })}
-      </span>
-      {copyOrDataText(text, myRunnerWaitingLabel(props.served))}
-    </td>
-  );
+function myRunnerProjectCells(
+  served: PersonalRunnerProjectListed,
+  props: {
+    readonly named: (project: string) => string;
+    readonly busy: boolean;
+    readonly onPrioritize: (
+      project: string,
+      priority: PersonalRunnerPriority,
+    ) => void;
+    readonly onRemove: (project: string) => void;
+  },
+  text: ReturnType<typeof useCopyText>,
+): Readonly<Record<"project" | "priority" | "waiting" | "remove", ReactNode>> {
+  const name = props.named(served.project);
+  return {
+    project: <span className="tabular-cut block text-ink-1">{name}</span>,
+    priority: (
+      <MyRunnerProjectPriority
+        served={served}
+        name={name}
+        onPrioritize={(priority) => {
+          props.onPrioritize(served.project, priority);
+        }}
+      />
+    ),
+    waiting: copyOrDataText(text, myRunnerWaitingLabel(served)),
+    remove: (
+      <Button
+        variant="quiet"
+        size="sm"
+        named={text({
+          id: "runners-personal-project-remove",
+          args: { project: name },
+        })}
+        disabled={props.busy}
+        onClick={() => {
+          props.onRemove(served.project);
+        }}
+      >
+        {text({ id: "runners-remove" })}
+      </Button>
+    ),
+  };
 }
 
 /** The projects every runner of the reader's takes work in, each with the
@@ -618,61 +638,35 @@ function MyRunnerProjectsTable(props: {
 }): ReactNode {
   const text = useCopyText();
   return (
-    <SettingsListingTable caption={text({ id: "runners-personal-projects" })}>
-      <thead>
-        <tr>
-          <th scope="col">{text({ id: "runners-personal-project-col" })}</th>
-          <th scope="col">
-            {text({ id: "runners-personal-project-priority-col" })}
-          </th>
-          <th scope="col">
-            {text({ id: "runners-personal-project-waiting-col" })}
-          </th>
-          <th scope="col" className="w-[8em]">
-            <span className="visually-hidden">
-              {text({ id: "runners-col-remove" })}
-            </span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.projects.map((served) => (
-          <tr key={served.project}>
-            <th scope="row">
-              <span className="people-name block text-ink-1">
-                {props.named(served.project)}
-              </span>
-            </th>
-            <td>
-              <MyRunnerProjectPriority
-                served={served}
-                name={props.named(served.project)}
-                onPrioritize={(priority) => {
-                  props.onPrioritize(served.project, priority);
-                }}
-              />
-            </td>
-            <MyRunnerProjectWaiting served={served} />
-            <td className="people-edit">
-              <Button
-                variant="quiet"
-                size="sm"
-                named={text({
-                  id: "runners-personal-project-remove",
-                  args: { project: props.named(served.project) },
-                })}
-                disabled={props.busy}
-                onClick={() => {
-                  props.onRemove(served.project);
-                }}
-              >
-                {text({ id: "runners-remove" })}
-              </Button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </SettingsListingTable>
+    <SettingsListingStacked
+      className="people-table"
+      caption={text({ id: "runners-personal-projects" })}
+      columns={[
+        {
+          key: "project",
+          label: text({ id: "runners-personal-project-col" }),
+          rowHeader: true,
+        },
+        {
+          key: "priority",
+          label: text({ id: "runners-personal-project-priority-col" }),
+        },
+        {
+          key: "waiting",
+          label: text({ id: "runners-personal-project-waiting-col" }),
+        },
+        {
+          key: "remove",
+          label: text({ id: "runners-col-remove" }),
+          actions: true,
+          headClassName: "w-[8em]",
+        },
+      ]}
+      rows={props.projects.map((served) => ({
+        key: served.project,
+        cells: myRunnerProjectCells(served, props, text),
+      }))}
+    />
   );
 }
 
@@ -898,31 +892,33 @@ export function MyRunnerPage(): ReactNode {
   const inventory = usePanelState(projectsInventoryQuery());
   const framed = useParams({ strict: false }).project;
   return (
-    <SettingsPage title={text({ id: "runners-personal-title" })}>
-      <SettingsListing>
-        <MyRunnerPauses tenant={tenant} />
-        <MyRunners
-          tenant={tenant}
-          runner={runner}
-          permit={permit}
-          addable={
-            inventory.state === "Ready" && runner.state === "Ready"
-              ? myRunnerAddable(inventory.value, tenant, runner.value)
-              : undefined
-          }
-          lineProjects={myRunnerLineProjects(
-            inventory.state === "Ready" ? inventory.value : [],
-            tenant,
-            framed,
-          )}
-          chat={host.state === "Absent"}
-        />
-        <MyChatHost
-          tenant={tenant}
-          host={host}
-          granted={permit.state === "Ready" && permit.value.granted}
-        />
-      </SettingsListing>
+    <SettingsPage title={text({ id: "runners-personal-title" })} headed>
+      <div className="my-runner grid min-w-0">
+        <SettingsListing>
+          <MyRunnerPauses tenant={tenant} />
+          <MyRunners
+            tenant={tenant}
+            runner={runner}
+            permit={permit}
+            addable={
+              inventory.state === "Ready" && runner.state === "Ready"
+                ? myRunnerAddable(inventory.value, tenant, runner.value)
+                : undefined
+            }
+            lineProjects={myRunnerLineProjects(
+              inventory.state === "Ready" ? inventory.value : [],
+              tenant,
+              framed,
+            )}
+            chat={host.state === "Absent"}
+          />
+          <MyChatHost
+            tenant={tenant}
+            host={host}
+            granted={permit.state === "Ready" && permit.value.granted}
+          />
+        </SettingsListing>
+      </div>
     </SettingsPage>
   );
 }

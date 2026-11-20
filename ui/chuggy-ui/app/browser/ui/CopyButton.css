@@ -34,6 +34,13 @@
     color: var(--ink-1);
   }
 
+  @media (max-width: 40em) {
+    .copy-button {
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
+    }
+  }
+
   .copy-button-labelled {
     gap: var(--space-1);
     padding-inline: var(--space-2);

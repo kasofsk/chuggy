@@ -1,0 +1,23 @@
+/* The one line a part of a page is drawn as while it has nothing else to say:
+   a note, an answer that is absent, or a failure. */
+
+@layer page {
+  .panel-note,
+  .panel-absent,
+  .panel-failed {
+    margin: 0;
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .panel-note {
+    color: var(--ink-3);
+  }
+
+  .panel-absent {
+    color: var(--tone-parked);
+  }
+
+  .panel-failed {
+    color: var(--tone-fail);
+  }
+}

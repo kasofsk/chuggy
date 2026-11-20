@@ -4,7 +4,8 @@
 
 epics-title = { -epic(case: "upper", form: "plural") }
 epics-page-title = { -epic(case: "upper") }
-epics-none = No { -epic(form: "plural") }
+epics-none = No { -epic(form: "plural") } yet. Ask in a { -thread } to make one.
+epics-none-matching = No { -epic } matches this search or filter.
 epics-not-found = No such { -epic }
 epics-search = Search { -epic(form: "plural") }
 epics-search-placeholder = Search titles and summaries…
@@ -66,6 +67,9 @@ epics-archive-body = An archived { -epic } takes no new { -ticket(form: "plural"
 epics-reactivate = Reactivate
 epics-reactivate-title = Reactivate this { -epic }?
 epics-reactivate-body = The { -epic } is active again and takes new { -ticket(form: "plural") }.
+# The toast once an archive or a reactivation has landed.
+epics-archived-toast = { -epic(case: "upper") } { $epic } archived
+epics-reactivated-toast = { -epic(case: "upper") } { $epic } reactivated
 epics-note-attention = Needs attention:
 epics-note-attention-escalated = is { -escalation }
 
@@ -91,6 +95,10 @@ epics-tickets-filter = Filter { -ticket(form: "plural") }
 epics-tickets-no-match = No { -ticket(form: "plural") } match
 epics-tickets-running = Running
 epics-tickets-group = { $word }, { $count }
+epics-tickets-group-count = { $count ->
+    [one] { $count } { -ticket }
+   *[other] { $count } { -ticket(form: "plural") }
+}
 epics-tickets-after = after
 epics-tickets-blocks = blocks { $count }
 epics-tickets-menu = More actions for #{ $ticket }
@@ -110,6 +118,7 @@ epics-tickets-add-chosen = Add { $count ->
 epics-graph-empty = This { -epic } has no { -ticket(form: "plural") } to draw
 epics-graph-loading = Drawing the graph…
 epics-graph-failed = The graph could not be read.
+epics-graph-as-list = Read these { -ticket(form: "plural") } as a list
 epics-graph-outside-shown = Show { -ticket(form: "plural") } outside the { -epic } ({ $count })
 epics-graph-label = { -ticket(case: "upper", form: "plural") } of the { -epic } and what they wait on
 epics-graph-key = Key
@@ -173,6 +182,9 @@ epics-history-also = { $first } · { $rest }
 
 epics-edit = Edit the { -epic }
 epics-edit-save = Save
+# The toast once a revision has landed and the edit page has been left.
+epics-saved-toast = { -epic(case: "upper") } { $epic } saved
+epics-leave-question = Discard the unsaved changes to the { -epic } and leave?
 
 ## What a form has wrong before it is sent, and what a refused write says.
 

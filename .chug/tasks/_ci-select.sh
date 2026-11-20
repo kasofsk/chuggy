@@ -432,7 +432,7 @@ ci_declare() { # <gate id or suite path>
 	check-console)
 		ci_text ui
 		ci_code src/contract test/fixtures/configurations .chug/configurations \
-			scripts/console-policy.ts scripts/check-console-policy.ts package-lock.json \
+			scripts/console-policy.ts scripts/check-console-policy.ts images/chuggy-ui/nginx.conf package-lock.json \
 			tsconfig.json .gitignore .prettierrc.json .prettierignore .chug/tasks/check-console.sh
 		ci_probes .browserslistrc browserslist .editorconfig .npmrc .prettierrc package.yaml \
 			lerna.json pnpm-workspace.yaml ':(glob).postcssrc*' ':(glob)postcss.config.*'
@@ -440,6 +440,9 @@ ci_declare() { # <gate id or suite path>
 		ci_compiler_looks src
 		ci_manifests
 		ci_install
+		;;
+	check-console-colours)
+		ci_code ui/chuggy-ui/app .chug/tasks/check-console-colours.sh
 		;;
 	check-console-copy)
 		ci_code ui/chuggy-ui/app/copy ui/chuggy-ui/app/core/generated \
@@ -564,6 +567,9 @@ ci_declare() { # <gate id or suite path>
 	.chug/tasks/check-queries.test.sh)
 		ci_code "$1" "${1%.test.sh}.sh" .chug/tasks/_postgres.sh .chug/tasks/_gate-fixture.sh \
 			.chug/tasks/_suite.sh
+		;;
+	.chug/tasks/check-console-colours.test.sh)
+		ci_code "$1" "${1%.test.sh}.sh" .chug/tasks/check-console-sheets.sh .chug/tasks/_suite.sh
 		;;
 	.chug/tasks/*.test.sh) ci_code "$1" "${1%.test.sh}.sh" .chug/tasks/_suite.sh ;;
 	.githooks/pre-commit.test.sh) ci_code "$1" .githooks/pre-commit .chug/tasks/_suite.sh ;;

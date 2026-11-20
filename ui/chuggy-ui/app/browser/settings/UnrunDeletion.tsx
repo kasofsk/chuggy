@@ -1,6 +1,7 @@
 /**
  * Deleting a project that never ran work, or a workspace that holds no
- * project, asked in place and named in the question.
+ * project, asked in a dialog, since it cannot be taken back, and named in the
+ * question.
  *
  * THE SECTION IS DRAWN ONLY WHERE THE DELETION WOULD BE DONE. Its read answers
  * absent to a reader who may not delete and names what holds it otherwise, so
@@ -41,7 +42,7 @@ import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import { useProjectNamed } from "../projectNamed.ts";
 import { useWorkspaceNames } from "../workspaceNames.ts";
 import { Button } from "../ui/Button.tsx";
-import { Confirm } from "../ui/Confirm.tsx";
+import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { SettingsListingSection } from "./SettingsListing.tsx";
 
@@ -102,37 +103,32 @@ function UnrunDeletionSection<Held extends UnrunDeletionHolding>(
       heading={props.title}
       about={props.about}
       action={
-        asking ? null : (
-          <Button
-            size="sm"
-            variant="danger"
-            disabled={deleting.isPending}
-            onClick={() => {
-              deleting.reset();
-              setAsking(true);
-            }}
-          >
-            {props.button}
-          </Button>
-        )
-      }
-    >
-      {asking || deleting.isPending ? (
-        <Confirm
-          question={props.question}
-          confirm={props.button}
+        <Button
+          size="sm"
+          variant="danger"
           busy={deleting.isPending}
-          onConfirm={() => {
-            setAsking(false);
-            deleting.mutate(undefined);
-          }}
-          onCancel={() => {
-            setAsking(false);
+          disabled={deleting.isPending}
+          onClick={() => {
+            deleting.reset();
+            setAsking(true);
           }}
         >
-          {props.line}
-        </Confirm>
-      ) : null}
+          {props.button}
+        </Button>
+      }
+    >
+      <ConfirmDialog
+        title={props.question}
+        confirm={props.button}
+        danger
+        open={asking}
+        onOpenChange={setAsking}
+        onConfirm={() => {
+          deleting.mutate(undefined);
+        }}
+      >
+        {props.line}
+      </ConfirmDialog>
       {held === undefined ? null : (
         <Notice tone="danger" inline>
           {text(held)}

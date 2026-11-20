@@ -3,9 +3,10 @@
    here is the grids and the states a data attribute carries. */
 
 @layer page {
+  /* A prose setting runs the width of its card, which a settings form's
+     width already bounds, so the card and its words end together. */
   .selector-prose {
     white-space: pre-wrap;
-    max-width: var(--measure);
     color: var(--ink-2);
     line-height: var(--leading-prose);
   }
@@ -53,13 +54,15 @@
     font-weight: var(--weight-medium);
   }
 
-  .selector-mark {
-    display: inline-block;
-    width: 0.4em;
-    height: 0.4em;
-    border-radius: var(--radius-circle);
-    background: var(--tone-live);
-    flex: none;
+  /* An open row is its field, over the key's column and the value's, beside
+     the alias menu where it has one. */
+  .selector-limit > .form-field,
+  .selector-limit > .selector-pinned {
+    grid-column: 1 / span 2;
+  }
+
+  .selector-limit[data-aliased] > .form-field {
+    grid-column: auto;
   }
 
   .selector-was {
@@ -70,13 +73,6 @@
     justify-content: flex-end;
     font-size: var(--text-sm);
     color: var(--ink-3);
-  }
-
-  .selector-fault {
-    grid-column: 1 / -1;
-    text-align: right;
-    font-size: var(--text-xs);
-    color: var(--tone-fail);
   }
 
   .selector-revision {

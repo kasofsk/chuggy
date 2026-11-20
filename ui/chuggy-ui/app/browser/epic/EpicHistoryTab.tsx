@@ -29,6 +29,7 @@ import { Disclosure } from "../ui/Disclosure.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";
+import { EpicTabHeading } from "./EpicTabs.tsx";
 import type { EpicPageHeld } from "./EpicPageHeld.tsx";
 
 import "./epicHistory.css";
@@ -36,7 +37,7 @@ import "./epicHistory.css";
 /** Who made a revision, as data: a name is not the catalog's to word. */
 export function EpicActor(props: { readonly label: Label }): ReactNode {
   return (
-    <Tooltip text={props.label.title}>
+    <Tooltip trigger="abbreviation" text={props.label.title}>
       <span translate="no">{props.label.text}</span>
     </Tooltip>
   );
@@ -190,6 +191,7 @@ export function EpicHistoryTab(): ReactNode {
   const held = useEpicPageHeld();
   return (
     <section className="epic-history-tab">
+      <EpicTabHeading tab="epics-tab-history" />
       <EpicHistoryPage state={held.historyState} held={held} />
     </section>
   );

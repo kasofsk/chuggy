@@ -47,7 +47,7 @@ export function repositoryImportFaultless(
   return (repositoryImportFaultlessWords as readonly string[]).includes(word);
 }
 
-/** An attempt's word, or that none was attempted, as the line's pill says it. */
+/** An attempt's word, or that none was attempted, as the line's badge says it. */
 export function repositoryImportWordLabel(
   word: RepositoryImportWord | typeof repositoryImportNever,
 ): Copy {

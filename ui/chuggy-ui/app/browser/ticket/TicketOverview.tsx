@@ -51,7 +51,8 @@ import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { TicketInstructions } from "./TicketInstructions.tsx";
-import { readValue, useTicketPageHeld } from "./TicketPageHeld.tsx";
+import { useTicketPageHeld } from "./TicketPageHeld.tsx";
+import { readValue } from "../../core/freshness.ts";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 import { TicketSlot } from "./TicketSlot.tsx";
 import { dependencyStandingOf } from "./TicketStateChip.tsx";
@@ -60,6 +61,7 @@ import { TicketStepsDrawn } from "./TicketSteps.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 type TicketOverviewParams = PartitionIdentity & { readonly ticket: string };
 
@@ -113,12 +115,19 @@ function TicketSidebarRepository(props: {
   const { repository } = props;
   const label = repositoryLabel(repository);
   const page = repositoryPage(repository);
-  return page === undefined ? (
-    <span title={repository}>{label}</span>
-  ) : (
-    <a href={page} rel="noopener noreferrer" target="_blank" title={repository}>
-      {label}
-    </a>
+  return (
+    <Tooltip
+      trigger={page === undefined ? "abbreviation" : "control"}
+      text={repository}
+    >
+      {page === undefined ? (
+        <span>{label}</span>
+      ) : (
+        <a href={page} rel="noopener noreferrer" target="_blank">
+          {label}
+        </a>
+      )}
+    </Tooltip>
   );
 }
 
@@ -261,12 +270,14 @@ function TicketSidebarDrawn(props: {
         </Field>
         {configuration === undefined ? null : (
           <Field name={text({ id: "ticket-overview-configuration" })}>
-            <Link
-              to="/$tenant/$project/tickets/$ticket/configuration"
-              params={params}
-            >
-              <span title={configuration.title}>{configuration.text}</span>
-            </Link>
+            <Tooltip trigger="control" text={configuration.title}>
+              <Link
+                to="/$tenant/$project/tickets/$ticket/configuration"
+                params={params}
+              >
+                {configuration.text}
+              </Link>
+            </Tooltip>
           </Field>
         )}
         {props.children}
@@ -441,7 +452,7 @@ function TicketDraftOverview(props: {
   );
 }
 
-export function TicketOverviewTab(): ReactNode {
+export function TicketOverview(): ReactNode {
   const held = useTicketPageHeld();
   if (held.draft !== undefined)
     return <TicketDraftOverview held={held} draft={held.draft} />;

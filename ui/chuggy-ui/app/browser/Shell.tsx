@@ -7,7 +7,10 @@
  * and a reader who filled the frame with the chat still has every screen one
  * press away. Below two columns a pane over the whole body takes the nav's row
  * and the page's under it too, the room a phone cannot spare, and the strip
- * gives them back: the banner and the project's row stay over it.
+ * gives them back: the banner and the project's row stay over it. On a phone
+ * the nav is a bar along the foot of the frame instead, under the pages and
+ * the strip, and it stays under a pane over the whole body, so every screen is
+ * still one press away from the chat.
  *
  * The chat pane is where the reader talks to the project, so it outlives every
  * navigation between the pages: they change beneath the bar and the
@@ -31,14 +34,26 @@
  * saves its edits through the shell before the pane sends, and a page the
  * reader's thread names is one the pane moves the pages to.
  *
+ * A reader's first Tab reaches a link past the bar to the page, the document's
+ * one `main`, which is named for the page and titles the document with it. A
+ * move to another page takes the reader's focus to it, so the new page's name
+ * is what they hear, as `shellPageFocused` decides.
+ *
  * The banner is not decoration — it is the only place a reader learns that what
  * the screens below are showing is no longer arriving live. The toasts are the
  * only place a refusal is drawn whose screen the reader has left.
  */
 
-import { Outlet, useParams } from "@tanstack/react-router";
+import { Outlet, useParams, useRouterState } from "@tanstack/react-router";
 import { Separator } from "radix-ui";
-import { memo, useLayoutEffect, useMemo, useState } from "react";
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { AnimationEvent, ReactNode, RefObject } from "react";
 import {
   Group,
@@ -89,6 +104,7 @@ import type {
   ChatPaneSlide,
   ChatPaneState,
 } from "../core/chatPane.ts";
+import { shellPageFocused, shellPageTitle } from "../core/shellPage.ts";
 import {
   projectStreamCarrying,
   projectStreamNotice,
@@ -104,12 +120,14 @@ import { consoleOutdatedOf } from "./consoleOutdated.ts";
 import { useConsolePageNow } from "./consolePageNow.ts";
 import { ConsoleWriteToasts } from "./consoleWrite.tsx";
 import { DraftSaveHeld } from "./editor/draftSaveBeforeSend.tsx";
+import { useProjectNamed } from "./projectNamed.ts";
 import { ChatPane } from "./shell/ChatPane.tsx";
 import { useChatPane } from "./shell/chatPaneHeld.ts";
-import { DetailsPane } from "./shell/DetailsPane.tsx";
+import { DetailsPane, detailsPaneMainId } from "./shell/DetailsPane.tsx";
+import { ProjectFavicon } from "./shell/ProjectFavicon.tsx";
 import { TicketReferenceWiring } from "./ticket/TicketReferenceWiring.tsx";
 import { ShellSlots } from "./shell/slots.tsx";
-import { TopBar, TopBarRows } from "./shell/TopBar.tsx";
+import { TopBar, TopBarPhone, TopBarRows } from "./shell/TopBar.tsx";
 import {
   useElementAtLeastEm,
   useViewportAtLeastEm,
@@ -124,6 +142,7 @@ import {
   useProjectStreamStatus,
 } from "./stream.tsx";
 import { useConsoleSelector } from "./store.ts";
+import { useWorkspaceNames } from "./workspaceNames.ts";
 import { Button } from "./ui/Button.tsx";
 import { CopyProvider } from "./ui/copyHeld.tsx";
 import { MarkdownProvider } from "./ui/markdownHeld.ts";
@@ -194,11 +213,58 @@ export function ShellFrame(props: { readonly children: ReactNode }): ReactNode {
   return (
     <div
       data-stream={carrying ? "live" : "not-live"}
-      className="bg-surface-0 relative grid h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+      className="bg-surface-0 relative grid h-dvh grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden"
     >
       {props.children}
     </div>
   );
+}
+
+/** The page's `main` given the reader's focus. */
+function shellMainFocused(): void {
+  document.getElementById(detailsPaneMainId)?.focus({ preventScroll: true });
+}
+
+/** The way past the bar to the page, drawn only while it holds focus. */
+function ShellSkip(): ReactNode {
+  const text = useCopyText();
+  return (
+    <a
+      href={`#${detailsPaneMainId}`}
+      className="shell-skip"
+      onClick={(event) => {
+        event.preventDefault();
+        shellMainFocused();
+      }}
+    >
+      {text({ id: "shell-skip" })}
+    </a>
+  );
+}
+
+/** The document titled for the page while the shell is drawn, and the
+ * reader's focus moved to the page as `shellPageFocused` says. */
+function ShellPageFollowed(props: {
+  readonly pathname: string;
+  readonly title: string;
+}): null {
+  const { pathname, title } = props;
+  const before = useRef<string>(undefined);
+  useEffect(() => {
+    const was = document.title;
+    document.title = title;
+    return () => {
+      document.title = was;
+    };
+  }, [title]);
+  useEffect(() => {
+    const chatFocused =
+      (document.activeElement?.closest("[data-chat-pane]") ?? null) !== null;
+    const moved = shellPageFocused(before.current, pathname, chatFocused);
+    before.current = pathname;
+    if (moved) shellMainFocused();
+  }, [pathname]);
+  return null;
 }
 
 /** The banner and the bar's first row, across the whole frame: the banner
@@ -241,6 +307,7 @@ function ShellBarRows(props: {
  * dragged, so a drag does not draw the pages again. */
 const ShellBodyPages = memo(function ShellBodyPages(props: {
   readonly sizes: ChatPaneSizes;
+  readonly title: string;
 }): ReactNode {
   const [columnHeld, columnAside] = useElementAtLeastEm(viewportColumnAsideEm);
   return (
@@ -251,7 +318,7 @@ const ShellBodyPages = memo(function ShellBodyPages(props: {
       className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)]"
     >
       <ViewportColumnAsideProvider value={columnAside}>
-        <DetailsPane>
+        <DetailsPane label={props.title}>
           <Outlet />
         </DetailsPane>
       </ViewportColumnAsideProvider>
@@ -309,6 +376,7 @@ const ShellBodyChat = memo(function ShellBodyChat(props: {
       defaultSize={props.sizes.chatDefault}
       minSize={props.sizes.chatMin}
       groupResizeBehavior={chatPaneKept(props.sizes, props.stripped)}
+      data-chat-pane
       className="chat-panel @container grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)]"
     >
       <ChatPane
@@ -329,6 +397,7 @@ function shellBodyDrawn(props: {
   readonly chat: ChatPaneState | undefined;
   readonly pane: ChatPaneState | undefined;
   readonly page: ConsolePage | undefined;
+  readonly title: string;
   readonly sizes: ChatPaneSizes;
   readonly panelIds: readonly string[];
   readonly chatPanel: RefObject<PanelImperativeHandle | null>;
@@ -350,7 +419,7 @@ function shellBodyDrawn(props: {
     id === chatPanePanels.pages ||
     props.chat === undefined ||
     props.pane === undefined ? (
-      <ShellBodyPages key="pages" sizes={props.sizes} />
+      <ShellBodyPages key="pages" sizes={props.sizes} title={props.title} />
     ) : (
       <ShellBodyChat
         key="chat"
@@ -437,6 +506,7 @@ function ShellBody(props: {
   readonly chat: ChatPaneState | undefined;
   readonly pane: ChatPaneState | undefined;
   readonly page: ConsolePage | undefined;
+  readonly title: string;
 }): ReactNode {
   const text = useCopyText();
   const held = useChatPane();
@@ -491,6 +561,7 @@ function ShellBody(props: {
         chat: props.chat,
         pane: props.pane,
         page: props.page,
+        title: props.title,
         sizes,
         panelIds,
         chatPanel,
@@ -547,8 +618,16 @@ function ShellDrawn(props: {
   const { slide, ended } = useShellSlide(chat, props.twoColumn);
   const laid = chat === undefined ? undefined : chatPaneSlideLaid(chat, slide);
   const page = useConsolePageNow();
+  const pathname = useRouterState({ select: (r) => r.location.pathname });
+  const title = shellPageTitle(props.partition, pathname, {
+    workspace: useWorkspaceNames(),
+    project: useProjectNamed(),
+  });
   return (
     <ShellFrame>
+      <ShellSkip />
+      <ShellPageFollowed pathname={pathname} title={title} />
+      <ProjectFavicon partition={props.partition} />
       <ShellHeader partition={props.partition} />
       <div
         data-chat-slide={slide?.toLowerCase()}
@@ -570,8 +649,10 @@ function ShellDrawn(props: {
               ? undefined
               : chatPanePageBeside(chat, props.twoColumn, page)
           }
+          title={title}
         />
       </div>
+      <TopBarPhone partition={props.partition} />
     </ShellFrame>
   );
 }

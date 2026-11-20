@@ -2,7 +2,8 @@
  * The epics a ticket belongs to, each a link to its page, drawn where a ticket
  * is named: the number, which is never cut, then the title cut short. The link
  * is named by the whole title and number, so a hover and a screen reader read
- * what the chip cut. An archived epic is drawn as one, so a reader who follows
+ * what the chip cut, and its parts are spaced as that name is, so the name
+ * holds the words drawn. An archived epic is drawn as one, so a reader who follows
  * the link is not surprised that it takes no new ticket.
  */
 
@@ -12,7 +13,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
-import { pillLookClassName } from "./ui/Pill.tsx";
+import { chipClassName } from "./ui/Chip.tsx";
 
 import "./Epic.css";
 
@@ -56,14 +57,15 @@ function EpicChipsChip(props: {
     <Link
       to="/$tenant/$project/epics/$epic"
       params={{ ...props.partition, epic: String(epic.number) }}
-      className={`${pillLookClassName({ tone: "neutral" })} epic-chip`}
+      className={`${chipClassName} epic-chip`}
       aria-label={name}
       title={name}
     >
       <span className="epic-chip-number">
         {text({ id: "epics-chip-number", args: { epic: args.epic } })}
-      </span>
+      </span>{" "}
       <span className="epic-chip-title">{epic.title}</span>
+      {archived ? " " : null}
       {archived ? (
         <span className="epic-chip-archived">
           {text({ id: "epics-chip-archived" })}

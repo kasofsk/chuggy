@@ -10,12 +10,19 @@ inbox-more = more
 inbox-loading = Loading…
 inbox-more-failed = More
 inbox-answer-unsaid = the answer failed
-inbox-col-title = title
-inbox-col-why = why
-inbox-col-last-run = last { -run }
-inbox-col-last-activity = last activity
-inbox-col-answer = answer
-inbox-col-happened = what happened
+inbox-last-run = last { -run }
+
+inbox-group-approvals = { -approval(case: "upper", form: "plural") }
+inbox-group-questions = Questions
+inbox-group-count = { $count } waiting
+
+inbox-ask-approval = Approve this { -evaluation }?
+inbox-ask-escalation = Resume this { -ticket }, or { -revoke } it?
+
+inbox-asker-evaluation = { -evaluation(case: "upper") }
+inbox-asker-escalation = { -brand-name }
+
+inbox-kind-approval = { -approval(case: "upper") }
 
 inbox-action-dispatch = { -dispatch }
 inbox-action-resume = resume

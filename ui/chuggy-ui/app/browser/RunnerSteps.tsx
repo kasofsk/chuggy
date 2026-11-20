@@ -18,6 +18,8 @@ import { currentOrigin } from "./ports.ts";
 import { CopyBox } from "./ui/CopyBox.tsx";
 import { Figure } from "./ui/Figure.tsx";
 
+import "./RunnerMint.css";
+
 function RunnerStep(props: {
   readonly title: string;
   readonly children: ReactNode;
@@ -77,7 +79,7 @@ export function RunnerSteps(props: {
       ref={steps}
       tabIndex={-1}
       aria-label={text(runnerStepsLabel(props.kind))}
-      className="grid min-w-0 list-decimal gap-3 pl-6"
+      className="runner-mint grid min-w-0 list-decimal gap-3 pl-6"
     >
       <RunnerStep title={text({ id: "runners-steps-install" })}>
         <CopyBox

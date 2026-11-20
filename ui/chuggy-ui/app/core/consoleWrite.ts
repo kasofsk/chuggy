@@ -101,6 +101,12 @@ export interface ConsoleWrite<V, T> {
     variables: V,
   ) => Promise<unknown>;
   readonly refused?: (error: ConsoleWriteRefused, variables: V) => void;
+  /** The line the shell's toast says once the write has landed, for a write
+   * whose effect is not drawn where its reader is looking, and for a settings
+   * save, whose one confirmation it is. Any other write whose screen draws
+   * what it changed says nothing more of it, and a check made before sending
+   * is no write, so neither can toast. */
+  readonly landedUnseen?: (value: T, variables: V) => CopyOrData;
   /** How long an answer is kept once no screen holds it; query-core's default
    * where absent. */
   readonly gcTime?: number;
@@ -140,11 +146,18 @@ export interface ConsoleWriteUnseen {
   readonly detail: CopyOrData | undefined;
 }
 
-/** The refusals no screen took, and how many have been kept, which names the
- * next one. */
+/** A landed write's line, as the shell draws it. */
+export interface ConsoleWriteLanded {
+  readonly id: number;
+  readonly sentence: string;
+}
+
+/** The refusals no screen took, the last landing a write said, and how many
+ * have been kept, which names the next one. */
 export interface ConsoleWriteUnseenHeld {
   readonly kept: number;
   readonly unseen: readonly ConsoleWriteUnseen[];
+  readonly landed: ConsoleWriteLanded | undefined;
 }
 
 /** The refusals held for the shell at most, the oldest let go first. */
@@ -153,6 +166,7 @@ export const consoleWriteUnseenMax = 3;
 export const consoleWriteUnseenHeldEmpty: ConsoleWriteUnseenHeld = {
   kept: 0,
   unseen: [],
+  landed: undefined,
 };
 
 /** What the shell draws of a refusal, before it is named. */
@@ -174,6 +188,7 @@ export function consoleWriteUnseenKept(
 ): ConsoleWriteUnseenHeld {
   const kept = held.kept + 1;
   return {
+    ...held,
     kept,
     unseen: [...held.unseen, { id: kept, ...said }].slice(
       -consoleWriteUnseenMax,
@@ -181,7 +196,18 @@ export function consoleWriteUnseenKept(
   };
 }
 
-/** The refusals once the reader let `id` go. */
+/** What is held once a write landed saying `sentence`, in place of any
+ * landing said before it and named one past the last kept. The refusals are
+ * left as they were, so a landing never lets one go. */
+export function consoleWriteLandedKept(
+  held: ConsoleWriteUnseenHeld,
+  sentence: string,
+): ConsoleWriteUnseenHeld {
+  const kept = held.kept + 1;
+  return { ...held, kept, landed: { id: kept, sentence } };
+}
+
+/** What is held once the reader, or the landing's own time, let `id` go. */
 export function consoleWriteUnseenDismissed(
   held: ConsoleWriteUnseenHeld,
   id: number,
@@ -189,6 +215,7 @@ export function consoleWriteUnseenDismissed(
   return {
     ...held,
     unseen: held.unseen.filter((unseen) => unseen.id !== id),
+    landed: held.landed?.id === id ? undefined : held.landed,
   };
 }
 
@@ -199,11 +226,12 @@ export type ConsoleWriteDrawn = (
   variables: unknown,
 ) => boolean;
 
-/** Which write keys mounted screens watch, and who hears a refusal that
- * landed where none of them draws it. */
+/** Which write keys mounted screens watch, who hears a refusal that landed
+ * where none of them draws it, and who hears the line a landed write said. */
 export class ConsoleWriteWatch {
   readonly #watching = new Map<string, Set<ConsoleWriteDrawn>>();
   #onUnseen: ((refused: ConsoleWriteRefused) => void) | undefined = undefined;
+  #onLanded: ((sentence: string) => void) | undefined = undefined;
 
   /** Watching `key`, asking `drawn` of each refusal under it, until the
    * release this answers is called. */
@@ -224,6 +252,17 @@ export class ConsoleWriteWatch {
    * it; with nobody, such a refusal is let go. */
   unseenHeard(heard: (refused: ConsoleWriteRefused) => void): void {
     this.#onUnseen = heard;
+  }
+
+  /** Who hears each line a landed write said, in place of any before it;
+   * with nobody, such a line is let go. */
+  landedHeard(heard: (sentence: string) => void): void {
+    this.#onLanded = heard;
+  }
+
+  /** A write landed saying `sentence`. */
+  landed(sentence: string): void {
+    this.#onLanded?.(sentence);
   }
 
   /** A write under `key` was refused: handed on where no screen watching that

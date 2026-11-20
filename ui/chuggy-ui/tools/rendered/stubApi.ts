@@ -1,0 +1,786 @@
+/**
+ * The API a served console talks to in a rendered case: one member signed in,
+ * one workspace, one project, and every answer one row of `stubApiReads`.
+ *
+ * EVERY BODY IS PARSED BY ITS ROUTE'S CONTRACT SCHEMA WHEN ITS ROW IS MADE,
+ * so a body the contract would refuse throws as this module loads, naming
+ * the route, rather than being sent to a screen that then draws its error
+ * state. What is sent is the body as written, because a schema's parse may
+ * fill or transform what the wire would not carry.
+ *
+ * TO ANSWER A NEW READ, add one `stubApiRead` row here: its method, its path
+ * as the console asks it, the schema `src/contract/` gives that route and the
+ * body. A read with no row is answered 404 and is listed in
+ * `Served.unanswered`, so a case says every read its screen made was one it
+ * stubbed.
+ */
+
+import type { z } from "zod";
+
+import {
+  builtInThemeDefault,
+  builtInThemes,
+} from "../../../../src/contract/appearance.ts";
+import { ticketActionReachResponseSchema } from "../../../../src/contract/actionReach.ts";
+import {
+  dispatchViewSchemaVersion,
+  errorEnvelopeSchema,
+} from "../../../../src/contract/http.ts";
+
+import {
+  accessCallerAccountSchema,
+  accessInviteLinkSummarySchema,
+  accessCallerTenantsSchema,
+  accessProjectPeopleSchema,
+  accessSiteAbilitiesSchema,
+} from "../../../../src/contract/accessPlane.ts";
+import {
+  agentAccountsResponseSchema,
+  chatAbilitiesResponseSchema,
+  chatHostResponseSchema,
+  configurationResponseSchema,
+  configurationsResponseSchema,
+  dispatchViewResponseSchema,
+  epicGraphResponseSchema,
+  epicHistoryResponseSchema,
+  epicViewResponseSchema,
+  executionsResponseSchema,
+  forgeAppsResponseSchema,
+  forgeInstallationsResponseSchema,
+  hostedRunsResponseSchema,
+  executionPlacementResponseSchema,
+  inboxResponseSchema,
+  landingQueuesResponseSchema,
+  projectAbilitiesResponseSchema,
+  projectDeletionResponseSchema,
+  projectRepositoriesResponseSchema,
+  repositoryConfigurationHeadResponseSchema,
+  projectInventoryResponseSchema,
+  projectResponseSchema,
+  personalRunnerPermitResponseSchema,
+  personalRunnerResponseSchema,
+  projectAppearanceResponseSchema,
+  projectImagesResponseSchema,
+  selectorProjectSettingsResponseSchema,
+  selectorSettingsHistoryResponseSchema,
+  sessionPlacementResponseSchema,
+  ownedThemesResponseSchema,
+  themeChoiceResponseSchema,
+  threadsResponseSchema,
+  ticketLandingsResponseSchema,
+  ticketNativeActionsResponseSchema,
+  draftInitializationResponseSchema,
+  ticketResponseSchema,
+} from "../../../../src/contract/responses.ts";
+
+export const stubApiTenant = "tenant-rendered";
+export const stubApiProject = "project-rendered";
+
+/** Who the member is signed in as, as the directory names them. */
+export const stubApiLogin = "member-rendered";
+export const stubApiEmail = "member@rendered.example";
+
+/** A JSON answer, or a server-sent stream held open with no frame on it. */
+export type StubApiRead =
+  | {
+      readonly kind: "Json";
+      readonly method: string;
+      readonly path: string;
+      readonly status: number;
+      readonly body: unknown;
+    }
+  | { readonly kind: "Stream"; readonly method: "GET"; readonly path: string };
+
+/** One route's answer, held to the contract's schema as it is made. */
+export function stubApiRead(
+  path: string,
+  schema: z.ZodType,
+  body: unknown,
+  method = "GET",
+): StubApiRead {
+  const parsed = schema.safeParse(body);
+  if (!parsed.success)
+    throw new Error(
+      `the stub for ${method} ${path} is refused by its schema: ${parsed.error.message}`,
+    );
+  return { kind: "Json", method, path, status: 200, body };
+}
+
+/** A route answered as the server answers a resource it does not hold. */
+export function stubApiNotFound(path: string): StubApiRead {
+  const body = { error: { code: "NotFound", message: "Resource not found." } };
+  errorEnvelopeSchema.parse(body);
+  return { kind: "Json", method: "GET", path, status: 404, body };
+}
+
+/** A stream that opens and stays open, so the console reads itself live. */
+export function stubApiStream(path: string): StubApiRead {
+  return { kind: "Stream", method: "GET", path };
+}
+
+const projectPath = `/api/v1/tenants/${stubApiTenant}/projects/${stubApiProject}`;
+const partition = { tenant: stubApiTenant, project: stubApiProject };
+const principal = "issuer member";
+
+/** The project's one ticket, created by the member, released, and still Pending. */
+const ticket = {
+  ticket: 1,
+  creator: principal,
+  phase: "Pending",
+  sequence: 1,
+  revision: 1,
+  releasedAt: "2026-11-01T00:00:00Z",
+  changedAt: "2026-11-02T00:00:00Z",
+  revokedDependencies: [],
+  openDependencies: [],
+};
+
+const tenantPath = `/api/v1/tenants/${stubApiTenant}`;
+
+/** The member's own runners: one live, running the project's ticket, and one
+ * behind the version chuggy pins that has never polled. */
+const personalRunner = {
+  runners: [
+    {
+      id: "chuggy-personal-3f2a9c1e-0000-4000-8000-000000000000",
+      capabilities: ["Platform:Linux:Amd64"],
+      registeredAt: "2026-10-01T00:00:00Z",
+      polledAt: "2026-11-02T00:00:00Z",
+      live: true,
+      executionsLive: true,
+      runner: { package: "chuggy-linux", version: "0.10.0", pinned: "0.10.0" },
+      held: [
+        {
+          project: stubApiProject,
+          ticket: 1,
+          identity: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
+        },
+      ],
+      heldTruncated: false,
+    },
+    {
+      id: "chuggy-personal-a81c04d2-0000-4000-8000-000000000000",
+      capabilities: ["Platform:Darwin:Arm64"],
+      registeredAt: "2026-10-01T00:00:00Z",
+      live: false,
+      executionsLive: false,
+      runner: { package: "chuggy-darwin", version: "0.9.0", pinned: "0.10.0" },
+      held: [],
+      heldTruncated: false,
+    },
+  ],
+  projects: [
+    {
+      project: stubApiProject,
+      priority: "Normal",
+      waiting: 0,
+      waitingTruncated: false,
+    },
+  ],
+};
+
+/** The repository whose name is the longest the stub binds, which a phone
+ * has to wrap. */
+export const stubApiRepositoryLong =
+  "https://github.com/kasofsk/chuggy-a-repository-whose-name-runs-past-a-phone.git";
+
+/** The project's repositories: one with a long name the worker app's
+ * installation does not select, and one the project holds no configuration
+ * for. */
+const projectRepositories = {
+  repositories: [
+    {
+      repository: stubApiRepositoryLong,
+      boundAt: "2026-10-01T00:00:00Z",
+      landing: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+      pipelinesWritable: false,
+      pipelinesRunnable: false,
+      configured: true,
+      lastImport: {
+        attemptedAt: "2026-11-01T00:00:00Z",
+        commit: "4f1c2a9e0b7d6c5a4f1c2a9e0b7d6c5a4f1c2a9e",
+        outcome: { result: "Imported" },
+      },
+      workerReach: {
+        reach: "Unselected",
+        installationId: "156786211",
+        settingsUrl:
+          "https://github.com/organizations/kasofsk/settings/installations/156786211",
+      },
+    },
+    {
+      repository: "https://github.com/kasofsk/chuggy.git",
+      boundAt: "2026-10-02T00:00:00Z",
+      landing: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+      pipelinesWritable: false,
+      pipelinesRunnable: false,
+      configured: false,
+    },
+  ],
+};
+
+/** Where a configuration the stub's repository declares is read from. */
+function repositoryConfigurationProvenance(name: string) {
+  return {
+    source: "Repository",
+    repository: stubApiRepositoryLong,
+    commit: "4f1c2a9e0b7d6c5a4f1c2a9e0b7d6c5a4f1c2a9e",
+    path: `.chug/configurations/${name}.json`,
+    name,
+  } as const;
+}
+
+/** What the long-named repository declares: one configuration ready to run,
+ * on a worker image whose name runs past a phone, and one not ready yet. */
+const repositoryConfigurations = {
+  configurations: ["coding", "nightly"].map((name, index) => {
+    const base = {
+      revision: `revision-${name}`,
+      digest: "a".repeat(64),
+      createdAt: "2026-11-01T00:00:00Z",
+      provenance: repositoryConfigurationProvenance(name),
+      version: { name, number: 3 },
+    };
+    return index === 0
+      ? {
+          ...base,
+          readiness: "Ready",
+          image:
+            "ghcr.io/kasofsk/chuggy-worker-with-a-long-image-name:2026.11.01",
+          practices: [],
+          finalization: { approvalRequired: true },
+          evaluationStagesCount: 2,
+        }
+      : { ...base, readiness: "Incomplete" };
+  }),
+};
+
+/** A worker an agent workload runs on: Claude on `model`, its arguments as
+ * long as a real catalog's. */
+function repositoryConfigurationWorker(model: string) {
+  return {
+    mode: {
+      type: "SingleAgent",
+      agent: "Claude",
+      arguments: [
+        "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
+        `--model=${model}`,
+        '--settings={"autoCompactWindow":250000,"permissions":{"defaultMode":"acceptEdits"}}',
+      ],
+    },
+    setup: ["npm ci"],
+    files: [],
+  };
+}
+
+/** What an agent workload may reach. */
+const repositoryConfigurationAuthority = {
+  tools: ["claude-code", "shell"],
+  credentials: ["claude-code", "track-record"],
+  network: true,
+  filesystem: "WriteWorkspace",
+  mayCompleteTask: false,
+};
+
+const repositoryConfigurationWorkPrompt = [
+  "# Implement the ticket",
+  "",
+  "Implement the one change this ticket asks for, and nothing else on it. Read the repository's working notes and the reviewer's brief before you change anything: the brief your change is reviewed against binds an author as much as a reviewer.",
+  "",
+  "Read the code you are about to change before you change it, change the least that satisfies the ticket, and add focused regression coverage for what you changed.",
+  "",
+  "- Run the gates the change affects before you stop.",
+  "- Leave the tree as you would hand it to someone else.",
+].join("\n");
+
+/** The ready configuration's own version: a catalog of several workloads,
+ * one whose name runs past a phone and two written in files of their own,
+ * prompts read from files whose paths run long, plans evaluating with them,
+ * and finalizers landing three ways. */
+const repositoryConfigurationCoding = {
+  partition,
+  revision: "revision-coding",
+  digest: "a".repeat(64),
+  canonical: JSON.stringify({
+    version: 2,
+    image: "ghcr.io/kasofsk/chuggy-worker-with-a-long-image-name:2026.11.01",
+    workloads: {
+      "build-and-test-everything-the-repository-declares": {
+        runner: "Agent",
+        prompt: { text: "Build it." },
+        worker: {
+          mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+        },
+      },
+      build: {
+        runner: "Agent",
+        prompt: {
+          path: ".chug/prompts/work.md",
+          text: repositoryConfigurationWorkPrompt,
+        },
+        worker: repositoryConfigurationWorker("opus"),
+        authority: repositoryConfigurationAuthority,
+        resources: { cpus: 6, memoryMib: 4096 },
+      },
+      "build-targeted-at-one-package-of-the-monorepo": {
+        runner: "Agent",
+        prompt: {
+          path: "packages/console/prompts/work-targeted-at-one-package-of-the-monorepo.md",
+          text: "# Implement the ticket in one package\n\nChange only the package the ticket names, and run that package's own gates.",
+        },
+        worker: repositoryConfigurationWorker("sonnet"),
+        authority: repositoryConfigurationAuthority,
+        resources: { cpus: 4, memoryMib: 4096 },
+      },
+      checks: { runner: "Commands", commands: ["npm test"] },
+      ci: { runner: "Commands", commands: [".chug/tasks/ci.sh"] },
+      review: {
+        runner: "Agent",
+        purpose: "Review",
+        reevaluate: "OnChange",
+        prompt: {
+          path: ".chug/tasks/review-change.md",
+          text: "# Review the change\n\nYou are reviewing a change in this repository. You did not write it, and that is the point of you.",
+        },
+        worker: repositoryConfigurationWorker("opus"),
+        authority: repositoryConfigurationAuthority,
+      },
+      approval: {
+        runner: "Approval",
+        instructions:
+          "Read the ticket's brief and its change, and approve only what you would merge yourself.",
+      },
+    },
+    plans: {
+      checked: [{ name: "checks", evaluators: ["checks"] }],
+      standard: [
+        { name: "checks", evaluators: ["ci"] },
+        { name: "review", evaluators: ["review"] },
+      ],
+      approved: [
+        { name: "checks", evaluators: ["ci"] },
+        { name: "review", evaluators: ["review"] },
+        { name: "approval", evaluators: ["approval"] },
+      ],
+    },
+    finalizers: {
+      land: { approvalRequired: false },
+      stacked: {
+        finalization: {
+          kind: "GitMerge",
+          mode: "PullRequestMerge",
+          policy: "Stacked",
+        },
+      },
+      "pull-request-to-the-release-branch": {
+        landing: { mode: "PullRequest", target: "release/2026-11" },
+      },
+    },
+    defaults: {
+      work: "build-and-test-everything-the-repository-declares",
+      evaluation: "checked",
+      finalization: "land",
+    },
+  }),
+  workloadPaths: {
+    ci: ".chug/workloads/ci.json",
+    review: ".chug/workloads/review.json",
+  },
+};
+
+/** What a new ticket under the ready configuration is drawn from: its
+ * catalog's defaults, a check stage, and the stub's one ticket to depend on. */
+const draftInitializationCoding = {
+  configuration: repositoryConfigurationCoding,
+  fence: { projectSequence: 1, configurationDigest: "a".repeat(64) },
+  defaults: {
+    dependencies: [],
+    program: [{ key: 1, evaluators: [{ key: 1 }] }],
+  },
+  choices: { programStagesMax: 4, evaluatorsMax: 3 },
+  dependencyCandidates: [1],
+  dependencyCandidatesTruncated: false,
+  commandedCheckStage: 1,
+};
+
+/** The repository's head, declaring the ready configuration as its newest
+ * import stored it, so the catalog's head line offers the way back. */
+const repositoryConfigurationCodingProvenance =
+  repositoryConfigurationProvenance("coding");
+
+const repositoryConfigurationHead = {
+  head: {
+    state: "Ready",
+    branch: "main",
+    commit: repositoryConfigurationCodingProvenance.commit,
+    configurations: [
+      {
+        name: repositoryConfigurationCodingProvenance.name,
+        path: repositoryConfigurationCodingProvenance.path,
+        revision: repositoryConfigurationCoding.revision,
+        canonical: repositoryConfigurationCoding.canonical,
+        digest: repositoryConfigurationCoding.digest,
+      },
+    ],
+  },
+};
+
+/** The tenant's connected accounts: one holding both apps, and one lacking
+ * the worker app, whose install is the step the repositories page offers. */
+const forgeInstallations = {
+  truncated: false,
+  installations: [
+    ["portal", "kasofsk", "Organization", "11"],
+    ["worker", "kasofsk", "Organization", "12"],
+    ["portal", "gdoteof", "User", "13"],
+  ].map(([app, account, accountKind, installationId]) => ({
+    forge: "github",
+    app,
+    account,
+    accountKind,
+    installationId,
+    claimedAt: "2026-10-01T00:00:00Z",
+  })),
+};
+
+/** Both apps this deployment holds, and the client it authorizes with. */
+const forgeApps = {
+  apps: ["portal", "worker"].map((app, index) => ({
+    app,
+    id: String(index + 1),
+    slug: `chuggy-${app}`,
+    installUrl: `https://github.com/apps/chuggy-${app}/installations/new`,
+  })),
+  authorization: {
+    clientId: "Iv1.portal",
+    authorizeUrl: "https://github.com/login/oauth/authorize",
+  },
+};
+
+/** The project's thread settings: nothing of its own, under the
+ * installation's north star and standing rules, each as long as a real
+ * project's. */
+const selectorNorthStar =
+  "Chuggy is a job orchestrator: tickets form a graph, one journaled actor drives each through authoring, work, evaluation and completion, and the fabric runs the work and decides nothing. Every change keeps the formal model and the code in agreement, and where they disagree the code is wrong.";
+
+const selectorSettings = {
+  partition,
+  revision: 0,
+  overrides: {},
+  effective: {
+    northStar: selectorNorthStar,
+    threadStandingRules: [
+      "- You act through your owner's own commands, and never through an account that is not theirs.",
+      "- File work as tickets rather than doing it in the conversation, and say which ticket holds it.",
+      "- Ask before anything that cannot be undone: a deploy, a restart, a reset of anyone's data.",
+    ].join("\n"),
+  },
+};
+
+const ticketPath = `${projectPath}/tickets/${String(ticket.ticket)}`;
+
+/** What the ticket's own page reads: the ticket, whose draft its release
+ * closed, and nothing it has run, been asked or landed. */
+const ticketPageReads: readonly StubApiRead[] = [
+  stubApiRead(ticketPath, ticketResponseSchema, ticket),
+  stubApiNotFound(`${projectPath}/drafts/${String(ticket.ticket)}`),
+  stubApiRead(
+    `${ticketPath}/native-actions`,
+    ticketNativeActionsResponseSchema,
+    { actions: [] },
+  ),
+  stubApiRead(`${ticketPath}/action-reach`, ticketActionReachResponseSchema, {
+    repository: null,
+    commit: null,
+    actions: [],
+  }),
+  stubApiRead(`${ticketPath}/landings`, ticketLandingsResponseSchema, {
+    landings: [],
+    truncated: false,
+  }),
+  stubApiRead(`${projectPath}/executions`, executionsResponseSchema, {
+    executions: [],
+  }),
+  stubApiRead(`${projectPath}/dispatch-view`, dispatchViewResponseSchema, {
+    result: "Page",
+    token: {
+      tenant: stubApiTenant,
+      project: stubApiProject,
+      recoveryEpoch: "epoch-rendered",
+      schemaVersion: dispatchViewSchemaVersion,
+      watermark: 1,
+      digest: "0".repeat(64),
+    },
+    candidates: [],
+    notificationCursor: 0,
+  }),
+];
+
+/** The project's one epic, holding its one ticket, at its first revision. */
+const epic = {
+  number: 1,
+  revision: 1,
+  title: "Billing",
+  summary: "All of billing",
+  visibility: "Active",
+  progress: {
+    byPhase: {
+      Pending: 1,
+      Work: 0,
+      Evaluation: 0,
+      Finalization: 0,
+      Done: 0,
+      Escalated: 0,
+      Revoked: 0,
+    },
+    drafts: 0,
+    done: 0,
+    total: 1,
+  },
+  status: "not_started",
+  waitingOnOutside: [],
+  description: "The **whole** of billing",
+  tickets: [ticket.ticket],
+};
+
+const epicReads: readonly StubApiRead[] = [
+  stubApiRead(`${projectPath}/epics/1`, epicViewResponseSchema, epic),
+  stubApiRead(`${projectPath}/epics/1/graph`, epicGraphResponseSchema, {
+    nodes: [{ ticket: ticket.ticket, phase: ticket.phase, member: true }],
+    edges: [],
+  }),
+  stubApiRead(`${projectPath}/epics/1/history`, epicHistoryResponseSchema, {
+    revisions: [
+      {
+        revision: 1,
+        changedAt: "2026-10-01T00:00:00Z",
+        actor: { kind: "user", subject: "member" },
+        title: epic.title,
+        visibility: "Active",
+        changes: { kind: "Created" },
+      },
+    ],
+  }),
+];
+
+/** The reads every case is answered, a route to a row. */
+export const stubApiReads: readonly StubApiRead[] = [
+  stubApiRead(`${projectPath}/appearance`, projectAppearanceResponseSchema, {
+    theme: builtInThemes[builtInThemeDefault],
+    layer: "BuiltInDefault",
+    layers: {},
+  }),
+  stubApiRead(`${projectPath}/appearance/images`, projectImagesResponseSchema, {
+    administers: false,
+  }),
+  stubApiRead("/api/v1/appearance/choice", themeChoiceResponseSchema, {}),
+  stubApiRead("/api/v1/appearance/themes", ownedThemesResponseSchema, {
+    themes: [],
+  }),
+  stubApiRead("/api/v1/projects", projectInventoryResponseSchema, {
+    projects: [{ ...partition, name: stubApiProject }],
+  }),
+  stubApiRead(projectPath, projectResponseSchema, {
+    partition,
+    sequence: 1,
+    tickets: [ticket],
+  }),
+  stubApiStream(`${projectPath}/events`),
+  ...ticketPageReads,
+  ...epicReads,
+  stubApiRead(`${projectPath}/abilities`, projectAbilitiesResponseSchema, {
+    principal,
+    mutate: true,
+    dispatch: true,
+    manageSelector: false,
+    overrideTicketConfig: false,
+    skipPlannedEvaluations: false,
+    mergeProposals: false,
+    makeAccessTokens: false,
+    administer: false,
+    writeEpic: true,
+  }),
+  stubApiRead(
+    `/api/v1/tenants/${stubApiTenant}/chat/abilities`,
+    chatAbilitiesResponseSchema,
+    {
+      principal,
+      openUnscopedChat: false,
+      executeHosted: false,
+      registerPersonalRunner: false,
+      administerTenant: false,
+    },
+  ),
+  stubApiRead(`${projectPath}/inbox`, inboxResponseSchema, {
+    entries: [],
+    count: 0,
+    more: false,
+  }),
+  stubApiRead(
+    `${projectPath}/selector-settings`,
+    selectorProjectSettingsResponseSchema,
+    selectorSettings,
+  ),
+  stubApiRead(
+    `${projectPath}/selector-settings/history`,
+    selectorSettingsHistoryResponseSchema,
+    { revisions: [] },
+  ),
+  stubApiRead(
+    `${projectPath}/repositories`,
+    projectRepositoriesResponseSchema,
+    projectRepositories,
+  ),
+  stubApiRead(
+    `${tenantPath}/forge-installations`,
+    forgeInstallationsResponseSchema,
+    forgeInstallations,
+  ),
+  stubApiRead("/api/v1/forge/github", forgeAppsResponseSchema, forgeApps),
+  stubApiRead(
+    `${projectPath}/configurations`,
+    configurationsResponseSchema,
+    repositoryConfigurations,
+  ),
+  stubApiRead(
+    `${projectPath}/configurations/revision-coding`,
+    configurationResponseSchema,
+    repositoryConfigurationCoding,
+  ),
+  stubApiRead(
+    `${projectPath}/draft-initializations/revision-coding`,
+    draftInitializationResponseSchema,
+    draftInitializationCoding,
+  ),
+  stubApiRead(
+    `${projectPath}/configurations/imports/head`,
+    repositoryConfigurationHeadResponseSchema,
+    repositoryConfigurationHead,
+  ),
+  stubApiRead(`${projectPath}/landing-queues`, landingQueuesResponseSchema, {
+    queues: [],
+    truncated: false,
+  }),
+  stubApiRead(
+    `${projectPath}/execution-placement`,
+    executionPlacementResponseSchema,
+    {
+      work: { route: "Pool", source: "Default" },
+      evaluation: { route: "Pool", source: "Default" },
+      choices: ["Pool"],
+    },
+  ),
+  stubApiRead(
+    `${projectPath}/session-placement`,
+    sessionPlacementResponseSchema,
+    {
+      thread: { route: "Pool", source: "Default" },
+      lead: { route: "Pool", source: "Default" },
+      leadOffering: "Own",
+      leadOfferings: ["Own"],
+      choices: ["Pool"],
+      runners: { mine: "Live", inquiry: "Live", project: "Live" },
+    },
+  ),
+  stubApiRead(`${projectPath}/hosted-runs`, hostedRunsResponseSchema, {
+    granted: false,
+  }),
+  stubApiRead(`${projectPath}/threads`, threadsResponseSchema, { threads: [] }),
+  stubApiRead(
+    `${tenantPath}/personal-runner-permit`,
+    personalRunnerPermitResponseSchema,
+    { granted: true },
+  ),
+  stubApiRead(
+    `${tenantPath}/personal-runner`,
+    personalRunnerResponseSchema,
+    personalRunner,
+  ),
+  stubApiRead(`${tenantPath}/chat-host`, chatHostResponseSchema, {
+    id: "chuggy-personal-5b7d2e90-0000-4000-8000-000000000000",
+    registeredAt: "2026-10-01T00:00:00Z",
+    live: false,
+  }),
+  stubApiRead("/api/v1/agent-accounts", agentAccountsResponseSchema, {
+    accounts: ["Claude", "Codex"].map((agent) => ({
+      agent,
+      settings: {
+        fiveHourPercent: 90,
+        sevenDayPercent: 90,
+        pausesThreads: false,
+      },
+      readings: [],
+    })),
+  }),
+  stubApiRead("/access/v1/account", accessCallerAccountSchema, {
+    subject: "member",
+    principal,
+    githubLogin: stubApiLogin,
+    email: stubApiEmail,
+  }),
+  stubApiRead(
+    "/access/v1/invite-links/summaries",
+    accessInviteLinkSummarySchema,
+    {
+      state: "Open",
+      kind: "Tenant",
+      displayName: stubApiTenant,
+      role: "Member",
+      mintedBy: stubApiLogin,
+    },
+    "POST",
+  ),
+  stubApiRead("/access/v1/workspaces", accessCallerTenantsSchema, {
+    tenants: [
+      {
+        tenant: stubApiTenant,
+        displayName: stubApiTenant,
+        roles: ["Member"],
+        administer: false,
+      },
+    ],
+    truncated: false,
+  }),
+  stubApiRead(`${projectPath}/deletion`, projectDeletionResponseSchema, {
+    held: [],
+  }),
+  stubApiRead("/access/v1/site/abilities", accessSiteAbilitiesSchema, {
+    administer: false,
+    createAccount: false,
+    createTenant: false,
+    manageAuthorities: false,
+  }),
+  stubApiRead(
+    `/access/v1/tenants/${stubApiTenant}/projects/${stubApiProject}/people`,
+    accessProjectPeopleSchema,
+    {
+      tenant: stubApiTenant,
+      project: stubApiProject,
+      people: [
+        {
+          subject: principal,
+          mine: true,
+          tenantAdmin: false,
+          roles: ["Developer"],
+        },
+      ],
+      otherIssuers: 0,
+      truncated: false,
+    },
+  ),
+];
+
+/** The answer to a request: a case's own rows first, then the stub's. The
+ * query does not choose a row; a later case that needs it to adds a row that
+ * reads it. */
+export function stubApiAnswer(
+  caseReads: readonly StubApiRead[],
+  method: string,
+  url: URL,
+): StubApiRead | undefined {
+  return [...caseReads, ...stubApiReads].find(
+    (read) => read.method === method && read.path === url.pathname,
+  );
+}

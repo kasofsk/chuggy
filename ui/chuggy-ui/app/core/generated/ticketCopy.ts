@@ -14,7 +14,6 @@ export interface TicketCopy {
   readonly "ticket-verdict-rejected": Record<never, never>;
   readonly "ticket-verdict-killed": Record<never, never>;
   readonly "ticket-cycle-current": Record<never, never>;
-  readonly "ticket-standing-ready": Record<never, never>;
   readonly "ticket-value-none": Record<never, never>;
   readonly "ticket-value-unknown": Record<never, never>;
   readonly "ticket-value-default": Record<never, never>;
@@ -52,6 +51,9 @@ export interface TicketCopy {
   readonly "ticket-tab-configuration": Record<never, never>;
   readonly "ticket-tab-usage": Record<never, never>;
   readonly "ticket-tabs-nav-label": Record<never, never>;
+  readonly "ticket-state-announced": {
+    readonly state: unknown;
+  };
   readonly "ticket-header-merged-into": {
     readonly base: unknown;
   };
@@ -192,6 +194,7 @@ export interface TicketCopy {
   };
   readonly "ticket-approval-note-label": Record<never, never>;
   readonly "ticket-approval-note-placeholder": Record<never, never>;
+  readonly "ticket-approval-note-unsendable": Record<never, never>;
   readonly "ticket-approval-reject-question": Record<never, never>;
   readonly "ticket-approval-feedback-label": Record<never, never>;
   readonly "ticket-approval-feedback-placeholder": Record<never, never>;
@@ -202,6 +205,7 @@ export interface TicketCopy {
   readonly "ticket-dispatch-aria-label": {
     readonly number: unknown;
   };
+  readonly "ticket-dispatch-offline": Record<never, never>;
   readonly "ticket-queue-place": {
     readonly position: unknown;
     readonly total: unknown;
