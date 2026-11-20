@@ -339,7 +339,7 @@ export const builtInThemes: Readonly<Record<BuiltInThemeId, ThemeDocument>> = {
         "ink-on-accent": "#000000",
       },
     },
-    textSize: "Large",
+    textSize: "Standard",
     font: "System",
   },
 };
