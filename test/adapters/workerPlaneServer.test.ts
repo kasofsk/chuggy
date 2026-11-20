@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+
+import { createLocalJWKSet, jwtVerify } from "jose";
+
+import { jobIdentitySigner } from "../../src/adapters/crypto/jobIdentitySigner.ts";
 
 import { planeBodyBytesDefault } from "../../src/adapters/http/planeRoutes.ts";
 import {
@@ -27,6 +31,7 @@ import {
   runUsageInstantSecsMax,
   runUsageWindows,
   workerCredentialAbsentSchema,
+  workerHeldCredentialsAnswerSchema,
   workerHeldCredentialsMax,
   type WorkerHeldCredentialBundle,
   workerPlaneRoutes,
@@ -77,6 +82,9 @@ import {
   heldCredentialIssuer,
   type HeldCredential,
 } from "../../src/interpreter/workerPlaneHeldCredentials.ts";
+import { connectorCredentialIssuers } from "../../src/interpreter/connectorCredential.ts";
+import type { JobIdentityIssuing } from "../../src/interpreter/jobIdentityIssuerSettings.ts";
+import type { ProjectConnectorRead } from "../../src/interpreter/projectConnectors.ts";
 import {
   credentialResolver,
   type CredentialRequester,
@@ -2958,4 +2966,137 @@ test("a listed connector credential is weighed against the attempt's own project
     [authority.partition, "absent"],
   ]);
   await app.close();
+});
+
+const connectorSigner = await (async () => {
+  const built = await jobIdentitySigner([
+    generateKeyPairSync("rsa", { modulusLength: 2048 })
+      .privateKey.export({ format: "pem", type: "pkcs8" })
+      .toString(),
+  ]);
+  assert.equal(built.result, "Built");
+  return built.signer;
+})();
+
+/** A plane whose attempt lists `deploy` and `absent`, its project holding `deploy` alone, with the connector issuers `identity` composes. */
+function connectorPlane(
+  identity: JobIdentityIssuing | undefined,
+): ReturnType<typeof createWorkerPlaneApp> {
+  const granted = heldTask([]);
+  assert.ok(granted.invocation !== undefined);
+  const found: WorkerTaskRead = {
+    ...granted,
+    invocation: {
+      ...granted.invocation,
+      credentialsListed: [
+        connectorCredentialOf("deploy"),
+        connectorCredentialOf("absent"),
+      ],
+    },
+  };
+  const connectors: ProjectConnectorRead = {
+    connector: (partition, name) =>
+      Promise.resolve(
+        name === "deploy" && partition === authority.partition
+          ? {
+              connector: {
+                name,
+                kind: "Anthropic",
+                settings: { organizationId: "org", federationRuleId: "rule" },
+              },
+              revision: 1,
+            }
+          : undefined,
+      ),
+  };
+  return createWorkerPlaneApp({
+    ...inertWorkerPlane(workerPlaneUploadBytesMax),
+    tasks: {
+      ...attemptTasks(found),
+      workload: () =>
+        Promise.resolve({ taskKind: "Work", workload: "implement" }),
+    },
+    heldCredentials: credentialResolver(
+      connectorCredentialIssuers(identity, {
+        connectors,
+        nowMs: () => 1_800_000_000_000,
+      }),
+      connectors,
+    ),
+  });
+}
+
+const connectorAsk = {
+  credentials: [
+    connectorCredentialOf("deploy"),
+    connectorCredentialOf("absent"),
+  ],
+};
+
+test("a plane holding an identity issuer serves a held connector a fresh token's bundle, and an unheld one is not enabled", async () => {
+  const app = connectorPlane({
+    issuerBaseUrl: "https://identity.example",
+    signer: connectorSigner,
+  });
+  const answered = await heldAsked(app, connectorAsk, {
+    ...held,
+    [workerContractHeader]: workerContractRelease,
+  });
+  await app.close();
+  assert.equal(answered.status, 200);
+  const body = workerHeldCredentialsAnswerSchema.parse(
+    JSON.parse(answered.body),
+  );
+  assert.deepEqual(body.absent, [
+    { credential: connectorCredentialOf("absent"), reason: "NotEnabled" },
+  ]);
+  const [bundle] = body.credentials;
+  assert.ok(bundle !== undefined && "files" in bundle);
+  assert.equal(body.credentials.length, 1);
+  assert.equal(bundle.credential, connectorCredentialOf("deploy"));
+  const token = bundle.files.find((file) => file.file === "token")?.content;
+  assert.ok(token?.kind === "Secret");
+  const { payload } = await jwtVerify(
+    token.secret,
+    createLocalJWKSet({ keys: [...connectorSigner.keySet().keys] }),
+    { currentDate: new Date(1_800_000_000_000) },
+  );
+  assert.equal(payload.iss, "https://identity.example/tenant");
+  assert.equal(payload.sub, "project:project:workload:implement:task:work");
+  assert.equal(bundle.expiresAtMs, (payload.exp ?? 0) * 1000);
+});
+
+test("a plane holding no identity issuer answers a held connector not held, and a release that reads no bundles is answered alike either way", async () => {
+  const unissued = connectorPlane(undefined);
+  assert.deepEqual(
+    await heldAsked(unissued, connectorAsk, {
+      ...held,
+      [workerContractHeader]: workerContractRelease,
+    }),
+    {
+      status: 200,
+      body: JSON.stringify({
+        credentials: [],
+        absent: [
+          { credential: connectorCredentialOf("deploy"), reason: "NotHeld" },
+          { credential: connectorCredentialOf("absent"), reason: "NotEnabled" },
+        ],
+      }),
+    },
+  );
+  const old: unknown[] = [];
+  for (const app of [
+    unissued,
+    connectorPlane({
+      issuerBaseUrl: "https://identity.example",
+      signer: connectorSigner,
+    }),
+  ]) {
+    old.push(await heldAsked(app, connectorAsk));
+    await app.close();
+  }
+  assert.deepEqual(old, [
+    { status: 200, body: JSON.stringify({ credentials: [] }) },
+    { status: 200, body: JSON.stringify({ credentials: [] }) },
+  ]);
 });
