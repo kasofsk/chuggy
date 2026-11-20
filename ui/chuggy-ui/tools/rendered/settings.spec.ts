@@ -8,7 +8,9 @@
  * page sideways. On a wide screen the catalog, a browser, is wider than a
  * form: its list is a list's width and its code breaks its lines rather than
  * scroll. A form there keeps the settings' width, and the navigation stands
- * where it stood beside the catalog.
+ * where it stood beside the catalog. A prose setting on Chats runs the width
+ * of its card, so the card ends as far past its words as it starts before
+ * them.
  */
 
 import { copyTextEn } from "../../app/copy/catalog.ts";
@@ -163,6 +165,34 @@ test("on a wide screen the catalog is wider than a form, its list a list's width
     throw new Error("the navigation and the form are drawn");
   expect(formed.width).toBeLessThanOrEqual(form + 0.5);
   expect(still.x).toBeCloseTo(beside.x, 0);
+  renderedNoViolations(rendered, [zodProbeViolation]);
+  expect(served.unanswered).toEqual([]);
+});
+
+test("on a wide screen each prose setting on Chats runs the width of its card", async ({
+  browser,
+  served,
+}) => {
+  const rendered = await renderedOpen(browser, served.origin, {
+    route: `${settingsRoot}/threads`,
+    viewport: "wide",
+    signedIn: true,
+    ready: (page) => page.locator(".selector-prose").first(),
+  });
+  const page = rendered.page;
+  const cards = page.locator("section", {
+    has: page.locator(".selector-prose"),
+  });
+  await expect(cards).toHaveCount(2);
+  for (const card of await cards.all()) {
+    const drawn = await card.boundingBox();
+    const prose = await card.locator(".selector-prose").boundingBox();
+    if (drawn === null || prose === null)
+      throw new Error("a prose setting's card and its words are drawn");
+    const before = prose.x - drawn.x;
+    const after = drawn.x + drawn.width - (prose.x + prose.width);
+    expect(after).toBeCloseTo(before, 0);
+  }
   renderedNoViolations(rendered, [zodProbeViolation]);
   expect(served.unanswered).toEqual([]);
 });

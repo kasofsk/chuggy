@@ -460,13 +460,22 @@ const forgeApps = {
 };
 
 /** The project's thread settings: nothing of its own, under the
- * installation's standing rules. */
+ * installation's north star and standing rules, each as long as a real
+ * project's. */
+const selectorNorthStar =
+  "Chuggy is a job orchestrator: tickets form a graph, one journaled actor drives each through authoring, work, evaluation and completion, and the fabric runs the work and decides nothing. Every change keeps the formal model and the code in agreement, and where they disagree the code is wrong.";
+
 const selectorSettings = {
   partition,
   revision: 0,
   overrides: {},
   effective: {
-    threadStandingRules: "- You act through your owner's own commands.",
+    northStar: selectorNorthStar,
+    threadStandingRules: [
+      "- You act through your owner's own commands, and never through an account that is not theirs.",
+      "- File work as tickets rather than doing it in the conversation, and say which ticket holds it.",
+      "- Ask before anything that cannot be undone: a deploy, a restart, a reset of anyone's data.",
+    ].join("\n"),
   },
 };
 

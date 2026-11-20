@@ -3,9 +3,10 @@
    here is the grids and the states a data attribute carries. */
 
 @layer page {
+  /* A prose setting runs the width of its card, which a settings form's
+     width already bounds, so the card and its words end together. */
   .selector-prose {
     white-space: pre-wrap;
-    max-width: var(--measure);
     color: var(--ink-2);
     line-height: var(--leading-prose);
   }
