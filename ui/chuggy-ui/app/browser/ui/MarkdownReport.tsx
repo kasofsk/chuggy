@@ -50,6 +50,9 @@ interface MarkdownReportProps {
   /** Whether the report gives up the panel it draws itself in, for a column
    * with no width to spare. */
   readonly bare?: boolean;
+  /** Whether a long line of code breaks where its panel ends rather than
+   * scrolling, for code read as a record's fields more than worked from. */
+  readonly wrapped?: boolean;
   /** Whether more of the text is still coming, so a mark its last block leaves
    * open is drawn as what it is about to be. */
   readonly writing?: boolean;
@@ -93,10 +96,15 @@ function useMarkdownReading(text: string, writing: boolean): MarkdownReading {
   return next;
 }
 
-function markdownReportClassName(bare: boolean, mark: boolean): string {
+function markdownReportClassName(
+  bare: boolean,
+  wrapped: boolean,
+  mark: boolean,
+): string {
   return [
     "run-report",
     ...(bare ? ["run-report-bare"] : []),
+    ...(wrapped ? ["run-report-wrapped"] : []),
     ...(mark ? [markdownMarkClassName] : []),
   ].join(" ");
 }
@@ -129,6 +137,7 @@ function MarkdownReportRead(props: MarkdownReportProps): ReactNode {
     <div
       className={markdownReportClassName(
         props.bare === true,
+        props.wrapped === true,
         writing && !carried,
       )}
     >

@@ -7,7 +7,9 @@
  * are two levels: their own address is the navigation alone, a row a section
  * with the line saying what is there, and a section is drawn alone under a
  * link back to it. The sheet decides which by the frame's width, and the
- * first section is chosen here by the same width.
+ * first section is chosen here by the same width. A section that is a form
+ * keeps to the settings' width; one that marks itself `data-settings-wide`, a
+ * browser, takes the frame's.
  *
  * The site's group is drawn only for a reader the site's abilities give a page
  * of it, and a section of the project's that its administrators alone are

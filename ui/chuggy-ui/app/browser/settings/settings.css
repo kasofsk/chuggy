@@ -1,17 +1,18 @@
 /* The settings' frame. Narrower than two columns it is two levels: at the
    settings' own address the navigation alone, a row a section, each under its
    group's heading; at a section, the section alone under its link back. From
-   two columns the navigation stands beside the section, centred as one block
-   in whatever holds it, and neither the lines nor the link back are drawn. */
+   two columns the navigation stands beside the section, and neither the lines
+   nor the link back are drawn. The frame is as wide as a page, centred in
+   whatever holds it, whichever section it shows, so the navigation stays put:
+   a section that is a form keeps to the settings' width at the frame's start,
+   and one marked `data-settings-wide`, a browser, takes the frame's width. */
 
 @layer page {
   .settings {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-4);
-    max-width: calc(
-      var(--width-settings-nav) + var(--space-6) + var(--width-settings)
-    );
+    max-width: var(--width-page);
     margin-inline: auto;
   }
 
@@ -93,6 +94,14 @@
     .settings[data-settings-at] > .settings-nav,
     .settings[data-settings-at] > .settings-section {
       display: grid;
+    }
+
+    .settings-section {
+      max-width: var(--width-settings);
+    }
+
+    .settings-section:has([data-settings-wide]) {
+      max-width: none;
     }
 
     .settings-nav-list {

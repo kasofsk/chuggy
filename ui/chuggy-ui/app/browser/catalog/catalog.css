@@ -3,10 +3,10 @@
    configuration where the version came from and what the repository's head
    says of it where the head is drawn, then the entries grouped by what each
    is, a compact row each, the chosen one's on the sunken ground. With an
-   entry chosen the list and the entry sit side by side, the entry held in
-   view under the bar and scrolling on its own while the list scrolls; where
-   the page is narrow they stack with the entry first, since it is what the
-   reader just asked for. */
+   entry chosen the list, at a list's width, and the entry, in the rest, sit
+   side by side, the entry held in view under the bar and scrolling on its
+   own while the list scrolls; where the page is narrow they stack with the
+   entry first, since it is what the reader just asked for. */
 
 @layer page {
   .catalog-page {
@@ -229,7 +229,7 @@
 
   @container (min-width: 60em) {
     .catalog-layout {
-      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+      grid-template-columns: var(--width-settings-list) minmax(0, 1fr);
     }
 
     .catalog-pane {

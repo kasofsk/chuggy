@@ -213,6 +213,16 @@
     tab-size: 2;
   }
 
+  /* A wrapped report's code breaks a line where the panel ends, what runs
+     on from it hanging in from the line's start so it is not read as a line
+     of its own; the breaks it was written with are the only ones copied. */
+  .run-report-wrapped .run-report-code > pre {
+    overflow-x: visible;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    text-indent: var(--space-6) hanging each-line;
+  }
+
   .run-report-code code {
     font-size: inherit;
   }

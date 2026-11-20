@@ -5,7 +5,10 @@
  * its heading is within the first screen, under the link back to the index.
  * At the desk the settings' own address is its first section, with the
  * navigation beside it and the chat pane beside both, and nothing scrolls the
- * page sideways.
+ * page sideways. On a wide screen the catalog, a browser, is wider than a
+ * form: its list is a list's width and its code breaks its lines rather than
+ * scroll. A form there keeps the settings' width, and the navigation stands
+ * where it stood beside the catalog.
  */
 
 import { copyTextEn } from "../../app/copy/catalog.ts";
@@ -15,6 +18,7 @@ import {
   renderedNoOverflow,
   renderedNoViolations,
   renderedOpen,
+  renderedTokenPixels,
   renderedTouchTargets,
   renderedViewports,
   test,
@@ -111,6 +115,54 @@ test("at the desk with the chat pane open the settings' own address is its first
   ).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("link", { name: "All settings" })).toBeHidden();
   await renderedNoOverflow(page);
+  renderedNoViolations(rendered, [zodProbeViolation]);
+  expect(served.unanswered).toEqual([]);
+});
+
+test("on a wide screen the catalog is wider than a form, its list a list's width and its code no wider than its panel, and a form beside the same navigation keeps the settings' width", async ({
+  browser,
+  served,
+}) => {
+  const entry = "build";
+  const rendered = await renderedOpen(browser, served.origin, {
+    route: `${settingsRoot}/catalog?${new URLSearchParams({ configuration: "revision-coding", entry: `workloads/${entry}` }).toString()}`,
+    viewport: "wide",
+    signedIn: true,
+    ready: (page) => page.getByRole("article", { name: entry, exact: true }),
+  });
+  const page = rendered.page;
+  const form = await renderedTokenPixels(page, "--width-settings");
+  const list = await renderedTokenPixels(page, "--width-settings-list");
+  const nav = page.getByRole("navigation", { name: "Settings" });
+  const section = page.locator(".settings-section");
+  const beside = await nav.boundingBox();
+  const browsed = await section.boundingBox();
+  const listed = await page.locator(".catalog-groups").boundingBox();
+  if (beside === null || browsed === null || listed === null)
+    throw new Error("the navigation, the catalog and its list are drawn");
+  expect(browsed.width).toBeGreaterThan(form);
+  expect(listed.width).toBeCloseTo(list, 0);
+  const code = page
+    .getByRole("article", { name: entry, exact: true })
+    .locator("pre");
+  const lines = await code.evaluate((pre) => ({
+    written: (pre.textContent ?? "").split("\n").length,
+    drawn: Math.round(
+      pre.clientHeight / Number.parseFloat(getComputedStyle(pre).lineHeight),
+    ),
+    past: pre.scrollWidth - pre.clientWidth,
+  }));
+  expect(lines.past).toBe(0);
+  expect(lines.drawn).toBeGreaterThan(lines.written);
+  await renderedNoOverflow(page);
+  await nav.getByRole("link", { name: "Placement", exact: true }).click();
+  await expect(section.getByRole("table")).toBeVisible();
+  const formed = await section.boundingBox();
+  const still = await nav.boundingBox();
+  if (formed === null || still === null)
+    throw new Error("the navigation and the form are drawn");
+  expect(formed.width).toBeLessThanOrEqual(form + 0.5);
+  expect(still.x).toBeCloseTo(beside.x, 0);
   renderedNoViolations(rendered, [zodProbeViolation]);
   expect(served.unanswered).toEqual([]);
 });

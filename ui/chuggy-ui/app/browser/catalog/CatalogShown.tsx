@@ -314,7 +314,7 @@ function CatalogDetail(props: {
       {source === undefined ? null : entry.detail.kind === "Prompt" ? (
         <MarkdownReport text={source} />
       ) : (
-        <MarkdownReport text={`\`\`\`yaml\n${source}\`\`\``} bare />
+        <MarkdownReport text={`\`\`\`yaml\n${source}\`\`\``} bare wrapped />
       )}
     </article>
   );

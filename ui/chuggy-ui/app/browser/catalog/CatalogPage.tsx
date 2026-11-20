@@ -11,6 +11,9 @@
  *
  * A version 1 configuration is no catalog, and is drawn as a ticket's page
  * draws the configuration it runs under.
+ *
+ * It is a browser rather than a form, so it marks itself wide and the
+ * settings' frame gives it the frame's width.
  */
 
 import { useNavigate } from "@tanstack/react-router";
@@ -489,7 +492,7 @@ export function CatalogPage(props: {
     />
   );
   return (
-    <div className="catalog-page" data-fills-width>
+    <div className="catalog-page" data-fills-width data-settings-wide>
       <CatalogSearchProvider value={typed}>
         {read === undefined ? (
           <CatalogUnread state={state} compact={revision !== undefined} />

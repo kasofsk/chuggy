@@ -45,8 +45,10 @@ export const renderedDist = join(
   "../../dist",
 );
 
-/** The widths a screen is held at: a phone, a tablet, and the desk the
- * vitest suites read at, `viewportDeskEm` in `ui/chuggy-ui/test/viewportSizes.ts`. */
+/** The widths a screen is held at: a phone, a tablet, the desk the vitest
+ * suites read at, `viewportDeskEm` in `ui/chuggy-ui/test/viewportSizes.ts`,
+ * and a wide screen's, where a page beside the chat pane is wider than a
+ * settings form beside the settings' navigation. */
 export const renderedViewports = {
   phone: { width: 360, height: 740 },
   tablet: { width: 768, height: 1024 },
@@ -54,6 +56,7 @@ export const renderedViewports = {
     width: viewportDeskEm * viewportEmPixels,
     height: viewportHeightEmDefault * viewportEmPixels,
   },
+  wide: { width: 1920, height: 1080 },
 } as const;
 
 export type RenderedViewport = keyof typeof renderedViewports;

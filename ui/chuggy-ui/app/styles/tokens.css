@@ -318,6 +318,7 @@
     --width-column: 64rem; /* a conversation's reading column */
     --width-reading: 48rem; /* that column where the conversation has the frame */
     --width-settings: 56rem; /* a settings page: form rows, not prose */
+    --width-settings-list: 28rem; /* a wide settings page's list, beside the record a row opens */
     --width-settings-nav: 13rem; /* the settings' own navigation, beside its page */
     --width-aside: 22rem; /* the details beside a page */
     --width-panel-named: 12rem; /* a panel's names, before its meta wraps under them */
