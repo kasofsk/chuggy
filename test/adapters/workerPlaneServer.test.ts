@@ -79,6 +79,7 @@ import {
 } from "../../src/interpreter/workerPlaneHeldCredentials.ts";
 import {
   credentialResolver,
+  type CredentialRequester,
   type CredentialsAsk,
 } from "../../src/interpreter/credentialIssuers.ts";
 import { reporterSecretBytes } from "../../src/adapters/reporters/secretFile.ts";
@@ -89,7 +90,9 @@ import {
   workerContractAccepted,
   workerContractTargetRefs,
   type SessionTaskRead,
+  type WorkerTaskPort,
   type WorkerTaskRead,
+  type WorkerTaskWorkload,
 } from "../../src/interpreter/workerPlane.ts";
 import {
   sessionTask,
@@ -187,6 +190,15 @@ function heldTask(
         mayCompleteTask: false,
       },
     },
+  };
+}
+
+/** A task port whose attempt reads find `found`, and a work task of no named workload. */
+function heldTasks(found: WorkerTaskRead | undefined): WorkerTaskPort {
+  return {
+    ...inertTasks,
+    work: () => Promise.resolve(found),
+    workload: () => Promise.resolve({ taskKind: "Work" }),
   };
 }
 
@@ -1376,7 +1388,7 @@ test("every job route takes the heaviest body its caller may send, and refuses a
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
     authority: { authenticate: () => Promise.resolve(authority) },
-    tasks: { ...inertTasks, work: () => Promise.resolve(heldTask()) },
+    tasks: heldTasks(heldTask()),
   });
   await planeHeaviestTaken(
     app,
@@ -2277,7 +2289,7 @@ function heldPlane(
         ];
   return createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
-    tasks: { ...inertTasks, work: () => Promise.resolve(found) },
+    tasks: heldTasks(found),
     ...(file === undefined
       ? {}
       : {
@@ -2364,7 +2376,7 @@ test("the resolver is handed the attempt's identity, the one repository its inpu
   ]) {
     const app = createWorkerPlaneApp({
       ...inertWorkerPlane(workerPlaneUploadBytesMax),
-      tasks: { ...inertTasks, work: () => Promise.resolve(found) },
+      tasks: heldTasks(found),
       heldCredentials: {
         resolve: (ask) => {
           asks.push(ask);
@@ -2384,6 +2396,7 @@ test("the resolver is handed the attempt's identity, the one repository its inpu
     ticket: granted.identity.ticket,
     task: granted.identity.task,
     repository: asRepositoryId("source"),
+    taskKind: "Work",
   };
   const asked = ["track-record", "other"];
   assert.deepEqual(asks, [
@@ -2419,7 +2432,7 @@ test("a release that reads bundles is served every bundle and every absence, and
   const absent = [{ credential: "unheld", reason: "NotHeld" }] as const;
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
-    tasks: { ...inertTasks, work: () => Promise.resolve(heldTask()) },
+    tasks: heldTasks(heldTask()),
     heldCredentials: {
       resolve: () =>
         Promise.resolve({
@@ -2610,6 +2623,110 @@ test("a bearer that is no live attempt is refused, and one whose grant is not re
   await app.close();
 });
 
+/** A plane whose task port reads `workload` beside a live attempt granted `track-record`, every requester its one issuer is handed recorded. */
+function heldRequesterPlane(
+  workload: WorkerTaskWorkload | undefined,
+  requesters: CredentialRequester[],
+): ReturnType<typeof createWorkerPlaneApp> {
+  return createWorkerPlaneApp({
+    ...inertWorkerPlane(workerPlaneUploadBytesMax),
+    tasks: {
+      ...heldTasks(heldTask(["track-record"])),
+      workload: () => Promise.resolve(workload),
+    },
+    heldCredentials: credentialResolver([
+      {
+        issue: (requester) => {
+          requesters.push(requester);
+          return Promise.resolve({ issued: "Absent", reason: "NotHeld" });
+        },
+      },
+    ]),
+  });
+}
+
+test("the issuer's requester carries the task's kind, an evaluation's evaluator key and the workload's name where the read names one", async () => {
+  const identity = heldTask().identity;
+  const who = {
+    partition: authority.partition,
+    ticket: identity.ticket,
+    task: identity.task,
+    repository: asRepositoryId("source"),
+  };
+  for (const workload of [
+    { taskKind: "Work", workload: "implement" },
+    { taskKind: "Evaluation", evaluator: 2, workload: "review" },
+    { taskKind: "Work" },
+  ] as const) {
+    const requesters: CredentialRequester[] = [];
+    const app = heldRequesterPlane(workload, requesters);
+    assert.deepEqual(
+      await heldAsked(
+        app,
+        { credentials: ["track-record"] },
+        { ...held, [workerContractHeader]: workerContractRelease },
+      ),
+      {
+        status: 200,
+        body: JSON.stringify({
+          credentials: [],
+          absent: [{ credential: "track-record", reason: "NotHeld" }],
+        }),
+      },
+    );
+    assert.deepEqual(requesters, [{ ...who, ...workload }]);
+    await app.close();
+  }
+});
+
+test("an ask naming a workload, a task kind or an evaluator key is refused, and no issuer is asked", async () => {
+  const requesters: CredentialRequester[] = [];
+  const app = heldRequesterPlane({ taskKind: "Work" }, requesters);
+  for (const extra of [
+    { workload: "review" },
+    { taskKind: "Evaluation" },
+    { evaluator: 2 },
+  ]) {
+    assert.deepEqual(
+      await heldAsked(app, { credentials: ["track-record"], ...extra }),
+      { status: 400, body: JSON.stringify({ action: "stop" }) },
+      JSON.stringify(extra),
+    );
+  }
+  assert.deepEqual(requesters, []);
+  await app.close();
+});
+
+test("an attempt whose workload read finds nothing is refused as an unknown bearer is, and no issuer is asked", async () => {
+  const requesters: CredentialRequester[] = [];
+  const app = heldRequesterPlane(undefined, requesters);
+  assert.deepEqual(await heldAsked(app, { credentials: ["track-record"] }), {
+    status: 401,
+    body: JSON.stringify({ action: "stop" }),
+  });
+  assert.deepEqual(requesters, []);
+  await app.close();
+});
+
+test("a workload read that raises is answered as a task read that raises", async () => {
+  const raised = () => Promise.reject(new Error("unreachable"));
+  const statuses: number[] = [];
+  for (const tasks of [
+    { ...heldTasks(heldTask(["track-record"])), work: raised },
+    { ...heldTasks(heldTask(["track-record"])), workload: raised },
+  ]) {
+    const app = createWorkerPlaneApp({
+      ...inertWorkerPlane(workerPlaneUploadBytesMax),
+      tasks,
+    });
+    statuses.push(
+      (await heldAsked(app, { credentials: ["track-record"] })).status,
+    );
+    await app.close();
+  }
+  assert.deepEqual(statuses, [500, 500]);
+});
+
 test("a held file that cannot be read is an outage to wait out, naming no secret", async () => {
   const file = join(heldRoot, "vanishing");
   writeFileSync(file, heldSecret);
@@ -2668,7 +2785,7 @@ function workflowRunsPlane(options: {
   };
   return createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
-    tasks: { ...inertTasks, work: () => Promise.resolve(found) },
+    tasks: heldTasks(found),
     heldCredentials: credentialResolver([
       workflowRunsCredentialIssuer({
         bindings: {
@@ -2809,7 +2926,7 @@ test("a listed connector credential is weighed against the attempt's own project
   };
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
-    tasks: { ...inertTasks, work: () => Promise.resolve(found) },
+    tasks: heldTasks(found),
     heldCredentials: credentialResolver([], {
       connector: (partition, name) => {
         looked.push([partition, name]);
