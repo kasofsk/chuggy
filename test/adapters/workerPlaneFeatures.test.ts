@@ -60,6 +60,7 @@ import type {
 } from "../../src/interpreter/workerTask.ts";
 import {
   inertSessionPlane,
+  attemptTasks,
   inertTasks,
   inertWorkerPlane,
 } from "./workerPlaneFixtures.ts";
@@ -243,7 +244,7 @@ const workerPlaneFeatureGates: readonly WorkerPlaneFeatureGate[] = [
       };
       const answered = await workerPlaneFeatureAsked(
         workerPlaneFeatureAttempt({
-          tasks: { ...inertTasks, work: () => Promise.resolve(named) },
+          tasks: attemptTasks(named),
         }),
         {
           method: "GET",
@@ -326,7 +327,7 @@ const workerPlaneFeatureGates: readonly WorkerPlaneFeatureGate[] = [
     given: async (headers) => {
       const answered = await workerPlaneFeatureAsked(
         workerPlaneFeatureAttempt({
-          tasks: { ...inertTasks, work: () => Promise.resolve(workTaskFound) },
+          tasks: attemptTasks(workTaskFound),
           heldCredentials: {
             resolve: () =>
               Promise.resolve({
@@ -431,7 +432,7 @@ const workerPlaneFeatureListedGates: readonly WorkerPlaneFeatureListedGate[] = [
       };
       const answered = await workerPlaneFeatureAsked(
         workerPlaneFeatureAttempt({
-          tasks: { ...inertTasks, work: () => Promise.resolve(named) },
+          tasks: attemptTasks(named),
         }),
         {
           method: "GET",
@@ -533,7 +534,7 @@ async function workerPlaneFeaturePushPathsTask(
   };
   const answered = await workerPlaneFeatureAsked(
     workerPlaneFeatureAttempt({
-      tasks: { ...inertTasks, work: () => Promise.resolve(named) },
+      tasks: attemptTasks(named),
     }),
     {
       method: "GET",

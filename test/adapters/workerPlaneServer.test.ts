@@ -90,7 +90,6 @@ import {
   workerContractAccepted,
   workerContractTargetRefs,
   type SessionTaskRead,
-  type WorkerTaskPort,
   type WorkerTaskRead,
   type WorkerTaskWorkload,
 } from "../../src/interpreter/workerPlane.ts";
@@ -109,6 +108,7 @@ import { fixtureForgeShapedToken } from "./forgeFixtures.ts";
 import {
   inertRunEvidence,
   inertSessionPlane,
+  attemptTasks,
   inertTasks,
   inertWorkerPlane,
   runContextReadingBody,
@@ -190,15 +190,6 @@ function heldTask(
         mayCompleteTask: false,
       },
     },
-  };
-}
-
-/** A task port whose attempt reads find `found`, and a work task of no named workload. */
-function heldTasks(found: WorkerTaskRead | undefined): WorkerTaskPort {
-  return {
-    ...inertTasks,
-    work: () => Promise.resolve(found),
-    workload: () => Promise.resolve({ taskKind: "Work" }),
   };
 }
 
@@ -1388,7 +1379,7 @@ test("every job route takes the heaviest body its caller may send, and refuses a
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
     authority: { authenticate: () => Promise.resolve(authority) },
-    tasks: heldTasks(heldTask()),
+    tasks: attemptTasks(heldTask()),
   });
   await planeHeaviestTaken(
     app,
@@ -2289,7 +2280,7 @@ function heldPlane(
         ];
   return createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
-    tasks: heldTasks(found),
+    tasks: attemptTasks(found),
     ...(file === undefined
       ? {}
       : {
@@ -2376,7 +2367,7 @@ test("the resolver is handed the attempt's identity, the one repository its inpu
   ]) {
     const app = createWorkerPlaneApp({
       ...inertWorkerPlane(workerPlaneUploadBytesMax),
-      tasks: heldTasks(found),
+      tasks: attemptTasks(found),
       heldCredentials: {
         resolve: (ask) => {
           asks.push(ask);
@@ -2432,7 +2423,7 @@ test("a release that reads bundles is served every bundle and every absence, and
   const absent = [{ credential: "unheld", reason: "NotHeld" }] as const;
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
-    tasks: heldTasks(heldTask()),
+    tasks: attemptTasks(heldTask()),
     heldCredentials: {
       resolve: () =>
         Promise.resolve({
@@ -2631,7 +2622,7 @@ function heldRequesterPlane(
   return createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
     tasks: {
-      ...heldTasks(heldTask(["track-record"])),
+      ...attemptTasks(heldTask(["track-record"])),
       workload: () => Promise.resolve(workload),
     },
     heldCredentials: credentialResolver([
@@ -2712,8 +2703,8 @@ test("a workload read that raises is answered as a task read that raises", async
   const raised = () => Promise.reject(new Error("unreachable"));
   const statuses: number[] = [];
   for (const tasks of [
-    { ...heldTasks(heldTask(["track-record"])), work: raised },
-    { ...heldTasks(heldTask(["track-record"])), workload: raised },
+    { ...attemptTasks(heldTask(["track-record"])), work: raised },
+    { ...attemptTasks(heldTask(["track-record"])), workload: raised },
   ]) {
     const app = createWorkerPlaneApp({
       ...inertWorkerPlane(workerPlaneUploadBytesMax),
@@ -2785,7 +2776,7 @@ function workflowRunsPlane(options: {
   };
   return createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
-    tasks: heldTasks(found),
+    tasks: attemptTasks(found),
     heldCredentials: credentialResolver([
       workflowRunsCredentialIssuer({
         bindings: {
@@ -2926,7 +2917,7 @@ test("a listed connector credential is weighed against the attempt's own project
   };
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
-    tasks: heldTasks(found),
+    tasks: attemptTasks(found),
     heldCredentials: credentialResolver([], {
       connector: (partition, name) => {
         looked.push([partition, name]);
