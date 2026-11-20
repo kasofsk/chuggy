@@ -46,9 +46,11 @@ import {
   postgresWorkerTasks,
 } from "../adapters/postgres/workerPlane.ts";
 import { workerPlaneUploadBytesMax } from "../contract/http.ts";
+import { connectorCredentialIssuers } from "../interpreter/connectorCredential.ts";
 import {
   credentialResolver,
   type CredentialIssuer,
+  type CredentialResolver,
 } from "../interpreter/credentialIssuers.ts";
 import {
   jobIdentityIssuerSettings,
@@ -351,6 +353,31 @@ async function planeIdentity(): Promise<JobIdentityIssuing | undefined> {
   return { issuerBaseUrl: settings.issuerBaseUrl, signer: built.signer };
 }
 
+/**
+ * The resolver a pod's held credentials are answered from: the file roster's,
+ * the workflow runs credential's where the forge mints, and the connectors'
+ * where the plane holds an identity issuer.
+ */
+function planeCredentialResolver(
+  pool: ReturnType<typeof postgresPool>,
+  held: readonly CredentialIssuer[],
+  forge: PlaneForgeCredentials | undefined,
+  identity: JobIdentityIssuing | undefined,
+): CredentialResolver {
+  const connectors = postgresProjectConnectors(pool);
+  return credentialResolver(
+    [
+      ...held,
+      ...(forge === undefined ? [] : [forge.workflowRuns]),
+      ...connectorCredentialIssuers(identity, {
+        connectors,
+        nowMs: () => Date.now(),
+      }),
+    ],
+    connectors,
+  );
+}
+
 async function main(): Promise<void> {
   const held = await planeHeldCredentials();
   const identity = await planeIdentity();
@@ -395,10 +422,7 @@ async function main(): Promise<void> {
     },
     sessions: planeSessions(pool, artifacts),
     ...(forge === undefined ? {} : { credentials: forge.minting }),
-    heldCredentials: credentialResolver(
-      forge === undefined ? held : [...held, forge.workflowRuns],
-      postgresProjectConnectors(pool),
-    ),
+    heldCredentials: planeCredentialResolver(pool, held, forge, identity),
     ...(identity === undefined ? {} : { identity }),
     uploadBytesMax,
     ready: async () => {
