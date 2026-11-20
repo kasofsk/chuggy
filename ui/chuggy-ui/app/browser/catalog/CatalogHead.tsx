@@ -112,7 +112,6 @@ export function CatalogHeadRevision(props: {
   return (
     <CatalogShown
       base={base}
-      repository={props.repository}
       canonical={declaration.canonical}
       entries={catalogEntriesOf(catalog, declaration.workloadPaths)}
       selected={entry}

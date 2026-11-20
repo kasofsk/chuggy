@@ -137,6 +137,7 @@ for (const viewport of catalogViewports)
     });
     const page = rendered.page;
     const touch = await renderedTokenPixels(page, "--height-touch");
+    const hairline = await renderedTokenPixels(page, "--hairline");
     const row = page.locator(".record-row", {
       has: page.getByRole("heading", { level: 3, name: "build", exact: true }),
     });
@@ -152,7 +153,8 @@ for (const viewport of catalogViewports)
       Math.abs(said.y + said.height / 2 - (title.y + title.height / 2)),
     ).toBeLessThan(title.height / 2);
     expect(drawn.height).toBeLessThan(2 * touch);
-    if (viewport === "desk") expect(drawn.height).toBeCloseTo(touch, 0);
+    if (viewport === "desk")
+      expect(drawn.height).toBeCloseTo(touch + 2 * hairline, 0);
     renderedNoViolations(rendered, [zodProbeViolation]);
     expect(served.unanswered).toEqual([]);
   });

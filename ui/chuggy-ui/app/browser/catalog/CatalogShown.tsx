@@ -185,9 +185,10 @@ export function CatalogRowMeta(props: {
   );
 }
 
+/** One version's entries. Its rows name no repository: the head names the
+ * one the version was read from. */
 function CatalogList(props: {
   readonly base: CatalogQuery;
-  readonly repository: string | undefined;
   readonly entries: CatalogEntries;
 }): ReactNode {
   const text = useCopyText();
@@ -218,7 +219,7 @@ function CatalogList(props: {
               level={3}
               meta={
                 <CatalogRowMeta
-                  repository={props.repository}
+                  repository={undefined}
                   said={catalogEntrySummary(entry, text)}
                 />
               }
@@ -343,19 +344,11 @@ const catalogEntryAbsentMark = "\u0000";
 /** One version as a catalog: its entries listed, and the chosen one beside them. */
 export function CatalogShown(props: {
   readonly base: CatalogQuery;
-  /** The repository the version was read from, none where it was authored. */
-  readonly repository: string | undefined;
   readonly canonical: string;
   readonly entries: CatalogEntries;
   readonly selected: string | undefined;
 }): ReactNode {
-  const list = (
-    <CatalogList
-      base={props.base}
-      repository={props.repository}
-      entries={props.entries}
-    />
-  );
+  const list = <CatalogList base={props.base} entries={props.entries} />;
   if (props.selected === undefined) return list;
   const entry = props.entries.byKey.get(props.selected);
   return (

@@ -230,7 +230,6 @@ function CatalogConfigurationPickers(props: {
 /** One version, read by its revision so a version past the listing's budget is still drawn. */
 function CatalogRevision(props: {
   readonly partition: PartitionIdentity;
-  readonly repository: string | undefined;
   readonly revision: string;
   readonly selected: string | undefined;
 }): ReactNode {
@@ -258,7 +257,6 @@ function CatalogRevision(props: {
   return (
     <CatalogShown
       base={{ configuration: props.revision }}
-      repository={props.repository}
       canonical={configuration.canonical}
       entries={catalogEntriesOf(catalog, configuration.workloadPaths)}
       selected={props.selected}
@@ -280,8 +278,6 @@ function CatalogDrawn(props: {
   const provenance = holding?.revisions.find(
     (summary) => summary.revision === props.revision,
   )?.provenance;
-  const repository =
-    provenance?.source === "Repository" ? provenance.repository : undefined;
   if (
     props.query.source === "head" &&
     holding !== undefined &&
@@ -296,7 +292,6 @@ function CatalogDrawn(props: {
         imported={
           <CatalogRevision
             partition={props.partition}
-            repository={repository}
             revision={props.revision}
             selected={props.query.entry}
           />
@@ -306,7 +301,6 @@ function CatalogDrawn(props: {
   return (
     <CatalogRevision
       partition={props.partition}
-      repository={repository}
       revision={props.revision}
       selected={props.query.entry}
     />
