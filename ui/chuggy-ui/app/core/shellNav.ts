@@ -20,6 +20,7 @@ export const navRoutes = {
   catalog: "/$tenant/$project/catalog",
   settings: "/$tenant/$project/settings",
   repositories: "/$tenant/$project/repositories",
+  connectors: "/$tenant/$project/connectors",
   ticketNew: "/$tenant/$project/tickets/new",
   thread: "/$tenant/$project/threads/$session",
 } as const;
@@ -41,6 +42,7 @@ export type NavEntryId =
   | "catalog"
   | "settings"
   | "repositories"
+  | "connectors"
   | "runners";
 
 export interface NavEntry {
@@ -101,6 +103,12 @@ export function shellSetupNav(
       id: "repositories",
       label: { id: "shell-nav-repositories" },
       to: navRoutes.repositories,
+      params,
+    },
+    {
+      id: "connectors",
+      label: { id: "shell-nav-connectors" },
+      to: navRoutes.connectors,
       params,
     },
     {

@@ -12,6 +12,8 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { apiProjectAuthorities, apiProjectPeople } from "./accessRoutes.ts";
 import {
   apiAccessTokens,
+  apiConnectorHistory,
+  apiConnectors,
   apiExecutionPlacement,
   apiForgeApps,
   apiHostedRuns,
@@ -74,6 +76,44 @@ export function selectorSettingsHistoryQuery(partition: PartitionIdentity) {
     "selector-settings-history",
     (ports) => apiSelectorSettingsHistory(ports, partition),
   );
+}
+
+/** The project's connectors. */
+export function connectorsQuery(partition: PartitionIdentity) {
+  return consolePartitionQuery(partition, "connectors", (ports) =>
+    apiConnectors(ports, partition),
+  );
+}
+
+/** One page of the project's connector changes: the newest, or those older than `before`. */
+export function connectorHistoryQuery(
+  partition: PartitionIdentity,
+  before?: number,
+) {
+  return consolePartitionQuery(
+    partition,
+    before === undefined
+      ? "connector-history"
+      : `connector-history/${String(before)}`,
+    (ports) => apiConnectorHistory(ports, partition, before),
+  );
+}
+
+/** The connectors and the newest page of their history, read again after a
+ * write: an older page holds changes that are past, and is never read again. */
+export async function connectorsReread(
+  client: QueryClient,
+  partition: PartitionIdentity,
+): Promise<void> {
+  await Promise.all([
+    client.invalidateQueries({
+      queryKey: connectorsQuery(partition).queryKey,
+    }),
+    client.invalidateQueries({
+      queryKey: connectorHistoryQuery(partition).queryKey,
+      exact: true,
+    }),
+  ]);
 }
 
 export function hostedRunsQuery(partition: PartitionIdentity) {

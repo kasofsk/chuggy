@@ -1475,7 +1475,13 @@ test("the bar draws the screens and a gear, and the gear holds setup, the theme 
     within(menu)
       .getAllByRole("menuitem")
       .map((item) => item.textContent),
-  ).toStrictEqual(["Project settings", "Repositories", "Runners", "Sign out"]);
+  ).toStrictEqual([
+    "Project settings",
+    "Repositories",
+    "Connectors",
+    "Runners",
+    "Sign out",
+  ]);
   expect(
     within(menu).getByRole("menuitemradio", { name: "Dark" }),
   ).toBeDefined();

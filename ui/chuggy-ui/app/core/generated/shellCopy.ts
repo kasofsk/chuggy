@@ -9,6 +9,7 @@ export interface ShellCopy {
   readonly "shell-nav-catalog": Record<never, never>;
   readonly "shell-nav-settings": Record<never, never>;
   readonly "shell-nav-repositories": Record<never, never>;
+  readonly "shell-nav-connectors": Record<never, never>;
   readonly "shell-nav-runners": Record<never, never>;
   readonly "shell-view-only": Record<never, never>;
   readonly "shell-inbox": Record<never, never>;

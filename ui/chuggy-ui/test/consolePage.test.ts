@@ -194,9 +194,12 @@ test("every route the console hangs under a project and draws the pane on is a p
   expect(
     consolePageOf(matched(threadRouteId, { session: "0123" })),
   ).toBeUndefined();
+  expect(consolePageOf(matched(connectorsRouteId))).toBeUndefined();
   const paned = routeIds.filter(
     (routeId) =>
-      routeId !== threadRouteId && routeId !== runnersRedirectRouteId,
+      routeId !== threadRouteId &&
+      routeId !== runnersRedirectRouteId &&
+      routeId !== connectorsRouteId,
   );
   expect(paned).not.toEqual([]);
   for (const routeId of paned) {
@@ -265,6 +268,10 @@ function consolePageLeaf(page: ConsolePage) {
 
 /** The address the Runners page was at only redirects, so no route is named it. */
 const runnersRedirectRouteId = `${partitionRouteId}/runners`;
+
+/** The connectors page, which the contract's pages do not name yet, so a
+ * message sent from it carries no page. */
+const connectorsRouteId = `${partitionRouteId}/connectors`;
 
 /** Whether a page is one the console draws no route for any more. */
 function consolePageRetired(page: ConsolePage): boolean {

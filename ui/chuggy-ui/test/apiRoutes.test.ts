@@ -28,6 +28,8 @@ import {
   apiConfiguration,
   apiConfigurations,
   apiConfigureProjectRepository,
+  apiConnectorHistory,
+  apiConnectors,
   apiDeregisterMemberRunner,
   apiDeleteDraft,
   apiDeregisterPersonalRunner,
@@ -50,6 +52,7 @@ import {
   apiProjectInventory,
   apiProjectInventoryAll,
   apiProjectRepositories,
+  apiRemoveConnector,
   apiRenameThread,
   apiSelectorSettings,
   apiSelectorSettingsHistory,
@@ -61,6 +64,7 @@ import {
   apiTicketDispatchView,
   apiTicketNativeActions,
   apiWriteAgentAccountSettings,
+  apiWriteConnector,
   apiWriteProjectRepositoryLanding,
   apiWriteSelectorSettings,
   projectInventoryPagesMax,
@@ -779,5 +783,69 @@ test("a draft is deleted at its own address, fenced at the version it was read a
     ),
   ).toStrictEqual([
     `DELETE ${partitionPath}/drafts/12?expectedVersion=3 undefined`,
+  ]);
+});
+
+const connectorStanding = {
+  name: "deploy",
+  revision: 3,
+  kind: "Aws",
+  settings: { roleArn: "arn:aws:iam::123456789012:role/deploy" },
+} as const;
+
+test("the connectors are read at the project's own connectors path", async () => {
+  const held = recordingRequests(() => ({ connectors: [connectorStanding] }));
+  const answered = await apiConnectors(held.ports, partition);
+  expect(
+    held.requests.map((request) => `${request.init.method} ${request.url}`),
+  ).toStrictEqual([`GET ${partitionPath}/connectors`]);
+  expect(answered).toStrictEqual({
+    outcome: "Ok",
+    value: { connectors: [connectorStanding] },
+  });
+});
+
+test("a connector is written by PUT at its own name, with the revision it was read at", async () => {
+  const held = recordingRequests(() => connectorStanding);
+  const written = {
+    kind: "Aws",
+    settings: { roleArn: connectorStanding.settings.roleArn },
+    expectedRevision: 2,
+  } as const;
+  const answered = await apiWriteConnector(
+    held.ports,
+    partition,
+    "deploy",
+    written,
+  );
+  expect(
+    held.requests.map((request) => `${request.init.method} ${request.url}`),
+  ).toStrictEqual([`PUT ${partitionPath}/connectors/deploy`]);
+  expect(JSON.parse(String(held.requests[0]?.init.body))).toStrictEqual(
+    written,
+  );
+  expect(answered).toStrictEqual({ outcome: "Ok", value: connectorStanding });
+});
+
+test("a connector is removed by DELETE at its own name, fenced on the revision in the query", async () => {
+  const held = recordingRequests(() => ({}));
+  const answered = await apiRemoveConnector(held.ports, partition, "deploy", 3);
+  expect(
+    held.requests.map((request) => `${request.init.method} ${request.url}`),
+  ).toStrictEqual([
+    `DELETE ${partitionPath}/connectors/deploy?expectedRevision=3`,
+  ]);
+  expect(answered).toStrictEqual({ outcome: "Ok", value: undefined });
+});
+
+test("the connectors' history is read newest first, and an older page before the cursor it was handed", async () => {
+  const held = recordingRequests(() => ({ changes: [] }));
+  await apiConnectorHistory(held.ports, partition);
+  await apiConnectorHistory(held.ports, partition, 41);
+  expect(
+    held.requests.map((request) => `${request.init.method} ${request.url}`),
+  ).toStrictEqual([
+    `GET ${partitionPath}/connectors/history`,
+    `GET ${partitionPath}/connectors/history?before=41`,
   ]);
 });

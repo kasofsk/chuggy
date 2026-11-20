@@ -1,0 +1,43 @@
+/* Switch: a track a press moves its thumb across, filled while it is on. */
+
+@layer ui {
+  .switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    width: 2em;
+    height: 1.125em;
+    padding: 0;
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: var(--radius-3);
+    cursor: pointer;
+    transition: background var(--duration-1) var(--ease-out);
+  }
+
+  .switch[data-state="checked"] {
+    background: var(--surface-inverse);
+    border-color: var(--surface-inverse);
+  }
+
+  .switch:disabled {
+    border-color: var(--edge);
+    cursor: not-allowed;
+  }
+
+  .switch-thumb {
+    display: block;
+    width: 0.75em;
+    height: 0.75em;
+    margin-inline-start: 0.125em;
+    background: var(--edge-control);
+    border-radius: var(--radius-circle);
+    transition: transform var(--duration-1) var(--ease-out);
+  }
+
+  .switch[data-state="checked"] .switch-thumb {
+    background: var(--ink-inverse);
+    transform: translateX(0.875em);
+  }
+}

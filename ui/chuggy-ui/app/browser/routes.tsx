@@ -73,6 +73,7 @@ import { ProjectCreationPage, ProjectlessFrame } from "./ProjectCreation.tsx";
 import { ProjectTable } from "./ProjectTable.tsx";
 import { RepositoriesPage } from "./RepositoriesPage.tsx";
 import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
+import { ConnectorsPage } from "./connectors/ConnectorsPage.tsx";
 import {
   projectSettingsRoutes,
   workspaceSettingsRoutes,
@@ -288,6 +289,12 @@ const repositoriesRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/repositories",
   component: RepositoriesPage,
+});
+
+const connectorsRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/connectors",
+  component: ConnectorsPage,
 });
 
 /** The address the project's runners were once at, which replaces itself
@@ -511,6 +518,7 @@ const routeTree = rootRoute.addChildren([
     projectSettingsRoutes(partitionRoute),
     repositoriesRoute,
     repositoryRoute,
+    connectorsRoute,
     runnersRoute,
     threadRoute,
     ticketCreationRoute,
