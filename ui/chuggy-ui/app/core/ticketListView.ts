@@ -1,6 +1,7 @@
 /**
  * The order the ticket list draws the rows it read in, what each row's state
- * chip says, and what of the list the page's address holds.
+ * chip says, how many rows each state's count above them holds and what
+ * pressing one filters to, and what of the list the page's address holds.
  *
  * A PENDING TICKET IS READY OR BLOCKED, which is the one thing a reader scanning
  * the list needs from it: whether anything stands between it and a dispatch.
@@ -26,6 +27,7 @@ import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
 import {
   ticketFilterAll,
+  ticketFilterIsStanding,
   ticketFilterOf,
   ticketFilterStandingOf,
 } from "./projectTableFilters.ts";
@@ -207,6 +209,59 @@ export function ticketListFiltered(
   const standing = ticketFilterStandingOf(filter);
   if (standing === undefined) return rows;
   return rows.filter((row) => ticketListStandingOf(row) === standing);
+}
+
+/** The standings the bar counts, every one not yet an end, in the order the
+ * State sort draws the rows, reversed. */
+export const ticketListCounted = [
+  "Blocked",
+  "Ready",
+  "Work",
+  "Evaluation",
+  "Finalization",
+  "Escalated",
+] as const satisfies readonly TicketListStanding[];
+
+export interface TicketListCount {
+  readonly standing: TicketListStanding;
+  readonly count: number;
+}
+
+/** How many rows stand in each counted state, in `ticketListCounted`'s order.
+ * A state no row stands in is left out, except the filter's own, which is
+ * counted at 0 so it can always be pressed away. */
+export function ticketListCountsOf(
+  rows: readonly ProjectTableRow[],
+  filter: TicketFilter,
+): readonly TicketListCount[] {
+  const counts = new Map<TicketListStanding, number>();
+  for (const row of rows) {
+    const standing = ticketListStandingOf(row);
+    counts.set(standing, (counts.get(standing) ?? 0) + 1);
+  }
+  return ticketListCounted.flatMap((standing) => {
+    const count = counts.get(standing) ?? (standing === filter ? 0 : undefined);
+    return count === undefined ? [] : [{ standing, count }];
+  });
+}
+
+/** The filter a state's count leaves once pressed: that state, or every ticket
+ * where that state was already the filter. */
+export function ticketListCountTapped(
+  filter: TicketFilter,
+  standing: TicketListStanding,
+): TicketFilter {
+  return filter === standing ? ticketFilterAll : standing;
+}
+
+/** Whether a state's count is drawn dimmed: a filter is set and the list it
+ * draws holds none of that state's tickets. */
+export function ticketListCountDimmed(
+  filter: TicketFilter,
+  standing: TicketListStanding,
+): boolean {
+  if (filter === ticketFilterAll || filter === standing) return false;
+  return !(filter === "Pending" && ticketFilterIsStanding(standing));
 }
 
 /** A narrowing the Filter control holds, as one mark under the bar draws it:

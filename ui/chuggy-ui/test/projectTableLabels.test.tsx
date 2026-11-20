@@ -723,23 +723,242 @@ const countedTickets = [
   pending(26, [], [9]),
 ];
 
-/** What the bar holds, by each control's name, in order. */
-function barDrawn(): readonly string[] {
+/** The bar's controls, each found by its accessible name, are its buttons in
+ * the order `names` lists them. */
+function barHolds(names: readonly string[]): void {
   const bar = document.querySelector<HTMLElement>(".list-controls");
   if (bar === null) throw new Error("the bar is drawn");
-  return within(bar)
+  expect(within(bar).getAllByRole("button")).toStrictEqual(
+    names.map((name) => within(bar).getByRole("button", { name })),
+  );
+}
+
+test("the bar holds each state's count, then the search, the one Filter control and the sort, and nothing is drawn under it while no filter is set", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  barHolds([
+    "Blocked, 2 tickets",
+    "Ready, 2 tickets",
+    "Working, 1 ticket",
+    "Escalated, 1 ticket",
+    "Search tickets",
+    "Filter",
+    "Sort State",
+  ]);
+  expect(screen.queryByRole("list", { name: "Filters set" })).toBeNull();
+});
+
+/** Each count at the bar's start, by what it says, with whether it is
+ * pressed or dimmed. */
+function countsDrawn(): readonly string[] {
+  const counts = screen.getByRole("list", { name: "Tickets by state" });
+  return within(counts)
     .getAllByRole("button")
     .map(
-      (control) =>
-        control.getAttribute("aria-label") ?? control.textContent ?? "",
+      (count) =>
+        `${count.querySelector(".status-badge")?.textContent ?? ""}${count.getAttribute("aria-pressed") === "true" ? " pressed" : ""}${count.hasAttribute("data-dimmed") ? " dimmed" : ""}`,
     );
 }
 
-test("the bar holds the search, the one Filter control and the sort, and nothing is drawn under it while no filter is set", async () => {
+async function countPressed(standing: RegExp): Promise<void> {
+  const counts = screen.getByRole("list", { name: "Tickets by state" });
+  fireEvent.click(within(counts).getByRole("button", { name: standing }));
+  await settled();
+}
+
+const countsEvery = ["Blocked2", "Ready2", "Working1", "Escalated1"];
+
+test("the counts name each unfinished state the rows stand in, in order, and no finished one", async () => {
+  await drawTableWith([finished, ...countedTickets], [execution]);
+  expect(countsDrawn()).toStrictEqual(countsEvery);
+});
+
+test("a state's count filters the list to that state and is pressed, every other count still drawn dimmed, and pressed again draws every ticket", async () => {
   await drawTableWith(countedTickets, [execution]);
-  expect(barDrawn()).toStrictEqual(["Search tickets", "Filter", "Sort State"]);
-  expect(screen.queryByRole("list", { name: "Filters set" })).toBeNull();
-  expect(screen.queryByRole("button", { name: /^Ready/u })).toBeNull();
+  expect(countsDrawn()).toStrictEqual(countsEvery);
+  await countPressed(/^Working/u);
+  expect(titlesDrawn()).toStrictEqual([title]);
+  expect(countsDrawn()).toStrictEqual([
+    "Blocked2 dimmed",
+    "Ready2 dimmed",
+    "Working1 pressed",
+    "Escalated1 dimmed",
+  ]);
+  expect(await ticketListFilterHeld("State", settled)).toBe("Working");
+  expect(ticketListFilterMarks()).toStrictEqual(["Remove State: Working"]);
+  await countPressed(/^Working/u);
+  expect(titlesDrawn()).toHaveLength(countedTickets.length);
+  expect(countsDrawn()).toStrictEqual(countsEvery);
+  expect(await ticketListFilterHeld("State", settled)).toBe("All states");
+  expect(localStorage.getItem("chug.ticket-list.filter")).toBe("All");
+});
+
+test("Ready and Blocked each filter the list to the pending tickets of their own standing", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  await countPressed(/^Ready/u);
+  expect(titlesDrawn()).toStrictEqual(["Pending 25", "Pending 24"]);
+  expect(countsDrawn()).toStrictEqual([
+    "Blocked2 dimmed",
+    "Ready2 pressed",
+    "Working1 dimmed",
+    "Escalated1 dimmed",
+  ]);
+  await countPressed(/^Blocked/u);
+  expect(titlesDrawn()).toStrictEqual(["Pending 23", "Pending 26"]);
+  expect(countsDrawn()).toStrictEqual([
+    "Blocked2 pressed",
+    "Ready2 dimmed",
+    "Working1 dimmed",
+    "Escalated1 dimmed",
+  ]);
+  expect(await ticketListFilterHeld("State", settled)).toBe("Blocked");
+});
+
+test("a dimmed count pressed moves the filter to its state, and the counts stay those of every ticket", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  await countPressed(/^Working/u);
+  await countPressed(/^Escalated/u);
+  expect(titlesDrawn()).toStrictEqual(["Escalated ticket"]);
+  expect(countsDrawn()).toStrictEqual([
+    "Blocked2 dimmed",
+    "Ready2 dimmed",
+    "Working1 dimmed",
+    "Escalated1 pressed",
+  ]);
+  expect(await ticketListFilterHeld("State", settled)).toBe("Escalated");
+});
+
+test("the State field and the counts are one filter, each drawing what the other chose", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  await ticketListFilterChosen("State", "Blocked", settled);
+  expect(countsDrawn()).toStrictEqual([
+    "Blocked2 pressed",
+    "Ready2 dimmed",
+    "Working1 dimmed",
+    "Escalated1 dimmed",
+  ]);
+  await ticketListFilterChosen("State", "Pending", settled);
+  expect(countsDrawn()).toStrictEqual([
+    "Blocked2",
+    "Ready2",
+    "Working1 dimmed",
+    "Escalated1 dimmed",
+  ]);
+  await countPressed(/^Ready/u);
+  expect(await ticketListFilterHeld("State", settled)).toBe("Ready");
+  await ticketListFilterChosen("State", "Escalated", settled);
+  expect(countsDrawn()).toStrictEqual([
+    "Blocked2 dimmed",
+    "Ready2 dimmed",
+    "Working1 dimmed",
+    "Escalated1 pressed",
+  ]);
+  await ticketListFilterChosen("State", "All states", settled);
+  expect(countsDrawn()).toStrictEqual(countsEvery);
+});
+
+test("the state the list is filtered to is counted at 0 where no ticket stands in it, so it can be pressed away", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  await ticketListFilterChosen("State", "Evaluating", settled);
+  expect(countsDrawn()).toStrictEqual([
+    "Blocked2 dimmed",
+    "Ready2 dimmed",
+    "Working1 dimmed",
+    "Evaluating0 pressed",
+    "Escalated1 dimmed",
+  ]);
+  await countPressed(/^Evaluating/u);
+  expect(countsDrawn()).toStrictEqual(countsEvery);
+});
+
+test("the counts are the same under the Oldest sort as under the default, whatever the oldest read holds", async () => {
+  await drawTableWith(
+    countedTickets,
+    [execution],
+    (served) => (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      return new URL(url, "http://stub").searchParams.get("order") === "Oldest"
+        ? Promise.resolve(
+            answer({ partition: atlas, sequence: 8, tickets: [finished] }),
+          )
+        : served(input, init);
+    },
+  );
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Sort/u }), {
+    key: "ArrowDown",
+  });
+  await screen.findByRole("menu");
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Oldest first" }));
+  await settled();
+  expect(titlesDrawn()).toStrictEqual([finished.title]);
+  expect(countsDrawn()).toStrictEqual(countsEvery);
+});
+
+function countBadge(count: Element): Element {
+  const badge = count.querySelector(".status-badge");
+  if (badge === null) throw new Error("a count draws its badge");
+  return badge;
+}
+
+/** What the list's sheet declares for one property of a count's badge while
+ * a keyboard focuses the count. Whether jsdom counts a focus as a keyboard's
+ * depends on what an earlier case pressed, so the focus is named by an
+ * attribute the sheet is read with. */
+function countFocusedDeclared(count: Element, property: string): string {
+  const focused = "data-keyboard-focused";
+  const rules = sheetRules(
+    listSheet.replaceAll(":focus-visible", `[${focused}]`),
+    [],
+  );
+  count.setAttribute(focused, "");
+  try {
+    return sheetDeclared(rules, countBadge(count), property);
+  } finally {
+    count.removeAttribute(focused);
+  }
+}
+
+test("a dimmed count gives up its tone for quiet ink on a plain surface, and takes it back on focus, still a button that can be pressed", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  await countPressed(/^Working/u);
+  const counts = screen.getByRole("list", { name: "Tickets by state" });
+  const rules = sheetRules(listSheet, []);
+  const ink = (count: HTMLElement): string =>
+    sheetDeclared(rules, countBadge(count), "--status-badge-ink");
+  const ready = within(counts).getByRole<HTMLButtonElement>("button", {
+    name: /^Ready/u,
+  });
+  const working = within(counts).getByRole<HTMLButtonElement>("button", {
+    name: /^Working/u,
+  });
+  expect(ready.disabled).toBe(false);
+  expect(ink(ready)).toBe("var(--ink-3)");
+  expect(countFocusedDeclared(ready, "--status-badge-ink")).toBe("");
+  expect(ink(working)).toBe("");
+});
+
+test("a count a keyboard focuses shows the focus indicator, pressed or not", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  const counts = screen.getByRole("list", { name: "Tickets by state" });
+  const working = (): Element =>
+    within(counts).getByRole("button", { name: /^Working/u });
+  const indicator = "var(--focus-width) solid var(--focus)";
+  expect(countFocusedDeclared(working(), "outline")).toBe(indicator);
+  await countPressed(/^Working/u);
+  expect(working().getAttribute("aria-pressed")).toBe("true");
+  expect(countFocusedDeclared(working(), "outline")).toBe(indicator);
+});
+
+test("narrow, a count draws its mark and its figure, and offers its state's word to assistive technology and on focus", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  const counts = screen.getByRole("list", { name: "Tickets by state" });
+  const working = within(counts).getByRole("button", { name: /^Working/u });
+  expect(working.querySelector(".status-badge-mark")).not.toBeNull();
+  expect(
+    working.querySelector(".status-badge .visually-hidden")?.textContent,
+  ).toBe("Working");
+  expect(working.querySelector(".status-badge-figure")?.textContent).toBe("1");
+  fireEvent.focus(working);
+  expect((await screen.findByRole("tooltip")).textContent).toBe("Working");
 });
 
 test("the panel offers every state, Pending's standings, the creator and the owner, each once", async () => {

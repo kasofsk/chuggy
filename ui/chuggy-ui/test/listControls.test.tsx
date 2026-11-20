@@ -1,6 +1,7 @@
 /**
  * The bar over a list, which the tickets list and the epics list both draw:
- * its search and pickers together at its end, and a search
+ * what it is handed for its start before its search and pickers, which sit
+ * together at its end, and a search
  * that is a button naming the box it opens out to, focused, until Escape or
  * leaving it closes it again; and a bar scrolled out of the way that is inert
  * while focus is outside it.
@@ -36,7 +37,29 @@ function barOf(): HTMLElement {
   return bar;
 }
 
-test("the search and the pickers sit together at the bar's end", () => {
+test("the start stands before the search and the pickers, which sit together at the bar's end", () => {
+  render(
+    <ListControls start={<span>12 shown</span>}>
+      <ListSearch
+        label="Search rows"
+        placeholder="Titles…"
+        search=""
+        onSearch={() => undefined}
+      />
+      <button type="button">Sort</button>
+    </ListControls>,
+  );
+  const bar = barOf();
+  const [start, selects] = [...bar.children];
+  expect(bar.children).toHaveLength(2);
+  expect(start?.textContent).toBe("12 shown");
+  expect(selects?.classList.contains("list-selects")).toBe(true);
+  const [search, sort] = [...(selects?.children ?? [])];
+  expect(search?.classList.contains("list-search")).toBe(true);
+  expect(sort?.textContent).toBe("Sort");
+});
+
+test("with no start, the search and the pickers sit together at the bar's end", () => {
   render(<Searched />);
   const bar = barOf();
   const [selects] = [...bar.children];

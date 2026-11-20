@@ -41,6 +41,11 @@ export interface ProjectCopy {
   readonly "project-table-title": Record<never, never>;
   readonly "project-table-empty": Record<never, never>;
   readonly "project-table-aria-tickets": Record<never, never>;
+  readonly "project-table-aria-by-state": Record<never, never>;
+  readonly "project-table-state-count": {
+    readonly state: unknown;
+    readonly count: unknown;
+  };
   readonly "project-table-waits-on": Record<never, never>;
   readonly "project-table-creator-label": Record<never, never>;
   readonly "project-table-creator-anyone": Record<never, never>;
