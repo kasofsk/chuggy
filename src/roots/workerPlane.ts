@@ -5,6 +5,7 @@ import {
   artifactStore,
   type ArtifactStore,
 } from "../adapters/artifacts/artifactStore.ts";
+import { jobIdentitySigner } from "../adapters/crypto/jobIdentitySigner.ts";
 import { githubRepositoryHost } from "../adapters/forge/githubAddress.ts";
 import {
   githubInstallationTokens,
@@ -24,7 +25,10 @@ import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresProjectConnectors } from "../adapters/postgres/projectConnectors.ts";
 import { postgresProjectRepositoryLanding } from "../adapters/postgres/repositoryBinding.ts";
 import { workerPlaneRole } from "../adapters/postgres/schema.ts";
-import { reporterSecretBytes } from "../adapters/reporters/secretFile.ts";
+import {
+  reporterSecretBytes,
+  reporterSecretBytesMax,
+} from "../adapters/reporters/secretFile.ts";
 import { postgresSessionLivePublisher } from "../adapters/postgres/sessionLive.ts";
 import { postgresSessionPlane } from "../adapters/postgres/sessionPlane.ts";
 import { postgresThreadJobWakes } from "../adapters/postgres/thread.ts";
@@ -46,6 +50,10 @@ import {
   credentialResolver,
   type CredentialIssuer,
 } from "../interpreter/credentialIssuers.ts";
+import {
+  jobIdentityIssuerSettings,
+  type JobIdentityIssuing,
+} from "../interpreter/jobIdentityIssuerSettings.ts";
 import {
   checkedProjectAccessSettings,
   projectAccessTimeoutMsDefault,
@@ -304,8 +312,48 @@ async function planeHeldCredentials(): Promise<readonly CredentialIssuer[]> {
   return [heldCredentialIssuer(roster.held, planeHeldCredentialText)];
 }
 
+const identityIssuerVariable = "CHUG_WORKER_PLANE_IDENTITY_ISSUER";
+const identityKeyFilesVariable = "CHUG_WORKER_PLANE_IDENTITY_KEY_FILES";
+
+/**
+ * The identity issuer this plane signs and publishes with, or none where the
+ * deployment names neither its base URL nor its key files. Every key file is
+ * read once, before the plane starts, and a key the signer refuses refuses the
+ * start.
+ */
+async function planeIdentity(): Promise<JobIdentityIssuing | undefined> {
+  const settings = jobIdentityIssuerSettings(
+    {
+      issuerBaseUrl: identityIssuerVariable,
+      keyFiles: identityKeyFilesVariable,
+    },
+    process.env,
+  );
+  if (settings.read === "Absent") return undefined;
+  if (settings.read === "Refused") throw new Error(settings.why);
+  const pems: string[] = [];
+  for (const file of settings.keyFiles) {
+    const bytes = await reporterSecretBytes(file);
+    if (bytes === undefined)
+      throw new Error(
+        `${identityKeyFilesVariable} names ${file}, which is not a readable regular file of at most ${String(reporterSecretBytesMax)} bytes`,
+      );
+    pems.push(bytes.toString("utf8"));
+  }
+  const built = await jobIdentitySigner(pems);
+  if (built.result === "Refused") {
+    const { refusal } = built;
+    const file = "key" in refusal ? settings.keyFiles[refusal.key] : undefined;
+    throw new Error(
+      `${identityKeyFilesVariable} names ${file ?? "no key"}, which the signer refuses: ${refusal.reason}`,
+    );
+  }
+  return { issuerBaseUrl: settings.issuerBaseUrl, signer: built.signer };
+}
+
 async function main(): Promise<void> {
   const held = await planeHeldCredentials();
+  const identity = await planeIdentity();
   const pool = postgresPool(required("CHUG_WORKER_PLANE_DATABASE_URL"));
   const uploadBytesMax = positive(
     "CHUG_WORKER_PLANE_UPLOAD_BYTES_MAX",
@@ -351,6 +399,7 @@ async function main(): Promise<void> {
       forge === undefined ? held : [...held, forge.workflowRuns],
       postgresProjectConnectors(pool),
     ),
+    ...(identity === undefined ? {} : { identity }),
     uploadBytesMax,
     ready: async () => {
       try {
