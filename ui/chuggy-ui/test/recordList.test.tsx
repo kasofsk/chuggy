@@ -2,7 +2,8 @@
  * The record list: a row's title is a link inside a heading at the level it is
  * handed, every row has the same parts whichever it was given, the pages a
  * list reads are rows of the one list with "show more" after it, and a
- * skeleton row has a row's parts and is hidden from a reader.
+ * skeleton row has a row's parts and is hidden from a reader. A compact list
+ * says so on its frame, which is what its sheet draws from.
  *
  * The router is stubbed, so the links are drawn with no provider around them.
  */
@@ -148,4 +149,30 @@ test("a skeleton row has a row's parts, and no reader is told of it", () => {
     recordListParts(row).filter((part) => part !== "record-row-title-words"),
   );
   expect(skeleton.querySelectorAll(".record-row-bone")).toHaveLength(2);
+});
+
+test("a compact list marks its frame compact and draws a row's parts, and a list not asked for one is not", () => {
+  const view = render(
+    <RecordList label="Records" compact>
+      {recordListRows(1)}
+    </RecordList>,
+  );
+  const frame = screen.getByRole("list", { name: "Records" }).parentElement;
+  expect(frame?.hasAttribute("data-compact")).toBe(true);
+  const [row] = screen.getAllByRole("listitem");
+  if (row === undefined) throw new Error("one row");
+  expect(recordListParts(row)).toEqual([
+    "record-row-head",
+    "record-row-title",
+    "record-row-title-words",
+    "record-row-line",
+    "record-row-meta",
+    "record-row-foot",
+  ]);
+  view.rerender(<RecordList label="Records">{recordListRows(1)}</RecordList>);
+  expect(
+    screen
+      .getByRole("list", { name: "Records" })
+      .parentElement?.hasAttribute("data-compact"),
+  ).toBe(false);
 });

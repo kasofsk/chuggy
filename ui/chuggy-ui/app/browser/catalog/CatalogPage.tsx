@@ -235,7 +235,7 @@ function CatalogRevision(props: {
   const state = usePanelState(
     configurationQuery(props.partition, props.revision, "Streamed"),
   );
-  if (state.state === "Pending") return <CatalogSkeleton />;
+  if (state.state === "Pending") return <CatalogSkeleton compact />;
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   const configuration = state.value;
   const catalog = configurationCatalogOf(configuration.canonical);
@@ -448,15 +448,17 @@ function CatalogRepositoriesView(props: {
   );
 }
 
-/** The listing's read, rows standing for it until it is read. */
+/** The listing's read, rows standing for it until it is read: compact where
+ * the address names a configuration, whose entries they stand for. */
 function CatalogUnread(props: {
   readonly state: PanelState<unknown>;
+  readonly compact: boolean;
 }): ReactNode {
   return (
     <>
       <CatalogPageHead partial={false} />
       {props.state.state === "Pending" ? (
-        <CatalogSkeleton />
+        <CatalogSkeleton compact={props.compact} />
       ) : (
         <PanelUnready state={props.state} />
       )}
@@ -490,7 +492,7 @@ export function CatalogPage(props: {
     <div className="catalog-page" data-fills-width>
       <CatalogSearchProvider value={typed}>
         {read === undefined ? (
-          <CatalogUnread state={state} />
+          <CatalogUnread state={state} compact={revision !== undefined} />
         ) : revision === undefined ? (
           <CatalogRepositoriesView
             partition={partition}

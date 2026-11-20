@@ -8,6 +8,11 @@
  * line and the foot hold their height when they are empty, so every row is as
  * tall whatever it carries, and a skeleton row is as tall again, so a list
  * read in under its skeletons does not jump.
+ *
+ * A compact list is one a reader picks from, beside what the row opens: each
+ * row is one line at the touch height, the whole row pressing its link, with
+ * the title, then the meta where the width allows, then the trailing slot. A
+ * compact row draws no foot.
  */
 
 import { createLink } from "@tanstack/react-router";
@@ -33,10 +38,15 @@ export function RecordList(props: {
   readonly children: ReactNode;
   /** The next page, while there is one to read. */
   readonly more?: RecordListMore | undefined;
+  /** Whether each row is one line, as a list beside the record it opens is. */
+  readonly compact?: boolean;
 }): ReactNode {
   const more = props.more;
   return (
-    <div className="record-list-frame">
+    <div
+      className="record-list-frame"
+      data-compact={props.compact === true ? "" : undefined}
+    >
       <ul className="record-list" aria-label={props.label}>
         {props.children}
       </ul>

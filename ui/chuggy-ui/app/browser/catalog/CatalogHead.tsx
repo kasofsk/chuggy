@@ -90,7 +90,7 @@ export function CatalogHeadRevision(props: {
 }): ReactNode {
   const text = useCopyText();
   const state = useCatalogHead(props.partition, props.repository);
-  if (state.state === "Pending") return <CatalogSkeleton />;
+  if (state.state === "Pending") return <CatalogSkeleton compact />;
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   const declaration = catalogHeadDeclaration(state.value.head, props.name);
   if (declaration === undefined) return props.imported;

@@ -239,4 +239,119 @@
       min-height: var(--height-touch);
     }
   }
+
+  /* Compact: a row is one line at the touch height, pressed anywhere through
+     its title's link: the title, then the meta in what the title leaves,
+     cut at its end, then the trailing slot. Where the title leaves the meta
+     too little, the meta and the slot go under it. The row is the touch
+     height at every width, so the narrow sizes above are undone for it, and
+     it runs edge to edge only where the page is a phone's: a narrow column
+     beside what a row opens is not one. */
+  .record-list-frame[data-compact] :is(.record-list, .record-list-item) {
+    min-width: 0;
+  }
+
+  .record-list-frame[data-compact] .record-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: var(--height-touch);
+    padding: var(--space-1) var(--space-3);
+  }
+
+  .record-list-frame[data-compact] .record-row-head {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--space-3);
+  }
+
+  .record-list-frame[data-compact] .record-row-title {
+    flex: 0 1 auto;
+    font-size: var(--text-md);
+    line-height: var(--leading-dense);
+  }
+
+  .record-list-frame[data-compact] .record-row-title a::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  .record-list-frame[data-compact] .record-row-line {
+    display: contents;
+  }
+
+  .record-list-frame[data-compact] .record-row-meta {
+    flex: 1 1 0;
+    min-width: var(--width-record-row-meta);
+    overflow: hidden;
+  }
+
+  .record-list-frame[data-compact] .record-row-trailing {
+    max-width: none;
+  }
+
+  /* What the meta or the trailing slot holds that is pressed on its own
+     stands over the row's link. */
+  .record-list-frame[data-compact]
+    :is(.record-row-meta, .record-row-trailing)
+    :is(a[href], button, [tabindex]) {
+    position: relative;
+  }
+
+  .record-list-frame[data-compact] .record-row-foot {
+    display: none;
+  }
+
+  .record-list-frame[data-compact]
+    .record-row[data-skeleton]
+    .record-row-title {
+    flex-basis: 40%;
+  }
+
+  @container (max-width: 40em) {
+    .record-list-frame[data-compact] .record-list {
+      margin-inline: 0;
+    }
+
+    .record-list-frame[data-compact] .record-row {
+      border-inline: var(--hairline) solid var(--edge);
+      padding: var(--space-1) var(--space-3);
+    }
+
+    .record-list-frame[data-compact] .record-list-item:last-child .record-row {
+      border-end-start-radius: var(--radius-3);
+      border-end-end-radius: var(--radius-3);
+    }
+
+    .record-list-frame[data-compact] .record-row-title a,
+    .record-list-frame[data-compact]
+      .record-row[data-skeleton]
+      .record-row-title {
+      display: inline;
+      min-height: 0;
+    }
+
+    .record-list-frame[data-compact] .record-row-title-words {
+      display: inline;
+    }
+  }
+
+  @container page (max-width: 40em) {
+    .record-list-frame[data-compact] .record-list {
+      margin-inline: calc(-1 * var(--space-4));
+    }
+
+    .record-list-frame[data-compact] .record-row {
+      border-inline: 0;
+      padding-inline: max(var(--space-3), env(safe-area-inset-left))
+        max(var(--space-3), env(safe-area-inset-right));
+    }
+
+    .record-list-frame[data-compact] .record-list-item:last-child .record-row {
+      border-radius: 0;
+    }
+  }
 }

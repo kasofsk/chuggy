@@ -101,11 +101,17 @@ export function useCatalogRowLink(): (query: CatalogQuery) => LinkOptions {
 
 const catalogSkeletonRowsCount = 3;
 
-/** Rows standing where a read's rows will be, until they are read. */
-export function CatalogSkeleton(): ReactNode {
+/** Rows standing where a read's rows will be, until they are read: compact
+ * where they stand for a version's entries. */
+export function CatalogSkeleton(props: {
+  readonly compact?: boolean;
+}): ReactNode {
   const text = useCopyText();
   return (
-    <RecordList label={text({ id: "panel-loading" })}>
+    <RecordList
+      label={text({ id: "panel-loading" })}
+      compact={props.compact === true}
+    >
       {Array.from({ length: catalogSkeletonRowsCount }, (_, index) => (
         <RecordRowSkeleton key={index} />
       ))}
@@ -114,12 +120,14 @@ export function CatalogSkeleton(): ReactNode {
 }
 
 /** A group's name over its rows, and how many it lists: entries, unless
- * the group is the configurations. */
+ * the group is the configurations. A version's entries are compact rows, as
+ * a list beside the entry it opens is. */
 export function CatalogGroup(props: {
   readonly title: Copy;
   readonly level: 2 | 3;
   readonly count: number;
   readonly counted?: "Entries" | "Configurations";
+  readonly compact?: boolean;
   readonly children: ReactNode;
 }): ReactNode {
   const text = useCopyText();
@@ -140,7 +148,9 @@ export function CatalogGroup(props: {
           })}
         />
       </Heading>
-      <RecordList label={title}>{props.children}</RecordList>
+      <RecordList label={title} compact={props.compact === true}>
+        {props.children}
+      </RecordList>
     </section>
   );
 }
@@ -153,13 +163,17 @@ export function CatalogSearchNone(): ReactNode {
   );
 }
 
-/** What a row says of where an entry is from and what it is. */
+/** What a row says of what an entry is and where it is from: what tells one
+ * entry from the next first, since a row cuts its meta at its end. */
 export function CatalogRowMeta(props: {
   readonly repository: string | undefined;
   readonly said: string;
 }): ReactNode {
   return (
     <>
+      {props.said === "" ? null : (
+        <span className="catalog-row-said">{props.said}</span>
+      )}
       {props.repository === undefined ? null : (
         <Tooltip trigger="abbreviation" text={props.repository}>
           <span className="catalog-row-repository">
@@ -167,7 +181,6 @@ export function CatalogRowMeta(props: {
           </span>
         </Tooltip>
       )}
-      {props.said === "" ? null : <span>{props.said}</span>}
     </>
   );
 }
@@ -195,6 +208,7 @@ function CatalogList(props: {
           title={group.title}
           level={2}
           count={group.entries.length}
+          compact
         >
           {group.entries.map((entry) => (
             <RecordRow

@@ -2,11 +2,11 @@
    its name and commit, then its configurations and fragments; and for one
    configuration where the version came from and what the repository's head
    says of it where the head is drawn, then the entries grouped by what each
-   is, the chosen one's row on the sunken ground. With an entry chosen the
-   list and the entry sit side by side, the entry held in view under the bar
-   and scrolling on its own while the list scrolls; where the page is narrow
-   they stack with the entry first, since it is what the reader just asked
-   for. */
+   is, a compact row each, the chosen one's on the sunken ground. With an
+   entry chosen the list and the entry sit side by side, the entry held in
+   view under the bar and scrolling on its own while the list scrolls; where
+   the page is narrow they stack with the entry first, since it is what the
+   reader just asked for. */
 
 @layer page {
   .catalog-page {
@@ -99,8 +99,11 @@
     min-width: 0;
   }
 
+  /* The chosen entry's row is on the sunken ground with a rail at its
+     start, as the run a ticket's page shows is in its rail. */
   .catalog-groups .record-row:has(.record-row-title a[aria-current="page"]) {
     background: var(--surface-2);
+    box-shadow: inset var(--rail) 0 0 var(--ink-1);
   }
 
   @media (forced-colors: active) {
@@ -118,6 +121,20 @@
     font-weight: var(--weight-strong);
     letter-spacing: var(--tracking-label);
     text-transform: uppercase;
+  }
+
+  /* In a compact row what an entry is keeps its width, cut only where it
+     alone passes the row, and the repository it is from takes what is left,
+     up to its own width and never less than a finger's, so it is not a
+     stop the reader cannot see. */
+  .record-list-frame[data-compact] .catalog-row-said {
+    flex: 0 1 auto;
+  }
+
+  .record-list-frame[data-compact] .catalog-row-repository {
+    flex: 1 1 0;
+    min-width: var(--height-touch);
+    max-width: max-content;
   }
 
   .catalog-badges {
@@ -227,12 +244,16 @@
   }
 
   /* On a phone what spells out its whole value on a press is a finger's
-     height, its text keeping its line, centred in that height. */
-  @container (max-width: 40em) {
+     size, its text keeping its line, centred in that height. */
+  @container page (max-width: 40em) {
     .catalog-row-repository,
     .catalog-repository-name > span,
     .catalog-provenance > code {
       line-height: var(--height-touch);
+    }
+
+    .catalog-row-repository {
+      min-width: var(--height-touch);
     }
   }
 }

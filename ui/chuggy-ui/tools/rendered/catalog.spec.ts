@@ -12,7 +12,9 @@
  * head and back up a little, the page holds its bar at the top of where it
  * scrolls, as the tickets list does, and the head draws no bar over it;
  * motion is reduced there too, so the bar is measured where it stands once
- * it has gone and come back.
+ * it has gone and come back. A configuration's entries are rows of one line:
+ * a short name and what the entry is stand side by side, in a row shorter
+ * than two touch heights and, at the desk, the touch height itself.
  */
 
 import {
@@ -20,6 +22,7 @@ import {
   renderedNoOverflow,
   renderedNoViolations,
   renderedOpen,
+  renderedTokenPixels,
   renderedTouchTargets,
   test,
 } from "./driver.ts";
@@ -116,6 +119,40 @@ for (const viewport of catalogViewports)
     ).toBeVisible();
     await renderedNoOverflow(page);
     if (viewport === "phone") await renderedTouchTargets(page, column);
+    renderedNoViolations(rendered, [zodProbeViolation]);
+    expect(served.unanswered).toEqual([]);
+  });
+
+for (const viewport of catalogViewports)
+  test(`on the ${viewport} a configuration's entry is a row of one line, its name and what it is side by side`, async ({
+    browser,
+    served,
+  }) => {
+    const rendered = await renderedOpen(browser, served.origin, {
+      route: `${catalogPath}?${new URLSearchParams({ configuration: "revision-coding" }).toString()}`,
+      viewport,
+      signedIn: true,
+      ready: (page) =>
+        page.getByRole("heading", { level: 3, name: "build", exact: true }),
+    });
+    const page = rendered.page;
+    const touch = await renderedTokenPixels(page, "--height-touch");
+    const row = page.locator(".record-row", {
+      has: page.getByRole("heading", { level: 3, name: "build", exact: true }),
+    });
+    const title = await row.locator(".record-row-title").boundingBox();
+    const said = await row
+      .getByText("Opus · .chug/prompts/work.md")
+      .boundingBox();
+    const drawn = await row.boundingBox();
+    expect(title !== null && said !== null && drawn !== null).toBe(true);
+    if (title === null || said === null || drawn === null) return;
+    expect(said.x).toBeGreaterThan(title.x + title.width);
+    expect(
+      Math.abs(said.y + said.height / 2 - (title.y + title.height / 2)),
+    ).toBeLessThan(title.height / 2);
+    expect(drawn.height).toBeLessThan(2 * touch);
+    if (viewport === "desk") expect(drawn.height).toBeCloseTo(touch, 0);
     renderedNoViolations(rendered, [zodProbeViolation]);
     expect(served.unanswered).toEqual([]);
   });

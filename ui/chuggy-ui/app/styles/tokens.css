@@ -321,6 +321,7 @@
     --width-settings-nav: 13rem; /* the settings' own navigation, beside its page */
     --width-aside: 22rem; /* the details beside a page */
     --width-panel-named: 12rem; /* a panel's names, before its meta wraps under them */
+    --width-record-row-meta: 6rem; /* a compact row's meta, before it goes under the title */
     --col-label: 8.5rem; /* ledger: the row's label */
     --col-identity: 8rem; /* ledger: the identity chip */
     --col-pill: 7rem; /* ledger: the verdict */

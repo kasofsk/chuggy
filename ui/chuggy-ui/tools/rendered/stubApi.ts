@@ -257,8 +257,48 @@ const repositoryConfigurations = {
   }),
 };
 
-/** The ready configuration's own version: a catalog whose workload's name
- * runs past a phone, a plan evaluating with it, and a landing. */
+/** A worker an agent workload runs on: Claude on `model`, its arguments as
+ * long as a real catalog's. */
+function repositoryConfigurationWorker(model: string) {
+  return {
+    mode: {
+      type: "SingleAgent",
+      agent: "Claude",
+      arguments: [
+        "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
+        `--model=${model}`,
+        '--settings={"autoCompactWindow":250000,"permissions":{"defaultMode":"acceptEdits"}}',
+      ],
+    },
+    setup: ["npm ci"],
+    files: [],
+  };
+}
+
+/** What an agent workload may reach. */
+const repositoryConfigurationAuthority = {
+  tools: ["claude-code", "shell"],
+  credentials: ["claude-code", "track-record"],
+  network: true,
+  filesystem: "WriteWorkspace",
+  mayCompleteTask: false,
+};
+
+const repositoryConfigurationWorkPrompt = [
+  "# Implement the ticket",
+  "",
+  "Implement the one change this ticket asks for, and nothing else on it. Read the repository's working notes and the reviewer's brief before you change anything: the brief your change is reviewed against binds an author as much as a reviewer.",
+  "",
+  "Read the code you are about to change before you change it, change the least that satisfies the ticket, and add focused regression coverage for what you changed.",
+  "",
+  "- Run the gates the change affects before you stop.",
+  "- Leave the tree as you would hand it to someone else.",
+].join("\n");
+
+/** The ready configuration's own version: a catalog of several workloads,
+ * one whose name runs past a phone and two written in files of their own,
+ * prompts read from files whose paths run long, plans evaluating with them,
+ * and finalizers landing three ways. */
 const repositoryConfigurationCoding = {
   partition,
   revision: "revision-coding",
@@ -274,16 +314,80 @@ const repositoryConfigurationCoding = {
           mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
         },
       },
+      build: {
+        runner: "Agent",
+        prompt: {
+          path: ".chug/prompts/work.md",
+          text: repositoryConfigurationWorkPrompt,
+        },
+        worker: repositoryConfigurationWorker("opus"),
+        authority: repositoryConfigurationAuthority,
+        resources: { cpus: 6, memoryMib: 4096 },
+      },
+      "build-targeted-at-one-package-of-the-monorepo": {
+        runner: "Agent",
+        prompt: {
+          path: "packages/console/prompts/work-targeted-at-one-package-of-the-monorepo.md",
+          text: "# Implement the ticket in one package\n\nChange only the package the ticket names, and run that package's own gates.",
+        },
+        worker: repositoryConfigurationWorker("sonnet"),
+        authority: repositoryConfigurationAuthority,
+        resources: { cpus: 4, memoryMib: 4096 },
+      },
       checks: { runner: "Commands", commands: ["npm test"] },
+      ci: { runner: "Commands", commands: [".chug/tasks/ci.sh"] },
+      review: {
+        runner: "Agent",
+        purpose: "Review",
+        reevaluate: "OnChange",
+        prompt: {
+          path: ".chug/tasks/review-change.md",
+          text: "# Review the change\n\nYou are reviewing a change in this repository. You did not write it, and that is the point of you.",
+        },
+        worker: repositoryConfigurationWorker("opus"),
+        authority: repositoryConfigurationAuthority,
+      },
+      approval: {
+        runner: "Approval",
+        instructions:
+          "Read the ticket's brief and its change, and approve only what you would merge yourself.",
+      },
     },
-    plans: { checked: [{ name: "checks", evaluators: ["checks"] }] },
-    finalizers: { land: { approvalRequired: false } },
+    plans: {
+      checked: [{ name: "checks", evaluators: ["checks"] }],
+      standard: [
+        { name: "checks", evaluators: ["ci"] },
+        { name: "review", evaluators: ["review"] },
+      ],
+      approved: [
+        { name: "checks", evaluators: ["ci"] },
+        { name: "review", evaluators: ["review"] },
+        { name: "approval", evaluators: ["approval"] },
+      ],
+    },
+    finalizers: {
+      land: { approvalRequired: false },
+      stacked: {
+        finalization: {
+          kind: "GitMerge",
+          mode: "PullRequestMerge",
+          policy: "Stacked",
+        },
+      },
+      "pull-request-to-the-release-branch": {
+        landing: { mode: "PullRequest", target: "release/2026-11" },
+      },
+    },
     defaults: {
       work: "build-and-test-everything-the-repository-declares",
       evaluation: "checked",
       finalization: "land",
     },
   }),
+  workloadPaths: {
+    ci: ".chug/workloads/ci.json",
+    review: ".chug/workloads/review.json",
+  },
 };
 
 /** What a new ticket under the ready configuration is drawn from: its
