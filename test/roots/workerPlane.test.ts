@@ -20,6 +20,7 @@
 
 import assert from "node:assert/strict";
 import { execFile, type ChildProcess } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -406,5 +407,146 @@ test("a held-credential roster the plane cannot serve refuses to start, naming n
     assert.match(refused.stderr, /CHUG_WORKER_PLANE_HELD_CREDENTIALS/u, roster);
     assert.match(refused.stderr, why, roster);
     assert.doesNotMatch(refused.stderr, new RegExp(heldSecret, "u"), roster);
+  }
+});
+
+/** An RSA private key as a deployment mounts one, generated here so no key is committed. */
+function identityKeyFile(name: string, modulusLength = 2048): string {
+  const file = join(root, name);
+  writeFileSync(
+    file,
+    generateKeyPairSync("rsa", { modulusLength }).privateKey.export({
+      format: "pem",
+      type: "pkcs8",
+    }),
+  );
+  return file;
+}
+
+const identityKeys = [
+  identityKeyFile("identity-current.pem"),
+  identityKeyFile("identity-next.pem"),
+];
+
+const identityIssuer = "https://identity.example/chuggy";
+
+test("a plane naming an identity issuer serves each tenant's documents without a bearer, and one naming none serves neither", async () => {
+  for (const [named, prefix, status] of [
+    [
+      {
+        CHUG_WORKER_PLANE_IDENTITY_ISSUER: identityIssuer,
+        CHUG_WORKER_PLANE_IDENTITY_KEY_FILES: JSON.stringify(identityKeys),
+      },
+      "/chuggy",
+      200,
+    ],
+    [{}, "/chuggy", 404],
+    [{}, "", 404],
+  ] as const) {
+    const port = await freePort();
+    const child = planeProcess({ ...planeEnvironment(port), ...named });
+    try {
+      await planeListening(port, child);
+      const paths = [
+        `${prefix}/acme/.well-known/openid-configuration`,
+        `${prefix}/acme/jwks`,
+      ];
+      assert.deepEqual(
+        await planeProbes(port, paths),
+        paths.map((path) => ({ path, status })),
+      );
+      if (status !== 200) continue;
+      const keySet = (await (
+        await fetch(`http://127.0.0.1:${String(port)}${prefix}/acme/jwks`)
+      ).json()) as { keys: readonly unknown[] };
+      assert.equal(keySet.keys.length, identityKeys.length);
+    } finally {
+      child.kill("SIGKILL");
+    }
+  }
+});
+
+const issuerVariable = "CHUG_WORKER_PLANE_IDENTITY_ISSUER";
+const keyFilesVariable = "CHUG_WORKER_PLANE_IDENTITY_KEY_FILES";
+
+/** One identity setting the plane refuses to start under: what is named, the variable it is refused by, and why. */
+type IdentityRefusal = readonly [
+  Readonly<Record<string, string>>,
+  string,
+  RegExp,
+];
+
+function identityNamed(issuer: string, keys: string): Record<string, string> {
+  return { [issuerVariable]: issuer, [keyFilesVariable]: keys };
+}
+
+/** Each base URL, list, file and key the plane is refused a start by. */
+function identityRefusals(): readonly IdentityRefusal[] {
+  const notKey = join(root, "identity-not-a-key.pem");
+  writeFileSync(notKey, "this is not a private key\n");
+  const short = identityKeyFile("identity-short.pem", 1024);
+  const files = JSON.stringify(identityKeys);
+  const bothOrNeither = /are named together or not at all/u;
+  return [
+    [{ [issuerVariable]: identityIssuer }, issuerVariable, bothOrNeither],
+    [{ [keyFilesVariable]: files }, keyFilesVariable, bothOrNeither],
+    ...[
+      "http://identity.example",
+      "https://identity.example:8443",
+      "https://identity.example/a?b",
+      "https://identity.example/a#b",
+      "https://user@identity.example",
+      "https://identity.example/",
+    ].map((issuer): IdentityRefusal => [
+      identityNamed(issuer, files),
+      issuerVariable,
+      new RegExp(
+        `${issuerVariable} (is not https|carries|ends in a slash)`,
+        "u",
+      ),
+    ]),
+    ...["not json", "[]", '["/a", 1]'].map((list): IdentityRefusal => [
+      identityNamed(identityIssuer, list),
+      keyFilesVariable,
+      new RegExp(`${keyFilesVariable} is not`, "u"),
+    ]),
+    ...(
+      [
+        [
+          [...identityKeys, join(root, "identity-absent.pem")],
+          /identity-absent\.pem, which is not a readable regular file/u,
+        ],
+        [
+          [notKey],
+          /identity-not-a-key\.pem, which the signer refuses: KeyUnreadable/u,
+        ],
+        [
+          [short],
+          /identity-short\.pem, which the signer refuses: KeyTooShort/u,
+        ],
+        [
+          [...identityKeys, identityKeys[0] ?? ""],
+          /identity-current\.pem, which the signer refuses: KeyDuplicated/u,
+        ],
+      ] as const
+    ).map(([keys, why]): IdentityRefusal => [
+      identityNamed(identityIssuer, JSON.stringify(keys)),
+      keyFilesVariable,
+      why,
+    ]),
+  ];
+}
+
+test("an identity issuer the plane cannot sign and publish with refuses to start, naming its variable", async () => {
+  const port = await freePort();
+  for (const [named, variable, why] of identityRefusals()) {
+    const refused = await planeRefusal({ ...planeEnvironment(port), ...named });
+    assert.equal(refused.code, 1, JSON.stringify(named));
+    assert.match(
+      refused.stderr,
+      new RegExp(variable, "u"),
+      JSON.stringify(named),
+    );
+    assert.match(refused.stderr, why, JSON.stringify(named));
   }
 });

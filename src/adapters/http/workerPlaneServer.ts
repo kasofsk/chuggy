@@ -152,6 +152,16 @@ import {
   type CredentialsResolved,
 } from "../../interpreter/credentialIssuers.ts";
 import {
+  jobIdentityIssuerBasePath,
+  type JobIdentityIssuing,
+} from "../../interpreter/jobIdentityIssuerSettings.ts";
+import {
+  jobIdentityDiscovery,
+  jobIdentityIssuer,
+  jobIdentityIssuerCharsMax,
+  type JobIdentityIssuer,
+} from "../../interpreter/jobIdentityToken.ts";
+import {
   threadJobWake,
   type ThreadJobWakeService,
 } from "../../interpreter/threadWake.ts";
@@ -630,6 +640,11 @@ export interface WorkerPlaneServerService {
    * serves any name.
    */
   readonly heldCredentials?: CredentialResolver;
+  /**
+   * The identity issuer a deployment names. Without one, neither its discovery
+   * documents nor its key set are served.
+   */
+  readonly identity?: JobIdentityIssuing;
   readonly ready: () => Promise<boolean>;
   readonly uploadBytesMax: number;
 }
@@ -679,6 +694,67 @@ function workerHeartbeatRoute(
       ? reply.code(204).send()
       : reply.code(409).send({ action: "stop" }),
   );
+}
+
+/** How long a provider may keep a tenant's discovery document or the key set before asking again. */
+export const workerIdentityDocumentsCacheSecs = 300;
+
+/** Where a tenant's discovery document and the key set are served, under the base URL's own path. */
+export function workerIdentityRoutes(issuerBaseUrl: string) {
+  const base = jobIdentityIssuerBasePath(issuerBaseUrl);
+  return {
+    discovery: {
+      method: "GET",
+      path: `${base}/:tenant/.well-known/openid-configuration`,
+    },
+    keySet: { method: "GET", path: `${base}/:tenant/jwks` },
+  } as const satisfies Readonly<Record<string, WorkerPlaneRoute>>;
+}
+
+/** The issuer a request's tenant names, or nothing where the issuer function refuses it. */
+function workerIdentityIssuerOf(
+  identity: JobIdentityIssuing,
+  request: FastifyRequest<{ Params: { tenant: string } }>,
+): JobIdentityIssuer | undefined {
+  const built = jobIdentityIssuer(
+    identity.issuerBaseUrl,
+    request.params.tenant,
+  );
+  return built.result === "Issuer" ? built.issuer : undefined;
+}
+
+/**
+ * A tenant's discovery document and the key set, public because a provider
+ * fetches them with no credential: they name no release, read no bearer and no
+ * body, and answer any tenant the issuer function accepts, so they say nothing
+ * of which tenants exist. The plane holding them bounds a path segment by the
+ * longest issuer, so every tenant an issuer could hold reaches that function.
+ */
+function workerIdentityRoutesServed(
+  app: FastifyInstance,
+  identity: JobIdentityIssuing,
+): void {
+  const routes = workerIdentityRoutes(identity.issuerBaseUrl);
+  const cacheControl = `public, max-age=${String(workerIdentityDocumentsCacheSecs)}`;
+  for (const [route, document] of [
+    [routes.discovery, jobIdentityDiscovery],
+    [routes.keySet, () => identity.signer.keySet()],
+  ] as const)
+    app.route<{ Params: { tenant: string } }>({
+      method: route.method,
+      url: route.path,
+      handler: async (request, reply) => {
+        const issuer = workerIdentityIssuerOf(identity, request);
+        if (issuer === undefined) {
+          reply.callNotFound();
+          return reply;
+        }
+        return reply
+          .header("cache-control", cacheControl)
+          .type("application/json")
+          .send(document(issuer));
+      },
+    });
 }
 
 /** The probes, which name no release and no caller and read no body. */
@@ -2067,7 +2143,11 @@ function sessionBoundsChecked(sessions: SessionPlaneService): void {
 export function createWorkerPlaneApp(
   service: WorkerPlaneServerService,
 ): FastifyInstance {
-  const app = planeApp();
+  const app = planeApp(
+    service.identity === undefined
+      ? {}
+      : { pathSegmentCharsMax: jobIdentityIssuerCharsMax },
+  );
   app.addContentTypeParser(
     workerPlaneBytesMediaType,
     { parseAs: "buffer" },
@@ -2077,6 +2157,8 @@ export function createWorkerPlaneApp(
   );
   workerContractNamed(app);
   workerHealthRoutes(app, service);
+  if (service.identity !== undefined)
+    workerIdentityRoutesServed(app, service.identity);
   const register = workerPlaneRegistrar(
     app,
     service,

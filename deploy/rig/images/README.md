@@ -267,6 +267,8 @@ positive whole number.
 | `CHUG_WORKER_PLANE_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
 | `CHUG_WORKER_PLANE_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
 | `CHUG_WORKER_PLANE_HELD_CREDENTIALS` | none held | a JSON list of `{credential, tenant, project, variable, file}`, the credentials this deployment holds as files; the plane refuses to start unless the list is well formed, names no credential starting `chuggy.`, and each file can be read |
+| `CHUG_WORKER_PLANE_IDENTITY_ISSUER` | with the key files, or neither | the identity issuer's base URL, `https` with no port, query, fragment, credentials or trailing slash and read exactly; each tenant's issuer is it, `/` and the tenant, and the plane serves that issuer's `/.well-known/openid-configuration` and `/jwks` without a bearer under the base URL's path; the plane refuses to start on one breaking a rule |
+| `CHUG_WORKER_PLANE_IDENTITY_KEY_FILES` | with the issuer, or neither | a JSON list of files each holding an RSA private key in PEM, the first signing and every one published in the key set; each is read once at start, and the plane refuses to start unless each can be read and used |
 | `CHUG_WORKER_PLANE_HOST` | | the default is loopback |
 | `CHUG_WORKER_PLANE_PORT` | 3001 | |
 
