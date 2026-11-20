@@ -178,26 +178,31 @@ residue() {
 	return 1
 }
 
+# The TypeScript programs run under the heap V8 gives a process on a machine
+# with memory to spare, because in a container V8 sizes the heap to a share of
+# the container's, and the root's program alone outgrows that share. It is
+# appended to `NODE_OPTIONS`, so an operator's own flags stay and this one,
+# being last, wins.
+heap() {
+	NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=4096" "$@"
+}
+
 # The root's configuration over the root's tree. A console under `ui/` carries
 # an `eslint.config.js` of its own, and its own `lint` script, which
 # `check-console.sh` runs, is what lints it; so the root's run is told to skip
-# each console's directory rather than lint it a second time. The process is
-# given the heap V8 gives one on a machine with memory to spare, because in a
-# container V8 sizes the heap to a share of the container's, and the root's
-# program alone outgrows that share.
+# each console's directory rather than lint it a second time.
 lint() {
 	for config in ui/*/eslint.config.js; do
 		[ -f "$config" ] || continue
 		set -- "$@" --ignore-pattern "${config%/eslint.config.js}/**"
 	done
-	NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=4096" CHUG_SAFEQL_DATABASE_URL= \
-		./node_modules/.bin/eslint "$@" .
+	heap env CHUG_SAFEQL_DATABASE_URL= ./node_modules/.bin/eslint "$@" .
 }
 
 if [ "$run_static" -eq 1 ]; then
 	stage "  residue  " residue
-	stage "  typecheck" ./node_modules/.bin/tsc --noEmit
-	stage "  browser  " ./node_modules/.bin/tsc --noEmit -p tsconfig.contract.json
+	stage "  typecheck" heap ./node_modules/.bin/tsc --noEmit
+	stage "  browser  " heap ./node_modules/.bin/tsc --noEmit -p tsconfig.contract.json
 	# Lint is the server-free half of the query checking: the SafeQL block in
 	# eslint.config.js activates on CHUG_SAFEQL_DATABASE_URL, and an operator
 	# who exports it shell-wide must not make this stage need a database.
