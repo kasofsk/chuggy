@@ -637,6 +637,21 @@
     }
 }
 
+# A project's leave for its runs to be issued one cloud identity, with that
+# provider's settings and never a secret.
+-connector = { $case ->
+    [upper] { $form ->
+        [plural] Connectors
+        [a] A connector
+       *[one] Connector
+    }
+   *[lower] { $form ->
+        [plural] connectors
+        [a] a connector
+       *[one] connector
+    }
+}
+
 # Where what needs a person is listed.
 -inbox = { $case ->
     [upper] Inbox

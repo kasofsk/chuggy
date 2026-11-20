@@ -6,6 +6,12 @@ import {
   type EndpointParameters,
 } from "../../../../src/contract/endpoints.ts";
 
+import type {
+  ConnectorHistoryResponse,
+  ConnectorStandingResponse,
+  ConnectorWriteRequest,
+  ConnectorsResponse,
+} from "../../../../src/contract/connectorAdministration.ts";
 import { partitionPath } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
@@ -1573,6 +1579,85 @@ export function apiSelectorSettingsHistory(
       limit: page.limit,
     }),
     (value) => selectorSettingsHistoryResponseSchema.parse(value),
+  );
+}
+
+/** A project's connectors, ordered by name, each with the revision a write against it names. */
+export function apiConnectors(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<ConnectorsResponse>> {
+  return apiGet(
+    ports,
+    endpointPath(nativeHttpEndpoints.connectors.path, partition),
+    (value) => nativeHttpEndpoints.connectors.response.parse(value),
+  );
+}
+
+/**
+ * One connector written under its name: a create naming no revision, a change
+ * naming the one it read. A write the revision moved under is a `Conflict`
+ * carrying the revision that stands, the caller's to draw and never this
+ * function's to retry.
+ */
+export function apiWriteConnector(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  name: string,
+  written: ConnectorWriteRequest,
+): Promise<ApiResult<ConnectorStandingResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: nativeHttpEndpoints.writeConnector.method,
+      path: endpointPath(nativeHttpEndpoints.writeConnector.path, {
+        ...partition,
+        name,
+      }),
+      body: written,
+    },
+    (value) => nativeHttpEndpoints.writeConnector.response.parse(value),
+  );
+}
+
+/** One connector removed, fenced on the revision its remover read. */
+export function apiRemoveConnector(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  name: string,
+  expectedRevision: number,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: nativeHttpEndpoints.removeConnector.method,
+      path: apiPath(
+        endpointPath(nativeHttpEndpoints.removeConnector.path, {
+          ...partition,
+          name,
+        }),
+        { expectedRevision },
+      ),
+    },
+    () => undefined,
+  );
+}
+
+/** One page of a project's connector changes, newest first, older than `before` where it is given. */
+export function apiConnectorHistory(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  before?: number,
+): Promise<ApiResult<ConnectorHistoryResponse>> {
+  return apiGet(
+    ports,
+    apiPath(
+      endpointPath(nativeHttpEndpoints.connectorHistory.path, partition),
+      {
+        before,
+      },
+    ),
+    (value) => nativeHttpEndpoints.connectorHistory.response.parse(value),
   );
 }
 

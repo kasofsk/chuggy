@@ -30,6 +30,7 @@ test("every entry names a route of the partition and carries its params", () => 
     "catalog",
     "settings",
     "repositories",
+    "connectors",
     "runners",
   ]);
 });
@@ -42,6 +43,7 @@ test("every entry is labelled by a catalog id, which reads as the screen's name"
     { id: "shell-nav-catalog" },
     { id: "shell-nav-settings" },
     { id: "shell-nav-repositories" },
+    { id: "shell-nav-connectors" },
     { id: "shell-nav-runners" },
   ]);
   expect(entries.map((entry) => copyTextEn(entry.label))).toStrictEqual([
@@ -50,6 +52,7 @@ test("every entry is labelled by a catalog id, which reads as the screen's name"
     "Catalog",
     "Project settings",
     "Repositories",
+    "Connectors",
     "Runners",
   ]);
 });
@@ -68,6 +71,7 @@ test("each screen is current on its own address alone", () => {
   expect(currentAt("/acme/atlas/catalog")).toStrictEqual(["catalog"]);
   expect(currentAt("/acme/atlas/settings")).toStrictEqual(["settings"]);
   expect(currentAt("/acme/atlas/repositories")).toStrictEqual(["repositories"]);
+  expect(currentAt("/acme/atlas/connectors")).toStrictEqual(["connectors"]);
   expect(currentAt("/acme/atlas/repositories/a%2Fb")).toStrictEqual([
     "repositories",
   ]);

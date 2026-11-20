@@ -41,6 +41,9 @@ const navIconPaths: Readonly<Record<NavEntryId, ReactNode>> = {
       <circle cx="20" cy="19" r="2" />
     </>
   ),
+  connectors: (
+    <path d="M12 22v-5M9 8V2M15 8V2M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" />
+  ),
   runners: (
     <>
       <rect width="20" height="8" x="2" y="2" rx="2" />

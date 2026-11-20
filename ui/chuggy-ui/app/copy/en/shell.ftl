@@ -6,6 +6,7 @@ shell-nav-epics = { -epic(case: "upper", form: "plural") }
 shell-nav-catalog = { -catalog(case: "upper") }
 shell-nav-settings = { -project(case: "upper") } settings
 shell-nav-repositories = { -repository(case: "upper", form: "plural") }
+shell-nav-connectors = { -connector(case: "upper", form: "plural") }
 shell-nav-runners = { -runner(case: "upper", form: "plural") }
 shell-view-only = View only
 shell-inbox = { -inbox(case: "upper") }
