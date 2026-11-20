@@ -450,6 +450,11 @@ test("under forced colours a state a wash drew alone gains an edge or an underli
       "border-color",
     ],
     [
+      "browser/ProjectTable.css",
+      'button.ticket-state-count[aria-pressed="true"] .status-badge',
+      "border-color",
+    ],
+    [
       "browser/settings/ThemePicker.css",
       '.theme-card[data-state="checked"]',
       "border-color",
@@ -713,6 +718,23 @@ test("under forced colours a mark drawn as a ground wins its sheet's cascade in 
       markup,
     ).toContain(`var(--${token})`);
   }
+});
+
+test("under forced colours a pressed state count a keyboard focuses draws the focus indicator, not its pressed mark", () => {
+  const sheet = focusIndicatorSheet("browser/ProjectTable.css").replaceAll(
+    ":focus-visible",
+    "[data-focus-visible]",
+  );
+  for (const focus of ["", " data-focus-visible"])
+    expect(
+      focusIndicatorForcedWinner(
+        sheet,
+        `<button class="ticket-state-count" aria-pressed="true"${focus}><span class="ticket-state-count-face"><span class="status-badge" data-under-test></span></span></button>`,
+        "",
+        "outline",
+      ),
+      focus,
+    ).toBe(focus === "" ? "" : "var(--focus-width) solid var(--focus)");
 });
 
 test("forced colours are let alone only where a colour is what is shown, and only under forced colours", () => {

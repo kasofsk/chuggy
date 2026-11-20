@@ -1,7 +1,7 @@
 /* StatusBadge: a state's word and mark in its tone, and any figure after them,
-   on its tone's wash, inside a hairline of the same tone. A tone with no wash stands on the sunken
-   surface. The mark is drawn in the word's colour, so it reads wherever the
-   word does. */
+   on its tone's wash, inside a hairline of the same tone. A tone with no wash
+   stands on the sunken surface. The mark is drawn in the word's colour, so it
+   reads wherever the word does. */
 
 @layer ui {
   .status-badge {

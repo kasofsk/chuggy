@@ -90,8 +90,6 @@
   @media (forced-colors: active) {
     button.ticket-state-count[aria-pressed="true"] .status-badge {
       border-color: var(--forced-current);
-      outline: calc(2 * var(--hairline)) solid var(--forced-current);
-      outline-offset: var(--hairline);
     }
   }
 
