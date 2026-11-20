@@ -50,6 +50,10 @@ export interface ConnectorsCopy {
   };
   readonly "connectors-refused-shape": Record<never, never>;
   readonly "connectors-refused-stale": Record<never, never>;
+  readonly "connectors-refused-stale-removal": Record<never, never>;
+  readonly "connectors-refused-taken": {
+    readonly name: unknown;
+  };
   readonly "connectors-refused-fields": Record<never, never>;
   readonly "connectors-add": Record<never, never>;
   readonly "connectors-adding": Record<never, never>;

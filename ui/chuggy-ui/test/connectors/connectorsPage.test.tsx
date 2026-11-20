@@ -718,6 +718,41 @@ test("the connector limit, a refused name and a refused setting are each said be
   }
 });
 
+test("adding a name the project already holds says the name is taken beside it, and sends nothing more until it is changed", async () => {
+  const served = await drawConnectors({
+    connectors: [deploy],
+    writeRefused: { status: 409, body: staleBody(3) },
+  });
+  await addedAws("deploy");
+  expect(faultBeside("Name")).toContain(
+    "This project already holds a connector named deploy. Choose another name, or change that one.",
+  );
+  expect(
+    within(dialog()).queryByText(/changed since this page read it/u),
+  ).toBeNull();
+  expect(
+    within(dialog()).getByRole<HTMLInputElement>("textbox", {
+      name: "Role ARN",
+    }).value,
+  ).toBe("arn:aws:iam::1:role/r");
+  await typed("Name", "deploy-2");
+  expect(faultBeside("Name")).not.toContain("already holds");
+  await turned(() => {
+    fireEvent.click(
+      within(dialog()).getByRole("button", { name: "Add connector" }),
+    );
+  });
+  await settled();
+  expect(
+    served.writes().map((sent) => sent.url.split("/").pop()),
+  ).toStrictEqual(["deploy", "deploy-2"]);
+  expect(served.writes().map((sent) => sent.body)).toStrictEqual([
+    { kind: "Aws", settings: { roleArn: "arn:aws:iam::1:role/r" } },
+    { kind: "Aws", settings: { roleArn: "arn:aws:iam::1:role/r" } },
+  ]);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
 test("a removal the connector moved under says so on its card over the list read again, and one already gone says nothing", async () => {
   const served = await drawConnectors({
     connectors: [deploy],
@@ -732,7 +767,7 @@ test("a removal the connector moved under says so on its card over the list read
   await settled();
   expect(
     within(cardOf("deploy")).getByText(
-      "This connector changed since this page read it. The list has been read again, and what you typed is kept.",
+      "This connector changed since this page read it, and the list has been read again.",
     ),
   ).toBeTruthy();
   expect(served.removals()).toHaveLength(1);

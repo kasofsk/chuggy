@@ -27,6 +27,7 @@ import {
   connectorKindLabel,
   connectorWriteOf,
   connectorWriteRefusal,
+  connectorWriteRefusedAs,
   connectorWriteRefusedLine,
 } from "../../core/connectors.ts";
 import type {
@@ -51,6 +52,7 @@ import { Switch } from "../ui/Switch.tsx";
 function connectorWrite(
   partition: PartitionIdentity,
   text: CopyText,
+  adding: boolean,
 ): ConsoleWrite<ConnectorDraft, ConnectorStandingResponse> {
   return {
     mutationKey: consoleWriteKey(
@@ -70,12 +72,12 @@ function connectorWrite(
       );
       if (
         answered.outcome !== "Ok" &&
-        connectorWriteRefusal(answered, draft.kind).refusal === "Stale"
+        connectorWriteRefusedAs(answered) === "Stale"
       )
         await connectorsReread(client, partition);
       return answered;
     },
-    refusal: (failure) => text(connectorWriteRefusedLine(failure)),
+    refusal: (failure) => text(connectorWriteRefusedLine(failure, adding)),
     landed: (client) => connectorsReread(client, partition),
   };
 }
@@ -106,17 +108,18 @@ function connectorFaultsJoined(
 function useConnectorWriting(
   partition: PartitionIdentity,
   open: boolean,
+  adding: boolean,
 ): ConnectorWriting {
   const text = useCopyText();
   const [draft, setDraft] = useState(connectorDraftBlank);
-  const writing = useConsoleWrite(connectorWrite(partition, text), {
+  const writing = useConsoleWrite(connectorWrite(partition, text, adding), {
     drawn: open,
   });
   const failure = writing.error?.failure;
   const refusal =
     failure === undefined
       ? undefined
-      : connectorWriteRefusal(failure, draft.kind);
+      : connectorWriteRefusal(failure, draft, adding);
   return {
     draft,
     faults: connectorFaultsJoined(
@@ -139,9 +142,8 @@ function useConnectorWriting(
       writing.mutate(sent, {
         onSuccess: done,
         onError: (refused) => {
-          if (refused.failure === undefined || sent.revision === undefined)
-            return;
-          const stale = connectorWriteRefusal(refused.failure, sent.kind);
+          if (refused.failure === undefined || adding) return;
+          const stale = connectorWriteRefusal(refused.failure, sent, adding);
           if (stale.refusal === "Stale")
             setDraft({ ...sent, revision: stale.standing });
         },
@@ -321,7 +323,11 @@ export function ConnectorWrite(props: {
 }): ReactNode {
   const text = useCopyText();
   const [open, setOpen] = useState(false);
-  const writing = useConnectorWriting(props.partition, open);
+  const writing = useConnectorWriting(
+    props.partition,
+    open,
+    props.connector === undefined,
+  );
   const connector = props.connector;
   const moved = (opened: boolean): void => {
     writing.begin(

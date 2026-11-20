@@ -55,6 +55,8 @@ connectors-fault-email = An email address with no spaces or braces.
 connectors-refused-limit = This { -project } already holds { $count } { -connector(form: "plural") }, as many as it may. Remove one to add another.
 connectors-refused-shape = The server refused this { -connector }'s settings.
 connectors-refused-stale = This { -connector } changed since this page read it. The list has been read again, and what you typed is kept.
+connectors-refused-stale-removal = This { -connector } changed since this page read it, and the list has been read again.
+connectors-refused-taken = This { -project } already holds a { -connector } named { $name }. Choose another name, or change that one.
 connectors-refused-fields = Some fields above need another look.
 
 ## Adding, changing and removing one.

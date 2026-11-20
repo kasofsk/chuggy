@@ -120,25 +120,14 @@ const rejected = (body: unknown) =>
   }) as const;
 
 test("each refused write is said beside the field it concerns, from the body the API answers", () => {
-  expect(
-    connectorWriteRefusal(
-      {
-        outcome: "Conflict",
-        code: connectorStaleCode,
-        body: {
-          error: { code: connectorStaleCode, message: "stale" },
-          standing: 4,
-        },
-      },
-      "Aws",
-    ),
-  ).toStrictEqual({ refusal: "Stale", standing: 4 });
   const limit = {
     outcome: "Conflict",
     code: connectorLimitReachedCode,
     body: { error: { code: connectorLimitReachedCode, message: "full" } },
   } as const;
-  expect(connectorWriteRefusal(limit, "Aws")).toStrictEqual({
+  expect(
+    connectorWriteRefusal(limit, { name: "deploy", kind: "Aws" }, true),
+  ).toStrictEqual({
     refusal: "Faults",
     faults: {
       name: { id: "connectors-refused-limit", args: { count: 32 } },
@@ -146,12 +135,13 @@ test("each refused write is said beside the field it concerns, from the body the
       form: undefined,
     },
   });
-  expect(connectorWriteRefusedLine(limit)).toStrictEqual({
+  expect(connectorWriteRefusedLine(limit, true)).toStrictEqual({
     id: "connectors-refused-fields",
   });
   const name = connectorWriteRefusal(
     rejected(connectorInvalidNameBody("-deploy")),
-    "Aws",
+    { name: "-deploy", kind: "Aws" },
+    true,
   );
   expect(name.refusal === "Faults" ? name.faults.name?.id : name).toBe(
     "connectors-fault-name",
@@ -164,7 +154,8 @@ test("each refused write is said beside the field it concerns, from the body the
           settings: { projectNumber: "x", pool: "p", provider: "q" },
         }),
       ),
-      "Gcp",
+      { name: "deploy", kind: "Gcp" },
+      true,
     ),
   ).toStrictEqual({
     refusal: "Faults",
@@ -177,7 +168,8 @@ test("each refused write is said beside the field it concerns, from the body the
   expect(
     connectorWriteRefusal(
       rejected({ error: { code: "InvalidRequest", message: "kind: bad" } }),
-      "Aws",
+      { name: "deploy", kind: "Aws" },
+      true,
     ),
   ).toStrictEqual({
     refusal: "Faults",
@@ -189,6 +181,36 @@ test("each refused write is said beside the field it concerns, from the body the
   });
 });
 
+test("a change refused as stale carries the revision that stands, and an add so refused met a connector of its name", () => {
+  const stale = {
+    outcome: "Conflict",
+    code: connectorStaleCode,
+    body: {
+      error: { code: connectorStaleCode, message: "stale" },
+      standing: 3,
+    },
+  } as const;
+  expect(
+    connectorWriteRefusal(stale, { name: "deploy", kind: "Aws" }, false),
+  ).toStrictEqual({ refusal: "Stale", standing: 3 });
+  expect(
+    connectorWriteRefusal(stale, { name: "deploy", kind: "Aws" }, true),
+  ).toStrictEqual({
+    refusal: "Faults",
+    faults: {
+      name: { id: "connectors-refused-taken", args: { name: "deploy" } },
+      settings: {},
+      form: undefined,
+    },
+  });
+  expect(connectorWriteRefusedLine(stale, true)).toStrictEqual({
+    id: "connectors-refused-fields",
+  });
+  expect(connectorWriteRefusedLine(stale, false)).toStrictEqual({
+    id: "connectors-refused-stale",
+  });
+});
+
 test("a removal of what is already gone is nothing to say, and one the connector moved under says so", () => {
   expect(connectorRemovalGone({ outcome: "Absent" })).toBe(true);
   expect(
@@ -197,7 +219,7 @@ test("a removal of what is already gone is nothing to say, and one the connector
       code: connectorStaleCode,
       body: {},
     }),
-  ).toStrictEqual({ id: "connectors-refused-stale" });
+  ).toStrictEqual({ id: "connectors-refused-stale-removal" });
 });
 
 test("a list draws a switch as On or Off and a blank optional setting as not set", () => {

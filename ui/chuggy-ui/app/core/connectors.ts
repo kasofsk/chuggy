@@ -323,7 +323,7 @@ function connectorShapeFaults(
 }
 
 /** Which refusal a write met, by the code the API answered. */
-function connectorWriteRefusedAs(
+export function connectorWriteRefusedAs(
   failure: ApiFailure,
 ): "Stale" | "Limit" | "Shape" | "Other" {
   if (failure.outcome === "Conflict" && failure.code === connectorStaleCode)
@@ -338,9 +338,10 @@ function connectorWriteRefusedAs(
   return "Other";
 }
 
-/** What a refused write is: one the connector moved under, carrying the
+/** What a refused write is: a change the connector moved under, carrying the
  * revision that stands, or one whose fields are at fault, each beside its
- * field; any other has no more to it than its line. */
+ * field; any other has no more to it than its line. An add refused as stale
+ * met a connector of its name already standing, which is its name's fault. */
 export type ConnectorWriteRefusal =
   | { readonly refusal: "Stale"; readonly standing: number | undefined }
   | { readonly refusal: "Faults"; readonly faults: ConnectorFaults }
@@ -348,10 +349,19 @@ export type ConnectorWriteRefusal =
 
 export function connectorWriteRefusal(
   failure: ApiFailure,
-  kind: ConnectorKind,
+  sent: { readonly name: string; readonly kind: ConnectorKind },
+  adding: boolean,
 ): ConnectorWriteRefusal {
   switch (connectorWriteRefusedAs(failure)) {
     case "Stale": {
+      if (adding)
+        return {
+          refusal: "Faults",
+          faults: {
+            ...connectorFaultsNone,
+            name: { id: "connectors-refused-taken", args: { name: sent.name } },
+          },
+        };
       const read = connectorStaleResponseSchema.safeParse(
         failure.outcome === "Conflict" ? failure.body : undefined,
       );
@@ -376,7 +386,7 @@ export function connectorWriteRefusal(
         refusal: "Faults",
         faults: connectorShapeFaults(
           failure.outcome === "Rejected" ? failure.body : undefined,
-          kind,
+          sent.kind,
         ),
       };
     case "Other":
@@ -386,10 +396,15 @@ export function connectorWriteRefusal(
 
 /** The one line a refused write is drawn as, beside the form's actions; what
  * is wrong with a field is said beside it as well. */
-export function connectorWriteRefusedLine(failure: ApiFailure): Copy {
+export function connectorWriteRefusedLine(
+  failure: ApiFailure,
+  adding: boolean,
+): Copy {
   switch (connectorWriteRefusedAs(failure)) {
     case "Stale":
-      return { id: "connectors-refused-stale" };
+      return adding
+        ? { id: "connectors-refused-fields" }
+        : { id: "connectors-refused-stale" };
     case "Limit":
     case "Shape":
       return { id: "connectors-refused-fields" };
@@ -407,7 +422,7 @@ export function connectorRemovalGone(failure: ApiFailure): boolean {
 /** The line a refused removal is drawn as under its row. */
 export function connectorRemovalRefusal(failure: ApiFailure): Copy {
   if (failure.outcome === "Conflict" && failure.code === connectorStaleCode)
-    return { id: "connectors-refused-stale" };
+    return { id: "connectors-refused-stale-removal" };
   return failureWords(failure).word;
 }
 
