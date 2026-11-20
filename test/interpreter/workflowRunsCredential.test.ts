@@ -46,6 +46,7 @@ const requester: CredentialRequester = {
   ticket: asTicketId(1),
   task: asTaskId(1),
   repository,
+  taskKind: "Work",
 };
 
 /** The project's binding of the requester's repository, live with its workflow runs on unless a case says otherwise. */
@@ -201,6 +202,7 @@ test("a requester pinning no one repository is refused, and reads and mints noth
     partition,
     ticket: requester.ticket,
     task: requester.task,
+    taskKind: "Work",
   };
   assert.deepEqual(await issued.issue(unpinned, workflowRunsCredential), {
     issued: "Absent",

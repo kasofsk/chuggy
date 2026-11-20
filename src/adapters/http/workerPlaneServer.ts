@@ -1339,16 +1339,17 @@ function workerHeldCredentialsAnswer(
 /**
  * The credentials one attempt is served, resolved from the names it asks for
  * against the names its configuration listed, its grant and its project's
- * connectors. The grant, the listed names, the project and the repository its
- * input bundle pinned are what its own task read found, so nothing the pod
- * sends but the names it asks for is weighed.
+ * connectors. The grant, the listed names, the project, the repository its
+ * input bundle pinned, its task's kind and its workload are what its own
+ * bearer's reads found, so nothing the pod sends but the names it asks for is
+ * weighed.
  */
 function workerHeldCredentialsRoute(
   register: WorkerJobRegistrar,
   service: WorkerPlaneServerService,
 ): void {
   const resolver = service.heldCredentials ?? credentialResolver([]);
-  register("heldCredentials", async (request, reply, { task }) => {
+  register("heldCredentials", async (request, reply, { task, secret }) => {
     const offered = workerHeldCredentialsSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
     const invocation = task.invocation;
@@ -1356,6 +1357,8 @@ function workerHeldCredentialsRoute(
       return reply
         .code(409)
         .send({ action: "stop", reason: "TaskNotRecorded" });
+    const workload = await service.tasks.workload(secret);
+    if (workload === undefined) return reply.code(401).send({ action: "stop" });
     const repository = workerPlaneCredentialRepository(task);
     const resolved = await resolver.resolve({
       requester: {
@@ -1363,6 +1366,7 @@ function workerHeldCredentialsRoute(
         ticket: task.identity.ticket,
         task: task.identity.task,
         ...(repository === undefined ? {} : { repository }),
+        ...workload,
       },
       listed: workTaskCredentialsListed(invocation),
       granted: invocation.authority.credentials,

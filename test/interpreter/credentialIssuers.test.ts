@@ -29,6 +29,7 @@ const requester: CredentialRequester = {
   partition: { tenant: asTenantId("tenant"), project: asProjectId("project") },
   ticket: asTicketId(7),
   task: asTaskId(11),
+  taskKind: "Work",
 };
 
 function bundle(credential: string): WorkerHeldCredentialBundle {

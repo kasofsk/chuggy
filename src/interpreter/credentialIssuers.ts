@@ -30,15 +30,16 @@ import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { RepositoryId } from "./finalizer.ts";
 import type { ProjectConnectorRead } from "./projectConnectors.ts";
 import type { Partition } from "./projectStore.ts";
+import type { WorkerTaskWorkload } from "./workerPlane.ts";
 
-/** Who a credential is issued to: the project it is for and the task in it that asks. */
-export interface CredentialRequester {
+/** Who a credential is issued to: the project it is for, the task in it that asks, which of its ticket's tasks that is, and the workload it runs. */
+export type CredentialRequester = {
   readonly partition: Partition;
   readonly ticket: TicketId;
   readonly task: TaskId;
   /** The one repository the attempt's input bundle pinned, absent where it pins none or several. */
   readonly repository?: RepositoryId;
-}
+} & WorkerTaskWorkload;
 
 /** Why an issuer does not serve a name it knows, which never speaks for the grant or the worker's release. */
 export type CredentialIssuerAbsence = Exclude<
