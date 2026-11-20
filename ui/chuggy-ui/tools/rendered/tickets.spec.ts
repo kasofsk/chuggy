@@ -252,6 +252,74 @@ for (const viewport of ticketsViewports)
     }
   });
 
+/**
+ * Each state's count at the bar's start, opened at an address that filters to
+ * Working, so the accessibility check judges a pressed count and dimmed ones
+ * in light and in dark: every unfinished state the rows stand in has its
+ * count; pressing Ready, a standing the list narrows to itself, draws only
+ * its rows, presses it and dims the others; the page does not scroll
+ * sideways, and on the phone every count is at least the touch height.
+ */
+for (const viewport of ticketsViewports)
+  test(`on the ${viewport} each state's count filters the list to its state, pressed and the others dimmed`, async ({
+    browser,
+  }) => {
+    const served = await servedOpen({
+      root: renderedDist,
+      reads: [
+        stubApiRead(ticketsProjectPath, projectResponseSchema, ticketsPage),
+      ],
+    });
+    try {
+      const rendered = await renderedOpen(browser, served.origin, {
+        route: `${ticketsPath}?filter=Work`,
+        viewport,
+        touch: viewport === "phone",
+        signedIn: true,
+        ready: (page) =>
+          page.getByRole("heading", { level: 3, name: ticketsTitleLong }),
+      });
+      const page = rendered.page;
+      const counts = page.getByRole("list", { name: "Tickets by state" });
+      const count = (name: string) =>
+        counts.getByRole("button", { name, exact: true });
+      const named = [
+        "Blocked, 1 ticket",
+        "Ready, 1 ticket",
+        "Working, 1 ticket",
+        "Escalated, 1 ticket",
+      ];
+      await expect(counts.getByRole("button")).toHaveCount(named.length);
+      for (const name of named) await expect(count(name)).toBeVisible();
+      await expect(count("Working, 1 ticket")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await count("Ready, 1 ticket").click();
+      await expect(page).toHaveURL(/[?&]filter=Ready(&|$)/u);
+      const rows = page.getByRole("list", { name: "Tickets", exact: true });
+      await expect(rows.getByRole("heading", { level: 3 })).toHaveText([
+        "Search index",
+      ]);
+      for (const name of named) {
+        const pressed = name.startsWith("Ready");
+        await expect(count(name)).toHaveAttribute(
+          "aria-pressed",
+          String(pressed),
+        );
+        if (pressed)
+          await expect(count(name)).not.toHaveAttribute("data-dimmed");
+        else await expect(count(name)).toHaveAttribute("data-dimmed");
+      }
+      await renderedNoOverflow(page);
+      if (viewport === "phone") await renderedTouchTargets(page, counts);
+      renderedNoViolations(rendered, [zodProbeViolation]);
+      expect(served.unanswered).toEqual([]);
+    } finally {
+      await served.close();
+    }
+  });
+
 const ticketsBannerArtifact = "banner-rendered";
 
 const ticketsBannerPath = `${ticketsProjectPath}/artifacts/${ticketsBannerArtifact}`;

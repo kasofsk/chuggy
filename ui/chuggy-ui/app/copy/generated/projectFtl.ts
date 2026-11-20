@@ -44,6 +44,12 @@ project-creation-workspace-unadmin-detail = { -workspace(case: "upper", form: "a
 project-table-title = { -ticket(case: "upper", form: "plural") }
 project-table-empty = No { -ticket(form: "plural") } yet. Ask in a { -thread } to make one.
 project-table-aria-tickets = { -ticket(case: "upper", form: "plural") }
+project-table-aria-by-state = { -ticket(case: "upper", form: "plural") } by state
+# A state's count above the list: the state's word, and how many tickets stand in it.
+project-table-state-count = { $state }, { $count ->
+    [one] { $count } { -ticket }
+   *[other] { $count } { -ticket(form: "plural") }
+}
 project-table-waits-on = Waits on
 project-table-creator-label = Creator
 project-table-creator-anyone = Anyone

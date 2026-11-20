@@ -187,6 +187,10 @@ const focusIndicatorTakenAway: Readonly<
   Record<string, Readonly<Record<string, FocusIndicatorTaken>>>
 > = {
   "browser/ProjectTable.css": {
+    "button.ticket-state-count:focus-visible": {
+      markup:
+        '<button class="ticket-state-count" data-under-test><span class="ticket-state-count-face"><span class="status-badge"></span></span></button>',
+    },
     ".ticket-list-standing:focus-visible": {
       markup:
         '<a class="ticket-list-standing" data-under-test><span class="status-badge"></span></a>',

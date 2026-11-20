@@ -1,6 +1,7 @@
 /**
  * One state as a small mark: its word in its tone, on its tone's own ground,
- * after a mark whose shape is the tone's.
+ * after a mark whose shape is the tone's, and where it is given one, a figure
+ * after the word in tabular digits.
  *
  * Total over `toneRoster`, and no two tones share a mark, so a reader who sees
  * no colour still tells every state apart. The word is always in the document:
@@ -90,6 +91,8 @@ export function StatusBadge(props: {
   readonly tone: Tone;
   readonly size: StatusBadgeSize;
   readonly compact?: boolean | undefined;
+  /** How many stand in the state, drawn in compact form too. */
+  readonly figure?: string | undefined;
   readonly children: ReactNode;
 }): ReactNode {
   const mark = statusBadgeMarkOf[props.tone];
@@ -112,6 +115,9 @@ export function StatusBadge(props: {
       <span className={compact ? "visually-hidden" : "status-badge-word"}>
         {props.children}
       </span>
+      {props.figure === undefined ? null : (
+        <span className="status-badge-figure">{props.figure}</span>
+      )}
     </span>
   );
 }

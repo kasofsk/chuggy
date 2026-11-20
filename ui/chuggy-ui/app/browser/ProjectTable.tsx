@@ -11,9 +11,11 @@
  * search, the sort, the filter, the creator and the owner are the page's
  * address, so a link holds the view. The filter, the creator and the owner
  * are chosen in the one Filter control, and each that is set is a mark under
- * the bar that takes it away. A project holding no ticket at all says so in
- * one line instead, and a list its reader narrowed to nothing offers the way
- * back to every ticket.
+ * the bar that takes it away. Each state's count at the bar's start, read
+ * under every state and by recent activity, chooses the filter as the State
+ * field does. A project holding no ticket at all says so in one line instead,
+ * and a list its reader narrowed to nothing offers the way back to every
+ * ticket.
  *
  * A ROW OFFERS ONE ACTION, DISPATCH, AS ITS READY CHIP. A ready row reads the
  * dispatch view for the version a dispatch names, and its chip is the button;
@@ -70,6 +72,9 @@ import {
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
 import { ticketRowsQuery } from "../core/ticketQueries.ts";
 import {
+  ticketListCountDimmed,
+  ticketListCountTapped,
+  ticketListCountsOf,
   ticketListCreatorsOffered,
   ticketListFiltered,
   ticketListFiltersActive,
@@ -115,6 +120,7 @@ import { TicketRowDispatchScope } from "./TicketActions.tsx";
 import type { TicketRowDispatch } from "./TicketActions.tsx";
 import { TicketActivity, cellAbsent } from "./TicketCells.tsx";
 import { RepositoryImportRefusedNotice } from "./repositories/RepositoryImportRefused.tsx";
+import { useScrollSides } from "./ui/useScrollSides.ts";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Identity } from "./ui/Identity.tsx";
@@ -128,11 +134,13 @@ import {
   TicketDependencyChip,
   dependencyStandingOf,
   TicketStateChip,
+  TicketStateCount,
 } from "./ticket/TicketStateChip.tsx";
 import {
   LandingQueueChip,
   useLandingQueues,
 } from "./ticket/LandingQueueChip.tsx";
+import "./ui/ScrollSides.css";
 import "./ProjectTable.css";
 
 interface TicketRowsHeld {
@@ -432,6 +440,47 @@ const ticketListDependencyGlyph = (
   </ListGlyph>
 );
 
+/** How many of the rows read under every state stand in each state that is
+ * not an end, each the button that filters the list to its state or, as the
+ * filter, back to every ticket; dimmed while a filter is set that draws none
+ * of its tickets. Where they do not fit they scroll sideways. */
+function TicketListCounts(props: {
+  readonly rows: readonly ProjectTableRow[];
+  readonly filter: TicketFilter;
+  readonly onFilter: (filter: TicketFilter) => void;
+  readonly compact: boolean;
+}): ReactNode {
+  const text = useCopyText();
+  const { scroller, more } = useScrollSides<HTMLDivElement>();
+  return (
+    <div
+      ref={scroller}
+      className="ticket-list-counts scroll-sides"
+      data-more-start={more.start ? "" : undefined}
+      data-more-end={more.end ? "" : undefined}
+    >
+      <ul aria-label={text({ id: "project-table-aria-by-state" })}>
+        {ticketListCountsOf(props.rows, props.filter).map(
+          ({ standing, count }) => (
+            <li key={standing}>
+              <TicketStateCount
+                standing={standing}
+                count={count}
+                pressed={standing === props.filter}
+                dimmed={ticketListCountDimmed(props.filter, standing)}
+                compact={props.compact}
+                onPress={() => {
+                  props.onFilter(ticketListCountTapped(props.filter, standing));
+                }}
+              />
+            </li>
+          ),
+        )}
+      </ul>
+    </div>
+  );
+}
+
 /** What the State field offers past All: every phase, Pending followed by
  * the standings it narrows to. */
 const ticketListFilterChoices: readonly Exclude<
@@ -613,11 +662,13 @@ function useTicketListMarks(
   }));
 }
 
-/** The bar over the list: the search, the one Filter control holding the
- * state, the creator and the owner, and the sort; and under it a mark for
- * each of those that is set. */
+/** The bar over the list: each state's count at its start, then the search,
+ * the one Filter control holding the state, the creator and the owner, and the
+ * sort; and under it a mark for each of those that is set. */
 function TicketListControls(
   props: TicketListFilters & {
+    /** The rows the counts are of, read under every state. */
+    readonly counted: readonly ProjectTableRow[];
     readonly search: string;
     readonly onSearch: (search: string) => void;
     readonly sort: TicketListSort;
@@ -630,7 +681,16 @@ function TicketListControls(
   const marks = useTicketListMarks(props);
   return (
     <>
-      <ListControls>
+      <ListControls
+        start={
+          <TicketListCounts
+            rows={props.counted}
+            filter={props.filter}
+            onFilter={props.onFilter}
+            compact={!props.wide}
+          />
+        }
+      >
         <ListSearch
           label={text({ id: "project-table-search" })}
           placeholder={text({ id: "project-table-search-placeholder" })}
@@ -949,8 +1009,10 @@ function useTicketListTyped(
 }
 
 /** Everything the page needs before it draws: the partition, the filter,
- * sort and search the address and this browser's own keeping agree on, and
- * the rows under them. */
+ * sort and search the address and this browser's own keeping agree on, the
+ * rows under them, and the rows the counts are of: under every state and by
+ * recent activity, so neither the filter nor the sort changes them, which in
+ * the default view is the list's own read. */
 function useProjectTableState(props: {
   readonly query: TicketListQuery;
   readonly onQuery: (query: TicketListQuery) => void;
@@ -962,6 +1024,7 @@ function useProjectTableState(props: {
   readonly sort: TicketListSort;
   readonly ask: TicketListAsk;
   readonly tickets: TicketRowsHeld;
+  readonly counted: readonly ProjectTableRow[];
   readonly nowMs: number;
 } {
   const partition = useParams({ from: "/$tenant/$project" });
@@ -976,6 +1039,11 @@ function useProjectTableState(props: {
     owner: props.query.owner,
   };
   const tickets = useTicketRows(partition, ask);
+  const counted = useTicketRows(partition, {
+    ...ask,
+    filter: ticketFilterAll,
+    order: "RecentActivity",
+  }).state;
   return {
     partition,
     choices,
@@ -984,6 +1052,10 @@ function useProjectTableState(props: {
     sort,
     ask,
     tickets,
+    counted:
+      counted.state === "Ready"
+        ? counted.value.tickets.map(projectTableRow)
+        : [],
     nowMs: useNowMs(),
   };
 }
@@ -1006,8 +1078,17 @@ export function ProjectTable(props: {
   readonly onQuery: (query: TicketListQuery) => void;
 }): ReactNode {
   const text = useCopyText();
-  const { partition, choices, typed, setTyped, sort, ask, tickets, nowMs } =
-    useProjectTableState(props);
+  const {
+    partition,
+    choices,
+    typed,
+    setTyped,
+    sort,
+    ask,
+    tickets,
+    counted,
+    nowMs,
+  } = useProjectTableState(props);
   if (
     tickets.state.state === "Ready" &&
     !tickets.kept &&
@@ -1026,6 +1107,7 @@ export function ProjectTable(props: {
         <>
           <TicketListControls
             wide={wide}
+            counted={counted}
             search={typed}
             onSearch={setTyped}
             sort={sort}

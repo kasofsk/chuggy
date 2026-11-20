@@ -1,6 +1,7 @@
 /**
  * What the ticket list draws of the rows it read: each row's standing and the
- * order a sort puts them in; and what a sort and a search are asked of the read
+ * order a sort puts them in; what each state's count holds and what pressing
+ * one filters to; and what a sort and a search are asked of the read
  * as, and of the page's address.
  */
 
@@ -16,6 +17,9 @@ import {
   ticketSearchCharsMax,
 } from "../../../src/contract/http.ts";
 import {
+  ticketListCountDimmed,
+  ticketListCountTapped,
+  ticketListCountsOf,
   ticketListCreatorsOffered,
   ticketListFiltered,
   ticketListFiltersActive,
@@ -352,4 +356,54 @@ test("the address holds an owner beside a creator as the text it was written as,
       { owner: issued },
     ),
   ).toStrictEqual({ filter: "Done", creator: "s-bob", owner: issued });
+});
+
+test("the counts name each unfinished state a row stands in, in order, and the filter's own at 0 where none does", () => {
+  const rows = [
+    row(1, "Done"),
+    row(2, "Escalated"),
+    row(3, "Work"),
+    row(4, "Pending"),
+    row(5, "Pending", { openDependencies: [{ ticket: 3, phase: "Work" }] }),
+    row(6, "Pending"),
+    row(7, "Revoked"),
+  ];
+  expect(ticketListCountsOf(rows, "All")).toStrictEqual([
+    { standing: "Blocked", count: 1 },
+    { standing: "Ready", count: 2 },
+    { standing: "Work", count: 1 },
+    { standing: "Escalated", count: 1 },
+  ]);
+  expect(
+    ticketListCountsOf(rows, "Evaluation").map(({ standing }) => standing),
+  ).toStrictEqual(["Blocked", "Ready", "Work", "Evaluation", "Escalated"]);
+  expect(ticketListCountsOf(rows, "Evaluation")[3]?.count).toBe(0);
+  for (const filter of ["Done", "Revoked", "Pending"] as const)
+    expect(ticketListCountsOf(rows, filter)).toStrictEqual(
+      ticketListCountsOf(rows, "All"),
+    );
+});
+
+test("a state's count pressed filters to that state, and pressed as the filter goes back to every ticket", () => {
+  for (const standing of ["Ready", "Blocked", "Work", "Escalated"] as const) {
+    expect(ticketListCountTapped("All", standing)).toBe(standing);
+    expect(ticketListCountTapped("Pending", standing)).toBe(standing);
+    expect(ticketListCountTapped("Done", standing)).toBe(standing);
+    expect(ticketListCountTapped(standing, standing)).toBe("All");
+  }
+  expect(ticketListCountTapped("Ready", "Blocked")).toBe("Blocked");
+});
+
+test("a state's count is dimmed exactly while a filter is set that draws none of its tickets", () => {
+  for (const standing of ["Ready", "Blocked", "Work", "Escalated"] as const) {
+    expect(ticketListCountDimmed("All", standing), standing).toBe(false);
+    expect(ticketListCountDimmed(standing, standing), standing).toBe(false);
+    expect(ticketListCountDimmed("Done", standing), standing).toBe(true);
+    expect(ticketListCountDimmed("Revoked", standing), standing).toBe(true);
+  }
+  expect(ticketListCountDimmed("Ready", "Blocked")).toBe(true);
+  expect(ticketListCountDimmed("Work", "Escalated")).toBe(true);
+  expect(ticketListCountDimmed("Pending", "Ready")).toBe(false);
+  expect(ticketListCountDimmed("Pending", "Blocked")).toBe(false);
+  expect(ticketListCountDimmed("Pending", "Work")).toBe(true);
 });

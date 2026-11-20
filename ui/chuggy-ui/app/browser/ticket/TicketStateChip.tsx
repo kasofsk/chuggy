@@ -1,8 +1,9 @@
 /**
  * A ticket's state where the ticket list draws it: the row's state as its
- * status badge, and a dependency's number on the badge of the state it stands
- * in. Where a dispatch is offered the row's state is the button that asks for
- * it, which cannot be pressed while one is going or this tab is offline.
+ * status badge, a dependency's number on the badge of the state it stands in,
+ * and each state's count on its badge. Where a dispatch is offered the row's
+ * state is the button that asks for it, which cannot be pressed while one is
+ * going or this tab is offline.
  */
 
 import type { ReactNode } from "react";
@@ -80,6 +81,53 @@ export function TicketDependencyChip(props: {
           {`#${String(props.ticket)}`}
         </StatusBadge>
       </span>
+    </Tooltip>
+  );
+}
+
+/** A state's badge holding how many tickets stand in it, as the button that
+ * filters the list to it: pressed while it is the filter, dimmed while another
+ * filter is, and named for its state and its figure whole, which assistive
+ * technology reads instead of the badge. Compact, it draws its mark and
+ * figure, and offers its state's word on hover and focus. */
+export function TicketStateCount(props: {
+  readonly standing: TicketListStanding;
+  readonly count: number;
+  readonly pressed: boolean;
+  readonly dimmed: boolean;
+  readonly compact: boolean;
+  readonly onPress: () => void;
+}): ReactNode {
+  const text = useCopyText();
+  const label = ticketStateLabelOf(props.standing);
+  const word = text(label.word);
+  return (
+    <Tooltip trigger="control" text={props.compact ? word : undefined}>
+      <button
+        type="button"
+        className="ticket-state-count"
+        data-standing={props.standing}
+        data-dimmed={props.dimmed || undefined}
+        aria-pressed={props.pressed}
+        onClick={props.onPress}
+      >
+        <span className="ticket-state-count-face" aria-hidden="true">
+          <StatusBadge
+            tone={label.tone}
+            size="regular"
+            compact={props.compact}
+            figure={String(props.count)}
+          >
+            {word}
+          </StatusBadge>
+        </span>
+        <span className="visually-hidden">
+          {text({
+            id: "project-table-state-count",
+            args: { state: word, count: props.count },
+          })}
+        </span>
+      </button>
     </Tooltip>
   );
 }

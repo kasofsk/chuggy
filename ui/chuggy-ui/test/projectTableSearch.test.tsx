@@ -229,7 +229,9 @@ test("a search under a standing counts only the rows of that standing, of those 
           nextCursor: "x-2",
         });
   });
-  expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(new Set(["Pending"]));
+  expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
+    new Set(["Pending", ""]),
+  );
   expect(titlesDrawn()).toStrictEqual(["Ticket 5"]);
   expect(screen.getByRole("status").textContent).toBe(
     "1 matching ticket so far",
@@ -514,8 +516,8 @@ async function filterDrawn(): Promise<string | undefined> {
   return ticketListFilterHeld("State", settled);
 }
 
-/** The phases each read asked for, one read to an entry, which is the
- * filter's. */
+/** The phases each read asked for, one read to an entry: the filter's, and
+ * none for the read the state counts are of. */
 function phasesAsked(asked: readonly URLSearchParams[]): readonly string[] {
   return asked.map((each) => each.getAll("phase").join(","));
 }
@@ -539,7 +541,7 @@ test("a filter the address names is the list drawn, whatever this browser kept",
   const drawn = await drawnAt({ filter: "Escalated" }, servedByPhase);
   expect(titlesDrawn()).toStrictEqual(["Ticket 4"]);
   expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
-    new Set(["Escalated"]),
+    new Set(["Escalated", ""]),
   );
   expect(await filterDrawn()).toBe("Escalated");
   expect(drawn.written).toStrictEqual([]);
@@ -559,7 +561,7 @@ test("where the address names no filter the kept one is drawn, and one kept by a
   expect(drawn.written).toStrictEqual([{ sort: "Oldest" }]);
   expect(titlesDrawn()).toStrictEqual(["Ticket 4"]);
   expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
-    new Set(["Escalated"]),
+    new Set(["Escalated", ""]),
   );
 });
 

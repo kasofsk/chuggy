@@ -1,15 +1,18 @@
 /**
  * The chip over both its shapes: one that stands, with no control, and one
  * that can be taken away, ending in a button named by its caller that removes
- * it only while it may. Then the ticket list's row state chip, as the state's
- * status badge.
+ * it only while it may. Then the ticket list's row state chip and each
+ * state's count, as the state's status badge.
  */
 
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { TicketStateChip } from "../app/browser/ticket/TicketStateChip.tsx";
+import {
+  TicketStateChip,
+  TicketStateCount,
+} from "../app/browser/ticket/TicketStateChip.tsx";
 import { Chip } from "../app/browser/ui/Chip.tsx";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import { ticketStateLabelOf } from "../app/core/ticketHeader.ts";
@@ -160,4 +163,46 @@ test("a ticket's number is named as it is written, never grouped as a count is",
   expect(
     screen.getByRole("button", { name: "Dispatch ticket #1345" }),
   ).toBeDefined();
+});
+
+test("a state's count is the button around its state's badge, holding its figure after its word, named for both whole", () => {
+  const pressed = vi.fn();
+  for (const compact of [false, true]) {
+    renderCopied(
+      <TicketStateCount
+        standing="Work"
+        count={3}
+        pressed={true}
+        dimmed={false}
+        compact={compact}
+        onPress={pressed}
+      />,
+    );
+    const count = screen.getByRole("button", { name: "Working, 3 tickets" });
+    const badge = stateLabelDrawn("Working");
+    expect(count.contains(badge)).toBe(true);
+    expect(badge.closest("[aria-hidden='true']")).not.toBeNull();
+    expect(count.getAttribute("aria-pressed")).toBe("true");
+    expect(badge.dataset["tone"]).toBe(ticketStateLabelOf("Work").tone);
+    expect(badge.hasAttribute("data-compact")).toBe(compact);
+    expect(badge.querySelector(".status-badge-mark")).not.toBeNull();
+    expect(badge.lastElementChild?.className).toBe("status-badge-figure");
+    expect(badge.lastElementChild?.textContent).toBe("3");
+    fireEvent.click(count);
+    cleanup();
+  }
+  expect(pressed).toHaveBeenCalledTimes(2);
+  renderCopied(
+    <TicketStateCount
+      standing="Ready"
+      count={1}
+      pressed={false}
+      dimmed={true}
+      compact={false}
+      onPress={pressed}
+    />,
+  );
+  const one = screen.getByRole("button", { name: "Ready, 1 ticket" });
+  expect(one.getAttribute("aria-pressed")).toBe("false");
+  expect(one.hasAttribute("data-dimmed")).toBe(true);
 });

@@ -1,10 +1,13 @@
-/* The ticket list's own parts on the shared record list: the number and the
-   meta in each row's line, and what it waits on at its end; and the foot,
-   whose state stands in a slot as wide on every row, which on a ready row is
-   the button that dispatches it. Where the list is narrow the creator and an
-   owner beside the meta move to the start of the foot, opposite the state,
-   each name shortened on its own so neither is cut away; on a phone the
-   controls stack full width and what a row waits on wraps at its line's end. */
+/* The ticket list's own parts on the shared record list: each state's count
+   at the bar's start, its badge holding its figure as the button that filters
+   to it, ringed in its tone while it is the filter and quiet while another
+   is; the number and the meta in each row's line, and what it waits on at its
+   end; and the foot, whose state stands in a slot as wide on every row, which
+   on a ready row is the button that dispatches it. Where the list is narrow
+   the creator and an owner beside the meta move to the start of the foot,
+   opposite the state, each name shortened on its own so neither is cut away;
+   on a phone the controls stack full width and what a row waits on wraps at
+   its line's end. */
 
 @layer page {
   .ticket-list-page {
@@ -12,6 +15,90 @@
     display: grid;
     gap: var(--space-3);
     min-width: 0;
+  }
+
+  /* The counts take the room the controls leave, in one row that scrolls
+     sideways where it does not fit, inset by as much as a ring or the focus
+     indicator stands outside a count, so the scroller clips neither. */
+  .ticket-list-counts {
+    --ticket-list-counts-inset: calc(var(--focus-width) + var(--focus-offset));
+    flex: 1 1 0;
+    min-width: 0;
+    overflow-x: auto;
+    margin: calc(-1 * var(--ticket-list-counts-inset));
+    padding: var(--ticket-list-counts-inset);
+  }
+
+  .ticket-list-counts > ul {
+    display: flex;
+    gap: var(--space-2);
+    width: max-content;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  button.ticket-state-count {
+    display: inline-flex;
+    height: var(--control-height);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-3);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .ticket-state-count-face {
+    display: inline-flex;
+    height: 100%;
+  }
+
+  button.ticket-state-count .status-badge {
+    box-sizing: border-box;
+    height: 100%;
+    transition:
+      color var(--duration-1) var(--ease-out),
+      background-color var(--duration-1) var(--ease-out),
+      border-color var(--duration-1) var(--ease-out);
+  }
+
+  button.ticket-state-count:focus-visible {
+    outline: none;
+  }
+
+  button.ticket-state-count:focus-visible .status-badge {
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: var(--focus-offset);
+  }
+
+  button.ticket-state-count[aria-pressed="true"] .status-badge {
+    box-shadow:
+      0 0 0 var(--hairline) var(--surface-0),
+      0 0 0 calc(3 * var(--hairline)) var(--status-badge-ink);
+  }
+
+  /* Dimmed, a count's word and figure are quiet ink on a plain surface, which
+     clear the contrast a live control's text needs, until it is hovered or
+     focused. */
+  button.ticket-state-count[data-dimmed]:not(:hover, :focus-visible)
+    .status-badge {
+    --status-badge-ink: var(--ink-3);
+    --status-badge-ground: var(--surface-1);
+    border-color: var(--edge);
+  }
+
+  @media (forced-colors: active) {
+    button.ticket-state-count[aria-pressed="true"] .status-badge {
+      border-color: var(--forced-current);
+      outline: calc(2 * var(--hairline)) solid var(--forced-current);
+      outline-offset: var(--hairline);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    button.ticket-state-count .status-badge {
+      transition: none;
+    }
   }
 
   .ticket-list-status {
@@ -156,6 +243,18 @@
   }
 
   @container (max-width: 40em) {
+    /* Narrow, a count is its mark and its figure, a finger's height and never
+       narrower, and the counts give the row to an open search. */
+    button.ticket-state-count .status-badge {
+      justify-content: center;
+      min-width: var(--control-height);
+      padding-inline: var(--space-2);
+    }
+
+    .list-controls:has(.list-search[data-open]) .ticket-list-counts {
+      display: none;
+    }
+
     /* On a phone every control a row draws is a finger's height, and the
        mark for what it waits on as wide; the text of each keeps its line,
        centred in that height. */
