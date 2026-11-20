@@ -1,5 +1,5 @@
 /**
- * 213 adds a project's images beside every row the schema already held: a row
+ * 218 adds a project's images beside every row the schema already held: a row
  * names one role the contract lists, an artifact or none, and goes with the
  * project it names.
  */
@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { postgresMigrate } from "../../src/adapters/postgres/pool.ts";
-import { migration213 } from "../../src/adapters/postgres/schema/migrations/213-project-images.ts";
+import { migration218 } from "../../src/adapters/postgres/schema/migrations/218-project-images.ts";
 import { projectImageRoles } from "../../src/contract/http.ts";
 import {
   deletionPartition,
@@ -31,9 +31,9 @@ function projectImagesMigrationRow(
   );
 }
 
-test("213 adds the relation, a row names a role the contract lists, and it goes with its project", async () => {
+test("218 adds the relation, a row names a role the contract lists, and it goes with its project", async () => {
   await migrationDatabase("project_images", async (subject) => {
-    await migratedBefore(subject, migration213.version);
+    await migratedBefore(subject, migration218.version);
     await subject.query(deletionPartition);
     assert.equal(
       (
@@ -44,7 +44,7 @@ test("213 adds the relation, a row names a role the contract lists, and it goes 
       null,
     );
 
-    assert.ok((await postgresMigrate(subject)).includes(migration213.version));
+    assert.ok((await postgresMigrate(subject)).includes(migration218.version));
     for (const role of projectImageRoles)
       await projectImagesMigrationRow(subject, role, null);
     for (const [role, artifact, constraint] of [

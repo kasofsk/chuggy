@@ -20,10 +20,6 @@ import {
   postgresWorkerRunEnded,
 } from "../../src/adapters/postgres/workerPlane.ts";
 import {
-  postgresWorkerPoolRegistry,
-  postgresWorkerPoolRoster,
-} from "../../src/adapters/postgres/workerPool.ts";
-import {
   nativeHttpPathSegmentCharsMax,
   workerErrorPath,
 } from "../../src/contract/http.ts";
@@ -48,7 +44,7 @@ import {
   asPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
-import type { WorkerPoolIdentity } from "../../src/interpreter/workerPool.ts";
+import type { PersonalRunnerIdentity } from "../../src/interpreter/workerPool.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   schedulerClaimFor,
@@ -83,32 +79,50 @@ after(() => resume.close());
 
 const reads = postgresNativeReads(apiPool);
 
-/** The name every pool a case registers goes by. */
-const poolName = "runner-a";
-
 type Routed = SchedulerResumeRouted;
 
-/** Registers a pool in the ticket's project and grants it `Execute`, answering the identity it claims under. */
-async function poolOf(routed: Routed): Promise<WorkerPoolIdentity> {
+/** Registers a personal runner of a member of its own, who may read the ticket's project and register runners, listing the project, answering the identity it claims under. */
+async function runnerOf(routed: Routed): Promise<PersonalRunnerIdentity> {
   const { partition } = routed.project;
-  const principal = asPrincipal(`https://issuer.invalid#pool-${randomUUID()}`);
+  const key = {
+    tenant: partition.tenant,
+    owner: asPrincipal(`https://issuer.invalid#member-${randomUUID()}`),
+  };
+  const principal = asPrincipal(
+    `https://issuer.invalid#personal-${randomUUID()}`,
+  );
+  access.grantTenant({
+    tenant: partition.tenant,
+    principal: key.owner,
+    access: new Set(["RegisterPersonalRunner"]),
+  });
+  access.grant({ partition, principal: key.owner, access: new Set(["Read"]) });
+  const personal = postgresPersonalRunnerRegistry(apiPool);
   assert.equal(
-    await postgresWorkerPoolRegistry(apiPool).register({
-      partition,
-      pool: poolName,
+    await personal.register({
+      ...key,
       capabilities: ["Platform:Linux:Amd64"],
-      class: "Dedicated",
-      clientId: `chuggy-pool-${randomUUID()}`,
+      clientId: `chuggy-personal-${randomUUID()}`,
       principal,
     }),
-    true,
+    "Registered",
   );
-  access.grant({ partition, principal, access: new Set(["Execute"]) });
-  const [registered] = (
-    await postgresWorkerPoolRoster(rig.pool).registered(partition)
-  ).pools;
-  assert.ok(registered !== undefined);
-  return registered;
+  assert.equal(await personal.allow(key, partition.project), "Allowed");
+  return { ...key, principal };
+}
+
+/** Makes `owner` the execution's owner, as a member's own ticket is. */
+async function ownedBy(
+  routed: Routed,
+  execution: ExecutionId,
+  owner: Principal,
+): Promise<void> {
+  const { partition } = routed.project;
+  await rig.harness.query(
+    `UPDATE execution SET owner=$4
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [partition.tenant, partition.project, execution, owner],
+  );
 }
 
 /** Registers the ticket's newest spawn on the pool route and admits its one task. */
@@ -118,30 +132,29 @@ async function newestAdmitted(routed: Routed): Promise<ExecutionId> {
   return execution;
 }
 
-/** Opens and invokes the execution's attempt, as a pass would for a pool. */
+/** Opens and invokes the execution's attempt, as a pass would for a runner. */
 const invokedAttempt = (routed: Routed, execution: ExecutionId) =>
   schedulerResumeInvoked(resume, routed, execution, schedulerInvocation);
 
-/** Has the pool claim the execution's attempt, answering the attempt and the bearer it was claimed under. */
+/** Has `claimant` claim the execution's attempt as its owner's, answering the attempt and the bearer it was claimed under. */
 async function claimed(
   routed: Routed,
   execution: ExecutionId,
-  pool: WorkerPoolIdentity,
+  claimant: PersonalRunnerIdentity,
 ): Promise<{ attempt: PhysicalAttempt; bearer: string }> {
+  await ownedBy(routed, execution, claimant.owner);
   const attempt = await invokedAttempt(routed, execution);
   const bearer = `bearer-${randomUUID()}`;
+  const terms = {
+    leaseSecs: service.config.attemptLeaseSecs,
+    heldMax: 1,
+    memoryMibDefault: service.poolMemoryMib,
+  };
+  const assignment = `assignment-${randomUUID()}`;
   assert.notEqual(
-    await assignments.claim(
-      pool,
-      {
-        leaseSecs: service.config.attemptLeaseSecs,
-        heldMax: 1,
-        memoryMibDefault: service.poolMemoryMib,
-      },
-      `assignment-${randomUUID()}`,
-      bearer,
-      [],
-    ),
+    await assignments.claimPersonal(claimant, terms, assignment, bearer, [
+      routed.project.partition.project,
+    ]),
     undefined,
   );
   return { attempt, bearer };
@@ -189,7 +202,7 @@ async function lostOnRunner(
   await concluded(routed);
 }
 
-/** The lease of the attempt the pool holds runs out, and it is concluded. */
+/** The lease of the attempt its runner holds runs out, and it is concluded. */
 async function leaseLapsedOnRunner(
   routed: Routed,
   execution: ExecutionId,
@@ -279,16 +292,20 @@ const evaluationLost = {
 
 test("an evaluation lost on its runner is resumed by the scheduler, and its next run passes", async () => {
   const { routed, execution } = await routedTicket("loss-evaluation");
-  const pool = await poolOf(routed);
-  const work = await claimed(routed, execution, pool);
+  const runner = await runnerOf(routed);
+  const work = await claimed(routed, execution, runner);
   await reported(routed, work.attempt, "Pass");
-  const evaluation = await claimed(routed, await newestAdmitted(routed), pool);
+  const evaluation = await claimed(
+    routed,
+    await newestAdmitted(routed),
+    runner,
+  );
   await lostOnRunner(routed, evaluation.bearer);
   assert.deepEqual(await standing(routed), evaluationLost);
   assert.equal(await resumedByScheduler(routed), 1);
   assert.equal(await schedulerAnswers(routed), 1);
   assert.equal((await standing(routed))?.["phase"], "Evaluation");
-  const again = await claimed(routed, await newestAdmitted(routed), pool);
+  const again = await claimed(routed, await newestAdmitted(routed), runner);
   await reported(routed, again.attempt, "Pass");
   assert.deepEqual(await standing(routed), {
     phase: "Finalization",
@@ -300,10 +317,10 @@ test("an evaluation lost on its runner is resumed by the scheduler, and its next
 
 test("work lost on its runner is resumed until the budget is spent, and the last loss waits for a person", async () => {
   const { routed, execution } = await routedTicket("loss-work-bound");
-  const pool = await poolOf(routed);
+  const runner = await runnerOf(routed);
   let next = execution;
   for (let loss = 1; loss < service.config.attemptRetriesMax; loss++) {
-    const { bearer } = await claimed(routed, next, pool);
+    const { bearer } = await claimed(routed, next, runner);
     if (loss % 2 === 0) await leaseLapsedOnRunner(routed, next);
     else await lostOnRunner(routed, bearer);
     assert.deepEqual(await standing(routed), workLost);
@@ -316,7 +333,7 @@ test("work lost on its runner is resumed until the budget is spent, and the last
     assert.equal((await standing(routed))?.["phase"], "Work");
     next = await newestAdmitted(routed);
   }
-  const { bearer } = await claimed(routed, next, pool);
+  const { bearer } = await claimed(routed, next, runner);
   await lostOnRunner(routed, bearer);
   assert.equal(await resumedByScheduler(routed), 0);
   assert.deepEqual(await standing(routed), workLost);
@@ -332,7 +349,7 @@ test("work lost on its runner is resumed until the budget is spent, and the last
   const { bearer: after } = await claimed(
     routed,
     await newestAdmitted(routed),
-    pool,
+    runner,
   );
   await lostOnRunner(routed, after);
   assert.equal(await resumedByScheduler(routed), 0);
@@ -349,10 +366,10 @@ test("work lost on its runner is resumed until the budget is spent, and the last
  */
 test("a ticket lost to its bound takes no place in a pass's batch", async () => {
   const bound = await routedTicket("loss-a-bound");
-  const pool = await poolOf(bound.routed);
+  const runner = await runnerOf(bound.routed);
   let next = bound.execution;
   for (let loss = 1; loss <= service.config.attemptRetriesMax; loss++) {
-    const { bearer } = await claimed(bound.routed, next, pool);
+    const { bearer } = await claimed(bound.routed, next, runner);
     await lostOnRunner(bound.routed, bearer);
     if (loss < service.config.attemptRetriesMax) {
       assert.equal(await resumedByScheduler(bound.routed), 1);
@@ -363,7 +380,7 @@ test("a ticket lost to its bound takes no place in a pass's batch", async () => 
   const { bearer } = await claimed(
     resumable.routed,
     resumable.execution,
-    await poolOf(resumable.routed),
+    await runnerOf(resumable.routed),
   );
   await lostOnRunner(resumable.routed, bearer);
   assert.equal(
@@ -380,15 +397,15 @@ test("a ticket lost to its bound takes no place in a pass's batch", async () => 
 
 test("a verdict between two losses starts the count again", async () => {
   const { routed, execution } = await routedTicket("loss-count-broken");
-  const pool = await poolOf(routed);
-  const first = await claimed(routed, execution, pool);
+  const runner = await runnerOf(routed);
+  const first = await claimed(routed, execution, runner);
   await lostOnRunner(routed, first.bearer);
   assert.equal(await resumedByScheduler(routed), 1);
-  const failed = await claimed(routed, await newestAdmitted(routed), pool);
+  const failed = await claimed(routed, await newestAdmitted(routed), runner);
   await reported(routed, failed.attempt, "Fail");
   assert.equal(await resumedByScheduler(routed), 0);
   await resumedByPerson(routed, "loss-count-broken-member");
-  const lostAgain = await claimed(routed, await newestAdmitted(routed), pool);
+  const lostAgain = await claimed(routed, await newestAdmitted(routed), runner);
   await lostOnRunner(routed, lostAgain.bearer);
   const lost = await readLoss(routed);
   assert.deepEqual(
@@ -399,13 +416,13 @@ test("a verdict between two losses starts the count again", async () => {
   assert.equal(await schedulerAnswers(routed), 2);
 });
 
-test("a ticket read names the pool a job was lost on, its attempt and the error its worker kept", async () => {
+test("a ticket read names the member whose own runner a job was lost on, its attempt and the error its worker kept", async () => {
   const { routed, execution } = await routedTicket("loss-read");
-  const pool = await poolOf(routed);
-  const { attempt, bearer } = await claimed(routed, execution, pool);
+  const runner = await runnerOf(routed);
+  const { attempt, bearer } = await claimed(routed, execution, runner);
   await lostOnRunner(routed, bearer, 61);
   assert.deepEqual(await readLoss(routed), {
-    runner: { kind: "Pool", pool: poolName },
+    runner: { kind: "Personal", owner: runner.owner },
     execution,
     attempt: attempt.attempt,
     evidence: "RunFailed",
@@ -417,7 +434,7 @@ test("a ticket read names the pool a job was lost on, its attempt and the error 
   const { bearer: second } = await claimed(
     routed,
     await newestAdmitted(routed),
-    pool,
+    runner,
   );
   await lostOnRunner(routed, second);
   const lost = await readLoss(routed);
@@ -428,61 +445,10 @@ test("a ticket read names the pool a job was lost on, its attempt and the error 
   );
 });
 
-test("a ticket read names the member whose own runner a job was lost on", async () => {
-  const { routed, execution } = await routedTicket("loss-personal");
-  const { partition } = routed.project;
-  const owner: Principal = asPrincipal(
-    `https://issuer.invalid#member-${randomUUID()}`,
-  );
-  const principal = asPrincipal(
-    `https://issuer.invalid#personal-${randomUUID()}`,
-  );
-  const key = { tenant: partition.tenant, owner };
-  const personal = postgresPersonalRunnerRegistry(apiPool);
-  assert.equal(
-    await personal.register({
-      ...key,
-      capabilities: ["Platform:Linux:Amd64"],
-      clientId: `chuggy-personal-${randomUUID()}`,
-      principal,
-    }),
-    "Registered",
-  );
-  assert.equal(await personal.allow(key, partition.project), "Allowed");
-  await rig.harness.query(
-    `UPDATE execution SET owner=$4, owner_fallback='Strict'
-      WHERE tenant=$1 AND project=$2 AND execution=$3`,
-    [partition.tenant, partition.project, execution, owner],
-  );
-  await invokedAttempt(routed, execution);
-  const bearer = `bearer-${randomUUID()}`;
-  assert.notEqual(
-    await assignments.claimPersonal(
-      { ...key, principal },
-      {
-        leaseSecs: service.config.attemptLeaseSecs,
-        heldMax: 1,
-        memoryMibDefault: service.poolMemoryMib,
-      },
-      `assignment-${randomUUID()}`,
-      bearer,
-      [partition.project],
-    ),
-    undefined,
-  );
-  await lostOnRunner(routed, bearer);
-  assert.deepEqual((await readLoss(routed))?.runner, {
-    kind: "Personal",
-    owner,
-  });
-  await resumedByScheduler(routed);
-  assert.equal((await standing(routed))?.["phase"], "Work");
-});
-
 test("work whose run ended itself out of turns is the run's own outcome, and is never resumed", async () => {
   const { routed, execution } = await routedTicket("loss-turns");
-  const pool = await poolOf(routed);
-  const { bearer } = await claimed(routed, execution, pool);
+  const runner = await runnerOf(routed);
+  const { bearer } = await claimed(routed, execution, runner);
   await lostOnRunner(routed, bearer, undefined, "RunTurnsExhausted");
   assert.deepEqual(await standing(routed), workLost);
   assert.equal(await resumedByScheduler(routed), 0);
@@ -492,8 +458,8 @@ test("work whose run ended itself out of turns is the run's own outcome, and is 
 
 test("work a usage limit stopped says so rather than that its attempt ended", async () => {
   const { routed, execution } = await routedTicket("loss-rate-limited");
-  const pool = await poolOf(routed);
-  const { bearer } = await claimed(routed, execution, pool);
+  const runner = await runnerOf(routed);
+  const { bearer } = await claimed(routed, execution, runner);
   await lostOnRunner(routed, bearer, undefined, "RunRateLimited");
   assert.deepEqual(await standing(routed), workLost);
   assert.equal(
@@ -504,8 +470,8 @@ test("work a usage limit stopped says so rather than that its attempt ended", as
 
 test("work whose account ran out of credits says so, and is never resumed", async () => {
   const { routed, execution } = await routedTicket("loss-credits");
-  const pool = await poolOf(routed);
-  const { bearer } = await claimed(routed, execution, pool);
+  const runner = await runnerOf(routed);
+  const { bearer } = await claimed(routed, execution, runner);
   await lostOnRunner(routed, bearer, undefined, "RunCreditsExhausted");
   assert.deepEqual(await standing(routed), workLost);
   assert.equal(await resumedByScheduler(routed), 0);
@@ -517,8 +483,8 @@ test("work whose account ran out of credits says so, and is never resumed", asyn
 
 test("work its worker reported failed is never resumed, and its read names no runner", async () => {
   const { routed, execution } = await routedTicket("loss-reported-fail");
-  const pool = await poolOf(routed);
-  const { attempt } = await claimed(routed, execution, pool);
+  const runner = await runnerOf(routed);
+  const { attempt } = await claimed(routed, execution, runner);
   await reported(routed, attempt, "Fail");
   assert.deepEqual(await standing(routed), workLost);
   assert.deepEqual(await resumedAtDoor(routed), { resumed: "NotResumable" });
@@ -569,8 +535,8 @@ test("work lost in the cluster until its budget ran out is left for a person", a
 test("work whose push failed on its runner waits for a person and is never resumed, as does every other failed step", async () => {
   for (const step of runStepEvidences) {
     const { routed, execution } = await routedTicket(`step-${step}`);
-    const pool = await poolOf(routed);
-    const { attempt, bearer } = await claimed(routed, execution, pool);
+    const runner = await runnerOf(routed);
+    const { attempt, bearer } = await claimed(routed, execution, runner);
     await lostOnRunner(routed, bearer, 61, step);
     assert.deepEqual(await standing(routed), workLost, step);
     assert.equal(await resumedByScheduler(routed), 0, step);
@@ -608,8 +574,8 @@ test("an attempt keeps a credential not delivered only beside `RunCredentialAbse
     ["RunCredentialAbsent", undefined],
   ] as const) {
     const { routed, execution } = await routedTicket(`absent-${evidence}`);
-    const pool = await poolOf(routed);
-    const { bearer } = await claimed(routed, execution, pool);
+    const runner = await runnerOf(routed);
+    const { bearer } = await claimed(routed, execution, runner);
     await assert.rejects(
       postgresWorkerRunEnded(workerPool).end({
         secret: asAttemptCapabilitySecret(bearer),
@@ -636,8 +602,8 @@ test("an attempt keeps a credential not delivered only beside `RunCredentialAbse
 
 test("work whose lease lapsed on its runner is still resumed, as is work whose run failed", async () => {
   const { routed, execution } = await routedTicket("step-lease-lapsed");
-  const pool = await poolOf(routed);
-  await claimed(routed, execution, pool);
+  const runner = await runnerOf(routed);
+  await claimed(routed, execution, runner);
   await leaseLapsedOnRunner(routed, execution);
   assert.deepEqual(await standing(routed), workLost);
   assert.equal((await readLoss(routed))?.evidence, "LeaseExpired");
@@ -648,7 +614,11 @@ test("work whose lease lapsed on its runner is still resumed, as is work whose r
   );
   assert.equal(await resumedByScheduler(routed), 1);
   assert.equal((await standing(routed))?.["phase"], "Work");
-  const { bearer } = await claimed(routed, await newestAdmitted(routed), pool);
+  const { bearer } = await claimed(
+    routed,
+    await newestAdmitted(routed),
+    runner,
+  );
   await lostOnRunner(routed, bearer);
   assert.equal((await readLoss(routed))?.evidence, "RunFailed");
   assert.equal(await readFailed(routed), undefined);

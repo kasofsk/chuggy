@@ -31,6 +31,7 @@ import {
 } from "../app/core/setupText.ts";
 import {
   boxClaudeConfig,
+  boxApiKey,
   boxLogin,
   boxOwn,
   boxPools,
@@ -101,18 +102,8 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Again",
     ],
     [
-      "the site did not say of acme/widgets whether it lets your own runners take its work (Fault)",
-      1,
-      "Again",
-    ],
-    [
       "the site did not say of acme/widgets which runners of yours it knows (Cut)",
       1,
-      "Again",
-    ],
-    [
-      "the site does not show you acme/widgets or whether it lets your own runners take its work",
-      0,
       "Again",
     ],
     [
@@ -145,14 +136,7 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   ],
   ServeRefused: [
     ["the site did not give your runners acme/widgets (Rejected)", 1, "Again"],
-    [
-      "the site did not let your own runners take your work in acme/widgets (Fault)",
-      1,
-      "Again",
-    ],
-  ],
-  NotAdmin: [
-    ["the site says you are not an admin of acme/widgets", 0, "Again"],
+    ["the site did not give your runners acme/widgets (Fault)", 1, "Again"],
   ],
   Serviceless: [
     [
@@ -192,6 +176,20 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       `${boxSettings} is there and does not read as the runner's settings`,
       1,
       "Again",
+    ],
+  ],
+  CredentialRefused: [
+    ["the file named was not taken: nothing is there", 0, "Status"],
+    ["the file named was not taken: it is empty", 0, "Status"],
+    [
+      "the file named was not taken: it holds no token `claude setup-token` made",
+      0,
+      "Status",
+    ],
+    [
+      "the file named was not taken: it holds no Anthropic API key",
+      0,
+      "Status",
     ],
   ],
   LoginMissing: [
@@ -634,17 +632,16 @@ test("only a stop made before the run's first act says nothing was changed, whic
       )
       .toSorted();
   expect([...new Set(saying("nothing was changed"))]).toEqual([
+    "CredentialRefused",
     "DockerBarred",
     "Engineless",
     "LoginMissing",
-    "NotAdmin",
     "Npmless",
     "Rebuild",
     "Rosettaless",
     "Serviceless",
     "SettingsUnread",
     "Unpackaged",
-    "fallback Refused",
     "threads Refused",
     "work Refused",
   ]);
@@ -652,13 +649,7 @@ test("only a stop made before the run's first act says nothing was changed, whic
     saying(
       "so I cannot say the runner is set up. What was done before stays done.",
     ),
-  ).toEqual([
-    "chat Fault",
-    "fallback Fault",
-    "permit Fault",
-    "personal Cut",
-    "personal Refused",
-  ]);
+  ).toEqual(["chat Fault", "permit Fault", "personal Cut", "personal Refused"]);
   const unread = runnerStops.Unread.map(
     (stop) => setupRunnerStopSaid(stop, widgets).tell,
   );
@@ -809,11 +800,9 @@ test("each thing a run found is said as found and each thing it did as did, in w
   expect(lines("PersonalGone")).toEqual([
     `found: ${rosterPersonal} registered this machine as your runner, and the site no longer knows that registration`,
   ]);
-  expect([...lines("Given"), ...lines("Allowed")]).toEqual([
+  expect(lines("Given")).toEqual([
     "found: your runners are given acme/widgets",
     "did: gave your runners acme/widgets",
-    "found: acme/widgets lets your own runners take your work in it",
-    "did: set acme/widgets to let your own runners take your work in it while one is online, and a shared runner while none is",
   ]);
   expect(lines("Checked")).toEqual([
     "found: the runner's own check passed",
@@ -847,11 +836,11 @@ test("each kind of note is said as found, as did or as a tell, by its kind alone
     Settings: ["found"],
     SettingsWritten: ["did"],
     Login: ["found"],
+    CredentialPlaced: ["did"],
     Personal: ["found"],
     PersonalGone: ["found"],
     PersonalRegistered: ["did"],
     Given: ["found", "did"],
-    Allowed: ["found", "did"],
     Checked: ["found"],
     Unit: ["found"],
     UnitWritten: ["did"],
@@ -901,7 +890,7 @@ test("the person's chat host is said as theirs, apart from the project's runner:
     .filter((note) => /^(?:Chat|ProjectLive|Hosted)/u.test(note.note))
     .map((note) => setupRunnerNoteSaid(note, widgets).join(": "));
   expect(lines).toEqual([
-    `did: wrote the size of your chat host into ${boxSettings}, every other setting kept as it was: the most chats it runs at once is 3, at 2 GiB each, 6 GiB in all`,
+    `did: wrote the size of your chat host into ${boxSettings}, every other setting kept as it was: the most chats it runs at once is 4, at 1 GiB each, 4 GiB in all`,
     "found: the site sees your runner live, taking your work in acme/widgets",
     "found: hosted runs take the work of acme/widgets, so that work needs no runner",
     `found: this machine is registered as your chat host, in ${rosterChat}`,
@@ -1043,12 +1032,13 @@ test("the package refusing the Node it was run under is a refusal that lasts, wh
     when: "once the person says node on this machine is newer",
     again: "Again",
   };
+  const registered: SetupRunnerStop = {
+    stop: "Act",
+    act: "Register",
+    failed: { how: "ExitUnquoted", exit: 1, refusal: "needs Node" },
+  };
   const stops: readonly SetupRunnerStop[] = [
-    {
-      stop: "Act",
-      act: "Register",
-      failed: { how: "ExitUnquoted", exit: 1, refusal: "needs Node" },
-    },
+    registered,
     {
       stop: "Act",
       act: "Check",
@@ -1065,9 +1055,7 @@ test("the package refusing the Node it was run under is a refusal that lasts, wh
     expect(setupRunnerStopSaid(stop, widgets), stop.stop).toMatchObject(
       lasting,
     );
-  expect(
-    setupRunnerStopSaid(stops[0] ?? { stop: "NotAdmin" }, widgets).found,
-  ).toBe(
+  expect(setupRunnerStopSaid(registered, widgets).found).toBe(
     "registering this machine ended with exit 1: the runner package needs a newer Node than the node this machine's PATH finds first",
   );
 });
@@ -1233,6 +1221,7 @@ test("on a Mac, an engine that did not answer is told to start Colima, the end s
       {
         settings: boxSettings,
         login: boxLogin,
+        apiKey: boxApiKey,
         pools: boxPools,
         units: "/Users/me/Library/LaunchAgents",
         own: boxOwn,

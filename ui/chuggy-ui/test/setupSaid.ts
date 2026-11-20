@@ -12,6 +12,7 @@ import { copyTextEn } from "../app/copy/catalog.ts";
 import { copyOrDataText } from "../app/core/copy.ts";
 import type { CopyArgument, CopyOrData } from "../app/core/copy.ts";
 import type {
+  SetupMore,
   SetupOfferCommand,
   SetupNext,
   SetupStepSaid,
@@ -44,6 +45,16 @@ export function saidStep(step: SetupStepSaid): Said {
 /** A next thing as the program words it, each descriptor in it formatted. */
 export type SaidThing =
   | { readonly thing: "Done"; readonly tell: string }
+  | {
+      readonly thing: "More";
+      readonly more: SetupMore;
+      readonly tell: string;
+      readonly directory?: string;
+      readonly image?: string;
+      readonly page?: string;
+      readonly workspace: string;
+      readonly project: string;
+    }
   | { readonly thing: "Hand"; readonly tell: string; readonly when: string }
   | {
       readonly thing: "Offer";
@@ -54,6 +65,7 @@ export type SaidThing =
       readonly project: string | undefined;
       readonly chatHost?: boolean;
       readonly elsewhere?: string;
+      readonly credential?: boolean;
     }
   | {
       readonly thing: "Offer";
@@ -94,15 +106,16 @@ export type SaidThing =
       readonly project: string;
     }
   | {
-      readonly thing: "NorthStar";
+      readonly thing: "Configure";
       readonly tell: string;
-      readonly draft: string;
       readonly workspace: string;
       readonly project: string;
     }
   | {
-      readonly thing: "Configure";
+      readonly thing: "Usage";
       readonly tell: string;
+      readonly over: Extract<SetupThing, { readonly thing: "Usage" }>["over"];
+      readonly then: "Status" | "Watch";
       readonly workspace: string;
       readonly project: string;
     }
@@ -115,8 +128,10 @@ export type SaidThing =
 export function saidThing(thing: SetupThing): SaidThing {
   switch (thing.thing) {
     case "Done":
+    case "More":
     case "Configure":
     case "First":
+    case "Usage":
       return { ...thing, tell: copyTextEn(thing.tell) };
     case "Hand":
     case "Offer":
@@ -134,12 +149,6 @@ export function saidThing(thing: SetupThing): SaidThing {
     case "Name":
     case "Brief":
       return { ...thing, ask: copyTextEn(thing.ask) };
-    case "NorthStar":
-      return {
-        ...thing,
-        tell: copyTextEn(thing.tell),
-        draft: copyTextEn(thing.draft),
-      };
     case "Failed":
       return { ...thing, found: copyTextEn(thing.found) };
   }
@@ -155,8 +164,6 @@ export function saidNext(next: SetupNext): {
 export const saidTodo: Said = ["todo", ""];
 export const saidAcme: Said = ["done", "acme"];
 export const saidWidgets: Said = ["done", "acme/widgets"];
-/** The North Star step where the project's settings carry one. */
-export const saidStarred: Said = ["done", "the project has a North Star"];
 export const saidOrg: Said = ["done", "acme-org"];
 /** The MCP step where the agent's configuration here names chuggy's server for the project. */
 export const saidServed: Said = [
@@ -173,7 +180,6 @@ export const saidLive: Said = ["done", "live"];
 export const saidReady = [
   saidAcme,
   saidWidgets,
-  saidStarred,
   saidServed,
   saidGranted,
   saidRepository,
@@ -196,7 +202,6 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
     saidTodo,
     saidTodo,
     saidTodo,
-    saidTodo,
   ],
   Workspace: [
     saidAcme,
@@ -206,12 +211,10 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
     saidTodo,
     saidTodo,
     saidTodo,
-    saidTodo,
   ],
   Project: [
     saidAcme,
     saidWidgets,
-    saidStarred,
     saidServed,
     saidTodo,
     saidTodo,
@@ -221,7 +224,6 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Portal: [
     saidAcme,
     saidWidgets,
-    saidStarred,
     saidServed,
     ["waiting", "acme-org has the portal app, not the worker app"],
     saidTodo,
@@ -231,7 +233,6 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Apps: [
     saidAcme,
     saidWidgets,
-    saidStarred,
     saidServed,
     saidOrg,
     saidTodo,
@@ -241,7 +242,6 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Added: [
     saidAcme,
     saidWidgets,
-    saidStarred,
     saidServed,
     saidGranted,
     ["waiting", "acme-org/widgets is added, its configuration not read yet"],
@@ -251,7 +251,6 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Configured: [
     saidAcme,
     saidWidgets,
-    saidStarred,
     saidServed,
     saidGranted,
     saidRepository,
@@ -261,7 +260,6 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Offline: [
     saidAcme,
     saidWidgets,
-    saidStarred,
     saidServed,
     saidGranted,
     saidRepository,
@@ -301,40 +299,34 @@ export const saidLanding: readonly Said[] = [
 ];
 
 /** The step each read leaves unread, and what the read is called there. The
- * owner fallback's leaves one unread only where the project has no pool, and
- * the person's personal runners' only where it also names a fallback, so
- * their cases are their own; a ticket's executions leave none unread. */
+ * person's personal runners' leaves one unread only where the project's work
+ * goes to runners, so its case is its own; a ticket's executions leave none
+ * unread. */
 export const saidUnread: Readonly<
   Record<
-    Exclude<
-      SetupSiteRead,
-      "workspaces" | "fallback" | "personal" | "executions"
-    >,
+    Exclude<SetupSiteRead, "workspaces" | "personal" | "executions">,
     readonly [number, string]
   >
 > = {
   inventory: [1, "your projects were"],
   settings: [1, "acme/widgets: its chat settings were"],
-  installations: [4, "its GitHub accounts were"],
-  portalGrant: [4, "what the portal app is granted on GitHub was"],
-  workerGrant: [4, "what the worker app is granted on GitHub was"],
-  repositories: [5, "its repositories were"],
-  work: [6, "where its work runs was"],
-  placement: [6, "its runners were"],
-  landed: [7, "its tickets were"],
-  moving: [7, "its tickets were"],
-  drafts: [7, "its drafts were"],
-  landings: [7, "a ticket's finalizations were"],
+  installations: [3, "its GitHub accounts were"],
+  portalGrant: [3, "what the portal app is granted on GitHub was"],
+  workerGrant: [3, "what the worker app is granted on GitHub was"],
+  repositories: [4, "its repositories were"],
+  work: [5, "where its work runs was"],
+  placement: [5, "its runners were"],
+  landed: [6, "its tickets were"],
+  moving: [6, "its tickets were"],
+  drafts: [6, "its drafts were"],
+  landings: [6, "a ticket's finalizations were"],
 };
 
 /** Where the GitHub step is said, which the project's repositories leave unread as they do their own step: it is held to the account that owns one. */
-const saidGithubAt = 4;
+const saidGithubAt = 3;
 
 /** Where the MCP step is said, which is to do wherever no project is read. */
-const saidMcpAt = 3;
-
-/** Where the North Star step is said, which the project's settings leave unread as they do the project step. */
-const saidNorthStarAt = 2;
+const saidMcpAt = 2;
 
 /** How each way a read fails is said. */
 export const saidFates: Readonly<
@@ -364,18 +356,12 @@ export function saidFated(
   const said = [...saidLanding];
   said[at] = ["unread", `${subject} ${saidFates[fate]}`];
   if (read === "repositories") said[saidGithubAt] = said[at] ?? saidTodo;
-  if (read === "settings")
-    said[saidNorthStarAt] = [
-      "unread",
-      `its chat settings were ${saidFates[fate]}`,
-    ];
   if (read === "inventory")
     for (const [after, hung] of [
-      [saidNorthStarAt, "its chat settings were"],
       [saidGithubAt, "its repositories were"],
-      [5, "its repositories were"],
-      [6, "where its work runs was"],
-      [7, "its tickets were"],
+      [4, "its repositories were"],
+      [5, "where its work runs was"],
+      [6, "its tickets were"],
     ] as const)
       said[after] = ["unread", `${hung} not read`];
   if (read === "inventory") said[saidMcpAt] = saidTodo;
@@ -405,7 +391,6 @@ export const saidMember: readonly Said[] = [
   ["waiting", "acme, where you are a member and not an admin"],
   ["todo", "no project of acme is shown to you"],
   saidTodo,
-  saidTodo,
   saidAccountsUnshown,
   saidTodo,
   saidTodo,
@@ -423,10 +408,25 @@ export function saidViewerSite(): SetupSite {
 export const saidViewer: readonly Said[] = [
   ["waiting", "acme, where you see a project and are not an admin"],
   ["unread", "acme/widgets: its chat settings were not shown to you"],
-  ["unread", "its chat settings were not shown to you"],
   saidServed,
   saidAccountsUnshown,
   saidRepository,
   saidLive,
   ["done", "ticket 1 is done"],
 ];
+
+/** Setup said to be done by `done`, with the three things offered after its last step. */
+export function saidMoreOffered(done: string): string {
+  return `${done} A few more things you might want: 1. Add more runners, on another machine. 2. Customize your default ticket configuration, including your own image for your tickets to run in. 3. Review what else you can configure. Want any of these?`;
+}
+
+/** The bare command run by `script` for acme/widgets with `--more` given `more`. */
+export function saidMoreCommand(script: string, more: string): string {
+  return `node ${script} --workspace acme --project widgets --more ${more}`;
+}
+
+/** The rule the three offers after setup's last step are put under, each and none naming the bare command run by `script`. */
+export function saidMoreRule(script: string): string {
+  const command = (more: string) => saidMoreCommand(script, more);
+  return `rule: Run ${command("runners")} where the person wants more runners, ${command("configuration")} where they want their configuration different, and ${command("review")} where they want to see what else they can set, one at a time in the order they named them. Run ${command("none")} where they want none of these.`;
+}

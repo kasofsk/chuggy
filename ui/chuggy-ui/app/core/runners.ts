@@ -86,7 +86,7 @@ export const runnerPackages = {
     program: "chuggy-linux",
     needs: { id: "runners-package-needs-linux" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.58.0/chuggy-linux-0.58.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.62.0/chuggy-linux-0.62.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
     /** `RestartSec=` of the unit `serviceUnit` writes, in chuggy-linux's `systemdUnit.mjs`. */
     restartIntervalSecs: 10,
@@ -102,7 +102,7 @@ export const runnerPackages = {
     program: "chuggy-darwin",
     needs: { id: "runners-package-needs-darwin" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.28.0/chuggy-darwin-0.28.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.32.0/chuggy-darwin-0.32.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
     /** `restartIntervalSecs`, the agent's `ThrottleInterval`, in chuggy-darwin's `launchAgent.mjs`. */
     restartIntervalSecs: 10,
@@ -216,8 +216,8 @@ export function runnerCapabilityLabel(capability: string): string {
     : platform[1].replaceAll(":", " ");
 }
 
-/** Whose a registered machine is: one of the project's pools, one of the reader's own runners, or the reader's chat host. */
-export type RunnerKind = "Pool" | "Personal" | "ChatHost";
+/** Whose a registration on a machine is: one of the reader's own runners, or the reader's chat host. */
+export type RunnerKind = "Personal" | "ChatHost";
 
 /** What a reader's choices ask, or why they cannot be asked. */
 export function runnerAskRead(
@@ -230,7 +230,7 @@ export function runnerAskRead(
   return { ask: { package: chosen, host, capabilities: read.capabilities } };
 }
 
-/** The command that registers the machine a package was installed on, with this console and a minted token, as a pool's, as the reader's own or as their chat host, declaring what the reader asked. */
+/** The command that registers the machine a package was installed on, with this console and a minted token, as the reader's own or as their chat host, declaring what the reader asked. */
 export function runnerRegisterCommand(
   installed: RunnerPackage,
   origin: string,

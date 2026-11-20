@@ -7,7 +7,6 @@
 
 import type { PersonalRunnerResponse } from "../../../src/contract/responses.ts";
 import type {
-  OwnerFallback,
   PlacementRoute,
   SessionRunnerStanding,
 } from "../../../src/contract/rosters.ts";
@@ -19,20 +18,15 @@ import { executionPlacementBody } from "./workRunnerFixture.ts";
 type WorkRunnerAnswer = () => Promise<Response>;
 
 export interface WorkRunnerReads {
-  /** The runners registered to the project, or what that read answers instead. */
-  readonly runners: SessionRunnerStanding | WorkRunnerAnswer;
   /** The reader's chat host, live where a case names none, which takes no work. */
   readonly mine?: SessionRunnerStanding;
-  /** The reader's own personal runner and the project it serves, none where a case names none. */
-  readonly personal?: {
-    readonly live: boolean;
-    readonly project: string;
-  };
+  /** The reader's own personal runner and the project it serves, none where a
+   * case names none, or what that read answers instead. */
+  readonly personal?:
+    { readonly live: boolean; readonly project: string } | WorkRunnerAnswer;
   /** Where the project's work runs, which is to runners where a case names
    * nowhere, or what that read answers instead. */
   readonly work?: PlacementRoute | WorkRunnerAnswer;
-  /** The project's owner fallback, absent where a case names none. */
-  readonly fallback?: OwnerFallback;
 }
 
 /** A read that fails, answered afresh for each request. */
@@ -40,9 +34,10 @@ export function workRunnerUnreadable(): Promise<Response> {
   return Promise.resolve(answer({ error: { code: "InternalError" } }, 500));
 }
 
-function personalRunnerBody(
-  personal: NonNullable<WorkRunnerReads["personal"]>,
-): PersonalRunnerResponse {
+function personalRunnerBody(personal: {
+  readonly live: boolean;
+  readonly project: string;
+}): PersonalRunnerResponse {
   return {
     runners: [
       {
@@ -70,35 +65,31 @@ function personalRunnerBody(
 export function workRunnerOver(
   reads: WorkRunnerReads,
 ): (served: typeof fetch) => typeof fetch {
-  const runners = reads.runners;
+  const personal = reads.personal;
   const work = reads.work ?? "Pool";
   return (served) =>
     ((url: string, init?: RequestInit) => {
       if (url.endsWith("/session-placement"))
-        return typeof runners === "function"
-          ? runners()
-          : Promise.resolve(
-              answer(
-                sessionPlacementBody({
-                  project: runners,
-                  ...(reads.mine === undefined ? {} : { mine: reads.mine }),
-                }),
-              ),
-            );
+        return Promise.resolve(
+          answer(
+            sessionPlacementBody({
+              project: "Unregistered",
+              ...(reads.mine === undefined ? {} : { mine: reads.mine }),
+            }),
+          ),
+        );
       if (url.endsWith("/execution-placement"))
         return typeof work === "function"
           ? work()
           : Promise.resolve(answer(executionPlacementBody(work)));
       if (url.endsWith("/personal-runner"))
-        return Promise.resolve(
-          reads.personal === undefined
-            ? answer({ error: { code: "NotFound" } }, 404)
-            : answer(personalRunnerBody(reads.personal)),
-        );
-      if (url.endsWith("/owner-fallback"))
-        return Promise.resolve(
-          answer({ fallback: reads.fallback, administers: false }),
-        );
+        return typeof personal === "function"
+          ? personal()
+          : Promise.resolve(
+              personal === undefined
+                ? answer({ error: { code: "NotFound" } }, 404)
+                : answer(personalRunnerBody(personal)),
+            );
       return served(url, init);
     }) as typeof fetch;
 }

@@ -107,6 +107,9 @@ export interface ConsoleWrite<V, T> {
    * what it changed says nothing more of it, and a check made before sending
    * is no write, so neither can toast. */
   readonly landedUnseen?: (value: T, variables: V) => CopyOrData;
+  /** How long an answer is kept once no screen holds it; query-core's default
+   * where absent. */
+  readonly gcTime?: number;
 }
 
 export const consoleMutationDefaults = { retry: 0 } as const;

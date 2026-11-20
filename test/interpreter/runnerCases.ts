@@ -16,13 +16,9 @@
  * statement with no column for some term — the policy the registry does not
  * carry — can select the cases it can express rather than skip the table.
  *
- * A CASE IS ONE POOL BESIDE THE OTHERS REGISTERED WITH IT, since an owner's
- * fallback reads the owner's personal pools; the guard is asked of the case's
- * pool, and the outcome of all of them.
- *
  * AN EXECUTION'S AGENT IS CLAUDE unless a case names another or none, as an
  * execution's attempt runs one; no pool advertises its agents unless a case
- * says so, as a project's pool never does.
+ * says so.
  *
  * A CONTAINER MATCHES A CAPABILITY SUBSET VACUOUSLY, since it carries no
  * capabilities. So the table refuses a container to a pool that declares
@@ -33,7 +29,6 @@ import {
   workerPoolDemandRouted,
   workerPoolPolicyRegistered,
   type WorkerPoolDemand,
-  type WorkerPoolEnrolment,
   type WorkerPoolPlacement,
   type WorkerPoolPlacementOutcome,
   type WorkerPoolRunner,
@@ -47,7 +42,7 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 
-/** One case: a pool, the poll it is making if any, the pools registered beside it, an execution routed to pools, and what the model says of them. */
+/** One case: a pool, the poll it is making if any, an execution routed to pools, and what the model says of them. */
 export interface RunnerCase {
   readonly name: string;
   /** The run of `model/tests/runner_test.qnt` this restates, where it restates one. */
@@ -56,7 +51,6 @@ export interface RunnerCase {
   readonly placement: WorkerPoolPlacement;
   readonly pool: WorkerPoolRunner;
   readonly session: WorkerPoolSession | undefined;
-  readonly others: readonly WorkerPoolEnrolment[];
   readonly assignmentsBound: readonly string[];
   readonly canAssign: boolean;
   readonly placementOutcome: WorkerPoolPlacementOutcome;
@@ -72,26 +66,19 @@ export const runnerTerm = {
   waiting: "p.phase == Waiting",
   fresh: "not(s.assignments.keys().contains(aid))",
   route: "p.route == RegisteredRunner",
-  account: "r.class == Personal or r.account == e.account",
   enabled: "r.enabled",
   draining: "not(r.draining)",
   revoked: "not(r.revoked)",
-  personal: "r.class != Personal or p.personalRunnerAllowed",
-  ownerless: "r.class != Personal or p.ownerOf != 0",
-  ownerOf: "r.class != Personal or r.dedicatedOwner == p.ownerOf",
-  allowlist: "r.class != Personal or r.allowlist.contains(e.account)",
+  ownerless: "p.ownerOf != 0",
+  ownerOf: "r.owner == p.ownerOf",
+  allowlist: "r.allowlist.contains(e.account)",
   trust: "r.trust >= p.minimumTrust",
   secrets: "not(p.secretsRequired) or r.secretsAllowed",
   source: "not(p.sourceRequired) or r.sourceAllowed",
-  owner:
-    "p.dedicatedOwnerRequired == 0 or r.dedicatedOwner == p.dedicatedOwnerRequired",
   runner: "s.runner == r.id",
   generation: "s.generation == r.sessionGeneration",
   lease: "s.leaseOpen",
   slot: "s.slotsUsed < s.slotsOffered",
-  fallback:
-    "r.class == Personal or p.profile.ownerFallback == Preferred or ownerRunners(s, e, p).size() == 0",
-  live: "r.class == Personal or ownerRunners(s, e, p).forall(o => not(runnerIsLive(s, o)) or not(agentOffered(p, s.runners.get(o).retainedInventory)))",
   containerPlatform:
     "ContainerRequirement: i.platforms.contains({ operatingSystem: c.operatingSystem, architecture: c.architecture })",
   capabilityPlatform:
@@ -122,17 +109,19 @@ const container: ContainerExecutionRequirement = {
   image: `registry.invalid/worker@sha256:${"a".repeat(64)}`,
 };
 
+/** `owner`'s container, pinned the way every routed execution is. */
 const placement: WorkerPoolPlacement = {
   partition,
   status: "Launching",
   phase: "Waiting",
   requirement: container,
   route: "Pool",
-  demand: workerPoolDemandRouted,
+  demand: { ...workerPoolDemandRouted, ownerOf: owner },
   memoryMib: 4_096,
   agent: "Claude",
 };
 
+/** `owner`'s pool, registered allowlisting the case's partition. */
 const pool: WorkerPoolRunner = {
   partition,
   pool: "pool-one",
@@ -140,6 +129,8 @@ const pool: WorkerPoolRunner = {
   enabled: true,
   revoked: false,
   ...workerPoolPolicyRegistered,
+  owner,
+  allowlist: [partition],
   capabilities: ["Platform:Linux:Amd64", "Agent:Claude", "Agent:Codex"],
   memoryCeilingMib: undefined,
   agentsAdvertised: false,
@@ -154,13 +145,12 @@ const session: WorkerPoolSession = {
   heldMax: 1,
 };
 
-/** What every case is a variation on: a registered pool polling with room, and a container on a platform it declares, pinned the way every routed execution is. */
+/** What every case is a variation on: the owner's pool polling with room, and the owner's container on a platform it declares. */
 const assignable: Omit<RunnerCase, "name"> = {
   falsifies: [],
   placement,
   pool,
   session,
-  others: [],
   assignmentsBound: [],
   canAssign: true,
   placementOutcome: "Placeable",
@@ -183,122 +173,51 @@ function refused(
 }
 
 function demanding(demand: Partial<WorkerPoolDemand>): WorkerPoolPlacement {
-  return { ...placement, demand: { ...workerPoolDemandRouted, ...demand } };
+  return { ...placement, demand: { ...placement.demand, ...demand } };
 }
 
-/** A personal pool of `owner` allowlisting the case's partition. */
-const personal: WorkerPoolRunner = {
-  ...pool,
-  class: "Personal",
-  dedicatedOwner: owner,
-  allowlist: [partition],
-};
-
-/** An execution of `owner` that allows a personal pool. */
-const owned = demanding({ personalRunnerAllowed: true, ownerOf: owner });
-
-/** An execution of `owner` that allows a personal pool under a Strict fallback. */
-const ownedStrict = demanding({
-  personalRunnerAllowed: true,
-  ownerOf: owner,
-  ownerFallback: "Strict",
-});
-
-const ownersPoolPrincipal = asPrincipal("principal-owner-pool");
-
-const ownersPoolSession: WorkerPoolSession = {
-  ...session,
-  pool: "pool-owner",
-  principal: ownersPoolPrincipal,
-};
-
-/** `owner`'s personal pool registered beside `pool`, polling with room. */
-const ownersPool: WorkerPoolEnrolment = {
-  pool: { ...personal, pool: "pool-owner", principal: ownersPoolPrincipal },
-  session: ownersPoolSession,
-};
-
-/** `ownersPool` with its poll varied. */
-function ownersPoolPolling(
-  varied: Partial<WorkerPoolSession>,
-): WorkerPoolEnrolment {
-  return { ...ownersPool, session: { ...ownersPoolSession, ...varied } };
-}
-
-/** `ownersPool` with its policy or inventory varied. */
-function ownersPoolRegistered(
-  varied: Partial<WorkerPoolRunner>,
-): WorkerPoolEnrolment {
-  return { ...ownersPool, pool: { ...ownersPool.pool, ...varied } };
-}
-
-/** `owner`'s personal pool advertising `agents` as the ones it takes, beside its platform. */
+/** `owner`'s pool advertising `agents` as the ones it takes, beside its platform. */
 function advertising(agents: readonly string[]): WorkerPoolRunner {
   return {
-    ...personal,
+    ...pool,
     capabilities: ["Platform:Linux:Amd64", ...agents],
     agentsAdvertised: true,
-  };
-}
-
-/** `ownersPool` advertising `agents` as the ones it takes. */
-function ownersPoolAdvertising(agents: readonly string[]): WorkerPoolEnrolment {
-  return {
-    ...ownersPool,
-    pool: {
-      ...advertising(agents),
-      pool: "pool-owner",
-      principal: ownersPoolPrincipal,
-    },
   };
 }
 
 const assignedByAgent: readonly RunnerCase[] = [
   {
     ...assignable,
-    name: "a personal pool advertising Codex alone is assigned its owner's Codex execution",
+    name: "a pool advertising Codex alone is assigned its owner's Codex execution",
     model: "advertisingRunnerTakesOnlyTheAgentsItNamesTest",
     pool: advertising(["Agent:Codex"]),
-    placement: { ...owned, agent: "Codex" },
+    placement: { ...placement, agent: "Codex" },
   },
   {
     ...assignable,
-    name: "a personal pool advertising no agent is assigned its owner's execution running commands",
+    name: "a pool advertising no agent is assigned its owner's execution running commands",
     model: "advertisingRunnerTakesOnlyTheAgentsItNamesTest",
     pool: advertising([]),
-    placement: { ...owned, agent: undefined },
+    placement: { ...placement, agent: undefined },
   },
   {
     ...assignable,
-    name: "a personal pool advertising both agents is assigned its owner's Claude execution",
+    name: "a pool advertising both agents is assigned its owner's Claude execution",
     model: "advertisingRunnerTakesOnlyTheAgentsItNamesTest",
     pool: advertising(["Agent:Claude", "Agent:Codex"]),
-    placement: owned,
   },
   {
     ...assignable,
-    name: "a personal pool advertising both agents is assigned its owner's Codex execution",
+    name: "a pool advertising both agents is assigned its owner's Codex execution",
     model: "advertisingRunnerTakesOnlyTheAgentsItNamesTest",
     pool: advertising(["Agent:Claude", "Agent:Codex"]),
-    placement: { ...owned, agent: "Codex" },
+    placement: { ...placement, agent: "Codex" },
   },
   {
     ...assignable,
-    name: "a personal pool not advertising its agents is assigned its owner's Claude execution while it names Codex alone",
+    name: "a pool not advertising its agents is assigned its owner's Claude execution while it names Codex alone",
     model: "runnerNotAdvertisingAgentsTakesAnyAgentTest",
-    pool: {
-      ...personal,
-      capabilities: ["Platform:Linux:Amd64", "Agent:Codex"],
-    },
-    placement: owned,
-  },
-  {
-    ...assignable,
-    name: "a dedicated pool is assigned an owner's Claude execution while the owner's polling personal pool advertises Codex alone",
-    model:
-      "preferredFallbackTakesDedicatedWhileOwnerRunnerLeavesOutItsAgentTest",
-    others: [ownersPoolAdvertising(["Agent:Codex"])],
-    placement: owned,
+    pool: { ...pool, capabilities: ["Platform:Linux:Amd64", "Agent:Codex"] },
   },
 ];
 
@@ -349,34 +268,15 @@ const assigned: readonly RunnerCase[] = [
   },
   {
     ...assignable,
-    name: "a personal pool is assigned its owner's execution in a partition it allowlists",
+    name: "a pool is assigned its owner's execution in one of the partitions it allowlists",
     model: "personalRunnerTakesItsOwnersAllowlistedExecutionTest",
-    pool: personal,
-    placement: owned,
+    pool: { ...pool, allowlist: [elsewhere, partition] },
   },
   {
     ...assignable,
-    name: "a personal pool registered in another partition is assigned its owner's execution in one it allowlists",
-    model: "personalRunnerServesAllowlistedAccountNotItsOwnTest",
-    pool: { ...personal, partition: elsewhere },
+    name: "a pool registered in another partition is assigned its owner's execution in one it allowlists",
+    pool: { ...pool, partition: elsewhere },
     session: { ...session, partition: elsewhere },
-    placement: owned,
-  },
-  {
-    ...assignable,
-    name: "a shared pool is assigned what a dedicated one is",
-    pool: { ...pool, class: "Shared" },
-  },
-  {
-    ...assignable,
-    name: "a pool dedicated to the owner an execution requires is assigned it",
-    pool: { ...pool, dedicatedOwner: owner },
-    placement: demanding({ dedicatedOwnerRequired: owner }),
-  },
-  {
-    ...assignable,
-    name: "a pool dedicated to an owner is assigned what requires none",
-    pool: { ...pool, dedicatedOwner: owner },
   },
   {
     ...assignable,
@@ -394,76 +294,6 @@ const assigned: readonly RunnerCase[] = [
     name: "a pool not allowed source is assigned what requires none",
     pool: { ...pool, sourceAllowed: false },
     placement: demanding({ sourceRequired: false }),
-  },
-  {
-    ...assignable,
-    name: "a personal pool is assigned its owner's execution beside a dedicated pool that defers to it",
-    model: "preferredFallbackWaitsForLiveOwnerRunnerTest",
-    pool: ownersPool.pool,
-    session: ownersPool.session,
-    others: [{ pool, session }],
-    placement: owned,
-  },
-  {
-    ...assignable,
-    name: "a dedicated pool is assigned an owner's execution while the owner's personal pool makes no live poll",
-    model: "preferredFallbackTakesDedicatedWhileOwnerRunnerIsAbsentTest",
-    others: [ownersPoolPolling({ leaseOpen: false })],
-    placement: owned,
-  },
-  {
-    ...assignable,
-    name: "a dedicated pool is assigned a strict owner's execution while the owner has no personal pool allowlisting its partition",
-    model: "ownerWithoutConfiguredRunnerFollowsDedicatedRouteTest",
-    others: [ownersPoolRegistered({ allowlist: [elsewhere] })],
-    placement: ownedStrict,
-  },
-  {
-    ...assignable,
-    name: "a dedicated pool is assigned a strict owner's execution that allows no personal pool",
-    model: "ownerWithoutConfiguredRunnerFollowsDedicatedRouteTest",
-    others: [ownersPool],
-    placement: {
-      ...ownedStrict,
-      demand: { ...ownedStrict.demand, personalRunnerAllowed: false },
-    },
-  },
-  {
-    ...assignable,
-    name: "a dedicated pool is assigned a strict execution owned by nobody beside a personal pool owning nothing",
-    model: "ownerWithoutConfiguredRunnerFollowsDedicatedRouteTest",
-    others: [ownersPoolRegistered({ dedicatedOwner: undefined })],
-    placement: {
-      ...ownedStrict,
-      demand: { ...ownedStrict.demand, ownerOf: undefined },
-    },
-  },
-  {
-    ...assignable,
-    name: "a dedicated pool is assigned a strict owner's execution that the owner's polling personal pool cannot run",
-    model: "strictFallbackOwnerRunnerUnableLeavesDedicatedRouteTest",
-    others: [ownersPoolRegistered({ capabilities: ["Platform:Linux:Arm64"] })],
-    placement: ownedStrict,
-  },
-  {
-    ...assignable,
-    name: "a dedicated pool is assigned a strict owner's execution that the owner's polling personal pool is too small for",
-    model: "strictFallbackOwnerRunnerTooSmallLeavesDedicatedRouteTest",
-    others: [ownersPoolRegistered({ memoryCeilingMib: 2_048 })],
-    placement: ownedStrict,
-  },
-  {
-    ...assignable,
-    name: "a dedicated pool is assigned an owner's execution while the owner's personal pool polls draining",
-    model: "preferredFallbackTakesDedicatedWhileOwnerRunnerDrainsTest",
-    others: [ownersPoolRegistered({ draining: true })],
-    placement: owned,
-  },
-  {
-    ...assignable,
-    name: "a dedicated pool is assigned a strict owner's execution while the owner's personal pool is revoked",
-    others: [ownersPoolRegistered({ revoked: true })],
-    placement: ownedStrict,
   },
 ];
 
@@ -502,34 +332,7 @@ const refusedByPlacement: readonly RunnerCase[] = [
 
 const refusedByPolicy: readonly RunnerCase[] = [
   refused(
-    "a pool of another project is assigned nothing",
-    [runnerTerm.account],
-    "DefinitiveIncompatibility",
-    { pool: { ...pool, partition: elsewhere } },
-  ),
-  refused(
-    "a pool of another project allowlisting this one is assigned nothing, since only a personal pool reads its allowlist",
-    [runnerTerm.account],
-    "DefinitiveIncompatibility",
-    {
-      model: "dedicatedRunnerServesOnlyItsOwnAccountTest",
-      pool: { ...pool, partition: elsewhere, allowlist: [partition] },
-      session: { ...session, partition: elsewhere },
-    },
-  ),
-  refused(
-    "a pool of another tenant's project of the same name is assigned nothing",
-    [runnerTerm.account],
-    "DefinitiveIncompatibility",
-    {
-      pool: {
-        ...pool,
-        partition: { ...partition, tenant: asTenantId("tenant-two") },
-      },
-    },
-  ),
-  refused(
-    "a deregistered pool is assigned nothing",
+    "a deregistered runner is assigned nothing",
     [runnerTerm.enabled],
     "DefinitiveIncompatibility",
     { pool: { ...pool, enabled: false } },
@@ -550,48 +353,54 @@ const refusedByPolicy: readonly RunnerCase[] = [
     { pool: { ...pool, revoked: true } },
   ),
   refused(
-    "a personal pool registered as every pool is, owning nothing and allowlisting nothing, is assigned nothing",
-    [runnerTerm.personal, runnerTerm.ownerless, runnerTerm.allowlist],
+    "a pool registered as every pool is, owning nothing and allowlisting nothing, is assigned nothing",
+    [runnerTerm.ownerOf, runnerTerm.allowlist],
     "DefinitiveIncompatibility",
-    { pool: { ...pool, class: "Personal" } },
+    { pool: { ...pool, ...workerPoolPolicyRegistered } },
   ),
   refused(
-    "a personal pool is assigned nothing of its owner's that does not allow one",
-    [runnerTerm.personal],
-    "DefinitiveIncompatibility",
-    { pool: personal, placement: demanding({ ownerOf: owner }) },
-  ),
-  refused(
-    "a personal pool is assigned nothing of another owner's",
+    "a pool is assigned nothing of another owner's",
     [runnerTerm.ownerOf],
     "DefinitiveIncompatibility",
     {
       model: "personalRunnerRefusesAnotherOwnersExecutionTest",
-      pool: personal,
-      placement: demanding({
-        personalRunnerAllowed: true,
-        ownerOf: asPrincipal("principal-other"),
-      }),
+      placement: demanding({ ownerOf: asPrincipal("principal-other") }),
     },
   ),
   refused(
-    "a personal pool owning nothing is assigned nothing owned by nobody",
+    "a pool owning nothing is assigned nothing owned by nobody",
     [runnerTerm.ownerless],
     "DefinitiveIncompatibility",
     {
       model: "personalRunnerRefusesOwnerlessExecutionTest",
-      pool: { ...personal, dedicatedOwner: undefined },
-      placement: demanding({ personalRunnerAllowed: true }),
+      pool: { ...pool, owner: undefined },
+      placement: demanding({ ownerOf: undefined }),
     },
   ),
   refused(
-    "a personal pool is assigned nothing of its owner's in a partition it does not allowlist",
+    "a pool is assigned nothing owned by nobody",
+    [runnerTerm.ownerless, runnerTerm.ownerOf],
+    "DefinitiveIncompatibility",
+    { placement: demanding({ ownerOf: undefined }) },
+  ),
+  refused(
+    "a pool is assigned nothing of its owner's in a partition it does not allowlist",
     [runnerTerm.allowlist],
     "DefinitiveIncompatibility",
     {
       model: "personalRunnerRefusesAccountItDoesNotAllowlistTest",
-      pool: { ...personal, allowlist: [elsewhere] },
-      placement: owned,
+      pool: { ...pool, allowlist: [elsewhere] },
+    },
+  ),
+  refused(
+    "a pool allowlisting another tenant's project of the same name is assigned nothing",
+    [runnerTerm.allowlist],
+    "DefinitiveIncompatibility",
+    {
+      pool: {
+        ...pool,
+        allowlist: [{ ...partition, tenant: asTenantId("tenant-two") }],
+      },
     },
   ),
   refused(
@@ -621,113 +430,33 @@ const refusedByPolicy: readonly RunnerCase[] = [
     "DefinitiveIncompatibility",
     { pool: { ...pool, sourceAllowed: false } },
   ),
-  refused(
-    "a pool dedicated to nobody is assigned nothing that requires an owner",
-    [runnerTerm.owner],
-    "DefinitiveIncompatibility",
-    { placement: demanding({ dedicatedOwnerRequired: owner }) },
-  ),
-];
-
-const refusedByFallback: readonly RunnerCase[] = [
-  refused(
-    "a dedicated pool is assigned nothing of an owner's whose personal pool is polling",
-    [runnerTerm.live],
-    "Placeable",
-    {
-      model: "preferredFallbackWaitsForLiveOwnerRunnerTest",
-      others: [ownersPool],
-      placement: owned,
-    },
-  ),
-  refused(
-    "a dedicated pool waiting on an owner's personal pool that is polling without room leaves the execution unavailable",
-    [runnerTerm.live],
-    "Unavailable",
-    {
-      model: "preferredFallbackBusyOwnerRunnerIsUnavailableTest",
-      others: [ownersPoolPolling({ held: 1 })],
-      placement: owned,
-    },
-  ),
-  refused(
-    "a dedicated pool is assigned nothing of a strict owner's beside the owner's polling personal pool",
-    [runnerTerm.fallback, runnerTerm.live],
-    "Placeable",
-    {
-      model: "strictFallbackRefusesDedicatedWhileOwnerHasRunnerTest",
-      others: [ownersPool],
-      placement: ownedStrict,
-    },
-  ),
-  refused(
-    "a dedicated pool is assigned nothing of a strict owner's whose personal pool makes no live poll, which is unavailable",
-    [runnerTerm.fallback],
-    "Unavailable",
-    {
-      model: "strictFallbackRefusesDedicatedWhileOwnerHasRunnerTest",
-      others: [ownersPoolPolling({ leaseOpen: false })],
-      placement: ownedStrict,
-    },
-  ),
 ];
 
 const refusedByAgent: readonly RunnerCase[] = [
   refused(
-    "a personal pool advertising Codex alone is assigned nothing of its owner's Claude execution, which is unavailable",
+    "a pool advertising Codex alone is assigned nothing of its owner's Claude execution, which is unavailable",
     [runnerTerm.agent],
     "Unavailable",
     {
       model: "advertisingRunnerTakesOnlyTheAgentsItNamesTest",
       pool: advertising(["Agent:Codex"]),
-      placement: owned,
     },
   ),
   refused(
-    "a personal pool advertising no agent is assigned nothing of its owner's Codex execution",
+    "a pool advertising no agent is assigned nothing of its owner's Codex execution",
     [runnerTerm.agent],
     "Unavailable",
     {
       model: "advertisingRunnerTakesOnlyTheAgentsItNamesTest",
       pool: advertising([]),
-      placement: { ...owned, agent: "Codex" },
-    },
-  ),
-  refused(
-    "a dedicated pool is assigned nothing of an owner's whose polling personal pool advertises its agent again",
-    [runnerTerm.live],
-    "Placeable",
-    {
-      model:
-        "preferredFallbackTakesDedicatedWhileOwnerRunnerLeavesOutItsAgentTest",
-      others: [ownersPoolAdvertising(["Agent:Claude", "Agent:Codex"])],
-      placement: owned,
-    },
-  ),
-  refused(
-    "a dedicated pool is assigned nothing of an owner's running commands whose polling personal pool advertises no agent",
-    [runnerTerm.live],
-    "Placeable",
-    {
-      others: [ownersPoolAdvertising([])],
-      placement: { ...owned, agent: undefined },
-    },
-  ),
-  refused(
-    "a dedicated pool is assigned nothing of a strict owner's whose polling personal pool leaves out its agent, which is unavailable",
-    [runnerTerm.fallback],
-    "Unavailable",
-    {
-      model: "strictFallbackWaitsWhileOwnerRunnerLeavesOutItsAgentTest",
-      others: [ownersPoolAdvertising(["Agent:Codex"])],
-      placement: ownedStrict,
+      placement: { ...placement, agent: "Codex" },
     },
   ),
 ];
 
 const refusedBySession: readonly RunnerCase[] = [
   refused(
-    "a registered pool making no poll is unavailable",
+    "a registered runner making no poll is unavailable",
     [runnerTerm.session],
     "Unavailable",
     {
@@ -772,22 +501,6 @@ const refusedBySession: readonly RunnerCase[] = [
     [runnerTerm.slot],
     "Unavailable",
     { session: { ...session, held: 1 } },
-  ),
-  refused(
-    "a personal pool's poll under a principal registered over is stale",
-    [runnerTerm.generation],
-    "Unavailable",
-    {
-      pool: personal,
-      placement: owned,
-      session: { ...session, principal: asPrincipal("principal-zero") },
-    },
-  ),
-  refused(
-    "a personal pool polling with the plane's bound held has no slot",
-    [runnerTerm.slot],
-    "Unavailable",
-    { pool: personal, placement: owned, session: { ...session, held: 1 } },
   ),
 ];
 
@@ -877,15 +590,6 @@ const refusedByInventory: readonly RunnerCase[] = [
     },
   ),
   refused(
-    "a personal pool is assigned nothing of its owner's above its memory ceiling",
-    [runnerTerm.size],
-    "DefinitiveIncompatibility",
-    {
-      pool: { ...personal, memoryCeilingMib: 2_048 },
-      placement: owned,
-    },
-  ),
-  refused(
     "a pool must declare every capability a requirement names",
     [runnerTerm.capabilitySubset],
     "DefinitiveIncompatibility",
@@ -914,7 +618,6 @@ export const runnerCases: readonly RunnerCase[] = [
   ...assignedByAgent,
   ...refusedByPlacement,
   ...refusedByPolicy,
-  ...refusedByFallback,
   ...refusedBySession,
   ...refusedByInventory,
   ...refusedByAgent,

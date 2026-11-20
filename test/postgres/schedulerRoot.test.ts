@@ -99,22 +99,24 @@ function schedulerRootBindingProgram(partition: Partition): string {
   `;
 }
 
-/** The registry read a launch pass asks of work routed to pools, made by the composition root itself. */
-function schedulerRootPoolsProgram(partition: Partition): string {
+/** The registry read a launch pass asks of work routed to pools, made by the composition root itself: the personal runners of `owner`. */
+function schedulerRootPoolsProgram(
+  partition: Partition,
+  owner: string,
+): string {
   return `
     const roots = await import('./src/roots/controlPlane.ts');
     const pools = await import('./src/adapters/postgres/pool.ts');
     const ports = await import('./test/postgres/schedulerRootPorts.ts');
     const pool = pools.postgresPool(${JSON.stringify(schedulerRootUrl())});
     const service = roots.schedulerProcessRootService(pool, ports.schedulerRootService, ports.schedulerRootAccess);
-    const page = await service.workerPools
-      .registered(${JSON.stringify(partition)})
+    const runners = await service.workerPools
+      .personal(${JSON.stringify(partition)}, ${JSON.stringify(owner)})
       .finally(() => pool.end());
-    const [registered] = page.pools;
     const asked = await service.access
-      .authorize(registered.principal, registered.partition, 'Execute')
+      .authorize(${JSON.stringify(owner)}, ${JSON.stringify(partition)}, 'Read')
       .then(() => 'answered', (failure) => failure.name);
-    process.stdout.write(JSON.stringify({ page, asked }));
+    process.stdout.write(JSON.stringify({ runners, asked }));
   `;
 }
 
@@ -294,24 +296,29 @@ test("the scheduler root reads the binding its session pass places on", async ()
 
 /**
  * The same question of the registry, which is what a launch pass asks of work
- * routed to pools and what migration 021 granted the scheduler.
+ * routed to pools: the personal runners of the execution's owner.
  */
-test("the scheduler root reads the pools a project registered, and asks a Keto adapter rather than a stand-in about them", async () => {
+test("the scheduler root reads an owner's personal runners, and asks a Keto adapter rather than a stand-in about the owner", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "scheduler-root-pools",
   );
-  const principal = `https://issuer.invalid#scheduler-root-pool-${randomUUID()}`;
+  const owner = `https://issuer.invalid#scheduler-root-owner-${randomUUID()}`;
+  const principal = `https://issuer.invalid#scheduler-root-runner-${randomUUID()}`;
   await harness.query(
-    `INSERT INTO worker_pool(tenant,project,pool,capabilities,class,principal,client_id)
-     VALUES($1,$2,'root-pool',$3,'Dedicated',$4,$5)`,
+    `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id)
+     VALUES($1,$2,$3,$4,$5)`,
     [
       partition.tenant,
-      partition.project,
+      owner,
       ["Platform:Linux:Amd64"],
       principal,
-      `chuggy-pool-${randomUUID()}`,
+      `chuggy-personal-${randomUUID()}`,
     ],
+  );
+  await harness.query(
+    `INSERT INTO personal_runner_project(tenant,owner,project) VALUES($1,$2,$3)`,
+    [partition.tenant, owner, partition.project],
   );
 
   const result = await execute(
@@ -320,24 +327,20 @@ test("the scheduler root reads the pools a project registered, and asks a Keto a
       "--experimental-strip-types",
       "--input-type=module",
       "--eval",
-      schedulerRootPoolsProgram(partition),
+      schedulerRootPoolsProgram(partition, owner),
     ],
     { cwd: process.cwd() },
   );
 
   assert.deepEqual(JSON.parse(result.stdout), {
-    page: {
-      pools: [
-        {
-          partition,
-          pool: "root-pool",
-          capabilities: ["Platform:Linux:Amd64"],
-          class: "Dedicated",
-          principal,
-        },
-      ],
-      truncated: false,
-    },
+    runners: [
+      {
+        owner,
+        principal,
+        capabilities: ["Platform:Linux:Amd64"],
+        allowlist: [partition],
+      },
+    ],
     asked: "ProjectAccessUnavailable",
   });
 });

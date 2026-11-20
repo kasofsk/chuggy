@@ -11,7 +11,10 @@ import {
   workerHeldCredentialBundleSchema,
 } from "../../src/contract/workerPlane.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
-import { credentialResolver } from "../../src/interpreter/credentialIssuers.ts";
+import {
+  credentialResolver,
+  type CredentialRequester,
+} from "../../src/interpreter/credentialIssuers.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   heldCredentialIssuer,
@@ -127,7 +130,12 @@ test("a roster may hold a name that only contains the reserved prefix past its s
   );
 });
 
-const requester = { partition, ticket: asTicketId(1), task: asTaskId(2) };
+const requester: CredentialRequester = {
+  partition,
+  ticket: asTicketId(1),
+  task: asTaskId(2),
+  taskKind: "Work",
+};
 
 test("the file issuer serves a credential held for the requester's project as a bundle of its one file, read as it is asked", async () => {
   const files = new Map<string, string | undefined>([

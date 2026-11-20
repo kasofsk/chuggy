@@ -323,6 +323,19 @@ const repositoryMovedRoute = createRoute({
   },
 });
 
+const connectorsMovedRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/connectors",
+  beforeLoad: ({ params }) => {
+    redirect({
+      to: navMoved["/$tenant/$project/connectors"],
+      params,
+      replace: true,
+      throw: true,
+    });
+  },
+});
+
 const runnersMovedRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/runners",
@@ -534,6 +547,7 @@ const routeTree = rootRoute.addChildren([
     projectSettingsRoutes(partitionRoute),
     repositoriesMovedRoute,
     repositoryMovedRoute,
+    connectorsMovedRoute,
     runnersMovedRoute,
     threadRoute,
     ticketCreationRoute,

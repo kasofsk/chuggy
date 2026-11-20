@@ -4,11 +4,7 @@
 /** Each message's variables, by name. */
 export interface RunnersCopy {
   readonly "runners-title": Record<never, never>;
-  readonly "runners-pools-title": Record<never, never>;
-  readonly "runners-pools-about": Record<never, never>;
-  readonly "runners-pools-none": Record<never, never>;
   readonly "runners-col-runner": Record<never, never>;
-  readonly "runners-col-platforms": Record<never, never>;
   readonly "runners-col-version": Record<never, never>;
   readonly "runners-col-registered": Record<never, never>;
   readonly "runners-col-last-polled": Record<never, never>;
@@ -165,16 +161,6 @@ export interface RunnersCopy {
     readonly free: unknown;
     readonly needed: unknown;
   };
-  readonly "runners-wait-pools": Record<never, never>;
-  readonly "runners-fallback-title": Record<never, never>;
-  readonly "runners-fallback-about": Record<never, never>;
-  readonly "runners-fallback-none": Record<never, never>;
-  readonly "runners-fallback-strict": Record<never, never>;
-  readonly "runners-fallback-preferred": Record<never, never>;
-  readonly "runners-fallback-none-about": Record<never, never>;
-  readonly "runners-fallback-strict-about": Record<never, never>;
-  readonly "runners-fallback-preferred-about": Record<never, never>;
-  readonly "runners-fallback-saved": Record<never, never>;
   readonly "runners-placement-title": Record<never, never>;
   readonly "runners-placement-about": Record<never, never>;
   readonly "runners-placement-col-kind": Record<never, never>;

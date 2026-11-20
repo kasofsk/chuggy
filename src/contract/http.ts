@@ -479,9 +479,6 @@ export const projectRepositoriesAnsweredMax = 200;
 /** How many of a refused import's refusals its kept attempt holds, in the order they were found. */
 export const repositoryConfigurationImportRefusalsKeptMax = 5;
 
-/** How many registered pools one project's listing answers with, in name order. */
-export const workerPoolsAnsweredMax = 64;
-
 /** How many projects one member's personal runners may serve in a tenant, which their read answers whole. */
 export const personalRunnerProjectsMax = 64;
 
@@ -634,9 +631,11 @@ export const nativeHttpRoutes = {
   projectRepositoryLanding: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/landing`,
   projectRepositoryRetirement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/retirement`,
   projectRepositoryConfigurations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/configurations`,
+  connectors: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/connectors`,
+  connectorHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/connectors/history`,
+  connector: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/connectors/:name`,
   executionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/execution-placement`,
   sessionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/session-placement`,
-  ownerFallback: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/owner-fallback`,
   projectTheme: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance/theme`,
   projectThemeOverride: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance/override`,
   projectAppearance: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance`,
@@ -644,9 +643,8 @@ export const nativeHttpRoutes = {
   projectImage: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/appearance/images/:role`,
   hostedRuns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/hosted-runs`,
   abilities: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/abilities`,
-  workerPools: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pools`,
-  workerPoolRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pool-registration-tokens`,
-  workerPoolRegistrations: `${nativeHttpBasePath}/worker-pool-registrations`,
+  accessTokens: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/access-tokens`,
+  accessToken: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/access-tokens/:token`,
   personalRunnerRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/personal-runner-registration-tokens`,
   personalRunnerRegistrations: `${nativeHttpBasePath}/personal-runner-registrations`,
   personalRunnerPermit: `${nativeHttpBasePath}/tenants/:tenant/personal-runner-permit`,

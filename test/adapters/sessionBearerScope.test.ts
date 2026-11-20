@@ -25,7 +25,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
-import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
+import { threeBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import {
   sessionBearerAdmission,
   sessionBearerMethodClasses,
@@ -70,6 +70,7 @@ import {
 import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
 import { threadCapabilitiesDefault } from "../../src/interpreter/thread.ts";
 import { routerServed } from "./routerFixtures.ts";
+import { recordedPort, recordedPorts } from "./recordedPortsFixture.ts";
 import { unservedNativeWeb } from "./threadFixtures.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
@@ -110,30 +111,9 @@ const elsewhere: readonly Partition[] = [
 const sessionToken = `${sessionBearerPrefix}${randomUUID()}${randomUUID()}`;
 const oidcToken = "issued";
 
-/** A port no case writes, recording each call and failing it. */
-function recorded(reached: string[], port: string): never {
-  return new Proxy(
-    {},
-    {
-      get: (_target, method) => () => {
-        reached.push(`${port}.${String(method)}`);
-        return Promise.reject(new Error(`${port} is not served here`));
-      },
-    },
-  ) as never;
-}
-
-/** A project's themes and images, each recording every door. */
-function projectAppearanceRecorded(reached: string[]): never {
-  return {
-    themes: recorded(reached, "projectAppearance"),
-    images: recorded(reached, "projectImages"),
-  } as never;
-}
-
 /** A member's chat whose tenant answers `opens` as `granted` without counting as a port reached, recording every other door. */
 function memberChatRecorded(reached: string[], granted: boolean): never {
-  const doors: Record<string | symbol, unknown> = recorded(reached, "chat");
+  const doors: Record<string | symbol, unknown> = recordedPort(reached, "chat");
   return new Proxy(
     {},
     {
@@ -155,8 +135,8 @@ function scopedApp(
     : projectCapabilities,
 ) {
   return createNativeHttpApp(
-    web ?? recorded(reached, "web"),
-    twoBearerAuthentication(
+    web ?? recordedPort(reached, "web"),
+    threeBearerAuthentication(
       {
         authenticateBearer: (token) =>
           Promise.resolve(
@@ -180,38 +160,9 @@ function scopedApp(
               : undefined,
           ),
       },
+      { authenticate: () => Promise.resolve(undefined) },
     ),
-    recorded(reached, "readiness"),
-    recorded(reached, "installation"),
-    undefined,
-    recorded(reached, "events"),
-    recorded(reached, "selectorSettings"),
-    recorded(reached, "forgeCredentials"),
-    recorded(reached, "onboarding"),
-    recorded(reached, "workerPools"),
-    recorded(reached, "creation"),
-    recorded(reached, "placement"),
-    recorded(reached, "sessionPlacement"),
-    recorded(reached, "threadLive"),
-    recorded(reached, "actionReports"),
-    recorded(reached, "actionReach"),
-    recorded(reached, "landings"),
-    recorded(reached, "personalRunners"),
-    recorded(reached, "ownerFallback"),
-    recorded(reached, "threadLimits"),
-    memberChatRecorded(reached, granted),
-    recorded(reached, "inbox"),
-    recorded(reached, "agentAccounts"),
-    undefined,
-    recorded(reached, "landingQueues"),
-    {
-      projects: recorded(reached, "projectDeletion"),
-      tenants: recorded(reached, "tenantDeletion"),
-    },
-    recorded(reached, "takes"),
-    recorded(reached, "proposalMerges"),
-    recorded(reached, "appearance"),
-    projectAppearanceRecorded(reached),
+    ...recordedPorts(reached, memberChatRecorded(reached, granted)),
   );
 }
 
@@ -582,6 +533,46 @@ test("merge_pull_request's route is refused every project session bearer as out 
   }
 });
 
+/** Asserts each of `routes` is refused every project session bearer, of every kind and holding every capability its scope may, before any port. */
+async function refusedEverySessionBearer(
+  routes: readonly string[],
+): Promise<void> {
+  for (const route of routes)
+    assert.equal(sessionBearerMethodClasses.get(route), "Refused", route);
+  for (const kind of sessionKinds)
+    for (const route of routes) {
+      const reached: string[] = [];
+      await using app = scopedApp(
+        reached,
+        undefined,
+        kind,
+        "Project",
+        true,
+        projectCapabilities,
+      );
+      const answered = await app.inject(routeRequest(route, own, sessionToken));
+      assert.ok(scopeRefused(answered), `${kind} ${route}`);
+      assert.deepEqual(reached, [], `${kind} ${route}`);
+    }
+}
+
+test("a project's access token routes are refused every session bearer, of every kind and holding every capability its scope may, before any port", async () => {
+  await refusedEverySessionBearer([
+    `GET ${nativeHttpRoutes.accessTokens}`,
+    `POST ${nativeHttpRoutes.accessTokens}`,
+    `DELETE ${nativeHttpRoutes.accessToken}`,
+  ]);
+});
+
+test("a project's connector routes are refused every session bearer, of every kind and holding every capability its scope may, before any port", async () => {
+  await refusedEverySessionBearer([
+    `GET ${nativeHttpRoutes.connectors}`,
+    `GET ${nativeHttpRoutes.connectorHistory}`,
+    `PUT ${nativeHttpRoutes.connector}`,
+    `DELETE ${nativeHttpRoutes.connector}`,
+  ]);
+});
+
 test("no session capability admits a tool the person's own agent alone may call", () => {
   for (const capability of personalAgentCapabilities)
     for (const tool of chuggyToolCapabilities[capability])
@@ -928,7 +919,7 @@ function revokingWeb(authorized: string[], accepted: Submission[]) {
       authorizeTenant: () => Promise.resolve(undefined),
       authorizeSite: projectAccessSiteRefused,
     },
-    recorded([], "reads"),
+    recordedPort([], "reads"),
     {
       accept: (submission) => {
         accepted.push(submission);
@@ -948,8 +939,8 @@ function revokingWeb(authorized: string[], accepted: Submission[]) {
       cancel: () => Promise.resolve({ cancelled: "Unknown" }),
       operation: () => Promise.resolve(undefined),
     },
-    recorded([], "authoring"),
-    recorded([], "notifications"),
+    recordedPort([], "authoring"),
+    recordedPort([], "notifications"),
     openExecutionBacklogGuard,
   );
 }

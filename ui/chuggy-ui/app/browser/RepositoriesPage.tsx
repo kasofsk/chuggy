@@ -22,18 +22,14 @@
  * each returning to this page. A return from the forge that did not simply
  * connect says so in one line above them, until the person leaves.
  *
- * AN ADDRESS ASKING FOR CONNECT GITHUB loses the ask, in the entry it is in,
- * before anything presses, so neither the return to this page nor Back asks
- * again; `ui/chuggy-ui/app/core/projectRepositories.ts` names the value and
- * `ConnectGithub` decides whether the ask is pressed or waits for the person.
- *
  * THE PICKER HAS AN ADDRESS, this page's own at the anchor
- * `ui/chuggy-ui/app/core/projectRepositories.ts` names, and a grant made on
- * the forge from the picker returns to it: the page opens with the picker open
- * and its roster read, unless the return brought a word to read first. The
- * address loses the anchor, in the entry it is in, when the picker closes and
- * when a bind is accepted, so neither a reload nor Back opens the picker and
- * reads its roster again.
+ * `ui/chuggy-ui/app/core/projectRepositories.ts` names, with the repository
+ * it is on where `ui/chuggy-ui/app/core/repositoryConnect.ts` finds one, and
+ * an install made on the forge from the picker returns to it: the page opens
+ * with the picker open, unless the return brought a word and the address
+ * carries no repository. The address loses the anchor and the repository, in
+ * the entry it is in, when the picker closes and when a bind is accepted, so
+ * neither a reload nor Back opens the picker again.
  *
  * ADD IS THE STEP BEING TAKEN UNDER AN EMPTY ROSTER, where adding is the one
  * thing left to do, and opens the dialog the head's Add opens. The step says
@@ -45,7 +41,7 @@
  */
 
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -63,6 +59,7 @@ import {
 import type { ForgeReturnWord } from "../core/forgeReturn.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
+  repositoryAddable,
   repositoryAddClosedPath,
   repositoryAddHow,
   repositoryAddLeads,
@@ -73,8 +70,6 @@ import {
   repositoryStepCurrent,
   repositoryStepLabels,
   repositorySteps,
-  repositoriesConnectAsked,
-  repositoriesConnectDropped,
 } from "../core/projectRepositories.ts";
 import type {
   RepositoryOffersLine,
@@ -85,6 +80,12 @@ import {
   projectRepositoriesQuery,
   projectRepositoriesReachUnaskedQuery,
 } from "../core/projectQueries.ts";
+import {
+  repositoryConnectAskedOf,
+  repositoryConnectPath,
+  repositoryConnectUnasked,
+} from "../core/repositoryConnect.ts";
+import type { RepositoryConnectAsked } from "../core/repositoryConnect.ts";
 import { forgeInstallationsQuery } from "../core/tenantQueries.ts";
 import type { WorkRunner } from "../core/workRunner.ts";
 import { settingsRoutes } from "../core/settingsNav.ts";
@@ -244,7 +245,6 @@ function RepositoryStepAction(props: {
   readonly tenant: string;
   readonly step: RepositoryStep;
   readonly onAdd: () => void;
-  readonly connectAsked: boolean;
 }): ReactNode {
   const text = useCopyText();
   switch (props.step) {
@@ -252,9 +252,8 @@ function RepositoryStepAction(props: {
       return (
         <ConnectGithub
           tenant={props.tenant}
-          returnPath={repositoriesConnectDropped(currentPath())}
+          returnPath={currentPath()}
           variant="primary"
-          asked={props.connectAsked}
         />
       );
     case "InstallWorker":
@@ -285,7 +284,6 @@ function RepositoryStepsDrawn(props: {
   readonly current: RepositoryStep;
   readonly line: RepositoryOffersLine | undefined;
   readonly onAdd: () => void;
-  readonly connectAsked: boolean;
 }): ReactNode {
   const text = useCopyText();
   const at = repositorySteps.indexOf(props.current);
@@ -316,7 +314,6 @@ function RepositoryStepsDrawn(props: {
                 tenant={props.tenant}
                 step={step}
                 onAdd={props.onAdd}
-                connectAsked={props.connectAsked}
               />
             ) : null}
           </span>
@@ -333,7 +330,6 @@ function RepositoryOffers(props: {
   readonly line: RepositoryOffersLine | undefined;
   readonly current: RepositoryStep | undefined;
   readonly onAdd: () => void;
-  readonly connectAsked: boolean;
 }): ReactNode {
   const text = useCopyText();
   if (props.current !== undefined)
@@ -343,7 +339,6 @@ function RepositoryOffers(props: {
         current={props.current}
         line={props.line}
         onAdd={props.onAdd}
-        connectAsked={props.connectAsked}
       />
     );
   if (props.line === undefined) return null;
@@ -351,52 +346,44 @@ function RepositoryOffers(props: {
 }
 
 /**
- * Whether the address this page was drawn at asked for Connect GitHub, which
- * is told only once the address has lost the ask.
- */
-function useConnectAsked(): boolean {
-  const navigate = useNavigate();
-  const [arrived] = useState(() => repositoriesConnectAsked(currentPath()));
-  const [asked, setAsked] = useState(false);
-  const dropping = useRef(false);
-  useEffect(() => {
-    if (!arrived || dropping.current) return;
-    dropping.current = true;
-    void navigate({
-      href: repositoriesConnectDropped(currentPath()),
-      replace: true,
-      resetScroll: false,
-    }).then(() => {
-      setAsked(true);
-    });
-  }, [arrived, navigate]);
-  return asked;
-}
-
-/**
- * Whether the picker is open, which the address it was drawn at decides first.
- * A close, and a bind told through `bound`, take the picker's anchor off the
- * address in the entry it is in, where the address carries it.
+ * Whether the picker is open, and what the address it was drawn at asked of
+ * its first opening alone, which a close drops so a later opening chooses. A
+ * close, and a bind told through `bound`, take the picker's anchor and the
+ * repository it carried off the address in the entry it is in.
  */
 function usePicker(returned: ForgeReturnWord | undefined): {
   readonly open: boolean;
+  readonly asked: RepositoryConnectAsked;
   readonly opened: (open: boolean) => void;
   readonly bound: () => void;
 } {
   const navigate = useNavigate();
+  const [asked, setAsked] = useState(() =>
+    repositoryConnectAskedOf(currentPath()),
+  );
   const [open, setOpen] = useState(() =>
-    repositoryAddOpened(currentAnchor(), returned),
+    repositoryAddOpened(
+      currentAnchor(),
+      returned,
+      asked.repository !== undefined,
+    ),
   );
   const left = (): void => {
-    const path = repositoryAddClosedPath(currentPath(), currentAnchor());
+    const path = repositoryAddClosedPath(
+      repositoryConnectPath(currentPath(), repositoryConnectUnasked),
+      currentAnchor(),
+    );
     if (path !== undefined)
       void navigate({ href: path, replace: true, resetScroll: false });
   };
   return {
+    asked,
     open,
     opened: (next) => {
       setOpen(next);
-      if (!next) left();
+      if (next) return;
+      setAsked(repositoryConnectUnasked);
+      left();
     },
     bound: left,
   };
@@ -410,6 +397,7 @@ function RepositoriesSection(props: {
   readonly bindings: readonly ProjectRepositoryListedResponse[] | undefined;
   readonly reaches: BindingReaches | undefined;
   readonly line: RepositoryOffersLine | undefined;
+  readonly addable: boolean;
   readonly returned: ForgeReturnWord | undefined;
   readonly unready: ReactNode;
   readonly runner: WorkRunner;
@@ -419,7 +407,6 @@ function RepositoriesSection(props: {
     (binding) => binding.retiredAt === undefined,
   );
   const picker = usePicker(props.returned);
-  const connectAsked = useConnectAsked();
   const portal = forgePortalInstallations(props.installations);
   const current = repositoryStepCurrent(
     props.line,
@@ -434,7 +421,7 @@ function RepositoriesSection(props: {
     onPress: () => {
       picker.opened(true);
     },
-    disabled: portal.length === 0,
+    disabled: !props.addable,
   };
   return (
     <>
@@ -449,6 +436,9 @@ function RepositoriesSection(props: {
         workers={forgeWorkerInstallations(props.installations)}
         bound={bindings ?? []}
         runner={props.runner}
+        addable={props.addable}
+        asked={picker.asked}
+        returned={props.returned}
         open={picker.open}
         onOpenChange={picker.opened}
         onBound={picker.bound}
@@ -457,11 +447,8 @@ function RepositoriesSection(props: {
       <RepositoryOffers
         tenant={props.partition.tenant}
         line={props.line}
-        connectAsked={connectAsked}
         current={current}
-        onAdd={() => {
-          picker.opened(true);
-        }}
+        onAdd={add.onPress}
       />
       {props.unready}
       {bindings === undefined ? null : (
@@ -513,6 +500,7 @@ export function RepositoriesPage(): ReactNode {
             : undefined
         }
         line={repositoryOffersLine(accounts, apps)}
+        addable={repositoryAddable(accounts, apps)}
         returned={returned}
         unready={<PanelUnready state={bindings} />}
         runner={runner}

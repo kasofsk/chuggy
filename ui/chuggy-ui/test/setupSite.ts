@@ -15,18 +15,17 @@
  * case moves one read to another fate by naming it in `fates`.
  *
  * It also answers what `runner` asks: whether the caller administers a
- * project, the pools registered for it, and the mint of a registration token,
- * which only an administrator is answered and only while the project holds
- * fewer unredeemed tokens than its bound. A token is redeemed once, by whoever
- * holds it, for a pool's credentials; every token and every credential handed
- * out is kept, so a suite can search what a run printed for any of them. The
- * caller's chat host in a workspace is answered likewise: whether the
- * workspace lets them register one, the mint of a token for one, which only a
- * caller it lets is answered, and its redemption, which makes a new host
- * theirs in place of any they held. Where their chats in a project run on
- * runners, the session placement says their chat host as it stands. Their
- * personal runners in a workspace are held apart from it, with the projects
- * they serve, and are not found where they hold none.
+ * project, and for the caller's chat host and their personal runners in a
+ * workspace, whether the workspace lets them register one and the mint of a
+ * registration token for one, which only a caller it lets is answered and only
+ * while they hold fewer unredeemed tokens than its bound. A token is redeemed
+ * once, by whoever holds it; a chat host's redemption makes a new host theirs
+ * in place of any they held. Every token and every credential handed out is
+ * kept, so a suite can search what a run printed for any of them. Where their
+ * chats in a project run on runners, the session placement says their chat
+ * host as it stands, and no runner of the project's. Their personal runners in
+ * a workspace are held apart from the chat host, with the projects they serve,
+ * and are not found where they hold none.
  *
  * It binds a repository as the server does, only where a portal installation
  * of the workspace's lists it, writing the bootstrap a binding of a repository
@@ -39,10 +38,6 @@
  * and dispatched where the dispatch view lists it; every brief it was sent is
  * kept, so a suite can say what was filed. Each operation is decided as it is
  * submitted.
- *
- * It writes a project's settings as the server does: whole, under the
- * revision they were read at, a write the revision moved under answered with
- * the settings standing in its place.
  *
  * It imports a repository's configuration as the server does: from what was
  * pushed to the repository's default branch, judged by the contract's own
@@ -60,6 +55,8 @@ import {
 } from "../../../src/contract/repositoryConfigurationReadiness.ts";
 import type { RepositoryConfigurationReferenced } from "../../../src/contract/repositoryConfigurationReference.ts";
 import type {
+  AgentAccount,
+  AgentPause,
   DraftResponse,
   ExecutionPlacementResponse,
   ExecutionSummary,
@@ -75,14 +72,15 @@ import type {
 } from "../../../src/contract/responses.ts";
 import { bootstrapConfigurationRevisionPrefix } from "../../../src/contract/responses.ts";
 import type {
+  AccountAgent,
   ForgeAppName,
-  OwnerFallback,
   PersonalRunnerWait,
   PlacementRoute,
   ProposalMergeRefusal,
   SessionRunnerStanding,
 } from "../../../src/contract/rosters.ts";
 import {
+  accountAgents,
   proposalMergeForbiddenCode,
   proposalMergeRefusedCode,
 } from "../../../src/contract/rosters.ts";
@@ -120,29 +118,20 @@ export interface SetupSiteProject {
   readonly project: string;
   /** The page of the list of projects this one is answered on, the first being zero. */
   page: number;
-  /** Whether the caller is shown the project's settings. */
+  /** Whether the caller is shown the project's settings, and the overrides they hold. */
   settled: boolean;
-  /** The project's settings as they stand, by their revision, and how many writes the revision is moved under by someone else before one is taken. */
   overrides: SelectorProjectSettingsResponse["overrides"];
-  revision: number;
-  races: number;
   repositories: SetupSiteRepository[];
   /** Where the project's work runs, and where the caller's chats in it run. */
   work: PlacementRoute;
   threads: PlacementRoute;
-  runner: SessionRunnerStanding;
-  /** The owner fallback the project names, where it names one. */
-  fallback: OwnerFallback | undefined;
   /** Most lately moved first. */
   tickets: SetupSiteTicket[];
   drafts: number[];
   landings: Map<number, readonly TicketLandingResponse[]>;
   executions: Map<number, readonly ExecutionSummary[]>;
-  /** Whether the caller administers the project, which its abilities read says and the mint goes by. */
+  /** Whether the caller administers the project, which its abilities read says. */
   administer: boolean;
-  /** The pools registered for the project, by name, and the registration tokens minted for it that nobody has redeemed. */
-  pools: string[];
-  tokens: string[];
   /** The names a repository holding its own configuration declares, each ready at the one commit imported. */
   declared: string[];
   /** Every draft created, by its ticket, with the body it was created from. */
@@ -165,7 +154,6 @@ export type SetupSiteRead =
   | "repositories"
   | "work"
   | "placement"
-  | "fallback"
   | "personal"
   | "landed"
   | "moving"
@@ -177,12 +165,10 @@ export type SetupSiteRead =
 export const setupSiteMember =
   "20:https://auth.example0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f";
 
-/** What only `runner`, `bind`, `serve`, `ticket` or `north-star` asks, which a case moves likewise; `mint`, `chatMint`, `bind`, `serve`, `allow`, `file` and `star` are writes, `file` the draft's creation, `serve` the project given the caller's runners, `allow` the owner fallback named and `star` the project's settings written. */
+/** What only `runner`, `bind`, `serve`, `ticket` or `usage` asks, or the checklist before the first ticket, which a case moves likewise; `mint`, `chatMint`, `bind`, `serve`, `file` and `raise` are writes, `file` the draft's creation, `serve` the project given the caller's runners, `usage` the read of the caller's agent accounts and `raise` the write of their settings. */
 export type SetupSiteRunnerAsk =
   | "abilities"
   | "serve"
-  | "allow"
-  | "pools"
   | "mint"
   | "permit"
   | "chat"
@@ -190,7 +176,8 @@ export type SetupSiteRunnerAsk =
   | "bind"
   | "configurations"
   | "file"
-  | "star";
+  | "usage"
+  | "raise";
 
 /** The caller's chat host in a workspace: the id it is held by, and whether it has polled lately, which is what the site sees as live. */
 export interface SetupSiteChatHost {
@@ -245,6 +232,11 @@ export interface SetupSite {
   /** How the site meets a merge of a ticket's pull request, which it merges unless a case says otherwise, and the import that merge brings on while it is still to finish. */
   merging?: SetupSiteMerging;
   importing?: SetupSiteImporting | undefined;
+  /** The caller's own agent accounts, in roster order, and each settings write they were sent, by agent. */
+  readonly accounts: AgentAccount[];
+  readonly settingsWritten: (Pick<AgentAccount, "agent" | "settings"> & {
+    readonly body: unknown;
+  })[];
 }
 
 /** How a merge is met: merged, its import finishing as `outcome` after the project's repositories are read `reads` times, or refused for a reason, or refused to a caller without the permit. */
@@ -291,21 +283,15 @@ export function setupSiteProject(
     project,
     page: 0,
     settled: true,
-    overrides: { northStar: setupSiteNorthStar },
-    revision: 1,
-    races: 0,
+    overrides: {},
     repositories: [],
     work: "Pool",
     threads: "Pool",
-    runner: "Unregistered",
-    fallback: undefined,
     tickets: [],
     drafts: [],
     landings: new Map(),
     executions: new Map(),
     administer: true,
-    pools: [],
-    tokens: [],
     declared: ["development"],
     filed: new Map(),
     operations: new Map(),
@@ -333,7 +319,32 @@ export function setupSiteEmpty(): SetupSite {
     mints: [],
     pushed: new Map(),
     letters: "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_",
+    accounts: accountAgents.map((agent) => setupSiteAccountOf(agent)),
+    settingsWritten: [],
   };
+}
+
+/** An agent account of the caller's at the default thresholds, with no reading and no pause unless `held` says otherwise. */
+export function setupSiteAccountOf(
+  agent: AccountAgent,
+  held: Partial<Omit<AgentAccount, "agent">> = {},
+): AgentAccount {
+  return {
+    agent,
+    settings: { fiveHourPercent: 80, sevenDayPercent: 90, pausesThreads: true },
+    readings: [],
+    ...held,
+  };
+}
+
+/** The site with the caller's Claude account held as `held` says. */
+export function setupSiteClaude(
+  site: SetupSite,
+  held: Partial<Omit<AgentAccount, "agent">>,
+): SetupSite {
+  const at = site.accounts.findIndex((account) => account.agent === "Claude");
+  site.accounts[at] = setupSiteAccountOf("Claude", held);
+  return site;
 }
 
 export function setupSiteClaim(
@@ -395,9 +406,6 @@ export const setupSiteHeld: TicketLandingResponse = {
 
 export const setupSiteWorkspace = "acme";
 export const setupSiteProjectName = "widgets";
-
-/** The North Star a project this site holds carries, unless it was made by the caller or a case takes it away. */
-export const setupSiteNorthStar = "Widgets for everyone.";
 export const setupSiteAccount = "acme-org";
 export const setupSiteRepositoryAddress = "https://github.com/acme-org/widgets";
 
@@ -444,7 +452,11 @@ export function setupSiteAt(stage: SetupSiteStage): SetupSite {
       repository: setupSiteRepositoryAddress,
       configured: reached("Configured"),
     });
-  if (reached("Offline")) project.runner = reached("Live") ? "Live" : "Offline";
+  if (reached("Offline"))
+    site.personal.set(setupSiteWorkspace, {
+      live: [reached("Live")],
+      projects: [setupSiteProjectName],
+    });
   if (reached("Live")) setupSiteChatAdded(site, setupSiteWorkspace, true);
   if (stage === "Draft") project.drafts.push(1);
   if (stage === "Moving") project.tickets.push({ ticket: 1, phase: "Work" });
@@ -519,12 +531,10 @@ function cut(
 function settings(project: SetupSiteProject): SelectorProjectSettingsResponse {
   return {
     partition: { tenant: project.tenant, project: project.project },
-    revision: project.revision,
+    revision: 1,
     overrides: project.overrides,
     effective: {
-      ...(project.overrides.northStar === undefined
-        ? {}
-        : { northStar: project.overrides.northStar }),
+      ...project.overrides,
       threadStandingRules: project.overrides.threadStandingRules ?? "Be brief.",
     },
   };
@@ -616,7 +626,7 @@ function placement(
     leadOffering: "Own",
     leadOfferings: ["Own"],
     choices: ["InCluster", "Pool"],
-    runners: { mine: mine(site, project), project: project.runner },
+    runners: { mine: mine(site, project), project: "Unregistered" },
   };
 }
 
@@ -655,7 +665,7 @@ function draft(project: SetupSiteProject, number: number): DraftResponse {
   };
 }
 
-/** The most registration tokens a project holds unredeemed, small so a case reaches it. */
+/** The most registration tokens the caller holds unredeemed in a workspace, for their chat host or for their personal runners, small so a case reaches it. */
 export const setupSiteTokensMax = 3;
 
 /** A registration token as the server draws one: a long run of the letters a URL carries unescaped, unless a case has the site draw from others. */
@@ -666,58 +676,6 @@ function drawn(site: SetupSite, kind: string): string {
   );
   site.secrets.push(secret);
   return secret;
-}
-
-/** The one write: a registration token for the project, to whoever administers it and while it holds fewer than its bound. */
-function minted(
-  site: SetupSite,
-  project: SetupSiteProject,
-  body: string | undefined,
-): SetupSiteAnswer {
-  const fate = fated(site, "mint");
-  if (fate !== undefined) return fate;
-  if (!project.administer) return refused();
-  if (project.tokens.length >= setupSiteTokensMax)
-    return {
-      status: 409,
-      body: { error: { code: "TokenLimitReached", message: "At its bound." } },
-    };
-  const asked = JSON.parse(body ?? "{}") as SetupSiteMint;
-  site.mints.push(asked);
-  const token = drawn(site, "registration");
-  project.tokens.push(token);
-  return { status: 201, body: { token, expiresAtMs: 4_102_444_800_000 } };
-}
-
-/**
- * A redemption, which is answered on the token alone: the pool's credentials
- * once, and not found for a token that is unknown or spent. The project then
- * has a runner registered that has not polled.
- */
-export function setupSiteRedeemed(
-  site: SetupSite,
-  token: string,
-  pool: string,
-): SetupSiteAnswer {
-  const project = site.projects.find((held) => held.tokens.includes(token));
-  if (project === undefined) return refused();
-  project.tokens.splice(project.tokens.indexOf(token), 1);
-  if (!project.pools.includes(pool)) project.pools.push(pool);
-  if (project.runner === "Unregistered") project.runner = "Offline";
-  return {
-    status: 201,
-    body: {
-      tenant: project.tenant,
-      project: project.project,
-      pool,
-      capabilities: ["Platform:Linux:Amd64"],
-      tokenUrl: "https://auth.example/oauth2/token",
-      audience: "https://chuggy.example/pool",
-      planeUrl: "https://pool.chuggy.example/",
-      clientId: `pool-${pool}`,
-      clientSecret: drawn(site, "credential"),
-    },
-  };
 }
 
 /** The caller's chat host in a workspace made a new one, of an id of its own, polling where `live`, in place of any they held; the id is answered. */
@@ -874,22 +832,6 @@ function personalAnswered(site: SetupSite, tenant: string): SetupSiteAnswer {
   );
 }
 
-/** The pools as the roster read answers them, padded past what one read holds where a case cut it. */
-function pools(site: SetupSite, project: SetupSiteProject): SetupSiteAnswer {
-  return (
-    fated(site, "pools") ??
-    answered({
-      pools: project.pools.toSorted().map((pool) => ({
-        pool,
-        capabilities: ["Platform:Linux:Amd64"],
-        registeredAt: "2026-10-09T00:00:00Z",
-        live: false,
-      })),
-      truncated: cut(site, "pools"),
-    })
-  );
-}
-
 function abilities(
   site: SetupSite,
   project: SetupSiteProject,
@@ -905,6 +847,7 @@ function abilities(
       overrideTicketConfig: administer,
       skipPlannedEvaluations: administer,
       mergeProposals: administer,
+      makeAccessTokens: administer,
       administer,
       writeEpic: true,
     })
@@ -1135,6 +1078,7 @@ export function setupSiteWaiting(
   ticket: number,
   wait: PersonalRunnerWait,
   room?: ExecutionSummary["personalRunnerRoom"],
+  paused?: AgentPause,
 ): ExecutionSummary {
   return {
     ...ledgerExecution({
@@ -1145,27 +1089,9 @@ export function setupSiteWaiting(
     }),
     ticket,
     mine: true,
-    ownerFallback: "Strict",
     personalRunnerWait: wait,
     ...(room === undefined ? {} : { personalRunnerRoom: room }),
-  };
-}
-
-/** Another member's execution of `ticket`'s work, admitted and not begun, waiting on its project's live pools short of `room`. */
-export function setupSitePoolWaiting(
-  ticket: number,
-  room: NonNullable<ExecutionSummary["poolRoom"]>,
-): ExecutionSummary {
-  return {
-    ...ledgerExecution({
-      execution: `execution-${String(ticket)}`,
-      task: 1,
-      identity: workIdentity(1),
-      status: "Admitted",
-    }),
-    ticket,
-    mine: false,
-    poolRoom: room,
+    ...(paused === undefined ? {} : { paused }),
   };
 }
 
@@ -1184,8 +1110,6 @@ function executions(
   );
 }
 
-const mintPath = "/worker-pool-registration-tokens";
-const redeemPath = "/api/v1/worker-pool-registrations";
 const chatMintPath = "/chat-host-registration-tokens";
 const personalMintPath = "/personal-runner-registration-tokens";
 /** Where a chat host's token is redeemed, which is where a member's runner's is. */
@@ -1225,24 +1149,12 @@ function projectAnswered(
       return executions(site, project, query);
     case "/session-placement":
       return fated(site, "placement") ?? answered(placement(site, project));
-    case "/owner-fallback":
-      return (
-        fated(site, "fallback") ??
-        answered({
-          ...(project.fallback === undefined
-            ? {}
-            : { fallback: project.fallback }),
-          administers: project.administer,
-        })
-      );
     case "/abilities":
       return abilities(site, project);
     case "/configurations":
       return configurationsListed(site, project);
     case "/dispatch-view":
       return dispatchView(project, query);
-    case "/worker-pools":
-      return pools(site, project);
     case "/drafts":
       return (
         fated(site, "drafts") ??
@@ -1607,60 +1519,7 @@ function personalServed(
   return answered({});
 }
 
-/** A project's owner fallback named whole, by a caller who administers it. */
-function fallbackWritten(
-  site: SetupSite,
-  project: SetupSiteProject,
-  body: string | undefined,
-): SetupSiteAnswer {
-  const fate = fated(site, "allow");
-  if (fate !== undefined) return fate;
-  if (!project.administer)
-    return {
-      status: 403,
-      body: { error: { code: "Forbidden", message: "Forbidden." } },
-    };
-  const asked = JSON.parse(body ?? "{}") as {
-    readonly fallback?: OwnerFallback;
-  };
-  project.fallback = asked.fallback;
-  return answered({
-    ...(asked.fallback === undefined ? {} : { fallback: asked.fallback }),
-    administers: true,
-  });
-}
-
-/** The project's settings written whole under the revision the writer read, refused as the server refuses a write the revision moved under. */
-function settingsWritten(
-  site: SetupSite,
-  project: SetupSiteProject,
-  body: string | undefined,
-): SetupSiteAnswer {
-  const fate = fated(site, "star");
-  if (fate !== undefined) return fate;
-  if (!project.settled) return refused();
-  const asked = JSON.parse(body ?? "{}") as {
-    readonly expectedRevision: number;
-    readonly overrides: SelectorProjectSettingsResponse["overrides"];
-  };
-  if (project.races > 0) {
-    project.races -= 1;
-    project.revision += 1;
-  }
-  if (asked.expectedRevision !== project.revision)
-    return {
-      status: 409,
-      body: {
-        error: { code: "SettingsRevisionConflict", message: "Conflict." },
-        settings: settings(project),
-      },
-    };
-  project.overrides = asked.overrides;
-  project.revision += 1;
-  return answered(settings(project));
-}
-
-/** A write within a workspace: the mint for a project the caller is shown, the mint for their chat host, the caller's runners given a project, a project's owner fallback named, or nothing the site answers. */
+/** A write within a workspace: the mint for the caller's chat host or for a personal runner of theirs, the caller's runners given a project, a write to a project the caller is shown, or nothing the site answers. */
 function tenantWritten(
   site: SetupSite,
   tenant: string,
@@ -1683,18 +1542,6 @@ function tenantWritten(
     const project = projectOf(site, tenant, within[1]);
     return project === undefined ? refused() : bound(site, project, sent.body);
   }
-  if (sent.method === "PUT" && within?.[2] === "/selector-settings") {
-    const project = projectOf(site, tenant, within[1]);
-    return project === undefined
-      ? refused()
-      : settingsWritten(site, project, sent.body);
-  }
-  if (sent.method === "PUT" && within?.[2] === "/owner-fallback") {
-    const project = projectOf(site, tenant, within[1]);
-    return project === undefined
-      ? refused()
-      : fallbackWritten(site, project, sent.body);
-  }
   if (sent.method === "POST" && within?.[2] === "/drafts") {
     const project = projectOf(site, tenant, within[1]);
     return project === undefined ? refused() : filed(site, project, sent.body);
@@ -1716,9 +1563,7 @@ function tenantWritten(
       ? refused()
       : imported(site, project, sent.body);
   }
-  if (sent.method !== "POST" || within?.[2] !== mintPath) return undefined;
-  const project = projectOf(site, tenant, within[1]);
-  return project === undefined ? refused() : minted(site, project, sent.body);
+  return undefined;
 }
 
 function tenantAnswered(
@@ -1763,15 +1608,6 @@ function tenantAnswered(
   return project === undefined
     ? refused()
     : projectAnswered(site, project, within[2] ?? "", query);
-}
-
-/** A redemption as it is sent: the token and the pool's name, in a body the site reads. */
-function redeemed(site: SetupSite, body: string | undefined): SetupSiteAnswer {
-  const asked = JSON.parse(body ?? "{}") as {
-    readonly token?: string;
-    readonly pool?: string;
-  };
-  return setupSiteRedeemed(site, asked.token ?? "", asked.pool ?? "");
 }
 
 /** One page of the projects the caller is shown: those answered on it, and the next page's cursor on every page but the last, or on every page where a case cut the list. */
@@ -1838,11 +1674,33 @@ function projectCreated(
       : conflict("ProjectExists");
   site.projects.push({
     ...setupSiteProject(tenant, project),
-    overrides: {},
     name: name.trim(),
     made: true,
   });
   return answered({ tenant, project, name: name.trim() });
+}
+
+/** The caller's agent accounts as read, and a write of one's settings, kept whole as sent. */
+function accountsAnswered(
+  site: SetupSite,
+  path: string,
+  sent: SetupSiteSent,
+): SetupSiteAnswer | undefined {
+  if (sent.method === "GET" && path === "/api/v1/agent-accounts")
+    return fated(site, "usage") ?? answered({ accounts: site.accounts });
+  const written = /^\/api\/v1\/agent-accounts\/([^/]+)\/settings$/u.exec(path);
+  const at = site.accounts.findIndex(
+    (account) => account.agent === decodeURIComponent(written?.[1] ?? ""),
+  );
+  if (sent.method !== "PUT" || at < 0) return undefined;
+  const fate = fated(site, "raise");
+  if (fate !== undefined) return fate;
+  const body: unknown = JSON.parse(sent.body ?? "{}");
+  const account = site.accounts[at] as AgentAccount;
+  const settings = body as AgentAccount["settings"];
+  site.settingsWritten.push({ agent: account.agent, settings, body });
+  site.accounts[at] = { ...account, settings };
+  return { status: 204, body: undefined };
 }
 
 /**
@@ -1857,8 +1715,6 @@ export function setupSiteAnswered(
   sent: SetupSiteSent = { method: "GET" },
 ): SetupSiteAnswer | undefined {
   const url = new URL(target, "http://site.invalid");
-  if (sent.method === "POST" && url.pathname === redeemPath)
-    return redeemed(site, sent.body);
   if (sent.method === "POST" && url.pathname === "/api/v1/projects")
     return projectCreated(site, sent.body);
   if (sent.method === "POST" && url.pathname === chatRedeemPath) {
@@ -1869,6 +1725,8 @@ export function setupSiteAnswered(
       ? setupSitePersonalRedeemed(site, token)
       : setupSiteChatRedeemed(site, token);
   }
+  const accounts = accountsAnswered(site, url.pathname, sent);
+  if (accounts !== undefined) return accounts;
   const tenant = /^\/api\/v1\/tenants\/([^/]+)(\/.*)$/u.exec(url.pathname);
   const named = decodeURIComponent(tenant?.[1] ?? "");
   const rest = tenant?.[2] ?? "";

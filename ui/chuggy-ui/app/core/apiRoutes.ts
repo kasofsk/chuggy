@@ -6,6 +6,12 @@ import {
   type EndpointParameters,
 } from "../../../../src/contract/endpoints.ts";
 
+import type {
+  ConnectorHistoryResponse,
+  ConnectorStandingResponse,
+  ConnectorWriteRequest,
+  ConnectorsResponse,
+} from "../../../../src/contract/connectorAdministration.ts";
 import { partitionPath } from "../../../../src/contract/http.ts";
 import type {
   PartitionIdentity,
@@ -25,7 +31,6 @@ import {
   executionPlacementResponseSchema,
   personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
-  projectOwnerFallbackResponseSchema,
   projectDeletionResponseSchema,
   tenantDeletionResponseSchema,
   executionsResponseSchema,
@@ -56,7 +61,6 @@ import {
   sessionPlacementResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
-  workerPoolsResponseSchema,
   workerPoolTokenResponseSchema,
 } from "../../../../src/contract/responses.ts";
 import type {
@@ -73,7 +77,6 @@ import type {
   ExecutionPlacementResponse,
   PersonalRunnerPermitResponse,
   PersonalRunnerResponse,
-  ProjectOwnerFallbackResponse,
   ExecutionsResponse,
   ForgeAppsResponse,
   ForgeAuthorizationResponse,
@@ -102,9 +105,9 @@ import type {
   SessionPlacementResponse,
   TicketNativeActionsResponse,
   TicketResponse,
-  WorkerPoolsResponse,
   WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
+import type { AccessTokenMintRequest } from "../../../../src/contract/accessToken.ts";
 import type { epicWriteRequestSchema } from "../../../../src/contract/epics.ts";
 import type {
   agentAccountSettingsSchema,
@@ -112,7 +115,6 @@ import type {
   draftRevisionSchema,
   executionPlacementSchema,
   personalRunnerProjectSchema,
-  projectOwnerFallbackSchema,
   forgeAuthorizationSchema,
   projectCreationSchema,
   projectRepositoryBindSchema,
@@ -515,60 +517,6 @@ export function apiWriteSessionPlacement(
       body: written,
     },
     (value) => sessionPlacementResponseSchema.parse(value),
-  );
-}
-
-/** The pools registered to one project, in name order. */
-export function apiWorkerPools(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-): Promise<ApiResult<WorkerPoolsResponse>> {
-  return apiGet(ports, apiSegments(partition, "worker-pools"), (value) =>
-    workerPoolsResponseSchema.parse(value),
-  );
-}
-
-/** A single-use token a machine registers one of this project's pools with. */
-export function apiMintWorkerPoolToken(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  request: RegistrationTokenRequest,
-): Promise<ApiResult<WorkerPoolTokenResponse>> {
-  return apiRead(
-    ports,
-    {
-      method: "POST",
-      path: apiSegments(partition, "worker-pool-registration-tokens"),
-      body: request,
-    },
-    (value) => workerPoolTokenResponseSchema.parse(value),
-  );
-}
-
-/** Who may take a project's owned work beside the pools, and whether the reader may change it. */
-export function apiOwnerFallback(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-): Promise<ApiResult<ProjectOwnerFallbackResponse>> {
-  return apiGet(ports, apiSegments(partition, "owner-fallback"), (value) =>
-    projectOwnerFallbackResponseSchema.parse(value),
-  );
-}
-
-/** A project's fallback written whole; an absent one is cleared. */
-export function apiWriteOwnerFallback(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  written: z.infer<typeof projectOwnerFallbackSchema>,
-): Promise<ApiResult<ProjectOwnerFallbackResponse>> {
-  return apiRead(
-    ports,
-    {
-      method: "PUT",
-      path: apiSegments(partition, "owner-fallback"),
-      body: written,
-    },
-    (value) => projectOwnerFallbackResponseSchema.parse(value),
   );
 }
 
@@ -1467,6 +1415,37 @@ export const apiProjectAbilities = apiProjectEndpoint(
   (partition) => ({ parameters: partition }),
 );
 
+/** The project's access tokens the reader may see, newest first. */
+export const apiAccessTokens = apiProjectEndpoint(
+  nativeHttpEndpoints.accessTokens,
+  (partition) => ({ parameters: partition }),
+);
+
+/** One access token made, answered with its secret this once. */
+export const apiMintAccessToken = apiProjectEndpoint(
+  nativeHttpEndpoints.mintAccessToken,
+  (partition, request: AccessTokenMintRequest) => ({
+    parameters: partition,
+    body: request,
+  }),
+);
+
+/** One access token deleted, which revokes it. */
+export function apiDeleteAccessToken(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  token: string,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "DELETE",
+      path: endpointPath(nativeHttpRoutes.accessToken, { ...partition, token }),
+    },
+    () => undefined,
+  );
+}
+
 export interface SessionTranscriptPage {
   readonly stream?: string | undefined;
   readonly after?: number | undefined;
@@ -1740,6 +1719,85 @@ export function apiSelectorSettingsHistory(
       limit: page.limit,
     }),
     (value) => selectorSettingsHistoryResponseSchema.parse(value),
+  );
+}
+
+/** A project's connectors, ordered by name, each with the revision a write against it names. */
+export function apiConnectors(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<ConnectorsResponse>> {
+  return apiGet(
+    ports,
+    endpointPath(nativeHttpEndpoints.connectors.path, partition),
+    (value) => nativeHttpEndpoints.connectors.response.parse(value),
+  );
+}
+
+/**
+ * One connector written under its name: a create naming no revision, a change
+ * naming the one it read. A write the revision moved under is a `Conflict`
+ * carrying the revision that stands, the caller's to draw and never this
+ * function's to retry.
+ */
+export function apiWriteConnector(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  name: string,
+  written: ConnectorWriteRequest,
+): Promise<ApiResult<ConnectorStandingResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: nativeHttpEndpoints.writeConnector.method,
+      path: endpointPath(nativeHttpEndpoints.writeConnector.path, {
+        ...partition,
+        name,
+      }),
+      body: written,
+    },
+    (value) => nativeHttpEndpoints.writeConnector.response.parse(value),
+  );
+}
+
+/** One connector removed, fenced on the revision its remover read. */
+export function apiRemoveConnector(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  name: string,
+  expectedRevision: number,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: nativeHttpEndpoints.removeConnector.method,
+      path: apiPath(
+        endpointPath(nativeHttpEndpoints.removeConnector.path, {
+          ...partition,
+          name,
+        }),
+        { expectedRevision },
+      ),
+    },
+    () => undefined,
+  );
+}
+
+/** One page of a project's connector changes, newest first, older than `before` where it is given. */
+export function apiConnectorHistory(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  before?: number,
+): Promise<ApiResult<ConnectorHistoryResponse>> {
+  return apiGet(
+    ports,
+    apiPath(
+      endpointPath(nativeHttpEndpoints.connectorHistory.path, partition),
+      {
+        before,
+      },
+    ),
+    (value) => nativeHttpEndpoints.connectorHistory.response.parse(value),
   );
 }
 

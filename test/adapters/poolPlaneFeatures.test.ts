@@ -65,7 +65,6 @@ import {
   type ChatHostIdentity,
   type PersonalRunnerIdentity,
   type WorkerPoolAssignments,
-  type WorkerPoolIdentity,
   type WorkerPoolRunners,
 } from "../../src/interpreter/workerPool.ts";
 import { workerPoolReports } from "../../src/interpreter/workerPoolReports.ts";
@@ -99,11 +98,6 @@ interface PoolPlaneFeatureGate {
 
 const issuer = "https://issuer.invalid";
 const partition = { tenant: "tenant", project: "project" } as Partition;
-const pool: WorkerPoolIdentity = {
-  partition,
-  pool: "pool-one",
-  principal: oidcPrincipal(issuer, "pool-client"),
-};
 const runner: PersonalRunnerIdentity = {
   tenant: partition.tenant,
   owner: oidcPrincipal(issuer, "a-member"),
@@ -115,11 +109,9 @@ const host: ChatHostIdentity = {
   principal: oidcPrincipal(issuer, "chuggy-personal-host"),
 };
 const callers = new Map([
-  ["pool-token", pool.principal],
   ["runner-token", runner.principal],
   ["host-token", host.principal],
 ]);
-const poolBearer = { authorization: "Bearer pool-token" };
 const runnerBearer = { authorization: "Bearer runner-token" };
 const hostBearer = { authorization: "Bearer host-token" };
 
@@ -189,7 +181,7 @@ const sessionsInert: WorkerPoolSessions = {
 
 const runnersInert: WorkerPoolRunners = { named: () => Promise.resolve() };
 
-/** An issuer that knows the three callers' tokens and refuses any other. */
+/** An issuer that knows the two callers' tokens and refuses any other. */
 const poolPlaneFeatureIssuer: PoolPlaneService["authentication"] = {
   authenticateBearer: (token: string) => {
     const principal = callers.get(token);
@@ -226,7 +218,7 @@ const poolPlaneFeatureSettings: PoolPlaneService["settings"] = {
   imageHosts: new Map([["registry.invalid", "registry.public.invalid"]]),
 };
 
-/** The plane over the three callers, every port but those `over` names answering the least it can. */
+/** The plane over the two callers, every port but those `over` names answering the least it can. */
 function poolPlaneFeatureApp(
   over: {
     readonly assignments?: Partial<WorkerPoolAssignments>;
@@ -237,13 +229,6 @@ function poolPlaneFeatureApp(
   const service: PoolPlaneService = {
     authentication: poolPlaneFeatureIssuer,
     access: allowing,
-    registry: {
-      register: () => Promise.resolve(true),
-      clientOf: () => Promise.resolve(undefined),
-      deregister: () => Promise.resolve(false),
-      identify: (principal) =>
-        Promise.resolve(principal === pool.principal ? pool : undefined),
-    },
     personal: {
       identify: (principal) =>
         Promise.resolve(principal === runner.principal ? runner : undefined),
@@ -351,10 +336,13 @@ const poolPlaneFeatureGates: readonly PoolPlaneFeatureGate[] = [
     given: async (headers) => {
       const body = await poolPlaneFeaturePolled(
         poolPlaneFeatureApp({
-          assignments: { waiting: () => Promise.resolve(true) },
+          assignments: {
+            allowlisted: () => Promise.resolve([asProjectId("project")]),
+            waitingPersonal: () => Promise.resolve(true),
+          },
         }),
         poolPlaneFeaturePolling([], 0, 0),
-        { ...headers, ...poolBearer, [workerRunnerMemoryRoomHeader]: "4096" },
+        { ...headers, ...runnerBearer, [workerRunnerMemoryRoomHeader]: "4096" },
       );
       return body["jobsWaiting"] === true;
     },
@@ -400,7 +388,7 @@ const poolPlaneFeatureGates: readonly PoolPlaneFeatureGate[] = [
         poolPlaneFeaturePolling([], 0, 0),
         {
           ...headers,
-          ...poolBearer,
+          ...runnerBearer,
           [workerRunnerCredentialsHeader]: "Claude:work",
         },
       );
@@ -489,7 +477,7 @@ const poolPlaneFeatureGates: readonly PoolPlaneFeatureGate[] = [
         poolPlaneFeaturePolling([], 0, 0),
         {
           ...headers,
-          ...poolBearer,
+          ...runnerBearer,
           [workerRunnerHeader]: "chuggy-linux/0.14.0",
         },
       );

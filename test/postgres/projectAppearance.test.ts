@@ -3,8 +3,8 @@
  * the API's role: the project's default document written, repeated, cleared
  * and kept with who set it; each person's override set to a built-in or a
  * theme of their own, never another's, and none once its theme is deleted, so
- * the resolved read falls to the layer below; and the API reaching neither
- * relation but through its doors, the default read as its fallback is.
+ * the resolved read falls to the layer below; and the API writing neither
+ * relation but through its doors, and reading the default's row directly.
  */
 
 import assert from "node:assert/strict";

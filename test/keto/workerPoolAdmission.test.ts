@@ -1,6 +1,6 @@
 /**
- * Whether a registered pool or personal runner is admitted, asked of the
- * authority an installation actually runs. The registries are stand-ins here
+ * Whether a registered personal runner or chat host is admitted, asked
+ * of the authority an installation actually runs. The registries are stand-ins here
  * because what is under test is the permit: each is recorded in PostgreSQL and
  * authorized in Keto, and the suite beside this one drives the other half.
  */
@@ -8,10 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  oidcPrincipal,
-  type Principal,
-} from "../../src/interpreter/principal.ts";
+import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import { forgeCredentialMinting } from "../../src/interpreter/forgeCredentials.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
@@ -28,8 +25,6 @@ import {
   type PersonalRunnerIdentity,
   type PersonalRunnerPlaneRegistry,
   type PoolPlaneRegistries,
-  type WorkerPoolIdentity,
-  type WorkerPoolRegistry,
 } from "../../src/interpreter/workerPool.ts";
 import {
   ketoHarnessAccess,
@@ -41,25 +36,6 @@ import {
 
 const access = ketoHarnessAccess();
 const grants = ketoHarnessGrants();
-
-/** A registry that knows one pool, so nothing but the permit decides the answer. */
-function registryOf(
-  partition: Partition,
-  principal: Principal,
-): WorkerPoolRegistry {
-  const identity: WorkerPoolIdentity = {
-    partition,
-    pool: "pool-one",
-    principal,
-  };
-  return {
-    register: () => Promise.resolve(true),
-    clientOf: () => Promise.resolve(undefined),
-    deregister: () => Promise.resolve(false),
-    identify: (asked) =>
-      Promise.resolve(asked === principal ? identity : undefined),
-  };
-}
 
 /** A registry of personal runners that knows `runner` alone, or none. */
 function personalOf(
@@ -79,87 +55,13 @@ function chatHostsOf(host?: ChatHostIdentity): ChatHostPlaneRegistry {
   };
 }
 
-/** The three registries a poll is looked up in, no chat host among them unless named. */
+/** The registries a poll is looked up in, no chat host among them unless named. */
 function registriesOf(
-  pools: WorkerPoolRegistry,
   personal: PersonalRunnerPlaneRegistry,
   chatHosts: ChatHostPlaneRegistry = chatHostsOf(),
 ): PoolPlaneRegistries {
-  return { pools, personal, chatHosts };
+  return { personal, chatHosts };
 }
-
-test("a registered pool the authority permits is admitted as the registration its principal names", async () => {
-  const partition = ketoHarnessPartition("pool-admitted");
-  const principal = oidcPrincipal(ketoHarnessIssuer, "chuggy-pool-admitted");
-  await grants.write(
-    projectPrincipalGrant({
-      issuer: ketoHarnessIssuer,
-      subject: "chuggy-pool-admitted",
-      tenant: partition.tenant,
-      project: partition.project,
-      relation: "pools",
-    }),
-  );
-  assert.deepEqual(
-    await workerPoolAdmitted(
-      registriesOf(registryOf(partition, principal), personalOf()),
-      access,
-      principal,
-    ),
-    {
-      kind: "Dedicated",
-      partition,
-      pool: "pool-one",
-      principal,
-    },
-  );
-});
-
-test("a pool's relation carries Execute and no other permit the project answers", async () => {
-  const partition = ketoHarnessPartition("pool-bounded");
-  const principal = oidcPrincipal(ketoHarnessIssuer, "chuggy-pool-bounded");
-  await grants.write(
-    projectPrincipalGrant({
-      issuer: ketoHarnessIssuer,
-      subject: "chuggy-pool-bounded",
-      tenant: partition.tenant,
-      project: partition.project,
-      relation: "pools",
-    }),
-  );
-  for (const kind of allProjectAccessKinds)
-    assert.equal(
-      (await access.authorize(principal, partition, kind)) !== undefined,
-      kind === "Execute",
-      kind,
-    );
-});
-
-test("a registered pool the authority names nothing about is not admitted", async () => {
-  const partition = ketoHarnessPartition("pool-ungranted");
-  const principal = oidcPrincipal(ketoHarnessIssuer, "chuggy-pool-ungranted");
-  assert.equal(
-    await workerPoolAdmitted(
-      registriesOf(registryOf(partition, principal), personalOf()),
-      access,
-      principal,
-    ),
-    undefined,
-  );
-});
-
-test("a pool polling through an authority that cannot answer is left undecided", async () => {
-  const partition = ketoHarnessPartition("pool-outage");
-  const principal = oidcPrincipal(ketoHarnessIssuer, "chuggy-pool-outage");
-  await assert.rejects(
-    workerPoolAdmitted(
-      registriesOf(registryOf(partition, principal), personalOf()),
-      ketoHarnessAccessAt("http://127.0.0.1:1/"),
-      principal,
-    ),
-    { name: "ProjectAccessUnavailable" },
-  );
-});
 
 /** A member's personal runner in the tenant of `partition`, its principal named by no relation. */
 function personalRunner(
@@ -178,10 +80,7 @@ test("a personal runner is admitted while its owner may register one in its tena
   const runner = personalRunner(partition, "personal-admitted");
   const admitted = () =>
     workerPoolAdmitted(
-      registriesOf(
-        registryOf(partition, oidcPrincipal(ketoHarnessIssuer, "no-pool")),
-        personalOf(runner),
-      ),
+      registriesOf(personalOf(runner)),
       access,
       runner.principal,
     );
@@ -198,6 +97,21 @@ test("a personal runner is admitted while its owner may register one in its tena
   assert.equal(await admitted(), undefined);
 });
 
+test("a personal runner polling through an authority that cannot answer is left undecided", async () => {
+  const runner = personalRunner(
+    ketoHarnessPartition("personal-outage"),
+    "personal-outage",
+  );
+  await assert.rejects(
+    workerPoolAdmitted(
+      registriesOf(personalOf(runner)),
+      ketoHarnessAccessAt("http://127.0.0.1:1/"),
+      runner.principal,
+    ),
+    { name: "ProjectAccessUnavailable" },
+  );
+});
+
 test("a chat host is admitted under its owner's permit to register a personal runner, and not once they lose it", async () => {
   const partition = ketoHarnessPartition("chat-host-admitted");
   const host: ChatHostIdentity = {
@@ -207,11 +121,7 @@ test("a chat host is admitted under its owner's permit to register a personal ru
   };
   const admitted = () =>
     workerPoolAdmitted(
-      registriesOf(
-        registryOf(partition, oidcPrincipal(ketoHarnessIssuer, "no-pool")),
-        personalOf(),
-        chatHostsOf(host),
-      ),
+      registriesOf(personalOf(), chatHostsOf(host)),
       access,
       host.principal,
     );
@@ -228,10 +138,9 @@ test("a chat host is admitted under its owner's permit to register a personal ru
   assert.equal(await admitted(), undefined);
 });
 
-test("a personal runner holds no permit of any project its owner serves, so a project's forge credential answers it nothing while it answers a pool", async () => {
+test("a personal runner holds no permit of any project its owner serves, so a project's forge credential answers it nothing while it answers its owner", async () => {
   const partition = ketoHarnessPartition("personal-unminted");
   const runner = personalRunner(partition, "personal-unminted");
-  const pool = oidcPrincipal(ketoHarnessIssuer, "chuggy-pool-minted");
   for (const grant of [
     tenantPrincipalGrant({
       issuer: ketoHarnessIssuer,
@@ -245,13 +154,6 @@ test("a personal runner holds no permit of any project its owner serves, so a pr
       tenant: partition.tenant,
       project: partition.project,
       relation: "admins",
-    }),
-    projectPrincipalGrant({
-      issuer: ketoHarnessIssuer,
-      subject: "chuggy-pool-minted",
-      tenant: partition.tenant,
-      project: partition.project,
-      relation: "pools",
     }),
   ])
     await grants.write(grant);
@@ -292,7 +194,7 @@ test("a personal runner holds no permit of any project its owner serves, so a pr
   });
   assert.deepEqual(asked, [], "a runner's mint reached the forge");
   assert.equal(
-    (await minting.mint(pool, partition, request)).result,
+    (await minting.mint(runner.owner, partition, request)).result,
     "Authorized",
   );
 });

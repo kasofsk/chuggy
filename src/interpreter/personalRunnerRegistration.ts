@@ -9,14 +9,12 @@
  * asked again of the minter when the token is redeemed, so a permit taken away
  * in between registers nothing.
  *
- * IT IS TWO WRITES AT TWO AUTHORITIES, NOT A POOL'S THREE. A pool's
- * registration writes the relation its principal is answered `Execute` from; a
- * personal runner's writes none, so its principal holds no permit of any
- * project, and nothing gated on `Execute` — the forge credential a project
- * mints among them — answers it. What its owner's runners may serve is one
- * allowlist, which starts empty, which its owner writes one project at a time
- * under their own `Read` of that project, and which goes with their last
- * runner.
+ * IT IS TWO WRITES AT TWO AUTHORITIES. A personal runner's registration writes
+ * no relation, so its principal holds no permit of any project, and nothing
+ * gated on `Execute` — the forge credential a project mints among them —
+ * answers it. What its owner's runners may serve is one allowlist, which starts
+ * empty, which its owner writes one project at a time under their own `Read` of
+ * that project, and which goes with their last runner.
  *
  * A CLIENT GOES BEFORE ITS ROW. Taking a runner off removes the client its row
  * names and then deletes the row, so a failure part-way leaves a row naming a
@@ -45,6 +43,7 @@ import {
   type ChatHostPorts,
   type ChatHostRead,
   type ChatHostRegistry,
+  type WorkerPoolSite,
 } from "./chatHostRegistration.ts";
 import type { AgentAccountPause } from "./agentAccount.ts";
 import { oidcPrincipal, type Principal } from "./principal.ts";
@@ -55,17 +54,34 @@ import type {
   WorkerPoolClientSecret,
 } from "./workerPool.ts";
 import {
-  workerPoolTokenLifetimeSecsMax,
-  type WorkerPoolSite,
-  type WorkerPoolTokenMinted,
-  type WorkerPoolTokenRequest,
-  type WorkerPoolTokenWritten,
-} from "./workerPoolRegistrationToken.ts";
-import {
   workerRunnerListed,
   type WorkerRunnerListed,
   type WorkerRunnerReleases,
 } from "./workerRunnerRelease.ts";
+
+/** What one mint wrote: a row, nothing because no tenant was named, or nothing because the member is at their bound. */
+export type WorkerPoolTokenWritten = "Minted" | "NotFound" | "LimitReached";
+
+/**
+ * What minting for a caller came to. An authority that could not answer is not
+ * an arm here: it throws `ProjectAccessUnavailable`, which the boundary already
+ * answers 503 with, so a refusal and an outage cannot be merged by accident.
+ */
+export type WorkerPoolTokenMinted =
+  | { readonly result: "NotFound" }
+  | { readonly result: "LimitReached" }
+  | {
+      readonly result: "Minted";
+      readonly value: { readonly token: string; readonly expiresAtMs: number };
+    };
+
+/** What one mint asks for: how long the token stands. */
+export interface WorkerPoolTokenRequest {
+  readonly lifetimeSecs: number;
+}
+
+/** The longest a registration token may stand, which bounds what an owner may ask for. */
+export const workerPoolTokenLifetimeSecsMax = 3_600;
 
 /** Whose runners a row is one of: a member, in one tenant. */
 export interface PersonalRunnerKey {
@@ -91,7 +107,7 @@ export interface PersonalRunnerHeldView {
  * One runner as its owner reads it, by the client it registered: its newest
  * poll of either kind, absent until it polls, and whether that poll is within
  * the window a runner is held live for; whether its newest poll for executions
- * is, which is the liveness a pool's claim defers to under Preferred; the
+ * is, which is the liveness a run's wait reads it by; the
  * runner its newest poll named, absent where it named none; and what it holds,
  * the earliest claimed first, as far as `personalRunnerHeldAnsweredMax`, with
  * `heldTruncated` where it holds more.
@@ -189,9 +205,8 @@ export interface PersonalRunnerTokenTerms {
 export const personalRunnerTokensLiveMax = 4;
 
 /**
- * A personal token's whole life, as `WorkerPoolRegistrationTokens` is a pool
- * token's, bounded per member and tenant, and `permitted` beside it, which
- * reads one neither spent nor expired without spending it.
+ * A personal token's whole life, bounded per member and tenant, and `permitted`
+ * beside it, which reads one neither spent nor expired without spending it.
  */
 export interface PersonalRunnerRegistrationTokens {
   mint(
@@ -416,8 +431,7 @@ function personalRunnerCredentialsOf(
  * Redemption, authenticated on the token alone and authorized on its minter's
  * current permit, registering the runner with what it declares. The token is
  * read before it is spent, so one whose minter has lost the permit stays
- * unspent, and given back where the writes after the spend faulted, as a pool
- * token is.
+ * unspent, and given back where the writes after the spend faulted.
  */
 export async function personalRunnerTokenRedeem(
   access: ProjectAccess,

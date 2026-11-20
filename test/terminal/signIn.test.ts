@@ -13,7 +13,9 @@ import assert from "node:assert/strict";
 import {
   chmodSync,
   existsSync,
+  mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -22,6 +24,10 @@ import { networkInterfaces } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 
+import {
+  signInStoreAccessName,
+  signInStoreEndedName,
+} from "../../src/contract/signInStore.ts";
 import {
   browsed,
   ended,
@@ -91,6 +97,23 @@ test("a sign-in the person finishes is exchanged, remembered and said, on this m
   assert.equal(remembered(machine).site, installation.site);
   assert.equal(machine.lock(), undefined);
   assert.equal(machine.file("sign-in.json"), undefined);
+});
+
+test("a sign-in the person finishes leaves neither record another program kept beside the site's token", async () => {
+  const { installation, machine } = await installed();
+  const records = [
+    signInStoreAccessName(installation.site),
+    signInStoreEndedName(installation.site),
+  ];
+  mkdirSync(machine.store, { recursive: true, mode: 0o700 });
+  for (const record of records)
+    writeFileSync(join(machine.store, record), "record\n", { mode: 0o600 });
+  const done = await signedIn(installation, machine);
+  assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
+  assert.deepEqual(readdirSync(machine.store).toSorted(), [
+    encodeURIComponent(installation.site),
+    "lock",
+  ]);
 });
 
 test("neither the program nor anything it asked ever names localhost", async () => {
@@ -259,7 +282,7 @@ test("a declined sign-in stands: the bare command says it again and opens nothin
     assert.match(stood.lines[3] ?? "", /^rule: Run the command on the next: /u);
     assert.match(
       stood.lines[4] ?? "",
-      /^rule: Before anything else, start a subagent that explores /u,
+      /^rule: Start a subagent in the background that explores /u,
     );
     assert.match(stood.lines[5] ?? "", /^rule: Never read or print /u);
     assert.match(stood.lines[6] ?? "", signOutRule);
@@ -460,7 +483,7 @@ test("where the opener cannot be run the address is printed at once, and the pag
 
 test("a page nobody finishes stops answering at its bound, and the next sign-in says so once", async () => {
   const { installation, machine } = await installed();
-  await machine.run(["--site", installation.site]);
+  await machine.run(["--site", installation.site, "--start", "yes"]);
   const listened = machine.run([
     "listen",
     "--site",
@@ -614,7 +637,10 @@ test("a page whose site is no longer the one remembered signs nothing in, and wh
   const second = await made.installation();
   const machine = made.machine();
   const address = await waiting(first, machine);
-  assert.equal((await machine.run(["--site", second.site])).code, 0);
+  assert.equal(
+    (await machine.run(["--site", second.site, "--start", "yes"])).code,
+    0,
+  );
   const kept = machine.file("session.json");
   assert.equal((await person(address)).status, 400);
   assert.deepEqual(first.grants, []);

@@ -17,6 +17,7 @@ import type {
 } from "../app/core/setupRunnerSaid.ts";
 import {
   boxClaudeConfig,
+  boxApiKey,
   boxLogin,
   boxChatFile,
   boxChatUnitName,
@@ -77,6 +78,7 @@ export const rosterRestart = setupRestartAll(
   {
     settings: boxSettings,
     login: boxLogin,
+    apiKey: boxApiKey,
     pools: boxPools,
     units: boxUnits,
     own: boxOwn,
@@ -139,15 +141,12 @@ export const runnerStops: {
   ],
   Unread: [
     { stop: "Unread", read: "work", outcome: "Refused" },
-    { stop: "Unread", read: "fallback", outcome: "Fault" },
     { stop: "Unread", read: "personal", outcome: "Cut" },
-    { stop: "Unread", read: "fallback", outcome: "Refused" },
     { stop: "Unread", read: "personal", outcome: "Refused" },
     { stop: "Unread", read: "threads", outcome: "Refused" },
     { stop: "Unread", read: "permit", outcome: "Fault" },
     { stop: "Unread", read: "chat", outcome: "Fault" },
   ],
-  NotAdmin: [{ stop: "NotAdmin" }],
   Serviceless: [{ stop: "Serviceless", guide }],
   Engineless: [
     {
@@ -192,6 +191,12 @@ export const runnerStops: {
     credential,
     guide,
   })),
+  CredentialRefused: [
+    { stop: "CredentialRefused", kind: "Subscription", why: "Missing" },
+    { stop: "CredentialRefused", kind: "Subscription", why: "Empty" },
+    { stop: "CredentialRefused", kind: "Subscription", why: "Unlike" },
+    { stop: "CredentialRefused", kind: "ApiKey", why: "Unlike" },
+  ],
   Npmless: [{ stop: "Npmless" }],
   Unwritten: [{ stop: "Unwritten", path: boxSettings }],
   Act: [
@@ -336,8 +341,8 @@ export const runnerStops: {
   ],
   RunnerWithheld: [{ stop: "RunnerWithheld", people: rosterPeople }],
   ServeRefused: [
-    { stop: "ServeRefused", write: "Give", outcome: "Rejected" },
-    { stop: "ServeRefused", write: "Allow", outcome: "Fault" },
+    { stop: "ServeRefused", outcome: "Rejected" },
+    { stop: "ServeRefused", outcome: "Fault" },
   ],
   ChatMintRefused: [
     { stop: "ChatMintRefused", outcome: "Absent", lapseMins: 60 },
@@ -422,8 +427,8 @@ export const runnerNotes: {
     {
       note: "ChatSettingsWritten",
       path: boxSettings,
-      sessionsMax: 3,
-      sessionMemoryMib: 2_048,
+      sessionsMax: 4,
+      sessionMemoryMib: 1_024,
     },
   ],
   Package: [{ note: "Package", command: rosterCommand, version: boxVersion }],
@@ -463,6 +468,16 @@ export const runnerNotes: {
     note: "Login" as const,
     credential,
   })),
+  CredentialPlaced: [
+    {
+      note: "CredentialPlaced",
+      credential: { kind: "Subscription", path: boxLogin },
+    },
+    {
+      note: "CredentialPlaced",
+      credential: { kind: "ApiKey", path: boxApiKey },
+    },
+  ],
   Personal: [{ note: "Personal", path: rosterPersonal }],
   ServerFound: [{ note: "ServerFound", path: boxClaudeConfig }],
   ServerAdded: [{ note: "ServerAdded", path: boxClaudeConfig }],
@@ -471,10 +486,6 @@ export const runnerNotes: {
   Given: [
     { note: "Given", now: false },
     { note: "Given", now: true },
-  ],
-  Allowed: [
-    { note: "Allowed", now: false },
-    { note: "Allowed", now: true },
   ],
   Checked: [
     { note: "Checked", warned: undefined },
@@ -546,7 +557,6 @@ export function rosterLines(places: RosterPlaces) {
       linger: "found: your services keep running after you log out",
       running: `found: ${unit} is enabled and running`,
       given: "found: your runners are given acme/widgets",
-      allowed: "found: acme/widgets lets your own runners take your work in it",
       live: "found: the site sees your runner live, taking your work in acme/widgets",
       chat: `found: this machine is registered as your chat host, in ${chat}`,
       chatGone: `found: ${chat} registered this machine as your chat host, and the site no longer knows that registration`,
@@ -567,10 +577,8 @@ export function rosterLines(places: RosterPlaces) {
       enabled: `did: set ${unit}, which was running, to start when you log in`,
       started: `did: started ${unit}, which also starts when you log in`,
       given: "did: gave your runners acme/widgets",
-      allowed:
-        "did: set acme/widgets to let your own runners take your work in it while one is online, and a shared runner while none is",
       restarted: `did: restarted ${unit}, so it runs as it is now registered and installed`,
-      chatSized: `did: wrote the size of your chat host into ${settings}, every other setting kept as it was: the most chats it runs at once is 3, at 2 GiB each, 6 GiB in all`,
+      chatSized: `did: wrote the size of your chat host into ${settings}, every other setting kept as it was: the most chats it runs at once is 4, at 1 GiB each, 4 GiB in all`,
       chat: `did: registered this machine as your chat host, in ${chat}`,
       chatUnit: `did: installed your chat host's service, ${chatUnit}`,
       chatStarted: `did: started ${chatUnit}, which also starts when you log in`,

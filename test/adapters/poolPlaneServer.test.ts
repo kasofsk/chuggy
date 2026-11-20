@@ -54,7 +54,6 @@ import type {
   PersonalRunnerIdentity,
   PoolPlaneIdentity,
   WorkerPoolAssignments,
-  WorkerPoolIdentity,
   WorkerPoolRunners,
 } from "../../src/interpreter/workerPool.ts";
 import { workerRunnerReleasesRead } from "../../src/interpreter/workerRunnerRelease.ts";
@@ -80,6 +79,7 @@ import {
 import {
   asProjectId,
   type Partition,
+  type ProjectId,
 } from "../../src/interpreter/projectStore.ts";
 import {
   workerContractOptionalsSeen,
@@ -102,17 +102,11 @@ import {
 
 const issuer = "https://issuer.invalid";
 
-/** The one client the fake issuer knows, and the principal its subject resolves to. */
+/** A project's pool, known by a token of its own and admitted by nothing. */
 const poolToken = "pool-token";
 const poolPrincipal = oidcPrincipal(issuer, "client-one");
 
 const partition = { tenant: "tenant", project: "project" } as Partition;
-const identity: WorkerPoolIdentity = {
-  partition,
-  pool: "pool-one",
-  principal: poolPrincipal,
-};
-
 /** A member's personal runner in the same tenant, known by a token of its own. */
 const runnerToken = "runner-token";
 const runner: PersonalRunnerIdentity = {
@@ -129,15 +123,9 @@ const host: ChatHostIdentity = {
   principal: oidcPrincipal(issuer, "chuggy-personal-host"),
 };
 
-/** The image the one claimed execution pinned, and the name a pool is handed it by. */
+/** The image the one claimed execution pinned, and the name a runner is handed it by. */
 const pinned = `registry.invalid/worker@sha256:${"a".repeat(64)}`;
 const published = `registry.public.invalid/worker@sha256:${"a".repeat(64)}`;
-
-/** A pool's token and the release it speaks, which is this plane's own. */
-const speaking = {
-  authorization: `Bearer ${poolToken}`,
-  [workerContractHeader]: workerContractRelease,
-};
 
 /** A chat host's token and the release it speaks. */
 const hostSpeaking = {
@@ -145,8 +133,8 @@ const hostSpeaking = {
   [workerContractHeader]: workerContractRelease,
 };
 
-/** A personal runner's token and the release it speaks. */
-const runnerSpeaking = {
+/** A personal runner's token and the release it speaks, which is this plane's own. */
+const speaking = {
   authorization: `Bearer ${runnerToken}`,
   [workerContractHeader]: workerContractRelease,
 };
@@ -167,37 +155,47 @@ function polling(
   return `${workerPoolPollRoute}?${query}`;
 }
 
-/** Records every call a route made, so the route's mapping is what the case reads, the pool holding `pinning`. */
-function calls(pinning: readonly string[] = []): {
+/**
+ * Records every call a route made, so the route's mapping is what the case
+ * reads, the caller holding `pinning` and a runner allowlisting `allowlisted`:
+ * the runner's first claim takes a job pinning an image.
+ */
+function calls(
+  pinning: readonly string[] = [],
+  allowlisted: readonly ProjectId[] = [partition.project],
+): {
   readonly made: unknown[];
   readonly ports: WorkerPoolAssignments;
 } {
   const made: unknown[] = [];
   let claims = 0;
+  const claimed = (assignment: string) => {
+    made.push(["claim", assignment]);
+    claims += 1;
+    return claims === 1
+      ? {
+          requirement: {
+            mode: "Container",
+            operatingSystem: "Linux",
+            architecture: "Amd64",
+            image: pinned,
+          } as const,
+        }
+      : undefined;
+  };
   return {
     made,
     ports: {
-      claim: (_identity, _terms, assignment) => {
-        made.push(["claim", assignment]);
-        claims += 1;
+      claimPersonal: (_identity, _terms, assignment) => {
+        const row = claimed(assignment);
         return Promise.resolve(
-          claims === 1
-            ? {
-                requirement: {
-                  mode: "Container",
-                  operatingSystem: "Linux",
-                  architecture: "Amd64",
-                  image: pinned,
-                },
-              }
-            : undefined,
+          row === undefined
+            ? undefined
+            : { ...row, project: partition.project },
         );
       },
-      ownersDeferredTo: () => Promise.resolve([]),
-      claimPersonal: () => Promise.resolve(undefined),
-      waiting: () => Promise.resolve(false),
       waitingPersonal: () => Promise.resolve(false),
-      allowlisted: () => Promise.resolve([]),
+      allowlisted: () => Promise.resolve(allowlisted),
       credentialOutcomes: () => Promise.resolve([]),
       credentialPauses: () => Promise.resolve([]),
       polled: () => Promise.resolve(),
@@ -225,7 +223,7 @@ function calls(pinning: readonly string[] = []): {
   };
 }
 
-/** The image every session of this site runs, and the name a pool is handed it by. */
+/** The image every session of this site runs, and the name a chat host is handed it by. */
 const sessionImage = `registry.invalid/session@sha256:${"c".repeat(64)}`;
 const sessionPublished = `registry.public.invalid/session@sha256:${"c".repeat(64)}`;
 const sessionSecret = `chgs_${"e".repeat(64)}`;
@@ -429,13 +427,6 @@ function plane(
   return {
     authentication: issuing,
     access,
-    registry: {
-      register: () => Promise.resolve(true),
-      clientOf: () => Promise.resolve(undefined),
-      deregister: () => Promise.resolve(false),
-      identify: (principal) =>
-        Promise.resolve(principal === poolPrincipal ? identity : undefined),
-    },
     personal: {
       identify: (principal) =>
         Promise.resolve(principal === runner.principal ? runner : undefined),
@@ -493,14 +484,15 @@ test("one poll renews what is held, says what must stop and hands over what it c
   assert.deepEqual(answered.json(), {
     assignments: [
       {
-        assignment: "minted-2",
+        assignment: "minted-1",
         capabilities: ["Platform:Linux:Amd64"],
         image: published,
+        project: "project",
         cpuMillis: 500,
         memoryMib: 256,
         deadlineSecs: 600,
         callbackUrl: "https://plane.invalid/v1/ticket-execution",
-        bearer: "minted-3",
+        bearer: "minted-2",
       },
     ],
     sessions: [],
@@ -509,7 +501,7 @@ test("one poll renews what is held, says what must stop and hands over what it c
   assert.deepEqual(recorded.made, [
     ["renew", "live"],
     ["renew", "gone"],
-    ["claim", "minted-2"],
+    ["claim", "minted-1"],
   ]);
 });
 
@@ -518,19 +510,19 @@ test("a poll naming its runner keeps it, and is answered with the release pinned
     [
       "a pinned package",
       { ...speaking, [workerRunnerHeader]: "chuggy-linux/0.14.0" },
-      ["Dedicated", { package: "chuggy-linux", version: "0.14.0" }],
+      ["Personal", { package: "chuggy-linux", version: "0.14.0" }],
       { package: "chuggy-linux", ...linuxPin },
     ],
     [
       "a package already past its pin",
       { ...speaking, [workerRunnerHeader]: "chuggy-linux/0.15.0" },
-      ["Dedicated", { package: "chuggy-linux", version: "0.15.0" }],
+      ["Personal", { package: "chuggy-linux", version: "0.15.0" }],
       { package: "chuggy-linux", ...linuxPin },
     ],
     [
       "a package nothing pins",
       { ...speaking, [workerRunnerHeader]: "chuggy-darwin/0.14.0" },
-      ["Dedicated", { package: "chuggy-darwin", version: "0.14.0" }],
+      ["Personal", { package: "chuggy-darwin", version: "0.14.0" }],
       undefined,
     ],
     [
@@ -540,21 +532,15 @@ test("a poll naming its runner keeps it, and is answered with the release pinned
         [workerContractHeader]: "1.10.0",
         [workerRunnerHeader]: "chuggy-linux/0.14.0",
       },
-      ["Dedicated", { package: "chuggy-linux", version: "0.14.0" }],
+      ["Personal", { package: "chuggy-linux", version: "0.14.0" }],
       undefined,
     ],
-    ["no runner named", speaking, ["Dedicated", undefined], undefined],
+    ["no runner named", speaking, ["Personal", undefined], undefined],
     [
       "a runner named in no grammar",
       { ...speaking, [workerRunnerHeader]: "chuggy-linux@0.14.0" },
-      ["Dedicated", undefined],
+      ["Personal", undefined],
       undefined,
-    ],
-    [
-      "a personal runner",
-      { ...runnerSpeaking, [workerRunnerHeader]: "chuggy-linux/0.14.0" },
-      ["Personal", { package: "chuggy-linux", version: "0.14.0" }],
-      { package: "chuggy-linux", ...linuxPin },
     ],
   ] as const) {
     const recorded = runnerCalls();
@@ -590,7 +576,7 @@ test("a runner named twice names none, and its poll is served", async () => {
   });
   assert.equal(answered.statusCode, 200);
   assert.equal("release" in answered.json<object>(), false);
-  assert.deepEqual(recorded.named, [["Dedicated", undefined]]);
+  assert.deepEqual(recorded.named, [["Personal", undefined]]);
 });
 
 test("a poll naming its capabilities has them kept as one list however its header spells them, and a poll naming none keeps none", async () => {
@@ -602,7 +588,7 @@ test("a poll naming its capabilities has them kept as one list however its heade
         ...speaking,
         [workerRunnerCapabilitiesHeader]: " Platform:Linux:Amd64,Tool:Bazel ",
       },
-      ["Dedicated", bazel],
+      ["Personal", bazel],
     ],
     [
       "a list sent on two lines",
@@ -613,18 +599,18 @@ test("a poll naming its capabilities has them kept as one list however its heade
           "Tool:Bazel",
         ] as string[],
       },
-      ["Dedicated", bazel],
+      ["Personal", bazel],
     ],
     [
       "an empty list",
       { ...speaking, [workerRunnerCapabilitiesHeader]: "" },
-      ["Dedicated", []],
+      ["Personal", []],
     ],
-    ["no list", speaking, ["Dedicated", undefined]],
+    ["no list", speaking, ["Personal", undefined]],
     [
       "a personal runner",
       {
-        ...runnerSpeaking,
+        ...speaking,
         [workerRunnerCapabilitiesHeader]: "Platform:Linux:Amd64, Tool:Bazel",
       },
       ["Personal", bazel],
@@ -639,15 +625,14 @@ test("a poll naming its capabilities has them kept as one list however its heade
   }
 });
 
-test("every poll of a personal runner records whether its release advertises its agents, and a pool's records that it does not", async () => {
+test("every poll of a personal runner records whether its release advertises its agents", async () => {
   for (const [why, headers, kept] of [
-    ["a personal runner of this release", runnerSpeaking, ["Personal", true]],
+    ["a personal runner of this release", speaking, ["Personal", true]],
     [
       "a personal runner of the release before",
-      { ...runnerSpeaking, [workerContractHeader]: "1.49.0" },
+      { ...speaking, [workerContractHeader]: "1.49.0" },
       ["Personal", false],
     ],
-    ["a pool of this release", speaking, ["Dedicated", false]],
   ] as const) {
     const recorded = runnerCalls();
     const answered = await createPoolPlaneApp(
@@ -708,7 +693,7 @@ test("a poll over a socket naming the most credentials the contract admits besid
       `http://127.0.0.1:${String(port)}${polling([], 0)}`,
       {
         headers: {
-          ...runnerSpeaking,
+          ...speaking,
           [workerRunnerCapabilitiesHeader]: capabilities,
           [workerRunnerCredentialsHeader]: credentials,
         },
@@ -723,12 +708,12 @@ test("a poll over a socket naming the most credentials the contract admits besid
   }
 });
 
-test("a personal runner's, a pool's or a chat host's poll has the credentials it named kept, one unread or absent keeping none", async () => {
+test("a personal runner's or a chat host's poll has the credentials it named kept, one unread or absent keeping none", async () => {
   for (const [why, headers, kept] of [
     [
       "a runner naming two agents' credentials",
       {
-        ...runnerSpeaking,
+        ...speaking,
         [workerRunnerCredentialsHeader]:
           "Claude:work, Codex:codex, Claude:home",
       },
@@ -737,18 +722,12 @@ test("a personal runner's, a pool's or a chat host's poll has the credentials it
     [
       "a runner naming one twice",
       {
-        ...runnerSpeaking,
+        ...speaking,
         [workerRunnerCredentialsHeader]: "Claude:work, Claude:work",
       },
       ["Personal", {}],
     ],
-    ["a runner naming none", runnerSpeaking, ["Personal", {}]],
-    [
-      "a pool naming some",
-      { ...speaking, [workerRunnerCredentialsHeader]: "Claude:work" },
-      ["Dedicated", { Claude: ["work"] }],
-    ],
-    ["a pool naming none", speaking, ["Dedicated", {}]],
+    ["a runner naming none", speaking, ["Personal", {}]],
     [
       "a chat host naming some",
       { ...hostSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
@@ -776,35 +755,18 @@ const credentialPauseAnswered = {
 const credentialPausesPolled = [
   [
     "a runner of this release",
-    { ...runnerSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
-    [{ Claude: ["work"] }],
-    [credentialPauseAnswered],
-  ],
-  [
-    "a runner of this release none of whose named credentials is paused",
-    { ...runnerSpeaking, [workerRunnerCredentialsHeader]: "Codex:codex" },
-    [{ Codex: ["codex"] }],
-    undefined,
-  ],
-  [
-    "a runner of a release before them",
-    {
-      ...runnerSpeaking,
-      [workerContractHeader]: "1.77.0",
-      [workerRunnerCredentialsHeader]: "Claude:work",
-    },
-    [],
-    undefined,
-  ],
-  ["a runner naming none", runnerSpeaking, [], undefined],
-  [
-    "a pool of this release",
     { ...speaking, [workerRunnerCredentialsHeader]: "Claude:work" },
     [{ Claude: ["work"] }],
     [credentialPauseAnswered],
   ],
   [
-    "a pool of a release before them",
+    "a runner of this release none of whose named credentials is paused",
+    { ...speaking, [workerRunnerCredentialsHeader]: "Codex:codex" },
+    [{ Codex: ["codex"] }],
+    undefined,
+  ],
+  [
+    "a runner of a release before them",
     {
       ...speaking,
       [workerContractHeader]: "1.77.0",
@@ -813,6 +775,7 @@ const credentialPausesPolled = [
     [],
     undefined,
   ],
+  ["a runner naming none", speaking, [], undefined],
   [
     "a chat host of this release",
     { ...hostSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
@@ -831,7 +794,7 @@ const credentialPausesPolled = [
   ],
 ] as const;
 
-test("a personal runner's, a pool's or a chat host's answer names the pauses of the credentials its poll named only where its release reads them", async () => {
+test("a personal runner's or a chat host's answer names the pauses of the credentials its poll named only where its release reads them", async () => {
   const pause = credentialPauseAnswered;
   for (const [why, headers, asked, pauses] of credentialPausesPolled) {
     const made: unknown[] = [];
@@ -859,17 +822,17 @@ test("a poll naming its memory ceiling has it kept, and a poll naming none keeps
     [
       "a ceiling",
       { ...speaking, [workerRunnerMemoryCeilingHeader]: "8192" },
-      ["Dedicated", 8_192],
+      ["Personal", 8_192],
     ],
     [
       "a ceiling of nothing",
       { ...speaking, [workerRunnerMemoryCeilingHeader]: "0" },
-      ["Dedicated", 0],
+      ["Personal", 0],
     ],
-    ["no ceiling", speaking, ["Dedicated", undefined]],
+    ["no ceiling", speaking, ["Personal", undefined]],
     [
       "a personal runner",
-      { ...runnerSpeaking, [workerRunnerMemoryCeilingHeader]: "16384" },
+      { ...speaking, [workerRunnerMemoryCeilingHeader]: "16384" },
       ["Personal", 16_384],
     ],
   ] as const) {
@@ -941,7 +904,7 @@ test("a poll naming its memory room has every claim held to it and one naming no
       planePolling(
         {
           ...calls().ports,
-          claim: (_identity, terms) =>
+          claimPersonal: (_identity, terms) =>
             Promise.resolve(void claimed.push(terms.memoryRoomMib)),
         },
         3,
@@ -976,7 +939,7 @@ test("a poll of this release naming its room is told a job it fits is waiting, a
     const answered = await createPoolPlaneApp(
       plane({
         ...calls().ports,
-        waiting: (_identity, terms) =>
+        waitingPersonal: (_identity, terms) =>
           Promise.resolve((asked.push(terms.memoryRoomMib), true)),
       }),
     ).inject({ method: "GET", url: polling([], 0), headers });
@@ -988,7 +951,7 @@ test("a poll of this release naming its room is told a job it fits is waiting, a
   }
 });
 
-test("a pool wanting none is renewed, told what to stop and claimed nothing", async () => {
+test("a runner wanting none is renewed, told what to stop and claimed nothing", async () => {
   const recorded = calls();
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
     method: "GET",
@@ -1007,7 +970,7 @@ test("a pool wanting none is renewed, told what to stop and claimed nothing", as
   ]);
 });
 
-test("a pool wanting more than the plane hands out per poll is claimed the plane's bound", async () => {
+test("a runner wanting more than the plane hands out per poll is claimed the plane's bound", async () => {
   const recorded = calls();
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
     method: "GET",
@@ -1019,7 +982,7 @@ test("a pool wanting more than the plane hands out per poll is claimed the plane
     workerPoolReconciliationSchema.parse(answered.json()).assignments.length,
     1,
   );
-  assert.deepEqual(recorded.made, [["claim", "minted-2"]]);
+  assert.deepEqual(recorded.made, [["claim", "minted-1"]]);
 });
 
 test("a poll that does not say its room, or says it as no count, is refused", async () => {
@@ -1068,7 +1031,7 @@ test("a poll that says its room for sessions as no count is refused, and one tha
   }
 });
 
-test("a pool already at its bound still polls and is answered with control alone", async () => {
+test("a runner already at its bound still polls and is answered with control alone", async () => {
   const recorded = calls();
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
     method: "GET",
@@ -1120,7 +1083,7 @@ for (const [why, headers, status] of [
     assert.equal(answered.body, "");
   });
 
-test("a pool the authority refuses is told it is not there rather than told to retry", async () => {
+test("a runner the authority refuses is told it is not there rather than told to retry", async () => {
   const answered = await createPoolPlaneApp(
     plane(calls().ports, authority("Refuse")),
   ).inject({
@@ -1132,7 +1095,7 @@ test("a pool the authority refuses is told it is not there rather than told to r
   assert.equal(answered.body, "");
 });
 
-test("a pool polling through an authority outage is told to retry", async () => {
+test("a runner polling through an authority outage is told to retry", async () => {
   const recorded = calls();
   const answered = await createPoolPlaneApp(
     plane(recorded.ports, authority("Outage")),
@@ -1210,12 +1173,12 @@ test("a settlement whose body does not carry what its path needs is refused", as
 /** A later minor than the one this plane was built with, which it cannot serve. */
 const unreleased = `${String(workerContractAccepted.max.major)}.${String(workerContractAccepted.max.minor + 1)}.0`;
 
-test("a pool naming no release, one below the plane's floor or one later than the plane's is refused at the poll and at every settlement, before any port", async () => {
+test("a runner naming no release, one below the plane's floor or one later than the plane's is refused at the poll and at every settlement, before any port", async () => {
   const recorded = calls();
   const app = createPoolPlaneApp(plane(recorded.ports));
   for (const offered of [undefined, "1.0.0", "1.2.0", "1.6.0", unreleased]) {
     const headers = {
-      authorization: `Bearer ${poolToken}`,
+      authorization: `Bearer ${runnerToken}`,
       ...(offered === undefined ? {} : { [workerContractHeader]: offered }),
     };
     for (const [method, url] of [
@@ -1243,7 +1206,7 @@ test("a pool naming no release, one below the plane's floor or one later than th
   assert.deepEqual(recorded.made, []);
 });
 
-/** The runtime a claimed attempt was opened under, and the name a pool reading one is handed it by. */
+/** The runtime a claimed attempt was opened under, and the name a runner reading one is handed it by. */
 const runtime = `registry.invalid/worker-runtime@sha256:${"e".repeat(64)}`;
 const runtimePublished = `registry.public.invalid/worker-runtime@sha256:${"e".repeat(64)}`;
 
@@ -1293,10 +1256,13 @@ const claims = {
   },
 } as const;
 
-test("a pool is handed the runtime its claim's attempt was opened under, on the public host", async () => {
+test("a runner is handed the runtime its claim's attempt was opened under, on the public host", async () => {
   const recorded = calls();
   const answered = await createPoolPlaneApp(
-    plane({ ...recorded.ports, claim: () => Promise.resolve(claims.pinned) }),
+    plane({
+      ...recorded.ports,
+      claimPersonal: () => Promise.resolve(claims.personal),
+    }),
   ).inject({ method: "GET", url: polling([]), headers: speaking });
   assert.equal(answered.statusCode, 200);
   const [assignment] = workerPoolReconciliationSchema.parse(
@@ -1306,20 +1272,18 @@ test("a pool is handed the runtime its claim's attempt was opened under, on the 
   assert.equal(assignment?.image, published);
 });
 
-test("a personal runner's poll naming this release is handed its job's project, and an earlier release's or a pool's none", async () => {
+test("a personal runner's poll naming this release is handed its job's project, and an earlier release's none", async () => {
   for (const [what, headers, project] of [
-    ["a runner of this release", runnerSpeaking, "project"],
+    ["a runner of this release", speaking, "project"],
     [
       "a runner of 1.14.0",
-      { ...runnerSpeaking, [workerContractHeader]: "1.14.0" },
+      { ...speaking, [workerContractHeader]: "1.14.0" },
       undefined,
     ],
-    ["a pool of this release", speaking, undefined],
   ] as const) {
     const answered = await createPoolPlaneApp(
       plane({
         ...calls().ports,
-        claim: () => Promise.resolve(claims.pinned),
         claimPersonal: () => Promise.resolve(claims.personal),
         allowlisted: () => Promise.resolve([asProjectId("project")]),
       }),
@@ -1339,11 +1303,11 @@ test("a personal runner's poll naming this release is handed its job's project, 
   }
 });
 
-/** Every poll a replayed pool makes: whose token it polls with, what it holds, how many executions and sessions it has room for, what a claim returns it, and the runner and the memory room it names where its release names them. */
+/** Every poll a replayed release makes: whose token it polls with, what it holds, how many executions and sessions it has room for, what a claim returns it, and the runner and the memory room it names where its release names them. */
 const poolReplayPolls = [
   [
     "a pinned image",
-    poolToken,
+    runnerToken,
     ["live", "gone"],
     1,
     0,
@@ -1353,7 +1317,7 @@ const poolReplayPolls = [
   ],
   [
     "a capability requirement",
-    poolToken,
+    runnerToken,
     [],
     1,
     0,
@@ -1363,7 +1327,7 @@ const poolReplayPolls = [
   ],
   [
     "an attempt that kept no runtime",
-    poolToken,
+    runnerToken,
     [],
     1,
     0,
@@ -1371,10 +1335,10 @@ const poolReplayPolls = [
     undefined,
     undefined,
   ],
-  ["no room", poolToken, ["live"], 0, 0, claims.pinned, undefined, undefined],
+  ["no room", runnerToken, ["live"], 0, 0, claims.pinned, undefined, undefined],
   [
     "nothing to claim",
-    poolToken,
+    runnerToken,
     [],
     1,
     0,
@@ -1382,7 +1346,6 @@ const poolReplayPolls = [
     "chuggy-linux/0.14.0",
     "4096",
   ],
-  ["room for a session", poolToken, [], 0, 1, undefined, undefined, undefined],
   [
     "a personal runner's job",
     runnerToken,
@@ -1425,17 +1388,18 @@ const poolReplayPolls = [
   ],
 ] as const;
 
-/** The durable side one replayed poll reaches: each claim taking `claimed`, a runner's where it names a project, and the job `benched` stopped where its credential ran out. */
+/** The durable side one replayed poll reaches: each claim taking `claimed` in the project, and the job `benched` stopped where its credential ran out. */
 function poolReplayPorts(
   ports: WorkerPoolAssignments,
   claimed: (typeof poolReplayPolls)[number][5],
 ): WorkerPoolAssignments {
   return {
     ...ports,
-    claim: () => Promise.resolve(claimed),
     claimPersonal: () =>
       Promise.resolve(
-        claimed !== undefined && "project" in claimed ? claimed : undefined,
+        claimed === undefined
+          ? undefined
+          : { ...claimed, project: asProjectId("project") },
       ),
     allowlisted: () => Promise.resolve([asProjectId("project")]),
     credentialOutcomes: (_caller, stopped) =>
@@ -1455,18 +1419,21 @@ function poolReplayPorts(
   };
 }
 
-/** The fields a release reads as optional that this server names on every answer carrying their parent, since every session it hands a chat host is a thread's. */
-const poolReplayAlwaysNamed: readonly string[] = ["answer.sessions[].thread"];
+/** The fields a release reads as optional that this server names on every answer carrying their parent, since every session it hands a chat host is a thread's and every job it hands a runner is in a project. */
+const poolReplayAlwaysNamed: readonly string[] = [
+  "answer.sessions[].thread",
+  "answer.assignments[].project",
+];
 
 /**
- * Every poll a pool built with `older` makes, through the names its own
+ * Every poll a runner built with `older` makes, through the names its own
  * release exports, read by its own reconciliation schema, each naming a
  * credential unless it names its runner. That schema is
- * strict, so an answer naming a field it does not is one such a pool refuses
+ * strict, so an answer naming a field it does not is one such a runner refuses
  * whole.
  */
 function poolReplayPolled(older: WorkerContractReleasePool): void {
-  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and only a chat host is handed the session it has room for`, async () => {
+  test(`a ${older.release} runner reads every reconciliation a poll answers it with, and only a chat host is handed the session it has room for`, async () => {
     const seen = new Map<string, Set<boolean>>();
     for (const [
       what,
@@ -1536,27 +1503,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
   });
 }
 
-test("a pool of this release with room for a session is handed none while one waits, asks for none, and is recorded as polling", async () => {
-  const recorded = calls();
-  const offering = sessionCalls([], ["session-waiting"]);
-  const answered = await createPoolPlaneApp(
-    plane(recorded.ports, authority("Allow"), offering.store),
-  ).inject({
-    method: "GET",
-    url: polling([], 0, 3),
-    headers: speaking,
-  });
-  assert.equal(answered.statusCode, 200);
-  assert.deepEqual(answered.json(), {
-    assignments: [],
-    sessions: [],
-    stop: [],
-  });
-  assert.deepEqual(offering.made, [["among", []], ["polled"]]);
-  assert.deepEqual(recorded.made, []);
-});
-
-test("what a pool holds is renewed through the rows of its own kind, each kind held to its own bound", async () => {
+test("what a chat host holds is renewed as its sessions, held to their own bound", async () => {
   const recorded = calls();
   const holding = sessionCalls(["session-live", "session-gone"]);
   const app = createPoolPlaneApp(
@@ -1564,20 +1511,26 @@ test("what a pool holds is renewed through the rows of its own kind, each kind h
   );
   const answered = await app.inject({
     method: "GET",
-    url: polling(["live", "live", "live", "session-live", "session-gone"], 0),
-    headers: speaking,
+    url: polling(["session-live", "session-gone"], 0),
+    headers: hostSpeaking,
   });
   assert.equal(answered.statusCode, 200);
   assert.deepEqual(answered.json(), {
     assignments: [],
     sessions: [],
     stop: ["session-gone"],
+    chatImage: sessionPublished,
   });
-  assert.deepEqual(recorded.made, Array(3).fill(["renew", "live"]));
-  assert.deepEqual(holding.made.slice(2), [
-    ["renew", "session-live"],
-    ["renew", "session-gone"],
-  ]);
+  assert.deepEqual(recorded.made, []);
+  assert.deepEqual(
+    holding.made.filter((call) =>
+      ["renew"].includes((call as unknown[])[0] as string),
+    ),
+    [
+      ["renew", "session-live"],
+      ["renew", "session-gone"],
+    ],
+  );
   const overSessions = await createPoolPlaneApp(
     plane(
       calls().ports,
@@ -1587,7 +1540,7 @@ test("what a pool holds is renewed through the rows of its own kind, each kind h
   ).inject({
     method: "GET",
     url: polling(["s1", "s2", "s3"], 0),
-    headers: speaking,
+    headers: hostSpeaking,
   });
   assert.equal(overSessions.statusCode, 400);
 });
@@ -1606,7 +1559,7 @@ test("a settlement of a held session reaches the session side and never the exec
     const answered = await app.inject({
       method: "POST",
       url: workerPoolSettlementPath(outcome, "session-one"),
-      headers: speaking,
+      headers: hostSpeaking,
       payload,
     });
     assert.equal(answered.statusCode, 204, outcome);
@@ -1622,9 +1575,9 @@ test("a settlement of a held session reaches the session side and never the exec
   );
 });
 
-/** Every settlement a pool built with `older` makes, at the paths and with the bodies its own release builds, each reaching its port. */
+/** Every settlement a runner built with `older` makes, at the paths and with the bodies its own release builds, each reaching its port. */
 function poolReplaySettled(older: WorkerContractReleasePool): void {
-  test(`a ${older.release} pool settles an assignment with every outcome its release names`, async () => {
+  test(`a ${older.release} runner settles an assignment with every outcome its release names`, async () => {
     const recorded = calls();
     const app = createPoolPlaneApp(plane(recorded.ports));
     for (const outcome of Object.keys(older.settlementRoutes)) {
@@ -1636,7 +1589,7 @@ function poolReplaySettled(older: WorkerContractReleasePool): void {
         method: "POST",
         url: older.settlementPath(outcome, "one"),
         headers: {
-          authorization: `Bearer ${poolToken}`,
+          authorization: `Bearer ${runnerToken}`,
           [workerContractHeader]: older.wire,
         },
         payload: body,
@@ -1661,10 +1614,7 @@ test("every answer names the plane's release, the probes' and the framework's ow
   const ports = calls().ports;
   const failing = {
     ...plane(ports),
-    registry: {
-      ...plane(ports).registry,
-      identify: () => Promise.reject(new Error("down")),
-    },
+    personal: { identify: () => Promise.reject(new Error("down")) },
     ready: () => Promise.resolve(false),
   };
   const token = speaking;
@@ -1720,9 +1670,9 @@ test("every settlement refuses a caller it does not serve before the body it sen
     ["no bearer", plane(recorded.ports), undefined, 401],
     ["a token the issuer rejects", plane(recorded.ports), "stranger", 401],
     [
-      "a pool the authority refuses",
+      "a runner the authority refuses",
       plane(recorded.ports, authority("Refuse")),
-      poolToken,
+      runnerToken,
       404,
     ],
     ["an issuer that cannot answer", plane(recorded.ports), "issuer-down", 503],
@@ -1751,7 +1701,7 @@ test("a settlement's empty body sent chunked with no media type is answered as n
   const service = plane(calls().ports);
   const path = workerPoolSettlementPath("Accepted", "one");
   const headers = {
-    authorization: `Bearer ${poolToken}`,
+    authorization: `Bearer ${runnerToken}`,
     [workerContractHeader]: workerContractRelease,
   };
   const bodyless = await createPoolPlaneApp(service).inject({
@@ -1772,8 +1722,8 @@ test("a settlement's empty body sent chunked with no media type is answered as n
   });
 });
 
-test("each call a pool makes is authenticated once", async () => {
-  const asked = { tokens: 0, pools: 0 };
+test("each call a runner makes is authenticated once", async () => {
+  const asked = { tokens: 0, runners: 0 };
   const served = plane(calls().ports);
   const app = createPoolPlaneApp({
     ...served,
@@ -1783,11 +1733,10 @@ test("each call a pool makes is authenticated once", async () => {
         return served.authentication.authenticateBearer(token);
       },
     },
-    registry: {
-      ...served.registry,
+    personal: {
       identify: (principal) => {
-        asked.pools += 1;
-        return served.registry.identify(principal);
+        asked.runners += 1;
+        return served.personal.identify(principal);
       },
     },
   });
@@ -1810,10 +1759,10 @@ test("each call a pool makes is authenticated once", async () => {
     });
     assert.ok(answered.statusCode < 300, `${url} ${answered.body}`);
   }
-  assert.deepEqual(asked, { tokens: made.length, pools: made.length });
+  assert.deepEqual(asked, { tokens: made.length, runners: made.length });
 });
 
-test("a refusal carrying the heaviest evidence a pool may send is taken, and a byte past the bound is refused", async () => {
+test("a refusal carrying the heaviest evidence a runner may send is taken, and a byte past the bound is refused", async () => {
   const recorded = calls();
   const app = createPoolPlaneApp(plane(recorded.ports));
   const url = workerPoolSettlementPath("Refused", "one");
@@ -1860,11 +1809,11 @@ function basic(token: string, user = "anyone"): string {
   return `Basic ${Buffer.from(`${user}:${token}`, "utf8").toString("base64")}`;
 }
 
-/** What the front forwards of one registry request, under the pool's own token unless the case names another credential or none. */
+/** What the front forwards of one registry request, under the runner's own token unless the case names another credential or none. */
 function forwarded(
   method: string,
   address: string,
-  authorization: string | null = basic(poolToken),
+  authorization: string | null = basic(runnerToken),
 ): Record<string, string> {
   return {
     ...(authorization === null ? {} : { authorization }),
@@ -1875,7 +1824,7 @@ function forwarded(
 
 const heldDigest = `sha256:${"a".repeat(64)}`;
 
-test("a pool is allowed the base, the manifest it holds by digest and that repository's blobs, naming no release", async () => {
+test("a runner is allowed the base, the manifest it holds by digest and that repository's blobs, naming no release", async () => {
   const recorded = calls([pinned]);
   const app = createPoolPlaneApp(plane(recorded.ports));
   for (const [method, address] of [
@@ -1896,13 +1845,13 @@ test("a pool is allowed the base, the manifest it holds by digest and that repos
   assert.deepEqual(recorded.made, Array(4).fill(["heldImages", 3]));
 });
 
-test("a Basic credential names any user, and only its password is the pool's token", async () => {
+test("a Basic credential names any user, and only its password is the runner's token", async () => {
   const app = createPoolPlaneApp(plane(calls([pinned]).ports));
   for (const user of ["", "pool-one", "someone else"]) {
     const answered = await app.inject({
       method: "GET",
       url: authorizing,
-      headers: forwarded("GET", "/v2/", basic(poolToken, user)),
+      headers: forwarded("GET", "/v2/", basic(runnerToken, user)),
     });
     assert.equal(answered.statusCode, 200, JSON.stringify(user));
   }
@@ -1910,12 +1859,12 @@ test("a Basic credential names any user, and only its password is the pool's tok
 
 for (const [why, authorization] of [
   ["no credential", null],
-  ["the pool's token as a bearer", `Bearer ${poolToken}`],
+  ["the runner's token as a bearer", `Bearer ${runnerToken}`],
   ["a scheme and nothing else", "Basic "],
   ["a credential that is not base64", "Basic !!!!"],
   [
     "base64 cut short of its padding",
-    `Basic ${Buffer.from(`anyone:${poolToken}`).toString("base64").replace(/=+$/u, "")}`,
+    `Basic ${Buffer.from(`anyone:${runnerToken}`).toString("base64").replace(/=+$/u, "")}`,
   ],
   [
     "a credential with no password",
@@ -1965,30 +1914,13 @@ test("a request the grammar refuses is 403 before anything held is read", async 
   const unforwarded = await app.inject({
     method: "GET",
     url: authorizing,
-    headers: { authorization: basic(poolToken) },
+    headers: { authorization: basic(runnerToken) },
   });
   assert.equal(unforwarded.statusCode, 403);
   assert.deepEqual(recorded.made, []);
 });
 
-test("a pool holding a session may pull its session's image, and one holding none may not", async () => {
-  const address = `/v2/session/manifests/sha256:${"c".repeat(64)}`;
-  for (const [holding, status] of [
-    [["session-one"], 200],
-    [[], 403],
-  ] as const) {
-    const answered = await createPoolPlaneApp(
-      plane(calls().ports, authority("Allow"), sessionCalls(holding).store),
-    ).inject({
-      method: "GET",
-      url: authorizing,
-      headers: forwarded("GET", address),
-    });
-    assert.equal(answered.statusCode, status, holding.join(","));
-  }
-});
-
-test("a pool holding an index by digest is allowed the platform manifest docker resolves it to, and only in that repository", async () => {
+test("a runner holding an index by digest is allowed the platform manifest docker resolves it to, and only in that repository", async () => {
   const platform = `sha256:${"b".repeat(64)}`;
   for (const [held, address, status] of [
     [[pinned], `/v2/worker/manifests/${platform}`, 200],
@@ -2005,7 +1937,7 @@ test("a pool holding an index by digest is allowed the platform manifest docker 
   }
 });
 
-test("a pull of an image the pool holds no assignment for is 403", async () => {
+test("a pull of an image the runner holds no assignment for is 403", async () => {
   const app = createPoolPlaneApp(plane(calls([pinned]).ports));
   for (const address of [
     `/v2/api/manifests/${heldDigest}`,
@@ -2026,7 +1958,7 @@ test("a pull of an image the pool holds no assignment for is 403", async () => {
   assert.equal(holdingNothing.statusCode, 403);
 });
 
-test("a chat host holding nothing may pull the manifests and blobs of the session image's repository its poll names, and no other image, while a pool or a personal runner holding nothing may not", async () => {
+test("a chat host holding nothing may pull the manifests and blobs of the session image's repository its poll names, and no other image, while a personal runner holding nothing may not", async () => {
   const app = createPoolPlaneApp(plane(calls().ports));
   const named = `sha256:${"c".repeat(64)}`;
   for (const [caller, token, address, status] of [
@@ -2034,7 +1966,6 @@ test("a chat host holding nothing may pull the manifests and blobs of the sessio
     ["host", hostToken, `/v2/session/blobs/sha256:${"b".repeat(64)}`, 200],
     ["host", hostToken, `/v2/session/manifests/sha256:${"d".repeat(64)}`, 200],
     ["host", hostToken, `/v2/worker/manifests/${heldDigest}`, 403],
-    ["pool", poolToken, `/v2/session/manifests/${named}`, 403],
     ["runner", runnerToken, `/v2/session/manifests/${named}`, 403],
   ] as const) {
     const answered = await app.inject({
@@ -2046,12 +1977,11 @@ test("a chat host holding nothing may pull the manifests and blobs of the sessio
   }
 });
 
-test("a chat host's poll names the session image on its public host, and a pool's and a personal runner's name none", async () => {
+test("a chat host's poll names the session image on its public host, and a personal runner's names none", async () => {
   const app = createPoolPlaneApp(plane(calls().ports));
   for (const [headers, named] of [
     [hostSpeaking, sessionPublished],
     [speaking, undefined],
-    [runnerSpeaking, undefined],
   ] as const) {
     const answered = await app.inject({
       method: "GET",
@@ -2067,40 +1997,40 @@ test("a chat host's poll names the session image on its public host, and a pool'
   }
 });
 
-test("a caller that is no admitted pool is 403, and an outage of the issuer, the authority or the store is 503", async () => {
+test("a caller that is no admitted runner is 403, and an outage of the issuer, the authority or the store is 503", async () => {
   const ports = calls([pinned]).ports;
   const served = plane(ports);
   for (const [why, service, token, status] of [
     [
-      "a pool the authority refuses",
+      "a runner the authority refuses",
       plane(ports, authority("Refuse")),
-      poolToken,
+      runnerToken,
       403,
     ],
     [
       "a principal no registration names",
       {
         ...served,
-        registry: {
-          ...served.registry,
-          identify: () => Promise.resolve(undefined),
-        },
+        personal: { identify: () => Promise.resolve(undefined) },
       },
-      poolToken,
+      runnerToken,
       403,
     ],
+    ["a project's pool holding its permit", served, poolToken, 403],
     ["an issuer that cannot answer", served, "issuer-down", 503],
-    ["an authority outage", plane(ports, authority("Outage")), poolToken, 503],
+    [
+      "an authority outage",
+      plane(ports, authority("Outage")),
+      runnerToken,
+      503,
+    ],
     [
       "a registry that cannot be read",
       {
         ...served,
-        registry: {
-          ...served.registry,
-          identify: () => Promise.reject(new Error("down")),
-        },
+        personal: { identify: () => Promise.reject(new Error("down")) },
       },
-      poolToken,
+      runnerToken,
       503,
     ],
     [
@@ -2112,7 +2042,7 @@ test("a caller that is no admitted pool is 403, and an outage of the issuer, the
           heldImages: () => Promise.reject(new Error("down")),
         },
       },
-      poolToken,
+      runnerToken,
       503,
     ],
   ] as const) {
@@ -2132,14 +2062,14 @@ test("a caller that is no admitted pool is 403, and an outage of the issuer, the
 });
 
 test("a personal runner is admitted by its owner's permit, renews the executions it names and is handed no session, its session store asked nothing of one", async () => {
-  const recorded = calls();
+  const recorded = calls([], []);
   const sessions = sessionCalls([], ["thread-one"]);
   const answered = await createPoolPlaneApp(
     plane(recorded.ports, authority("Allow"), sessions.store),
   ).inject({
     method: "GET",
     url: polling(["live"], 1, 1),
-    headers: runnerSpeaking,
+    headers: speaking,
   });
   assert.equal(answered.statusCode, 200);
   const body = workerPoolReconciliationSchema.parse(answered.json());
@@ -2162,7 +2092,7 @@ test("a personal runner whose owner lost the permit to register one is told it i
   ).inject({
     method: "GET",
     url: polling([], 1, 1),
-    headers: runnerSpeaking,
+    headers: speaking,
   });
   assert.equal(answered.statusCode, 404);
   assert.deepEqual(sessions.made, [], "a refused runner reached sessions");
@@ -2173,7 +2103,7 @@ test("a personal runner's settlement of an execution reaches the executions it h
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
     method: "POST",
     url: workerPoolSettlementPath("Accepted", "live"),
-    headers: runnerSpeaking,
+    headers: speaking,
   });
   assert.equal(answered.statusCode, 204);
   assert.deepEqual(recorded.made, [["held", "live"]]);
@@ -2198,7 +2128,7 @@ test("a personal runner polling with room for a session and none for an executio
   ).inject({
     method: "GET",
     url: polling([], 0, 1),
-    headers: runnerSpeaking,
+    headers: speaking,
   });
   assert.equal(answered.statusCode, 200);
   assert.deepEqual(
@@ -2229,7 +2159,7 @@ test("a personal runner polling for an execution while its owner's read cannot b
   ).inject({
     method: "GET",
     url: polling([], 1, 0),
-    headers: runnerSpeaking,
+    headers: speaking,
   });
   assert.equal(answered.statusCode, 503);
   assert.equal(answered.body, "");
@@ -2349,7 +2279,7 @@ async function pollRecorded(
   return recorded;
 }
 
-test("a chat host's poll names the capabilities its threads may hold as it wrote them, a pool's is not read, and a set naming one twice is refused", async () => {
+test("a chat host's poll names the capabilities its threads may hold as it wrote them, a personal runner's is not read, and a set naming one twice is refused", async () => {
   const set = ["RunCommands", "ProjectRead"] as const;
   const query = `&${workerPoolPollQuery.sessionCapabilities}=`;
   for (const [headers, suffix, kept] of [
@@ -2363,7 +2293,7 @@ test("a chat host's poll names the capabilities its threads may hold as it wrote
     [
       speaking,
       `${query}${workerPoolPollSessionCapabilitiesText(set)}`,
-      ["Dedicated", undefined],
+      ["Personal", undefined],
     ],
   ] as const) {
     const recorded = await pollRecorded(headers, suffix);
@@ -2387,13 +2317,13 @@ test("a chat host's poll naming a retired session capability is served, and keep
   assert.deepEqual(recorded.hosted, [["ChatHost", ["ProjectRead"]]]);
 });
 
-test("a chat host's poll names its threads' ticket wakes as it wrote them, none where it named none, a pool's is not read, and anything but On or Off is refused", async () => {
+test("a chat host's poll names its threads' ticket wakes as it wrote them, none where it named none, a personal runner's is not read, and anything but On or Off is refused", async () => {
   const query = `&${workerPoolPollQuery.ticketWakes}=`;
   for (const [headers, suffix, kept] of [
     [hostSpeaking, `${query}On`, ["ChatHost", "On"]],
     [hostSpeaking, `${query}Off`, ["ChatHost", "Off"]],
     [hostSpeaking, "", ["ChatHost", undefined]],
-    [speaking, `${query}On`, ["Dedicated", undefined]],
+    [speaking, `${query}On`, ["Personal", undefined]],
   ] as const) {
     const recorded = await pollRecorded(headers, suffix);
     assert.deepEqual(recorded.ticketWakes, [kept], suffix);
@@ -2408,7 +2338,7 @@ test("a chat host's poll names its threads' ticket wakes as it wrote them, none 
   assert.equal(refused.statusCode, 400);
 });
 
-test("a pool's declared idle bound is accepted and opens nothing, and a bound of no seconds is refused", async () => {
+test("a personal runner's declared idle bound is accepted and opens nothing, and a bound of no seconds is refused", async () => {
   const sessions = openingsRecorded();
   const answered = await createPoolPlaneApp(
     plane(calls().ports, authority("Allow"), sessions.store),
@@ -2479,7 +2409,7 @@ test("a report is held against the runner its bearer names, and one whose body n
     { pool: "pool-two" },
     { owner: "someone-else" },
   ]) {
-    const refused = await reporting(app, runnerSpeaking, {
+    const refused = await reporting(app, speaking, {
       ...workerRunnerReportLeast,
       ...named,
     });
@@ -2491,12 +2421,12 @@ test("a report is held against the runner its bearer names, and one whose body n
   );
   const taken = await reporting(app, speaking, {
     ...workerRunnerReportLeast,
-    host: "pool-two",
+    host: "box-two",
   });
   assert.equal(taken.statusCode, 204);
   assert.equal(taken.body, "");
   assert.deepEqual(reportSamples(held.reports, "chuggy_runner_jobs_running"), [
-    'chuggy_runner_jobs_running{tenant="tenant",project="project",pool="pool-one",owner="",personal_runner="",host="pool-two"} 1',
+    'chuggy_runner_jobs_running{tenant="tenant",project="",pool="",owner="a-member",personal_runner="chuggy-personal-one",host="box-two"} 1',
   ]);
 });
 
@@ -2509,7 +2439,7 @@ test("a personal runner's series carry its owner's bare subject and its client, 
     method: "GET",
     url: polling([]),
     headers: {
-      ...runnerSpeaking,
+      ...speaking,
       [workerRunnerHeader]: "chuggy-linux/0.14.0",
       [workerRunnerMemoryRoomHeader]: "512",
       [workerRunnerMemoryCeilingHeader]: "1024",
@@ -2524,7 +2454,7 @@ test("a personal runner's series carry its owner's bare subject and its client, 
   );
   held.clock.nowMs += 1_000;
   assert.equal(
-    (await reporting(app, runnerSpeaking, workerRunnerReportLeast)).statusCode,
+    (await reporting(app, speaking, workerRunnerReportLeast)).statusCode,
     204,
   );
   const labels =
@@ -2607,6 +2537,99 @@ test("a report refuses a caller the plane does not serve before the body it sent
     );
     assert.equal(answered.status, status, caller);
   }
+  assert.deepEqual(
+    held.reports
+      .families()
+      .flatMap((family): readonly unknown[] => family.samples),
+    [],
+  );
+});
+
+/** A request to every route an admitted runner may call by bearer, under that bearer. */
+const unadmittedRequests = [
+  ["the poll", { method: "GET", url: polling(["live"]) }],
+  ...(["Accepted", "Refused", "Unavailable"] as const).map(
+    (outcome) =>
+      [
+        `the ${outcome} settlement`,
+        {
+          method: "POST",
+          url: workerPoolSettlementPath(outcome, "live"),
+          payload: outcome === "Refused" ? { evidence: "no runner" } : {},
+        },
+      ] as const,
+  ),
+  [
+    "the report",
+    {
+      method: "POST",
+      url: workerRunnerReportRoute,
+      payload: workerRunnerReportLeast,
+    },
+  ],
+] as const;
+
+/** The status `service` answers each of those requests and a registry pull with, under `token`. */
+async function unadmittedAnswered(
+  service: PoolPlaneService,
+  token: string,
+): Promise<readonly number[]> {
+  const app = createPoolPlaneApp(service);
+  const statuses = [];
+  for (const [, request] of unadmittedRequests)
+    statuses.push(
+      (
+        await app.inject({
+          ...request,
+          headers: {
+            authorization: `Bearer ${token}`,
+            [workerContractHeader]: workerContractRelease,
+          },
+        })
+      ).statusCode,
+    );
+  statuses.push(
+    (
+      await app.inject({
+        method: "GET",
+        url: authorizing,
+        headers: forwarded(
+          "GET",
+          `/v2/worker/manifests/${heldDigest}`,
+          basic(token),
+        ),
+      })
+    ).statusCode,
+  );
+  return statuses;
+}
+
+test("a project's pool holding its permit is answered at the poll, every settlement, the report and the registry as a principal nobody registered, reaching no port", async () => {
+  const pool = calls([pinned]);
+  const sessions = sessionCalls(["live"], ["waiting"]);
+  const held = reportsHeld();
+  const refused = await unadmittedAnswered(
+    plane(
+      pool.ports,
+      authority("Allow"),
+      sessions.store,
+      undefined,
+      held.reports,
+    ),
+    poolToken,
+  );
+  const stranger = calls([pinned]);
+  const unregistered = await unadmittedAnswered(
+    {
+      ...plane(stranger.ports, authority("Allow")),
+      personal: { identify: () => Promise.resolve(undefined) },
+    },
+    runnerToken,
+  );
+  assert.deepEqual(refused, unregistered);
+  assert.ok(refused.every((status) => status >= 400));
+  assert.deepEqual(pool.made, []);
+  assert.deepEqual(sessions.made, []);
   assert.deepEqual(
     held.reports
       .families()

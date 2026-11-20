@@ -83,7 +83,6 @@ import {
   agentReportedTurnFailures,
   runEndedEvidences,
   runStepEvidences,
-  ownerFallbacks,
 } from "../../src/contract/rosters.ts";
 import {
   allForgeAccountKinds,
@@ -141,7 +140,6 @@ import {
 } from "../../src/interpreter/refusal.ts";
 import { allThreadStandings } from "../../src/interpreter/thread.ts";
 import { allLifecycles } from "../../src/interpreter/projectStore.ts";
-import { allWorkerPoolOwnerFallbacks } from "../../src/interpreter/projectOwnerFallback.ts";
 import {
   allAgentReportedTurnFailures,
   allPlatformTurnFailures,
@@ -510,7 +508,6 @@ test("the phase and scheduler rosters are the model's", () => {
   assert.deepEqual([...executionOutcomes], [...allExecutionOutcomes]);
   assert.deepEqual([...attemptStates], [...allAttemptStates]);
   assert.deepEqual([...artifactRoles], [...allArtifactRoles]);
-  assert.deepEqual([...ownerFallbacks], [...allWorkerPoolOwnerFallbacks]);
   assert.deepEqual(
     sorted(nativeActionResolutions),
     sorted(allNativeActionResolutions),

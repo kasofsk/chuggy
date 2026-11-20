@@ -233,7 +233,6 @@ test("every path the API answers begins with a name no new tenant may take", asy
     unreached,
     unreached,
     unreached,
-    unreached,
   );
   t.after(() => app.close());
   await app.ready();

@@ -427,7 +427,7 @@ async function schedulerRegistrationConflict(
  * One task of a request as registration reads it, with what its execution
  * copies out: its owner pinned as its route is, the member who took the
  * ticket, else the member whose authority wrote its first draft revision, else
- * nobody, and the fallback its project names at registration.
+ * nobody.
  */
 interface ExecutionCreateInput {
   task: string;
@@ -443,7 +443,6 @@ interface ExecutionCreateInput {
   capacity_account: string;
   cluster: string;
   owner: string | null;
-  owner_fallback: string | null;
 }
 
 /**
@@ -472,14 +471,13 @@ async function schedulerCreatePlaced(
        (tenant,project,execution,ticket,task,source_request,account,cluster,
         configuration_revision,configuration_digest,requirement_identity,requirement_value,
         requirement_digest,requirement_source,platform_default_version,placement,
-        owner,owner_fallback,cpu_millis,memory_mib,workload_digest)
+        owner,cpu_millis,memory_mib,workload_digest)
        VALUES (${claim.partition.tenant},${claim.partition.project},${execution},${claim.ticket},
         ${task},${claim.request},${input.capacity_account},${input.cluster},
         ${input.configuration_revision},${input.configuration_digest},${execution},
         ${requirementValue}::jsonb,${materialized.digest},${materialized.source},
         ${materialized.platformDefaultVersion},${route},
-        ${input.owner},${input.owner_fallback},
-        ${resources?.cpuMillis ?? null},${resources?.memoryMib ?? null},
+        ${input.owner},${resources?.cpuMillis ?? null},${resources?.memoryMib ?? null},
         ${workloadDigest ?? null})
        ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
   return inserted.rowCount ?? 0;
@@ -505,11 +503,11 @@ async function schedulerCreateAwaiting(
   const inserted = await client.query(sql`INSERT INTO execution
        (tenant,project,execution,ticket,task,source_request,account,cluster,
         configuration_revision,configuration_digest,requirement_identity,
-        placement,owner,owner_fallback)
+        placement,owner)
        VALUES (${claim.partition.tenant},${claim.partition.project},${execution},${claim.ticket},
         ${task},${claim.request},${input.capacity_account},${input.cluster},
         ${input.configuration_revision},${input.configuration_digest},${execution},
-        ${route},${input.owner},${input.owner_fallback})
+        ${route},${input.owner})
        ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
   return inserted.rowCount ?? 0;
 }
@@ -534,7 +532,7 @@ async function schedulerCreateExecutions(
        d.overrides::text AS configuration_overrides,
        d.selection::text AS configuration_selection,q.configuration_revision,
        q.configuration_digest,q.capacity_account,a.cluster,
-       ticket_owner(q.tenant,q.project,q.ticket)::text AS owner,f.fallback AS owner_fallback
+       ticket_owner(q.tenant,q.project,q.ticket)::text AS owner
      FROM execution_request q
      JOIN execution_request_task t
        ON t.tenant=q.tenant AND t.project=q.project AND t.request=q.request
@@ -544,8 +542,6 @@ async function schedulerCreateExecutions(
      JOIN ticket_definition d
        ON d.tenant=q.tenant AND d.project=q.project AND d.ticket=q.ticket
      JOIN capacity_account a ON a.account=q.capacity_account
-     LEFT JOIN project_owner_fallback f
-       ON f.tenant=q.tenant AND f.project=q.project
      WHERE q.tenant=${claim.partition.tenant} AND q.project=${claim.partition.project}
        AND q.request=${claim.request} ORDER BY t.task
      LIMIT ${tasksMax + 1}`);
@@ -944,7 +940,7 @@ async function schedulerLockForLaunch(
   opening: AttemptOpening,
 ): Promise<LaunchRow> {
   const found = await client.query<LaunchRow>(
-    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.owner_fallback, e.ticket::text AS ticket, e.task::text AS task,
+    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.ticket::text AS ticket, e.task::text AS task,
             t.kind AS task_kind, t.stage::text AS stage, t.evaluator::text AS evaluator, e.source_request,
             q.input_bundle, q.input_bundle_digest,
             q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
@@ -1430,7 +1426,7 @@ async function schedulerUnlaunched(
   schedulerRequirePositive(executionsMax, "executionsMax");
   if ((await postgresOwnershipEpoch(client)) !== epoch) return [];
   const waiting = await client.query<ExecutionRow>(
-    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.owner_fallback, e.ticket::text AS ticket, e.task::text AS task,
+    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.ticket::text AS ticket, e.task::text AS task,
             t.kind AS task_kind, t.stage::text AS stage, t.evaluator::text AS evaluator, e.source_request,
             q.input_bundle, q.input_bundle_digest,
             q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
@@ -1556,7 +1552,7 @@ async function schedulerExecution(
   execution: ExecutionId,
 ): Promise<LogicalExecution | undefined> {
   const found = await pool.query<ExecutionRow>(
-    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.owner_fallback, e.ticket::text AS ticket,
+    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.ticket::text AS ticket,
                e.task::text AS task, t.kind AS task_kind, t.stage::text AS stage, t.evaluator::text AS evaluator,
                e.source_request, q.input_bundle, q.input_bundle_digest,
                q.authorizing_seq::text AS source_seq,

@@ -105,7 +105,6 @@ class Project implements Namespace {
     dispatchers: User[];
     viewers: User[];
     agents: User[];
-    pools: User[];
     admin_granters: (User | SubjectSet<Project, "admins"> | SubjectSet<Tenant, "admins"> | SubjectSet<Site, "admins">)[];
     developer_granters: (User | SubjectSet<Project, "admins"> | SubjectSet<Project, "developers"> | SubjectSet<Tenant, "admins"> | SubjectSet<Site, "admins">)[];
     dispatcher_granters: (User | SubjectSet<Project, "admins"> | SubjectSet<Tenant, "admins"> | SubjectSet<Site, "admins">)[];
@@ -126,12 +125,14 @@ class Project implements Namespace {
     dispatch: (ctx: Context): boolean =>
       this.related.dispatchers.includes(ctx.subject) ||
       this.permits.administer(ctx),
-    execute: (ctx: Context): boolean =>
-      this.related.pools.includes(ctx.subject) || this.permits.develop(ctx),
+    execute: (ctx: Context): boolean => this.permits.develop(ctx),
     manage_selector: (ctx: Context): boolean => this.permits.administer(ctx),
     override_ticket_config: (ctx: Context): boolean => this.permits.administer(ctx),
     skip_planned_evaluations: (ctx: Context): boolean => this.permits.administer(ctx),
     merge_proposals: (ctx: Context): boolean => this.permits.administer(ctx),
+    make_access_tokens: (ctx: Context): boolean =>
+      this.permits.administer(ctx) ||
+      (this.permits.read(ctx) && this.related.tenant.traverse((t) => t.permits.register_personal_runner(ctx))),
     chat_metadata: (ctx: Context): boolean => this.permits.read(ctx),
     grant_admin: (ctx: Context): boolean => this.related.admin_granters.includes(ctx.subject),
     grant_developer: (ctx: Context): boolean => this.related.developer_granters.includes(ctx.subject),

@@ -7,6 +7,8 @@
 import { expect, test } from "vitest";
 
 import {
+  signInStoreAccessName,
+  signInStoreEndedName,
   signInStoreFileName,
   signInStoreLockSecsMax,
   signInStoreLockStale,
@@ -41,6 +43,7 @@ import {
   setupSignInNoteRead,
   setupSignInNoteWritten,
   setupTokenRead,
+  setupTokenRemoved,
   setupTokenStore,
 } from "../app/core/setupStore.ts";
 import type { SetupSignInNote } from "../app/core/setupStore.ts";
@@ -64,14 +67,17 @@ interface Held {
   readonly swept: string[];
   /** Each file room was asked for, with how much. */
   readonly reserved: (readonly [string, number])[];
-  /** What the machine refuses from here on: room, a write, a sweep, or nothing. */
-  refuses: "Room" | "Write" | "Sweep" | undefined;
+  /** What the machine refuses from here on: room, a write, a sweep, the removal of one file in the store, or nothing. */
+  refuses:
+    "Room" | "Write" | "Sweep" | { readonly removing: string } | undefined;
 }
 
-const storePath = `/home/person/.config/chuggy/sign-ins/${siteFile}`;
+const storeDirectory = "/home/person/.config/chuggy/sign-ins";
 
-function unwritable(): SetupMachineError {
-  return new SetupMachineError({ fault: "Unwritable", path: storePath });
+const storePath = `${storeDirectory}/${siteFile}`;
+
+function unwritable(path = storePath): SetupMachineError {
+  return new SetupMachineError({ fault: "Unwritable", path });
 }
 
 function held(session?: string, token?: string): Held {
@@ -120,6 +126,8 @@ function held(session?: string, token?: string): Held {
         if (kept.refuses === "Room") throw unwritable();
       },
       remove: (name) => {
+        if (typeof kept.refuses === "object" && kept.refuses.removing === name)
+          throw unwritable(`${storeDirectory}/${name}`);
         writing(name);
         stored.delete(name);
       },
@@ -338,6 +346,113 @@ test("something the files threw that is no path of the machine's is thrown again
     }),
   ).toBe(odd);
   expect(fault(store.kept)).toBe(odd);
+});
+
+const other = "https://other.example";
+
+/** The records the shared store keeps beside a site's token, for `site` and for `other`. */
+const records = [
+  signInStoreAccessName(site),
+  signInStoreEndedName(site),
+  signInStoreAccessName(other),
+  signInStoreEndedName(other),
+] as const;
+
+/** A machine whose store holds both records for `site` and for `other`, beside whatever `held` is given. */
+function recorded(session?: string, token?: string): Held {
+  const kept = held(session, token);
+  for (const name of records) kept.stored.set(name, "record\n");
+  return kept;
+}
+
+/** Which of `records` the store still holds. */
+function recordsLeft(kept: Held): readonly string[] {
+  return records.filter((name) => kept.stored.has(name));
+}
+
+const otherRecords = [
+  signInStoreAccessName(other),
+  signInStoreEndedName(other),
+];
+
+test("every write or removal of a site's token through the holder's store leaves neither record for the site, and the other sites' alone", () => {
+  for (const step of [
+    (store: ReturnType<typeof setupTokenStore>) => {
+      store.write(sessionRefreshTokenKey, "renewal-2");
+    },
+    (store: ReturnType<typeof setupTokenStore>) => {
+      store.remove(sessionRefreshTokenKey);
+    },
+  ]) {
+    const kept = recorded(undefined, signInStoreText("renewal-1"));
+    const store = setupTokenStore(kept.store, site, "renewal-1");
+    step(store);
+    expect(recordsLeft(kept)).toEqual(otherRecords);
+    expect(kept.writes.slice(1)).toEqual([
+      signInStoreAccessName(site),
+      signInStoreEndedName(site),
+    ]);
+  }
+});
+
+test("a token an older copy kept, moved into the shared store, leaves neither record for the site, and one the store already held leaves both", () => {
+  const kept = recorded(JSON.stringify({ site, refreshToken: "renewal-old" }));
+  setupSessionMoved(kept.files, kept.store);
+  expect(recordsLeft(kept)).toEqual(otherRecords);
+  const holding = recorded(
+    JSON.stringify({ site, refreshToken: "renewal-old" }),
+    signInStoreText("renewal-mcp"),
+  );
+  setupSessionMoved(holding.files, holding.store);
+  expect(recordsLeft(holding)).toEqual(records);
+});
+
+test("a sign-out removes both records for the site whether or not it held a token, and says only whether it held one", () => {
+  const holding = recorded(undefined, signInStoreText("renewal-1"));
+  expect(setupTokenRemoved(holding.store, site)).toBe(true);
+  expect(holding.stored.has(siteFile)).toBe(false);
+  expect(recordsLeft(holding)).toEqual(otherRecords);
+  const bare = recorded();
+  expect(setupTokenRemoved(bare.store, site)).toBe(false);
+  expect(recordsLeft(bare)).toEqual(otherRecords);
+});
+
+test("an ended record the machine would not remove after a renewal was written is the path it would not change, never a sign-in that was not kept, and the new token stays", () => {
+  const kept = recorded(undefined, signInStoreText("renewal-1"));
+  const store = setupTokenStore(kept.store, site, "renewal-1");
+  const endedPath = `${storeDirectory}/${signInStoreEndedName(site)}`;
+  kept.refuses = { removing: signInStoreEndedName(site) };
+  const refused = { fault: "Unwritable", path: endedPath };
+  expect(
+    fault(() => {
+      store.write(sessionRefreshTokenKey, "renewal-2");
+    }),
+  ).toEqual(refused);
+  expect(fault(store.kept)).toEqual(refused);
+  expect(kept.stored.get(siteFile)).toBe(signInStoreText("renewal-2"));
+  expect(store.read(sessionRefreshTokenKey)).toBe("renewal-2");
+  const signingOut = recorded(undefined, signInStoreText("renewal-1"));
+  signingOut.refuses = { removing: signInStoreEndedName(site) };
+  expect(fault(() => setupTokenRemoved(signingOut.store, site))).toEqual(
+    refused,
+  );
+});
+
+test("an access record the machine would not remove is no fault, since the token it was bound to is gone, and the ended record is removed all the same", () => {
+  const kept = recorded(undefined, signInStoreText("renewal-1"));
+  const store = setupTokenStore(kept.store, site, "renewal-1");
+  kept.refuses = { removing: signInStoreAccessName(site) };
+  store.write(sessionRefreshTokenKey, "renewal-2");
+  expect(fault(store.kept)).toBeUndefined();
+  expect(kept.stored.get(siteFile)).toBe(signInStoreText("renewal-2"));
+  expect(recordsLeft(kept)).toEqual([
+    signInStoreAccessName(site),
+    ...otherRecords,
+  ]);
+  const signingOut = recorded();
+  signingOut.refuses = { removing: signInStoreAccessName(site) };
+  expect(setupTokenRemoved(signingOut.store, site)).toBe(false);
+  expect(signingOut.stored.has(signInStoreEndedName(site))).toBe(false);
 });
 
 const nowMs = 5_000_000;

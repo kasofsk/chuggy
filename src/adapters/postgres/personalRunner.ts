@@ -32,10 +32,7 @@
  * alone, asked per agent: paused where every runner offered the agent is, of
  * those polling for executions where any is, as the fourth asks of a run's
  * live runners, and `test/postgres/personalRunner.test.ts` holds it to the
- * cases those terms decide. `./operationalReads.ts`'s answer of the memory a
- * run waiting on its project's pools is short of is a sixth copy of the
- * predicate, a pool's claim's with its room, slots and pause left out, and
- * `test/postgres/workerPoolClaim.test.ts` holds it to the claim's answers too.
+ * cases those terms decide.
  */
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
@@ -65,6 +62,7 @@ import {
   type PersonalRunnerTokenTerms,
   type PersonalRunnerWritten,
   type RegistrationTokenKind,
+  type WorkerPoolTokenWritten,
 } from "../../interpreter/personalRunnerRegistration.ts";
 import { asPrincipal, type Principal } from "../../interpreter/principal.ts";
 import {
@@ -78,7 +76,6 @@ import {
   workerPoolMemoryMibDefault,
   type PersonalRunnerPlaneRegistry,
 } from "../../interpreter/workerPool.ts";
-import type { WorkerPoolTokenWritten } from "../../interpreter/workerPoolRegistrationToken.ts";
 import {
   executionIdentity,
   executionRunnerPause,
@@ -424,7 +421,7 @@ async function personalRunnersWaiting(
         WHERE q.tenant=l.tenant AND q.project=l.project
           AND q.state='Placing' AND q.pool IS NULL AND q.invoked
           AND x.placement='Pool' AND x.status='Launching'
-          AND x.owner_fallback IS NOT NULL AND x.owner=l.owner
+          AND x.owner=l.owner
           AND q.recovery_epoch=(SELECT e.epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1)
           AND EXISTS(SELECT 1 FROM personal_runner r
             CROSS JOIN LATERAL (SELECT h.paused_until,h.admitted_by_press FROM agent_account_pause(r.owner,q.agent) h
@@ -539,7 +536,7 @@ function registrationTokenKindOf(kind: string): RegistrationTokenKind {
  * One mint under the member's bound in the tenant, serialized on an advisory
  * lock per member and tenant, sweeping that member's expired tokens, and
  * refused by its foreign key where the tenant is no row. A spent token stays until it expires,
- * as a pool token does, because its redemption may still give it back.
+ * because its redemption may still give it back.
  */
 async function personalRunnerTokenMinted(
   client: pg.PoolClient,

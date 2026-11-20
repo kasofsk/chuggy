@@ -1020,6 +1020,13 @@ test("a stated project authority timeout is taken", async () => {
   });
 });
 
+test("the pool plane's size for an execution naming none is 2,048 MiB where the plane names none", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(parseProgram(environment)),
+  ) as { readonly parsed: { readonly poolMemoryMib: unknown } };
+  assert.equal(found.parsed.poolMemoryMib, 2_048);
+});
+
 test("the pool plane's size for an execution naming none is read under the plane's own name, and refused by it when it is not a positive count", async () => {
   const found = JSON.parse(
     await schedulerProgram(

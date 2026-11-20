@@ -55,6 +55,7 @@ async function repositoriesServed(): Promise<Served> {
           overrideTicketConfig: false,
           skipPlannedEvaluations: false,
           mergeProposals: true,
+          makeAccessTokens: true,
           administer: true,
           writeEpic: true,
         },

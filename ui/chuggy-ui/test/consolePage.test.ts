@@ -85,10 +85,6 @@ test("a route is the page the contract names for it, with what its address carri
   expect(
     consolePageOf(matched("/$tenant/$project/settings/placement")),
   ).toEqual({ page: "Settings", section: "ProjectPlacement" });
-  expect(consolePageOf(matched("/$tenant/$project/settings/pools"))).toEqual({
-    page: "Settings",
-    section: "ProjectPools",
-  });
   expect(
     consolePageOf(matched("/$tenant/$project/settings/workspace/runner")),
   ).toEqual({ page: "Settings", section: "WorkspaceRunners" });
@@ -161,6 +157,17 @@ test("a Runners page a thread still names moves the console to the old runners a
   expect(consolePageOf(matched(runnersRouteId))).toBeUndefined();
 });
 
+test("a Pools section a thread still names moves the console to the settings' own address, named as the settings, and the old pools address is no page", () => {
+  const pools: ConsolePage = { page: "Settings", section: "ProjectPools" };
+  expect(consolePageHref({ tenant: "acme", project: "atlas" }, pools)).toBe(
+    "/acme/atlas/settings",
+  );
+  expect(copyTextEn(consolePageLabel(pools))).toBe("Settings");
+  expect(
+    consolePageOf(matched("/$tenant/$project/settings/pools")),
+  ).toBeUndefined();
+});
+
 test("an address the contract would refuse, or a route it does not know, is no page", () => {
   expect(
     consolePageOf(
@@ -191,8 +198,12 @@ test("every route the console hangs under a project and draws the pane on, but o
   expect(
     consolePageOf(matched(threadRouteId, { session: "0123" })),
   ).toBeUndefined();
+  expect(consolePageOf(matched(connectorsRouteId))).toBeUndefined();
   const paned = routeIds.filter(
-    (routeId) => routeId !== threadRouteId && !(routeId in navMoved),
+    (routeId) =>
+      routeId !== threadRouteId &&
+      routeId !== connectorsRouteId &&
+      !(routeId in navMoved),
   );
   expect(paned).not.toEqual([]);
   for (const routeId of paned) {
@@ -228,8 +239,9 @@ test("a page is named in the console's own words for it", () => {
     "Repository acme/atlas",
     "Settings · Project · Chats",
     "Settings · Project · Placement",
-    "Settings · Project · Pools",
+    "Settings",
     "Settings · Project · Permissions",
+    "Settings · Project · Access tokens",
     "Settings · Workspace · People",
     "Settings · Workspace · GitHub accounts",
     "Settings · Workspace · Permissions",
@@ -264,6 +276,7 @@ test("a settings page is named by the group and the page the side navigation dra
   );
   for (const section of consolePageSettingsSections) {
     const page: ConsolePage = { page: "Settings", section };
+    if (consolePageRetired(page)) continue;
     const href = consolePageHref({ tenant: "acme", project: "atlas" }, page);
     expect(drawnAt.has(href), href).toBe(true);
     expect(copyTextEn(consolePageLabel(page)), href).toBe(drawnAt.get(href));
@@ -280,9 +293,21 @@ function consolePageLeaf(page: ConsolePage) {
   return { href, search, leaf: consoleRouter.matchRoutes(path, search).at(-1) };
 }
 
+/** The connectors page, which the contract's pages do not name yet, so a
+ * message sent from it carries no page. */
+const connectorsRouteId = `${partitionRouteId}/settings/connectors`;
+
+/** Whether a page is one the console draws no route for any more. */
+function consolePageRetired(page: ConsolePage): boolean {
+  return (
+    page.page === "Runners" ||
+    (page.page === "Settings" && page.section === "ProjectPools")
+  );
+}
+
 test("every page's address is matched by the console's router as that page", () => {
   for (const page of consolePagesEvery.filter(
-    (named) => named.page !== "Runners",
+    (named) => !consolePageRetired(named),
   )) {
     const { href, search, leaf } = consolePageLeaf(page);
     expect(leaf?.params, href).toMatchObject({

@@ -1,8 +1,9 @@
 /**
  * Work routed to pools end to end, against a real PostgreSQL and under the
  * roles a deployment runs: the scheduler registers an execution on the route
- * its policy names and offers its attempt, the pool plane claims it, and the
- * worker plane hands the claim its task and takes its report.
+ * its policy names and offers its attempt, a personal runner of its owner
+ * claims it through the pool plane, and the worker plane hands the claim its
+ * task and takes its report.
  *
  * A PASS IS INSTALLATION-WIDE and the cases share one database, so each reads
  * back only its own project's rows, and placement records what it is asked for
@@ -24,10 +25,8 @@ import {
   postgresWorkerReportStore,
   postgresWorkerTasks,
 } from "../../src/adapters/postgres/workerPlane.ts";
-import {
-  postgresWorkerPoolAssignments,
-  postgresWorkerPoolRegistry,
-} from "../../src/adapters/postgres/workerPool.ts";
+import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
+import { postgresWorkerPoolAssignments } from "../../src/adapters/postgres/workerPool.ts";
 import { postgresExecutionPlacement } from "../../src/adapters/postgres/executionPlacement.ts";
 import { workerPlaneUploadBytesMax } from "../../src/contract/http.ts";
 import { workTaskAnswerSchema } from "../../src/contract/workerTask.ts";
@@ -54,7 +53,7 @@ import {
   asProjectId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
-import type { WorkerPoolIdentity } from "../../src/interpreter/workerPool.ts";
+import type { PersonalRunnerIdentity } from "../../src/interpreter/workerPool.ts";
 import {
   inertWorkerPlane,
   taskFetched,
@@ -182,30 +181,62 @@ async function launchedUnder(
   return row.execution;
 }
 
-/** Registers a pool of this project under the API's role, able to run the harness requirement, grants it `Execute`, and answers it as the pool plane identifies it. */
-async function poolRegistered(
-  partition: Partition,
-  pool: string,
-): Promise<WorkerPoolIdentity> {
+/** A member's personal runner as the pool plane admits it, and the project its claims are in. */
+type Runner = PersonalRunnerIdentity & {
+  readonly kind: "Personal";
+  readonly partition: Partition;
+};
+
+/**
+ * Makes a fresh member the author of this project's ticket, so the executions
+ * it registers are that member's, registers a personal runner of theirs
+ * listing the project and able to run the harness requirement under the API's
+ * role, and grants the owner what admits the runner and `Read` of the project.
+ */
+async function runnerOwning(project: SchedulerProject): Promise<Runner> {
+  const { partition } = project;
+  const owner = asPrincipal(`https://issuer.invalid#owner-${randomUUID()}`);
+  const drafted = (await rig.harness.query(
+    `UPDATE draft_revision SET authority_kind='Member',authority_subject=$4
+      WHERE tenant=$1 AND project=$2 AND ticket=$3 AND authoring_version=1
+      RETURNING 1 AS one`,
+    [partition.tenant, partition.project, project.ticket, owner],
+  )) as readonly unknown[];
+  assert.equal(drafted.length, 1, "the ticket has a first draft revision");
+  const personal = postgresPersonalRunnerRegistry(apiPool);
   const principal = asPrincipal(
-    `https://issuer.invalid#${pool}-${randomUUID()}`,
+    `https://issuer.invalid#runner-${randomUUID()}`,
   );
   assert.equal(
-    await postgresWorkerPoolRegistry(apiPool).register({
-      partition,
-      pool,
+    await personal.register({
+      tenant: partition.tenant,
+      owner,
       capabilities: ["Platform:Linux:Amd64"],
-      class: "Dedicated",
-      clientId: `chuggy-pool-${randomUUID()}`,
+      clientId: `chuggy-personal-${randomUUID()}`,
       principal,
     }),
-    true,
+    "Registered",
   );
-  access.grant({ partition, principal, access: new Set(["Execute"]) });
-  const identity =
-    await postgresWorkerPoolRegistry(poolPlanePool).identify(principal);
-  assert.ok(identity !== undefined);
-  return identity;
+  assert.equal(
+    await personal.allow(
+      { tenant: partition.tenant, owner },
+      partition.project,
+    ),
+    "Allowed",
+  );
+  access.grantTenant({
+    tenant: partition.tenant,
+    principal: owner,
+    access: new Set(["RegisterPersonalRunner"]),
+  });
+  access.grant({ partition, principal: owner, access: new Set(["Read"]) });
+  return {
+    kind: "Personal",
+    tenant: partition.tenant,
+    owner,
+    principal,
+    partition,
+  };
 }
 
 /** What one execution's row and attempts stand at, read as the owner. */
@@ -228,17 +259,15 @@ async function standing(project: SchedulerProject, execution: string) {
 /** How long a claim's lease runs for, past the duration of any case here. */
 const claimLeaseSecs = 300;
 
-/** Claims this pool's next offered attempt as the pool plane, under a fresh bearer, answering the bearer or nothing. */
-async function claimed(
-  identity: WorkerPoolIdentity,
-): Promise<string | undefined> {
+/** Claims this runner's next offered attempt in its project as the pool plane, under a fresh bearer, answering the bearer or nothing. */
+async function claimed(runner: Runner): Promise<string | undefined> {
   const bearer = `bearer-${randomUUID()}`;
-  const claim = await assignments.claim(
-    identity,
+  const claim = await assignments.claimPersonal(
+    runner,
     { leaseSecs: claimLeaseSecs, heldMax: 1, memoryMibDefault: 4_096 },
     `assignment-${randomUUID()}`,
     bearer,
-    [],
+    [runner.partition.project],
   );
   return claim === undefined ? undefined : bearer;
 }
@@ -246,7 +275,7 @@ async function claimed(
 test("work registered on the pool route is offered, claimed, fetched and reported to its end", async () => {
   const label = "route-pool";
   const project = await schedulerProject(rig, label, { tasks: 1 });
-  const identity = await poolRegistered(project.partition, "route-pool");
+  const identity = await runnerOwning(project);
   const placed: string[] = [];
   const execution = await launchedUnder(
     project,
@@ -260,7 +289,7 @@ test("work registered on the pool route is offered, claimed, fetched and reporte
     attempts: [{ state: "Placing", pool: null, invoked: true }],
   });
   const bearer = await claimed(identity);
-  assert.ok(bearer !== undefined, "no pool could claim the offered attempt");
+  assert.ok(bearer !== undefined, "no runner could claim the offered attempt");
   const fetched = await taskFetched(plane, bearer);
   assert.equal(fetched.status, 200);
   const task = workTaskAnswerSchema.parse(fetched.body);
@@ -307,10 +336,10 @@ test("work registered on the pool route is offered, claimed, fetched and reporte
   });
 });
 
-test("work the policy routes in cluster is registered and placed there, and an idle pool that could run it claims nothing", async () => {
+test("work the policy routes in cluster is registered and placed there, and an idle runner that could run it claims nothing", async () => {
   const label = "route-cluster";
   const project = await schedulerProject(rig, label, { tasks: 1 });
-  const identity = await poolRegistered(project.partition, "route-idle");
+  const identity = await runnerOwning(project);
   const placed: string[] = [];
   const execution = await launchedUnder(
     project,
@@ -329,7 +358,7 @@ test("work the policy routes in cluster is registered and placed there, and an i
 test("a policy that moves between attempts leaves the route the execution registered with", async () => {
   const label = "route-moved";
   const project = await schedulerProject(rig, label, { tasks: 1 });
-  await poolRegistered(project.partition, "route-moved");
+  await runnerOwning(project);
   const placed: string[] = [];
   const execution = await launchedUnder(
     project,
@@ -409,10 +438,10 @@ test("a project's override routes that project, and neither one beside it nor on
   });
 });
 
-test("a project its administrator placed on pools registers there under an in-cluster default, and its own pool claims the work", async () => {
+test("a project its administrator placed on pools registers there under an in-cluster default, and its owner's runner claims the work", async () => {
   const label = "route-placed";
   const project = await schedulerProject(rig, label, { tasks: 1 });
-  const identity = await poolRegistered(project.partition, "route-placed");
+  const identity = await runnerOwning(project);
   assert.equal(
     await postgresExecutionPlacement(apiPool).write(
       project.partition,
@@ -435,16 +464,16 @@ test("a project its administrator placed on pools registers there under an in-cl
   );
   assert.ok(
     (await claimed(identity)) !== undefined,
-    "the project's own pool could not claim the offered attempt",
+    "the owner's runner could not claim the offered attempt",
   );
 });
 
-test("a project nobody placed follows a pool default, and only its own pool claims the work", async () => {
+test("a project nobody placed follows a pool default, and only its owner's runner claims the work", async () => {
   const label = "route-default";
   const project = await schedulerProject(rig, label, { tasks: 1 });
   const stranger = await schedulerProject(rig, "route-stranger", { tasks: 1 });
-  const theirs = await poolRegistered(stranger.partition, "route-stranger");
-  const identity = await poolRegistered(project.partition, "route-default");
+  const theirs = await runnerOwning(stranger);
+  const identity = await runnerOwning(project);
   const execution = await launchedUnder(
     project,
     label,
@@ -458,7 +487,7 @@ test("a project nobody placed follows a pool default, and only its own pool clai
   assert.equal(await claimed(theirs), undefined);
   assert.ok(
     (await claimed(identity)) !== undefined,
-    "the project's own pool could not claim the offered attempt",
+    "the owner's runner could not claim the offered attempt",
   );
 });
 

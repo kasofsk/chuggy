@@ -60,7 +60,6 @@ import {
   selectorProjectSettingsSchema,
   sessionPlacementSchema,
   personalRunnerProjectSchema,
-  projectOwnerFallbackSchema,
   threadLimitSchema,
   type PublicMutation,
 } from "../../contract/requests.ts";
@@ -70,7 +69,6 @@ import {
 } from "../../interpreter/agentSession.ts";
 import type { ExecutionRoutes } from "../../interpreter/executionScheduler.ts";
 import type { SessionPlacementChoice } from "../../interpreter/sessionPlacement.ts";
-import type { WorkerPoolOwnerFallback } from "../../interpreter/projectOwnerFallback.ts";
 import {
   asThreadOpenKey,
   type ThreadOpenKey,
@@ -183,31 +181,19 @@ import {
   type PersonalRunnerRedemptionRequest,
   type RegistrationTokenRequest,
 } from "../../contract/requests.ts";
-import {
-  workerPoolRedemptionSchema,
-  type WorkerPoolRedemptionRequest,
-} from "../../contract/workerPool.ts";
 export interface ParsedRepositoryConfigurationImport {
   readonly repository: RepositoryId;
 }
 
 /**
  * What an owner asks a registration token for, its ignored capabilities
- * dropped here so nothing past the boundary reads them, and what a machine
- * redeems one with, which is the worker contract's own schema: a pool is
- * registered by a third party's machine, so the shape is where the wire is.
+ * dropped here so nothing past the boundary reads them.
  */
 export function parseRegistrationTokenRequest(
   body: unknown,
 ): RegistrationTokenRequest {
   const { lifetimeSecs } = registrationTokenRequestSchema.parse(body);
   return { lifetimeSecs };
-}
-
-export function parseWorkerPoolRedemption(
-  body: unknown,
-): WorkerPoolRedemptionRequest {
-  return workerPoolRedemptionSchema.parse(body);
 }
 
 export function parsePersonalRunnerRedemption(
@@ -314,13 +300,6 @@ function parseRepositoryFinalization(
 export function parseExecutionPlacement(body: unknown): ExecutionRoutes {
   const parsed = executionPlacementSchema.parse(body);
   return { Work: parsed.work, Evaluation: parsed.evaluation };
-}
-
-/** A project's fallback as the wire carries it, absent where it names none. */
-export function parseProjectOwnerFallback(
-  body: unknown,
-): WorkerPoolOwnerFallback | undefined {
-  return projectOwnerFallbackSchema.parse(body).fallback;
 }
 
 /** The priority an allowlist write names, or none where it came with no body. */

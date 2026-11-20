@@ -23,7 +23,6 @@ import type { SetupMcpPackaged } from "../app/core/setupAgent.ts";
 import type { SetupPlatform } from "../app/core/setupPorts.ts";
 import { setupAnswersNone } from "../app/core/setupArguments.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
-import { repositoryGrantLines } from "../app/core/projectRepositories.ts";
 import {
   setupAskNamesMax,
   setupBindAwaited,
@@ -37,10 +36,7 @@ import {
 } from "../app/core/setupNext.ts";
 import type { SetupChoice } from "../app/core/setupReads.ts";
 import { setupRepositoryRead } from "../app/core/setupRemote.ts";
-import { setupChatSized } from "../app/core/setupRunnerMachine.ts";
-import { boxEngineBytes } from "./setupRunnerBox.ts";
 import type {
-  SetupChatSize,
   SetupRunnerHeld,
   SetupRunnerHere,
   SetupRunnerRoom,
@@ -61,6 +57,7 @@ import type {
 } from "../app/core/setupStanding.ts";
 import {
   saidLandingTicket,
+  saidMoreOffered,
   saidNext,
   saidRunnable,
   saidThing,
@@ -74,7 +71,6 @@ import {
   setupSiteOpened,
   setupSiteProposed,
   setupSiteStages,
-  setupSitePoolWaiting,
   setupSiteWaiting,
 } from "./setupSite.ts";
 import type { SetupSite, SetupSiteFate, SetupSiteStage } from "./setupSite.ts";
@@ -166,7 +162,6 @@ const mends: {
       | "App"
       | "Grant"
       | "Serving"
-      | "NorthStar"
       | "Landing"
     >
   ]: readonly [Extract<SetupLack, { readonly lacks: Kind }>, SaidThing];
@@ -188,7 +183,7 @@ const mends: {
   Binding: [
     { lacks: "Binding", reach: undefined },
     hand(
-      `Open ${pages}/settings/repositories, press Add and choose your repository. Tell me once it is added.`,
+      `Open ${pages}/settings/repositories?from=setup#add and name your repository there: it then shows both apps, and adds it once both reach it. Tell me once it is added.`,
       "once the person says the repository is added",
     ),
   ],
@@ -286,19 +281,19 @@ const trips: {
       repository: "acme-org/widgets",
     },
     bindRun(
-      `The worker app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/settings/repositories, press Add, and under the list find A row marked missing · add it to the worker app on GitHub. Follow the link beside it, Worker app, and on GitHub add acme-org/widgets to the repositories the app may reach.`,
+      `This project's repository is acme-org/widgets. The worker app is installed on acme-org, and GitHub does not let it in yet. Open ${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, and the worker app's press there goes to GitHub to let it in. I'll wait here.`,
     ),
   ],
   Account: [
     { lacks: "Account" },
     bindRun(
-      `chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to your repository. Open ${pages}/settings/repositories?connect=github, and press Connect GitHub if the page does not go on to GitHub by itself. GitHub then asks for two installs, the portal app and then the worker app, each on the GitHub account that owns your repository. On the first, choose "All repositories", or "Only select repositories" and pick your repository. Either is fine: with All, a later project needs no trip to GitHub. The second comes with that choice already made.`,
+      `Which repository is this project for? I could not tell this folder's, so name it on ${pages}/settings/repositories?from=setup#add. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to your repository. That page then shows both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here and add it once both reach it.`,
     ),
   ],
   App: [
-    { lacks: "App", app: "worker", account: "acme-org" },
+    { lacks: "App", app: "worker", account: "acme-org", repository: undefined },
     bindRun(
-      `Open ${pages}/settings/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them.`,
+      `Which repository is this project for? I could not tell this folder's, so name it on ${pages}/settings/repositories?from=setup#add. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to your repository. That page then shows both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here and add it once both reach it.`,
     ),
   ],
 };
@@ -363,10 +358,7 @@ const mcpOffered = (tell: string): SaidThing => ({
   project: "widgets",
 });
 
-const mcpServes =
-  "Claude Code is the agent it is named in, for this folder, and it signs in as chuggy setup does, under the one sign-in, so you sign in once. Tell me yes to go ahead.";
-
-test("the MCP step offers mcp, which installs the runner package first where none here is one it leaves as it is, and names its server in the agent", () => {
+test("the MCP step offers mcp in one sentence naming the step, an install where the runner package here is absent or behind and a connection where it is current, and names nothing of how it is done", () => {
   const lacking = { lacks: "Mcp" } as const;
   const offered = (packaged?: SetupMcpPackaged) =>
     saidThing(
@@ -378,25 +370,12 @@ test("the MCP step offers mcp, which installs the runner package first where non
         packaged,
       ).thing,
     );
-  const opening = `The next step is chuggy's tools in your agent, for acme/widgets at ${stoodSite}.`;
-  const installing = `With your yes I will install it with npm, without a password, and then name its server in Claude Code's configuration for this folder. ${mcpServes}`;
+  const installing = "Next, let's install the chuggy cli here. Okay?";
   expect(thing(lacking)).toEqual(offered({ packaged: "Absent" }));
-  expect(offered({ packaged: "Absent" })).toEqual(
-    mcpOffered(
-      `${opening} The runner package, chuggy-linux, serves them as an MCP server, and it is not installed here. ${installing}`,
-    ),
-  );
-  expect(
-    offered({ packaged: "Behind", version: "0.3.0", installs: "0.4.0" }),
-  ).toEqual(
-    mcpOffered(
-      `${opening} The runner package, chuggy-linux, serves them as an MCP server, and the one installed here, chuggy-linux 0.3.0, is older than chuggy setup uses. With your yes I will install chuggy-linux 0.4.0 in its place with npm, without a password, and then name its server in Claude Code's configuration for this folder. ${mcpServes}`,
-    ),
-  );
+  expect(offered({ packaged: "Absent" })).toEqual(mcpOffered(installing));
+  expect(offered({ packaged: "Behind" })).toEqual(mcpOffered(installing));
   expect(offered({ packaged: "Current" })).toEqual(
-    mcpOffered(
-      `${opening} The runner package here, chuggy-linux, serves them as an MCP server. With your yes I will name that server in Claude Code's configuration for this folder. ${mcpServes}`,
-    ),
+    mcpOffered("Next, let's connect chuggy to your agent here. Okay?"),
   );
 });
 
@@ -406,32 +385,11 @@ function toldOf(said: SaidThing): string {
   return said.tell;
 }
 
-test("on a Mac the MCP step and the runner, with or without the chat host, offer the Mac's own package, as Linux's offer Linux's", () => {
-  const mcp = (packaged: SetupMcpPackaged) =>
-    toldOf(
-      saidThing(
-        setupNext(
-          lacking_({ lacks: "Mcp" }),
-          setupAnswersNone,
-          "darwin",
-          undefined,
-          packaged,
-        ).thing,
-      ),
-    );
-  for (const packaged of [
-    { packaged: "Current" },
-    { packaged: "Behind", version: "0.3.0", installs: "0.4.0" },
-    { packaged: "Absent" },
-  ] as const) {
-    expect(mcp(packaged)).toContain(", chuggy-darwin, serves them");
-    expect(mcp(packaged)).not.toContain("chuggy-linux");
-  }
+test("on a Mac the runner, with or without the chat host, offers the Mac's own package, as Linux's offers Linux's", () => {
   const looked: SetupRunnerHere = {
     room: { room: "Open", engine: "docker" },
     held: undefined,
     chat: false,
-    chatSize: setupChatSized(engineRoomy, 0, {}),
     claude: "Subscription",
     fit: { fit: "Room" },
     settings: undefined,
@@ -563,51 +521,152 @@ test("a runner that is registered and not running is started on its machine, and
   expect(tell).not.toMatch(/https?:|page|shows/u);
 });
 
-test("the portal app missing from an account is mended on the workspace's GitHub accounts page, which is the page that draws Connect GitHub where an account is already connected", () => {
-  expect(thing({ lacks: "App", app: "portal", account: "acme-org" })).toEqual(
-    bindRun(
-      `Open ${stoodSite}/tenants/acme/settings/accounts, the workspace's GitHub accounts page, and press Connect GitHub, so chuggy is shown acme-org.`,
+test("the portal app missing from an account is sent to the connect flow on the folder's repository, as the worker app missing is", () => {
+  const remote = setupRepositoryRead("git@github.com:acme-org/widgets.git");
+  const portal = thing(
+    { lacks: "App", app: "portal", account: "acme-org", repository: undefined },
+    { remote },
+  );
+  expect(portal).toEqual(
+    thing(
+      {
+        lacks: "App",
+        app: "worker",
+        account: "acme-org",
+        repository: undefined,
+      },
+      { remote },
     ),
   );
+  expect(portal).toEqual(thing({ lacks: "Account" }, { remote }));
 });
 
-test("an app not granted the repository is mended from the line the Add picker draws for that app, in the picker's own words, and the portal app's line is another", () => {
+test("an app not granted the project's repository is sent to the connect flow on that repository, naming the app, and asks no question the binding settled", () => {
   const grant = { account: "acme-org", repository: "acme-org/widgets" };
-  for (const app of ["portal", "worker"] as const) {
-    const line = repositoryGrantLines[app];
-    const next = thing({ lacks: "Grant", app, ...grant });
-    const tell = next.thing === "Run" ? (next.tell ?? "") : "";
-    expect(tell, app).toContain(
-      `under the list find ${copyTextEn(line.status)}. `,
-    );
-    expect(tell, app).toContain(
-      `Follow the link beside it, ${copyTextEn(line.label)}, `,
-    );
-  }
   expect(thing({ lacks: "Grant", app: "portal", ...grant })).toEqual(
     bindRun(
-      `The portal app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/settings/repositories, press Add, and under the list find Repository not listed · add it to the portal app on GitHub. Follow the link beside it, Portal app, and on GitHub add acme-org/widgets to the repositories the app may reach.`,
+      `This project's repository is acme-org/widgets. The portal app is installed on acme-org, and GitHub does not let it in yet. Open ${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, and the portal app's press there goes to GitHub to let it in. I'll wait here.`,
     ),
   );
 });
 
-test("the repository to add is named as this folder's where the folder has a remote", () => {
+test("an app missing from the owner of the project's repository is sent to the connect flow on that repository, called the project's", () => {
+  const remote = setupRepositoryRead("git@github.com:acme-org/other.git");
+  expect(
+    thing(
+      {
+        lacks: "App",
+        app: "worker",
+        account: "acme-org",
+        repository: "acme-org/widgets",
+      },
+      { remote },
+    ),
+  ).toEqual(
+    bindRun(
+      `This project's repository is acme-org/widgets. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to acme-org/widgets. Open ${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets with both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here until both reach it.`,
+    ),
+  );
+});
+
+test("a tell of the project's repository makes no claim about the folder and asks nothing, whatever the folder's remote", () => {
+  const remotes = [
+    undefined,
+    setupRepositoryRead("git@github.com:acme-org/other.git"),
+  ];
+  const lacks: readonly SetupLack[] = [
+    {
+      lacks: "Grant",
+      app: "worker",
+      account: "acme-org",
+      repository: "acme-org/widgets",
+    },
+    {
+      lacks: "App",
+      app: "portal",
+      account: "acme-org",
+      repository: "acme-org/widgets",
+    },
+  ];
+  for (const remote of remotes)
+    for (const lack of lacks) {
+      const { tell } = thing(lack, { remote }) as { readonly tell: string };
+      expect(tell).not.toMatch(/folder|Which repository/u);
+      expect(tell).toMatch(
+        /^This project's repository is acme-org\/widgets\./u,
+      );
+    }
+});
+
+test("the repository to add is named as this folder's where the folder has a remote, and the address setup gives carries it", () => {
   const remote = setupRepositoryRead("git@github.com:acme-org/widgets.git");
   expect(
     thing({ lacks: "Binding", reach: undefined }, { remote }),
   ).toMatchObject({
-    tell: `Open ${pages}/settings/repositories, press Add and choose acme-org/widgets, this folder's repository. Tell me once it is added.`,
+    tell: `Open ${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, this folder's repository, shows both apps, and adds it once both reach it. Tell me once it is added.`,
   });
 });
 
-test("connecting GitHub offers All repositories and Only select repositories with the folder's repository named as equal choices on the first install, and says the second comes with it made", () => {
+test("the repository to add is named on the connect flow where the folder has no remote, and the address says the person came from setup", () => {
+  expect(
+    thing(
+      { lacks: "Binding", reach: undefined },
+      {
+        remote: undefined,
+      },
+    ),
+  ).toMatchObject({
+    tell: `Open ${pages}/settings/repositories?from=setup#add and name your repository there: it then shows both apps, and adds it once both reach it. Tell me once it is added.`,
+  });
+});
+
+test("connecting GitHub asks which repository first, names the folder's, and sends the person to the connect flow with it in the address", () => {
   const remote = setupRepositoryRead("git@github.com:acme-org/widgets.git");
   const next = thing({ lacks: "Account" }, { remote });
-  const tell = next.thing === "Run" ? (next.tell ?? "") : "";
-  expect(tell).toContain(
-    'On the first, choose "All repositories", or "Only select repositories" and pick acme-org/widgets, this folder\'s repository. Either is fine: with All, a later project needs no trip to GitHub. The second comes with that choice already made.',
+  expect(next).toEqual(
+    bindRun(
+      `Which repository is this project for? This folder's is acme-org/widgets. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to acme-org/widgets, this folder's repository. Open ${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets with both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here and add it once both reach it.`,
+    ),
   );
-  expect(tell).not.toMatch(/rather than|alone|better|instead/u);
+});
+
+test("every tell of a trip to GitHub says the repository before any app, carries it in the address it sends the person to, and never has them pick it on GitHub's page", () => {
+  const remote = setupRepositoryRead("git@github.com:acme-org/widgets.git");
+  const lacks: readonly SetupLack[] = [
+    ...Object.values(trips).map(([lack]) => lack),
+    {
+      lacks: "Binding",
+      reach: {
+        reach: "Ungranted",
+        repository: "acme-org/widgets",
+        apps: [
+          {
+            reached: "Lacking",
+            page: { app: "portal", page: "Settings", settings: "https://f/s" },
+          },
+          {
+            reached: "Lacking",
+            page: { app: "worker", page: "Install", account: "acme-org" },
+          },
+        ],
+        installed: ["elsewhere"],
+      },
+    },
+  ];
+  for (const lack of lacks) {
+    const next = thing(lack, { remote });
+    const tell = next.thing === "Run" ? (next.tell ?? "") : "";
+    const repository = tell.indexOf("acme-org/widgets");
+    const app = tell.search(/\bapps?\b/u);
+    expect(repository, lack.lacks).toBeGreaterThanOrEqual(0);
+    expect(repository, lack.lacks).toBeLessThan(app);
+    expect(tell, lack.lacks).toContain(
+      `${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add`,
+    );
+    expect(tell, lack.lacks).not.toMatch(
+      /All repositories|Only select repositories|pick acme-org/u,
+    );
+  }
 });
 
 test("a workspace named that the person is not in is said by its name", () => {
@@ -641,14 +700,14 @@ test("a project lacking is asked a name for, to be made by project in the worksp
     thing({ lacks: "Project" }, { choice: { ...chosen, project: undefined } }),
   ).toEqual({
     thing: "Name",
-    ask: "What should the new project in acme be called? Its address is made from the name. Pass the name as --name.",
+    ask: "First, we'll create a new project in acme. What should it be called? Pass the name as --name.",
     workspace: "acme",
     project: undefined,
   });
   const named: SetupChoice = { ...chosen, by: "Named", project: "atlas" };
   expect(thing({ lacks: "Project" }, { choice: named })).toEqual({
     thing: "Name",
-    ask: "What should the new project in acme be called? Its address will be atlas. Pass the name as --name.",
+    ask: "First, we'll create a new project in acme. What should it be called? Pass the name as --name.",
     workspace: "acme",
     project: "atlas",
   });
@@ -694,7 +753,7 @@ test("a step the site would not show, or sent only part of, is a state the perso
   );
 });
 
-test("with every step done, setup is said to be done in the ticket step's own words, and nothing is named but where the next ticket is made", () => {
+test("with every step done, setup is said to be done in the ticket step's own words, with where the next ticket is made and the three things offered after it", () => {
   for (const detail of [
     "ticket 4 is finalized",
     "ticket 4 opened a pull request",
@@ -713,23 +772,27 @@ test("with every step done, setup is said to be done in the ticket step's own wo
       ),
     ).toEqual({
       carried: setupAnswersNone,
-      thing: {
-        thing: "Done",
-        tell: `chuggy is set up for acme/widgets: ${detail}. The next ticket is made at ${pages}/tickets/new.`,
-      },
+      thing: closingWith(detail),
     });
   }
 });
 
 const pullRequest = "https://github.com/acme-org/widgets/pull/2";
 
-/** Setup said to be done in the ticket step's words. */
-function closing(detail: string): SaidThing {
+/** Setup said to be done in the ticket step's words, with `configuration` said of the repository's own, and the three things offered after it. */
+function closingWith(detail: string, configuration = ""): SaidThing {
   return {
-    thing: "Done",
-    tell: `chuggy is set up for acme/widgets: ${detail}. The next ticket is made at ${pages}/tickets/new.`,
+    thing: "More",
+    more: "Offer",
+    tell: saidMoreOffered(
+      `chuggy is set up for acme/widgets: ${detail}.${configuration} The next ticket is made at ${pages}/tickets/new.`,
+    ),
+    workspace: "acme",
+    project: "widgets",
   };
 }
+
+const closing = (detail: string): SaidThing => closingWith(detail);
 
 /** What a reader of this repository is told as the offer to merge `ticket`'s pull request, leaning towards leaving it to the person where `leave` is said. */
 function mergeOffered(ticket: number, leave = ""): SaidThing {
@@ -812,16 +875,6 @@ test.each([
   },
 );
 
-test("a ticket whose starting execution waits on its project's pools short of memory is told how much they have free and it needs, and no remedy, in one sentence after its phase", async () => {
-  expect(
-    (await nextSaid(workingWith([setupSitePoolWaiting(7, room)]))).thing,
-  ).toEqual(
-    working(
-      " It is waiting on this project's runners, which have 1.4 GiB free; this run needs 4 GiB.",
-    ),
-  );
-});
-
 test("a ticket whose starting execution waits on runners that are live, with no room said, is told as it was before any wait was read", async () => {
   expect(
     (await nextSaid(workingWith([setupSiteWaiting(7, "Live")]))).thing,
@@ -860,7 +913,7 @@ test("the merge offer leans towards leaving the merge to the person, and says wh
   expect(await offered("Unread")).toEqual(mergeOffered(1));
 });
 
-test("where the site refused the merge, setup done closes as it always has, with the pull request still unmerged", async () => {
+test("where the site refused the merge, setup done closes with the offers after it, with the pull request still unmerged", async () => {
   expect(
     (
       await nextSaid(doneWith([setupSiteOpened(pullRequest)]), {
@@ -870,7 +923,7 @@ test("where the site refused the merge, setup done closes as it always has, with
   ).toEqual(closing("ticket 1 is done"));
 });
 
-test("where the repository holds its own configuration, setup done closes as it always has, whatever pull request the ticket opened", async () => {
+test("where the repository holds its own configuration, setup done closes with the offers after it, whatever pull request the ticket opened", async () => {
   expect(
     (await nextSaid(doneWith([setupSiteOpened(pullRequest)], true))).thing,
   ).toEqual(closing("ticket 1 is done"));
@@ -879,7 +932,7 @@ test("where the repository holds its own configuration, setup done closes as it 
   ).toEqual(closing("ticket 6 opened a pull request"));
 });
 
-test("where the repository holds only the bootstrap and no pull request of the ticket stands unmerged, setup done closes as it always has: none opened, one pushed, one that landed or says it merged, one failed or invalidated", async () => {
+test("where the repository holds only the bootstrap and no pull request of the ticket stands unmerged, setup done closes with the offers after it: none opened, one pushed, one that landed or says it merged, one failed or invalidated", async () => {
   const opened = setupSiteOpened(pullRequest);
   const proposal = {
     url: pullRequest,
@@ -908,7 +961,7 @@ test("where the repository holds only the bootstrap and no pull request of the t
 });
 
 test.each(["Refused", "Failed", "Garbled", "Unauthenticated", "Cut"] as const)(
-  "the done ticket's landings answered as %s leave setup done, closing as it always has, and stop nothing",
+  "the done ticket's landings answered as %s leave setup done, closing with the offers after it, and stop nothing",
   async (fate) => {
     const site = doneWith([setupSiteOpened(pullRequest)]);
     site.fates.set("landings", fate);
@@ -934,9 +987,6 @@ const offered = (tell: string, chat = false): SaidThing => ({
   elsewhere: otherMachine(chat),
 });
 
-/** The memory, in MiB, the engine of the box's machine reports. */
-const engineRoomy = Math.floor(boxEngineBytes / 2 ** 20);
-
 /** What is next for a lack once the machine was looked at and showed `room`. */
 function here(
   lack: SetupLack,
@@ -944,13 +994,11 @@ function here(
   held: SetupRunnerHeld | undefined = undefined,
   chat = false,
   platform: SetupPlatform = "linux",
-  chatSize: SetupChatSize = setupChatSized(engineRoomy, 0, {}),
 ): SaidThing {
   const looked: SetupRunnerHere = {
     room,
     held,
     chat,
-    chatSize,
     claude: "Subscription",
     fit: { fit: "Room" },
     settings: undefined,
@@ -969,11 +1017,14 @@ const runnerIs =
   "The next step is a runner: the machine that does the work on your tickets";
 
 const runnerOnly =
-  "chuggy needs a **runner** running on a machine of yours, which does the work of tickets. I'll install it on this machine, as yours alone. It can live on another machine instead; say so if you want that.";
+  "I'll install your runner on this machine, as yours alone. Say if you'd rather not have it here, or want it on another machine.";
 const runnerAndHost =
-  "chuggy needs two things running on a machine of yours. A **runner** does the work of tickets. A **chat host** runs your chats with chuggy. I'll install both on this machine, as yours alone. They can live on another machine instead; say so if you want that.";
+  "I'll install your chat host and your runner on this machine, as yours alone. Say if you'd rather not have either here, or want them on another machine.";
 const putHere =
-  "The runner package, chuggy-linux, runs it as a background service of yours that starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan, 4 GiB a run.";
+  "The runner package, chuggy-linux, runs it as a background service of yours that starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan.";
+
+/** What no tell of the runner's step says where the machine fits a job as it stands: a memory, Colima, or a file's mode. */
+const unsaid = /GiB|MiB|Colima|mode 600|setup-token/u;
 const takesWork =
   "Your runner will take work for acme/widgets. Say if you'd rather it didn't.";
 
@@ -986,36 +1037,13 @@ test("with no runner yet and a machine that could take one, the person is told w
   );
 });
 
-test("with neither a runner nor the person's chat host, the offer explains both and installs both by default, the chat host sized to the engine's memory whatever room it leaves", () => {
-  const holds = (size: string) =>
-    `Your chat host is a second background service, which holds ${size} at once.`;
-  expect(here({ lacks: "Runner", chat: true }, roomy)).toEqual(
-    offered(
-      `${runnerAndHost} ${putHere} ${holds("6 GiB whenever it runs: 2 GiB a chat, for up to 3")} ${takesWork}`,
-      true,
-    ),
+test("with neither a runner nor the person's chat host, the offer installs both by default, says what neither holds, and introduces neither again", () => {
+  const told = here({ lacks: "Runner", chat: true }, roomy);
+  expect(told).toEqual(
+    offered(`${runnerAndHost} ${putHere} ${takesWork}`, true),
   );
-  for (const size of [
-    setupChatSized(6_144, 0, {}),
-    setupChatSized(6_144, 2_048, {}),
-    setupChatSized(6_144, undefined, {}),
-    setupChatSized(undefined, 0, {}),
-  ])
-    expect(
-      here(
-        { lacks: "Runner", chat: true },
-        roomy,
-        undefined,
-        false,
-        "linux",
-        size,
-      ),
-    ).toEqual(
-      offered(
-        `${runnerAndHost} ${putHere} ${holds("2 GiB whenever it runs: 2 GiB a chat, for up to 1")} ${takesWork}`,
-        true,
-      ),
-    );
+  expect(toldOf(told)).not.toMatch(unsaid);
+  expect(toldOf(told)).not.toContain("Now let's");
 });
 
 /** What is next for a runner the machine lacks, where its settings and Claude login are as `looked` says. */
@@ -1028,7 +1056,6 @@ function hereFound(
       room: roomy,
       held: undefined,
       chat: false,
-      chatSize: setupChatSized(engineRoomy, 0, {}),
       fit: { fit: "Room" },
       ...looked,
     }).thing,
@@ -1055,22 +1082,85 @@ test("runner settings already on this machine are named before anything is chang
   );
 });
 
-test("a Claude login the runner would run on and that is not there yet is the first thing the person does, before anything is installed, and nothing else is offered", () => {
+/** The runner step's opening, with the chat host where `chat`. */
+function opening(chat: boolean): string {
+  return chat
+    ? "Now let's set up your chat host and a runner. The chat host will power your chat in the chuggy web app, and the runner will run your work. You'll need a token from `claude setup-token` or an Anthropic API key. Point me to it and I'll set these up on this machine. If you want them hosted elsewhere, let me know."
+    : "Now let's set up a runner, which will run your work. You'll need a token from `claude setup-token` or an Anthropic API key. Point me to it and I'll set it up on this machine. If you want it hosted elsewhere, let me know.";
+}
+
+test("with no Claude credential on this machine, the step opens once, asking for a token or an API key by its path and offering another machine, and offers nothing else", () => {
   const login = "/home/person/.config/chuggy-linux/claude/token";
-  expect(
-    hereFound(true, {
+  for (const chat of [true, false]) {
+    const told = hereFound(chat, {
       claude: "Subscription",
       settings: undefined,
       loginMissing: { kind: "Subscription", path: login },
+    });
+    expect(told, String(chat)).toEqual({
+      thing: "Offer",
+      command: "Runner",
+      tell: opening(chat),
+      when: "once the person points you to the file of a token from `claude setup-token`, with the first, or of an Anthropic API key, with the second, and has not asked for it on another machine instead",
+      workspace: "acme",
+      project: "widgets",
+      chatHost: false,
+      credential: true,
+      elsewhere: otherMachine(chat),
+    });
+    expect(toldOf(told)).not.toMatch(/GiB|MiB|Colima|mode 600|\/home\//u);
+  }
+});
+
+test("runner settings naming a Claude credential that is not there have the person put it where they name it, before anything is installed", () => {
+  const key = "/srv/key";
+  const credential: SetupClaudeCredential = { kind: "ApiKey", path: key };
+  expect(
+    hereFound(true, {
+      claude: "ApiKey",
+      settings: {
+        path: "/home/person/.config/chuggy-linux/runner.json",
+        credential,
+      },
+      loginMissing: credential,
     }),
   ).toEqual({
     thing: "Hand",
-    tell: `chuggy needs two things running on a machine of yours. A **runner** does the work of tickets. A **chat host** runs your chats with chuggy. First, Claude needs to be logged in for them: run \`claude setup-token\` and tell me when it's done. ${copyTextEn(setupClaudeSaved({ kind: "Subscription", path: login }))}`,
+    tell: `Now let's set up your chat host and a runner. The chat host will power your chat in the chuggy web app, and the runner will run your work. First, Claude needs to be logged in for them: the runner's settings name its Anthropic API key as ${key}, and nothing is there. ${copyTextEn(setupClaudeSaved(credential))} Tell me once it is there.`,
     when: copyTextEn({
       id: "setup-runner-login-missing-when",
-      args: { credential: setupClaudeWords.Subscription.credential },
+      args: { credential: setupClaudeWords.ApiKey.credential },
     }),
   });
+});
+
+test("with the runner's credential in place, the offer follows without the opening, whether settings were there before or written with the credential", () => {
+  for (const credential of [
+    {
+      kind: "Subscription",
+      path: "/home/person/.config/chuggy-linux/claude/token",
+    },
+    {
+      kind: "ApiKey",
+      path: "/home/person/.config/chuggy-linux/claude/api-key",
+    },
+  ] as const) {
+    const told = toldOf(
+      hereFound(true, {
+        claude: credential.kind,
+        settings: {
+          path: "/home/person/.config/chuggy-linux/runner.json",
+          credential,
+        },
+        loginMissing: undefined,
+      }),
+    );
+    expect(told, credential.kind).toMatch(
+      /^I'll install your chat host and your runner/u,
+    );
+    expect(told, credential.kind).not.toContain("Now let's");
+    expect(told, credential.kind).not.toMatch(/GiB|MiB|Colima|mode 600/u);
+  }
 });
 
 test("where this machine could not take a runner the person is told why instead, and nothing is offered: user services that do not answer, no engine, and on a Mac, Colima not started", () => {
@@ -1156,9 +1246,9 @@ test("a user the runner package bars from docker is told the package's reason an
   );
 });
 
-test("a runner registered and not running is offered to be started here only where this machine holds the person's runner's registration, said as held and as registered again where the site no longer knows it, offered to be registered again beside a pool's registration, and where this machine holds none is offered as where there is no runner", () => {
+test("a runner registered and not running is offered to be started here only where this machine holds the person's runner's registration, said as held and as registered again where the site no longer knows it, and where this machine holds none is offered as where there is no runner", () => {
   const holds =
-    "A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner. I'll check it and start it here as a background service of yours that starts when you log in, registering this machine again as yours alone first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan, 4 GiB a run.";
+    "A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner. I'll check it and start it here as a background service of yours that starts when you log in, registering this machine again as yours alone first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan.";
   const instead =
     "It can live on another machine instead; say so if you want that.";
   expect(here({ lacks: "RunnerLive", chat: false }, roomy, "Personal")).toEqual(
@@ -1170,13 +1260,8 @@ test("a runner registered and not running is offered to be started here only whe
     );
   expect(here({ lacks: "RunnerLive", chat: true }, roomy, "Personal")).toEqual(
     offered(
-      `${holds} Your chat host is a second background service, which holds 6 GiB whenever it runs: 2 GiB a chat, for up to 3 at once. ${takesWork} ${instead}`,
+      `${holds} I'll make this machine your chat host too. ${takesWork} ${instead}`,
       true,
-    ),
-  );
-  expect(here({ lacks: "RunnerLive", chat: false }, roomy, "Pool")).toEqual(
-    offered(
-      `A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner of the project's rather than yours. I'll leave that registration as it is and register this machine again as yours alone, then check your runner and start it here as a background service of yours that starts when you log in, so work on your tickets runs on this machine in containers, on your Claude plan, 4 GiB a run. ${takesWork} ${instead}`,
     ),
   );
 });
@@ -1195,7 +1280,6 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
           room: roomy,
           held,
           chat: false,
-          chatSize: setupChatSized(engineRoomy, 0, {}),
           claude,
           fit: { fit: "Room" },
           settings: undefined,
@@ -1205,7 +1289,7 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
       return thing.thing === "Offer" ? thing.tell : "";
     });
   for (const tell of said("Subscription"))
-    expect(tell).toContain("in containers, on your Claude plan, 4 GiB a run.");
+    expect(tell).toContain("in containers, on your Claude plan.");
   for (const [claude, on] of [
     ["ApiKey", "your Anthropic API key"],
     ["Bedrock", "your Amazon Bedrock account"],
@@ -1213,11 +1297,11 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
     ["Foundry", "your Microsoft Foundry resource"],
   ] as const)
     for (const tell of said(claude)) {
-      expect(tell, claude).toContain(`in containers, on ${on}, 4 GiB a run.`);
+      expect(tell, claude).toContain(`in containers, on ${on}.`);
       expect(tell, claude).not.toContain("Claude plan");
     }
   for (const tell of said(undefined)) {
-    expect(tell).toContain("in containers, 4 GiB a run.");
+    expect(tell).toContain("in containers.");
     expect(tell).not.toContain("Claude plan");
   }
 });
@@ -1314,7 +1398,8 @@ test("at each stage of a site the first step that is not done decides what is ne
     const next = await nextSaid(setupSiteAt(stage));
     const kind = deciding[stage];
     expect(next.carried, stage).toEqual(setupAnswersNone);
-    if (kind === "Done") expect(next.thing.thing, stage).toBe("Done");
+    if (kind === "Done")
+      expect(next.thing, stage).toMatchObject({ thing: "More", more: "Offer" });
     else if (kind === "Project")
       expect(next.thing, stage).toMatchObject({
         thing: "Name",
@@ -1489,7 +1574,7 @@ test("the folder's repository both apps are granted has bind run at once for the
   });
 });
 
-test("both apps are named in one tell, each with its own page and whether it is granted the folder's repository, with bind run at once to wait for them and nothing yet due to bind", () => {
+test("both apps are named in one tell, each with whether it reaches the folder's repository, with the connect flow's address, bind run at once to wait for them and nothing yet due to bind", () => {
   const lack: SetupLack = {
     lacks: "Binding",
     reach: {
@@ -1514,7 +1599,7 @@ test("both apps are named in one tell, each with its own page and whether it is 
   };
   expect(thing(lack)).toEqual(
     bindRun(
-      `${reachSaid} 1. Portal: https://forge/settings, not granted acme-org/widgets yet 2. Worker: not installed on acme-org yet; on ${stoodSite}/tenants/acme/settings/accounts press Install worker on the row of acme-org. I'll wait here. On GitHub, choose "All repositories", or "Only select repositories" and pick acme-org/widgets, and save. Either is fine: with All, a later project needs no trip to GitHub. GitHub may ask you to confirm access first, with a code it emails you.`,
+      `${reachSaid} 1. Portal: installed, not let into acme-org/widgets yet 2. Worker: not installed on acme-org yet. I'll wait here. Open ${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets, and each app it still lacks has one press there that goes to GitHub for it. GitHub may ask you to confirm access first, with a code it emails you.`,
     ),
   );
   expect(setupBindDue(lacking(lack))).toBeUndefined();
@@ -1523,7 +1608,7 @@ test("both apps are named in one tell, each with its own page and whether it is 
   ).toBeUndefined();
 });
 
-test("accounts the workspace holds both apps on beside the repository's owner are said first, as why their repositories are shown", () => {
+test("accounts the workspace holds both apps on beside the repository's owner are said once the repository is, as why their repositories are shown", () => {
   const reach = (installed: readonly string[]): SetupLack => ({
     lacks: "Binding",
     reach: {
@@ -1541,13 +1626,15 @@ test("accounts the workspace holds both apps on beside the repository's owner ar
     const run = thing(reach(installed));
     return run.thing === "Run" ? (run.tell ?? "") : "";
   };
-  expect(told(["elsewhere"])).toMatch(
-    /^elsewhere already has chuggy's apps installed, so I can see its repositories\. Another workspace can only where one of its admins owns elsewhere on GitHub\. Which repository /u,
+  const asked =
+    "Which repository is this project for? This folder's is acme-org/widgets, so that is the one I connect; for another, start me in the folder of its clone. ";
+  expect(told(["elsewhere"])).toContain(
+    `${asked}elsewhere already has chuggy's apps installed, so I can see its repositories. Another workspace can only where one of its admins owns elsewhere on GitHub. chuggy uses two GitHub apps.`,
   );
-  expect(told(["one", "two"])).toMatch(
-    /^one, two already have chuggy's apps installed, so I can see their repositories\. /u,
+  expect(told(["one", "two"])).toContain(
+    `${asked}one, two already have chuggy's apps installed, so I can see their repositories. `,
   );
-  expect(told([])).toMatch(/^Which repository /u);
+  expect(told([])).toContain(`${asked}chuggy uses two GitHub apps.`);
 });
 
 test("bind waits while the next thing is a trip to GitHub, and on nothing else", () => {
@@ -1582,93 +1669,54 @@ test("bind waits while the next thing is a trip to GitHub, and on nothing else",
     expect(setupBindAwaited(lacking(lack)), lack.lacks).toBe(false);
 });
 
-test("the page bind opens is the repositories page asked to begin Connect GitHub, and only where connecting GitHub is next", () => {
+test("the page bind opens is the connect flow, on the folder's repository where it has one, and only where connecting GitHub is next", () => {
   expect(setupConnectDue(lacking({ lacks: "Account" }))).toBe(
-    `${pages}/settings/repositories?connect=github`,
+    `${pages}/settings/repositories?from=setup#add`,
   );
   expect(
-    setupConnectDue(lacking({ lacks: "App", app: "worker", account: "a" })),
+    setupConnectDue(
+      lacking(
+        { lacks: "Account" },
+        { remote: setupRepositoryRead("git@github.com:acme-org/widgets.git") },
+      ),
+    ),
+  ).toBe(
+    `${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add`,
+  );
+  expect(
+    setupConnectDue(
+      lacking({
+        lacks: "App",
+        app: "worker",
+        account: "a",
+        repository: undefined,
+      }),
+    ),
   ).toBeUndefined();
 });
 
-/** What a personal runner of the person's lacks to take the project's work. */
-function serving(
-  given: boolean,
-  named: boolean,
-  administers: boolean,
-): SetupLack {
-  return { lacks: "Serving", given, named, administers };
-}
+/** A personal runner of the person's registered and not given the project. */
+const serving: SetupLack = { lacks: "Serving" };
 
 const servingWhen =
   "once the person says yes to their runner taking the project's work";
-const servingPlacement = `${pages}/settings/placement`;
 
-test("a personal runner that does not take the project's work is offered serve, which gives it the project and lets the person's own runners take the work, each only where it is lacking", () => {
-  const offered = (tell: string): SaidThing => ({
+test("a personal runner that does not take the project's work is offered serve, which gives it the project and nothing else", () => {
+  expect(thing(serving)).toEqual({
     thing: "Offer",
     command: "Serve",
-    tell: `Your runner is registered and does not take acme/widgets's work yet. With your yes I will ${tell}. Tell me yes to go ahead.`,
+    tell: "Your runner is registered and does not take acme/widgets's work yet. With your yes I will give it acme/widgets. Tell me yes to go ahead.",
     when: servingWhen,
     workspace: "acme",
     project: "widgets",
   });
-  expect(thing(serving(false, false, true))).toEqual(
-    offered("give it acme/widgets and let your own runners take its work"),
-  );
-  expect(thing(serving(false, true, true))).toEqual(
-    offered("give it acme/widgets"),
-  );
-  expect(thing(serving(false, true, false))).toEqual(
-    offered("give it acme/widgets"),
-  );
-  expect(thing(serving(true, false, true))).toEqual(
-    offered("let your own runners take acme/widgets's work"),
-  );
 });
 
-test("a person who cannot administer a project naming no owner fallback is offered serve for the project alone, and told an admin sets Personal runners on its Placement page", () => {
-  const admin = `Your own runners take its work only once an admin of the project sets Personal runners on its Placement page, ${servingPlacement}.`;
-  expect(thing(serving(false, false, false))).toEqual({
-    thing: "Offer",
-    command: "Serve",
-    tell: `Your runner is registered and does not take acme/widgets's work yet. With your yes I will give it acme/widgets. ${admin} Tell me yes to go ahead.`,
-    when: servingWhen,
-    workspace: "acme",
-    project: "widgets",
-  });
-  expect(thing(serving(true, false, false))).toEqual(
-    hand(
-      `Your runner is registered and given acme/widgets, and does not take its work yet. ${admin} Tell me once they have.`,
-      "once the person says an admin of the project set Personal runners",
-    ),
-  );
-});
-
-test("serve is due only where the runner step lacks Serving and writes only what the person may and what is lacking: the project given where it is not, and Preferred where no fallback is named and the person administers", () => {
-  const partition = { tenant: "acme", project: "widgets" };
+test("serve is due only where the runner step lacks Serving, and names the project to give", () => {
   const due = (lack: SetupLack) => setupServeDue(lacking_(lack));
-  expect(due(serving(false, false, true))).toEqual({
-    partition,
-    give: true,
-    allow: true,
+  expect(due(serving)).toEqual({
+    partition: { tenant: "acme", project: "widgets" },
   });
-  expect(due(serving(false, true, true))).toEqual({
-    partition,
-    give: true,
-    allow: false,
-  });
-  expect(due(serving(false, false, false))).toEqual({
-    partition,
-    give: true,
-    allow: false,
-  });
-  expect(due(serving(true, false, true))).toEqual({
-    partition,
-    give: false,
-    allow: true,
-  });
-  expect(due(serving(true, false, false))).toBeUndefined();
   expect(due({ lacks: "Runner", chat: false })).toBeUndefined();
-  expect(setupRunnerDue(lacking_(serving(false, false, true)))).toBeUndefined();
+  expect(setupRunnerDue(lacking_(serving))).toBeUndefined();
 });

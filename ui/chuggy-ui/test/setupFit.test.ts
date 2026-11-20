@@ -1,6 +1,7 @@
 /**
  * What a machine is short of for a job naming no memory or platform, as the
- * bare command offers it and `runner` mends it on the person's yes: a fake
+ * bare command offers it, saying only what is done or to be done and the size
+ * Colima's VM is given, and `runner` mends it on the person's yes: a fake
  * Apple-silicon Mac whose docker runs in a small vz Colima VM, and a small
  * Linux box.
  */
@@ -28,8 +29,6 @@ const gib = 2 ** 30;
 const runner = ["runner", "--workspace", "acme", "--project", "widgets"];
 const takes =
   "Your runner will take work for acme/widgets. Say if you'd rather it didn't.";
-const short =
-  "Colima's VM here has 2 GiB, short of the 4 GiB a run naming no memory needs, and 1 GiB for the container engine beside it, and runs no amd64 images, which a run naming no platform needs.";
 
 /** A small vz VM on Apple silicon, running, with no Rosetta asked or on. */
 function vmSmall(): BoxColimaVm {
@@ -83,7 +82,7 @@ async function offered(machine: SetupMachine): Promise<string> {
   const { lines } = await said(machine, []);
   return (
     lines.find((line) =>
-      /^tell: (?:chuggy needs|The next step is a runner)/u.test(line),
+      /^tell: (?:I'll install|The next step is a runner)/u.test(line),
     ) ?? ""
   );
 }
@@ -98,8 +97,9 @@ test("a Mac with Rosetta whose VM is short of memory and amd64 is offered both, 
   const machine = await macOf({ vm: vmSmall() });
   const offer = await offered(machine);
   expect(offer).toContain(
-    `${short} I first stop it, which stops its containers, and start it again with 8 GiB and Rosetta: colima stop, then colima start --memory 8 --vz-rosetta. ${takes}`,
+    ` I first restart Colima's VM with 8 GiB and Rosetta, which stops its containers: colima stop, then colima start --memory 8 --vz-rosetta. ${takes}`,
   );
+  expect(offer).not.toMatch(/2 GiB|4 GiB|1 GiB|short of/u);
   expect(colimaRan(machine)).toEqual([]);
 
   const { exit, lines } = await said(machine, runner);
@@ -137,7 +137,7 @@ test("a Mac without Rosetta is told to install it first, with no restart offered
 test("a stopped VM, read from Colima's list and its profile's settings, is started with what it lacks and never stopped", async () => {
   const machine = await macOf({ vm: { ...vmSmall(), running: false } });
   expect(await offered(machine)).toContain(
-    "I first start it with 8 GiB and Rosetta: colima start --memory 8 --vz-rosetta.",
+    " I first start Colima's VM with 8 GiB and Rosetta: colima start --memory 8 --vz-rosetta.",
   );
   const { exit } = await said(machine, runner);
   expect(exit).toBe(0);
@@ -180,25 +180,27 @@ test("a QEMU VM is told it is made again with what that costs, and nothing is ru
   expect(machine.box.acts).not.toContain("register");
 });
 
-test("a Linux box of 3 GiB is told it cannot run a job naming no memory, and one with room is offered as before", async () => {
+test("a Linux box of 2 GiB is told it cannot run a job naming no memory, and one with room is offered as before", async () => {
   const site = setupSiteAt("Configured");
   for (const project of site.projects) project.threads = "InCluster";
   const small = await machineSignedIn(site);
-  small.box.memoryBytes = 3 * gib;
-  expect(await offered(small)).toContain(
-    "Here docker has 3 GiB, less than the 4 GiB a run naming no memory needs, and 1 GiB for the container engine beside it, so this machine has no room for such a run: run it on another machine.",
+  small.box.memoryBytes = 2 * gib;
+  const told = await offered(small);
+  expect(told).toContain(
+    " This machine is too small for your work, so set your runner up on another machine instead.",
   );
+  expect(told).not.toMatch(/GiB|MiB/u);
 
   const roomy = await machineSignedIn(site);
   const offer = await offered(roomy);
-  expect(offer).toContain(`4 GiB a run. ${takes}`);
-  expect(offer).not.toContain("no room");
+  expect(offer).toContain(`in containers, on your Claude plan. ${takes}`);
+  expect(offer).not.toContain("too small");
 });
 
 test("a Mac with Colima and no VM is offered one made as vz with Rosetta and room for a job, which the yes makes before registering", async () => {
   const machine = await macOf({ vm: undefined });
   expect(await offered(machine)).toContain(
-    "Colima has no VM here yet. I first make one with 8 GiB and Rosetta",
+    " Colima has no VM here yet, so I first make one with 8 GiB and Rosetta: colima start --vm-type vz --vz-rosetta --memory 8.",
   );
   const { exit, lines } = await said(machine, runner);
   expect(exit).toBe(0);

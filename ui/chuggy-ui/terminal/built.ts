@@ -6,13 +6,13 @@
  * named so that the bundler puts a stand-in where it was parses, typechecks
  * and builds, and stops on its first call. So the file is run as a person's
  * agent first runs it, bare, under a home made for the purpose with nothing
- * remembered and for a bounded time, and it must print what that run prints
- * and exit as that run exits. Being last, this is also what notices a step
+ * remembered and for a bounded time, and it must print what that run prints,
+ * exit as that run exits and leave that home as empty as it found it. Being last, this is also what notices a step
  * that left the output directory without the program in it.
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -28,8 +28,12 @@ const startMsMax = 30_000;
 /** Past anything a first run prints, and enough of a trace to say what stopped it. */
 const outputBytesMax = 16_384;
 
-/** What a bare run reports on a machine that remembers nothing. */
-const first: SetupReport = { report: "SiteUnknown" };
+/** What a bare run reports on a machine that remembers nothing, in a folder that is no checkout. */
+const first: SetupReport = {
+  report: "Opening",
+  site: undefined,
+  repository: undefined,
+};
 
 /** What starting the built program came to, in the catalog's words. */
 function said(built: string): Copy {
@@ -38,6 +42,7 @@ function said(built: string): Copy {
   const home = mkdtempSync(join(tmpdir(), "chuggy-setup-built-"));
   try {
     const ran = spawnSync(process.execPath, [built], {
+      cwd: home,
       env: { HOME: home, PATH: process.env["PATH"] ?? "" },
       encoding: "utf8",
       timeout: startMsMax,
@@ -46,6 +51,8 @@ function said(built: string): Copy {
     });
     if (ran.error !== undefined)
       return { id: "setup-built-unended", args: { path } };
+    if (readdirSync(home).length > 0)
+      return { id: "setup-built-wrote", args: { path } };
     const printed = `${setupReportLines(first, built, copyTextEn).join("\n")}\n`;
     if (ran.stdout === printed && ran.status === setupReportExit(first))
       return { id: "setup-built-starts", args: { path } };

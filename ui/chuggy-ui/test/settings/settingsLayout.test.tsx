@@ -247,9 +247,10 @@ const projectGroups = [
     [
       "Chats /acme-co/atlas-web/settings/threads",
       "Placement /acme-co/atlas-web/settings/placement",
-      "Pools /acme-co/atlas-web/settings/pools",
       "Permissions /acme-co/atlas-web/settings/permissions",
+      "Access tokens /acme-co/atlas-web/settings/access-tokens",
       "Repositories /acme-co/atlas-web/settings/repositories",
+      "Connectors /acme-co/atlas-web/settings/connectors",
       "Catalog /acme-co/atlas-web/settings/catalog",
     ],
   ],
@@ -448,6 +449,7 @@ test.each([
             overrideTicketConfig: administer,
             skipPlannedEvaluations: administer,
             mergeProposals: administer,
+            makeAccessTokens: administer,
             administer,
             writeEpic: true,
           })
@@ -485,7 +487,6 @@ test.each([
     address: "/acme-co/atlas-web/settings/placement",
     group: "Project atlas-web",
   },
-  { address: "/acme-co/atlas-web/settings/pools", group: "Project atlas-web" },
   {
     address: "/acme-co/atlas-web/settings/permissions",
     group: "Project atlas-web",

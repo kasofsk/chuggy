@@ -16,7 +16,11 @@ import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import type { Copy } from "../core/copy.ts";
 import { failureWords } from "../core/failureWords.ts";
 import { runnerAskRead, runnerPackages } from "../core/runners.ts";
-import type { RunnerAsk, RunnerPackageName } from "../core/runners.ts";
+import type {
+  RunnerAsk,
+  RunnerKind,
+  RunnerPackageName,
+} from "../core/runners.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "./consoleWrite.tsx";
 import type { ConsoleWriteShown, ConsoleWriting } from "./consoleWrite.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -24,7 +28,6 @@ import { Checkbox } from "./ui/Checkbox.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
 import { Input } from "./ui/Input.tsx";
 import { RunnerSteps } from "./RunnerSteps.tsx";
-import type { RunnerStepsKind } from "./RunnerSteps.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { ToggleGroup } from "./ui/ToggleGroup.tsx";
 
@@ -237,7 +240,7 @@ function RunnerAskForm(props: { readonly minting: RunnerMinting }): ReactNode {
  * is, the steps it is handed over in. */
 export function RunnerByHand(props: {
   readonly minting: RunnerMinting;
-  readonly kind: RunnerStepsKind;
+  readonly kind: RunnerKind;
 }): ReactElement {
   const { data: minted, variables: ask } = props.minting.writing;
   return minted !== undefined && ask !== undefined ? (

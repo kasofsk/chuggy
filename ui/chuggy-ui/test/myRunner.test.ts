@@ -1,6 +1,5 @@
 /**
- * A member's own runners, derived: the words for a project's fallback, how one
- * runner is told from another, what it is running and how many wait in a
+ * A member's own runners, derived: how one runner is told from another, what it is running and how many wait in a
  * project, whether one more may be registered, the
  * projects they may be given, what a run says it waits on of the reader's runners, what
  * taking a member's runners off came to, and where a session's missing runner
@@ -23,15 +22,9 @@ import {
   myRunnersCountLine,
   myRunnerShort,
   myRunnerWaitingLabel,
-  ownerFallbackAbout,
-  ownerFallbackChoices,
-  ownerFallbackChosen,
-  ownerFallbackLabel,
-  ownerFallbackValue,
   runnerWait,
   runnerWaitPause,
   runnerWaitLine,
-  runnerWaitPoolRoom,
   runnerWaitRoom,
   runnerWaitRoomLine,
   runnerWaitWord,
@@ -61,7 +54,7 @@ const runner: PersonalRunnerResponse = {
   ],
 };
 
-/** A run of the reader's, routed to runners under `Strict`, whose worker has not begun. */
+/** A run of the reader's, routed to runners, whose worker has not begun. */
 const waiting = {
   ...ledgerExecution({
     execution: "execution-1",
@@ -71,27 +64,7 @@ const waiting = {
     carrier: "Agent",
   }),
   mine: true,
-  ownerFallback: "Strict" as const,
 };
-
-test("each fallback is chosen by its own value, none included, and said in its own plain line", () => {
-  expect(
-    ownerFallbackChoices.map((each) => copyTextEn(ownerFallbackLabel(each))),
-  ).toStrictEqual(["None", "Strict", "Preferred"]);
-  for (const fallback of ownerFallbackChoices)
-    expect(ownerFallbackChosen(ownerFallbackValue(fallback))).toStrictEqual({
-      fallback,
-    });
-  expect(ownerFallbackChosen("Sometimes")).toBeUndefined();
-  expect(copyTextEn(ownerFallbackAbout(undefined))).toBe(
-    "Personal runners take no work started from now on.",
-  );
-  expect(
-    new Set(
-      ownerFallbackChoices.map((each) => copyTextEn(ownerFallbackAbout(each))),
-    ).size,
-  ).toBe(ownerFallbackChoices.length);
-});
 
 test("the register line is made for the project the page is framed in, or else for any of the workspace's projects the reader reads, in name order", () => {
   const readable = [
@@ -176,7 +149,6 @@ test.each([
 test.each([
   ["another member's", { ...waiting, mine: false }],
   ["a read that predates ownership", { ...waiting, mine: undefined }],
-  ["one no personal runner may take", { ...waiting, ownerFallback: undefined }],
   ["one still queued", { ...waiting, status: "Queued" as const }],
   [
     "one whose worker began",
@@ -241,25 +213,13 @@ test("a run of the reader's waiting on their live runners says the memory they a
   expect(runnerWaitRoom({ ...short, mine: false })).toBeUndefined();
 });
 
-/** The server sends a pool room only where every live pool a run waits on is short of memory, to any reader, and the console says it of a run not begun and not queued. */
-test("a run waiting on its project's live pools says the memory they are short of to any reader, and one queued or begun says none", () => {
-  const room = { freeMib: 3_686, neededMib: 4_096 };
-  const short = {
-    ...waiting,
-    mine: false,
-    ownerFallback: undefined,
-    poolRoom: room,
-  };
-  expect(runnerWaitPoolRoom(short)).toStrictEqual(room);
-  expect(runnerWaitPoolRoom({ ...short, mine: true })).toStrictEqual(room);
-  expect(runnerWaitPoolRoom({ ...waiting, mine: false })).toBeUndefined();
-  expect(runnerWaitPoolRoom({ ...short, status: "Queued" })).toBeUndefined();
+test("the memory a run's runners are short of is said in GiB", () => {
   expect(
-    runnerWaitPoolRoom({ ...short, runStartedAt: "2026-10-01T05:00:00Z" }),
-  ).toBeUndefined();
-  expect(copyOrDataText(copyTextEn, runnerWaitRoomLine(room))).toBe(
-    "3.6 GiB free, needs 4 GiB",
-  );
+    copyOrDataText(
+      copyTextEn,
+      runnerWaitRoomLine({ freeMib: 3_686, neededMib: 4_096 }),
+    ),
+  ).toBe("3.6 GiB free, needs 4 GiB");
 });
 
 test("taking a member's runners off says whether there were any it could take", () => {

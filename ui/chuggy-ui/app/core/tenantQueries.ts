@@ -40,6 +40,7 @@ import {
 } from "./consoleQuery.ts";
 import type { ConsoleRead } from "./consoleQuery.ts";
 import type { ForgeReachable } from "./projectRepositories.ts";
+import type { RepositoryAppReach } from "./repositoryConnect.ts";
 import { memberChatThreadPolledMs } from "./memberChat.ts";
 import { sessionPlacementPolledMs } from "./sessionRunners.ts";
 
@@ -248,4 +249,20 @@ export function forgeReachableQuery(
   polledMs: number | undefined,
 ) {
   return consoleTenantQuery(tenant, "forge-reachable", read, polledMs);
+}
+
+/** Where each app stands on one repository, by its name in lower case, read
+ * as the flow connecting it says and on its clock. */
+export function forgeRepositoryReachQuery(
+  tenant: string,
+  repository: string,
+  read: ConsoleRead<readonly RepositoryAppReach[]>,
+  polledMs: number | undefined,
+) {
+  return consoleTenantQuery(
+    tenant,
+    `forge-repository-reach/${repository}`,
+    read,
+    polledMs,
+  );
 }

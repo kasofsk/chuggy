@@ -66,17 +66,18 @@ test("on the phone a section is drawn alone, its heading within the first screen
   served,
 }) => {
   const rendered = await renderedOpen(browser, served.origin, {
-    route: `${settingsRoot}/pools`,
+    route: `${settingsRoot}/placement`,
     viewport: "phone",
     signedIn: true,
-    ready: (page) => page.getByRole("rowheader", { name: /^build-linux/u }),
+    touch: true,
+    ready: (page) => page.getByRole("rowheader", { name: /^Work/u }).first(),
   });
   const page = rendered.page;
   await expect(page.getByRole("navigation", { name: "Settings" })).toBeHidden();
   const back = page.getByRole("link", { name: "All settings" });
   await expect(back).toBeVisible();
   await renderedTouchTargets(page, back.locator(".."));
-  const heading = page.getByRole("heading", { level: 1, name: "Pools" });
+  const heading = page.getByRole("heading", { level: 1, name: "Placement" });
   const box = await heading.boundingBox();
   expect(box, "the section's heading is drawn").not.toBeNull();
   expect(box?.y ?? Infinity).toBeLessThan(renderedViewports.phone.height);

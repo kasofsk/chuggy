@@ -33,6 +33,7 @@ import { copyPseudoLocale } from "../app/copy/copyPseudo.ts";
 import { repositoryConfigurationsDirectory } from "../app/core/repositoryConfigurations.ts";
 import { creationImageTypesLabel } from "../app/core/ticketCreation.ts";
 import { inboxPhases } from "../../../src/contract/http.ts";
+import { connectorCredentialPrefix } from "../../../src/contract/workerEnvironment.ts";
 import {
   consoleAdvanced,
   consoleInboxTicket,
@@ -114,6 +115,7 @@ const consoleRouteAttributes = ["aria-label", "title", "placeholder"] as const;
 const consoleRouteContractNamed = [
   repositoryConfigurationsDirectory,
   creationImageTypesLabel,
+  connectorCredentialPrefix,
 ];
 
 /** Whether a word, bare of the marks around it, is shaped as an id is. */

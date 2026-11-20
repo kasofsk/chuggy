@@ -50,6 +50,16 @@
     width: 6.5em;
   }
 
+  /* An access token's columns: Read or Write, and two instants each as wide
+     as one in another year. */
+  .people-col-access {
+    width: 6em;
+  }
+
+  .people-col-when {
+    width: 11.5em;
+  }
+
   /* The roles start at one place down the table where the projects' names
      are short, and where the two do not fit the name is cut short before
      its roles wrap. */

@@ -84,11 +84,12 @@
  * that never reached one.
  *
  * AN EXECUTION ROUTED TO POOLS IS NEVER PLACED HERE. Its attempt is opened and
- * `runner.qnt`'s `placementOutcome` asked of the pools its project registered,
- * each revoked where the project authority withholds its `Execute`. That is
- * the two inabilities again: no pool configured to run it blocks, and one that
- * could is a hold, as is an authority that could not answer. A held attempt,
- * prepared and invoked as a placed one is where a pool could run it, waits
+ * `runner.qnt`'s `placementOutcome` asked of its owner's personal runners,
+ * each revoked where the owner no longer holds what admits them or `Read` of
+ * the project. That is the two inabilities again: no runner configured to run
+ * it blocks, and one that could is a hold, as is an authority that could not
+ * answer. A held attempt, prepared and invoked as a placed one is where a
+ * runner could run it, waits
  * for a runner with no lease, as `runner.qnt` holds an `Unavailable`
  * placement until one can take it. Its place in the claims' order is its
  * opening, so waiting longer never sends it to the back.
@@ -96,13 +97,13 @@
  * A WAITING ATTEMPT IS ASKED AGAIN, IN TURN, WHAT ITS OPENING ASKED. Once no
  * lapse ends it, nothing else would: a pass reads a bounded batch of them, each
  * after where the last batch stopped, and checks each for a project no longer
- * `Active`, the pools again, and a preparation that would now record something
- * else — a repinned runtime, a policy or a briefing that moved. The first and
- * the last withdraw it without spending the budget, for the pass to open again,
- * which it does for a project only while it is `Active`; the pools and the
- * preparation block it as they would at opening, and a hold leaves it waiting.
- * Every one of those ends is fenced by `pool` being null in the statement that
- * ends it, so a runner that claimed it in between keeps it.
+ * `Active`, the owner's runners again, and a preparation that would now record
+ * something else — a repinned runtime, a policy or a briefing that moved. The
+ * first and the last withdraw it without spending the budget, for the pass to
+ * open again, which it does for a project only while it is `Active`; the
+ * runners and the preparation block it as they would at opening, and a hold
+ * leaves it waiting. Every one of those ends is fenced by `pool` being null in
+ * the statement that ends it, so a runner that claimed it in between keeps it.
  *
  * A POOL'S REFUSAL IS THE DEFINITIVE INABILITY. A pool that says it cannot run
  * what it claimed blocks the execution rather than holding it for another pool,
@@ -228,10 +229,8 @@ import type {
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Principal } from "./principal.ts";
 import {
-  workerPoolExecutes,
   workerPoolOwnerStands,
   type PersonalRunnerRegistered,
-  type WorkerPoolRegistered,
   type WorkerPoolRoster,
 } from "./workerPool.ts";
 import {
@@ -1037,14 +1036,13 @@ interface SchedulerOwnerRunners {
   readonly runners: readonly PersonalRunnerRegistered[];
 }
 
-/** The owner's runners where the execution's project allows one, and nothing where it allows none, it has no owner, or the owner has no runner. */
+/** The owner's runners, and nothing where the execution has no owner or the owner has no runner. */
 async function schedulerOwnerRunners(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
 ): Promise<SchedulerOwnerRunners | undefined> {
   const owner = execution.owner;
-  if (execution.ownerFallback === undefined || owner === undefined)
-    return undefined;
+  if (owner === undefined) return undefined;
   const runners = await service.workerPools.personal(
     execution.partition,
     owner,
@@ -1069,43 +1067,25 @@ async function schedulerOwnerRunnersAnswered(
     principal: runner.principal,
     capabilities: runner.capabilities,
     memoryCeilingMib: runner.memoryCeilingMib,
-    class: "Personal",
-    dedicatedOwner: owner,
+    owner,
     allowlist: runner.allowlist,
     revoked,
   }));
 }
 
 /**
- * Each pool beside whether the authority withholds its `Execute`, and each of
- * the owner's personal runners beside whether it is revoked, or nothing where
- * the authority could not answer, which decides nothing this pass.
+ * Each of the owner's personal runners beside whether it is revoked, none
+ * where it has no owner or the owner none, or nothing where the authority
+ * could not answer, which decides nothing this pass.
  */
 async function schedulerPoolsAnswered(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
-  pools: readonly WorkerPoolRegistered[],
-  owned: SchedulerOwnerRunners | undefined,
 ): Promise<readonly WorkerPoolAnswered[] | undefined> {
+  const owned = await schedulerOwnerRunners(service, execution);
+  if (owned === undefined) return [];
   try {
-    const answered = await Promise.all(
-      pools.map(async (pool) => ({
-        ...pool,
-        dedicatedOwner: undefined,
-        allowlist: [],
-        revoked: !(await workerPoolExecutes(
-          service.access,
-          pool.partition,
-          pool.principal,
-        )),
-      })),
-    );
-    return owned === undefined
-      ? answered
-      : [
-          ...answered,
-          ...(await schedulerOwnerRunnersAnswered(service, execution, owned)),
-        ];
+    return await schedulerOwnerRunnersAnswered(service, execution, owned);
   } catch {
     return undefined;
   }
@@ -1118,23 +1098,16 @@ type SchedulerPoolsAnswer =
   | Extract<SchedulerRefused, { readonly refused: "Block" }>;
 
 /**
- * Asks what can be said of an execution routed to pools against the pools its
- * project registered and its owner's personal runners: the one no runner is
- * configured to run blocks, for its size where that is all that stops one. A
- * page the registry cut short never blocks, since a pool past it may be, and
- * an authority that could not answer decides nothing.
+ * Asks what can be said of an execution routed to pools against its owner's
+ * personal runners, the only runners a registry holds that take work: the one
+ * none is configured to run blocks, for its size where that is all that stops
+ * one, and an authority that could not answer decides nothing.
  */
 async function schedulerPoolsAsked(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
 ): Promise<SchedulerPoolsAnswer> {
-  const registered = await service.workerPools.registered(execution.partition);
-  const answered = await schedulerPoolsAnswered(
-    service,
-    execution,
-    registered.pools,
-    await schedulerOwnerRunners(service, execution),
-  );
+  const answered = await schedulerPoolsAnswered(service, execution);
   if (answered === undefined) return { pools: "Undecided" };
   const outcome = workerPoolOutcomeRegistered(
     execution,
@@ -1143,7 +1116,6 @@ async function schedulerPoolsAsked(
   );
   switch (outcome) {
     case "DefinitiveIncompatibility":
-      if (registered.truncated) return { pools: "Offerable" };
       return {
         refused: "Block",
         evidence: "PlacementIncompatible",

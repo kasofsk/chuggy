@@ -1,18 +1,10 @@
 /**
- * Adding a repository: the two apps it takes, what the tenant's portal
- * installations grant, marked against what this project already binds and
- * against what the worker app was read not to grant, and what choosing one
- * came to.
- *
- * A refusal is one line under the roster and never a second dialog, because
- * the choice that earned it is still on screen and is what the reader would go
- * back to.
- *
- * WHAT AN INSTALLATION GRANTS IS CHANGED ON THE FORGE, so the roster carries
- * the way there under it: the portal app's own page for a repository it does
- * not list, and the worker app's for one a row marks. Each is the install link
- * the page draws, returning to this picker open, where the roster is read
- * again.
+ * Adding a repository, which begins with which repository it is and names no
+ * app before: one the address carries, one the person names, or one of what
+ * the tenant's portal installations grant, marked against what this project
+ * already binds and against what the worker app was read not to grant. Once
+ * one is chosen the dialog is `ConnectRepository`'s, which keeps it in view
+ * and offers choosing another.
  *
  * THE ROSTER IS READ WHEN A PERSON OPENS THE PICKER, AND AGAIN ON A CLOCK OF
  * ITS OWN WHILE IT STAYS OPEN, because the forge can be slow to list a grant
@@ -27,9 +19,7 @@
  * THE ROSTER IS DRAWN WHEN THE PORTAL APP'S LISTINGS ARE READ, and the worker
  * app's follow it: an opening's first reading writes what it has under its own
  * key before it asks for them. A row is marked once they answer and nothing is
- * drawn of them before, but for a reader who chooses a row meanwhile, who is
- * told under the roster that they are unread until the mark she might have
- * missed can arrive.
+ * drawn of them before.
  *
  * A READING THE PICKER MAKES BY ITSELF CHANGES WHAT IS DRAWN ONLY WHEN IT IS
  * WHOLE, so no row loses a mark to get it back. One that a listing did not
@@ -37,8 +27,8 @@
  * no failure under the key for the next opening to draw.
  *
  * A ROW ONCE DRAWN KEEPS ITS PLACE UNTIL THE PICKER CLOSES, because a press
- * binds at once and a row moved under the pointer between aim and press binds
- * another repository. A reading's new rows are drawn after every row, and one
+ * chooses at once and a row moved under the pointer between aim and press
+ * chooses another repository. A reading's new rows are drawn after every row, and one
  * it no longer lists stands where it stood, saying so, and cannot be pressed.
  */
 
@@ -52,57 +42,46 @@ import type {
   ForgeRepositoryResponse,
   ProjectRepositoryResponse,
 } from "../../../../../src/contract/responses.ts";
-import type { ForgeAppName } from "../../../../../src/contract/rosters.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
-import { base64urlFromBytes } from "../../core/base64url.ts";
-import {
-  apiBindProjectRepository,
-  apiForgeInstallationRepositories,
-} from "../../core/apiRoutes.ts";
-import type { ProjectRepositoryBindAnswer } from "../../core/apiRoutes.ts";
+import { apiForgeInstallationRepositories } from "../../core/apiRoutes.ts";
+import type { ForgeReturnWord } from "../../core/forgeReturn.ts";
 import type { PanelState } from "../../core/freshness.ts";
-import { consoleWriteKey } from "../../core/consoleWrite.ts";
-import type { ConsoleWrite } from "../../core/consoleWrite.ts";
-import { copyOrDataText } from "../../core/copy.ts";
-import { operationIdBytesCount } from "../../core/operationFollow.ts";
-import { projectRepositoriesInvalidated } from "../../core/projectQueries.ts";
 import {
   repositoriesTruncated,
   repositoriesWorkerless,
-  repositoryAddReturnPath,
-  repositoryBindNote,
-  repositoryBindOutcome,
   repositoryChoices,
   repositoriesDrawn,
-  repositoryGrantLines,
   repositoryListingsRead,
   repositoryRosterRereadMs,
   repositoryUnlisted,
-  repositoryWorkerLine,
   repositoryWorkerMissing,
-  repositoryWorkerReading,
 } from "../../core/projectRepositories.ts";
 import type {
   ForgeReachable,
   InstallationGrant,
   RepositoryChoice,
   RepositoryDrawn,
-  RepositoryNote,
 } from "../../core/projectRepositories.ts";
+import {
+  repositoryConnectNamed,
+  repositoryNamedLabel,
+  repositoryNamedSame,
+} from "../../core/repositoryConnect.ts";
+import type {
+  RepositoryConnectAsked,
+  RepositoryNamed,
+} from "../../core/repositoryConnect.ts";
 import type { WorkRunner } from "../../core/workRunner.ts";
 import { forgeReachableQuery } from "../../core/tenantQueries.ts";
 import { usePanelState } from "../api.ts";
-import { useConsoleWrite } from "../consoleWrite.tsx";
-import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
-import { currentPath, drawBytes } from "../ports.ts";
 import { Button } from "../ui/Button.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
+import { Input } from "../ui/Input.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { SearchableRoster } from "../ui/SearchableRoster.tsx";
-import { InstallLink } from "./InstallLink.tsx";
-import { RepositoryNextStep } from "./RepositoryNextStep.tsx";
+import { ConnectRepository } from "./ConnectRepository.tsx";
 
 function reachableOf(
   portal: readonly InstallationGrant[],
@@ -206,11 +185,9 @@ async function rereadReachable(
     : undefined;
 }
 
-/** A row, `busy` while any bind is unanswered and `binding` while its own is. */
+/** A row, which chooses its repository unless the latest reading no longer lists it. */
 function RepositoryChoiceRow(props: {
   readonly choice: RepositoryChoice;
-  readonly busy: boolean;
-  readonly binding: boolean;
   readonly onChoose: (choice: RepositoryChoice) => void;
 }): ReactNode {
   const text = useCopyText();
@@ -220,8 +197,7 @@ function RepositoryChoiceRow(props: {
       <Button
         size="sm"
         variant="quiet"
-        disabled={props.busy || !choice.listed}
-        busy={props.binding}
+        disabled={!choice.listed}
         onClick={() => {
           props.onChoose(choice);
         }}
@@ -243,51 +219,6 @@ function RepositoryChoiceRow(props: {
       ) : null}
     </span>
   );
-}
-
-/** One line about a repository an app's installation does not grant, with that
- * app's own page on the forge beside it, returning to this picker open. */
-function RepositoryGrant(props: {
-  readonly tenant: string;
-  readonly app: ForgeAppName;
-}): ReactNode {
-  const text = useCopyText();
-  const line = repositoryGrantLines[props.app];
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Notice
-        tone={props.app === "worker" ? "parked" : "info"}
-        inline
-        detail={text(line.status)}
-      />
-      <InstallLink
-        tenant={props.tenant}
-        returnPath={repositoryAddReturnPath(currentPath())}
-        app={props.app}
-        label={line.label}
-      />
-    </div>
-  );
-}
-
-/** The worker app's line under the roster: its own page on the forge for what
- * a row marks, or that its listings are unread where a row was chosen first. */
-function RepositoryWorkerGrant(props: {
-  readonly tenant: string;
-  readonly workerless: readonly string[] | undefined;
-  readonly chosen: boolean;
-}): ReactNode {
-  const text = useCopyText();
-  switch (repositoryWorkerLine(props.workerless, props.chosen)) {
-    case "Reading":
-      return (
-        <Notice tone="info" inline detail={text(repositoryWorkerReading)} />
-      );
-    case "Missing":
-      return <RepositoryGrant tenant={props.tenant} app="worker" />;
-    case undefined:
-      return null;
-  }
 }
 
 /**
@@ -350,109 +281,72 @@ function useRowsDrawn(
   return rows;
 }
 
-/** One press of a row: the repository, and the identity the press drew. */
-interface RepositoryBindPressed {
-  readonly choice: RepositoryChoice;
-  readonly identity: string;
-}
-
-/** One bind, from the identity its press drew to the line it leaves behind,
- * over only once the bindings it changed have been read again. */
-function repositoryBindWrite(
-  partition: PartitionIdentity,
-): ConsoleWrite<RepositoryBindPressed, ProjectRepositoryBindAnswer> {
-  return {
-    mutationKey: consoleWriteKey(
-      "repository-bind",
-      partition.tenant,
-      partition.project,
-    ),
-    write: (ports, pressed) =>
-      apiBindProjectRepository(
-        ports,
-        partition,
-        { repository: pressed.choice.repository.url },
-        pressed.identity,
-      ),
-    refusal: (failure) =>
-      repositoryBindNote(repositoryBindOutcome(failure)).status,
-    landed: (client) => projectRepositoriesInvalidated(client, partition),
-  };
-}
-
-/** The line a bind left: what it bound, or the refusal in the same place. */
-function repositoryBindNoted(
-  binding: ConsoleWriting<RepositoryBindPressed, ProjectRepositoryBindAnswer>,
-): RepositoryNote | undefined {
-  if (binding.error !== null)
-    return { status: binding.error.message, ticketOffered: false };
-  if (binding.isPending || binding.data === undefined) return undefined;
-  return repositoryBindNote(
-    repositoryBindOutcome({ outcome: "Ok", value: binding.data }),
-  );
-}
-
-/** A press of a row bound under the identity it drew, with `bound` told of
- * one the route accepted once the bindings have been read again. */
-function useRepositoryBind(
-  partition: PartitionIdentity,
-  bound: () => void,
-): {
-  readonly binding: ConsoleWriting<
-    RepositoryBindPressed,
-    ProjectRepositoryBindAnswer
-  >;
-  readonly note: RepositoryNote | undefined;
-  readonly bind: (choice: RepositoryChoice) => void;
-} {
-  const binding = useConsoleWrite(repositoryBindWrite(partition), {
-    drawn: true,
-  });
-  const note = repositoryBindNoted(binding);
-  const bind = (choice: RepositoryChoice): void => {
-    binding.mutate(
-      {
-        choice,
-        identity: base64urlFromBytes(drawBytes(operationIdBytesCount)),
-      },
-      { onSuccess: bound },
-    );
-  };
-  return { binding, note, bind };
-}
-
-/** What the dialog says first: the two apps a repository takes, and what each is for. */
-function AddRepositoryApps(): ReactNode {
+/** The repository named by typing it: `owner/name`, or its address on the forge. */
+function ConnectNamed(props: {
+  readonly onChoose: (named: RepositoryNamed) => void;
+}): ReactNode {
   const text = useCopyText();
+  const [typed, setTyped] = useState("");
+  const [refused, setRefused] = useState(false);
   return (
-    <p className="text-sm text-ink-3">
-      {text({ id: "repositories-add-apps" })}
-    </p>
+    <form
+      className="grid gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const named = repositoryConnectNamed(typed);
+        setRefused(named === undefined);
+        if (named !== undefined) props.onChoose(named);
+      }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          label={text({ id: "repositories-connect-name" })}
+          placeholder={text({ id: "repositories-connect-name-hint" })}
+          value={typed}
+          invalid={refused}
+          onChange={(value) => {
+            setTyped(value);
+            setRefused(false);
+          }}
+        />
+        <Button size="sm" variant="primary" type="submit">
+          {text({ id: "repositories-connect-next" })}
+        </Button>
+      </div>
+      {refused ? (
+        <Notice
+          tone="danger"
+          inline
+          role="status"
+          detail={text({ id: "repositories-connect-name-invalid" })}
+        />
+      ) : null}
+    </form>
   );
 }
 
-function AddRepositoryBody(props: {
+/** The roster of what the tenant's portal installations grant, a row choosing its repository. */
+function ConnectListed(props: {
   readonly partition: PartitionIdentity;
   readonly installations: readonly ForgeInstallationResponse[];
   readonly workers: readonly ForgeInstallationResponse[];
   readonly bound: readonly ProjectRepositoryResponse[];
-  readonly runner: WorkRunner;
-  readonly onBound: () => void;
+  readonly onChoose: (named: RepositoryNamed) => void;
 }): ReactNode {
   const text = useCopyText();
-  const partition = props.partition;
   const state = useReachable(
-    partition.tenant,
+    props.partition.tenant,
     props.installations,
     props.workers,
   );
-  const { binding, note, bind } = useRepositoryBind(partition, props.onBound);
   const drawn = useRowsDrawn(
     state.state === "Ready" ? state.value.repositories : undefined,
   );
   return (
     <>
-      <AddRepositoryApps />
+      <p className="text-sm text-ink-3">
+        {text({ id: "repositories-connect-listed" })}
+      </p>
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
         <SearchableRoster
@@ -467,13 +361,12 @@ function AddRepositoryBody(props: {
           renderRow={(choice) => (
             <RepositoryChoiceRow
               choice={choice}
-              busy={binding.isPending}
-              binding={
-                binding.isPending &&
-                binding.variables?.choice.repository.url ===
-                  choice.repository.url
-              }
-              onChoose={bind}
+              onChoose={(chosen) => {
+                const named = repositoryConnectNamed(
+                  chosen.repository.fullName,
+                );
+                if (named !== undefined) props.onChoose(named);
+              }}
             />
           )}
         />
@@ -481,58 +374,71 @@ function AddRepositoryBody(props: {
       {state.state === "Ready" && state.value.truncated ? (
         <Notice tone="parked" inline detail={text(repositoriesTruncated)} />
       ) : null}
-      {state.state === "Ready" ? (
-        <RepositoryGrant tenant={partition.tenant} app="portal" />
-      ) : null}
-      {state.state === "Ready" ? (
-        <RepositoryWorkerGrant
-          tenant={partition.tenant}
-          workerless={state.value.workerless}
-          chosen={binding.isPending || note !== undefined}
-        />
-      ) : null}
-      {note === undefined ? null : (
-        <AddRepositoryNote
-          partition={partition}
-          note={note}
-          runner={props.runner}
-        />
-      )}
     </>
   );
 }
 
-/** The line a bind left, with its next step, and the line under it naming what
- * under `.chug/` its configuration step read none of. */
-function AddRepositoryNote(props: {
+/** The first step: which repository this is for, before any app is named. */
+function ConnectChoose(props: {
   readonly partition: PartitionIdentity;
-  readonly note: RepositoryNote;
-  readonly runner: WorkRunner;
+  readonly installations: readonly ForgeInstallationResponse[];
+  readonly workers: readonly ForgeInstallationResponse[];
+  readonly bound: readonly ProjectRepositoryResponse[];
+  readonly onChoose: (named: RepositoryNamed) => void;
 }): ReactNode {
   const text = useCopyText();
   return (
     <>
-      <Notice
-        tone="info"
-        inline
-        detail={copyOrDataText(text, props.note.status)}
-        role="status"
-      >
-        <RepositoryNextStep
-          partition={props.partition}
-          ticketOffered={props.note.ticketOffered}
-          runner={props.runner}
-        />
-      </Notice>
-      {props.note.ignored === undefined ? null : (
-        <Notice
-          tone="parked"
-          inline
-          detail={text(props.note.ignored)}
-          role="status"
-        />
-      )}
+      <h3 className="text-md font-strong text-ink-1">
+        {text({ id: "repositories-connect-which" })}
+      </h3>
+      <ConnectNamed onChoose={props.onChoose} />
+      {props.installations.length === 0 ? null : <ConnectListed {...props} />}
     </>
+  );
+}
+
+function AddRepositoryBody(props: {
+  readonly partition: PartitionIdentity;
+  readonly installations: readonly ForgeInstallationResponse[];
+  readonly workers: readonly ForgeInstallationResponse[];
+  readonly bound: readonly ProjectRepositoryResponse[];
+  readonly runner: WorkRunner;
+  readonly asked: RepositoryConnectAsked;
+  readonly returned: ForgeReturnWord | undefined;
+  readonly onClose: () => void;
+  readonly onBound: () => void;
+}): ReactNode {
+  const [chosen, setChosen] = useState(props.asked.repository);
+  if (chosen === undefined)
+    return (
+      <ConnectChoose
+        partition={props.partition}
+        installations={props.installations}
+        workers={props.workers}
+        bound={props.bound}
+        onChoose={setChosen}
+      />
+    );
+  return (
+    <ConnectRepository
+      key={repositoryNamedLabel(chosen)}
+      partition={props.partition}
+      named={chosen}
+      arrival={props.asked.arrival}
+      returned={
+        props.asked.repository !== undefined &&
+        repositoryNamedSame(props.asked.repository, chosen)
+          ? props.returned
+          : undefined
+      }
+      runner={props.runner}
+      onAnother={() => {
+        setChosen(undefined);
+      }}
+      onDone={props.onClose}
+      onBound={props.onBound}
+    />
   );
 }
 
@@ -545,6 +451,12 @@ export function AddRepository(props: {
   readonly bound: readonly ProjectRepositoryResponse[];
   /** Whether the project's work has a runner to go to, which a bind's next step turns on. */
   readonly runner: WorkRunner;
+  /** Whether this reader can connect a repository here at all. */
+  readonly addable: boolean;
+  /** What the page's address asked of the flow when the picker opened. */
+  readonly asked: RepositoryConnectAsked;
+  /** The word the person came back from the forge with, where they did. */
+  readonly returned: ForgeReturnWord | undefined;
   /** The page's own state, because the page draws the presses that open it. */
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -552,11 +464,10 @@ export function AddRepository(props: {
   readonly onBound: () => void;
 }): ReactNode {
   const text = useCopyText();
-  const offered = props.installations.length > 0;
   return (
     <Dialog
       title={text({ id: "repositories-add" })}
-      open={props.open && offered}
+      open={props.open && props.addable}
       onOpenChange={props.onOpenChange}
     >
       <AddRepositoryBody
@@ -565,6 +476,11 @@ export function AddRepository(props: {
         workers={props.workers}
         bound={props.bound}
         runner={props.runner}
+        asked={props.asked}
+        returned={props.returned}
+        onClose={() => {
+          props.onOpenChange(false);
+        }}
         onBound={props.onBound}
       />
     </Dialog>

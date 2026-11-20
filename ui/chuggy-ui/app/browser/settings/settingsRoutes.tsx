@@ -30,13 +30,14 @@ import { settingsRoutes } from "../../core/settingsNav.ts";
 import { CatalogPage } from "../catalog/CatalogPage.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { ProjectlessFrame } from "../ProjectCreation.tsx";
+import { ConnectorsPage } from "../connectors/ConnectorsPage.tsx";
 import { RepositoriesPage } from "../RepositoriesPage.tsx";
 import { RepositoryPage } from "../repositories/RepositoryPage.tsx";
+import { AccessTokensPage } from "./AccessTokensPage.tsx";
 import { AppearanceSettingsPage } from "./AppearanceSettingsPage.tsx";
 import { ThreadSettingsPage } from "./ThreadSettingsPage.tsx";
 import { MyRunnerPage } from "./MyRunnerPage.tsx";
 import { PlacementSettingsPage } from "./PlacementSettingsPage.tsx";
-import { PoolsSettingsPage } from "./PoolsSettingsPage.tsx";
 import { PreferencesPage } from "./PreferencesPage.tsx";
 import { ProjectPermissionsPage } from "./ProjectPermissionsPage.tsx";
 import { SettingsLayout } from "./SettingsLayout.tsx";
@@ -68,13 +69,13 @@ function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
     }),
     createRoute({
       getParentRoute,
-      path: "/pools",
-      component: PoolsSettingsPage,
+      path: "/permissions",
+      component: ProjectPermissionsPage,
     }),
     createRoute({
       getParentRoute,
-      path: "/permissions",
-      component: ProjectPermissionsPage,
+      path: "/access-tokens",
+      component: AccessTokensPage,
     }),
     createRoute({
       getParentRoute,
@@ -87,6 +88,11 @@ function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
       getParentRoute,
       path: "/repositories/$repository",
       component: RepositoryPage,
+    }),
+    createRoute({
+      getParentRoute,
+      path: "/connectors",
+      component: ConnectorsPage,
     }),
     createRoute({
       getParentRoute,

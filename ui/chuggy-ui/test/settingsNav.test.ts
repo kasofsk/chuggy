@@ -55,7 +55,15 @@ test("in a project the project's pages lead, then the workspace's, then the read
     [
       "Project",
       "Atlas Billing",
-      ["Chats", "Placement", "Pools", "Permissions", "Repositories", "Catalog"],
+      [
+        "Chats",
+        "Placement",
+        "Permissions",
+        "Access tokens",
+        "Repositories",
+        "Connectors",
+        "Catalog",
+      ],
     ],
     [
       "Workspace",
@@ -185,9 +193,10 @@ test("the site's sections and the project's appearance alone are shown by an abi
   ).toStrictEqual([
     ["threads", "Member"],
     ["placement", "Member"],
-    ["pools", "Member"],
     ["permissions", "Member"],
+    ["access-tokens", "Member"],
     ["repositories", "Member"],
+    ["connectors", "Member"],
     ["catalog", "Member"],
     ["appearance", "ProjectAdminister"],
     ["people", "Member"],
@@ -283,9 +292,10 @@ test("Appearance closes the project's group for a reader who administers the pro
   expect(projectGroup(atlasAdministered)).toStrictEqual([
     "Chats",
     "Placement",
-    "Pools",
     "Permissions",
+    "Access tokens",
     "Repositories",
+    "Connectors",
     "Catalog",
     "Appearance",
   ]);

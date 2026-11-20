@@ -16,7 +16,6 @@ import type {
 import type { ExecutionRunResource, RunTotals } from "./runEvidence.ts";
 import { allExecutionStandings } from "./executionScheduler.ts";
 import type { Principal } from "./principal.ts";
-import type { WorkerPoolOwnerFallback } from "./projectOwnerFallback.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import type { AttemptId, ClusterId, ExecutionId } from "./schedulerIdentity.ts";
@@ -175,12 +174,6 @@ export interface ExecutionSummary {
   readonly carrier?: BriefingCarrier;
   readonly terminalAt?: PublicInstant;
   readonly runTotals?: RunTotals;
-  /**
-   * The fallback its owner's personal runner may take it under, absent where no
-   * personal runner may: routed in cluster, owned by nobody, or registered
-   * while its project named no fallback.
-   */
-  readonly ownerFallback?: WorkerPoolOwnerFallback;
   /** Whether the reader is the member who owns it. */
   readonly mine: boolean;
   /** What the reader's own execution, its attempt waiting unclaimed, waits on of their runners, absent where nothing of theirs holds it. */
@@ -189,8 +182,6 @@ export interface ExecutionSummary {
   readonly paused?: AgentAccountPause;
   /** The largest memory room of the `Live` runners it waits on and the memory it needs, present only where every one of them named a room above nothing and below that, and none is paused. */
   readonly personalRunnerRoom?: RunnerRoom;
-  /** The largest memory room of the live pools of its project it waits on and the memory it needs, present only where every one of them named a room above nothing and below that. */
-  readonly poolRoom?: RunnerRoom;
   /** The earlier execution of the ticket whose passing verdict settled this one rather than a run, its task and the work cycle it ran in. */
   readonly carriedFrom?: ExecutionCarrySource;
 }

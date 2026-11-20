@@ -289,6 +289,20 @@ export const termsFtl = `## The product's own nouns, and the verbs done to a tic
     }
 }
 
+# The program a runner package installs, which a person runs at a command line.
+-cli = { $case ->
+    [upper] { $form ->
+        [plural] CLIs
+        [a] A CLI
+       *[one] CLI
+    }
+   *[lower] { $form ->
+        [plural] clis
+        [a] a cli
+       *[one] cli
+    }
+}
+
 # A runner a member registers for their own runs.
 # rejects: My runners, Your runners, own runner, own runners, runner of your own, runners of your own
 -personal-runner = { $case ->
@@ -623,6 +637,21 @@ export const termsFtl = `## The product's own nouns, and the verbs done to a tic
         [plural] repositories
         [a] a repository
        *[one] repository
+    }
+}
+
+# A project's leave for its runs to be issued one cloud identity, with that
+# provider's settings and never a secret.
+-connector = { $case ->
+    [upper] { $form ->
+        [plural] Connectors
+        [a] A connector
+       *[one] Connector
+    }
+   *[lower] { $form ->
+        [plural] connectors
+        [a] a connector
+       *[one] connector
     }
 }
 

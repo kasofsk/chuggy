@@ -104,7 +104,7 @@ test("a screen links to its own page, and what it holds is named decoded", () =>
   ]);
 });
 
-test("the Pools page is under settings, as every settings page is", () => {
+test("an address under settings is under settings, as every settings page is", () => {
   expect(shellCrumbs(atlas, "/acme/atlas/settings/pools", names)).toStrictEqual(
     [
       ...head,

@@ -24,6 +24,7 @@ import type {
   TicketLandingState,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
+import type { AccessTokenStatus } from "./accessTokens.ts";
 import type {
   ConversationRunningState,
   ConversationStanding,
@@ -159,6 +160,19 @@ export function inviteLinkStateTone(state: AccessInviteLink["state"]): Tone {
     case "Used":
       return "pass";
     case "Revoked":
+    case "Expired":
+      return "retired";
+  }
+}
+
+/** Where one access token stands: in use as an open link is, nearing its end
+ * as an escalation asks for attention, or ended. */
+export function accessTokenStatusTone(status: AccessTokenStatus): Tone {
+  switch (status) {
+    case "Active":
+      return "live";
+    case "Expiring":
+      return "parked";
     case "Expired":
       return "retired";
   }

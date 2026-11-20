@@ -30,6 +30,11 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
+import {
+  signInStoreAccessName,
+  signInStoreDraftName,
+  signInStoreEndedName,
+} from "../../src/contract/signInStore.ts";
 import { SetupMachineError } from "../../ui/chuggy-ui/app/core/setupPorts.ts";
 import type { SetupMachineFault } from "../../ui/chuggy-ui/app/core/setupPorts.ts";
 import { filesIn } from "../../ui/chuggy-ui/terminal/files.ts";
@@ -626,6 +631,25 @@ test("what a write that was killed part-way left of the sign-in is gone after th
   assert.deepEqual(readdirSync(machine.store).toSorted(), [token, "lock"]);
 });
 
+test("what a write that was killed part-way left of either record beside the sign-in is gone after the next run", async () => {
+  const { installation, machine } = await signedIn();
+  const gone = departed();
+  for (const record of [
+    signInStoreAccessName(installation.site),
+    signInStoreEndedName(installation.site),
+  ])
+    writeFileSync(
+      join(machine.store, signInStoreDraftName(record, gone)),
+      '{"a record',
+    );
+  const done = await machine.run([]);
+  assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
+  assert.deepEqual(readdirSync(machine.store).toSorted(), [
+    encodeURIComponent(installation.site),
+    "lock",
+  ]);
+});
+
 test("runs started together each renew in turn with what the one before stored", async () => {
   const { installation, machine } = await signedIn();
   const runs = await Promise.all([
@@ -652,7 +676,10 @@ test("a home the program cannot keep its files in is a failure that names the pa
   const machine = made.machine();
   mkdirSync(dirname(machine.store), { recursive: true });
   writeFileSync(machine.store, "in the way");
-  for (const argv of [["--site", "http://127.0.0.1:9"], ["sign-in"]]) {
+  for (const argv of [
+    ["--site", "http://127.0.0.1:9", "--start", "yes"],
+    ["sign-in"],
+  ]) {
     const done = await machine.run(argv);
     assert.equal(done.code, 1);
     assert.equal(done.stderr, "");

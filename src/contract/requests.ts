@@ -43,7 +43,6 @@ import {
   forgeCredentialPermissions,
   forgeIds,
   nativeActionResolutions,
-  ownerFallbacks,
   leadOfferings,
   personalRunnerPriorities,
   placementRoutes,
@@ -296,11 +295,6 @@ export const sessionPlacementSchema = z.strictObject({
   leadOffering: z.enum(leadOfferings).optional(),
 });
 
-/** Whether a project's members' personal runners serve them there, and under which fallback; a body naming none takes them out. */
-export const projectOwnerFallbackSchema = z.strictObject({
-  fallback: z.enum(ownerFallbacks).optional(),
-});
-
 /** A project's default theme, the document itself; a body naming none clears it. */
 export const projectThemeSchema = z.strictObject({
   document: themeDocumentSchema.optional(),
@@ -468,8 +462,8 @@ export const personalRunnerRedemptionSchema = z.strictObject({
 });
 
 /**
- * What an owner asks a registration token for, a pool's or their own runner's:
- * how long it stands. A token permits registering and nothing about what the
+ * What a member asks a registration token for, their runner's or their chat
+ * host's: how long it stands. A token permits registering and nothing about what the
  * runner declares, so capabilities a request still names are ignored.
  */
 export const registrationTokenRequestSchema = z.strictObject({

@@ -51,7 +51,6 @@ export const allProjectGrantRelations = [
   "dispatchers",
   "viewers",
   "agents",
-  "pools",
 ] as const;
 
 export type ProjectGrantRelation = (typeof allProjectGrantRelations)[number];

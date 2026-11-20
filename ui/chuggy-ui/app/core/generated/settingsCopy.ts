@@ -7,9 +7,10 @@ export interface SettingsCopy {
   readonly "settings-nav-project": Record<never, never>;
   readonly "settings-nav-threads": Record<never, never>;
   readonly "settings-nav-placement": Record<never, never>;
-  readonly "settings-nav-pools": Record<never, never>;
   readonly "settings-nav-permissions": Record<never, never>;
+  readonly "settings-nav-access-tokens": Record<never, never>;
   readonly "settings-nav-repositories": Record<never, never>;
+  readonly "settings-nav-connectors": Record<never, never>;
   readonly "settings-nav-catalog": Record<never, never>;
   readonly "settings-nav-appearance": Record<never, never>;
   readonly "settings-nav-workspace": Record<never, never>;
@@ -24,9 +25,10 @@ export interface SettingsCopy {
   readonly "settings-nav-index": Record<never, never>;
   readonly "settings-nav-threads-summary": Record<never, never>;
   readonly "settings-nav-placement-summary": Record<never, never>;
-  readonly "settings-nav-pools-summary": Record<never, never>;
   readonly "settings-nav-permissions-summary": Record<never, never>;
+  readonly "settings-nav-access-tokens-summary": Record<never, never>;
   readonly "settings-nav-repositories-summary": Record<never, never>;
+  readonly "settings-nav-connectors-summary": Record<never, never>;
   readonly "settings-nav-catalog-summary": Record<never, never>;
   readonly "settings-nav-appearance-summary": Record<never, never>;
   readonly "settings-nav-people-summary": Record<never, never>;
@@ -306,6 +308,46 @@ export interface SettingsCopy {
   readonly "settings-invite-link-used": Record<never, never>;
   readonly "settings-invite-link-revoked": Record<never, never>;
   readonly "settings-invite-link-expired": Record<never, never>;
+  readonly "settings-access-tokens-title": Record<never, never>;
+  readonly "settings-access-tokens-about": Record<never, never>;
+  readonly "settings-access-tokens-none": Record<never, never>;
+  readonly "settings-access-tokens-create": Record<never, never>;
+  readonly "settings-access-tokens-name": Record<never, never>;
+  readonly "settings-access-tokens-name-long": {
+    readonly chars: unknown;
+  };
+  readonly "settings-access-tokens-access": Record<never, never>;
+  readonly "settings-access-tokens-read": Record<never, never>;
+  readonly "settings-access-tokens-write": Record<never, never>;
+  readonly "settings-access-tokens-expires": Record<never, never>;
+  readonly "settings-access-tokens-lifetime-days": {
+    readonly days: unknown;
+  };
+  readonly "settings-access-tokens-lifetime-year": Record<never, never>;
+  readonly "settings-access-tokens-own": Record<never, never>;
+  readonly "settings-access-tokens-send": Record<never, never>;
+  readonly "settings-access-tokens-secret": Record<never, never>;
+  readonly "settings-access-tokens-copy": Record<never, never>;
+  readonly "settings-access-tokens-shown-once": Record<never, never>;
+  readonly "settings-access-tokens-use": Record<never, never>;
+  readonly "settings-access-tokens-how": Record<never, never>;
+  readonly "settings-access-tokens-created": Record<never, never>;
+  readonly "settings-access-tokens-status": Record<never, never>;
+  readonly "settings-access-tokens-maker": Record<never, never>;
+  readonly "settings-access-tokens-days-left": {
+    readonly days: unknown;
+  };
+  readonly "settings-access-tokens-active": Record<never, never>;
+  readonly "settings-access-tokens-expiring": Record<never, never>;
+  readonly "settings-access-tokens-expired": Record<never, never>;
+  readonly "settings-access-tokens-delete": Record<never, never>;
+  readonly "settings-access-tokens-delete-question": {
+    readonly name: unknown;
+  };
+  readonly "settings-access-tokens-delete-line": Record<never, never>;
+  readonly "settings-access-tokens-forbidden": Record<never, never>;
+  readonly "settings-access-tokens-limit": Record<never, never>;
+  readonly "settings-access-tokens-name-taken": Record<never, never>;
   readonly "settings-invite-brand": Record<never, never>;
   readonly "settings-invite-needed-title": Record<never, never>;
   readonly "settings-invite-needed": Record<never, never>;

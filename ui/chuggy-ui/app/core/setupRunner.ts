@@ -1,8 +1,7 @@
 /**
  * `runner`: the person's own runner installed, registered and started on the
- * machine the program is run on, given one project, with the project letting
- * their own runners take its work, and said to be done only once the site sees
- * it live and given the project; then, where the person's chats in the project run on runners
+ * machine the program is run on, given one project, and said to be done only
+ * once the site sees it live and given the project; then, where the person's chats in the project run on runners
  * and the run is named with the chat host flag's yes, which is what setup
  * names unless the person objects, the same machine made their chat host, which takes
  * their chats in every project of the workspace, and said to be done only
@@ -19,22 +18,20 @@
  * nothing; so the command is run again after any failure, at any point, and
  * picks up where things stand. Whatever could stop a run without anything
  * having been changed is looked at before the first act: where the project's
- * work runs and whether it lets this person's runner take it, whether the
- * workspace lets them register one where this machine holds none the site
+ * work runs, whether the workspace lets them register one where this machine holds none the site
  * lists, the machine's user services, a container engine the package takes from this user, the
  * runner's settings and its Claude credential, and whether the package could be
- * installed at all.
+ * installed at all. Named the file of the person's Claude credential where the
+ * runner has none, a run copies it into place and does nothing more, so what
+ * it would put here is said before it is put.
  *
  * A registration is good where the machine holds a file of a runner the site
  * lists as the person's; otherwise a registration token is minted, a write,
  * and handed to the package's own `register` as one word of its arguments and
  * nowhere else. The package's own check then runs before its service is
  * started, so nothing is started that the package says cannot work. The
- * project is given to the person's runners and Preferred named as its owner
- * fallback, each a write made only where the site does not say it is so
- * already, and the person's runner takes the project's work only where its
- * fallback is named, so a run stops before touching anything where none is
- * and the person may not name one. This machine is the person's chat host
+ * project is given to the person's runners, a write made only where the site
+ * does not say it is so already. This machine is the person's chat host
  * where it holds a file of the one the site holds for them; otherwise it is
  * registered as theirs the same way, where the workspace lets them. A member has
  * one chat host, so where theirs is another machine `runner` never replaces
@@ -63,7 +60,6 @@ import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
 import type {
   ChatHostResponse,
   PersonalRunnerResponse,
-  ProjectOwnerFallbackResponse,
   WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
 import type { PlacementRoute } from "../../../../src/contract/rosters.ts";
@@ -74,18 +70,16 @@ import {
   apiExecutionPlacement,
   apiMintChatHostToken,
   apiMintPersonalRunnerToken,
-  apiOwnerFallback,
   apiPersonalRunner,
   apiPersonalRunnerPermit,
   apiPersonalRunnerServes,
   apiSessionPlacement,
-  apiWriteOwnerFallback,
 } from "./apiRoutes.ts";
 import { myRunnerShort } from "./myRunner.ts";
 import { runnerPackages, runnerTokenLifetimeSecs } from "./runners.ts";
 import type { RunnerKind, RunnerPackage } from "./runners.ts";
 import { settingsRoutes } from "./settingsNav.ts";
-import type { SetupAsked } from "./setupArguments.ts";
+import type { SetupAsked, SetupCredentialGiven } from "./setupArguments.ts";
 import { SetupMachineError, setupPlatformOf } from "./setupPorts.ts";
 import type { SetupPlatform, SetupPorts } from "./setupPorts.ts";
 import { setupGot, setupReadPorts } from "./setupReads.ts";
@@ -100,6 +94,9 @@ import {
   setupChatSized,
   setupChildFailed,
   setupColimaAtLogin,
+  setupCredentialPath,
+  setupCredentialUnset,
+  setupCredentialRead,
   setupEngineInUseRead,
   setupEngineMemoryRead,
   setupInstallCommand,
@@ -266,6 +263,8 @@ interface Run {
 interface ProjectRun extends Run {
   readonly partition: PartitionIdentity;
   readonly chatHost: boolean;
+  /** The file the person named as their Claude credential, which a run copies into place and goes no further, where the runner has none. */
+  readonly credential: SetupCredentialGiven | undefined;
 }
 
 /** Why a walk went no further: a stop of its own, or a report another part of the program makes. */
@@ -292,25 +291,17 @@ export function setupChatHostWrites(tenant: string): readonly string[] {
   return [`POST ${route}`];
 }
 
-/** Each write `serve` makes for what is due, by its method and its address: the project given to the person's runners, and Preferred named as its owner fallback. */
+/** Each write `serve` makes for what is due, by its method and its address: the project given to the person's runners. */
 export function setupServeWrites(due: {
   readonly partition: PartitionIdentity;
-  readonly give: boolean;
-  readonly allow: boolean;
 }): readonly string[] {
-  const filled = (route: string): string =>
-    route
-      .replace(":tenant", encodeURIComponent(due.partition.tenant))
-      .replace(":project", encodeURIComponent(due.partition.project));
-  return [
-    ...(due.give
-      ? [`PUT ${filled(nativeHttpRoutes.personalRunnerProject)}`]
-      : []),
-    ...(due.allow ? [`PUT ${filled(nativeHttpRoutes.ownerFallback)}`] : []),
-  ];
+  const route = nativeHttpRoutes.personalRunnerProject
+    .replace(":tenant", encodeURIComponent(due.partition.tenant))
+    .replace(":project", encodeURIComponent(due.partition.project));
+  return [`PUT ${route}`];
 }
 
-/** Each write `runner` makes for a project, by its method and its address: the mint of a registration token for the person's own runner, the project given to their runners and Preferred named as its owner fallback, and the mint for the person's chat host where `chat` says this machine is made it. */
+/** Each write `runner` makes for a project, by its method and its address: the mint of a registration token for the person's own runner, the project given to their runners, and the mint for the person's chat host where `chat` says this machine is made it. */
 export function setupRunnerWrites(
   partition: PartitionIdentity,
   chat: boolean,
@@ -321,7 +312,7 @@ export function setupRunnerWrites(
   );
   return [
     `POST ${route}`,
-    ...setupServeWrites({ partition, give: true, allow: true }),
+    ...setupServeWrites({ partition }),
     ...(chat ? setupChatHostWrites(partition.tenant) : []),
   ];
 }
@@ -419,21 +410,6 @@ async function setupProjectAsked(
     : setupUnread("work", read);
 }
 
-/** Whether the project lets the person's own runner take their work, read before anything is touched: it names an owner fallback, or the person may name one. */
-async function setupFallbackAsked(
-  run: ProjectRun,
-): Promise<ProjectOwnerFallbackResponse | Halt> {
-  const fallback = await setupSiteAsked(run, setupRunnerReads, (ports) =>
-    apiOwnerFallback(ports, run.partition),
-  );
-  if ("reported" in fallback) return fallback;
-  const read = setupGot(fallback, (answered) => answered, setupWhole);
-  if (read.read !== "Got") return setupUnread("fallback", read);
-  return read.value.fallback === undefined && !read.value.administers
-    ? halt({ stop: "NotAdmin" })
-    : read.value;
-}
-
 /** A room a runner cannot be put in, as the stop it is, with the guide of the package `offered` where it names one. */
 export function setupRoomStop(
   room: Exclude<SetupRunnerRoom, { readonly room: "Open" }>,
@@ -483,7 +459,7 @@ async function setupMachineProbed(
   const credential: SetupClaudeCredential =
     settings.settings === "Read"
       ? settings.credential
-      : { kind: "Subscription", path: places.login };
+      : setupCredentialUnset(ports, places);
   if (ports.disk.kind(credential.path) !== "File")
     return halt({ stop: "LoginMissing", credential, guide });
   notes.push({ note: "Login", credential });
@@ -630,7 +606,11 @@ function setupSettingsHad(run: Run, machine: Machine): Halt | undefined {
   try {
     run.ports.disk.make(
       path,
-      setupSettingsText(run.platform, machine.engine, machine.credential.path),
+      setupSettingsText(
+        run.platform,
+        machine.engine,
+        setupCredentialUnset(run.ports, run.places),
+      ),
     );
   } catch (failure: unknown) {
     if (!(failure instanceof SetupMachineError)) throw failure;
@@ -731,7 +711,7 @@ type Mint = (
 async function setupTokenHanded(
   run: Run,
   command: string,
-  kind: Exclude<RunnerKind, "Pool">,
+  kind: RunnerKind,
   mint: Mint,
 ): Promise<Exited | Halt> {
   const lapseMins = Math.ceil(
@@ -1175,11 +1155,8 @@ async function setupPersonalLooked(
     : { unseen: { listed: runner !== undefined } };
 }
 
-/** The writes that let the person's own runner take their work in the project, each made only where the site does not say it is so already. */
-async function setupServed(
-  run: ProjectRun,
-  fallback: ProjectOwnerFallbackResponse,
-): Promise<Halt | undefined> {
+/** The write that lets the person's own runner take their work in the project, made only where the site does not say it is so already. */
+async function setupServed(run: ProjectRun): Promise<Halt | undefined> {
   const read = await setupPersonalRead(run);
   if (halted(read)) return read;
   const given =
@@ -1192,27 +1169,9 @@ async function setupServed(
     );
     if ("reported" in written) return written;
     if (written.outcome !== "Ok")
-      return halt({
-        stop: "ServeRefused",
-        write: "Give",
-        outcome: written.outcome,
-      });
+      return halt({ stop: "ServeRefused", outcome: written.outcome });
   }
   run.notes.push({ note: "Given", now: !given });
-  const named = fallback.fallback !== undefined;
-  if (!named) {
-    const written = await setupSiteAsked(run, setupRunWrites(run), (ports) =>
-      apiWriteOwnerFallback(ports, run.partition, { fallback: "Preferred" }),
-    );
-    if ("reported" in written) return written;
-    if (written.outcome !== "Ok")
-      return halt({
-        stop: "ServeRefused",
-        write: "Allow",
-        outcome: written.outcome,
-      });
-  }
-  run.notes.push({ note: "Allowed", now: !named });
   return undefined;
 }
 
@@ -1571,6 +1530,63 @@ async function setupColimaHad(run: Run): Promise<Halt | ColimaHad> {
     : had;
 }
 
+/**
+ * The file the person named as their Claude credential, copied to where the
+ * runner keeps one of its kind where the machine has no runner settings and
+ * no credential, the run going no further, so what `runner` would put here
+ * is said before it is put and the settings it then writes name the copy.
+ * Nothing is copied where a credential is in place, nor anything changed
+ * where the file is not taken or settings name a credential that is not there.
+ */
+function setupCredentialPlaced(
+  run: ProjectRun,
+  given: SetupCredentialGiven,
+): SetupRunnerEnded | Halt {
+  const { ports, places, notes, offered } = run;
+  const guide = offered.guideAddress;
+  const settings = setupSettingsRead(ports, places);
+  if (settings.settings === "Unread")
+    return halt({ stop: "SettingsUnread", path: places.settings, guide });
+  const held: SetupClaudeCredential =
+    settings.settings === "Read"
+      ? settings.credential
+      : setupCredentialUnset(ports, places);
+  if (ports.disk.kind(held.path) === "File") {
+    notes.push({ note: "Login", credential: held });
+    return { ended: "Credentialed" };
+  }
+  if (settings.settings === "Read")
+    return halt({ stop: "LoginMissing", credential: held, guide });
+  const path = setupCredentialPath(ports.surroundings, given.path);
+  const read = setupCredentialRead(ports, { kind: given.kind, path });
+  if (read.read === "Refused")
+    return halt({ stop: "CredentialRefused", kind: given.kind, why: read.why });
+  run.secrets.push(read.text.trim());
+  const credential = {
+    kind: given.kind,
+    path: given.kind === "Subscription" ? places.login : places.apiKey,
+  };
+  const put = setupCredentialPut(run, credential.path, read.text);
+  if (halted(put)) return put;
+  notes.push({ note: "CredentialPlaced", credential });
+  return { ended: "Credentialed" };
+}
+
+/** Puts a credential's text at `path`, readable only by the person, with the directories above it. */
+function setupCredentialPut(
+  run: Run,
+  path: string,
+  text: string,
+): Halt | undefined {
+  try {
+    run.ports.disk.make(path, text);
+  } catch (failure: unknown) {
+    if (!(failure instanceof SetupMachineError)) throw failure;
+    return halt({ stop: "Unwritten", path });
+  }
+  return undefined;
+}
+
 async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   const project = await setupProjectAsked(run);
   if (halted(project)) return project;
@@ -1578,10 +1594,10 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   if (halted(asked)) return asked;
   const { chats } = asked;
   if (setupHosted(project.route)) return setupHostedWalked(run, chats);
-  const fallback = await setupFallbackAsked(run);
-  if (halted(fallback)) return fallback;
   const personal = await setupPersonalAsked(run);
   if (halted(personal)) return personal;
+  if (run.credential !== undefined)
+    return setupCredentialPlaced(run, run.credential);
   const colima = await setupColimaHad(run);
   if (halted(colima)) return colima;
   const leasts = setupPackageLeasts[run.platform];
@@ -1594,7 +1610,7 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   if (halted(packaged)) return packaged;
   const done = await setupPersonalDone(run, packaged, personal);
   if (halted(done)) return done;
-  const served = await setupServed(run, fallback);
+  const served = await setupServed(run);
   if (halted(served)) return served;
   const seen = await setupWaited(
     run,
@@ -1721,6 +1737,7 @@ export async function setupRunner(
     ),
     partition,
     chatHost,
+    credential: asked.credential,
   };
   return setupRunReported(run, at, setupDoneNoted(run, await setupWalked(run)));
 }

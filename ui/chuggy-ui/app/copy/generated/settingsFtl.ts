@@ -7,9 +7,10 @@ settings-nav = Settings
 settings-nav-project = { -project(case: "upper") }
 settings-nav-threads = { -thread(case: "upper", form: "plural") }
 settings-nav-placement = { -placement(case: "upper") }
-settings-nav-pools = Pools
 settings-nav-permissions = Permissions
+settings-nav-access-tokens = Access tokens
 settings-nav-repositories = { -repository(case: "upper", form: "plural") }
+settings-nav-connectors = { -connector(case: "upper", form: "plural") }
 settings-nav-catalog = { -catalog(case: "upper") }
 settings-nav-appearance = Appearance
 settings-nav-workspace = { -workspace(case: "upper") }
@@ -24,9 +25,10 @@ settings-nav-preferences = Preferences
 settings-nav-index = All settings
 settings-nav-threads-summary = The settings this { -project }'s { -thread(form: "plural") } keep
 settings-nav-placement-summary = The image each { -stage } is given, and what it requires
-settings-nav-pools-summary = The shared machines registered for this { -project }
 settings-nav-permissions-summary = Who may do what in this { -project }
+settings-nav-access-tokens-summary = The tokens your own scripts act as you with in this { -project }
 settings-nav-repositories-summary = The { -repository(form: "plural") } this { -project } works in
+settings-nav-connectors-summary = The cloud identities this { -project }'s { -run(form: "plural") } may be issued
 settings-nav-catalog-summary = The { -configuration(form: "plural") } { -ticket(form: "a") } can be given
 settings-nav-appearance-summary = This { -project }'s default theme, its icon and its banner
 settings-nav-people-summary = Who is in this { -workspace }, and their roles
@@ -317,6 +319,45 @@ settings-invite-link-used = Used
 # spells -revoke: a link is revoked, not a ticket
 settings-invite-link-revoked = Revoked
 settings-invite-link-expired = Expired
+
+## A project's access tokens.
+
+settings-access-tokens-title = Access tokens
+settings-access-tokens-about = Let your own scripts act as you here.
+settings-access-tokens-none = No tokens
+settings-access-tokens-create = New token
+settings-access-tokens-name = Name
+settings-access-tokens-name-long = At most { $chars } characters
+settings-access-tokens-access = Access
+settings-access-tokens-read = Read
+settings-access-tokens-write = Write
+settings-access-tokens-expires = Expires
+settings-access-tokens-lifetime-days = { $days } days
+settings-access-tokens-lifetime-year = 1 year
+settings-access-tokens-own = For your own scripts. Never share it.
+settings-access-tokens-send = Create token
+settings-access-tokens-secret = Token
+settings-access-tokens-copy = Copy token
+settings-access-tokens-shown-once = Copy it now. It is not shown again.
+# spells -brand-name: the runner packages' own command names
+settings-access-tokens-use = Use it as CHUGGY_TOKEN for chuggy-linux mcp or chuggy-darwin mcp.
+settings-access-tokens-how = How to use
+settings-access-tokens-created = Created
+settings-access-tokens-status = Status
+settings-access-tokens-maker = Made by
+settings-access-tokens-days-left = { $days ->
+    [one] { $days } day left
+   *[other] { $days } days left
+}
+settings-access-tokens-active = Active
+settings-access-tokens-expiring = Expiring
+settings-access-tokens-expired = Expired
+settings-access-tokens-delete = Delete
+settings-access-tokens-delete-question = Delete { $name }?
+settings-access-tokens-delete-line = Anything using this token stops at once.
+settings-access-tokens-forbidden = Not permitted to make tokens
+settings-access-tokens-limit = Token limit reached
+settings-access-tokens-name-taken = Name already in use
 
 ## The page an invite link is opened at.
 

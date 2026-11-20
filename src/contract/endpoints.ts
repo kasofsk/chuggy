@@ -1,6 +1,17 @@
 /** Shared conversation and run-evidence endpoints for the server, browser, and contract document. */
+import {
+  accessTokenMintedResponseSchema,
+  accessTokenMintRequestSchema,
+  accessTokensResponseSchema,
+} from "./accessToken.ts";
 import { ticketActionReachResponseSchema } from "./actionReach.ts";
 import { themeChoiceSchema, themeDocumentSchema } from "./appearance.ts";
+import {
+  connectorHistoryResponseSchema,
+  connectorStandingSchema,
+  connectorWriteRequestSchema,
+  connectorsResponseSchema,
+} from "./connectorAdministration.ts";
 import {
   epicHistoryQuerySchema,
   epicListQuerySchema,
@@ -131,6 +142,17 @@ export const nativeHttpEndpoints = {
     method: "GET",
     path: nativeHttpRoutes.abilities,
     response: projectAbilitiesResponseSchema,
+  },
+  accessTokens: {
+    method: "GET",
+    path: nativeHttpRoutes.accessTokens,
+    response: accessTokensResponseSchema,
+  },
+  mintAccessToken: {
+    method: "POST",
+    path: nativeHttpRoutes.accessTokens,
+    body: accessTokenMintRequestSchema,
+    response: accessTokenMintedResponseSchema,
   },
   runTurns: {
     method: "GET",
@@ -476,6 +498,30 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.ticketProposalMerge,
     body: emptyBody,
     response: ticketProposalMergeResponseSchema,
+  },
+  connectors: {
+    method: "GET",
+    path: nativeHttpRoutes.connectors,
+    response: connectorsResponseSchema,
+  },
+  writeConnector: {
+    method: "PUT",
+    path: nativeHttpRoutes.connector,
+    body: connectorWriteRequestSchema,
+    response: connectorStandingSchema,
+  },
+  removeConnector: {
+    method: "DELETE",
+    path: nativeHttpRoutes.connector,
+    query: endpointQuery({
+      expectedRevision: endpointInteger("expectedRevision").optional(),
+    }),
+  },
+  connectorHistory: {
+    method: "GET",
+    path: nativeHttpRoutes.connectorHistory,
+    query: endpointQuery({ before: endpointInteger("before").optional() }),
+    response: connectorHistoryResponseSchema,
   },
 } as const;
 

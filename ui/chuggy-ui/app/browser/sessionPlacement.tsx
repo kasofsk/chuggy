@@ -21,21 +21,10 @@ import { settingsRoutes } from "../core/settingsNav.ts";
 import { usePanelAnswers, usePanelState } from "./api.ts";
 import { Notice } from "./ui/Notice.tsx";
 
-/** The placement, with whether its read has ever come back. */
-export function useSessionPlacementSettled(partition: PartitionIdentity): {
-  readonly state: PanelState<SessionPlacementResponse>;
-  readonly settled: boolean;
-} {
-  return usePanelState(sessionPlacementQuery(partition), (state, answer) => ({
-    state,
-    settled: answer.isFetched,
-  }));
-}
-
 export function useSessionPlacement(
   partition: PartitionIdentity,
 ): PanelState<SessionPlacementResponse> {
-  return useSessionPlacementSettled(partition).state;
+  return usePanelState(sessionPlacementQuery(partition));
 }
 
 /** Why no runner can take one session's turn, once the placement is read. */

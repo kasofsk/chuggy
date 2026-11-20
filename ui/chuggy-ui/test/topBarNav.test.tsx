@@ -61,7 +61,7 @@ async function drawnAt(path: string): Promise<readonly string[]> {
         leaf("/inbox"),
         leaf("/epics"),
         leaf("/settings"),
-        leaf("/settings/pools"),
+        leaf("/settings/placement"),
         leaf("/tickets/new"),
         leaf("/tickets/$ticket"),
         leaf("/tickets/$ticket/edit"),
@@ -82,7 +82,7 @@ test("the Inbox page is the Inbox alone", async () => {
 });
 
 test("a settings section, which no primary place holds, leaves no place current", async () => {
-  expect(await drawnAt("/acme/atlas/settings/pools")).toStrictEqual([]);
+  expect(await drawnAt("/acme/atlas/settings/placement")).toStrictEqual([]);
 });
 
 test("the overview is Tickets alone", async () => {

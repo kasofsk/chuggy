@@ -39,9 +39,9 @@
  * and the wait it may name bounds when it is answered; each is refused in the
  * same way.
  *
- * A POOL OR A PERSONAL RUNNER MAY REPORT how its machine and its work are
- * doing. The report is held against the caller its bearer resolved to, beside
- * what that caller's polls named, by the interpreter's `workerPoolReports`. A
+ * A PERSONAL RUNNER MAY REPORT how its machine and its work are doing. The
+ * report is held against the caller its bearer resolved to, beside what that
+ * caller's polls named, by the interpreter's `workerPoolReports`. A
  * chat host is no runner: its report is answered as a caller this route does
  * not serve, and nothing of its polls is held.
  *
@@ -109,7 +109,6 @@ import {
   type WorkerPoolMint,
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
-  type WorkerPoolRegistry,
   type WorkerPoolRunners,
 } from "../../interpreter/workerPool.ts";
 import type {
@@ -149,7 +148,6 @@ export const poolPlaneSettlementBytesMax = planeJsonObjectBytesMax(
 export interface PoolPlaneService {
   readonly authentication: PrincipalAuthentication;
   readonly access: ProjectAccess;
-  readonly registry: WorkerPoolRegistry;
   readonly personal: PersonalRunnerPlaneRegistry;
   readonly chatHosts: ChatHostPlaneRegistry;
   readonly assignments: WorkerPoolAssignments;
@@ -260,7 +258,6 @@ async function poolCaller(
   try {
     identity = await workerPoolAdmitted(
       {
-        pools: service.registry,
         personal: service.personal,
         chatHosts: service.chatHosts,
       },
@@ -423,7 +420,7 @@ function poolAssignmentsRoute(
   );
 }
 
-/** A pool or a personal runner as its reports are held, and a chat host as none. */
+/** A personal runner as its reports are held, and a chat host as none. */
 function poolReporter(
   identity: PoolPlaneIdentity,
 ): WorkerPoolReporter | undefined {

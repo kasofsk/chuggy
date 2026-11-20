@@ -123,7 +123,6 @@ import {
   parseProjectRepositoryLanding,
   parseExecutionPlacement,
   parsePersonalRunnerProject,
-  parseProjectOwnerFallback,
   parseThreadLimit,
   parseAccountAgent,
   parseAgentAccountSettings,
@@ -148,7 +147,6 @@ import {
   parseEpicList,
   parseEpicWrite,
   parsePersonalRunnerRedemption,
-  parseWorkerPoolRedemption,
   parseRegistrationTokenRequest,
 } from "./contract.ts";
 import {
@@ -176,6 +174,10 @@ import {
   projectRepositoryBindResponse,
   projectRepositoryConfigureResponse,
   projectRepositoryLandingResponse,
+  connectorsResponse,
+  connectorHistoryResponse,
+  connectorWrittenResponse,
+  connectorRemovedResponse,
   projectRepositoryRetirementResponse,
   inventoryResponse,
   nativeActionsResponse,
@@ -225,9 +227,6 @@ import {
   threadsResponse,
   type NativeHttpResponse,
   authorityRetryAfterSeconds,
-  workerPoolRedemptionResponse,
-  workerPoolTokenResponse,
-  workerPoolsResponse,
   personalRunnerAllowedResponse,
   agentAccountPressedResponse,
   agentAccountRetiredResponse,
@@ -254,6 +253,9 @@ import {
   unrunDeletionStandingResponse,
   ticketTakeResponse,
   ticketProposalMergeResponse,
+  accessTokenDeletedResponse,
+  accessTokenMintedResponse,
+  accessTokensResponse,
   personalRunnerDisallowedResponse,
   personalRunnerPermitResponse,
   personalRunnerRedemptionResponse,
@@ -262,7 +264,6 @@ import {
   chatHostDeregisteredResponse,
   chatHostResponse,
   executionPlacementBody,
-  ownerFallbackBody,
   threadLimitBody,
   placementReadResponse,
   placementWriteResponse,
@@ -270,6 +271,8 @@ import {
   sessionPlacementWriteResponse,
   notFound,
   sessionBearerRefusedResponse,
+  accessTokenReadOnlyResponse,
+  accessTokenRefusedResponse,
   actionReportResponse,
   ticketActionReachResponse,
   ticketLandingsResponse,
@@ -279,7 +282,6 @@ import type { ActionReports } from "../../interpreter/actionReport.ts";
 import type { TicketActionReaches } from "../../interpreter/ticketActionReach.ts";
 import type { TicketLandingReads } from "../../interpreter/ticketLandings.ts";
 import type { LandingQueueReads } from "../../interpreter/landingQueues.ts";
-import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegistration.ts";
 import type { AgentAccountService } from "../../interpreter/agentAccount.ts";
 import type { AppearanceService } from "../../interpreter/appearance.ts";
@@ -294,9 +296,18 @@ import {
 } from "../../contract/appearance.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
-import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
 import type { TicketTakes } from "../../interpreter/ticketTake.ts";
 import type { TicketProposalMerges } from "../../interpreter/ticketProposalMerge.ts";
+import type {
+  AccessTokenBearerIdentity,
+  AccessTokenService,
+} from "../../interpreter/accessToken.ts";
+import { accessTokenExpiresHeader } from "../../contract/accessToken.ts";
+import {
+  connectorNameSchema,
+  connectorSchema,
+} from "../../contract/connectors.ts";
+import type { ProjectConnectorAdministration } from "../../interpreter/projectConnectors.ts";
 import type { ThreadLimitAdministration } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
@@ -308,6 +319,13 @@ import {
   sessionBearerAdmission,
   type SessionBearerConfinement,
 } from "./sessionBearerScope.ts";
+import { accessTokenAdmission } from "./accessTokenScope.ts";
+
+/** The access token a request came through: the one it records, and the project, access and expiry it is confined to. */
+export type AuthenticatedViaToken = Pick<
+  AccessTokenBearerIdentity,
+  "token" | "name" | "access" | "partition" | "expiresAt"
+>;
 
 /** Who the bearer is, and when it stops saying so, for a route that outlives one request. */
 export interface AuthenticatedBearer {
@@ -318,6 +336,8 @@ export interface AuthenticatedBearer {
     SessionBearerIdentity,
     "partition" | "session" | "scope" | "capabilities"
   >;
+  /** The access token the bearer was, whose maker `principal` is. */
+  readonly viaToken?: AuthenticatedViaToken;
 }
 
 /**
@@ -471,6 +491,7 @@ declare module "fastify" {
     principal?: Principal;
     bearerExpiresAtMs?: number;
     viaSession?: SessionId;
+    viaToken?: AuthenticatedViaToken;
   }
 }
 
@@ -548,6 +569,7 @@ function registerAuthentication(
   app.decorateRequest("principal");
   app.decorateRequest("bearerExpiresAtMs");
   app.decorateRequest("viaSession");
+  app.decorateRequest("viaToken");
   app.addHook("preHandler", async (request, reply) => {
     if (request.routeOptions.config.public === true) return;
     const authenticated = await nativeHttpBearerAuthenticated(
@@ -565,11 +587,51 @@ function registerAuthentication(
       }))
     )
       return reply;
+    const token = authenticated.viaToken;
+    if (
+      token !== undefined &&
+      !registerAuthenticationToken(request, reply, token)
+    )
+      return reply;
     request.principal = authenticated.principal;
     if (authenticated.expiresAtMs !== undefined)
       request.bearerExpiresAtMs = authenticated.expiresAtMs;
     if (session !== undefined) request.viaSession = session.session;
+    if (token !== undefined) request.viaToken = token;
   });
+}
+
+/**
+ * Whether an access token may reach the route this request matched, having
+ * answered it when it may not: another project as an unauthorized read is
+ * answered, and a route no token may reach, or a write under a token that may
+ * only read, as `insufficient_scope`. Every answer names the token's expiry.
+ */
+function registerAuthenticationToken(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  token: AuthenticatedViaToken,
+): boolean {
+  void reply.header(accessTokenExpiresHeader, token.expiresAt);
+  const admission = accessTokenAdmission(
+    token,
+    request.method,
+    request.routeOptions.url,
+    request.params,
+  );
+  switch (admission) {
+    case "Admitted":
+      return true;
+    case "OtherPartition":
+      nativeHttpSend(reply, notFound());
+      return false;
+    case "ReadOnly":
+      nativeHttpSend(reply, accessTokenReadOnlyResponse());
+      return false;
+    case "Refused":
+      nativeHttpSend(reply, accessTokenRefusedResponse());
+      return false;
+  }
 }
 
 /**
@@ -909,7 +971,8 @@ function registerProjectAbilities(
   registerEndpoint(
     app,
     nativeHttpEndpoints.abilities,
-    (_request, principal, partition) => web.abilities(principal, partition),
+    (request, principal, partition) =>
+      web.abilities(principal, partition, request.viaToken?.access),
     projectAbilitiesResponse,
   );
 }
@@ -931,6 +994,7 @@ function registerInbox(app: FastifyInstance, inbox: ProjectInbox): void {
           limit: query.limit,
         },
         request.viaSession,
+        request.viaToken,
       );
     },
     inboxResponse,
@@ -1050,6 +1114,7 @@ function registerNativeActions(
       partitionOf(request),
       asTicketIdField(params, "ticket"),
       request.viaSession,
+      request.viaToken,
     );
     nativeHttpSend(reply, ticketNativeActionsResponse(actions));
   });
@@ -1072,6 +1137,7 @@ function registerNativeActions(
         limit: integerField(query, "limit", 50),
       },
       request.viaSession,
+      request.viaToken,
     );
     nativeHttpSend(reply, nativeActionsResponse(partition, result));
   });
@@ -1332,57 +1398,6 @@ function registerForgeCredentials(
   );
 }
 
-/**
- * The two doors a pool is registered through: an owner with `Administer` on the
- * project mints a single-use token for it, and whoever holds that token redeems
- * it once for a client and its secret. The redemption carries no bearer and is
- * declared `public` because it is authenticated by the token in its body — a
- * machine being configured has no principal yet, which is the whole reason an
- * owner had to mint the token for it.
- */
-function registerWorkerPools(
-  app: FastifyInstance,
-  pools: WorkerPoolRegistrationService,
-  partitionRoot: string,
-): void {
-  app.get(`${partitionRoot}/worker-pools`, async (request, reply) => {
-    nativeHttpSend(
-      reply,
-      workerPoolsResponse(
-        await pools.registered(principalOf(request), partitionOf(request)),
-      ),
-    );
-  });
-  app.post(
-    `${partitionRoot}/worker-pool-registration-tokens`,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      nativeHttpSend(
-        reply,
-        workerPoolTokenResponse(
-          await pools.mint(
-            principalOf(request),
-            partitionOf(request),
-            parseRegistrationTokenRequest(request.body),
-          ),
-        ),
-      );
-    },
-  );
-  app.post(
-    "/api/v1/worker-pool-registrations",
-    { config: { public: true }, preValidation: requireVersionedJson },
-    async (request, reply) => {
-      nativeHttpSend(
-        reply,
-        workerPoolRedemptionResponse(
-          await pools.redeem(parseWorkerPoolRedemption(request.body)),
-        ),
-      );
-    },
-  );
-}
-
 /** The project one allowlist route names, read beside its tenant. */
 function personalRunnerProjectOf(request: FastifyRequest): ProjectId {
   return asProjectId(textField(record(request.params), "project"));
@@ -1433,8 +1448,8 @@ function registerPersonalRunnerRemovals(
 
 /**
  * A member's own runners: the token they mint for one in a tenant, its public
- * redemption, which the token in its body authenticates as a pool's does, the
- * caller's own runners read, their allowlist narrowed or widened by a project,
+ * redemption, which the token in its body authenticates, the caller's own
+ * runners read, their allowlist narrowed or widened by a project,
  * and their removal.
  */
 function registerPersonalRunners(
@@ -2538,10 +2553,14 @@ function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
         fields["mutation"],
       );
       const session = request.viaSession;
+      const token = request.viaToken;
       const result = await web.submit(principalOf(request), {
         partition,
         ...parsed,
         ...(session === undefined ? {} : { viaSession: session }),
+        ...(token === undefined
+          ? {}
+          : { viaToken: { token: token.token, name: token.name } }),
       });
       nativeHttpSend(reply, submissionResponse(partition, result));
     },
@@ -2726,7 +2745,7 @@ function registerDraftDeletion(
 function registerEndpoint<Value>(
   app: FastifyInstance,
   endpoint: {
-    readonly method: "GET" | "POST";
+    readonly method: "GET" | "POST" | "PUT" | "DELETE";
     readonly path: string;
     readonly body?: z.ZodType;
     readonly bodyLimit?: number;
@@ -2856,6 +2875,101 @@ function registerLandingQueues(
     nativeHttpEndpoints.landingQueues,
     (_request, principal, partition) => queues.read(principal, partition),
     landingQueuesResponse,
+  );
+}
+
+/** A project's access tokens: listed, minted by their maker, and deleted. */
+function registerAccessTokens(
+  app: FastifyInstance,
+  tokens: AccessTokenService,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.accessTokens,
+    (_request, principal, partition) => tokens.listed(principal, partition),
+    accessTokensResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.mintAccessToken,
+    (request, principal, partition) =>
+      tokens.mint(
+        principal,
+        partition,
+        nativeHttpEndpoints.mintAccessToken.body.parse(request.body),
+      ),
+    accessTokenMintedResponse,
+  );
+  app.delete(nativeHttpRoutes.accessToken, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      accessTokenDeletedResponse(
+        await tokens.deleted(
+          principalOf(request),
+          partitionOf(request),
+          textField(record(request.params), "token"),
+        ),
+      ),
+    );
+  });
+}
+
+function registerConnectorsName(request: FastifyRequest): string {
+  return connectorNameSchema.parse(textField(record(request.params), "name"));
+}
+
+/**
+ * A project's connectors. `history` is a route of its own rather than a
+ * connector's name, the router taking a fixed segment before a parameter.
+ */
+function registerConnectors(
+  app: FastifyInstance,
+  connectors: ProjectConnectorAdministration,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.connectors,
+    (_request, principal, partition) => connectors.listed(principal, partition),
+    connectorsResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.connectorHistory,
+    (request, principal, partition) =>
+      connectors.history(
+        principal,
+        partition,
+        nativeHttpEndpoints.connectorHistory.query.parse(request.query).before,
+      ),
+    connectorHistoryResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.writeConnector,
+    (request, principal, partition) => {
+      const name = registerConnectorsName(request);
+      const { expectedRevision, ...written } =
+        nativeHttpEndpoints.writeConnector.body.parse(request.body);
+      return connectors.written(principal, partition, {
+        connector: connectorSchema.parse({ ...written, name }),
+        ...(expectedRevision === undefined ? {} : { expectedRevision }),
+      });
+    },
+    connectorWrittenResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.removeConnector,
+    (request, principal, partition) => {
+      const name = registerConnectorsName(request);
+      const { expectedRevision } =
+        nativeHttpEndpoints.removeConnector.query.parse(request.query);
+      return connectors.removed(principal, partition, {
+        name,
+        ...(expectedRevision === undefined ? {} : { expectedRevision }),
+      });
+    },
+    connectorRemovedResponse,
   );
 }
 
@@ -3271,7 +3385,7 @@ async function serveThreadLive(
 function registerChatEndpoint<Value>(
   app: FastifyInstance,
   endpoint: {
-    readonly method: "GET" | "POST";
+    readonly method: "GET" | "POST" | "PUT" | "DELETE";
     readonly path: string;
     readonly body?: z.ZodType;
   },
@@ -3541,34 +3655,11 @@ export function nativeHttpMediaTypeServed(app: FastifyInstance): void {
   });
 }
 
-/** The registrations of both kinds of runner, each where its service is composed. */
-function registerRunners(
-  app: FastifyInstance,
-  partitionRoot: string,
-  workerPools: WorkerPoolRegistrationService | undefined,
-  personalRunners: PersonalRunnerService | undefined,
-): void {
-  if (workerPools !== undefined)
-    registerWorkerPools(app, workerPools, partitionRoot);
-  if (personalRunners !== undefined)
-    registerPersonalRunners(app, personalRunners);
-}
-
 function registerPlacements(
   app: FastifyInstance,
   placement: ExecutionPlacementAdministration | undefined,
   sessionPlacement: SessionPlacementAdministration | undefined,
-  ownerFallback: ProjectOwnerFallbackAdministration | undefined,
 ): void {
-  if (ownerFallback !== undefined)
-    registerPlacement(
-      app,
-      nativeHttpRoutes.ownerFallback,
-      ownerFallback,
-      parseProjectOwnerFallback,
-      ownerFallbackBody,
-      (result) => placementWriteResponse(result, ownerFallbackBody),
-    );
   if (placement !== undefined)
     registerPlacement(
       app,
@@ -3618,9 +3709,6 @@ function registerFailures(app: FastifyInstance): void {
   });
 }
 
-/** The path every project route is under. */
-const nativeHttpPartitionRoot = "/api/v1/tenants/:tenant/projects/:project";
-
 export function createNativeHttpApp(
   web: InitialNativeWeb,
   authentication: PrincipalAuthentication,
@@ -3631,7 +3719,6 @@ export function createNativeHttpApp(
   selectorSettings?: SelectorProjectSettingsAdministration,
   forgeCredentials?: ForgeCredentialMinting,
   onboarding?: RepositoryOnboarding,
-  workerPools?: WorkerPoolRegistrationService,
   creation?: ProjectCreation,
   placement?: ExecutionPlacementAdministration,
   sessionPlacement?: SessionPlacementAdministration,
@@ -3640,7 +3727,6 @@ export function createNativeHttpApp(
   actionReach?: TicketActionReaches,
   landings?: TicketLandingReads,
   personalRunners?: PersonalRunnerService,
-  ownerFallback?: ProjectOwnerFallbackAdministration,
   threadLimits?: ThreadLimitAdministration,
   chat?: MemberChat,
   inbox?: ProjectInbox,
@@ -3650,6 +3736,8 @@ export function createNativeHttpApp(
   deletions?: UnrunDeletions,
   takes?: TicketTakes,
   proposalMerges?: TicketProposalMerges,
+  accessTokens?: AccessTokenService,
+  connectors?: ProjectConnectorAdministration,
   appearance?: AppearanceService,
   projectAppearance?: ProjectAppearanceServices,
 ): FastifyInstance {
@@ -3662,6 +3750,8 @@ export function createNativeHttpApp(
   registerProject(app, web);
   registerHostedRuns(app, web);
   registerProjectAbilities(app, web);
+  if (accessTokens !== undefined) registerAccessTokens(app, accessTokens);
+  if (connectors !== undefined) registerConnectors(app, connectors);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
   if (inbox !== undefined) registerInbox(app, inbox);
@@ -3679,8 +3769,9 @@ export function createNativeHttpApp(
   if (threadLimits !== undefined) registerThreadLimits(app, threadLimits);
   if (chat !== undefined) registerMemberChat(app, chat, threadLive);
   registerProjectViews(app, web);
-  registerRunners(app, nativeHttpPartitionRoot, workerPools, personalRunners);
-  registerPlacements(app, placement, sessionPlacement, ownerFallback);
+  if (personalRunners !== undefined)
+    registerPersonalRunners(app, personalRunners);
+  registerPlacements(app, placement, sessionPlacement);
   registerActions(app, actionReports, actionReach);
   registerTicketDoors(app, landings, landingQueues, takes, proposalMerges);
   registerOwnSettings(app, agentAccounts, appearance, projectAppearance);

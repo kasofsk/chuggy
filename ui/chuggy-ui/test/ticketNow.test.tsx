@@ -270,7 +270,7 @@ test("a step whose run nothing has taken says it waits, and for how long", async
   ).toEqual(["Waiting", "25m"]);
 });
 
-/** The reader's own run, routed to runners under Strict, its worker not begun, carrying what the server answers it waits on of their runners. */
+/** The reader's own run, routed to runners, its worker not begun, carrying what the server answers it waits on of their runners. */
 function ownRunSummary(
   over: Record<string, unknown> = {},
 ): Record<string, unknown> {
@@ -280,7 +280,6 @@ function ownRunSummary(
     runTotals: undefined,
     carrier: "Agent",
     mine: true,
-    ownerFallback: "Strict",
     ...over,
   });
 }
@@ -341,10 +340,9 @@ test("the reader's own run waiting on live runners short of memory says how much
   ).toMatch(/\/settings\/workspace\/runner$/u);
 });
 
-/** Another member's run, routed to runners, its worker not begun, carrying what the server answers its project's pools are short of. */
-function poolRunAnswered(over: Record<string, unknown>): RunPageServed {
-  const summary = () =>
-    ownRunSummary({ mine: false, ownerFallback: undefined, ...over });
+/** Another member's run, routed to runners, its worker not begun, carrying what the server answers of it. */
+function otherRunAnswered(over: Record<string, unknown>): RunPageServed {
+  const summary = () => ownRunSummary({ mine: false, ...over });
   return {
     ticket: runningTicket,
     executions: [summary()],
@@ -353,50 +351,14 @@ function poolRunAnswered(over: Record<string, unknown>): RunPageServed {
   };
 }
 
-test("any reader's run waiting on its project's live pools short of memory says how much they have free and it needs, beside the link to where they are managed", async () => {
-  await runPageDrawn(
-    atlas,
-    poolRunAnswered({ poolRoom: { freeMib: 3_686, neededMib: 4_096 } }),
-  );
-  const sentence = "Waiting on this project's runners";
-  expect(nowLineParts()).toStrictEqual([
-    sentence,
-    "· 3.6 GiB free, needs 4 GiB",
-  ]);
-  expect(
-    within(nowCard())
-      .getByRole("link", { name: sentence })
-      .getAttribute("href"),
-  ).toMatch(/\/settings\/pools$/u);
-});
-
-test("a run the server answers no pool room for says nothing of its project's runners", async () => {
-  await runPageDrawn(atlas, poolRunAnswered({}));
-  expect(nowCard().textContent).not.toContain("Waiting on this project");
-});
-
-/** No frame says a pool polled, so another member's run is read again on the clock while it has not begun. */
-test("another member's run that has not begun is read again on the clock, and says the pool room the server answers now", async () => {
+test("another member's run that has not begun is not read again on the clock", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   try {
-    let over: Record<string, unknown> = {};
-    const summary = () =>
-      ownRunSummary({ mine: false, ownerFallback: undefined, ...over });
-    const drawn = await runPageDrawn(atlas, {
-      ticket: runningTicket,
-      executions: [summary()],
-      execution: () => ({ ...summary(), attempts: [] }),
-      transcripts: [],
-    });
-    expect(nowCard().textContent).not.toContain("Waiting on this project");
+    const drawn = await runPageDrawn(atlas, otherRunAnswered({}));
     const reads = executionReads(drawn.reads);
-    over = { poolRoom: { freeMib: 3_686, neededMib: 4_096 } };
     await act(() => vi.advanceTimersByTimeAsync(sessionPlacementPolledMs));
     await settled();
-    expect(executionReads(drawn.reads)).toBeGreaterThan(reads);
-    expect(nowCard().textContent).toContain(
-      "Waiting on this project's runners",
-    );
+    expect(executionReads(drawn.reads)).toBe(reads);
   } finally {
     vi.useRealTimers();
   }
@@ -435,7 +397,7 @@ test("a run that has begun is not read again on the clock", async () => {
     const drawn = await runPageDrawn(
       atlas,
       runningRun(transcribed, {
-        executions: [{ ...running, mine: true, ownerFallback: "Strict" }],
+        executions: [{ ...running, mine: true }],
       }),
     );
     const reads = executionReads(drawn.reads);

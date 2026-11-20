@@ -11,7 +11,11 @@
 import { expect, test } from "vitest";
 
 import { apiAttemptsMax } from "../app/core/apiRequest.ts";
-import { setupAnswersNone } from "../app/core/setupArguments.ts";
+import {
+  setupAnswersNone,
+  setupStartFlag,
+  setupStartYes,
+} from "../app/core/setupArguments.ts";
 import {
   SetupMachineError,
   setupFiles,
@@ -27,6 +31,8 @@ import {
   machineHeld,
   machineHolding,
   machineKept,
+  machineRecording,
+  machineRecordsLeft,
   machineRemembered,
   machineRevokeAddress,
   machineSignedIn,
@@ -48,20 +54,47 @@ const signedOut = {
 
 const remembered = machineRemembered;
 
+/** The person's yes to setup, which a bare run before it says what setup will do in place of. */
+const yes = [setupStartFlag, setupStartYes];
+
 const signedIn = (): Promise<SetupMachine> => machineSignedIn();
 
-test("with no site given and none remembered the program asks for one and touches nothing", async () => {
+test("with no site given and none remembered, the bare command says what setup will do and touches nothing", async () => {
   const machine = setupMachine();
-  expect(await machine.command([])).toEqual({ report: "SiteUnknown" });
+  expect(await machine.command([])).toEqual({
+    report: "Opening",
+    site: undefined,
+    repository: undefined,
+  });
   expect(machine.asked).toEqual([]);
   expect([...machine.files.keys()]).toEqual([]);
 });
 
-test("a site is remembered once it has answered as one, and the next command needs no flag", async () => {
+test("with the person's yes and no site given or remembered, the program asks for one and touches nothing", async () => {
   const machine = setupMachine();
-  expect(await machine.command(["--site", `${machineSite}/acme/`])).toEqual(
-    signedOut,
-  );
+  expect(await machine.command([...yes])).toEqual({ report: "SiteUnknown" });
+  expect(machine.asked).toEqual([]);
+  expect([...machine.files.keys()]).toEqual([]);
+});
+
+test("given a site nothing here says setup has begun for, the bare command says what setup will do, and asks, takes, keeps and writes nothing", async () => {
+  const machine = setupMachine();
+  expect(await machine.command(["--site", machineSite])).toEqual({
+    report: "Opening",
+    site: machineSite,
+    repository: undefined,
+  });
+  expect(machine.asked).toEqual([]);
+  expect(machine.reserved).toEqual([]);
+  expect([...machine.files.keys()]).toEqual([]);
+  expect([...machine.store.keys()]).toEqual([]);
+});
+
+test("a site is remembered once it has answered as one, and the next command needs no flag and no yes", async () => {
+  const machine = setupMachine();
+  expect(
+    await machine.command(["--site", `${machineSite}/acme/`, ...yes]),
+  ).toEqual(signedOut);
   expect(remembered(machine)).toEqual({ site: machineSite });
   expect(await machine.command([])).toEqual(signedOut);
 });
@@ -69,7 +102,7 @@ test("a site is remembered once it has answered as one, and the next command nee
 test("a site that does not answer is said to be unreachable and is not remembered", async () => {
   const machine = setupMachine();
   machine.site = "Silent";
-  expect(await machine.command(["--site", machineSite])).toEqual({
+  expect(await machine.command(["--site", machineSite, ...yes])).toEqual({
     report: "SiteUnusable",
     site: machineSite,
     phase: "Unreachable",
@@ -81,7 +114,7 @@ test("a site that does not answer is said to be unreachable and is not remembere
 test("an address that is not a chuggy site is said not to be one", async () => {
   const machine = setupMachine();
   machine.site = "Refuses";
-  expect(await machine.command(["--site", machineSite])).toMatchObject({
+  expect(await machine.command(["--site", machineSite, ...yes])).toMatchObject({
     report: "SiteUnusable",
     phase: "Unconfigured",
   });
@@ -96,6 +129,25 @@ test("a site whose issuer does not answer is told apart from a site that does no
     asked: "SignIn",
   });
   expect(machine.detached).toEqual([]);
+});
+
+test("signed in, with steps done, the console's line run again reads the checklist and says nothing of what setup will do", async () => {
+  const machine = await signedIn();
+  const report = await machine.command(["--site", machineSite]);
+  expect(report.report).toBe("Checklist");
+  if (report.report !== "Checklist") return;
+  expect(
+    report.steps.filter((step) => step.state === "done").map((s) => s.step),
+  ).toEqual(["plugin", "workspace"]);
+});
+
+test("a sign-in the shared store holds for the site given is setup begun, though no site is remembered, so the bare command works under it", async () => {
+  const machine = await signedIn();
+  machine.files.delete(setupFiles.session);
+  expect(await machine.command(["--site", machineSite])).toMatchObject({
+    report: "Checklist",
+    site: machineSite,
+  });
 });
 
 test("the bare command, signed in, reads where the person stands and reports it as a checklist", async () => {
@@ -116,7 +168,6 @@ test("the bare command, signed in, reads where the person stands and reports it 
         state: "todo",
         detail: { id: "setup-step-projectless", args: { workspace: "acme" } },
       },
-      { step: "north-star", state: "todo", detail: undefined },
       { step: "mcp", state: "todo", detail: undefined },
       { step: "github", state: "todo", detail: undefined },
       { step: "repository", state: "todo", detail: undefined },
@@ -164,6 +215,31 @@ test("a renewal the issuer refuses is not signed in and not a failure, and the n
     report: "SignInWaiting",
     opened: "Opened",
   });
+});
+
+test("a renewal, a renewal the issuer refuses and a sign-out each leave neither record beside the site's token", async () => {
+  const renewed = await signedIn();
+  machineRecording(renewed);
+  expect(await renewed.command([])).toMatchObject({ report: "Checklist" });
+  expect(machineRecordsLeft(renewed)).toEqual([]);
+  const refused = await signedIn();
+  machineHolding(refused, "renewal-spent");
+  machineRecording(refused);
+  expect(await refused.command([])).toEqual(signedOut);
+  expect(machineRecordsLeft(refused)).toEqual([]);
+  const signedOutHere = await signedIn();
+  machineRecording(signedOutHere);
+  expect(await signedOutHere.command(["sign-out"])).toMatchObject({
+    report: "SignedOutHere",
+    held: true,
+  });
+  expect(machineRecordsLeft(signedOutHere)).toEqual([]);
+  machineRecording(signedOutHere);
+  expect(await signedOutHere.command(["sign-out"])).toMatchObject({
+    report: "SignedOutHere",
+    held: false,
+  });
+  expect(machineRecordsLeft(signedOutHere)).toEqual([]);
 });
 
 test("a renewal the issuer does not answer is a failure, and the token is kept", async () => {
@@ -292,7 +368,7 @@ test("a run with no site to work under keeps no room, and one given a site keeps
   await machine.command([]);
   expect(machine.reserved).toEqual([]);
   machine.room = () => false;
-  expect(await machine.command(["--site", machineSite])).toMatchObject({
+  expect(await machine.command(["--site", machineSite, ...yes])).toMatchObject({
     report: "Faulted",
     site: machineSite,
     fault: unwritable,
@@ -448,7 +524,7 @@ test("the platforms served are Linux and macOS, each one this program knows how 
   for (const platform of setupPlatforms) {
     const machine = setupMachine();
     machine.platform = platform;
-    expect(await machine.command([])).toEqual({ report: "SiteUnknown" });
+    expect(await machine.command([...yes])).toEqual({ report: "SiteUnknown" });
     expect(
       setupOpenerCommand(
         { platform, browser: undefined },
@@ -479,7 +555,9 @@ test("a token held for one site is never sent for another, and the other site is
   const held = machine.live() ?? "";
   machine.store.clear();
   machineHolding(machine, held, elsewhere);
-  expect(await machine.command(["--site", machineSite])).toEqual(signedOut);
+  expect(await machine.command(["--site", machineSite, ...yes])).toEqual(
+    signedOut,
+  );
   expect(machine.bodies.join(" ")).not.toContain(held);
   expect(remembered(machine)).toEqual({ site: machineSite });
   expect(machineHeld(machine, elsewhere)).toBe(held);
@@ -624,7 +702,7 @@ test("an ending stands until a sign-in is run, which opens a page, and the bare 
 test("an ending for one site does not stand in the way of another", async () => {
   const machine = await declined();
   const other = "https://other.example";
-  expect(await machine.command(["--site", other])).toEqual({
+  expect(await machine.command(["--site", other, ...yes])).toEqual({
     ...signedOut,
     site: other,
   });

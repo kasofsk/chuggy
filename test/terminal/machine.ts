@@ -7,8 +7,7 @@
  * reads back every command that was run, with its words, what it was given to
  * read and whether it led a session of its own. The site sees a runner live
  * once its service on the machine is up and polls, as it would the real one:
- * a pool's as the project's runner, the person's own runner's as theirs, and
- * a chat host's as the person's.
+ * the person's own runner's as theirs, and a chat host's as the person's.
  * The commands that would ask for a password are stood in for too, so one
  * that was run is found and not merely missing.
  */
@@ -83,7 +82,6 @@ function knobsFirst(prefix: string): MachineKnobs {
   return {
     prefix,
     version: "0.35.0",
-    pool: "shame",
     engines: { docker: true, podman: true },
     memoryBytes: machineEngineBytes,
     services: true,
@@ -170,9 +168,6 @@ export function machineStoodIn(home: Home, installation: StandIn): Machine {
     const world = installation.world;
     for (const [name, unit] of Object.entries(read().units)) {
       if (!unit.active) continue;
-      if (name.endsWith(`.${knobs.pool}.service`))
-        for (const project of world.projects)
-          if (project.pools.includes(knobs.pool)) project.runner = "Live";
       machinePersonalSeen(world, name, pools);
       for (const [tenant, host] of world.chat) {
         const named = `${machineNamePart(tenant)}.${machineNamePart(world.member)}.chat.host`;

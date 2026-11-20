@@ -2530,7 +2530,7 @@ test.each([
   },
 );
 
-/** A thread runs only on its member's chat host, so it is added on their own page rather than as a project's pool. */
+/** A thread runs only on its member's chat host, so it is added on their own page. */
 test("a reader with no chat host is pointed at their own runners' page", async () => {
   await mounted(
     viewportDeskEm,

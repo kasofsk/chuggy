@@ -1,6 +1,6 @@
 /**
- * The process a registered worker pool polls, composed against its own
- * PostgreSQL role.
+ * The process a registered runner or chat host polls, composed against its
+ * own PostgreSQL role.
  *
  * IT STARTS UNDER `chuggy_pool_plane` OR IT IS NOT READY. The whole argument
  * for a plane of its own is the grant set behind it — it claims and leases and
@@ -10,9 +10,9 @@
  *
  * IT IS COMPOSED WITH NO WAY TO MINT ANYTHING. The issuer reaches this process
  * as a discovery address and a key set, and the authority as a read URL; the
- * admin API that registers a pool's client is named by no variable this file
- * reads, so the least-trusted outward-facing process cannot make itself a
- * second pool. Discovery happens once, at start-up, which is why an issuer that
+ * admin API that registers a runner's client is named by no variable this
+ * file reads, so the least-trusted outward-facing process cannot make itself a
+ * second runner. Discovery happens once, at start-up, which is why an issuer that
  * cannot be reached refuses the start rather than serving refusals.
  *
  * ITS RUNNERS' REPORTS ARE SERVED ON A SECOND LISTENER, and only where
@@ -59,7 +59,6 @@ import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositor
 import { poolPlaneRole } from "../adapters/postgres/schema.ts";
 import {
   postgresWorkerPoolAssignments,
-  postgresWorkerPoolRegistry,
   postgresWorkerPoolRunners,
 } from "../adapters/postgres/workerPool.ts";
 import { postgresWorkerPoolSessions } from "../adapters/postgres/workerPoolSessions.ts";
@@ -215,7 +214,6 @@ async function main(): Promise<void> {
   const app = createPoolPlaneApp({
     authentication,
     access,
-    registry: postgresWorkerPoolRegistry(pool),
     personal: postgresPersonalRunnerPlaneRegistry(pool),
     chatHosts: postgresChatHostPlaneRegistry(pool),
     assignments: postgresWorkerPoolAssignments(pool),

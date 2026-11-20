@@ -159,6 +159,7 @@ export function useConsoleWrite<V, T>(
   useConsoleWriteWatched(write.mutationKey, shown.drawn);
   const own = useMutation<T, ConsoleWriteRefused, V>({
     mutationKey: write.mutationKey,
+    ...(write.gcTime === undefined ? {} : { gcTime: write.gcTime }),
     mutationFn: async (variables) => {
       try {
         return consoleWriteAnswered(

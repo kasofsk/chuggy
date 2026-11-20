@@ -9,8 +9,8 @@
  * theirs that no longer exists is resolved as that layer unset.
  *
  * THE PROJECT'S DEFAULT IS READ BY ANYONE WHO MAY READ THE PROJECT AND WRITTEN
- * BY AN ADMINISTRATOR, as its owner fallback is, and held to the contract's
- * contrast rule as a person's own theme is. AN OVERRIDE IS ITS PERSON'S OWN:
+ * BY AN ADMINISTRATOR, and held to the contract's contrast rule as a person's
+ * own theme is. AN OVERRIDE IS ITS PERSON'S OWN:
  * each call is handed the principal its request authenticated as, and needs
  * only that they may read the project.
  */

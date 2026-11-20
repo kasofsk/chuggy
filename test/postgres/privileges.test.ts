@@ -258,6 +258,7 @@ test("the access plane's role reaches its invite links and tenants' display name
       "SELECT * FROM worker_pool_registration_token",
       "worker_pool_registration_token",
     ],
+    ["SELECT * FROM access_token", "access_token"],
     ["UPDATE invite_link SET role=role", "invite_link"],
     ["UPDATE invite_link SET token_digest=token_digest", "invite_link"],
     ["UPDATE invite_link SET tenant=tenant", "invite_link"],
@@ -1173,7 +1174,7 @@ test("only the importer reads the tickets following a head and moves one, and it
   );
   assert.deepEqual(
     await changeLogExecutors(
-      `${acceptanceFunction}(text,text,text,text,text,text,text,text,text[],text[],text,bigint,bigint,text)`,
+      `${acceptanceFunction}(text,text,text,text,text,text,text,text,text[],text[],text,bigint,bigint,text,text,text)`,
     ),
     [apiRole],
   );

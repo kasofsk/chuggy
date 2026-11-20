@@ -94,7 +94,7 @@ export const workerContractRunnerCredentialOutcomes: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** The versions in which a pool's, a personal runner's or a chat host's poll may name the credentials it would run each agent's work on, and be answered with those of them that are paused, a field an earlier one refuses its whole answer over. */
+/** The versions in which a personal runner's or a chat host's poll may name the credentials it would run each agent's work on, and be answered with those of them that are paused, a field an earlier one refuses its whole answer over. */
 export const workerContractRunnerCredentialPauses: WorkerContractRange = {
   min: workerContractCredentialPauses,
   max: workerContractAccepted.max,
@@ -263,9 +263,19 @@ export interface SessionTaskRead {
   readonly launch?: SessionTaskLaunch;
 }
 
+/** Which task of its ticket an attempt runs, and the name of the workload it runs, present only where that is one workload of a catalog. */
+export type WorkerTaskWorkload = (
+  | { readonly taskKind: "Work" }
+  | { readonly taskKind: "Evaluation"; readonly evaluator: number }
+) & { readonly workload?: string };
+
 /** The task either kind of bearer fetches, each read through its own bearer's digest. */
 export interface WorkerTaskPort {
   work(secret: AttemptCapabilitySecret): Promise<WorkerTaskRead | undefined>;
+  /** Found for the attempts `work` finds, from the revision the attempt pins. */
+  workload(
+    secret: AttemptCapabilitySecret,
+  ): Promise<WorkerTaskWorkload | undefined>;
   session(secret: SessionBearerSecret): Promise<SessionTaskRead | undefined>;
 }
 

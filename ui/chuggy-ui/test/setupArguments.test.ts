@@ -17,7 +17,7 @@ import {
   setupWaitSecsDefault,
   setupWaitSecsMax,
 } from "../app/core/setupArguments.ts";
-import { selectorSettingsTextCharsMax } from "../../../src/contract/http.ts";
+import type { SetupAnswers } from "../app/core/setupArguments.ts";
 
 const site = "https://chuggy.example";
 
@@ -132,10 +132,12 @@ test("plain HTTP is a site only at this machine's own address", () => {
 
 test.each([
   [["log-out"], "Command"],
+  [["north-star"], "Command"],
   [["sign-in", "sign-in"], "Command"],
   [["sign-in", "extra"], "Command"],
   [["constructor"], "Command"],
   [["--verbose", "1"], "Flag"],
+  [["--north-star", "skip"], "Flag"],
   [["--site"], "Flag"],
   [["--site", site, "--site", site], "Flag"],
   [["--wait-secs", "5"], "Flag"],
@@ -223,6 +225,33 @@ test("runner is read only with the workspace and the project it is for, waits as
     setupAsked(["runner", "--workspace", "a\nb", "--project", "c"]),
   ).toEqual(wrongly("Name"));
   expect(setupAnswersAsked(["runner", ...named])).toEqual(answers);
+});
+
+test("runner reads the path of a Claude credential of either kind, one at most and not empty, and no other command reads either flag", () => {
+  const named = ["runner", "--workspace", "acme", "--project", "widgets"];
+  expect(
+    setupAsked([...named, "--claude-token-file", "a b/token"]),
+  ).toMatchObject({
+    asked: "Runner",
+    credential: { kind: "Subscription", path: "a b/token" },
+  });
+  expect(
+    setupAsked([...named, "--anthropic-api-key-file=/keys/anthropic"]),
+  ).toMatchObject({
+    asked: "Runner",
+    credential: { kind: "ApiKey", path: "/keys/anthropic" },
+  });
+  expect(setupAsked(named)).toMatchObject({ credential: undefined });
+  for (const argv of [
+    [...named, "--claude-token-file", "t", "--anthropic-api-key-file", "k"],
+    [...named, "--claude-token-file="],
+    [...named, "--anthropic-api-key-file="],
+  ])
+    expect(setupAsked(argv), argv.join(" ")).toEqual(wrongly("Credential"));
+  for (const flag of ["--claude-token-file", "--anthropic-api-key-file"])
+    expect(setupAsked(["--workspace", "acme", flag, "t"]), flag).toEqual(
+      wrongly("Flag"),
+    );
 });
 
 test("the arguments a sign-in starts its listener with are read back as that listener", () => {
@@ -423,68 +452,6 @@ test("plugin is read with a site, a workspace and a project, --plugin takes only
   expect(setupAnswersAsked(setupAnswerArguments(skip))).toEqual(skip);
 });
 
-test("--north-star takes only skip and is read by every command but a listener, and skip is carried back in the arguments a report names, beside the plugin's", () => {
-  const skip = { ...setupAnswersNone, northStar: "skip" } as const;
-  for (const command of [
-    [],
-    ["sign-in"],
-    ["plugin"],
-    ["mcp", "--workspace", "acme", "--project", "widgets"],
-    ["project", "--workspace", "acme", "--name", "Atlas"],
-    ["serve", "--workspace", "acme", "--project", "widgets"],
-    ["north-star", "--text", "Widgets."],
-  ])
-    expect(
-      setupAsked([...command, "--north-star", "skip"]),
-      command.join(" "),
-    ).toMatchObject({ answers: { northStar: "skip" } });
-  for (const value of ["yes", "", "Skip"])
-    expect(setupAsked(["--north-star", value]), value).toEqual(
-      wrongly("NorthStar"),
-    );
-  expect(setupAsked(["--north-star", "skip", "--north-star", "skip"])).toEqual(
-    wrongly("Flag"),
-  );
-  expect(setupAnswerArguments(skip)).toEqual(["--north-star", "skip"]);
-  expect(setupAnswersAsked(setupAnswerArguments(skip))).toEqual(skip);
-  const both = { ...skip, plugin: "skip" } as const;
-  expect(setupAnswersAsked(setupAnswerArguments(both))).toEqual(both);
-});
-
-test("north-star reads its text whole, as one argument and at most as long as the settings take, with a site, a workspace and a project, and --text is read by no other command", () => {
-  const named = ["--workspace", "acme", "--project", "widgets"];
-  const text = "Widgets for everyone, --site and all.\nKept small.";
-  expect(
-    setupAsked(["north-star", ...named, "--site", site, "--text", text]),
-  ).toEqual({
-    asked: "NorthStar",
-    site,
-    answers: { workspace: "acme", project: "widgets" },
-    text,
-  });
-  expect(setupCommandArguments("NorthStar")).toEqual(["north-star"]);
-  const longest = "w".repeat(selectorSettingsTextCharsMax);
-  expect(setupAsked(["north-star", "--text", longest])).toMatchObject({
-    asked: "NorthStar",
-    text: longest,
-  });
-  for (const given of [
-    [],
-    ["--text", ""],
-    ["--text", " \n "],
-    ["--text", `${longest}w`],
-  ])
-    expect(
-      setupAsked(["north-star", ...named, ...given]),
-      given.join(" ").slice(0, 20),
-    ).toEqual(wrongly("NorthStarText"));
-  for (const command of [[], ["ticket"], ["project", "--name", "Atlas"]])
-    expect(
-      setupAsked([...command, "--text", "Widgets."]),
-      command.join(" "),
-    ).toEqual(wrongly("Flag"));
-});
-
 test("bind reads --opened, which takes only github and no other command reads, as a page connecting GitHub already open", () => {
   expect(setupAsked(["bind"])).toEqual({
     asked: "Bind",
@@ -506,6 +473,24 @@ test("bind reads --opened, which takes only github and no other command reads, a
       setupAsked([...command, "--opened", "github"]),
       command.join(" "),
     ).toEqual(wrongly("Flag"));
+});
+
+test("--start takes only yes and only the bare command reads it, as the person's yes to setup, carried back only in the bare command a report names", () => {
+  const answers: SetupAnswers = { ...setupAnswersNone, start: "yes" };
+  expect(setupAsked(["--start", "yes", "--site", site])).toEqual({
+    asked: "Status",
+    site,
+    answers,
+  });
+  for (const value of ["no", "", "Yes"])
+    expect(setupAsked(["--start", value]), value).toEqual(wrongly("Start"));
+  for (const command of [["sign-in"], ["runner"], ["plugin"]])
+    expect(
+      setupAsked([...command, "--start", "yes"]),
+      command.join(" "),
+    ).toEqual(wrongly("Flag"));
+  expect(setupAnswerArguments(answers, "Status")).toEqual(["--start", "yes"]);
+  expect(setupAnswerArguments(answers, "SignIn")).toEqual([]);
 });
 
 test("serve is read only with the workspace and the project it is for, takes a site and no wait, and is run again as itself", () => {

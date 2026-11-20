@@ -16,12 +16,13 @@ import type { ProjectAppearanceService } from "../../src/interpreter/projectAppe
 import type { ProjectImageService } from "../../src/interpreter/projectImages.ts";
 import type { PersonalRunnerService } from "../../src/interpreter/personalRunnerRegistration.ts";
 import type { Principal } from "../../src/interpreter/principal.ts";
-import type { ProjectOwnerFallbackAdministration } from "../../src/interpreter/projectOwnerFallback.ts";
 import type { TicketActionReaches } from "../../src/interpreter/ticketActionReach.ts";
 import type { TicketLandingReads } from "../../src/interpreter/ticketLandings.ts";
 import type { LandingQueueReads } from "../../src/interpreter/landingQueues.ts";
 import type { TicketProposalMerges } from "../../src/interpreter/ticketProposalMerge.ts";
 import type { TicketTakes } from "../../src/interpreter/ticketTake.ts";
+import type { AccessTokenService } from "../../src/interpreter/accessToken.ts";
+import type { ProjectConnectorAdministration } from "../../src/interpreter/projectConnectors.ts";
 import { unservedNativeWeb } from "./threadFixtures.ts";
 
 /** The services one app serves, each absent where its suite composes none. */
@@ -29,13 +30,14 @@ export interface CallerAppServices {
   readonly actionReach?: TicketActionReaches;
   readonly landings?: TicketLandingReads;
   readonly personalRunners?: PersonalRunnerService;
-  readonly ownerFallback?: ProjectOwnerFallbackAdministration;
   readonly chat?: MemberChat;
   readonly agentAccounts?: AgentAccountService;
   readonly landingQueues?: LandingQueueReads;
   readonly deletions?: UnrunDeletions;
   readonly takes?: TicketTakes;
   readonly proposalMerges?: TicketProposalMerges;
+  readonly accessTokens?: AccessTokenService;
+  readonly connectors?: ProjectConnectorAdministration;
   readonly appearance?: AppearanceService;
   readonly projectAppearance?: ProjectAppearanceService;
   readonly projectImages?: ProjectImageService;
@@ -73,11 +75,9 @@ export function callerApp(caller: Principal, services: CallerAppServices) {
     undefined,
     undefined,
     undefined,
-    undefined,
     services.actionReach,
     services.landings,
     services.personalRunners,
-    services.ownerFallback,
     undefined,
     services.chat,
     undefined,
@@ -87,6 +87,8 @@ export function callerApp(caller: Principal, services: CallerAppServices) {
     services.deletions,
     services.takes,
     services.proposalMerges,
+    services.accessTokens,
+    services.connectors,
     services.appearance,
     {
       themes: services.projectAppearance,

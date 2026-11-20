@@ -41,6 +41,11 @@ import {
   projectImageSetFunction,
   configurationFollowingMoveFunction,
   configurationImporterRole,
+  connectorChangesListFunction,
+  connectorListFunction,
+  connectorReadFunction,
+  connectorRemoveFunction,
+  connectorWriteFunction,
   draftCreateFunction,
   draftInEpicFunction,
   draftReviseFunction,
@@ -84,8 +89,6 @@ import {
   ticketServiceRole,
   ticketUsageResumeFunction,
   workerPlaneRole,
-  workerPoolFenceFunction,
-  workerPoolReleaseFunction,
   workerRunLimitFunction,
   workerRunUsageFunction,
 } from "../../src/adapters/postgres/schema.ts";
@@ -589,16 +592,6 @@ function boundaryGrantsDoor(
 
 /** The doors and functions a role reaches the schema through, and the roles each is shut to. */
 const boundaryGrantsDoors: readonly DoorDeclared[] = [
-  boundaryGrantsDoor(
-    `${workerPoolFenceFunction}(text,text,text)`,
-    [apiRole],
-    [schedulerRole, workerPlaneRole, poolPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${workerPoolReleaseFunction}(text,text,text,text,text)`,
-    [poolPlaneRole],
-    [schedulerRole, workerPlaneRole, apiRole],
-  ),
   {
     signature: `${statusMoveFunction}(text,text,boolean)`,
     definer: false,
@@ -699,6 +692,31 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean,boolean,boolean)`,
     [apiRole],
     [],
+  ),
+  boundaryGrantsDoor(
+    `${connectorReadFunction}(text,text,text)`,
+    [apiRole, workerPlaneRole],
+    [schedulerRole, poolPlaneRole, finalizerRole],
+  ),
+  boundaryGrantsDoor(
+    `${connectorListFunction}(text,text)`,
+    [apiRole],
+    [workerPlaneRole, schedulerRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${connectorWriteFunction}(text,text,text,text,jsonb,bigint,text,text)`,
+    [apiRole],
+    [workerPlaneRole, schedulerRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${connectorRemoveFunction}(text,text,text,bigint,text,text)`,
+    [apiRole],
+    [workerPlaneRole, schedulerRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${connectorChangesListFunction}(text,text,bigint,bigint)`,
+    [apiRole],
+    [workerPlaneRole, schedulerRole, poolPlaneRole],
   ),
   boundaryGrantsDoor(
     `${repositoryConfigurationImportRecordFunction}(text,text,text,text,text,text,jsonb,integer)`,
@@ -1060,6 +1078,17 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["project_image", null, "UPDATE", apiRole, false],
   ["project_image", null, "INSERT", boundaryOwnerRole, true],
   ["project_image", null, "SELECT", schedulerRole, false],
+  ["access_token", null, "DELETE", apiRole, true],
+  ["access_token", null, "DELETE", boundaryOwnerRole, true],
+  ["access_token", null, "UPDATE", apiRole, false],
+  ["access_token", null, "UPDATE", boundaryOwnerRole, false],
+  ["access_token", null, "INSERT", boundaryOwnerRole, false],
+  ["project_connector", null, "SELECT", apiRole, false],
+  ["project_connector", null, "SELECT", workerPlaneRole, false],
+  ["project_connector", null, "UPDATE", boundaryOwnerRole, true],
+  ["project_connector_change", null, "SELECT", apiRole, false],
+  ["project_connector_change", null, "INSERT", boundaryOwnerRole, true],
+  ["project_connector_change", null, "UPDATE", boundaryOwnerRole, false],
 ];
 
 test("each role holds of a relation the columns it reaches it by, and is refused the ones it does not", async () => {
@@ -1113,6 +1142,15 @@ const boundaryGrantsHeld: readonly (readonly [
   readonly string[],
   readonly string[],
 ])[] = [
+  [
+    "access_token",
+    ["maker", "secret_digest"],
+    [
+      `${apiRole} INSERT maker,secret_digest`,
+      `${apiRole} SELECT maker,secret_digest`,
+      `${boundaryOwnerRole} SELECT maker,secret_digest`,
+    ],
+  ],
   [
     "worker_pool",
     ["class"],

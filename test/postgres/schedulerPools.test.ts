@@ -1,15 +1,16 @@
 /**
  * The scheduler's half of work routed to pools, against a real PostgreSQL and
  * under the scheduler's own role: what a pass asks the registry before an
- * attempt waits for a pool, what the reaper does with one whose lease ran out,
- * what a pass does with one a pool refused, and that every other end of one a
- * pool claimed concludes its execution with no attempt opened again.
+ * attempt waits for a runner, what the reaper does with one whose lease ran
+ * out, what a pass does with one a runner refused, and that every other end of
+ * one a runner claimed concludes its execution with no attempt opened again.
+ * The runner is a personal runner of the execution's owner.
  *
  * Everything but the authority is the role a deployment runs: the store and
  * the registry read are the scheduler's, a registration is the API's and a
- * claim is the pool plane's. The authority holds its grants in memory, and
- * every pool registered here is granted `Execute`; `test/keto/` asks a real
- * one about a pool it withholds that from.
+ * claim is the pool plane's. The authority holds its grants in memory: every
+ * runner's owner holds what admits it and `Read` of its project; `test/keto/`
+ * asks a real one.
  *
  * A PASS IS INSTALLATION-WIDE and the cases share one database, so each reads
  * back only its own project's rows.
@@ -25,6 +26,7 @@ import {
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
+import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresRunEvidenceReads } from "../../src/adapters/postgres/runEvidence.ts";
 import {
   postgresWorkerArtifactReservations,
@@ -35,9 +37,6 @@ import { workerPoolEvidenceCharsMax } from "../../src/contract/workerPool.ts";
 import type { WorkerImageFault } from "../../src/contract/workerEnvironment.ts";
 import {
   postgresWorkerPoolAssignments,
-  postgresWorkerPoolDirectory,
-  postgresWorkerPoolRegistry,
-  postgresWorkerPoolRoster,
   postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
 import {
@@ -48,19 +47,13 @@ import {
   executionSchedulerFence,
   executionSchedulerLaunch,
 } from "../../src/interpreter/executionSchedulerRun.ts";
-import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
-  asProjectId,
-  type Partition,
-  type RecoveryEpoch,
-} from "../../src/interpreter/projectStore.ts";
-import type { WorkerPoolRegistered } from "../../src/interpreter/workerPool.ts";
-import { workerPoolsAnsweredMax } from "../../src/interpreter/workerPool.ts";
-import {
-  postgresHarnessNewEpoch,
-  postgresHarnessProject,
-  postgresHarnessRolePool,
-} from "./harness.ts";
+  asPrincipal,
+  type Principal,
+} from "../../src/interpreter/principal.ts";
+import type { RecoveryEpoch } from "../../src/interpreter/projectStore.ts";
+import type { PersonalRunnerIdentity } from "../../src/interpreter/workerPool.ts";
+import { postgresHarnessNewEpoch, postgresHarnessRolePool } from "./harness.ts";
 import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import {
   schedulerClaimFor,
@@ -93,10 +86,8 @@ after(async () => {
   await rig.close();
 });
 
-const registry = postgresWorkerPoolRegistry(apiPool);
-const directory = postgresWorkerPoolDirectory(apiPool);
+const personalRegistry = postgresPersonalRunnerRegistry(apiPool);
 const assignments = postgresWorkerPoolAssignments(planePool);
-const roster = postgresWorkerPoolRoster(rig.pool);
 const access = memoryProjectAccess();
 const service = poolRoutedService(rig, access);
 
@@ -118,36 +109,6 @@ async function routedAttempt(routed: PoolRouted) {
   return opened.attempt;
 }
 
-/** Registers one pool under the API's role, declaring what the case wants it to and polling under `memoryCeilingMib` where the case names one, and grants it `Execute`. */
-async function poolRegistered(
-  partition: Partition,
-  pool: string,
-  capabilities: readonly string[],
-  memoryCeilingMib?: number,
-): Promise<void> {
-  const principal = asPrincipal(
-    `https://issuer.invalid#${pool}-${randomUUID()}`,
-  );
-  assert.equal(
-    await registry.register({
-      partition,
-      pool,
-      capabilities,
-      class: "Dedicated",
-      clientId: `chuggy-pool-${randomUUID()}`,
-      principal,
-    }),
-    true,
-  );
-  await postgresWorkerPoolRunners(planePool).named(
-    { kind: "Dedicated", partition, pool, principal },
-    undefined,
-    undefined,
-    memoryCeilingMib,
-  );
-  access.grant({ partition, principal, access: new Set(["Execute"]) });
-}
-
 /** Runs out the lease of every live attempt of this execution, as the owner. */
 async function leaseLapsed(routed: PoolRouted): Promise<void> {
   await rig.harness.query(
@@ -155,6 +116,99 @@ async function leaseLapsed(routed: PoolRouted): Promise<void> {
       WHERE tenant=$1 AND project=$2 AND execution=$3
         AND state IN ('Placing','Running')`,
     poolRoutedKey(routed),
+  );
+}
+
+/** A member's personal runner as the pool plane admits it. */
+type Runner = PersonalRunnerIdentity & { readonly kind: "Personal" };
+
+/** Makes a fresh member the routed execution's owner, as taking its ticket would have, and answers them. */
+async function executionOwned(routed: PoolRouted): Promise<Principal> {
+  const owner = asPrincipal(`https://issuer.invalid#owner-${randomUUID()}`);
+  await rig.harness.query(
+    `UPDATE execution SET owner=$4
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [...poolRoutedKey(routed), owner],
+  );
+  return owner;
+}
+
+/** What a runner `runnerOwning` registers declares. */
+interface RunnerDeclared {
+  readonly capabilities?: readonly string[];
+  readonly memoryCeilingMib?: number;
+}
+
+/**
+ * Makes a fresh member the routed execution's owner, registers a personal
+ * runner of theirs listing its project and declaring `declared`, able to run
+ * the harness requirement where it declares nothing, and grants the owner what
+ * admits the runner and `Read` of the project. An attempt the runner claims
+ * records its owner as its `pool`.
+ */
+async function runnerOwning(
+  routed: PoolRouted,
+  declared: RunnerDeclared = {},
+): Promise<Runner & { readonly clientId: string }> {
+  const { partition } = routed.project;
+  const owner = await executionOwned(routed);
+  const runner: Runner = {
+    kind: "Personal",
+    tenant: partition.tenant,
+    owner,
+    principal: asPrincipal(`https://issuer.invalid#runner-${randomUUID()}`),
+  };
+  const clientId = `chuggy-personal-${randomUUID()}`;
+  assert.equal(
+    await personalRegistry.register({
+      tenant: partition.tenant,
+      owner,
+      capabilities: declared.capabilities ?? ["Platform:Linux:Amd64"],
+      clientId,
+      principal: runner.principal,
+    }),
+    "Registered",
+  );
+  if (declared.memoryCeilingMib !== undefined)
+    await postgresWorkerPoolRunners(planePool).named(
+      runner,
+      undefined,
+      undefined,
+      declared.memoryCeilingMib,
+    );
+  assert.equal(
+    await personalRegistry.allow(
+      { tenant: partition.tenant, owner },
+      partition.project,
+    ),
+    "Allowed",
+  );
+  access.grantTenant({
+    tenant: partition.tenant,
+    principal: owner,
+    access: new Set(["RegisterPersonalRunner"]),
+  });
+  access.grant({ partition, principal: owner, access: new Set(["Read"]) });
+  return { ...runner, clientId };
+}
+
+/** One claim by the runner in the routed execution's project, on the terms a runner asks under. */
+function runnerClaim(
+  routed: PoolRouted,
+  runner: Runner,
+  assignment = `assignment-${randomUUID()}`,
+  bearer = `bearer-${randomUUID()}`,
+) {
+  return assignments.claimPersonal(
+    runner,
+    {
+      leaseSecs: service.config.attemptLeaseSecs,
+      heldMax: 1,
+      memoryMibDefault: service.poolMemoryMib,
+    },
+    assignment,
+    bearer,
+    [routed.project.partition.project],
   );
 }
 
@@ -181,32 +235,15 @@ test("an attempt offered to pools and never invoked keeps the lease it opened un
   });
 });
 
-test("an attempt a pool held is lost when its lease runs out, and spends the budget", async () => {
+test("an attempt a runner held is lost when its lease runs out, and spends the budget", async () => {
   const routed = await poolRoutedExecution(rig, "pools-claimed");
-  await poolRegistered(routed.project.partition, "claiming", [
-    "Platform:Linux:Amd64",
-  ]);
+  const runner = await runnerOwning(routed);
   const attempt = await routedAttempt(routed);
   assert.equal(
     await rig.store.attemptInvoked(attempt, schedulerInvocation),
     true,
   );
-  const [pool] = (await roster.registered(routed.project.partition)).pools;
-  assert.ok(pool !== undefined);
-  assert.notEqual(
-    await assignments.claim(
-      pool,
-      {
-        leaseSecs: service.config.attemptLeaseSecs,
-        heldMax: 1,
-        memoryMibDefault: service.poolMemoryMib,
-      },
-      `assignment-${randomUUID()}`,
-      `bearer-${randomUUID()}`,
-      [],
-    ),
-    undefined,
-  );
+  assert.notEqual(await runnerClaim(routed, runner), undefined);
   await leaseLapsed(routed);
   assert.equal(
     await rig.store.reapLapsedAttempts(
@@ -222,54 +259,63 @@ test("an attempt a pool held is lost when its lease runs out, and spends the bud
       retries_spent: 1,
       backed_off: true,
     },
-    attempts: [{ state: "Lost", evidence: "LeaseExpired", pool: "claiming" }],
+    attempts: [{ state: "Lost", evidence: "LeaseExpired", pool: runner.owner }],
   });
 });
 
-test("an execution routed to pools none of its project's is configured to run is blocked, and never placed", async () => {
-  const routed = await poolRoutedExecution(rig, "pools-incompatible");
-  await poolRegistered(
-    routed.project.partition,
-    "arm",
-    ["Platform:Linux:Arm64"],
-    1,
-  );
-  await poolRegistered(
-    await postgresHarnessProject(rig.harness.store, "pools-elsewhere"),
-    "elsewhere",
-    ["Platform:Linux:Amd64"],
-  );
-  await executionSchedulerLaunch(service, routed.project.epoch);
-  assert.deepEqual(await poolRoutedStanding(rig, routed), {
+/** Where an execution stands that a pass blocked for `reason` before any runner was offered it. */
+function incompatibleStanding(reason: string) {
+  return {
     execution: {
       status: "Terminal",
       outcome: "Blocked",
-      blocked_reason: "RequiredCapabilityUnavailable",
+      blocked_reason: reason,
       retries_spent: 0,
       backed_off: true,
     },
     attempts: [
       { state: "Withdrawn", evidence: "PlacementIncompatible", pool: null },
     ],
-  });
+  };
+}
+
+test("an execution routed to pools whose owner has no runner is blocked, and never placed", async () => {
+  const routed = await poolRoutedExecution(rig, "pools-no-runner");
+  await executionOwned(routed);
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.deepEqual(
+    await poolRoutedStanding(rig, routed),
+    incompatibleStanding("RequiredCapabilityUnavailable"),
+  );
 });
 
-test("an execution routed to pools whose every one configured to run it is too small for it is blocked as too large, and one fitting it at its ceiling waits", async () => {
+test("an execution routed to pools with no owner is blocked, and never placed", async () => {
+  const routed = await poolRoutedExecution(rig, "pools-no-owner");
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.deepEqual(
+    await poolRoutedStanding(rig, routed),
+    incompatibleStanding("RequiredCapabilityUnavailable"),
+  );
+});
+
+test("an execution routed to pools whose owner's every runner is configured for something else is blocked, and never placed", async () => {
+  const routed = await poolRoutedExecution(rig, "pools-incompatible");
+  await runnerOwning(routed, {
+    capabilities: ["Platform:Linux:Arm64"],
+    memoryCeilingMib: 1,
+  });
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.deepEqual(
+    await poolRoutedStanding(rig, routed),
+    incompatibleStanding("RequiredCapabilityUnavailable"),
+  );
+});
+
+test("an execution routed to pools whose owner's runner configured to run it is too small for it is blocked as too large, and one fitting it at its ceiling waits", async () => {
   for (const [ceiling, standing] of [
     [
       service.poolMemoryMib - 1,
-      {
-        execution: {
-          status: "Terminal",
-          outcome: "Blocked",
-          blocked_reason: "RequiredMemoryUnavailable",
-          retries_spent: 0,
-          backed_off: true,
-        },
-        attempts: [
-          { state: "Withdrawn", evidence: "PlacementIncompatible", pool: null },
-        ],
-      },
+      incompatibleStanding("RequiredMemoryUnavailable"),
     ],
     [
       service.poolMemoryMib,
@@ -287,15 +333,7 @@ test("an execution routed to pools whose every one configured to run it is too s
       rig,
       `pools-ceiling-${String(ceiling)}`,
     );
-    await poolRegistered(
-      routed.project.partition,
-      "amd",
-      ["Platform:Linux:Amd64"],
-      ceiling,
-    );
-    await poolRegistered(routed.project.partition, "arm", [
-      "Platform:Linux:Arm64",
-    ]);
+    await runnerOwning(routed, { memoryCeilingMib: ceiling });
     await executionSchedulerLaunch(service, routed.project.epoch);
     assert.deepEqual(
       await poolRoutedStanding(rig, routed),
@@ -305,11 +343,9 @@ test("an execution routed to pools whose every one configured to run it is too s
   }
 });
 
-test("an execution routed to pools one of its project's is configured to run waits on its attempt, neither placed nor blocked", async () => {
+test("an execution routed to pools whose owner's runner is configured to run it and not polling waits on its attempt, neither placed nor blocked", async () => {
   const routed = await poolRoutedExecution(rig, "pools-compatible");
-  await poolRegistered(routed.project.partition, "amd", [
-    "Platform:Linux:Amd64",
-  ]);
+  await runnerOwning(routed);
   await executionSchedulerLaunch(service, routed.project.epoch);
   assert.deepEqual(await poolRoutedStanding(rig, routed), {
     execution: {
@@ -358,24 +394,6 @@ async function leaseOutwaited(routed: PoolRouted): Promise<void> {
   );
 }
 
-/** A claim of one of the project's own pools, on the terms a pool asks under. */
-async function poolClaim(routed: PoolRouted) {
-  const [registered] = (await roster.registered(routed.project.partition))
-    .pools;
-  assert.ok(registered !== undefined);
-  return assignments.claim(
-    registered,
-    {
-      leaseSecs: service.config.attemptLeaseSecs,
-      heldMax: 1,
-      memoryMibDefault: service.poolMemoryMib,
-    },
-    `assignment-${randomUUID()}`,
-    `bearer-${randomUUID()}`,
-    [],
-  );
-}
-
 /** The one waiting attempt of this execution a pass would check. */
 async function waitingRead(routed: PoolRouted) {
   const found = (
@@ -398,9 +416,7 @@ const waitingStanding = {
 
 test("an invoked attempt no runner claims waits unleased past an attempt lease, keeping its opening and number, reads as unclaimed, and is then claimed", async () => {
   const routed = await poolRoutedExecution(rig, "pools-waiting");
-  await poolRegistered(routed.project.partition, "amd", [
-    "Platform:Linux:Amd64",
-  ]);
+  const runner = await runnerOwning(routed);
   await executionSchedulerLaunch(service, routed.project.epoch);
   const opened = await waitingRow(routed);
   assert.equal(opened.lease_owner, null);
@@ -426,7 +442,7 @@ test("an invoked attempt no runner claims waits unleased past an attempt lease, 
   const [unclaimed] = (await read()) ?? [];
   assert.equal(unclaimed?.state, "Placing");
   assert.equal(unclaimed.claimedAt, undefined);
-  assert.notEqual(await poolClaim(routed), undefined);
+  assert.notEqual(await runnerClaim(routed, runner), undefined);
   const claimed = await waitingRow(routed);
   assert.equal(claimed.attempt, opened.attempt);
   assert.ok(claimed.claimed_at !== null && claimed.lease_expires_at !== null);
@@ -437,9 +453,7 @@ test("an invoked attempt no runner claims waits unleased past an attempt lease, 
 
 test("a waiting attempt is withdrawn and opened again once the backoff has passed, and not before, when the runtime a pass prepares it under is repinned", async () => {
   const routed = await poolRoutedExecution(rig, "pools-repinned");
-  await poolRegistered(routed.project.partition, "amd", [
-    "Platform:Linux:Amd64",
-  ]);
+  await runnerOwning(routed);
   await executionSchedulerLaunch(service, routed.project.epoch);
   const repinned = {
     ...service,
@@ -514,17 +528,15 @@ async function poolReopened(routed: PoolRouted): Promise<void> {
   assert.equal((await poolRoutedStanding(rig, routed)).attempts.length, 2);
 }
 
-/** A routed execution whose first attempt was withdrawn unclaimed and whose second a pool claimed, with that claim. */
+/** A routed execution whose first attempt was withdrawn unclaimed and whose second a runner claimed, with that claim. */
 async function poolClaimedSecond(name: string) {
   const routed = await poolRoutedExecution(rig, name);
-  await poolRegistered(routed.project.partition, "amd", [
-    "Platform:Linux:Amd64",
-  ]);
+  const runner = await runnerOwning(routed);
   await executionSchedulerLaunch(service, routed.project.epoch);
   assert.equal(await summaryTakenAt(routed), undefined);
   await poolReopened(routed);
   assert.equal(await summaryTakenAt(routed), undefined);
-  assert.notEqual(await poolClaim(routed), undefined);
+  assert.notEqual(await runnerClaim(routed, runner), undefined);
   const claimed = await waitingRow(routed);
   assert.ok(claimed.claimed_at !== null);
   assert.equal(claimed.attempt_number, 2);
@@ -590,33 +602,26 @@ test("a pool execution's summary is taken at its earliest claim, or at the openi
 
 test("a waiting attempt is blocked once a registry change leaves no runner configured to run it", async () => {
   const routed = await poolRoutedExecution(rig, "pools-deregistered");
-  const { partition } = routed.project;
-  await poolRegistered(partition, "amd", ["Platform:Linux:Amd64"]);
+  const runner = await runnerOwning(routed);
   await executionSchedulerLaunch(service, routed.project.epoch);
   assert.deepEqual(await poolRoutedStanding(rig, routed), waitingStanding);
-  const client = await registry.clientOf(partition, "amd");
-  assert.ok(client !== undefined);
-  assert.equal(await registry.deregister(partition, "amd", client), true);
+  assert.equal(
+    await personalRegistry.deregister(
+      { tenant: runner.tenant, owner: runner.owner },
+      runner.clientId,
+    ),
+    true,
+  );
   await executionSchedulerLaunch(service, routed.project.epoch);
-  assert.deepEqual(await poolRoutedStanding(rig, routed), {
-    execution: {
-      status: "Terminal",
-      outcome: "Blocked",
-      blocked_reason: "RequiredCapabilityUnavailable",
-      retries_spent: 0,
-      backed_off: true,
-    },
-    attempts: [
-      { state: "Withdrawn", evidence: "PlacementIncompatible", pool: null },
-    ],
-  });
+  assert.deepEqual(
+    await poolRoutedStanding(rig, routed),
+    incompatibleStanding("RequiredCapabilityUnavailable"),
+  );
 });
 
 test("a waiting attempt of a project no longer Active is withdrawn, spending nothing, and opened again only once the project is Active", async () => {
   const routed = await poolRoutedExecution(rig, "pools-suspended");
-  await poolRegistered(routed.project.partition, "amd", [
-    "Platform:Linux:Amd64",
-  ]);
+  await runnerOwning(routed);
   await executionSchedulerLaunch(service, routed.project.epoch);
   const lifecycleSet = (lifecycle: string) =>
     rig.harness.query(
@@ -661,9 +666,7 @@ test("successive reads of the waiting attempts each start after where the last s
   const routedAll = [];
   for (const name of ["pools-turn-a", "pools-turn-b", "pools-turn-c"]) {
     const routed = await poolRoutedExecution(rig, name);
-    await poolRegistered(routed.project.partition, "amd", [
-      "Platform:Linux:Amd64",
-    ]);
+    await runnerOwning(routed);
     await executionSchedulerLaunch(service, routed.project.epoch);
     routedAll.push(routed);
   }
@@ -690,13 +693,11 @@ test("successive reads of the waiting attempts each start after where the last s
 
 test("a check that read an attempt as waiting ends nothing once a runner has claimed it", async () => {
   const routed = await poolRoutedExecution(rig, "pools-check-raced");
-  await poolRegistered(routed.project.partition, "amd", [
-    "Platform:Linux:Amd64",
-  ]);
+  const runner = await runnerOwning(routed);
   await executionSchedulerLaunch(service, routed.project.epoch);
   const read = await waitingRead(routed);
   assert.equal(read.projectActive, true);
-  assert.notEqual(await poolClaim(routed), undefined);
+  assert.notEqual(await runnerClaim(routed, runner), undefined);
   assert.equal(
     await rig.store.waitingAttemptWithdrawn(read, "PlacementIncompatible"),
     false,
@@ -710,15 +711,13 @@ test("a check that read an attempt as waiting ends nothing once a runner has cla
   );
   assert.deepEqual(await poolRoutedStanding(rig, routed), {
     ...waitingStanding,
-    attempts: [{ state: "Placing", evidence: null, pool: "amd" }],
+    attempts: [{ state: "Placing", evidence: null, pool: runner.owner }],
   });
 });
 
 test("cancelling a waiting execution ends its attempt", async () => {
   const routed = await poolRoutedExecution(rig, "pools-cancelled");
-  await poolRegistered(routed.project.partition, "amd", [
-    "Platform:Linux:Amd64",
-  ]);
+  await runnerOwning(routed);
   await executionSchedulerLaunch(service, routed.project.epoch);
   const read = await waitingRead(routed);
   const cancellation = await schedulerRevoke(
@@ -791,114 +790,35 @@ test("an attempt routed in the cluster keeps its lease once invoked, and is lost
   });
 });
 
-test("the scheduler and a member each read the project's own pools in name order, and say when there are more than one read answers", async () => {
-  const partition = await postgresHarnessProject(
-    rig.harness.store,
-    "pools-roster",
-  );
-  await poolRegistered(
-    await postgresHarnessProject(rig.harness.store, "pools-roster-elsewhere"),
-    "elsewhere",
-    [],
-  );
-  const sibling = {
-    tenant: partition.tenant,
-    project: asProjectId(`project-pools-roster-sibling-${randomUUID()}`),
-  };
-  await rig.harness.store.createProject(sibling);
-  await poolRegistered(sibling, "sibling", []);
-  const names = Array.from(
-    { length: workerPoolsAnsweredMax + 1 },
-    (_, index) => `pool-${String(index).padStart(4, "0")}`,
-  );
-  for (const name of names.slice(0, workerPoolsAnsweredMax).reverse())
-    await poolRegistered(partition, name, [name]);
-  const whole = await roster.registered(partition);
-  assert.equal(whole.truncated, false);
-  const answered = names
-    .slice(0, workerPoolsAnsweredMax)
-    .map((name) => ({ pool: name, capabilities: [name] }));
-  assert.deepEqual(
-    whole.pools.map(({ pool, capabilities }) => ({ pool, capabilities })),
-    answered,
-  );
-  const listed = await directory.listed(partition);
-  assert.equal(listed.truncated, false);
-  assert.deepEqual(
-    listed.pools.map(({ pool, capabilities }) => ({ pool, capabilities })),
-    answered,
-  );
-  const stamped = (await rig.harness.query(
-    `SELECT pool, registered_at FROM worker_pool
-      WHERE tenant=$1 AND project=$2 ORDER BY pool`,
-    [partition.tenant, partition.project],
-  )) as readonly { pool: string; registered_at: Date }[];
-  assert.deepEqual(
-    listed.pools.map(({ pool, registeredAt }) => ({ pool, registeredAt })),
-    stamped.map((row) => ({
-      pool: row.pool,
-      registeredAt: row.registered_at.toISOString(),
-    })),
-  );
-  await poolRegistered(partition, names[workerPoolsAnsweredMax] ?? "", []);
-  const cut = await roster.registered(partition);
-  assert.equal(cut.truncated, true);
-  assert.deepEqual(
-    cut.pools.map(({ pool }) => pool),
-    names.slice(0, workerPoolsAnsweredMax),
-  );
-  const listedCut = await directory.listed(partition);
-  assert.equal(listedCut.truncated, true);
-  assert.deepEqual(
-    listedCut.pools.map(({ pool }) => pool),
-    names.slice(0, workerPoolsAnsweredMax),
-  );
-});
-
-/** Registers a pool for a routed execution, opens and invokes its attempt, and has the pool claim it, answering the pool and the assignment it claimed under. */
-async function poolClaimed(routed: PoolRouted, name: string) {
-  await poolRegistered(routed.project.partition, name, [
-    "Platform:Linux:Amd64",
-  ]);
+/** Registers a runner of a routed execution's owner, opens and invokes its attempt, and has the runner claim it, answering the runner and the assignment it claimed under. */
+async function runnerClaimed(routed: PoolRouted) {
+  const runner = await runnerOwning(routed);
   const attempt = await routedAttempt(routed);
   assert.equal(
     await rig.store.attemptInvoked(attempt, schedulerInvocation),
     true,
   );
-  const [registered] = (await roster.registered(routed.project.partition))
-    .pools;
-  assert.ok(registered !== undefined);
-  const pool = { kind: "Dedicated" as const, ...registered };
   const assignment = `assignment-${randomUUID()}`;
   const bearer = `bearer-${randomUUID()}`;
   assert.notEqual(
-    await assignments.claim(
-      pool,
-      {
-        leaseSecs: service.config.attemptLeaseSecs,
-        heldMax: 1,
-        memoryMibDefault: service.poolMemoryMib,
-      },
-      assignment,
-      bearer,
-      [],
-    ),
+    await runnerClaim(routed, runner, assignment, bearer),
     undefined,
   );
-  return { pool, assignment, bearer };
+  return { runner, assignment, bearer };
 }
 
-/** Has a pool claim a routed execution's attempt, as `poolClaimed` does, and refuse it, naming `fault` where one is given. */
-async function poolRefused(
+/** Has a runner claim a routed execution's attempt, as `runnerClaimed` does, and refuse it, naming `fault` where one is given, answering the runner. */
+async function runnerRefused(
   routed: PoolRouted,
   refusal: string,
   fault?: WorkerImageFault,
-): Promise<void> {
-  const { pool, assignment } = await poolClaimed(routed, "refusing");
+): Promise<Runner> {
+  const { runner, assignment } = await runnerClaimed(routed);
   assert.equal(
-    await assignments.refuse(pool, assignment, refusal, fault),
+    await assignments.refuse(runner, assignment, refusal, fault),
     true,
   );
+  return runner;
 }
 
 /** The refusal each of an execution's attempts carries, read as the owner. */
@@ -914,35 +834,38 @@ async function poolRefusals(
   return rows.map((row) => row.pool_refusal);
 }
 
-/** Where an execution a pool refused stands once a pass has read the refusal. */
-const refusedStanding = {
-  execution: {
-    status: "Terminal",
-    outcome: "Blocked",
-    blocked_reason: "RequiredCapabilityUnavailable",
-    retries_spent: 0,
-    backed_off: true,
-  },
-  attempts: [
-    { state: "Withdrawn", evidence: "PlacementRefused", pool: "refusing" },
-  ],
-};
-
-/** Where an execution stands once a pass has read a refusal naming `fault`: blocked as incompatible, its attempt withdrawn under the fault. */
-function faultedStanding(fault: WorkerImageFault) {
+/** Where an execution `runner` refused stands once a pass has read the refusal. */
+function refusedStanding(runner: Runner) {
   return {
     execution: {
-      ...refusedStanding.execution,
-      blocked_reason: "TicketConfigIncompatible",
+      status: "Terminal",
+      outcome: "Blocked",
+      blocked_reason: "RequiredCapabilityUnavailable",
+      retries_spent: 0,
+      backed_off: true,
     },
-    attempts: [{ state: "Withdrawn", evidence: fault, pool: "refusing" }],
+    attempts: [
+      { state: "Withdrawn", evidence: "PlacementRefused", pool: runner.owner },
+    ],
   };
 }
 
-/** Where an execution stands once a pass has concluded it on the one attempt a pool claimed: settled as the process that died. */
+/** Where an execution stands once a pass has read a refusal by `runner` naming `fault`: blocked as incompatible, its attempt withdrawn under the fault. */
+function faultedStanding(fault: WorkerImageFault, runner: Runner) {
+  return {
+    execution: {
+      ...refusedStanding(runner).execution,
+      blocked_reason: "TicketConfigIncompatible",
+    },
+    attempts: [{ state: "Withdrawn", evidence: fault, pool: runner.owner }],
+  };
+}
+
+/** Where an execution stands once a pass has concluded it on the one attempt `runner` claimed: settled as the process that died. */
 function concludedStanding(
   attempt: Record<string, unknown>,
   execution: { readonly retries_spent: number; readonly backed_off: boolean },
+  runner: Runner,
 ) {
   return {
     execution: {
@@ -951,17 +874,20 @@ function concludedStanding(
       blocked_reason: null,
       ...execution,
     },
-    attempts: [{ ...attempt, pool: "claiming" }],
+    attempts: [{ ...attempt, pool: runner.owner }],
   };
 }
 
-/** Where an execution stands once a pass has found the attempt a pool claimed lost. */
-const lostStanding = concludedStanding(
-  { state: "Lost", evidence: "LeaseExpired" },
-  { retries_spent: 1, backed_off: true },
-);
+/** Where an execution stands once a pass has found the attempt `runner` claimed lost. */
+function lostStanding(runner: Runner) {
+  return concludedStanding(
+    { state: "Lost", evidence: "LeaseExpired" },
+    { retries_spent: 1, backed_off: true },
+    runner,
+  );
+}
 
-/** Records the invocation on every live, uninvoked attempt of the execution, as the scheduler will once it invokes a pool's, and answers how many there were. */
+/** Records the invocation on every live, uninvoked attempt of the execution, as the scheduler will once it invokes a runner's, and answers how many there were. */
 async function poolInvokedLive(routed: PoolRouted): Promise<number> {
   const live = (await rig.harness.query(
     `SELECT attempt, generation::int AS generation FROM execution_attempt
@@ -989,12 +915,12 @@ async function poolInvokedLive(routed: PoolRouted): Promise<number> {
 /**
  * That a concluded execution stays concluded: a later pass, past any backoff an
  * unconcluded one would still be holding, opens no attempt, so none is left to
- * invoke and the pool that claimed the first can claim nothing.
+ * invoke and the runner that claimed the first can claim nothing.
  */
-async function poolConcludedStays(
+async function runnerConcludedStays(
   routed: PoolRouted,
   epoch: RecoveryEpoch,
-  pool: WorkerPoolRegistered,
+  runner: Runner,
   standing: ReturnType<typeof concludedStanding>,
 ): Promise<void> {
   assert.deepEqual(await poolRoutedStanding(rig, routed), standing);
@@ -1007,28 +933,18 @@ async function poolConcludedStays(
   await executionSchedulerLaunch(service, epoch);
   assert.deepEqual(await poolRoutedStanding(rig, routed), standing);
   assert.equal(await poolInvokedLive(routed), 0);
-  assert.equal(
-    await assignments.claim(
-      pool,
-      {
-        leaseSecs: service.config.attemptLeaseSecs,
-        heldMax: 1,
-        memoryMibDefault: service.poolMemoryMib,
-      },
-      `assignment-${randomUUID()}`,
-      `bearer-${randomUUID()}`,
-      [],
-    ),
-    undefined,
-  );
+  assert.equal(await runnerClaim(routed, runner), undefined);
 }
 
-test("an attempt a pool refused is withdrawn without spending, its execution blocked, and the longest refusal kept whole", async () => {
+test("an attempt a runner refused is withdrawn without spending, its execution blocked, and the longest refusal kept whole", async () => {
   const routed = await poolRoutedExecution(rig, "pools-refused");
   const refusal = "r".repeat(workerPoolEvidenceCharsMax);
-  await poolRefused(routed, refusal);
+  const runner = await runnerRefused(routed, refusal);
   await executionSchedulerLaunch(service, routed.project.epoch);
-  assert.deepEqual(await poolRoutedStanding(rig, routed), refusedStanding);
+  assert.deepEqual(
+    await poolRoutedStanding(rig, routed),
+    refusedStanding(runner),
+  );
   assert.deepEqual(await poolRefusals(routed), [refusal]);
 });
 
@@ -1040,7 +956,7 @@ test("an attempt a pool refused is withdrawn without spending, its execution blo
  */
 test("a pass between a refusal's end and its block blocks the execution as refused", async () => {
   const routed = await poolRoutedExecution(rig, "pools-refused-window");
-  await poolRefused(routed, "no node takes this image");
+  const runner = await runnerRefused(routed, "no node takes this image");
   const refused = (
     await rig.store.refusedAttempts(
       routed.project.epoch,
@@ -1053,20 +969,30 @@ test("a pass between a refusal's end and its block blocks the execution as refus
     true,
   );
   await executionSchedulerLaunch(service, routed.project.epoch);
-  assert.deepEqual(await poolRoutedStanding(rig, routed), refusedStanding);
+  assert.deepEqual(
+    await poolRoutedStanding(rig, routed),
+    refusedStanding(runner),
+  );
   const late = await rig.store.blockExecution(
     routed.project.partition,
     routed.execution,
     "RequiredCapabilityUnavailable",
   );
   assert.equal(late.blocked, "AlreadyBlocked");
-  assert.deepEqual(await poolRoutedStanding(rig, routed), refusedStanding);
+  assert.deepEqual(
+    await poolRoutedStanding(rig, routed),
+    refusedStanding(runner),
+  );
 });
 
-test("an attempt a pool refused naming an image fault is withdrawn under the fault without spending, and its execution blocked as incompatible", async () => {
+test("an attempt a runner refused naming an image fault is withdrawn under the fault without spending, and its execution blocked as incompatible", async () => {
   const routed = await poolRoutedExecution(rig, "pools-faulted");
   const refusal = "/workspace is not writable";
-  await poolRefused(routed, refusal, "ImageWorkspaceUnwritable");
+  const runner = await runnerRefused(
+    routed,
+    refusal,
+    "ImageWorkspaceUnwritable",
+  );
   const read = (
     await rig.store.refusedAttempts(
       routed.project.epoch,
@@ -1077,14 +1003,14 @@ test("an attempt a pool refused naming an image fault is withdrawn under the fau
   await executionSchedulerLaunch(service, routed.project.epoch);
   assert.deepEqual(
     await poolRoutedStanding(rig, routed),
-    faultedStanding("ImageWorkspaceUnwritable"),
+    faultedStanding("ImageWorkspaceUnwritable", runner),
   );
   assert.deepEqual(await poolRefusals(routed), [refusal]);
 });
 
 test("a pass between a fault refusal's end and its block blocks the execution as incompatible", async () => {
   const routed = await poolRoutedExecution(rig, "pools-faulted-window");
-  await poolRefused(routed, "no shell", "ImageLacksShell");
+  const runner = await runnerRefused(routed, "no shell", "ImageLacksShell");
   const refused = (
     await rig.store.refusedAttempts(
       routed.project.epoch,
@@ -1099,13 +1025,13 @@ test("a pass between a fault refusal's end and its block blocks the execution as
   await executionSchedulerLaunch(service, routed.project.epoch);
   assert.deepEqual(
     await poolRoutedStanding(rig, routed),
-    faultedStanding("ImageLacksShell"),
+    faultedStanding("ImageLacksShell", runner),
   );
 });
 
-test("a spent budget whose last attempt a pool refused naming a fault blocks its execution as incompatible", async () => {
+test("a spent budget whose last attempt a runner refused naming a fault blocks its execution as incompatible", async () => {
   const routed = await poolRoutedExecution(rig, "pools-faulted-spent");
-  await poolRefused(routed, "no git", "ImageLacksGit");
+  await runnerRefused(routed, "no git", "ImageLacksGit");
   const refused = (
     await rig.store.refusedAttempts(
       routed.project.epoch,
@@ -1134,7 +1060,7 @@ test("a spent budget whose last attempt a pool refused naming a fault blocks its
 
 test("a refused attempt whose lease has also run out is not the reaper's, and the pass blocks it as refused", async () => {
   const routed = await poolRoutedExecution(rig, "pools-refused-lapsed");
-  await poolRefused(routed, "no node takes this image");
+  const runner = await runnerRefused(routed, "no node takes this image");
   await leaseLapsed(routed);
   await rig.store.reapLapsedAttempts(
     routed.project.epoch,
@@ -1146,10 +1072,13 @@ test("a refused attempt whose lease has also run out is not the reaper's, and th
       ...poolRoutedUnsettled,
       backed_off: false,
     },
-    attempts: [{ state: "Placing", evidence: null, pool: "refusing" }],
+    attempts: [{ state: "Placing", evidence: null, pool: runner.owner }],
   });
   await executionSchedulerLaunch(service, routed.project.epoch);
-  assert.deepEqual(await poolRoutedStanding(rig, routed), refusedStanding);
+  assert.deepEqual(
+    await poolRoutedStanding(rig, routed),
+    refusedStanding(runner),
+  );
   assert.deepEqual(await poolRefusals(routed), ["no node takes this image"]);
 });
 
@@ -1161,36 +1090,50 @@ test("attempts refused past what one pass takes do not hold the reaper off an at
   const first = await poolRoutedExecution(rig, "pools-bound-a");
   const second = await poolRoutedExecution(rig, "pools-bound-b");
   const held = await poolRoutedExecution(rig, "pools-bound-c");
-  await poolRefused(first, "no node takes this image");
-  await poolRefused(second, "no node takes this image");
-  await poolClaimed(held, "claiming");
+  const firstRunner = await runnerRefused(first, "no node takes this image");
+  const secondRunner = await runnerRefused(second, "no node takes this image");
+  const { runner: heldRunner } = await runnerClaimed(held);
   for (const routed of [first, second, held]) await leaseLapsed(routed);
   await executionSchedulerLaunch(one, held.project.epoch);
-  assert.deepEqual(await poolRoutedStanding(rig, first), refusedStanding);
+  assert.deepEqual(
+    await poolRoutedStanding(rig, first),
+    refusedStanding(firstRunner),
+  );
   assert.deepEqual(await poolRoutedStanding(rig, second), {
     execution: {
       status: "Launching",
       ...poolRoutedUnsettled,
       backed_off: false,
     },
-    attempts: [{ state: "Placing", evidence: null, pool: "refusing" }],
+    attempts: [{ state: "Placing", evidence: null, pool: secondRunner.owner }],
   });
-  assert.deepEqual(await poolRoutedStanding(rig, held), lostStanding);
+  assert.deepEqual(
+    await poolRoutedStanding(rig, held),
+    lostStanding(heldRunner),
+  );
   await executionSchedulerLaunch(one, held.project.epoch);
-  assert.deepEqual(await poolRoutedStanding(rig, second), refusedStanding);
+  assert.deepEqual(
+    await poolRoutedStanding(rig, second),
+    refusedStanding(secondRunner),
+  );
 });
 
 test("an execution whose claimed attempt is lost concludes on that pass, and opens no attempt again", async () => {
   const routed = await poolRoutedExecution(rig, "pools-lost");
-  const { pool } = await poolClaimed(routed, "claiming");
+  const { runner } = await runnerClaimed(routed);
   await leaseLapsed(routed);
   await executionSchedulerLaunch(service, routed.project.epoch);
-  await poolConcludedStays(routed, routed.project.epoch, pool, lostStanding);
+  await runnerConcludedStays(
+    routed,
+    routed.project.epoch,
+    runner,
+    lostStanding(runner),
+  );
 });
 
 test("an execution whose claimed attempt its run ends rate limited concludes on the next pass, and opens no attempt again", async () => {
   const routed = await poolRoutedExecution(rig, "pools-rate-limited");
-  const { pool, bearer } = await poolClaimed(routed, "claiming");
+  const { runner, bearer } = await runnerClaimed(routed);
   assert.equal(
     await postgresWorkerRunEnded(harnessPlanePool).end({
       secret: asAttemptCapabilitySecret(bearer),
@@ -1200,13 +1143,14 @@ test("an execution whose claimed attempt its run ends rate limited concludes on 
     true,
   );
   await executionSchedulerLaunch(service, routed.project.epoch);
-  await poolConcludedStays(
+  await runnerConcludedStays(
     routed,
     routed.project.epoch,
-    pool,
+    runner,
     concludedStanding(
       { state: "Withdrawn", evidence: "RunRateLimited" },
       { retries_spent: 0, backed_off: true },
+      runner,
     ),
   );
 });
@@ -1215,9 +1159,9 @@ test("an execution whose claimed attempt its run ends rate limited concludes on 
  * What a member reads of the run a killed runner ended: the retry its loss
  * spent was never a relaunch, and the attempt carries the text its worker left.
  */
-test("an execution a pool lost its one attempt of reads as relaunched never, carrying the worker's error", async () => {
+test("an execution a runner lost its one attempt of reads as relaunched never, carrying the worker's error", async () => {
   const routed = await poolRoutedExecution(rig, "pools-run-failed");
-  const { bearer } = await poolClaimed(routed, "claiming");
+  const { bearer } = await runnerClaimed(routed);
   const left = { path: workerErrorPath, digest: "e".repeat(64), bytes: 61 };
   assert.deepEqual(
     await postgresWorkerArtifactReservations(harnessPlanePool).reserve({
@@ -1258,18 +1202,19 @@ test("an execution a pool lost its one attempt of reads as relaunched never, car
   );
 });
 
-test("an execution whose claimed attempt its pool releases concludes on the next pass, and opens no attempt again", async () => {
+test("an execution whose claimed attempt its runner releases concludes on the next pass, and opens no attempt again", async () => {
   const routed = await poolRoutedExecution(rig, "pools-released");
-  const { pool, assignment } = await poolClaimed(routed, "claiming");
-  assert.equal(await assignments.release(pool, assignment), true);
+  const { runner, assignment } = await runnerClaimed(routed);
+  assert.equal(await assignments.release(runner, assignment), true);
   await executionSchedulerLaunch(service, routed.project.epoch);
-  await poolConcludedStays(
+  await runnerConcludedStays(
     routed,
     routed.project.epoch,
-    pool,
+    runner,
     concludedStanding(
       { state: "Withdrawn", evidence: "PlacementUnavailable" },
       { retries_spent: 0, backed_off: false },
+      runner,
     ),
   );
 });
@@ -1301,7 +1246,7 @@ test("an execution no pool claimed an attempt of is not concluded as one whose a
  */
 test("an execution whose claimed attempt a restore fences loses it, concludes on the pass that follows, and opens no attempt again", async () => {
   const routed = await poolRoutedExecution(rig, "pools-restored");
-  const { pool } = await poolClaimed(routed, "claiming");
+  const { runner } = await runnerClaimed(routed);
   const restored = await rig.harness.store.establishRecoveryEpoch(
     postgresHarnessNewEpoch(),
   );
@@ -1313,13 +1258,14 @@ test("an execution whose claimed attempt a restore fences loses it, concludes on
   }
   assert.ok(fenced >= 1);
   await executionSchedulerLaunch(service, restored);
-  await poolConcludedStays(
+  await runnerConcludedStays(
     routed,
     restored,
-    pool,
+    runner,
     concludedStanding(
       { state: "Lost", evidence: "Fenced" },
       { retries_spent: 0, backed_off: false },
+      runner,
     ),
   );
 });

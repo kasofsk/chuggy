@@ -39,7 +39,8 @@
           "mayCompleteTask": false
         },
         "resources": {
-          "cpus": 6
+          "cpus": 6,
+          "memoryMib": 4096
         }
       },
       "build-targeted": {
@@ -76,7 +77,8 @@
           "mayCompleteTask": false
         },
         "resources": {
-          "cpus": 6
+          "cpus": 6,
+          "memoryMib": 4096
         }
       },
       "build-fable": {
@@ -113,7 +115,8 @@
           "mayCompleteTask": false
         },
         "resources": {
-          "cpus": 6
+          "cpus": 6,
+          "memoryMib": 4096
         }
       },
       "build-targeted-fable": {
@@ -150,7 +153,8 @@
           "mayCompleteTask": false
         },
         "resources": {
-          "cpus": 6
+          "cpus": 6,
+          "memoryMib": 4096
         }
       },
       "build-sonnet": {
@@ -187,7 +191,8 @@
           "mayCompleteTask": false
         },
         "resources": {
-          "cpus": 6
+          "cpus": 6,
+          "memoryMib": 4096
         }
       },
       "build-targeted-sonnet": {
@@ -224,7 +229,8 @@
           "mayCompleteTask": false
         },
         "resources": {
-          "cpus": 6
+          "cpus": 6,
+          "memoryMib": 4096
         }
       },
       "build-orchestrated": {
@@ -261,7 +267,8 @@
           "mayCompleteTask": false
         },
         "resources": {
-          "cpus": 6
+          "cpus": 6,
+          "memoryMib": 4096
         }
       },
       "ci": ".chug/workloads/ci.json",

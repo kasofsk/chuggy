@@ -17,7 +17,11 @@
  * `--replace` is the person's yes to `chat-host` registering this machine in
  * place of the chat host of theirs it names. `--chat-host` is the person's
  * answer to `runner` making this machine their chat host too, which it does
- * only on `yes`. `configuration` writes a starting
+ * only on `yes`. `--claude-token-file` or `--anthropic-api-key-file` names
+ * the file of a token `claude setup-token` made or of an Anthropic API key,
+ * which `runner` copies to where the runner package keeps its credential
+ * where it has none yet; the two are never given together.
+ * `configuration` writes a starting
  * configuration into the checkout, its check running the command `--test`
  * gives where it gives one; `check` judges the checkout's configuration as an
  * import would; neither asks the site anything. `import` asks the site to
@@ -43,14 +47,20 @@
  * its landing, and reads the checklist again. `plugin` installs chuggy's
  * Claude Code plugin, or updates or enables it. `--plugin skip` is the way
  * past the plugin step without it, and every command the program prints
- * carries it as it carries the workspace and project. `north-star` writes
- * the project's North Star, which `--text` says and which is never printed
- * back, where that is the checklist's next thing, and reads the checklist
- * again; `--north-star skip` is the way past that step without one, carried
- * as `--plugin skip` is.
+ * carries it as it carries the workspace and project. `usage`, on the
+ * person's yes, writes their own settings for the agent their runner works
+ * as with each threshold `--five-hour-percent` or `--seven-day-percent`
+ * gives, and reads the checklist again. `--usage keep` is the person's no to
+ * raising one, and every command the program prints carries it as it carries
+ * `--plugin`. `--start yes` is the
+ * person's yes to setup itself, read only by the bare command and carried
+ * only by it. `--more`, read only by the bare command and carried by none,
+ * is which of the offers after setup's last step the person took: the offer
+ * itself, more runners, their configuration, the review of what else is set,
+ * or none.
  */
 
-import { selectorSettingsTextCharsMax } from "../../../../src/contract/http.ts";
+import type { RunUsageWindow } from "../../../../src/contract/rosters.ts";
 
 import { setupLoopbackHost } from "./setupProgram.ts";
 import { setupSayable } from "./setupText.ts";
@@ -73,9 +83,6 @@ export const setupConfigurationFlag = "--configuration";
 export const setupImageFlag = "--image";
 export const setupToolchainsFlag = "--toolchains";
 
-/** The flag `north-star` is told the project's North Star in. */
-export const setupTextFlag = "--text";
-
 /** The flag a `bind` is told the page connecting GitHub is already open in, and the one value it takes. */
 export const setupOpenedFlag = "--opened";
 export const setupOpenedGithub = "github";
@@ -94,14 +101,17 @@ export type SetupAskFault =
   | "Workspace"
   | "Replace"
   | "ChatHost"
+  | "Credential"
   | "ProjectName"
   | "Test"
   | "Brief"
   | "Image"
   | "Plugin"
   | "Opened"
-  | "NorthStar"
-  | "NorthStarText";
+  | "Start"
+  | "Usage"
+  | "Percent"
+  | "More";
 
 /** The commands a person or an agent runs, as a report names them. */
 export type SetupCommand =
@@ -121,17 +131,22 @@ export type SetupCommand =
   | "Ticket"
   | "Watch"
   | "Plugin"
-  | "NorthStar";
+  | "Usage";
 
-/** Which workspace and project a run is about, as far as its arguments named them, what `project` was asked to call the one it makes, and whether the plugin step and the North Star step are passed over. */
+/** Which workspace and project a run is about, as far as its arguments named them, what `project` was asked to call the one it makes, and whether the plugin step is passed over. */
 export interface SetupAnswers {
   readonly workspace: string | undefined;
   readonly project: string | undefined;
   readonly name?: string | undefined;
   readonly plugin?: SetupPluginAnswer;
-  readonly northStar?: SetupNorthStarAnswer;
+  /** The person's no to raising a threshold their usage is over, so nothing asks it again. */
+  readonly usage?: SetupUsageAnswer;
+  /** The person's yes to setup itself, which a bare run is given once they have said it. */
+  readonly start?: SetupStartAnswer;
   /** What `runner` was told of making this machine the person's chat host too, carried into every `runner` printed again. */
   readonly chatHost?: SetupChatHostAnswer;
+  /** Which offer after setup's last step the person took, which only the bare command reads. */
+  readonly more?: SetupMoreAnswer;
 }
 
 /** The one value `--plugin` takes: the plugin step passed over without the plugin. */
@@ -142,31 +157,72 @@ export type SetupPluginAnswer = typeof setupPluginSkip;
 /** The flag the plugin step is passed over with. */
 export const setupPluginFlag = "--plugin";
 
-/** The one value `--north-star` takes: the North Star step passed over without one. */
-export const setupNorthStarSkip = "skip";
+/** The one value `--usage` takes: the person's no to raising a threshold. */
+export const setupUsageKeep = "keep";
 
-export type SetupNorthStarAnswer = typeof setupNorthStarSkip;
+export type SetupUsageAnswer = typeof setupUsageKeep;
 
-/** The flag the North Star step is passed over with. */
-export const setupNorthStarFlag = "--north-star";
+/** The flag the person's no to raising a threshold is carried in. */
+export const setupUsageFlag = "--usage";
 
-/** The steps passed over, where any was, to be kept in answers made anew. */
-export function setupAnswersSkipped(
+/** The flags `usage` is told each window's new threshold in, as a whole percentage, by their names. */
+const setupUsagePercentNames = {
+  five_hour: "five-hour-percent",
+  seven_day: "seven-day-percent",
+} as const satisfies Readonly<Record<RunUsageWindow, SetupFlag>>;
+
+export function setupUsagePercentFlag(window: RunUsageWindow): string {
+  return `--${setupUsagePercentNames[window]}`;
+}
+
+/** The threshold `usage` writes for each window it was given one for. */
+export type SetupUsageRaised = Readonly<
+  Partial<Record<RunUsageWindow, number>>
+>;
+
+/** The answers every command carries, where they were given, to be kept in answers made anew: the plugin step passed over, and the person's no to raising a threshold. */
+export function setupAnswersCarried(
   answers: SetupAnswers,
-): Pick<SetupAnswers, "plugin" | "northStar"> {
+): Pick<SetupAnswers, "plugin" | "usage"> {
   return {
     ...(answers.plugin === undefined ? {} : { plugin: answers.plugin }),
-    ...(answers.northStar === undefined
-      ? {}
-      : { northStar: answers.northStar }),
+    ...(answers.usage === undefined ? {} : { usage: answers.usage }),
   };
 }
+
+/** The flag the bare command is told in which offer after setup's last step the person took, and the values it takes: the offer itself, each of the three, and none of them. */
+export const setupMoreFlag = "--more";
+export const setupMoreAnswers = [
+  "offer",
+  "runners",
+  "configuration",
+  "review",
+  "none",
+] as const;
+
+export type SetupMoreAnswer = (typeof setupMoreAnswers)[number];
+
+/** The flag the bare command is told the person's yes to setup in, and the one value it takes. */
+export const setupStartFlag = "--start";
+export const setupStartYes = "yes";
+
+export type SetupStartAnswer = typeof setupStartYes;
 
 /** The flag `runner` is told in whether to make this machine the person's chat host too, and the answers it takes. */
 export const setupChatHostFlag = "--chat-host";
 export const setupChatHostAnswers = ["yes", "no"] as const;
 
 export type SetupChatHostAnswer = (typeof setupChatHostAnswers)[number];
+
+/** The flags `runner` is told in where the person's Claude credential is, a token `claude setup-token` made or an Anthropic API key, each a file. */
+export const setupTokenFileFlag = "--claude-token-file";
+export const setupApiKeyFileFlag = "--anthropic-api-key-file";
+
+/** The file the person named as their Claude credential, and which kind they named it as. */
+export interface SetupCredentialGiven {
+  readonly kind: "Subscription" | "ApiKey";
+  readonly path: string;
+}
 
 export const setupAnswersNone: SetupAnswers = {
   workspace: undefined,
@@ -217,6 +273,8 @@ export type SetupAsked =
       readonly project: string;
       /** Whether this machine is made the person's chat host too, where the person was asked. */
       readonly chatHost: SetupChatHostAnswer | undefined;
+      /** The file the person named as their Claude credential, to be copied into place where the runner has none. */
+      readonly credential: SetupCredentialGiven | undefined;
     }
   | {
       readonly asked: "ChatHost";
@@ -290,11 +348,11 @@ export type SetupAsked =
       readonly answers: SetupAnswers;
     }
   | {
-      readonly asked: "NorthStar";
+      readonly asked: "Usage";
       readonly site: string | undefined;
       readonly answers: SetupAnswers;
-      /** The project's North Star, which the command is not run without. */
-      readonly text: string;
+      /** Each window's new threshold, of one window at least. */
+      readonly raised: SetupUsageRaised;
     }
   | {
       readonly asked: "Listen";
@@ -333,7 +391,7 @@ const setupCommandWords = {
   ticket: "Ticket",
   watch: "Watch",
   plugin: "Plugin",
-  "north-star": "NorthStar",
+  usage: "Usage",
   listen: "Listen",
 } as const;
 
@@ -348,6 +406,8 @@ const setupFlags = [
   "name",
   "replace",
   "chat-host",
+  "claude-token-file",
+  "anthropic-api-key-file",
   "test",
   "title",
   "intent",
@@ -356,50 +416,48 @@ const setupFlags = [
   "toolchains",
   "plugin",
   "opened",
-  "north-star",
-  "text",
+  "start",
+  "usage",
+  "five-hour-percent",
+  "seven-day-percent",
+  "more",
 ] as const;
 
 type SetupFlag = (typeof setupFlags)[number];
 
 /** The flags each command reads; one it does not read is asked wrongly. */
 const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
-  Status: ["site", "workspace", "project", "plugin", "north-star"],
-  SignIn: ["site", "wait-secs", "workspace", "project", "plugin", "north-star"],
-  SignOut: ["site", "workspace", "project", "plugin", "north-star"],
-  Project: ["site", "workspace", "project", "name", "plugin", "north-star"],
-  Mcp: ["site", "workspace", "project", "plugin", "north-star"],
+  Status: ["site", "workspace", "project", "plugin", "usage", "start", "more"],
+  SignIn: ["site", "wait-secs", "workspace", "project", "plugin", "usage"],
+  SignOut: ["site", "workspace", "project", "plugin", "usage"],
+  Project: ["site", "workspace", "project", "name", "plugin", "usage"],
+  Mcp: ["site", "workspace", "project", "plugin", "usage"],
   Runner: [
     "site",
     "wait-secs",
     "workspace",
     "project",
     "chat-host",
+    "claude-token-file",
+    "anthropic-api-key-file",
     "plugin",
-    "north-star",
+    "usage",
   ],
-  ChatHost: [
-    "site",
-    "wait-secs",
-    "workspace",
-    "replace",
-    "plugin",
-    "north-star",
-  ],
-  Configuration: ["workspace", "project", "test", "plugin", "north-star"],
-  Check: ["workspace", "project", "plugin", "north-star"],
-  Import: ["site", "workspace", "project", "plugin", "north-star"],
+  ChatHost: ["site", "wait-secs", "workspace", "replace", "plugin", "usage"],
+  Configuration: ["workspace", "project", "test", "plugin", "usage"],
+  Check: ["workspace", "project", "plugin", "usage"],
+  Import: ["site", "workspace", "project", "plugin", "usage"],
   Bind: [
     "site",
     "wait-secs",
     "workspace",
     "project",
     "plugin",
-    "north-star",
+    "usage",
     "opened",
   ],
-  Merge: ["site", "wait-secs", "workspace", "project", "plugin", "north-star"],
-  Serve: ["site", "workspace", "project", "plugin", "north-star"],
+  Merge: ["site", "wait-secs", "workspace", "project", "plugin", "usage"],
+  Serve: ["site", "workspace", "project", "plugin", "usage"],
   Ticket: [
     "site",
     "workspace",
@@ -410,11 +468,19 @@ const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
     "toolchains",
     "configuration",
     "plugin",
-    "north-star",
+    "usage",
   ],
-  Watch: ["site", "wait-secs", "workspace", "project", "plugin", "north-star"],
-  Plugin: ["site", "workspace", "project", "plugin", "north-star"],
-  NorthStar: ["site", "workspace", "project", "text", "plugin", "north-star"],
+  Watch: ["site", "wait-secs", "workspace", "project", "plugin", "usage"],
+  Plugin: ["site", "workspace", "project", "plugin", "usage"],
+  Usage: [
+    "site",
+    "workspace",
+    "project",
+    "plugin",
+    "usage",
+    "five-hour-percent",
+    "seven-day-percent",
+  ],
   Listen: ["site", "life-secs"],
 };
 
@@ -494,13 +560,22 @@ function setupAnswersRead(
   const project = flags.get("project");
   const name = flags.get("name");
   if (!setupNameWhole(workspace) || !setupNameWhole(project)) return undefined;
-  const skipped: Pick<SetupAnswers, "plugin" | "northStar"> = {
-    ...(flags.has("plugin") ? { plugin: setupPluginSkip } : {}),
-    ...(flags.has("north-star") ? { northStar: setupNorthStarSkip } : {}),
-  };
+  const plugin: Pick<SetupAnswers, "plugin"> = flags.has("plugin")
+    ? { plugin: setupPluginSkip }
+    : {};
+  const start: Pick<SetupAnswers, "start"> = flags.has("start")
+    ? { start: setupStartYes }
+    : {};
+  const usage: Pick<SetupAnswers, "usage"> = flags.has("usage")
+    ? { usage: setupUsageKeep }
+    : {};
+  const given = flags.get("more");
+  const chosen = setupMoreAnswers.find((answer) => answer === given);
+  const more: Pick<SetupAnswers, "more"> =
+    chosen === undefined ? {} : { more: chosen };
   return name === undefined
-    ? { workspace, project, ...skipped }
-    : { workspace, project, name, ...skipped };
+    ? { workspace, project, ...plugin, ...usage, ...start, ...more }
+    : { workspace, project, name, ...plugin, ...usage, ...start, ...more };
 }
 
 /** A name is carried back in the command that retries it, so it is one a line prints as it is. */
@@ -539,6 +614,20 @@ function setupChatHostRead(
 ): SetupChatHostAnswer | "Wrongly" | undefined {
   if (given === undefined) return undefined;
   return setupChatHostAnswers.find((answer) => answer === given) ?? "Wrongly";
+}
+
+/** The credential file `runner` was named, of one kind at most. */
+function setupCredentialRead(
+  flags: ReadonlyMap<SetupFlag, string>,
+): SetupCredentialGiven | "Wrongly" | undefined {
+  const token = flags.get("claude-token-file");
+  const apiKey = flags.get("anthropic-api-key-file");
+  if (token !== undefined && apiKey !== undefined) return "Wrongly";
+  if (token !== undefined)
+    return token === "" ? "Wrongly" : { kind: "Subscription", path: token };
+  if (apiKey !== undefined)
+    return apiKey === "" ? "Wrongly" : { kind: "ApiKey", path: apiKey };
+  return undefined;
 }
 
 /** A test command is carried back in the command that writes it, so it is one a line prints as it is. */
@@ -588,19 +677,24 @@ function setupTicketAsked(
   };
 }
 
-/** A North Star is sent whole and never printed back, so it is held only to what the site takes: some text, and no more than its bound. */
-function setupNorthStarAsked(
+/** Each window's threshold `usage` was given, as the bare digits of a whole percentage, of one window at least; whether the site takes the figure is the site's to say. */
+function setupUsageAsked(
   site: string | undefined,
   answers: SetupAnswers,
-  text: string | undefined,
+  flags: ReadonlyMap<SetupFlag, string>,
 ): SetupAsked {
-  if (
-    text === undefined ||
-    text.trim() === "" ||
-    text.length > selectorSettingsTextCharsMax
-  )
-    return { asked: "Wrongly", fault: "NorthStarText" };
-  return { asked: "NorthStar", site, answers, text };
+  let raised: SetupUsageRaised = {};
+  for (const window of Object.keys(
+    setupUsagePercentNames,
+  ) as readonly RunUsageWindow[]) {
+    const text = flags.get(setupUsagePercentNames[window]);
+    if (text === undefined) continue;
+    if (!/^\d{1,3}$/u.test(text)) return { asked: "Wrongly", fault: "Percent" };
+    raised = { ...raised, [window]: Number(text) };
+  }
+  if (Object.keys(raised).length === 0)
+    return { asked: "Wrongly", fault: "Percent" };
+  return { asked: "Usage", site, answers, raised };
 }
 
 function setupBindAsked(
@@ -634,6 +728,9 @@ function setupAskedOfProjectRun(
   if (asked !== "Runner") return { asked, site, answers, workspace, project };
   const chatHost = setupChatHostRead(flags.get("chat-host"));
   if (chatHost === "Wrongly") return { asked: "Wrongly", fault: "ChatHost" };
+  const credential = setupCredentialRead(flags);
+  if (credential === "Wrongly")
+    return { asked: "Wrongly", fault: "Credential" };
   return {
     asked,
     site,
@@ -642,6 +739,7 @@ function setupAskedOfProjectRun(
     workspace,
     project,
     chatHost,
+    credential,
   };
 }
 
@@ -656,9 +754,15 @@ function setupAskedOf(
   const plugin = flags.get("plugin");
   if (plugin !== undefined && plugin !== setupPluginSkip)
     return { asked: "Wrongly", fault: "Plugin" };
-  const northStar = flags.get("north-star");
-  if (northStar !== undefined && northStar !== setupNorthStarSkip)
-    return { asked: "Wrongly", fault: "NorthStar" };
+  const start = flags.get("start");
+  if (start !== undefined && start !== setupStartYes)
+    return { asked: "Wrongly", fault: "Start" };
+  const usage = flags.get("usage");
+  if (usage !== undefined && usage !== setupUsageKeep)
+    return { asked: "Wrongly", fault: "Usage" };
+  const more = flags.get("more");
+  if (more !== undefined && !setupMoreAnswers.some((answer) => answer === more))
+    return { asked: "Wrongly", fault: "More" };
   const answers = setupAnswersRead(flags);
   if (answers === undefined) return { asked: "Wrongly", fault: "Name" };
   const wait = setupSecsRead(
@@ -698,8 +802,8 @@ function setupAskedOf(
       return { asked, site, answers };
     case "Ticket":
       return setupTicketAsked(site, answers, flags);
-    case "NorthStar":
-      return setupNorthStarAsked(site, answers, flags.get("text"));
+    case "Usage":
+      return setupUsageAsked(site, answers, flags);
     case "Listen":
       return site === undefined
         ? { asked: "Wrongly", fault: "Site" }
@@ -755,12 +859,12 @@ export function setupCommandArguments(
       return ["watch"];
     case "Plugin":
       return ["plugin"];
-    case "NorthStar":
-      return ["north-star"];
+    case "Usage":
+      return ["usage"];
   }
 }
 
-/** The flags that name a choice again for `command`, which `setupAsked` reads back as the same choice: the name only for `project`, the one command that reads it, and the plugin step and the North Star step passed over for every command. */
+/** The flags that name a choice again for `command`, which `setupAsked` reads back as the same choice: the name only for `project`, the one command that reads it, the yes to setup only for the bare command, and the plugin step passed over and the no to raising a threshold for every command. */
 export function setupAnswerArguments(
   answers: SetupAnswers,
   command: SetupCommand = "Status",
@@ -774,12 +878,13 @@ export function setupAnswerArguments(
       ? []
       : [setupNameFlag, answers.name]),
     ...(answers.plugin === undefined ? [] : [setupPluginFlag, answers.plugin]),
-    ...(answers.northStar === undefined
-      ? []
-      : [setupNorthStarFlag, answers.northStar]),
+    ...(answers.usage === undefined ? [] : [setupUsageFlag, answers.usage]),
     ...(command !== "Runner" || answers.chatHost === undefined
       ? []
       : [setupChatHostFlag, answers.chatHost]),
+    ...(command !== "Status" || answers.start === undefined
+      ? []
+      : [setupStartFlag, answers.start]),
   ];
 }
 

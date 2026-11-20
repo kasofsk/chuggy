@@ -84,7 +84,6 @@ import {
   personalRunnerResponseSchema,
   projectAbilitiesResponseSchema,
   projectInventoryResponseSchema,
-  projectOwnerFallbackResponseSchema,
   projectRepositoriesResponseSchema,
   projectResponseSchema,
   selectorProjectSettingsResponseSchema,
@@ -99,9 +98,13 @@ import {
   landingQueuesResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
-  workerPoolsResponseSchema,
 } from "../../../src/contract/responses.ts";
 import type { InboxResponse } from "../../../src/contract/responses.ts";
+import { accessTokensResponseSchema } from "../../../src/contract/accessToken.ts";
+import {
+  connectorHistoryResponseSchema,
+  connectorsResponseSchema,
+} from "../../../src/contract/connectorAdministration.ts";
 import { InviteProvider } from "../app/browser/InvitePage.tsx";
 import { consoleRouterOver } from "../app/browser/routes.tsx";
 import { SessionProvider, useSilentRefresh } from "../app/browser/session.tsx";
@@ -344,6 +347,56 @@ const consoleReads: readonly ConsoleRead[] = [
     body: () => abilitiesEvery,
   },
   {
+    path: consoleReadAt(`${projectPath}/access-tokens`),
+    schema: accessTokensResponseSchema,
+    body: () => ({
+      tokens: [
+        {
+          token: "token-1",
+          name: "deploy-1",
+          access: "Read",
+          maker: abilitiesEvery.principal,
+          createdAt: "2026-08-27T00:00:00Z",
+          expiresAt: "2026-09-26T00:00:00Z",
+        },
+      ],
+    }),
+  },
+  {
+    path: consoleReadAt(`${projectPath}/connectors`),
+    schema: connectorsResponseSchema,
+    body: () => ({
+      connectors: [
+        {
+          name: "deploy-aws",
+          revision: 1,
+          kind: "Aws",
+          settings: { roleArn: "arn:aws:iam::123456789012:role/deploy-aws" },
+        },
+      ],
+    }),
+  },
+  {
+    path: consoleReadAt(`${projectPath}/connectors/history`),
+    schema: connectorHistoryResponseSchema,
+    body: () => ({
+      changes: [
+        {
+          change: 1,
+          changedAt: "2026-08-27T00:00:00Z",
+          author: {
+            kind: "user",
+            subject: projectPeopleListed.people[0]?.subject ?? "",
+          },
+          name: "deploy-aws",
+          action: "Created",
+          kind: "Aws",
+          settings: { roleArn: "arn:aws:iam::123456789012:role/deploy-aws" },
+        },
+      ],
+    }),
+  },
+  {
     path: consoleReadAt(`${projectPath}/inbox`),
     schema: inboxResponseSchema,
     body: () => consoleInbox,
@@ -390,11 +443,6 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadAt(`${projectPath}/execution-placement`),
     schema: executionPlacementResponseSchema,
     body: () => executionPlacementBody(),
-  },
-  {
-    path: consoleReadAt(`${projectPath}/owner-fallback`),
-    schema: projectOwnerFallbackResponseSchema,
-    body: () => ({ administers: false }),
   },
   {
     path: consoleReadAt(`${projectPath}/deletion`),
@@ -465,11 +513,6 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadAt(`${projectPath}/executions`),
     schema: executionsResponseSchema,
     body: () => ({ executions: [] }),
-  },
-  {
-    path: consoleReadAt(`${projectPath}/worker-pools`),
-    schema: workerPoolsResponseSchema,
-    body: () => ({ pools: [], truncated: false }),
   },
   {
     path: consoleReadAt(`${projectPath}/dispatch-view`),

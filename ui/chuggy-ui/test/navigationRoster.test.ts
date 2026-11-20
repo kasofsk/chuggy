@@ -98,6 +98,7 @@ test.each([
     "/acme/atlas/repositories/github.com%2Facme%2Fatlas",
     "/acme/atlas/settings/repositories/github.com%2Facme%2Fatlas",
   ],
+  ["/acme/atlas/connectors", "/acme/atlas/settings/connectors"],
   ["/acme/atlas/runners", "/acme/atlas/settings/workspace/runner"],
 ])("%s redirects to %s", async (from, to) => {
   expect((await followed(from)).pathname).toBe(to);
@@ -108,6 +109,7 @@ test("every address that moved is one the redirects above follow", () => {
     "/$tenant/$project/catalog",
     "/$tenant/$project/repositories",
     "/$tenant/$project/repositories/$repository",
+    "/$tenant/$project/connectors",
     "/$tenant/$project/runners",
   ]);
 });

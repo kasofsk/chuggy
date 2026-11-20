@@ -120,10 +120,9 @@ const mint = `POST ${machineSite}/api/v1/tenants/acme/personal-runner-registrati
 const chat = boxChatFile("acme", setupSiteMember);
 const chatUnit = boxChatUnitName("acme", setupSiteMember);
 const chatMint = `POST ${machineSite}/api/v1/tenants/acme/chat-host-registration-tokens`;
-/** The writes that let the person's runner take the project's work: the project given to it, and the fallback that routes their work to it. */
+/** The write that lets the person's runner take the project's work: the project given to it. */
 const serve = [
   `PUT ${machineSite}/api/v1/tenants/acme/personal-runner/projects/widgets`,
-  `PUT ${machineSite}/api/v1/tenants/acme/projects/widgets/owner-fallback`,
 ];
 const pickedUp =
   "What was done before it stays done, and running again picks up from there. Tell me if you want me to try again.";
@@ -215,7 +214,6 @@ const projectFound = [
   found.linger,
   found.running,
   found.given,
-  found.allowed,
   live,
 ];
 
@@ -235,7 +233,6 @@ test("on a machine with an engine, a Claude login and the runner package and not
       did.linger,
       did.started,
       did.given,
-      did.allowed,
       live,
       next,
     ],
@@ -315,7 +312,6 @@ test("where the person's chats run on a chat host and they have none, runner mak
       did.linger,
       did.started,
       did.given,
-      did.allowed,
       live,
       ...chatMade,
       next,
@@ -355,7 +351,7 @@ test("where the person's chats run on a chat host and they have none, runner mak
   );
 });
 
-test("a fresh Linux box and a fresh Mac each end with the person's own runner and chat host live, both tokens minted by the run itself, the project given to the runner and the project's owner fallback Preferred", async () => {
+test("a fresh Linux box and a fresh Mac each end with the person's own runner and chat host live, both tokens minted by the run itself and the project given to the runner", async () => {
   const macBoth = async () => {
     const machine = await machineSignedIn(setupSiteAt("Configured"), false);
     machine.platform = "darwin";
@@ -368,10 +364,6 @@ test("a fresh Linux box and a fresh Mac each end with the person's own runner an
     expect(writes(machine)).toEqual([mint, ...serve, chatMint]);
     expect(machine.world.personal.get("acme")?.live).toEqual([true]);
     expect(machine.world.personal.get("acme")?.projects).toContain("widgets");
-    expect(
-      machine.world.projects.find((held) => held.project === "widgets")
-        ?.fallback,
-    ).toBe("Preferred");
     expect(machine.world.chat.get("acme")?.live).toBe(true);
   }
 });
@@ -480,7 +472,6 @@ test("settings naming claudeCredential with a package older than the runner need
     did.linger,
     did.started,
     did.given,
-    did.allowed,
     live,
     next,
   ]);
@@ -850,7 +841,6 @@ test("the one write a run makes is the mint, naming no capabilities and a life f
   expect(setupMintLifetimeSecs * 2).toBeLessThan(runnerTokenLifetimeSecs);
   await ran(machine);
   expect(writes(machine)).toEqual([mint, ...serve]);
-  expect(machine.world.projects[0]?.tokens).toEqual([]);
 });
 
 test("the registration token is one word of register's arguments, which are the console's own command run by the installed program's whole path, and is in no other word of anything run", async () => {
@@ -1563,12 +1553,11 @@ test("a registration of the person's runner the site no longer lists is said and
     `found: ${personal} registered this machine as your runner, and the site no longer knows that registration`,
     did.personal,
   ]);
-  expect(done.lines.slice(-7)).toEqual([
+  expect(done.lines.slice(-6)).toEqual([
     found.unit,
     found.linger,
     `did: restarted ${unit}, so it runs as it is now registered and installed`,
     did.given,
-    found.allowed,
     live,
     next,
   ]);
@@ -1698,11 +1687,10 @@ test("a service found running and not set to start at login is set to by the one
   if (held !== undefined) held.enabled = false;
   machine.box.acts.length = 0;
   const done = await ran(machine);
-  expect(done.lines.slice(-6)).toEqual([
+  expect(done.lines.slice(-5)).toEqual([
     found.linger,
     did.enabled,
     found.given,
-    found.allowed,
     live,
     next,
   ]);
@@ -1712,11 +1700,10 @@ test("a service found running and not set to start at login is set to by the one
 
   if (held !== undefined) held.active = false;
   const stopped = await ran(machine);
-  expect(stopped.lines.slice(-6)).toEqual([
+  expect(stopped.lines.slice(-5)).toEqual([
     found.linger,
     did.started,
     found.given,
-    found.allowed,
     live,
     next,
   ]);
@@ -1931,10 +1918,9 @@ test("the site is asked until it sees the runner live and no longer than the wai
     if (polls(machine, true) === 3) personalHeld(machine).live.fill(true);
   };
   const late = await ran(machine);
-  expect(late.lines.slice(-5)).toEqual([
+  expect(late.lines.slice(-4)).toEqual([
     found.running,
     found.given,
-    found.allowed,
     live,
     next,
   ]);
@@ -1961,10 +1947,9 @@ test("a service that stops while the site is waited on is what the run says when
   machine.box.exit = 75;
   const done = await ran(machine, [...runner, "--wait-secs", "7"]);
   expect(done.exit).toBe(1);
-  expect(done.lines.slice(-7)).toEqual([
+  expect(done.lines.slice(-6)).toEqual([
     did.started,
     did.given,
-    did.allowed,
     `found: ${unit} was running and after 7 s is activating (auto-restart)`,
     `tell: The runner's service was started and is activating (auto-restart), so the runner is not set up yet. ${exitedSaid.updated} ${pickedUp}`,
     again(asksAgain),
@@ -2043,7 +2028,7 @@ test("a workspace or project named as a place an address would fold away is aske
     );
 });
 
-test("a project whose work the cluster runs needs no runner, and one this person does not administer gets none: either way the machine is not looked at", async () => {
+test("a project whose work the cluster runs needs no runner, and the machine is not looked at", async () => {
   const hosted = await fresh();
   for (const held of hosted.world.projects) held.work = "InCluster";
   expect(await ran(hosted)).toEqual({
@@ -2054,23 +2039,24 @@ test("a project whose work the cluster runs needs no runner, and one this person
       next,
     ],
   });
+  expect(hosted.box.ran).toEqual([]);
+  expect(hosted.box.read).toEqual([]);
+  expect(writes(hosted)).toEqual([]);
+});
+
+/** A member's own runner takes their work wherever they are given the
+ * project, so whether they administer it is not asked. */
+test("a member who does not administer the project is not stopped, and the run gives their runner the project", async () => {
   const viewer = await fresh();
   for (const held of viewer.world.projects) held.administer = false;
-  expect(await ran(viewer)).toEqual({
-    exit: 0,
-    lines: [
-      signedIn,
-      "found: the site says you are not an admin of acme/widgets",
-      "tell: Your runner takes your work in acme/widgets only once the project lets its members' own runners take it, which takes an admin of it to set, and the chuggy site says you are not one, so nothing was changed on this machine. Ask an admin of acme/widgets to set it, or to make you one. Tell me once they have.",
-      again("once the person says they are an admin of acme/widgets"),
-      stop,
-    ],
-  });
-  for (const machine of [hosted, viewer]) {
-    expect(machine.box.ran).toEqual([]);
-    expect(machine.box.read).toEqual([]);
-    expect(writes(machine)).toEqual([]);
-  }
+  const done = await ran(viewer);
+  expect(done.exit).toBe(0);
+  expect(done.lines.at(-1)).toBe(next);
+  expect(done.lines).not.toContain(
+    "found: the site says you are not an admin of acme/widgets",
+  );
+  expect(writes(viewer)).toEqual([mint, ...serve]);
+  expect(viewer.world.personal.get("acme")?.projects).toContain("widgets");
 });
 
 test("where the project's work runs not read is a stop before the machine is looked at: a failure where the site failed, and the person's to take up where it does not show them the project", async () => {
@@ -2159,7 +2145,6 @@ test("on a Mac runner takes Linux's path through chuggy-darwin: settings with no
       macSaid.did.unit,
       macSaid.did.started,
       did.given,
-      did.allowed,
       live,
       colima,
       next,
@@ -2277,7 +2262,6 @@ test("on a Mac a second run finds the agent running and loads nothing, and a per
     macSaid.found.unit,
     macSaid.found.running,
     found.given,
-    found.allowed,
     live,
     colima,
     next,
@@ -2493,7 +2477,7 @@ test("a declined sign-in that still stands where a run enters its sign-in again 
 const pages = `${machineSite}/acme/widgets`;
 const offer = `rule: Run node ${machineScript} runner ${flags} only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.`;
 const runnerService =
-  "The runner package, chuggy-linux, runs it as a background service of yours that starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan, 4 GiB a run.";
+  "The runner package, chuggy-linux, runs it as a background service of yours that starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan.";
 const runnerIs =
   "The next step is a runner: the machine that does the work on your tickets";
 const takesWork =
@@ -2514,7 +2498,7 @@ test("the bare command, where a runner is next and this machine could take one, 
   expect(done.lines.slice(-6)).toEqual([
     "step: runner      todo",
     "step: ticket      todo",
-    `tell: chuggy needs a **runner** running on a machine of yours, which does the work of tickets. I'll install it on this machine, as yours alone. It can live on another machine instead; say so if you want that. ${runnerService} ${takesWork}`,
+    `tell: I'll install your runner on this machine, as yours alone. Say if you'd rather not have it here, or want it on another machine. ${runnerService} ${takesWork}`,
     offer,
     otherMachine(false),
     stop,
@@ -2541,7 +2525,7 @@ test("the bare command on a machine that already holds runner settings, which no
   const done = await ran(machine, []);
   expect(done.exit).toBe(0);
   expect(done.lines.at(-4)).toBe(
-    `tell: chuggy needs a **runner** running on a machine of yours, which does the work of tickets. I'll install it on this machine, as yours alone. It can live on another machine instead; say so if you want that. This machine already has runner settings, in ${boxSettings}, which run its work on the Claude login at ${theirs}. I keep them as they are. ${runnerService} ${takesWork}`,
+    `tell: I'll install your runner on this machine, as yours alone. Say if you'd rather not have it here, or want it on another machine. This machine already has runner settings, in ${boxSettings}, which run its work on the Claude login at ${theirs}. I keep them as they are. ${runnerService} ${takesWork}`,
   );
   expect(machine.box.paths.get(boxSettings)).toBe(settings);
   expect(writes(machine)).toEqual([]);
@@ -2564,10 +2548,10 @@ test("from the offer to live: the command the rule names sets the runner up, and
   );
 });
 
-/** The bare command's offer where the person's chats run on a chat host: its tell, naming the chat host's size, and the rules naming `runner` with it. */
-function chatOffer(program: string, held: string): readonly string[] {
+/** The bare command's offer where the person's chats run on a chat host: its tell, naming no size, and the rules naming `runner` with it. */
+function chatOffer(program: string): readonly string[] {
   return [
-    `tell: chuggy needs two things running on a machine of yours. A **runner** does the work of tickets. A **chat host** runs your chats with chuggy. I'll install both on this machine, as yours alone. They can live on another machine instead; say so if you want that. ${runnerService.replace("chuggy-linux", program)} Your chat host is a second background service, which holds ${held} at once. ${takesWork}`,
+    `tell: I'll install your chat host and your runner on this machine, as yours alone. Say if you'd rather not have either here, or want them on another machine. ${runnerService.replace("chuggy-linux", program)} ${takesWork}`,
     `rule: Run node ${machineScript} runner ${flags} --chat-host yes only once the person has been told what it does here, has not objected, and has not asked for it on another machine instead.`,
     "rule: Run it with --chat-host no in place of --chat-host yes only where the person says they want no chat host. Before running it with --chat-host yes, tell the person: Downloading the chat image. This takes a few minutes the first time.",
     otherMachine(true),
@@ -2575,26 +2559,28 @@ function chatOffer(program: string, held: string): readonly string[] {
   ];
 }
 
-const chatRoomy = chatOffer(
-  "chuggy-linux",
-  "6 GiB whenever it runs: 2 GiB a chat, for up to 3",
-);
-const chatShort = chatOffer(
-  "chuggy-linux",
-  "2 GiB whenever it runs: 2 GiB a chat, for up to 1",
-);
+const chatOffered = chatOffer("chuggy-linux");
 
-test("where the person's chats run on a chat host, the bare command offers it beside the runner, by default and asking nothing, sized to the engine: 11.7 GiB holds three chats in 6 GiB, and 6 GiB or a memory not said holds one", async () => {
+/** The chat host's size the run wrote into the settings at `at`. */
+function chatWritten(machine: SetupMachine, at = boxSettings): unknown {
+  return (JSON.parse(machine.box.paths.get(at) ?? "{}") as { chat?: unknown })
+    .chat;
+}
+
+test("where the person's chats run on a chat host, the bare command offers it beside the runner, by default and asking nothing and naming no size, and the run sizes it to the engine: 11.7 GiB holds four chats, and 4 GiB or a memory not said holds one", async () => {
   const roomy = await both();
-  expect((await ran(roomy, [])).lines.slice(-5)).toEqual(chatRoomy);
   const short = await both();
-  short.box.memoryBytes = 6 * 2 ** 30;
-  expect((await ran(short, [])).lines.slice(-5)).toEqual(chatShort);
+  short.box.memoryBytes = 4 * 2 ** 30;
   const unsaid = await both();
   unsaid.box.memoryBytes = undefined;
-  expect((await ran(unsaid, [])).lines.slice(-5)).toEqual(chatShort);
-  for (const machine of [roomy, short, unsaid])
+  for (const machine of [roomy, short, unsaid]) {
+    expect((await ran(machine, [])).lines.slice(-5)).toEqual(chatOffered);
     expect(writes(machine)).toEqual([]);
+    expect((await ran(machine)).exit).toBe(0);
+  }
+  expect([roomy, short, unsaid].map((machine) => chatWritten(machine))).toEqual(
+    [4, 1, 1].map((sessionsMax) => ({ sessionsMax, sessionMemoryMib: 1024 })),
+  );
 });
 
 /** What an engine may run beside a run that is no runner's: a buildkitd and a postgres. */
@@ -2604,7 +2590,7 @@ const boxBesideContainers: BoxContainer[] = [
     name: "buildkitd",
     labels: {},
     memoryBytes: 0,
-    usage: "1.6GiB",
+    usage: "5.6GiB",
   },
   {
     id: "p2",
@@ -2615,15 +2601,10 @@ const boxBesideContainers: BoxContainer[] = [
   },
 ];
 
-test("the bare command sizes the chat host to the room what the engine already runs leaves: 11.7 GiB with 2 GiB in use is offered two chats in 4 GiB and the run writes two, and a run's own container that leaves no room is offered none, saying what is in use", async () => {
+test("the run sizes the chat host to the room what the engine already runs leaves, which the offer does not say: 11.7 GiB with 6 GiB in use writes two chats", async () => {
   const used = await both();
   used.box.containers.push(...boxBesideContainers);
-  expect((await ran(used, [])).lines.slice(-5)).toEqual(
-    chatOffer(
-      "chuggy-linux",
-      "4 GiB whenever it runs: 2 GiB a chat, for up to 2",
-    ),
-  );
+  expect((await ran(used, [])).lines.slice(-5)).toEqual(chatOffered);
   const crowded = await both();
   crowded.box.containers.push(...boxBesideContainers, {
     id: "j3",
@@ -2632,35 +2613,35 @@ test("the bare command sizes the chat host to the room what the engine already r
     memoryBytes: 4 * 2 ** 30,
     usage: "1GiB",
   });
-  expect((await ran(crowded, [])).lines.slice(-5)).toEqual(chatShort);
+  expect((await ran(crowded, [])).lines.slice(-5)).toEqual(chatOffered);
   const uncounted = await both();
   uncounted.box.containers.push(...boxBesideContainers);
   uncounted.box.stats = undefined;
-  expect((await ran(uncounted, [])).lines.slice(-5)).toEqual(chatShort);
+  expect((await ran(uncounted, [])).lines.slice(-5)).toEqual(chatOffered);
   for (const machine of [used, crowded, uncounted])
     expect(writes(machine)).toEqual([]);
 
   await ran(used);
   expect(JSON.parse(used.box.paths.get(boxSettings) ?? "")).toMatchObject({
-    chat: { sessionsMax: 2, sessionMemoryMib: 2048 },
+    chat: { sessionsMax: 2, sessionMemoryMib: 1024 },
   });
 });
 
-test("on a Mac the bare command asks of the chat host as Linux does, with the Mac's own package, on the memory its engine reports", async () => {
+test("on a Mac the bare command asks of the chat host as Linux does, with the Mac's own package and naming no size, whatever memory its engine reports", async () => {
   const roomy = await mac();
   for (const project of roomy.world.projects) project.threads = "Pool";
   expect((await ran(roomy, [])).lines.slice(-5)).toEqual(
-    chatRoomy.map((line) => line.replace("chuggy-linux", "chuggy-darwin")),
+    chatOffer("chuggy-darwin"),
   );
   const short = await mac();
   for (const project of short.world.projects) project.threads = "Pool";
   short.box.memoryBytes = 6 * 2 ** 30;
   expect((await ran(short, [])).lines.slice(-5)).toEqual(
-    chatShort.map((line) => line.replace("chuggy-linux", "chuggy-darwin")),
+    chatOffer("chuggy-darwin"),
   );
 });
 
-test("on a Mac whose Colima runs no VM, stopped or not made yet, the bare command counts nothing in use against the memory the run gives it, offering three chats in 6 GiB, and the run writes the same three", async () => {
+test("on a Mac whose Colima runs no VM, stopped or not made yet, the run counts nothing in use against the memory it gives the VM and writes four chats, which the offer does not say", async () => {
   for (const vm of ["Stopped", "None"] as const) {
     const machine = await mac();
     for (const project of machine.world.projects) project.threads = "Pool";
@@ -2681,20 +2662,18 @@ test("on a Mac whose Colima runs no VM, stopped or not made yet, the bare comman
             },
     });
     const offer = (await ran(machine, [])).lines.join("\n");
-    expect(offer).toContain(
-      "which holds 6 GiB whenever it runs: 2 GiB a chat, for up to 3 at once.",
-    );
+    expect(offer).not.toMatch(/whenever it runs|a chat,/u);
     expect(offer).toContain(`${flags} --chat-host yes only once`);
     expect(writes(machine)).toEqual([]);
 
     expect((await ran(machine)).exit).toBe(0);
     expect(
       JSON.parse(machine.box.paths.get(boxMacSettings) ?? ""),
-    ).toMatchObject({ chat: { sessionsMax: 3, sessionMemoryMib: 2048 } });
+    ).toMatchObject({ chat: { sessionsMax: 4, sessionMemoryMib: 1024 } });
   }
 });
 
-test("on a Mac whose running Colima VM the run restarts, the run counts what ran before the restart, so a postgres the restart stops leaves the offer's two chats in 4 GiB, not three", async () => {
+test("on a Mac whose running Colima VM the run restarts, the run counts what ran before the restart, so a postgres the restart stops leaves three chats, not four, which the offer does not say", async () => {
   const machine = await mac();
   for (const project of machine.world.projects) project.threads = "Pool";
   boxMacMade(machine.box, {
@@ -2716,18 +2695,16 @@ test("on a Mac whose running Colima VM the run restarts, the run counts what ran
       name: "postgres",
       labels: {},
       memoryBytes: 0,
-      usage: "2GiB",
+      usage: "6GiB",
     },
   ];
   const offer = (await ran(machine, [])).lines.join("\n");
-  expect(offer).toContain(
-    "which holds 4 GiB whenever it runs: 2 GiB a chat, for up to 2 at once.",
-  );
+  expect(offer).not.toMatch(/whenever it runs|a chat,/u);
 
   expect((await ran(machine)).exit).toBe(0);
   expect(machine.box.containers).toEqual([]);
   expect(JSON.parse(machine.box.paths.get(boxMacSettings) ?? "")).toMatchObject(
-    { chat: { sessionsMax: 2, sessionMemoryMib: 2048 } },
+    { chat: { sessionsMax: 3, sessionMemoryMib: 1024 } },
   );
 });
 
@@ -2792,7 +2769,7 @@ test("--chat-host yes writes the chat host's size into settings it wrote itself,
   await ran(made);
   expect(JSON.parse(made.box.paths.get(boxSettings) ?? "")).toMatchObject({
     engine: "docker",
-    chat: { sessionsMax: 3, sessionMemoryMib: 2048 },
+    chat: { sessionsMax: 4, sessionMemoryMib: 1024 },
   });
 
   const theirs = {
@@ -2806,7 +2783,7 @@ test("--chat-host yes writes the chat host's size into settings it wrote itself,
   expect(run.lines).toContain(did.chatSized);
   expect(JSON.parse(merged.box.paths.get(boxSettings) ?? "")).toEqual({
     ...theirs,
-    chat: { sessionsMax: 3, sessionMemoryMib: 2048 },
+    chat: { sessionsMax: 4, sessionMemoryMib: 1024 },
   });
 
   const sized = await both();
@@ -2832,10 +2809,10 @@ test("--chat-host yes writes the chat host's size into settings it wrote itself,
   });
 
   const cramped = await both();
-  cramped.box.memoryBytes = 6 * 2 ** 30;
+  cramped.box.memoryBytes = 4 * 2 ** 30;
   await ran(cramped);
   expect(JSON.parse(cramped.box.paths.get(boxSettings) ?? "")).toMatchObject({
-    chat: { sessionsMax: 1, sessionMemoryMib: 2048 },
+    chat: { sessionsMax: 1, sessionMemoryMib: 1024 },
   });
 });
 
@@ -2902,7 +2879,7 @@ test("the bare command says why this machine cannot take a runner where it canno
 test("a runner registered and not running on another machine does not hold the step: a machine holding no registration is offered the person's own runner as where there is none, and the run ends with it live and given the project", async () => {
   const elsewhere = await machineSignedIn(projectOnly(setupSiteAt("Offline")));
   expect((await ran(elsewhere, [])).lines.slice(-4)).toEqual([
-    `tell: chuggy needs a **runner** running on a machine of yours, which does the work of tickets. I'll install it on this machine, as yours alone. It can live on another machine instead; say so if you want that. ${runnerService} ${takesWork}`,
+    `tell: I'll install your runner on this machine, as yours alone. Say if you'd rather not have it here, or want it on another machine. ${runnerService} ${takesWork}`,
     offer,
     otherMachine(false),
     stop,
@@ -2911,7 +2888,7 @@ test("a runner registered and not running on another machine does not hold the s
   expect(done.lines).toContain(did.personal);
   expect(done.lines.slice(-2)).toEqual([live, next]);
   expect(elsewhere.box.paths.has(personal)).toBe(true);
-  expect(writes(elsewhere)).toEqual([mint, ...serve]);
+  expect(writes(elsewhere)).toEqual([mint]);
 });
 
 test("a runner registered and not running is offered to be started here only where this machine holds a registration for the project, and the offer says the machine is registered again where the site no longer knows that one", async () => {
@@ -2922,16 +2899,15 @@ test("a runner registered and not running is offered to be started here only whe
   const offered = await ran(here, []);
   expect(offered.lines.slice(-3)).toEqual([offer, otherMachine(false), stop]);
   const holds =
-    "tell: A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner. I'll check it and start it here as a background service of yours that starts when you log in, registering this machine again as yours alone first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan, 4 GiB a run.";
+    "tell: A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner. I'll check it and start it here as a background service of yours that starts when you log in, registering this machine again as yours alone first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan.";
   const keeps = `This machine already has runner settings, in ${boxSettings}, which run its work on the Claude login at ${boxLogin}. I keep them as they are.`;
   expect(offered.lines.at(-4)).toBe(
     `${holds} ${keeps} ${takesWork} It can live on another machine instead; say so if you want that.`,
   );
   const started = await ran(here);
-  expect(started.lines.slice(-5)).toEqual([
+  expect(started.lines.slice(-4)).toEqual([
     did.started,
     found.given,
-    found.allowed,
     live,
     next,
   ]);
@@ -2951,25 +2927,23 @@ test("a runner registered and not running is offered to be started here only whe
     `found: ${old} registered this machine as your runner, and the site no longer knows that registration`,
   );
   expect(anew.lines).toContain(did.personal);
-  expect(writes(stale)).toEqual([mint, ...serve]);
+  expect(writes(stale)).toEqual([mint]);
 });
 
-test("a machine that holds only the project's pool's registration, beside a runner registered and not running, is offered to be registered again as the person's own, and the run does that and leaves the pool's file as it was", async () => {
+/** A project's pool takes no one's work, so its registration on this
+ * machine is no runner of the person's and is left as it was. */
+test("a machine that holds only a project's pool's registration is offered and run as one that holds none, and the pool's file is left as it was", async () => {
+  const bare = await machineSignedIn(projectOnly(setupSiteAt("Offline")));
   const pooled = await machineSignedIn(projectOnly(setupSiteAt("Offline")));
   const pool = boxPoolFile("acme", "widgets");
   pooled.box.paths.set(pool, "{}");
-  expect((await ran(pooled, [])).lines.slice(-4)).toEqual([
-    `tell: A runner is registered for acme/widgets and is not running, and this machine holds the registration of a runner of the project's rather than yours. I'll leave that registration as it is and register this machine again as yours alone, then check your runner and start it here as a background service of yours that starts when you log in, so work on your tickets runs on this machine in containers, on your Claude plan, 4 GiB a run. ${takesWork} It can live on another machine instead; say so if you want that.`,
-    offer,
-    otherMachine(false),
-    stop,
-  ]);
+  expect((await ran(pooled, [])).lines).toEqual((await ran(bare, [])).lines);
   const anew = await ran(pooled);
+  expect(anew.lines).toEqual((await ran(bare)).lines);
   expect(anew.lines).toContain(did.personal);
-  expect(anew.lines.slice(-2)).toEqual([live, next]);
   expect(pooled.box.paths.get(pool)).toBe("{}");
   expect(pooled.box.paths.has(personal)).toBe(true);
-  expect(writes(pooled)).toEqual([mint, ...serve]);
+  expect(writes(pooled)).toEqual(writes(bare));
 });
 
 test("the machine is looked at only where the runner's step is the one next, and at no stage is anything on it changed or anything but a read sent", async () => {
@@ -3008,7 +2982,7 @@ function reaching(): { readonly api: ApiPorts; readonly reached: string[] } {
   };
 }
 
-test("the ports the writes go out through pass the mint for the person's runner, the project given to it and the fallback that lets it take their work, the mint for their chat host where the run is named with one, and any read, and refuse every other write having reached nothing", async () => {
+test("the ports the writes go out through pass the mint for the person's runner and the project given to it, the mint for their chat host where the run is named with one, and any read, and refuse every other write having reached nothing", async () => {
   const { api, reached } = reaching();
   const partition = { tenant: "two words", project: "a/b" };
   const ports = setupWritePorts(
@@ -3021,7 +2995,6 @@ test("the ports the writes go out through pass the mint for the person's runner,
   const pool = `${tenant}/projects/a%2Fb/worker-pool-registration-tokens`;
   const hosting = `${tenant}/chat-host-registration-tokens`;
   const project = `${tenant}/personal-runner/projects/a%2Fb`;
-  const fallback = `${tenant}/projects/a%2Fb/owner-fallback`;
   const init = (method: string) => ({
     method,
     headers: {},
@@ -3032,7 +3005,6 @@ test("the ports the writes go out through pass the mint for the person's runner,
     (await apiMintPersonalRunnerToken(ports, partition.tenant, asked)).outcome,
   ).toBe("Ok");
   await ports.fetch(project, init("PUT"));
-  await ports.fetch(fallback, init("PUT"));
   expect(
     (await apiMintChatHostToken(ports, partition.tenant, asked)).outcome,
   ).toBe("Ok");
@@ -3046,10 +3018,8 @@ test("the ports the writes go out through pass the mint for the person's runner,
     ["POST", "/api/v1/personal-runner-registrations"],
     ["POST", "/api/v1/tenants/acme/chat-host-registration-tokens"],
     ["PUT", `${tenant}/personal-runner/projects/other`],
-    ["PUT", `${tenant}/projects/other/owner-fallback`],
     ["DELETE", `${tenant}/chat-host`],
     ["DELETE", project],
-    ["DELETE", fallback],
     ["DELETE", `${tenant}/personal-runner`],
     ["DELETE", path],
     ["PUT", path],
@@ -3062,7 +3032,6 @@ test("the ports the writes go out through pass the mint for the person's runner,
   expect(reached).toEqual([
     `POST ${path}`,
     `PUT ${project}`,
-    `PUT ${fallback}`,
     `POST ${hosting}`,
     "GET /api/v1/projects",
   ]);
@@ -3285,7 +3254,7 @@ test("runner keeps its rule of never replacing a chat host of the person's on an
   expect(
     (await ran(machine, [...runner, "--replace", "chuggy-chat-1"])).lines,
   ).toEqual([
-    "found: chuggy setup takes --site, --workspace, --project, --plugin, --north-star and --wait-secs, --name with project, --opened with bind, --replace with chat-host, --chat-host with runner, --test with configuration, --title, --intent, --image, --toolchains and --configuration with ticket, and --text with north-star, each once with a value, and no other flag",
+    "found: chuggy setup takes --site, --workspace, --project, --plugin, --usage and --wait-secs, --name with project, --opened with bind, --replace with chat-host, --chat-host, --claude-token-file and --anthropic-api-key-file with runner, --test with configuration, --title, --intent, --image, --toolchains and --configuration with ticket, --five-hour-percent and --seven-day-percent with usage, --start and --more when run bare, each once with a value, and no other flag",
     `next: node ${machineScript}`,
   ]);
   expect(machine.box.ran).toEqual([]);
@@ -3377,7 +3346,7 @@ test("chat-host is not read without a workspace, with a project, or with --repla
     ],
     [
       [...chatHost, "--project", "widgets"],
-      "found: chuggy setup takes --site, --workspace, --project, --plugin, --north-star and --wait-secs, --name with project, --opened with bind, --replace with chat-host, --chat-host with runner, --test with configuration, --title, --intent, --image, --toolchains and --configuration with ticket, and --text with north-star, each once with a value, and no other flag",
+      "found: chuggy setup takes --site, --workspace, --project, --plugin, --usage and --wait-secs, --name with project, --opened with bind, --replace with chat-host, --chat-host, --claude-token-file and --anthropic-api-key-file with runner, --test with configuration, --title, --intent, --image, --toolchains and --configuration with ticket, --five-hour-percent and --seven-day-percent with usage, --start and --more when run bare, each once with a value, and no other flag",
     ],
     [
       [...chatHost, "--replace", ".."],

@@ -11,13 +11,13 @@
  *
  * ADMIN IS NOT A PLANE PRIVILEGE. Nothing a pool can reach is composed with
  * this adapter: the plane pools poll verifies tokens against the issuer's
- * published keys and mints nothing, so a pool that took that process could not
- * create a second client to be some other project's pool with.
+ * published keys and mints nothing, so a runner that took that process could
+ * not create a second client to pass as another runner with.
  *
  * A FAULT IS NEVER A REFUSAL. Every status this side did not ask for, every
  * body it cannot read and every connection it could not open raise
  * `WorkerPoolClientUnavailable`, because a registration reported as denied when
- * the issuer was merely unreachable is an owner deleting a pool that exists.
+ * the issuer was merely unreachable is an owner deleting a runner that exists.
  * The one status a removal asks for beyond success is not-found: a client the
  * issuer no longer holds is the state the removal is for, and answering a fault
  * to it would make a deregistration that failed after this step unrepeatable.
@@ -134,7 +134,7 @@ async function hydraRequest(input: {
 
 /**
  * The registration body, which is the whole of what this tree decides about a
- * pool's client. `response_types` is empty and `redirect_uris` is absent
+ * runner's client. `response_types` is empty and `redirect_uris` is absent
  * because a machine completes no browser flow.
  */
 function hydraPoolClientBody(

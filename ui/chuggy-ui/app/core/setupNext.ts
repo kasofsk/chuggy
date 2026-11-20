@@ -15,8 +15,9 @@
  * GitHub to let both apps into the folder's repository and then adds it,
  * which the project's `Administer` permit already guards, so where both apps
  * are granted it the next thing is `bind` and nothing is asked. Its tell
- * names both apps, what each is for and each one's page on the forge, with
- * whether it is granted the repository already. Where the project has
+ * says the repository first, then both apps and what each is for, with
+ * whether each is granted it already, and sends the person to the console's
+ * connect flow opened on that repository. Where the project has
  * no ticket yet and what a ticket may be drawn under was read, the person is
  * asked what they want done first, and `ticket` files it, with the
  * configuration they choose where there is a choice; where that read came to
@@ -31,7 +32,12 @@
  * on another machine instead; where the machine could not take a runner, they
  * are told that instead. A chat host lacking is never the next thing.
  * Where a personal runner of theirs is registered and does not take the
- * project's work, `serve` is offered on the person's yes.
+ * project's work, `serve` is offered on the person's yes. Where the first
+ * ticket is next, or waits on the person's account paused, and their usage
+ * is over a threshold raising would lift, that is said first and `usage`
+ * offered on their yes, and on their no the checklist is read past it and
+ * never asks again; what raising would not lift is said beside the next
+ * thing, with when it lifts and whether the ticket starts by itself then.
  * `setupMend` is where each thing a step can lack is turned into its next
  * thing; the slice that gives a step its command changes that step's line
  * there and nowhere else. A tell says of a page only what is pressed there:
@@ -41,30 +47,30 @@
  * Where which project is meant is still open, the next thing is the question,
  * one flag at a time. chuggy's Claude Code plugin is offered first, since its
  * setup skill holds the talk of every step after it: `plugin` installs it on
- * the person's yes, and on their no the checklist is read past it. A project
- * with no North Star is offered one in the same way: the agent drafts it from
- * the folder where its checkout tracks any file, and otherwise from whether
- * the project is a demo or software to be maintained, and `north-star` writes
- * it on the person's yes. Where every
+ * the person's yes, and on their no the checklist is read past it. Where every
  * step is done and the first ticket's pull request, holding the repository's
  * own configuration, stands unmerged, `merge` is offered on the person's yes,
  * leaning towards leaving the merge to them where the repository has a history
- * of its own; on their no, setup is done.
+ * of its own. Once that merge is settled, by `merge` or by the person saying
+ * they merge it themselves, and on every bare run after, setup is said to be
+ * done with three things offered after it, none of them a step: more runners,
+ * by the line that makes another machine one; the repository's configuration
+ * changed with the person's agent and judged by `check`, once the pull request
+ * holding it is merged; and where else
+ * chuggy is set, each by its address. On none of them, setup ends saying how
+ * to have them offered again.
  */
 
+import { repositoryConfigurationRoot } from "../../../../src/contract/configurationDocument.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { RepositoryConfigurationImportAttemptResponse } from "../../../../src/contract/responses.ts";
 import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type { Copy, CopyArgument } from "./copy.ts";
-import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
-import { claudeCodeRunnerLine } from "./claudeCodeLine.ts";
-import { forgeInstallLabel } from "./forgeInstallation.ts";
+import { instantText, memoryMibFigure, quantityFigureCopy } from "./figures.ts";
+import { claudeCodeLine, claudeCodeRunnerLine } from "./claudeCodeLine.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
-import {
-  repositoriesConnectPath,
-  repositoryGrantLines,
-  repositoryLabel,
-} from "./projectRepositories.ts";
+import { repositoryAddAnchor, repositoryLabel } from "./projectRepositories.ts";
+import { repositoryConnectSetupAddress } from "./repositoryConnect.ts";
 import { runnerPackages } from "./runners.ts";
 import { settingsRoutes } from "./settingsNav.ts";
 import {
@@ -72,30 +78,27 @@ import {
   repositoryImportWord,
   repositoryImportWordLabel,
 } from "./repositoryImport.ts";
-import { setupServerPackages } from "./setupAgent.ts";
 import type { SetupMcpPackaged } from "./setupAgent.ts";
-import { setupAnswersSkipped, setupNameFlag } from "./setupArguments.ts";
+import {
+  setupAnswersCarried,
+  setupNameFlag,
+  setupUsageKeep,
+} from "./setupArguments.ts";
 import { setupConfigurationPath } from "./setupConfiguration.ts";
-import type { SetupAnswers } from "./setupArguments.ts";
+import type { SetupAnswers, SetupMoreAnswer } from "./setupArguments.ts";
 import { setupMergeImportFailed } from "./setupMerge.ts";
 import type { SetupHistory, SetupMergeSince } from "./setupMerge.ts";
-import type { SetupTracked } from "./setupNorthStar.ts";
 import type { SetupPlatform } from "./setupPorts.ts";
 import type { SetupChoice } from "./setupReads.ts";
+import { setupUsageWindowSaid } from "./setupReport.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
-import { setupEngineSpareMib, setupJobMemoryMib } from "./setupFit.ts";
 import type { SetupFit } from "./setupFit.ts";
-import { setupChatSized } from "./setupRunnerMachine.ts";
-import type {
-  SetupChatSize,
-  SetupRunnerHeld,
-  SetupRunnerHere,
-} from "./setupRunnerMachine.ts";
+import type { SetupRunnerHere } from "./setupRunnerMachine.ts";
 import { setupTicketAgentsPath } from "./setupTicket.ts";
 import type { SetupTicketOffers } from "./setupTicket.ts";
 import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
+import type { SetupUsage, SetupUsageOver } from "./setupUsage.ts";
 import {
-  setupChatCost,
   setupClaudeSaved,
   setupClaudeWords,
   setupDockerBarredTold,
@@ -107,6 +110,7 @@ import { setupAppNames, setupPhaseSaid } from "./setupStanding.ts";
 import type {
   SetupAppReached,
   SetupLack,
+  SetupRunnerPausedBy,
   SetupRunnerWait,
   SetupStanding,
   SetupStep,
@@ -123,11 +127,7 @@ import type { WorkspaceNamed } from "./workspaceNames.ts";
  * each page for it and fails where a page renamed it.
  */
 export const setupPressed = {
-  connect: { id: "repositories-connect-github" },
-  addAccount: { id: "settings-accounts-add" },
-  add: { id: "repositories-add" },
   runner: { id: "runners-register" },
-  fallback: { id: "runners-fallback-title" },
   ticket: { id: "ticket-authoring-create-ticket" },
   dispatch: { id: "setup-pressed-dispatch" },
 } as const satisfies Readonly<Record<string, Copy>>;
@@ -219,8 +219,6 @@ function setupProjectMend(at: SetupAt): SetupThing {
       id: "setup-ask-project-name",
       args: {
         workspace: at.named(workspace),
-        address: address === undefined ? "made" : "given",
-        project: address ?? "",
         flag: setupNameFlag,
       },
     },
@@ -229,12 +227,20 @@ function setupProjectMend(at: SetupAt): SetupThing {
   };
 }
 
-/** An app that is installed and not let into the repository: the picker draws a line for it under its list, with a link to that app's own page on the forge. */
+/** The repositories page's connect flow, opened on the folder's repository where it has one, and on naming one where it has none. */
+function setupConnectPage(at: SetupAt, mine: string | undefined): string {
+  return repositoryConnectSetupAddress(
+    setupPage(at, settingsRoutes.project.repositories),
+    mine,
+    repositoryAddAnchor,
+  );
+}
+
+/** An app that is installed and not let into the repository: the connect flow opens on it, with that app's press. */
 function setupGrantMend(
   lack: Extract<SetupLack, { readonly lacks: "Grant" }>,
   at: SetupAt,
 ): SetupThing {
-  const line = repositoryGrantLines[lack.app];
   const app = setupAppNames[lack.app];
   const { account, repository } = lack;
   return setupBindRun(at, {
@@ -243,26 +249,9 @@ function setupGrantMend(
       app,
       account,
       repository,
-      page: setupPage(at, settingsRoutes.project.repositories),
-      add: setupPressed.add,
-      status: line.status,
-      label: line.label,
+      page: setupConnectPage(at, repository),
     },
   });
-}
-
-/** The repositories page asked to begin Connect GitHub's press, which it does by itself only for the workspace's sole administrator. */
-function setupConnectPage(at: SetupAt): string {
-  return repositoriesConnectPath(
-    setupPage(at, settingsRoutes.project.repositories),
-  );
-}
-
-/** The folder's repository by its remote, or the person's where it has none. */
-function setupMendBindingSaid(mine: string | undefined): Copy {
-  return mine === undefined
-    ? { id: "setup-mend-binding-yours" }
-    : { id: "setup-mend-binding-mine", args: { repository: mine } };
 }
 
 function setupGithubMend(
@@ -271,50 +260,52 @@ function setupGithubMend(
   mine: string | undefined,
 ): SetupThing {
   if (lack.lacks === "Grant") return setupGrantMend(lack, at);
-  if (lack.lacks === "Account")
+  const bound = lack.lacks === "App" ? lack.repository : undefined;
+  if (bound !== undefined)
     return setupBindRun(at, {
-      id: "setup-mend-account-tell",
+      id: "setup-mend-connect-tell-bound",
       args: {
         explained: {
           id: "setup-mend-apps-explained",
-          args: { repository: setupMendBindingSaid(mine) },
+          args: { repository: bound },
         },
-        page: setupConnectPage(at),
-        connect: setupPressed.connect,
-        repository: setupMendBindingSaid(mine),
+        page: setupConnectPage(at, bound),
+        repository: bound,
       },
     });
-  const { account } = lack;
-  if (lack.app === "worker")
+  const page = setupConnectPage(at, mine);
+  if (mine === undefined)
     return setupBindRun(at, {
-      id: "setup-mend-worker-tell",
+      id: "setup-mend-connect-tell-named",
       args: {
-        page: setupPage(at, settingsRoutes.project.repositories),
-        install: forgeInstallLabel(lack.app),
-        account,
+        explained: {
+          id: "setup-mend-apps-explained",
+          args: { repository: { id: "setup-mend-binding-yours" } },
+        },
+        page,
       },
     });
   return setupBindRun(at, {
-    id: "setup-mend-portal-tell",
+    id: "setup-mend-connect-tell",
     args: {
-      page: setupPage(at, settingsRoutes.workspace.accounts),
-      connect: setupPressed.connect,
-      account,
+      explained: {
+        id: "setup-mend-apps-explained",
+        args: {
+          repository: {
+            id: "setup-mend-binding-mine",
+            args: { repository: mine },
+          },
+        },
+      },
+      page,
+      repository: mine,
     },
   });
 }
 
-/**
- * An app as a line of the tell names it: granted the repository, with its
- * settings page on the forge where that was read; or not, with that page, or
- * with the press on the workspace's accounts page that installs it. The
- * worker app's install is on the row of an account holding the portal app,
- * so where the portal app is to be installed there too, its row is waited on.
- */
+/** An app as a line of the tell names it: granted the repository, with its settings page on the forge where that was read; installed and not let in; or not installed on the repository's owner. Its press is the connect flow's. */
 function setupAppReachedSaid(
   reached: SetupAppReached,
-  apps: readonly SetupAppReached[],
-  at: SetupAt,
   repository: string,
 ): Copy {
   if (reached.reached === "Granted")
@@ -327,35 +318,15 @@ function setupAppReachedSaid(
           id: "setup-mend-reach-granted",
           args: { app: reached.app, page: reached.settings, repository },
         };
-  const page = reached.page;
-  const { app } = page;
-  if (page.page === "Settings")
-    return {
-      id: "setup-mend-reach-settings",
-      args: { app, page: page.settings, repository },
-    };
-  const accounts = setupPage(at, settingsRoutes.workspace.accounts);
-  const { account } = page;
-  if (app === "portal")
-    return {
-      id: "setup-mend-reach-install-portal",
-      args: { app, page: accounts, press: setupPressed.addAccount, account },
-    };
-  const after = apps.some(
-    (other) =>
-      other.reached === "Lacking" &&
-      other.page.app === "portal" &&
-      other.page.page === "Install",
-  );
-  const press = forgeInstallLabel("worker");
-  return after
+  const { page } = reached;
+  return page.page === "Settings"
     ? {
-        id: "setup-mend-reach-install-worker-after",
-        args: { app, press, account },
+        id: "setup-mend-reach-ungranted",
+        args: { app: page.app, repository },
       }
     : {
-        id: "setup-mend-reach-install-worker",
-        args: { app, page: accounts, press, account },
+        id: "setup-mend-reach-uninstalled",
+        args: { app: page.app, account: page.account },
       };
 }
 
@@ -374,7 +345,8 @@ function setupReachInstalledSaid(installed: readonly string[]): Copy {
  * was read: one tell says the repository, what each app is for, and each
  * app's page with whether it is granted it already, and `bind` waits while
  * the person gives an app what it is not, and adds the repository once both
- * are. Where what the apps grant was not read, the console's Add is the way.
+ * are. Where what the apps grant was not read, the person is sent to the
+ * connect flow on the folder's repository, or to name one there.
  */
 function setupBindingMend(
   lack: Extract<SetupLack, { readonly lacks: "Binding" }>,
@@ -387,7 +359,7 @@ function setupBindingMend(
       throw new Error("a tell of the apps names each app once");
     const { repository } = reach;
     const [portal, worker] = reach.apps.map((reached) =>
-      setupAppReachedSaid(reached, reach.apps, at, repository),
+      setupAppReachedSaid(reached, repository),
     );
     return setupBindRun(at, {
       id: "setup-mend-reach-tell",
@@ -398,18 +370,24 @@ function setupBindingMend(
         portal: portal ?? "",
         worker: worker ?? "",
         granted: reach.reach === "Granted" ? "both" : "lacking",
+        page: setupConnectPage(at, repository),
       },
     });
   }
+  const page = setupConnectPage(at, mine);
   return setupHand(
-    {
-      id: "setup-mend-binding-tell",
-      args: {
-        page: setupPage(at, settingsRoutes.project.repositories),
-        add: setupPressed.add,
-        repository: setupMendBindingSaid(mine),
-      },
-    },
+    mine === undefined
+      ? { id: "setup-mend-binding-tell-named", args: { page } }
+      : {
+          id: "setup-mend-binding-tell",
+          args: {
+            page,
+            repository: {
+              id: "setup-mend-binding-mine",
+              args: { repository: mine },
+            },
+          },
+        },
     { id: "setup-mend-binding-when" },
   );
 }
@@ -461,17 +439,25 @@ function setupConfigurationMend(
   };
 }
 
-/** What `runner` does on this machine for the checklist's project, said before it is run, with the line that has it run on another machine instead; `chat` where it makes this machine the person's chat host too. */
-function setupOffer(tell: Copy, at: SetupAt, chat: boolean): SetupThing {
+/** What `runner` does on this machine for the checklist's project, said before it is run, with the line that has it run on another machine instead; `chat` where it makes this machine the person's chat host too, and `credential` where it is first run only to put the person's Claude credential in place, once they point to it. */
+function setupOffer(
+  tell: Copy,
+  at: SetupAt,
+  chat: boolean,
+  credential = false,
+): SetupThing {
   const { workspace, project } = at;
   return {
     thing: "Offer",
     command: "Runner",
     tell,
-    when: { id: "setup-offer-when" },
+    when: {
+      id: credential ? "setup-offer-credential-when" : "setup-offer-when",
+    },
     workspace,
     project,
-    chatHost: chat,
+    chatHost: chat && !credential,
+    ...(credential ? { credential } : {}),
     elsewhere: claudeCodeRunnerLine(at.site, workspace, project, chat),
   };
 }
@@ -487,37 +473,12 @@ const setupMcpOffers = {
  * its configuration on the person's yes, installing the platform's runner
  * package first where `packaged` says none here is one it leaves as it is.
  */
-function setupMcpMend(
-  at: SetupAt,
-  platform: SetupPlatform,
-  packaged: SetupMcpPackaged,
-): SetupThing {
-  const { site, workspace, project } = at;
-  const program = setupServerPackages[platform].offered.program;
-  const named = setupNamed(at);
-  const versioned = (version: string | undefined): Copy | string =>
-    version === undefined
-      ? program
-      : { id: "setup-runner-versioned", args: { program, version } };
+function setupMcpMend(at: SetupAt, packaged: SetupMcpPackaged): SetupThing {
+  const { workspace, project } = at;
   return {
     thing: "Offer",
     command: "Mcp",
-    tell:
-      packaged.packaged === "Behind"
-        ? {
-            id: setupMcpOffers.Behind,
-            args: {
-              project: named,
-              site,
-              program,
-              found: versioned(packaged.version),
-              installs: versioned(packaged.installs),
-            },
-          }
-        : {
-            id: setupMcpOffers[packaged.packaged],
-            args: { project: named, site, program },
-          },
+    tell: { id: setupMcpOffers[packaged.packaged] },
     when: { id: "setup-offer-mcp-when" },
     workspace,
     project,
@@ -533,28 +494,6 @@ function setupPluginMend(off: boolean): SetupThing {
       id: off ? "setup-mend-plugin-offer-off" : "setup-mend-plugin-offer",
     },
     when: { id: "setup-offer-plugin-when" },
-  };
-}
-
-/** The project's North Star offered, drafted from the folder where its checkout tracks any file, and from one question to the person otherwise. */
-function setupNorthStarMend(
-  at: SetupAt,
-  tracked: SetupTracked | undefined,
-): SetupThing {
-  const folder = tracked === "Files";
-  return {
-    thing: "NorthStar",
-    tell: {
-      id: "setup-mend-north-star-tell",
-      args: { drawn: folder ? "folder" : "question" },
-    },
-    draft: {
-      id: folder
-        ? "setup-north-star-draft-folder"
-        : "setup-north-star-draft-ask",
-    },
-    workspace: at.workspace,
-    project: at.project,
   };
 }
 
@@ -581,29 +520,14 @@ function setupRunsOn(claude: SetupClaudeKind | undefined): Copy {
     : { id: "setup-runs-on", args: { claude: setupClaudeOn[claude] } };
 }
 
-/** What a job of the project's takes, as an offer says it. */
-const setupJobSaid: Copy = quantityFigureCopy(
-  memoryMibFigure(setupJobMemoryMib),
-);
-
-/** What a chat host here would be, where the machine was looked at and its engine named; sized as having no room where the engine was not read. */
-function setupChatSizeHere(here: SetupRunnerHere): SetupChatSize {
-  return here.chatSize ?? setupChatSized(undefined, undefined, {});
-}
-
-/** What an offer of `runner` says of the two things it puts here, or of the runner alone where `chat` says the person's chat host is not made here. */
+/** What the runner's step says first of the two things it puts here, or of the runner alone where `chat` says the person's chat host is not made here. */
 function setupRunnerThings(chat: boolean): Copy {
   return { id: "setup-mend-runner-things", args: { chat: setupWith(chat) } };
 }
 
-/** What an offer of `runner` says the person's chat host here holds; nothing where it is not made here. */
-function setupChatHostSaid(chat: boolean, here: SetupRunnerHere): CopyArgument {
-  if (!chat) return "";
-  const size = setupChatSizeHere(here);
-  return {
-    id: "setup-mend-chat-host-holds",
-    args: setupChatCost(size.sessionsMax, size.sessionMemoryMib),
-  };
+/** What an offer of `runner` says of the person's chat host made here too; nothing where it is not. */
+function setupChatHostSaid(chat: boolean): CopyArgument {
+  return chat ? { id: "setup-mend-chat-host-too" } : "";
 }
 
 /** What an offer of `runner` says it finds here and keeps: the runner's settings, and whose Claude login they run work on. */
@@ -620,39 +544,44 @@ function setupRunnerFoundSaid(here: SetupRunnerHere): CopyArgument {
   };
 }
 
-/** Where the Claude credential work here would run on is not on this machine yet, what the person is told to do first, before anything is put here. */
+/**
+ * Where the Claude credential work here would run on is not on this machine
+ * yet, what the person is told first, before anything is put here: with no
+ * settings, the step's opening, which asks for a token or an API key by its
+ * path, for `runner` to copy into place, and offers another machine; where
+ * settings name a credential that is not there, to put it there.
+ */
 function setupRunnerLoginMend(
+  at: SetupAt,
   here: SetupRunnerHere,
   chat: boolean,
 ): SetupThing | undefined {
   const credential = here.loginMissing;
   if (credential === undefined) return undefined;
   const things = setupRunnerThings(chat);
-  const saved = setupClaudeSaved(credential);
+  if (here.settings === undefined)
+    return setupOffer(
+      {
+        id: "setup-mend-runner-opening",
+        args: { things, chat: setupWith(chat) },
+      },
+      at,
+      chat,
+      true,
+    );
   const words = setupClaudeWords[credential.kind].credential;
   return setupHand(
-    credential.kind === "Subscription"
-      ? { id: "setup-mend-runner-login", args: { things, saved } }
-      : {
-          id: "setup-mend-runner-login-named",
-          args: { things, credential: words, path: credential.path, saved },
-        },
+    {
+      id: "setup-mend-runner-login-named",
+      args: {
+        things,
+        credential: words,
+        path: credential.path,
+        saved: setupClaudeSaved(credential),
+      },
+    },
     { id: "setup-runner-login-missing-when", args: { credential: words } },
   );
-}
-
-/** Memory as an offer says it. */
-function setupMemorySaid(mib: number): Copy {
-  return quantityFigureCopy(memoryMibFigure(mib));
-}
-
-/** What Colima's VM is short of for a job, as the word an offer's sentence picks its clause by. */
-function setupColimaShort(
-  fit: Extract<SetupFit, { readonly fit: "Colima" }>,
-): string {
-  if (fit.short && fit.hasMib !== undefined)
-    return fit.amd64 ? "both" : "memory";
-  return fit.amd64 ? "amd64" : "none";
 }
 
 /** What `runner` gives Colima's VM, as the word an offer's sentence picks its clause by. */
@@ -666,36 +595,22 @@ function setupColimaGives(
   return fit.rosetta ? "rosetta" : "none";
 }
 
-/** What an offer of `runner` says this machine is short of for a job naming no memory or platform, and what `runner` does for it, or nothing where it is short of nothing. */
+/** What an offer of `runner` says this machine needs done or done elsewhere for a job naming no memory or platform, with no figure but the size `runner` gives Colima's VM, or nothing where it fits one as it stands. */
 function setupFitSaid(here: SetupRunnerHere): CopyArgument {
   const { fit } = here;
-  const engine = here.room.room === "Open" ? here.room.engine : "docker";
-  const job = setupMemorySaid(setupJobMemoryMib);
-  const spare = setupMemorySaid(setupEngineSpareMib);
   switch (fit.fit) {
     case "Small":
-      return {
-        id: "setup-mend-fit-small",
-        args: {
-          machine: fit.machine === "Mac" ? "mac" : "engine",
-          engine,
-          has: setupMemorySaid(fit.hasMib),
-          job,
-          spare,
-        },
-      };
+      return { id: "setup-mend-fit-small" };
     case "Colima":
       return {
         id: "setup-mend-fit-colima",
         args: {
           vm: fit.vm.toLowerCase(),
-          short: setupColimaShort(fit),
-          has: fit.hasMib === undefined ? "" : setupMemorySaid(fit.hasMib),
-          job,
-          spare,
           gives: setupColimaGives(fit),
           target:
-            fit.targetMib === undefined ? "" : setupMemorySaid(fit.targetMib),
+            fit.targetMib === undefined
+              ? ""
+              : quantityFigureCopy(memoryMibFigure(fit.targetMib)),
           commands: {
             id: "setup-mend-fit-commands",
             args: {
@@ -727,30 +642,25 @@ function setupFitToldMend(
   );
 }
 
-/** A runner registered and not running where this machine holds a registration: started here unless the person objects where it is the person's runner's, and registered again as theirs where it is only the project's pool's. */
+/** A runner registered and not running where this machine holds the person's runner's registration: started here unless the person objects. */
 function setupRunnerLiveMend(
   at: SetupAt,
   here: SetupRunnerHere,
-  held: SetupRunnerHeld,
   chat: boolean,
   instead: Copy,
 ): SetupThing {
   return (
-    setupRunnerLoginMend(here, chat) ??
+    setupRunnerLoginMend(at, here, chat) ??
     setupFitToldMend(here.fit, instead) ??
     setupOffer(
       {
-        id:
-          held === "Personal"
-            ? "setup-mend-runner-live-offer"
-            : "setup-mend-runner-pool-offer",
+        id: "setup-mend-runner-live-offer",
         args: {
           project: setupNamed(at),
           runs: setupRunsOn(here.claude),
-          job: setupJobSaid,
           fit: setupFitSaid(here),
           found: setupRunnerFoundSaid(here),
-          chat: setupChatHostSaid(chat, here),
+          chat: setupChatHostSaid(chat),
         },
       },
       at,
@@ -759,43 +669,15 @@ function setupRunnerLiveMend(
   );
 }
 
-/**
- * A personal runner of the person's that does not take the project's work.
- * `serve` gives it the project where it is not given, and names Preferred
- * where the project names no owner fallback and the person may name one;
- * where they may not, the tell names the project's Placement page, where an
- * admin of it does, and where the project is given already that is all there
- * is to do.
- */
-function setupServingMend(
-  lack: Extract<SetupLack, { readonly lacks: "Serving" }>,
-  at: SetupAt,
-): SetupThing {
-  const project = setupNamed(at);
-  const setting = setupPressed.fallback;
-  const placement = setupPage(at, settingsRoutes.project.placement);
-  const allow = !lack.named && lack.administers;
-  const admin = !lack.named && !lack.administers;
-  if (lack.given && !allow)
-    return setupHand(
-      {
-        id: "setup-mend-serving-admin-tell",
-        args: { project, setting, placement },
-      },
-      { id: "setup-mend-serving-admin-when", args: { setting } },
-    );
+/** A personal runner of the person's that the project is not given, which
+ * `serve` gives it. */
+function setupServingMend(at: SetupAt): SetupThing {
   return {
     thing: "Offer",
     command: "Serve",
     tell: {
       id: "setup-mend-serving-offer",
-      args: {
-        project,
-        does: lack.given ? "allow" : allow ? "both" : "give",
-        admin: admin ? "admin" : "none",
-        setting,
-        placement,
-      },
+      args: { project: setupNamed(at) },
     },
     when: { id: "setup-offer-serve-when" },
     workspace: at.workspace,
@@ -829,7 +711,7 @@ function setupRunnerMend(
   };
   const live = lack.lacks === "RunnerLive";
   if (live && here?.held !== undefined)
-    return setupRunnerLiveMend(at, here, here.held, lack.chat, instead);
+    return setupRunnerLiveMend(at, here, lack.chat, instead);
   if (here === undefined)
     return live
       ? setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning)
@@ -868,13 +750,12 @@ function setupRunnerPutMend(
   instead: Copy,
 ): SetupThing {
   const told =
-    setupRunnerLoginMend(here, chat) ?? setupFitToldMend(here.fit, instead);
+    setupRunnerLoginMend(at, here, chat) ?? setupFitToldMend(here.fit, instead);
   if (told !== undefined) return told;
   return setupOffer(
     {
       id: "setup-mend-runner-offer",
       args: {
-        things: setupRunnerThings(chat),
         chat: setupWith(chat),
         found: setupRunnerFoundSaid(here),
         put: {
@@ -882,11 +763,9 @@ function setupRunnerPutMend(
           args: {
             program: runnerPackages[platform].program,
             runs: setupRunsOn(here.claude),
-            job: setupJobSaid,
           },
         },
         fit: setupFitSaid(here),
-        holds: setupChatHostSaid(chat, here),
         project: setupNamed(at),
       },
     },
@@ -965,9 +844,21 @@ function setupBriefAsked(
   };
 }
 
-/** What a ticket's starting execution waits on of the person's runners or the project's pools, as the finalization tell says it: the fact, and no remedy. */
+/** What holds the person's account paused, as the finalization tell's wait says it. */
+const setupWaitPausedSaid = {
+  Threshold: "paused",
+  Limit: "limited",
+  Both: "limited-paused",
+} as const satisfies Record<SetupRunnerPausedBy, string>;
+
+/** What a ticket's starting execution waits on of the person's runners, as the finalization tell says it: the fact, and no remedy. */
 function setupWaitSaid(wait: SetupRunnerWait | undefined): {
-  readonly wait: "room" | "pool-room" | "offline" | "unable" | "none";
+  readonly wait:
+    | "room"
+    | "offline"
+    | "unable"
+    | (typeof setupWaitPausedSaid)[SetupRunnerPausedBy]
+    | "none";
   readonly free: CopyArgument;
   readonly needed: CopyArgument;
 } {
@@ -978,16 +869,12 @@ function setupWaitSaid(wait: SetupRunnerWait | undefined): {
         free: quantityFigureCopy(memoryMibFigure(wait.freeMib)),
         needed: quantityFigureCopy(memoryMibFigure(wait.neededMib)),
       };
-    case "PoolRoom":
-      return {
-        wait: "pool-room",
-        free: quantityFigureCopy(memoryMibFigure(wait.freeMib)),
-        needed: quantityFigureCopy(memoryMibFigure(wait.neededMib)),
-      };
     case "Offline":
       return { wait: "offline", free: "", needed: "" };
     case "Unable":
       return { wait: "unable", free: "", needed: "" };
+    case "Paused":
+      return { wait: setupWaitPausedSaid[wait.by], free: "", needed: "" };
     case undefined:
       return { wait: "none", free: "", needed: "" };
   }
@@ -1105,13 +992,12 @@ function setupMend(
   here: SetupRunnerHere | undefined,
   mcp: SetupMcpHere,
   offers: SetupTicketOffers | undefined,
-  tracked: SetupTracked | undefined,
 ): SetupThing {
   switch (lack.lacks) {
     case "Read":
       return setupUnreadMend(lack, step);
     case "Mcp":
-      return setupMcpMend(at, mcp.platform, mcp.packaged);
+      return setupMcpMend(at, mcp.packaged);
     case "Plugin":
       return setupPluginMend(lack.off);
     case "Workspace":
@@ -1119,8 +1005,6 @@ function setupMend(
       return setupWorkspaceMend(lack, at);
     case "Project":
       return setupProjectMend(at);
-    case "NorthStar":
-      return setupNorthStarMend(at, tracked);
     case "Account":
     case "App":
     case "Grant":
@@ -1132,7 +1016,7 @@ function setupMend(
     case "RunnerLive":
       return setupRunnerMend(lack, at, here, mcp.platform);
     case "Serving":
-      return setupServingMend(lack, at);
+      return setupServingMend(at);
     case "Ticket":
     case "Release":
     case "Dispatch":
@@ -1193,27 +1077,28 @@ function setupAsk(
   };
 }
 
-/** The workspace and project a checklist's commands carry: none where there was nothing to choose, and otherwise the choice as far as it is made; and the steps passed over, where any was. */
+/** The workspace and project a checklist's commands carry: none where there was nothing to choose, and otherwise the choice as far as it is made; and the answers every command carries, where they were given. */
 function setupCarried(
   choice: SetupChoice,
   answers: SetupAnswers,
 ): SetupAnswers {
-  const skipped = setupAnswersSkipped(answers);
+  const carried = setupAnswersCarried(answers);
   if (choice.choice === "Made")
     return choice.by === "Only"
       ? answers
-      : { workspace: choice.workspace, project: choice.project, ...skipped };
+      : { workspace: choice.workspace, project: choice.project, ...carried };
   return choice.open === "workspace"
-    ? { workspace: undefined, project: answers.project, ...skipped }
-    : { workspace: choice.workspace, project: undefined, ...skipped };
+    ? { workspace: undefined, project: answers.project, ...carried }
+    : { workspace: choice.workspace, project: undefined, ...carried };
 }
 
 /** What setup said to be done says of the repository's own configuration, after a `merge` run: in place, being imported, or refused by its import with what the import said. */
 type SetupDoneConfiguration =
   | { readonly configuration: "imported" | "importing" | "none" }
-  | { readonly configuration: "refused"; readonly last: Copy };
+  | { readonly configuration: "refused"; readonly last: Copy }
+  | { readonly configuration: "merging"; readonly url: string };
 
-/** Setup said to be done in the ticket step's own words, so a pull request that was opened is not said to have landed, and with what became of the repository's own configuration where a `merge` run waited on it. */
+/** Setup said to be done in the ticket step's own words, so a pull request that was opened is not said to have landed, and with what became of the repository's own configuration where a `merge` run waited on it, or where the person merges it themselves. */
 function setupDoneTell(
   standing: SetupStanding,
   at: SetupAt,
@@ -1228,6 +1113,7 @@ function setupDoneTell(
       detail: detail ?? "",
       configuration: done.configuration,
       last: done.configuration === "refused" ? done.last : "",
+      url: done.configuration === "merging" ? done.url : "",
       page: setupPage(at, navRoutes.ticketNew),
     },
   };
@@ -1272,26 +1158,161 @@ export const setupMergeUnseen: SetupMergeSeen = {
   history: "Unread",
 };
 
+/** The docs pages the offers after setup's last step name, by the addresses the docs' own index, `chuggyDocsIndex`, gives them. */
+export const setupDocsPages = {
+  configuration:
+    "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/docs/configuration.md",
+  image:
+    "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/docs/jobs/image.md",
+  sizing:
+    "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/docs/jobs/sizing.md",
+  runners:
+    "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/docs/runners.md",
+} as const;
+
+/** What else can be set and where, each by its address: the project's settings pages, the repository's configuration and the docs on it and on sizing a stage, and the settings file of the runner package of `platform`, by the part of its README that says it. */
+function setupReviewTell(at: SetupAt, platform: SetupPlatform): Copy {
+  const runner = runnerPackages[platform];
+  return {
+    id: "setup-more-review",
+    args: {
+      permissions: setupPage(at, settingsRoutes.project.permissions),
+      placement: setupPage(at, settingsRoutes.project.placement),
+      usage: setupPage(at, settingsRoutes.project.usage),
+      directory: repositoryConfigurationRoot,
+      configuration: setupDocsPages.configuration,
+      sizing: setupDocsPages.sizing,
+      program: runner.program,
+      guide: runner.guideAddress,
+    },
+  };
+}
+
+/**
+ * The repository's configuration offered to be changed with the person; or,
+ * where the first ticket's pull request holding it is `merging` by the
+ * person's hand, left as it is until they have merged it, since the default
+ * branch holds none for the change to start from.
+ */
+function setupMoreConfigurationThing(
+  at: SetupAt,
+  merging: string | undefined,
+): SetupThing {
+  const { workspace, project } = at;
+  if (merging !== undefined)
+    return {
+      thing: "More",
+      more: "Merging",
+      tell: { id: "setup-more-configuration-merging", args: { url: merging } },
+      url: merging,
+      directory: repositoryConfigurationRoot,
+      workspace,
+      project,
+    };
+  return {
+    thing: "More",
+    more: "Configuration",
+    tell: {
+      id: "setup-more-configuration",
+      args: { directory: repositoryConfigurationRoot },
+    },
+    directory: repositoryConfigurationRoot,
+    image: setupDocsPages.image,
+    page: setupPage(at, settingsRoutes.project.repositories),
+    workspace,
+    project,
+  };
+}
+
+/**
+ * Setup's last step behind it, said by `done`: the three things offered after
+ * it, or the one the person took, `more` naming which, with the first ticket's
+ * pull request where the person is `merging` it themselves; on none of them,
+ * setup ended with how to be offered them again.
+ */
+function setupMoreThing(
+  done: Copy,
+  at: SetupAt,
+  more: SetupMoreAnswer | undefined,
+  platform: SetupPlatform,
+  merging: string | undefined,
+): SetupThing {
+  const { workspace, project } = at;
+  switch (more) {
+    case undefined:
+    case "offer":
+      return {
+        thing: "More",
+        more: "Offer",
+        tell: { id: "setup-more-offer", args: { done } },
+        workspace,
+        project,
+      };
+    case "runners":
+      return {
+        thing: "More",
+        more: "Runners",
+        tell: {
+          id: "setup-more-runners",
+          args: {
+            line: claudeCodeRunnerLine(at.site, workspace, project, false),
+            runners: setupDocsPages.runners,
+          },
+        },
+        workspace,
+        project,
+      };
+    case "configuration":
+      return setupMoreConfigurationThing(at, merging);
+    case "review":
+      return {
+        thing: "More",
+        more: "Review",
+        tell: setupReviewTell(at, platform),
+        workspace,
+        project,
+      };
+    case "none":
+      return {
+        thing: "Done",
+        tell: {
+          id: "setup-more-none",
+          args: { line: claudeCodeLine(at.site) },
+        },
+      };
+  }
+}
+
 /**
  * Every step done: the merge offered where the first ticket's pull request
- * stands unmerged, and otherwise setup said to be done; after a merge, with
- * the import of the repository's own configuration in place, refused, or
- * still under way, which is `merge` run again.
+ * stands unmerged and the person has not said they merge it themselves, and
+ * otherwise setup said to be done with what is offered after it; after a
+ * merge, with the import of the repository's own configuration in place,
+ * refused, or still under way, which is `merge` run again.
  */
 function setupDoneThing(
   standing: SetupStanding,
   at: SetupAt,
   merge: SetupMergeSeen,
+  more: SetupMoreAnswer | undefined,
+  platform: SetupPlatform,
 ): SetupThing {
-  const done = (configuration: SetupDoneConfiguration): SetupThing => ({
-    thing: "Done",
-    tell: setupDoneTell(standing, at, configuration),
-  });
+  const done = (configuration: SetupDoneConfiguration): SetupThing =>
+    setupMoreThing(
+      setupDoneTell(standing, at, configuration),
+      at,
+      more,
+      platform,
+      configuration.configuration === "merging" ? configuration.url : undefined,
+    );
   if (merge.seen === "Refused") return done({ configuration: "none" });
-  if (merge.seen === "Offered")
-    return standing.unmerged === undefined
-      ? done({ configuration: "none" })
-      : setupMergeOffer(standing.unmerged, at, merge.history);
+  if (merge.seen === "Offered") {
+    const { unmerged } = standing;
+    if (unmerged === undefined) return done({ configuration: "none" });
+    return more === undefined
+      ? setupMergeOffer(unmerged, at, merge.history)
+      : done({ configuration: "merging", url: unmerged.url });
+  }
   if (standing.bootstrap === undefined)
     return done({ configuration: "imported" });
   const last = standing.bootstrap.lastImport;
@@ -1375,36 +1396,33 @@ export function setupBindAwaited(standing: SetupStanding): boolean {
   return lack?.lacks !== "Binding" || lack.reach?.reach === "Ungranted";
 }
 
-/** The repositories page asked to begin Connect GitHub's press, where connecting GitHub is the one next thing, which is when `bind` opens it in a browser. */
+/** The repositories page's connect flow on the folder's repository, where connecting GitHub is the one next thing, which is when `bind` opens it in a browser. */
 export function setupConnectDue(standing: SetupStanding): string | undefined {
   const partition = setupDue(standing, ["Account"]);
   return partition === undefined
     ? undefined
-    : setupConnectPage({
-        site: standing.site,
-        workspace: partition.tenant,
-        project: partition.project,
-        named: workspaceNamesListed(standing.workspaces),
-      });
+    : setupConnectPage(
+        {
+          site: standing.site,
+          workspace: partition.tenant,
+          project: partition.project,
+          named: workspaceNamesListed(standing.workspaces),
+        },
+        setupMine(standing),
+      );
 }
 
-/** What `serve` writes for a project: the project given to the person's runners, and Preferred named as its owner fallback. */
+/** What `serve` writes for a project: the project given to the person's runners. */
 export interface SetupServeDue {
   readonly partition: PartitionIdentity;
-  readonly give: boolean;
-  readonly allow: boolean;
 }
 
-/** What `serve` writes where a personal runner of the person's taking the project's work is the one next thing, and something of it is theirs to write. */
+/** What `serve` writes where a personal runner of the person's taking the project's work is the one next thing. */
 export function setupServeDue(
   standing: SetupStanding,
 ): SetupServeDue | undefined {
   const partition = setupDue(standing, ["Serving"]);
-  const lack = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
-  if (partition === undefined || lack?.lacks !== "Serving") return undefined;
-  const give = !lack.given;
-  const allow = !lack.named && lack.administers;
-  return give || allow ? { partition, give, allow } : undefined;
+  return partition === undefined ? undefined : { partition };
 }
 
 /** The project of a checklist whose every step is done. */
@@ -1449,11 +1467,117 @@ export function setupWatchAwaited(standing: SetupStanding): boolean {
   return setupDue(standing, ["Landing"]) !== undefined;
 }
 
-/** The project whose North Star step is the one next, which is when the folder's checkout is looked at and `north-star` writes one. */
-export function setupNorthStarDue(
+/** Where the person's usage is read: before the project's first ticket, or while it waits on their account paused. */
+export function setupUsageDue(
   standing: SetupStanding,
-): PartitionIdentity | undefined {
-  return setupDue(standing, ["NorthStar"]);
+): "Ticket" | "Landing" | undefined {
+  if (setupTicketDue(standing) !== undefined) return "Ticket";
+  if (setupDue(standing, ["Landing"]) === undefined) return undefined;
+  const lack = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
+  return lack?.lacks === "Landing" && lack.wait?.wait === "Paused"
+    ? "Landing"
+    : undefined;
+}
+
+/** The windows over their thresholds, each figure said whole, and the threshold offered in place of each, as one sentence says one or both; `held` is whether something no threshold lifts holds the work too. */
+function setupUsageOverSaid(
+  over: readonly SetupUsageOver[],
+  held: boolean,
+): Copy {
+  const [first, second] = over;
+  if (first === undefined) throw new Error("a usage over names a window");
+  const one = {
+    held: held ? "yes" : "no",
+    reading: String(first.reading),
+    window: setupUsageWindowSaid(first.window),
+    threshold: String(first.threshold),
+    offered: String(first.offered),
+  };
+  if (second === undefined) return { id: "setup-usage-over", args: one };
+  return {
+    id: "setup-usage-over-both",
+    args: {
+      ...one,
+      readingOther: String(second.reading),
+      windowOther: setupUsageWindowSaid(second.window),
+      thresholdOther: String(second.threshold),
+      offeredOther: String(second.offered),
+    },
+  };
+}
+
+/** What holds the person's work that raising a threshold would not lift, said with when it lifts where the read says, and whether the work starts by itself then. */
+function setupUsageHeldSaid(
+  held: NonNullable<SetupUsage["held"]>,
+  nowMs: number,
+): Copy {
+  const now = new Date(nowMs);
+  const starts = held.starts ? "yes" : "no";
+  const { by } = held;
+  if (by.held === "Full")
+    return {
+      id: "setup-usage-full",
+      args: {
+        reading: String(by.reading),
+        window: setupUsageWindowSaid(by.window),
+        resets: instantText(new Date(by.resetsAt), now),
+        starts,
+      },
+    };
+  return by.resetsAt === undefined
+    ? { id: "setup-usage-limit", args: { resets: "unknown", at: "", starts } }
+    : {
+        id: "setup-usage-limit",
+        args: {
+          resets: "known",
+          at: instantText(new Date(by.resetsAt), now),
+          starts,
+        },
+      };
+}
+
+/** What the person's usage says beside the next thing: where raising would lift a window and they have not said no, the offer, which is the next thing; where something raising would not lift holds the work, a line said before it. */
+interface SetupUsageThing {
+  readonly thing: SetupThing | undefined;
+  readonly said: Copy | undefined;
+}
+
+/** What the person's usage holds their work to, as read at `nowMs`. */
+export interface SetupUsageRead {
+  readonly usage: SetupUsage;
+  readonly nowMs: number;
+}
+
+function setupUsageThing(
+  standing: SetupStanding,
+  answers: SetupAnswers,
+  read: SetupUsageRead | undefined,
+): SetupUsageThing {
+  const due = setupUsageDue(standing);
+  if (read === undefined || due === undefined)
+    return { thing: undefined, said: undefined };
+  const { usage, nowMs } = read;
+  const said =
+    usage.held === undefined
+      ? undefined
+      : setupUsageHeldSaid(usage.held, nowMs);
+  if (
+    usage.over.length === 0 ||
+    answers.usage === setupUsageKeep ||
+    standing.choice.choice === "Open"
+  )
+    return { thing: undefined, said };
+  return {
+    thing: {
+      thing: "Usage",
+      tell: setupUsageOverSaid(usage.over, usage.held !== undefined),
+      over: usage.over,
+      then: due === "Ticket" ? "Status" : "Watch",
+      workspace: standing.choice.workspace ?? "",
+      project: standing.choice.project ?? "",
+    },
+    said,
+  };
 }
 
 /** The platform the program runs on, and what `mcp` would find of its runner package here. */
@@ -1469,13 +1593,20 @@ export function setupMcpDue(
   return setupDue(standing, ["Mcp"]);
 }
 
+/** The folder's repository by its remote, where it has one. */
+function setupMine(standing: SetupStanding): string | undefined {
+  return standing.remote === undefined
+    ? undefined
+    : repositoryLabel(standing.remote.said);
+}
+
 function setupThing(
   standing: SetupStanding,
   here: SetupRunnerHere | undefined,
   mcp: SetupMcpHere,
   offers: SetupTicketOffers | undefined,
   merge: SetupMergeSeen,
-  tracked: SetupTracked | undefined,
+  more: SetupMoreAnswer | undefined,
 ): SetupThing {
   const named = workspaceNamesListed(standing.workspaces);
   if (standing.choice.choice === "Open")
@@ -1487,12 +1618,17 @@ function setupThing(
     named,
   };
   const undone = standing.steps.find((step) => step.lacks !== undefined);
-  if (undone?.lacks === undefined) return setupDoneThing(standing, at, merge);
-  const mine =
-    standing.remote === undefined
-      ? undefined
-      : repositoryLabel(standing.remote.said);
-  return setupMend(undone, undone.lacks, at, mine, here, mcp, offers, tracked);
+  if (undone?.lacks === undefined)
+    return setupDoneThing(standing, at, merge, more, mcp.platform);
+  return setupMend(
+    undone,
+    undone.lacks,
+    at,
+    setupMine(standing),
+    here,
+    mcp,
+    offers,
+  );
 }
 
 /**
@@ -1504,8 +1640,9 @@ function setupThing(
  * would find of the platform's runner package here, where `setupMcpDue`
  * named one; `offers` is what a ticket may be drawn under where
  * `setupTicketDue` named a project and it was read; `merge` is what the merge
- * offer turns on beyond the reads; `tracked` is what the folder's checkout
- * tracks, where `setupNorthStarDue` named a project and it was looked at.
+ * offer turns on beyond the reads; `usage` is what the person's usage holds
+ * their work to, where `setupUsageDue` named where and it was read, at
+ * `nowMs`.
  */
 export function setupNext(
   standing: SetupStanding,
@@ -1515,17 +1652,21 @@ export function setupNext(
   packaged: SetupMcpPackaged = { packaged: "Absent" },
   offers?: SetupTicketOffers,
   merge: SetupMergeSeen = setupMergeUnseen,
-  tracked?: SetupTracked,
+  usage?: SetupUsageRead,
 ): SetupNext {
-  return {
-    carried: setupCarried(standing.choice, answers),
-    thing: setupThing(
+  const carried = setupCarried(standing.choice, answers);
+  const said = setupUsageThing(standing, answers, usage);
+  const thing =
+    said.thing ??
+    setupThing(
       standing,
       here,
       { platform, packaged },
       offers,
       merge,
-      tracked,
-    ),
-  };
+      answers.more,
+    );
+  return said.said === undefined
+    ? { carried, thing }
+    : { carried, thing, usage: said.said };
 }

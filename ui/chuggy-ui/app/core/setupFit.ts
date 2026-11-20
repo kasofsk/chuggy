@@ -28,7 +28,7 @@
 import type { SetupPlatform } from "./setupPorts.ts";
 
 /** The memory, in MiB, a job that names none runs with on a runner, as the plane gives it; a suite holds this to the plane's own. */
-export const setupJobMemoryMib = 4_096;
+export const setupJobMemoryMib = 2_048;
 
 /** The memory, in MiB, the engine is left beside a job, and a chat host beside both. */
 export const setupEngineSpareMib = 1_024;
@@ -458,14 +458,4 @@ export function setupFitOf(
   return engineMib !== undefined && engineMib < setupJobNeedMib
     ? { fit: "Small", machine: "Engine", hasMib: engineMib }
     : { fit: "Room" };
-}
-
-/** The memory, in MiB, a chat host here is sized to: what the engine will have once a yes changes Colima, and otherwise what it reports. */
-export function setupFitEngineMib(
-  fit: SetupFit,
-  engineMib: number | undefined,
-): number | undefined {
-  return fit.fit === "Colima" && fit.targetMib !== undefined
-    ? fit.targetMib
-    : engineMib;
 }

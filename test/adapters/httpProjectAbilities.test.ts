@@ -1,16 +1,24 @@
 /**
  * The abilities route over the real boundary: what a member is answered, what
- * a stranger is, and what an authority that cannot answer becomes on the wire.
+ * a stranger is, what an access token narrows them to, and what an authority
+ * that cannot answer becomes on the wire.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
+import {
+  accessTokenExpiresHeader,
+  type AccessTokenAccess,
+} from "../../src/contract/accessToken.ts";
 import { nativeHttpEndpoints } from "../../src/contract/endpoints.ts";
-import { asTicketId } from "../../src/domain/ids.ts";
+
+import { asInstallationId, asTicketId } from "../../src/domain/ids.ts";
 import type { AuthoringStore } from "../../src/interpreter/authoring.ts";
 import { nativeWeb } from "../../src/interpreter/nativeWeb.ts";
 import {
+  allProjectAccessKinds,
   ProjectAccessUnavailable,
   type ProjectAccess,
   type ProjectAccessKind,
@@ -62,6 +70,7 @@ test("a member is answered exactly its abilities", async () => {
     overrideTicketConfig: true,
     skipPlannedEvaluations: true,
     mergeProposals: false,
+    makeAccessTokens: false,
     administer: false,
     writeEpic: false,
   });
@@ -154,4 +163,107 @@ test("a caller with no bearer is unauthenticated", async () => {
   await using app = appOver(accessOf(["Read"]));
   const found = await app.inject({ url });
   assert.equal(found.statusCode, 401);
+});
+
+const expiresAt = "2027-03-04T05:06:07.000Z";
+
+/** The abilities route under a token of `access` its maker `caller` presents, holding every permit. */
+function tokenAppOver(access: AccessTokenAccess) {
+  const web = nativeWeb(
+    accessOf(allProjectAccessKinds),
+    ...unaskedNativeWebPorts,
+  );
+  return createNativeHttpApp(
+    {
+      ...unservedNativeWeb,
+      abilities: (principal, partition, viaToken) =>
+        web.abilities(principal, partition, viaToken),
+    },
+    {
+      authenticateBearer: () =>
+        Promise.resolve({
+          authenticated: "Bearer" as const,
+          bearer: {
+            principal: caller,
+            viaToken: {
+              token: "token",
+              name: "nightly",
+              access,
+              partition,
+              expiresAt,
+            },
+          },
+        }),
+    },
+    { ready: () => Promise.resolve(true) },
+    {
+      installationAuthority: () =>
+        Promise.resolve(
+          asInstallationId("018f84a1-4c2b-7def-8abc-0123456789ab"),
+        ),
+    },
+  );
+}
+
+test("under a Read token every ability is false, and the answer names the token's expiry", async () => {
+  await using app = tokenAppOver("Read");
+  const found = await app.inject({ url, headers: authorized });
+  assert.equal(found.statusCode, 200);
+  assert.equal(found.headers[accessTokenExpiresHeader], expiresAt);
+  assert.deepEqual(found.json(), {
+    principal: caller,
+    mutate: false,
+    dispatch: false,
+    manageSelector: false,
+    overrideTicketConfig: false,
+    skipPlannedEvaluations: false,
+    mergeProposals: false,
+    makeAccessTokens: false,
+    administer: false,
+    writeEpic: false,
+  });
+});
+
+test("under a Write token a maker holding everything may neither make tokens nor merge", async () => {
+  await using app = tokenAppOver("Write");
+  const found = await app.inject({ url, headers: authorized });
+  assert.equal(found.statusCode, 200);
+  assert.equal(found.headers[accessTokenExpiresHeader], expiresAt);
+  assert.deepEqual(found.json(), {
+    principal: caller,
+    mutate: true,
+    dispatch: true,
+    manageSelector: true,
+    overrideTicketConfig: true,
+    skipPlannedEvaluations: true,
+    mergeProposals: false,
+    makeAccessTokens: false,
+    administer: true,
+    writeEpic: true,
+  });
+});
+
+test("a token refused a route is answered 403 naming its expiry, under either access", async () => {
+  for (const access of ["Read", "Write"] as const) {
+    await using app = tokenAppOver(access);
+    const refused = await app.inject({
+      url: "/api/v1/tenants/acme/projects/atlas/access-tokens",
+      headers: authorized,
+    });
+    assert.equal(refused.statusCode, 403, access);
+    assert.equal(refused.headers[accessTokenExpiresHeader], expiresAt, access);
+  }
+  await using app = tokenAppOver("Read");
+  const written = await app.inject({
+    method: "POST",
+    url: "/api/v1/tenants/acme/projects/atlas/operations",
+    headers: {
+      ...authorized,
+      "content-type": "application/vnd.chuggy.v1+json",
+      "idempotency-key": "key",
+    },
+    body: {},
+  });
+  assert.equal(written.statusCode, 403);
+  assert.equal(written.headers[accessTokenExpiresHeader], expiresAt);
 });

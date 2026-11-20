@@ -1,5 +1,5 @@
 /**
- * 212 adds a project's default theme and each person's override for a project
+ * 217 adds a project's default theme and each person's override for a project
  * beside every row the schema already held: the default is an object or
  * none, an override names one theme, a built-in the contract lists or a theme
  * of its own person's, and both go with the theme or the project they name.
@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { postgresMigrate } from "../../src/adapters/postgres/pool.ts";
-import { migration212 } from "../../src/adapters/postgres/schema/migrations/212-project-themes.ts";
+import { migration217 } from "../../src/adapters/postgres/schema/migrations/217-project-themes.ts";
 import { builtInThemeIds } from "../../src/contract/appearance.ts";
 import {
   deletionPartition,
@@ -64,9 +64,9 @@ async function projectThemesMigrationCascades(
     );
 }
 
-test("212 adds the relations, and an override names one theme of its own person's or a built-in the contract lists", async () => {
+test("217 adds the relations, and an override names one theme of its own person's or a built-in the contract lists", async () => {
   await migrationDatabase("project_themes", async (subject) => {
-    await migratedBefore(subject, migration212.version);
+    await migratedBefore(subject, migration217.version);
     await subject.query(deletionPartition);
     assert.equal(
       (
@@ -77,7 +77,7 @@ test("212 adds the relations, and an override names one theme of its own person'
       null,
     );
 
-    assert.ok((await postgresMigrate(subject)).includes(migration212.version));
+    assert.ok((await postgresMigrate(subject)).includes(migration217.version));
     for (const builtIn of builtInThemeIds)
       await projectThemesMigrationOverride(
         subject,

@@ -28,6 +28,7 @@ function wipeTruncated(script: string): readonly string[] {
 
 /** What the wipe keeps: what a project is, rather than what it has done, and what was reported or read of its repositories. */
 const wipeKept = [
+  "access_token",
   "action_observation",
   "admitted_worker",
   "agent_account_credential_off",
@@ -48,6 +49,8 @@ const wipeKept = [
   "personal_runner_project",
   "personal_runner_registration_token",
   "project",
+  "project_connector",
+  "project_connector_change",
   "project_creation_grant",
   "project_creation_operation",
   "project_execution_placement",

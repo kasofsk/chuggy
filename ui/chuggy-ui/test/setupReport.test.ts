@@ -24,6 +24,8 @@ import {
   setupAnswersNone,
   setupAsked,
   setupPluginSkip,
+  setupStartFlag,
+  setupStartYes,
 } from "../app/core/setupArguments.ts";
 import type { SetupAnswers } from "../app/core/setupArguments.ts";
 import {
@@ -49,7 +51,6 @@ import type {
   SetupMergeAnswered,
   SetupServeAnswered,
   SetupTicketAnswered,
-  SetupNorthStarAnswered,
   SetupReport,
   SetupSignInEnded,
   SetupStepSaid,
@@ -105,11 +106,6 @@ const steps: readonly SetupStepSaid[] = [
   { step: "plugin", state: "done", detail: { id: "setup-step-plugin-on" } },
   { step: "workspace", state: "done", detail: "acme" },
   { step: "project", state: "done", detail: "acme/widgets" },
-  {
-    step: "north-star",
-    state: "done",
-    detail: { id: "setup-step-north-star-set" },
-  },
   {
     step: "mcp",
     state: "todo",
@@ -210,6 +206,7 @@ const things: {
           detail: "",
           configuration: "none",
           last: "",
+          url: "",
           page: `${site}/acme/widgets/tickets/new`,
         },
       },
@@ -224,9 +221,61 @@ const things: {
           detail: "",
           configuration: "imported",
           last: "",
+          url: "",
           page: `${site}/acme/widgets/tickets/new`,
         },
       },
+    },
+  ],
+  More: [
+    {
+      thing: "More",
+      more: "Offer",
+      tell: { id: "setup-more-offer", args: { done: "Done." } },
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "More",
+      more: "Runners",
+      tell: {
+        id: "setup-more-runners",
+        args: { line: "the line", runners: "the runners page" },
+      },
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "More",
+      more: "Configuration",
+      tell: {
+        id: "setup-more-configuration",
+        args: { directory: ".chug/configurations/" },
+      },
+      directory: ".chug/configurations/",
+      image: "the image page",
+      page: "the page",
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "More",
+      more: "Review",
+      tell: {
+        id: "setup-more-review",
+        args: {
+          permissions: "p",
+          placement: "q",
+          usage: "u",
+          directory: ".chug/configurations/",
+          configuration: "c",
+          sizing: "s",
+          program: "chuggy-linux",
+          guide: "g",
+        },
+      },
+      workspace: "acme",
+      project: "widgets",
     },
   ],
   Hand: [
@@ -281,13 +330,7 @@ const things: {
       command: "Serve",
       tell: {
         id: "setup-mend-serving-offer",
-        args: {
-          project: "acme/widgets",
-          does: "both",
-          admin: "none",
-          setting: { id: "runners-fallback-title" },
-          placement: "https://chuggy.example/acme/widgets/settings/placement",
-        },
+        args: { project: "acme/widgets" },
       },
       when: { id: "setup-offer-serve-when" },
       workspace: "acme",
@@ -327,6 +370,7 @@ const things: {
             args: { app: "worker", repository: "acme-org/widgets" },
           },
           granted: "both",
+          page: "the page",
         },
       },
       workspace: "acme",
@@ -336,11 +380,14 @@ const things: {
       thing: "Run",
       command: "Bind",
       tell: {
-        id: "setup-mend-portal-tell",
+        id: "setup-mend-connect-tell",
         args: {
+          explained: {
+            id: "setup-mend-apps-explained",
+            args: { repository: "acme-org/widgets" },
+          },
           page: "the page",
-          connect: { id: "repositories-connect-github" },
-          account: "acme-org",
+          repository: "acme-org/widgets",
         },
       },
       workspace: "acme",
@@ -357,6 +404,7 @@ const things: {
           detail: "",
           configuration: "importing",
           last: "",
+          url: "",
           page: `${site}/acme/widgets/tickets/new`,
         },
       },
@@ -434,18 +482,6 @@ const things: {
     workspace: "acme",
     project: "widgets",
   })),
-  NorthStar: (["folder", "question"] as const).map((drawn) => ({
-    thing: "NorthStar",
-    tell: { id: "setup-mend-north-star-tell", args: { drawn } },
-    draft: {
-      id:
-        drawn === "folder"
-          ? "setup-north-star-draft-folder"
-          : "setup-north-star-draft-ask",
-    },
-    workspace: "acme",
-    project: "widgets",
-  })),
   Name: [
     {
       thing: "Name",
@@ -453,8 +489,6 @@ const things: {
         id: "setup-ask-project-name",
         args: {
           workspace: "acme",
-          address: "made",
-          project: "",
           flag: "--name",
         },
       },
@@ -467,8 +501,6 @@ const things: {
         id: "setup-ask-project-name",
         args: {
           workspace: "two words",
-          address: "given",
-          project: "it's --site",
           flag: "--name",
         },
       },
@@ -486,6 +518,49 @@ const things: {
     {
       thing: "Configure",
       tell: configureTell,
+      workspace: "two words",
+      project: "it's --site",
+    },
+  ],
+  Usage: [
+    {
+      thing: "Usage",
+      tell: {
+        id: "setup-usage-over",
+        args: {
+          held: "no",
+          reading: "83",
+          window: { id: "setup-usage-window-five-hour" },
+          threshold: "80",
+          offered: "90",
+        },
+      },
+      over: [{ window: "five_hour", reading: 83, threshold: 80, offered: 90 }],
+      then: "Status",
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "Usage",
+      tell: {
+        id: "setup-usage-over-both",
+        args: {
+          held: "no",
+          reading: "83",
+          window: { id: "setup-usage-window-five-hour" },
+          threshold: "80",
+          offered: "90",
+          readingOther: "91",
+          windowOther: { id: "setup-usage-window-seven-day" },
+          thresholdOther: "90",
+          offeredOther: "100",
+        },
+      },
+      over: [
+        { window: "five_hour", reading: 83, threshold: 80, offered: 90 },
+        { window: "seven_day", reading: 91, threshold: 90, offered: 100 },
+      ],
+      then: "Watch",
       workspace: "two words",
       project: "it's --site",
     },
@@ -629,23 +704,11 @@ const ticketAnswers: readonly (SetupTicketAnswered | undefined)[] = [
   },
 ];
 
-/** What a run of `north-star` can have had answered: nothing asked, written, and failed. */
-const northStarAnswers: readonly (SetupNorthStarAnswered | undefined)[] = [
-  undefined,
-  { answered: "Written" },
-  { answered: "Failed", failure: { id: "failure-no-connection" } },
-];
-
-/** What a run of `serve` can have had answered: nothing asked, each write written, and each refused. */
+/** What a run of `serve` can have had answered: nothing asked, the project given, and the give refused. */
 const serveAnswers: readonly (SetupServeAnswered | undefined)[] = [
   undefined,
-  { given: { written: true }, allowed: { written: true } },
-  { given: { written: true }, allowed: undefined },
-  { given: undefined, allowed: { written: true } },
-  {
-    given: { written: false, failure: { id: "failure-refused" } },
-    allowed: { written: false, failure: { id: "failure-no-connection" } },
-  },
+  { given: { written: true } },
+  { given: { written: false, failure: { id: "failure-refused" } } },
 ];
 
 /** What a run of `bind` can have had answered: nothing asked, bound, and refused. */
@@ -732,10 +795,15 @@ const roster: {
     { report: "AskedWrongly", fault: "Test" },
     { report: "AskedWrongly", fault: "Brief" },
     { report: "AskedWrongly", fault: "Opened" },
-    { report: "AskedWrongly", fault: "NorthStar" },
-    { report: "AskedWrongly", fault: "NorthStarText" },
+    { report: "AskedWrongly", fault: "Start" },
+    { report: "AskedWrongly", fault: "Usage" },
+    { report: "AskedWrongly", fault: "Percent" },
   ],
   SiteUnknown: [{ report: "SiteUnknown" }],
+  Opening: [
+    { report: "Opening", site, repository: "github.com/quilbert/site" },
+    { report: "Opening", site: undefined, repository: undefined },
+  ],
   Busy: [
     { report: "Busy", asked: "SignIn", site: undefined, pid: 4242 },
     { report: "Busy", asked: "Status", site, pid: undefined },
@@ -889,7 +957,7 @@ const roster: {
     })),
     {
       report: "Bind",
-      opened: `${site}/acme/widgets/repositories?connect=github`,
+      opened: `${site}/acme/widgets/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add`,
       openBefore: false,
       repository: undefined,
       answered: undefined,
@@ -933,12 +1001,35 @@ const roster: {
     answered,
     checklist: checklist(things.Brief[0] as SetupThing),
   })),
-  NorthStar: northStarAnswers.map((answered) => ({
-    report: "NorthStar",
-    project: answered === undefined ? undefined : "acme/widgets",
-    answered,
-    checklist: checklist(things.Brief[0] as SetupThing),
-  })),
+  Usage: [
+    {
+      report: "Usage",
+      answered: {
+        answered: "Raised",
+        raised: [
+          { window: "five_hour", percent: 90 },
+          { window: "seven_day", percent: 95 },
+        ],
+      },
+      checklist: checklist(things.Brief[0] as SetupThing),
+    },
+    {
+      report: "Usage",
+      answered: {
+        answered: "Refused",
+        refusal: { id: "usage-percent-fault", args: { min: "1", max: "100" } },
+      },
+      checklist: checklist(things.Usage[0] as SetupThing),
+    },
+    {
+      report: "Usage",
+      answered: {
+        answered: "Failed",
+        failure: { id: "failure-no-connection" },
+      },
+      checklist: checklist(things.Usage[0] as SetupThing),
+    },
+  ],
   RunnerOut: pairs.flatMap(({ workspace, project }) =>
     outsOf(project === undefined ? "ChatHost" : "Runner").map((out) => ({
       report: "RunnerOut",
@@ -964,7 +1055,7 @@ const configuring: ReadonlySet<SetupReport["report"]> = new Set([
   "Merge",
   "Serve",
   "Ticket",
-  "NorthStar",
+  "Usage",
 ]);
 
 /** Every report but a checklist and a run of `mcp` or `runner`, which is every report a run that is not signed in can make. */
@@ -1148,7 +1239,7 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
     report.report === "Merge" ||
     report.report === "Serve" ||
     report.report === "Ticket" ||
-    report.report === "NorthStar"
+    report.report === "Usage"
   )
     return carried(report.checklist, answers);
   if (report.report === "Plugin")
@@ -1164,8 +1255,8 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
       thing.thing === "Name" ||
       thing.thing === "Brief" ||
       thing.thing === "First" ||
-      thing.thing === "NorthStar" ||
-      thing.thing === "Configure"
+      thing.thing === "Configure" ||
+      thing.thing === "Usage"
       ? project(thing)
       : report.next.carried;
   }
@@ -1281,12 +1372,21 @@ test("a report of a run not signed in that does not stop names no command in a r
     const said = JSON.stringify(report);
     const unknown = report.report === "SiteUnknown";
     const reloading = report.report === "Plugin" && report.ended.ended === "On";
+    const opening = report.report === "Opening";
+    const yes = [setupStartFlag, setupStartYes];
     expect(ruled(lines), said).toEqual(
-      unknown ? [["--site"]] : reloading ? [["--site", site]] : [],
+      unknown
+        ? [["--site"]]
+        : reloading
+          ? [["--site", site]]
+          : opening
+            ? [[...yes, "--site", ...(report.site === undefined ? [] : [site])]]
+            : [],
     );
     expect(lines.at(-1) === stop, said).toBe(
       unknown ||
         reloading ||
+        opening ||
         report.report === "Unserved" ||
         report.report === "SignedOutHere",
     );
@@ -1328,7 +1428,9 @@ test("a run on a Node too old, on a platform not served, one asked wrongly and o
     roster[kind].map((report) => setupReportExit(report));
   expect(exits("NodeOld")).toEqual([2, 2]);
   expect(exits("Unserved")).toEqual([2]);
-  expect(exits("AskedWrongly")).toEqual(roster.AskedWrongly.map(() => 2));
+  expect(exits("AskedWrongly")).toEqual([
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+  ]);
   expect(exits("SiteUnknown")).toEqual([2]);
 });
 
@@ -1372,9 +1474,14 @@ test("a sign-in that ended on the person's side exits zero, and one the installa
   });
 });
 
+const drive = `rule: Run the command on the next: line exactly as written, and stop where it says ${setupNextStop}. Say each tell: line to the person as it is written. Put each ask: line to the person, and pass their answer in the flag it names.`;
+
+const explore =
+  "rule: Start a subagent in the background that explores this folder's repository and reports which toolchains work on it needs, and which images the repository already defines for its CI or development. Go on with the person through the sign-in and the other steps that do not depend on the repository while it works, and use its report where the worker image is chosen.";
+
 const driven = [
-  `rule: Run the command on the next: line exactly as written, and stop where it says ${setupNextStop}. Say each tell: line to the person as it is written. Put each ask: line to the person, and pass their answer in the flag it names.`,
-  "rule: Before anything else, start a subagent that explores this folder's repository and reports which toolchains work on it needs, and which images the repository already defines for its CI or development. Go on with the person through the steps that do not depend on the repository while it works, and use its report where the worker image is chosen.",
+  drive,
+  explore,
   "rule: Never read or print anything under ~/.chuggy-setup: it holds the sign-in.",
   `rule: To change which GitHub account chuggy setup is signed in as, run node ${machineScript} sign-out and then sign in again.`,
 ];
@@ -1392,6 +1499,90 @@ test("not signed in, the bare command says how the program is driven and what is
   expect(signedOut(undefined)).toEqual(plain);
   for (const ended of ["SignedIn", "SiteChanged", "WorkspacesUnread"] as const)
     expect(signedOut(ended), ended).toEqual(plain);
+});
+
+const repository = "github.com/quilbert/site";
+
+const opening = (named: string): string =>
+  `tell: I'll set chuggy up for ${named}. Here is what happens: 1. Sign you in to chuggy. 2. Add chuggy's plugin and tools to your agent. 3. Create a project. 4. Connect ${named} on GitHub. 5. Set up a runner and a chat host on this machine. 6. File a first ticket to check it all works. I'll say what each step does as we get to it. Okay to start?`;
+
+const waits =
+  "rule: Until the person says yes, do nothing else: start no subagent, no sign-in and no other command.";
+
+test("before the person's yes, the bare command says every step setup will do and asks whether to go on, and names only itself again with that yes, once they say it", () => {
+  expect(
+    setupReportLines(
+      { report: "Opening", site, repository },
+      machineScript,
+      copyTextEn,
+    ),
+  ).toEqual([
+    `site: ${site}, not signed in`,
+    opening(repository),
+    drive,
+    waits,
+    `rule: Run node ${machineScript} --start yes --site ${site} only once the person says yes to setting chuggy up.`,
+    stop,
+  ]);
+  expect(
+    setupReportLines(
+      { report: "Opening", site: undefined, repository: undefined },
+      machineScript,
+      copyTextEn,
+    ),
+  ).toEqual([
+    "found: no chuggy site is remembered on this machine yet",
+    opening("the repository in this folder"),
+    drive,
+    waits,
+    `rule: Run node ${machineScript} --start yes --site with the address of the person's chuggy site after it, such as https://chuggy.example, only once the person says yes to setting chuggy up. Ask the person for the address if you do not have it.`,
+    stop,
+  ]);
+});
+
+test("before the person's yes, nothing printed starts a subagent or a sign-in: no explore rule, and no sign-in named in a rule or on next:", () => {
+  for (const report of roster.Opening) {
+    const lines = setupReportLines(report, machineScript, copyTextEn);
+    const said = JSON.stringify(report);
+    expect(lines, said).not.toContain(explore);
+    expect(
+      commands(lines.filter((text) => /^(?:rule|next): /u.test(text))).map(
+        (named) =>
+          setupAsked(
+            named.argv.at(-1) === "--site" ? [...named.argv, site] : named.argv,
+          ).asked,
+      ),
+      said,
+    ).toEqual(["Status"]);
+  }
+});
+
+test("only a run before the person's yes says what setup will do and waits on that yes: signed out after it, signed in, or with steps done, no report does", () => {
+  for (const report of every.filter((one) => one.report !== "Opening")) {
+    const lines = printed(report).join("\n");
+    const said = JSON.stringify(report);
+    expect(lines, said).not.toContain("Okay to start?");
+    expect(lines, said).not.toContain(waits);
+    expect(lines, said).not.toContain(`${setupStartFlag} ${setupStartYes}`);
+  }
+});
+
+test("a run given the person's yes carries it into every bare command it names again, and into no other command", () => {
+  const answers: SetupAnswers = { ...setupAnswersNone, start: setupStartYes };
+  const yes = `${setupStartFlag} ${setupStartYes}`;
+  const again = (report: SetupReport) =>
+    setupReportLines(report, machineScript, copyTextEn, answers);
+  expect(
+    again({ report: "Busy", asked: "Status", site, pid: undefined }),
+  ).toContain(
+    `rule: Run node ${machineScript} ${yes} --site ${site} only once that command has ended.`,
+  );
+  expect(again({ report: "SiteUnknown" }).join("\n")).toContain(
+    `node ${machineScript} ${yes} --site with the address`,
+  );
+  expect(
+    again({ report: "SignedOut", site, directory, ended: undefined }),
+  ).toEqual([`site: ${site}, not signed in`, ...driven, `${next} sign-in`]);
 });
 
 test("while the last sign-in's ending stands the bare command says it as sign-in did, under the same rule, and names no command to run", () => {
@@ -1440,7 +1631,6 @@ test("signed in, the bare command prints what was found, each step in columns, a
     "step: plugin      done     Claude Code here has chuggy's plugin, on",
     "step: workspace   done     acme",
     "step: project     done     acme/widgets",
-    "step: north-star  done     the project has a North Star",
     "step: mcp         todo     Claude Code here has no chuggy MCP server for acme/widgets",
     "step: github      unread   its GitHub accounts were not answered (Fault)",
     "step: repository  todo",
@@ -1512,11 +1702,19 @@ test("no checklist but bind's, merge's and watch's ends on a command: whatever e
     const imageRecommended =
       thing.thing === "First" ||
       (thing.thing === "Brief" && thing.bootstrapOffered);
+    if (thing.thing === "More") {
+      expect(rules, said).toHaveLength(
+        thing.more === "Runners" || thing.more === "Configuration" ? 2 : 1,
+      );
+      expect(lines.at(-2), said).toBe(rules.at(-1));
+      continue;
+    }
     expect(rules, said).toHaveLength(
       thing.thing === "Done"
         ? 0
-        : (thing.thing === "Offer" && thing.command === "Plugin") ||
-            thing.thing === "NorthStar" ||
+        : (thing.thing === "Offer" &&
+              (thing.command === "Plugin" || thing.command === "Merge")) ||
+            thing.thing === "Usage" ||
             imageRecommended
           ? 2
           : 1,
@@ -1632,12 +1830,12 @@ test("whatever the person answers a question with, passed after the flag the rul
 test("a project lacking is asked a name for, and the rule names project for the workspace, with the address only where one is held, and the name last", () => {
   const [made, given] = things.Name;
   expect(ended(made as SetupThing)).toEqual([
-    "ask: What should the new project in acme be called? Its address is made from the name. Pass the name as --name.",
+    "ask: First, we'll create a new project in acme. What should it be called? Pass the name as --name.",
     `rule: Run node ${machineScript} project --workspace acme --name with the person's answer after it, quoted as one word, only once the person has answered.`,
     stop,
   ]);
   expect(ended(given as SetupThing)).toEqual([
-    "ask: What should the new project in two words be called? Its address will be it's --site. Pass the name as --name.",
+    "ask: First, we'll create a new project in two words. What should it be called? Pass the name as --name.",
     `rule: Run node ${machineScript} project --workspace 'two words' --project 'it'\\''s --site' --name with the person's answer after it, quoted as one word, only once the person has answered.`,
     stop,
   ]);
@@ -2473,12 +2671,8 @@ function named(name: string): readonly string[] {
         thing: {
           thing: "Hand",
           tell: {
-            id: "setup-mend-serving-admin-tell",
-            args: {
-              project: name,
-              setting: "Personal runners",
-              placement: `${site}/placement`,
-            },
+            id: "setup-mend-admin-tell",
+            args: { workspace: name, people: `${site}/people` },
           },
           when: { id: "setup-mend-admin-when", args: { workspace: name } },
         },
@@ -2494,7 +2688,7 @@ function flat(name: string): readonly string[] {
     `site: ${site}, signed in`,
     `found: this folder's remote ${name} is added to no project the site shows you, so it proposes none`,
     `step: workspace   done     ${name}`,
-    `tell: Your runner is registered and given ${name}, and does not take its work yet. Your own runners take its work only once an admin of the project sets Personal runners on its Placement page, ${site}/placement. Tell me once they have.`,
+    `tell: Setting chuggy up takes an admin of the workspace, and you are not one in ${name}. Ask an admin of ${name} to make you one on its People page, ${site}/people. Tell me once you are an admin.`,
     `rule: Run node ${machineScript} --workspace '${name}' only once the person says they are an admin of ${name}.`,
     stop,
   ];
@@ -2725,7 +2919,7 @@ test("a run of import says what it asked and what the site answered under the si
 const bindRule =
   "rule: Run the command on the next: line now, without asking the person";
 const bindRuleRest =
-  ". It waits until GitHub lets both apps into this folder's repository, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.";
+  ". It waits until GitHub lets both apps into the repository the tell: line names, and then adds it where it is not added yet. Nothing has failed, so do not tell the person that it did or give them a deadline.";
 
 test("bind is named to run at once for the project, asking nothing of the person, beside its tell of GitHub", () => {
   const [granted, trip] = things.Run;
@@ -2789,7 +2983,7 @@ test("a bind whose wait ran out before GitHub was done says so, says the page it
   const lines = setupReportLines(waited, machineScript, copyTextEn);
   const alone = setupReportLines(waited.checklist, machineScript, copyTextEn);
   expect(lines.slice(1, 3)).toEqual([
-    `did: opened ${site}/acme/widgets/repositories?connect=github in a browser`,
+    `did: opened ${site}/acme/widgets/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add in a browser`,
     "found: the wait ended before GitHub let both apps into this folder's repository",
   ]);
   expect(lines.slice(3, -2)).toEqual(alone.slice(1, -2));
@@ -3035,6 +3229,7 @@ test("the merge is offered under one rule naming merge, once the person says yes
   );
   expect(lines.slice(1)).toEqual([
     `rule: Run node ${machineScript} merge ${flags} only once the person says yes to chuggy merging that pull request.`,
+    `rule: Run node ${machineScript} ${flags} --more offer only if the person would rather merge it themselves.`,
     stop,
   ]);
 });

@@ -1,12 +1,7 @@
-## A project's pools, and the words the pages of runners share.
+## The words the pages of runners share.
 
 runners-title = { -runner(case: "upper", form: "plural") }
-runners-pools-title = Pools
-# spells -run: to run is a verb here
-runners-pools-about = Shared machines registered to run this { -project }'s { -agent(form: "plural") }.
-runners-pools-none = No pools
 runners-col-runner = { -runner(case: "upper") }
-runners-col-platforms = Platforms
 runners-col-version = Version
 runners-col-registered = Registered
 runners-col-last-polled = Last polled
@@ -147,30 +142,13 @@ runners-member-remove = Remove { -personal-runner(form: "plural") }
 runners-member-removed = { -personal-runner(case: "upper", form: "plural") } removed
 runners-member-none = No { -personal-runner } you may remove
 
-## Whether a run of the reader's waits on their personal runners, or a run on its project's pools.
+## Whether a run of the reader's waits on their personal runners.
 
 runners-wait-waiting = Waiting on your { -personal-runner(form: "plural") }
 runners-wait-offline = offline
 # spells -run: to run is a verb here
 runners-wait-unable = none can run it
 runners-wait-room = { $free } free, needs { $needed }
-runners-wait-pools = Waiting on this { -project }'s { -runner(form: "plural") }
-
-## Whether personal runners take a member's work in a project.
-
-runners-fallback-title = { -personal-runner(case: "upper", form: "plural") }
-# spells -work-stage: the work in general
-runners-fallback-about = Take { -role-member(form: "a") }'s own work · Changes reach new work only
-runners-fallback-none = None
-runners-fallback-strict = Strict
-runners-fallback-preferred = Preferred
-# spells -work-stage: the work in general
-runners-fallback-none-about = { -personal-runner(case: "upper", form: "plural") } take no work started from now on.
-# spells -work-stage: the work in general
-runners-fallback-strict-about = { -role-member(case: "upper", form: "a") }'s { -personal-runner(form: "plural") } take the work they start here, and while they have one serving this { -project } no shared { -runner } does.
-# spells -work-stage: the work in general
-runners-fallback-preferred-about = { -role-member(case: "upper", form: "a") }'s { -personal-runner(form: "plural") } take the work they start here while one is online, and a shared { -runner } takes it while none is.
-runners-fallback-saved = { runners-fallback-title } saved
 
 ## The project's placement.
 

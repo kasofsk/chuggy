@@ -33,6 +33,8 @@ const document = golden as {
 /** Every route name the golden document names, sorted. */
 const documentRouteNames = [
   "abilities",
+  "accessToken",
+  "accessTokens",
   "actionReports",
   "agentAccountCredential",
   "agentAccountCredentialOff",
@@ -58,6 +60,9 @@ const documentRouteNames = [
   "configurationImports",
   "configurationSchema",
   "configurations",
+  "connector",
+  "connectorHistory",
+  "connectors",
   "contract",
   "dispatchView",
   "draft",
@@ -89,7 +94,6 @@ const documentRouteNames = [
   "outputContent",
   "ownTheme",
   "ownThemes",
-  "ownerFallback",
   "personalRunner",
   "personalRunnerMember",
   "personalRunnerPermit",
@@ -143,9 +147,6 @@ const documentRouteNames = [
   "ticketReturn",
   "ticketTake",
   "tickets",
-  "workerPoolRegistrationTokens",
-  "workerPoolRegistrations",
-  "workerPools",
 ];
 
 test("the golden names every route and not an empty stand-in", () => {
@@ -154,16 +155,17 @@ test("the golden names every route and not an empty stand-in", () => {
 
 test("the golden names every request schema", () => {
   assert.deepEqual(Object.keys(document.schemas).sort(), [
+    "accessTokenMint",
     "actionReport",
     "agentAccountSettings",
     "chatThreadMessage",
+    "connectorWrite",
     "draftCreation",
     "draftRevision",
     "epicWrite",
     "executionPlacement",
     "forgeAuthorization",
     "forgeCredential",
-    "ownerFallback",
     "personalRunnerProject",
     "personalRunnerRedemption",
     "projectCreation",
@@ -185,7 +187,6 @@ test("the golden names every request schema", () => {
     "threadOfferReply",
     "threadOpen",
     "threadRename",
-    "workerPoolRedemption",
     "workerPoolRegistrationToken",
   ]);
 });

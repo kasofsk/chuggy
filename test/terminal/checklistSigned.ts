@@ -79,7 +79,7 @@ export function said(done: Ran, word: string): readonly string[] {
 }
 
 const ruleEnd =
-  / with the (?:person's answer|command that tests this repository) after it,| with (?=--(?:title|text) )| only (?:once|if) the person /u;
+  / with the (?:person's answer|command that tests this repository) after it,| with (?=--title )| only (?:once|if) the person /u;
 
 /**
  * The arguments of the command a run's rule names, as a shell makes words of

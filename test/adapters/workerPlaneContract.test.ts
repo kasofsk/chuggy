@@ -176,6 +176,7 @@ import {
 import {
   inertRunEvidence,
   inertSessionPlane,
+  attemptTasks,
   inertTasks,
   inertWorkerPlane,
   runContextReadingBody,
@@ -488,7 +489,7 @@ function workerPlaneAuthority(
 function workerPlaneTask(
   found: WorkerTaskRead | undefined,
 ): Pick<WorkerPlaneServerService, "tasks"> {
-  return { tasks: { ...inertTasks, work: () => Promise.resolve(found) } };
+  return { tasks: attemptTasks(found) };
 }
 
 /** A member of the worker mode union by name: its agent where it runs one, and otherwise its type. */

@@ -33,9 +33,10 @@ export const settingsRoutes = {
   project: {
     threads: "/$tenant/$project/settings/threads",
     placement: "/$tenant/$project/settings/placement",
-    pools: "/$tenant/$project/settings/pools",
     permissions: "/$tenant/$project/settings/permissions",
+    accessTokens: "/$tenant/$project/settings/access-tokens",
     repositories: "/$tenant/$project/settings/repositories",
+    connectors: "/$tenant/$project/settings/connectors",
     catalog: "/$tenant/$project/settings/catalog",
     appearance: "/$tenant/$project/settings/appearance",
     people: "/$tenant/$project/settings/workspace/people",
@@ -76,9 +77,10 @@ export type SettingsSectionShownBy =
 export type SettingsSectionId =
   | "threads"
   | "placement"
-  | "pools"
   | "permissions"
+  | "access-tokens"
   | "repositories"
+  | "connectors"
   | "catalog"
   | "appearance"
   | "people"
@@ -107,9 +109,10 @@ export interface SettingsSection {
 const settingsSectionLabels = {
   threads: { id: "settings-nav-threads" },
   placement: { id: "settings-nav-placement" },
-  pools: { id: "settings-nav-pools" },
   permissions: { id: "settings-nav-permissions" },
+  "access-tokens": { id: "settings-nav-access-tokens" },
   repositories: { id: "settings-nav-repositories" },
+  connectors: { id: "settings-nav-connectors" },
   catalog: { id: "settings-nav-catalog" },
   appearance: { id: "settings-nav-appearance" },
   people: { id: "settings-nav-people" },
@@ -126,9 +129,10 @@ const settingsSectionLabels = {
 const settingsSectionSummaries = {
   threads: { id: "settings-nav-threads-summary" },
   placement: { id: "settings-nav-placement-summary" },
-  pools: { id: "settings-nav-pools-summary" },
   permissions: { id: "settings-nav-permissions-summary" },
+  "access-tokens": { id: "settings-nav-access-tokens-summary" },
   repositories: { id: "settings-nav-repositories-summary" },
+  connectors: { id: "settings-nav-connectors-summary" },
   catalog: { id: "settings-nav-catalog-summary" },
   appearance: { id: "settings-nav-appearance-summary" },
   people: { id: "settings-nav-people-summary" },
@@ -170,9 +174,10 @@ function settingsSectionOf(
 export const settingsSections: readonly SettingsSection[] = [
   settingsSectionOf("threads", "project", "threads"),
   settingsSectionOf("placement", "project", "placement"),
-  settingsSectionOf("pools", "project", "pools"),
   settingsSectionOf("permissions", "project", "permissions"),
+  settingsSectionOf("access-tokens", "project", "accessTokens"),
   settingsSectionOf("repositories", "project", "repositories"),
+  settingsSectionOf("connectors", "project", "connectors"),
   settingsSectionOf("catalog", "project", "catalog"),
   settingsSectionOf("appearance", "project", "appearance", "ProjectAdminister"),
   settingsSectionOf("people", "workspace", "people"),

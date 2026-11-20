@@ -5,7 +5,7 @@
  *
  * A REQUEST REACHES A RELATION THROUGH ONE RECORD PER ROSTER, OR AS HOSTED
  * RUNS, PERSONAL RUNNERS OR UNSCOPED CHAT. The builders in `./projectGrant.ts`
- * take any relation the model declares, `agents`, `pools` and the `tenant`
+ * take any relation the model declares, `agents` and the `tenant`
  * link included, so these records, `accessHostedRunsRelation`,
  * `accessPersonalRunnersRelation` and `accessUnscopedChatRevokedRelation` are
  * the whole of what a role change can write, and

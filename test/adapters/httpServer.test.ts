@@ -84,17 +84,16 @@ import {
   asRepositoryFinalization,
   type ProjectRepositoryLandingStore,
 } from "../../src/interpreter/repositoryBinding.ts";
-import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
+import { threeBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
-import { unservedEpics, unservedThreads } from "./threadFixtures.ts";
-import type { WorkerPoolRegistrationService } from "../../src/interpreter/workerPoolRegistrationToken.ts";
-import type { ExecutionPlacementAdministration } from "../../src/interpreter/executionPlacement.ts";
 import {
-  executionPlacementResponseSchema,
-  workerPoolCredentialsSchema,
-  workerPoolsResponseSchema,
-} from "../../src/contract/responses.ts";
+  accessTokenExpiresHeader,
+  accessTokenPrefix,
+} from "../../src/contract/accessToken.ts";
+import { unservedEpics, unservedThreads } from "./threadFixtures.ts";
+import type { ExecutionPlacementAdministration } from "../../src/interpreter/executionPlacement.ts";
+import { executionPlacementResponseSchema } from "../../src/contract/responses.ts";
 import { hostedRunsNotGrantedCode } from "../../src/contract/rosters.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
@@ -486,7 +485,9 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
     submit: (_principal, submission) => {
       const via =
         submission.viaSession === undefined
-          ? ""
+          ? submission.viaToken === undefined
+            ? ""
+            : `:token:${submission.viaToken.token}:${submission.viaToken.name}`
           : `:via:${String(submission.viaSession)}`;
       calls.push(`submit:${submission.command.command}${via}`);
       return Promise.resolve({
@@ -594,84 +595,6 @@ function fakeForgeCredentials(calls: string[]): ForgeCredentialMinting {
   };
 }
 
-/** The runner the listed pool's newest poll named, beside the version pinned for its package. */
-const shameRunner = {
-  package: "chuggy-linux",
-  version: "0.14.0",
-  pinned: "0.14.1",
-};
-
-/** Registration as the routes see it: one token stands for one project, and a mint is recorded as the service was asked it. */
-function fakeWorkerPools(calls: string[]): WorkerPoolRegistrationService {
-  return {
-    registered: (_principal, partition) => {
-      calls.push(`worker-pools:${partition.project}`);
-      return Promise.resolve(
-        partition.project === "atlas"
-          ? {
-              result: "Found",
-              value: {
-                pools: [
-                  {
-                    pool: "shame",
-                    capabilities: ["Platform:Linux:Amd64"],
-                    registeredAt: "2026-09-30T12:00:00.000Z",
-                    polledAt: "2026-09-30T12:01:00.000Z",
-                    live: true,
-                    runner: shameRunner,
-                  },
-                  {
-                    pool: "spare",
-                    capabilities: [],
-                    registeredAt: "2026-09-30T12:00:00.000Z",
-                    live: false,
-                  },
-                ],
-                truncated: false,
-              },
-            }
-          : { result: "NotFound" },
-      );
-    },
-    mint: (_principal, partition, request) => {
-      calls.push(
-        `worker-pool-token:${partition.project}:${JSON.stringify(request)}`,
-      );
-      if (partition.project === "full")
-        return Promise.resolve({ result: "LimitReached" });
-      return Promise.resolve(
-        partition.project === "atlas"
-          ? {
-              result: "Minted",
-              value: { token: "a-token", expiresAtMs: 1_757_500_000_000 },
-            }
-          : { result: "NotFound" },
-      );
-    },
-    redeem: (offered) => {
-      calls.push(`worker-pool-redeem:${offered.pool}`);
-      if (offered.pool === "spent")
-        return Promise.resolve({ result: "NotFound" });
-      return Promise.resolve({
-        result: "Registered",
-        value: {
-          partition: {
-            tenant: asTenantId("acme"),
-            project: asProjectId("atlas"),
-          },
-          pool: offered.pool,
-          capabilities: offered.capabilities,
-          tokenUrl: "https://issuer.invalid/oauth2/token",
-          audience: "https://api.invalid",
-          planeUrl: "https://plane.invalid/",
-          clientId: "chuggy-pool-one",
-          clientSecret: "a-secret",
-        },
-      });
-    },
-  };
-}
-
 /**
  * Placement as the routes see it: `atlas` is administered under the hosted
  * grant, `pooled` without it, and every other project is not found.
@@ -736,7 +659,6 @@ function appOf(
     fakeSelectorSettings(calls),
     minting ?? fakeForgeCredentials(calls),
     undefined,
-    fakeWorkerPools(calls),
     undefined,
     fakeExecutionPlacement(calls),
   );
@@ -1132,8 +1054,6 @@ function appPinning(calls: string[], releases = pinnedFixture) {
     },
     { ready: () => Promise.resolve(true) },
     authority,
-    undefined,
-    undefined,
     undefined,
     undefined,
     undefined,
@@ -2346,14 +2266,25 @@ function sessionSecret(): string {
 
 const liveSession = asSessionId("session-one");
 
+/** The token the token authority answers for, a writer in the session's project. */
+const liveToken = {
+  partition: { tenant: asTenantId("tenant"), project: asProjectId("project") },
+  token: "0b5f3c1e-7a4d-4f2b-9c8e-1d2a3b4c5d6e",
+  name: "nightly",
+  access: "Write" as const,
+  principal: asPrincipal("issuer subject"),
+  expiresAt: "2027-01-01T00:00:00.000Z",
+};
+
 /**
- * The server as it is composed once a session authority stands beside the
- * issuer, which is the only arrangement in which either bearer kind is routed.
+ * The server as it is composed once a session authority and a token authority
+ * stand beside the issuer, which is the only arrangement in which every bearer
+ * kind is routed.
  */
-function twoBearerAppOf(calls: string[], known: ReadonlySet<string>) {
+function threeBearerAppOf(calls: string[], known: ReadonlySet<string>) {
   return createNativeHttpApp(
     fakeWeb(calls),
-    twoBearerAuthentication(
+    threeBearerAuthentication(
       {
         authenticateBearer: (token) => {
           calls.push(`oidc:${token}`);
@@ -2387,6 +2318,12 @@ function twoBearerAppOf(calls: string[], known: ReadonlySet<string>) {
           );
         },
       },
+      {
+        authenticate: (secret) => {
+          calls.push("token-authority");
+          return Promise.resolve(known.has(secret) ? liveToken : undefined);
+        },
+      },
     ),
     { ready: () => Promise.resolve(true) },
     authority,
@@ -2410,9 +2347,24 @@ function submissionUnder(token: string) {
   };
 }
 
+/** A submission under `token`, known to no authority, refused as an invalid bearer and not as an outage. */
+async function refusedAsInvalid(token: string) {
+  const calls: string[] = [];
+  await using app = threeBearerAppOf(calls, new Set());
+  const found = await app.inject(submissionUnder(token));
+  assert.equal(found.statusCode, 401, token);
+  assert.equal(
+    found.headers["www-authenticate"],
+    'Bearer error="invalid_token"',
+    token,
+  );
+  assert.equal(found.headers["retry-after"], undefined, token);
+  return { calls, found };
+}
+
 test("an OIDC bearer still authenticates, and stamps no session", async () => {
   const calls: string[] = [];
-  await using app = twoBearerAppOf(calls, new Set());
+  await using app = threeBearerAppOf(calls, new Set());
   const found = await app.inject(submissionUnder("valid"));
   assert.equal(found.statusCode, 422);
   assert.deepEqual(calls, ["oidc:valid", "submit:Decide"]);
@@ -2421,13 +2373,37 @@ test("an OIDC bearer still authenticates, and stamps no session", async () => {
 test("a session bearer submits as its principal, and the record says which session", async () => {
   const calls: string[] = [];
   const secret = sessionSecret();
-  await using app = twoBearerAppOf(calls, new Set([secret]));
+  await using app = threeBearerAppOf(calls, new Set([secret]));
   const found = await app.inject(submissionUnder(secret));
   assert.equal(found.statusCode, 422);
   assert.deepEqual(calls, [
     "session-authority",
     `submit:Decide:via:${String(liveSession)}`,
   ]);
+});
+
+test("an access token submits as its maker, and the record names the token and its expiry", async () => {
+  const calls: string[] = [];
+  const secret = `${accessTokenPrefix}${"t".repeat(43)}`;
+  await using app = threeBearerAppOf(calls, new Set([secret]));
+  const found = await app.inject(submissionUnder(secret));
+  assert.equal(found.statusCode, 422);
+  assert.equal(found.headers[accessTokenExpiresHeader], liveToken.expiresAt);
+  assert.deepEqual(calls, [
+    "token-authority",
+    `submit:Decide:token:${liveToken.token}:${liveToken.name}`,
+  ]);
+});
+
+test("a malformed or unknown access token is unauthenticated, and never reported as an outage", async () => {
+  for (const token of [
+    accessTokenPrefix,
+    `${accessTokenPrefix}!!`,
+    `${accessTokenPrefix}${"t".repeat(43)}`,
+  ]) {
+    const { found } = await refusedAsInvalid(token);
+    assert.equal(found.headers[accessTokenExpiresHeader], undefined, token);
+  }
 });
 
 /** A draft creation, offered under whichever bearer a case is about. */
@@ -2441,7 +2417,7 @@ function draftUnder(token: string) {
 
 test("a draft created under an OIDC bearer has no origin session", async () => {
   const calls: string[] = [];
-  await using app = twoBearerAppOf(calls, new Set());
+  await using app = threeBearerAppOf(calls, new Set());
   await app.inject(draftUnder("valid"));
   assert.deepEqual(calls, ["oidc:valid", "createDraft"]);
 });
@@ -2451,7 +2427,7 @@ test("a draft created under an OIDC bearer has no origin session", async () => {
 test("a draft created under a session bearer has that session as its origin", async () => {
   const calls: string[] = [];
   const secret = sessionSecret();
-  await using app = twoBearerAppOf(calls, new Set([secret]));
+  await using app = threeBearerAppOf(calls, new Set([secret]));
   await app.inject(draftUnder(secret));
   assert.deepEqual(calls, [
     "session-authority",
@@ -2461,7 +2437,7 @@ test("a draft created under a session bearer has that session as its origin", as
 
 test("a session bearer no live row answers is unauthenticated, not forbidden", async () => {
   const calls: string[] = [];
-  await using app = twoBearerAppOf(calls, new Set());
+  await using app = threeBearerAppOf(calls, new Set());
   const found = await app.inject(submissionUnder(sessionSecret()));
   assert.equal(found.statusCode, 401);
   assert.equal(
@@ -2482,16 +2458,7 @@ test("a malformed session bearer is refused, and never reported as an outage", a
     `${sessionBearerPrefix}!!`,
     `${sessionBearerPrefix.toUpperCase()}${randomUUID()}${randomUUID()}`,
   ]) {
-    const calls: string[] = [];
-    await using app = twoBearerAppOf(calls, new Set());
-    const found = await app.inject(submissionUnder(token));
-    assert.equal(found.statusCode, 401, token);
-    assert.equal(
-      found.headers["www-authenticate"],
-      'Bearer error="invalid_token"',
-      token,
-    );
-    assert.equal(found.headers["retry-after"], undefined, token);
+    const { calls } = await refusedAsInvalid(token);
     assert.equal(
       calls.includes("session-authority"),
       false,
@@ -2500,9 +2467,6 @@ test("a malformed session bearer is refused, and never reported as an outage", a
   }
 });
 
-const workerPoolTokenPath =
-  "/api/v1/tenants/acme/projects/atlas/worker-pool-registration-tokens";
-const workerPoolRedemptionPath = "/api/v1/worker-pool-registrations";
 const workerPoolJson = { "content-type": "application/vnd.chuggy.v1+json" };
 
 const placementPath = (project: string) =>
@@ -2569,158 +2533,33 @@ test("a placement is written whole, and a hosted route the tenant has not grante
   );
 });
 
-test("a project's registered pools are listed to a reader with each one's newest poll, whether it is live and the runner it named, and another project's are not found", async () => {
+test("a project's pools are neither listed, minted a token nor registered: each path answers as one the API does not serve", async () => {
   const calls: string[] = [];
   await using app = appOf(calls);
-  const listed = await app.inject({
-    url: "/api/v1/tenants/acme/projects/atlas/worker-pools",
-    headers: { authorization: "Bearer valid" },
-  });
-  assert.equal(listed.statusCode, 200);
-  assert.deepEqual(workerPoolsResponseSchema.parse(listed.json()), {
-    pools: [
-      {
-        pool: "shame",
-        capabilities: ["Platform:Linux:Amd64"],
-        registeredAt: "2026-09-30T12:00:00.000Z",
-        polledAt: "2026-09-30T12:01:00.000Z",
-        live: true,
-        runner: {
-          package: "chuggy-linux",
-          version: "0.14.0",
-          pinned: "0.14.1",
-        },
-      },
-      {
-        pool: "spare",
-        capabilities: [],
-        registeredAt: "2026-09-30T12:00:00.000Z",
-        live: false,
-      },
-    ],
-    truncated: false,
-  });
-  const absent = await app.inject({
-    url: "/api/v1/tenants/acme/projects/other/worker-pools",
-    headers: { authorization: "Bearer valid" },
-  });
-  assert.equal(absent.statusCode, 404);
-});
-
-test("an owner mints a registration token and a project they may not administer is not found", async () => {
-  const calls: string[] = [];
-  await using app = appOf(calls);
-  const minted = await app.inject({
-    method: "POST",
-    url: workerPoolTokenPath,
-    headers: { authorization: "Bearer valid", ...workerPoolJson },
-    payload: JSON.stringify({ lifetimeSecs: 900 }),
-  });
-  assert.equal(minted.statusCode, 201);
-  assert.deepEqual(minted.json(), {
-    token: "a-token",
-    expiresAtMs: 1_757_500_000_000,
-  });
-  const absent = await app.inject({
-    method: "POST",
-    url: "/api/v1/tenants/acme/projects/other/worker-pool-registration-tokens",
-    headers: { authorization: "Bearer valid", ...workerPoolJson },
-    payload: JSON.stringify({ lifetimeSecs: 900 }),
-  });
-  assert.equal(absent.statusCode, 404);
-  assert.deepEqual(
-    calls.filter((call) => call.startsWith("worker-pool-")),
+  const asked = (method: "GET" | "POST", url: string) =>
+    app.inject({
+      method,
+      url,
+      headers: { authorization: "Bearer valid", ...workerPoolJson },
+      ...(method === "POST" ? { payload: "{}" } : {}),
+    });
+  for (const [method, url] of [
+    ["GET", "/api/v1/tenants/acme/projects/atlas/worker-pools"],
     [
-      'worker-pool-token:atlas:{"lifetimeSecs":900}',
-      'worker-pool-token:other:{"lifetimeSecs":900}',
+      "POST",
+      "/api/v1/tenants/acme/projects/atlas/worker-pool-registration-tokens",
     ],
-  );
-});
-
-test("a mint still naming capabilities mints, and the service is asked only for the lifetime", async () => {
-  const calls: string[] = [];
-  await using app = appOf(calls);
-  const minted = await app.inject({
-    method: "POST",
-    url: workerPoolTokenPath,
-    headers: { authorization: "Bearer valid", ...workerPoolJson },
-    payload: JSON.stringify({
-      capabilities: ["Platform:Linux:Amd64"],
-      lifetimeSecs: 900,
-    }),
-  });
-  assert.equal(minted.statusCode, 201);
-  assert.deepEqual(
-    calls.filter((call) => call.startsWith("worker-pool-")),
-    ['worker-pool-token:atlas:{"lifetimeSecs":900}'],
-  );
-});
-
-test("a project already holding its bound of live tokens is answered a conflict", async () => {
-  await using app = appOf([]);
-  const refused = await app.inject({
-    method: "POST",
-    url: "/api/v1/tenants/acme/projects/full/worker-pool-registration-tokens",
-    headers: { authorization: "Bearer valid", ...workerPoolJson },
-    payload: JSON.stringify({ lifetimeSecs: 900 }),
-  });
-  assert.equal(refused.statusCode, 409);
-  assert.equal(
-    refused.json<HttpErrorEnvelope>().error.code,
-    "TokenLimitReached",
-  );
-});
-
-test("minting a registration token needs a bearer, and redeeming one needs none", async () => {
-  const calls: string[] = [];
-  await using app = appOf(calls);
-  const unauthenticated = await app.inject({
-    method: "POST",
-    url: workerPoolTokenPath,
-    headers: workerPoolJson,
-    payload: JSON.stringify({ lifetimeSecs: 60 }),
-  });
-  assert.equal(unauthenticated.statusCode, 401);
-  const redeemed = await app.inject({
-    method: "POST",
-    url: workerPoolRedemptionPath,
-    headers: workerPoolJson,
-    payload: JSON.stringify({
-      token: "a-token",
-      pool: "pool-one",
-      capabilities: ["linux-containers"],
-    }),
-  });
-  assert.equal(redeemed.statusCode, 201);
-  assert.deepEqual(redeemed.json(), {
-    tenant: "acme",
-    project: "atlas",
-    pool: "pool-one",
-    capabilities: ["linux-containers"],
-    tokenUrl: "https://issuer.invalid/oauth2/token",
-    audience: "https://api.invalid",
-    planeUrl: "https://plane.invalid/",
-    clientId: "chuggy-pool-one",
-    clientSecret: "a-secret",
-  });
-  workerPoolCredentialsSchema.parse(redeemed.json());
-  assert.deepEqual(
-    calls.filter((call) => call.startsWith("worker-pool-")),
-    ["worker-pool-redeem:pool-one"],
-  );
-});
-
-test("a spent token is not found", async () => {
-  await using app = appOf([]);
-  const answered = await app.inject({
-    method: "POST",
-    url: workerPoolRedemptionPath,
-    headers: workerPoolJson,
-    payload: JSON.stringify({
-      token: "a-token",
-      pool: "spent",
-      capabilities: [],
-    }),
-  });
-  assert.equal(answered.statusCode, 404);
+    ["POST", "/api/v1/worker-pool-registrations"],
+  ] as const) {
+    const unserved = await asked(method, `${url}-unserved`);
+    assert.equal(unserved.statusCode, 404, url);
+    const answered = await asked(method, url);
+    assert.equal(answered.statusCode, unserved.statusCode, url);
+    assert.deepEqual(
+      answered.json(),
+      JSON.parse(unserved.body.replace(`${url}-unserved`, url)),
+      url,
+    );
+  }
+  assert.deepEqual(calls, []);
 });

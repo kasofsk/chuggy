@@ -46,8 +46,10 @@ import {
   oidcAuthentication,
   type OidcAuthenticationConfig,
 } from "../adapters/http/oidc.ts";
-import { twoBearerAuthentication } from "../adapters/http/sessionBearer.ts";
+import { threeBearerAuthentication } from "../adapters/http/sessionBearer.ts";
 import { postgresSessionBearerAuthority } from "../adapters/postgres/sessionPlane.ts";
+import { postgresAccessTokenBearerAuthority } from "../adapters/postgres/accessToken.ts";
+import { accessTokenSecretDigest } from "../adapters/crypto/accessTokenMint.ts";
 import {
   composeApiRepositoryCredentials,
   composeForgeCredentialMinting,
@@ -55,9 +57,10 @@ import {
   composeNativeWeb,
   composeExecutionPlacement,
   composeProjectInbox,
-  composeProjectOwnerFallback,
   composeProjectAppearance,
   composeTicketTakes,
+  composeAccessTokens,
+  composeProjectConnectors,
   composeTicketProposalMerges,
   composeThreadLimits,
   composeMemberChat,
@@ -172,16 +175,7 @@ import {
   checkedProjectGrantSettings,
   type ProjectGrantWriter,
 } from "../interpreter/projectGrant.ts";
-import {
-  postgresWorkerPoolDirectory,
-  postgresWorkerPoolRegistrationTokens,
-  postgresWorkerPoolRegistry,
-} from "../adapters/postgres/workerPool.ts";
-import {
-  workerPoolRegistrationService,
-  type WorkerPoolRegistrationService,
-  type WorkerPoolSite,
-} from "../interpreter/workerPoolRegistrationToken.ts";
+import type { WorkerPoolSite } from "../interpreter/chatHostRegistration.ts";
 import {
   workerPoolEndpointSchema,
   workerPoolRegistryHostSchema,
@@ -228,18 +222,17 @@ const oidcAlgorithmsVariable = "CHUG_API_OIDC_ALGORITHMS";
 const artifactRootVariable = "CHUG_API_ARTIFACT_ROOT";
 const ketoReadUrlVariable = "CHUG_API_KETO_READ_URL";
 /**
- * The only two addresses this process names that write rather than read. The
- * authority's write port alone is what creating a project needs, and a pool's
- * registration needs both, so naming the issuer's admin port without it refuses
- * the start rather than minting a client the authority is never told about.
+ * The only two addresses this process names that write rather than read: the
+ * authority's write port, which creating a project needs, and the issuer's
+ * admin port, which a runner's registration needs.
  */
 const ketoWriteUrlVariable = "CHUG_API_KETO_WRITE_URL";
 const hydraAdminUrlVariable = "CHUG_API_HYDRA_ADMIN_URL";
 const ketoTimeoutVariable = "CHUG_API_KETO_TIMEOUT_MS";
 /**
- * Where a registered runner, a pool or a member's personal one, reaches this
- * deployment, which a redemption answers so a runner's file is written whole:
- * required wherever runners are registered, the registry host only where the
+ * Where a member's registered runner or chat host reaches this deployment,
+ * which a redemption answers so a runner's file is written whole: required
+ * wherever runners are registered, the registry host only where the
  * deployment names one of its own.
  */
 const poolTokenUrlVariable = "CHUG_API_POOL_TOKEN_URL";
@@ -330,9 +323,9 @@ function poolEndpointSetting(variable: string): string {
 }
 
 /**
- * Where a registered pool reaches this deployment, refused at start where a
- * runner would refuse the pool file: a redemption spends its token and
- * registers the pool before the runner reads the file.
+ * Where a registered runner or chat host reaches this deployment, refused at
+ * start where a runner would refuse its file: a redemption spends its token
+ * and registers the runner before the runner reads the file.
  */
 export function workerPoolSite(): WorkerPoolSite {
   const registryHost = process.env[poolRegistryHostVariable];
@@ -350,46 +343,14 @@ export function workerPoolSite(): WorkerPoolSite {
   };
 }
 
-/**
- * The registration half of worker pools, composed only where an installation
- * named both addresses it needs. It is the one place in this tree that holds
- * the issuer's admin privilege beside an owner's command, which is what keeps
- * it off the plane a pool polls.
- */
-function nativeWorkerPools(
-  pool: pg.Pool,
-  access: ProjectAccess,
-  grants: ProjectGrantWriter | undefined,
-): WorkerPoolRegistrationService | undefined {
-  if (process.env[hydraAdminUrlVariable] === undefined) return undefined;
-  if (grants === undefined)
-    throw new Error(`${ketoWriteUrlVariable} is required`);
-  return workerPoolRegistrationService({
-    access,
-    site: workerPoolSite(),
-    directory: postgresWorkerPoolDirectory(pool),
-    releases: runnerReleasesPinned(),
-    minting: {
-      tokens: postgresWorkerPoolRegistrationTokens(pool),
-      ...nativeRegistrationTokenDrawing,
-    },
-    ports: {
-      registry: postgresWorkerPoolRegistry(pool),
-      clients: nativeRunnerClients(),
-      grants,
-      clientId: () => `chuggy-pool-${randomUUID()}`,
-    },
-  });
-}
-
-/** How a runner's registration token is drawn and digested, and the clock it expires by, the same for a pool's and a member's. */
+/** How a runner's registration token is drawn and digested, and the clock it expires by. */
 const nativeRegistrationTokenDrawing = {
   draw: () => randomBytes(32).toString("base64url"),
   digest: (token: string) => createHash("sha256").update(token).digest("hex"),
   nowMs: () => Date.now(),
 };
 
-/** The issuer's client registration every runner's client, a pool's or a member's, is made through. */
+/** The issuer's client registration every runner's and chat host's client is made through. */
 function nativeRunnerClients(): WorkerPoolClients {
   return hydraWorkerPoolClients({
     adminUrl: requiredEnvironment(hydraAdminUrlVariable),
@@ -402,9 +363,8 @@ function nativeRunnerClients(): WorkerPoolClients {
 }
 
 /**
- * A member's own runner, composed where the issuer's admin port is named, as a
- * pool's registration is. It writes no relation, so it needs no write address
- * at the authority; its client ids are prefixed apart from a pool's.
+ * A member's own runner, composed where the issuer's admin port is named. It
+ * writes no relation, so it needs no write address at the authority.
  */
 function nativePersonalRunners(
   pool: pg.Pool,
@@ -1373,17 +1333,18 @@ export function nativeStopping(
 }
 
 /**
- * The two bearer kinds this API accepts: the issuer's, and the session bearers
+ * The three bearer kinds this API accepts: the issuer's, the session bearers
  * the API pool is the authority on, through its `EXECUTE` on
- * `authenticate_session_bearer`.
+ * `authenticate_session_bearer`, and the access tokens it reads by digest.
  */
 export function nativeAuthentication(
   oidc: PrincipalAuthentication,
   pools: NativePools,
 ): PrincipalAuthentication {
-  return twoBearerAuthentication(
+  return threeBearerAuthentication(
     oidc,
     postgresSessionBearerAuthority(pools.pool),
+    postgresAccessTokenBearerAuthority(pools.pool, accessTokenSecretDigest),
   );
 }
 
@@ -1544,7 +1505,6 @@ async function main(): Promise<void> {
     composeSelectorProjectSettings(pool, access),
     forge.minting,
     forge.onboarding,
-    nativeWorkerPools(pool, access, grants),
     composeProjectCreation(
       pool,
       access,
@@ -1560,7 +1520,6 @@ async function main(): Promise<void> {
     nativeActionReach(pools, access, forge.credentials),
     nativeTicketLandings(pools, access, artifacts),
     nativePersonalRunners(pool, access),
-    composeProjectOwnerFallback(pool, access),
     composeThreadLimits(pool, access, authenticationConfig.issuer),
     composeMemberChat(pool, access, threads),
     nativeProjectInbox(pools, access, usageResume),
@@ -1570,6 +1529,8 @@ async function main(): Promise<void> {
     nativeUnrunDeletions(pool, access, erasure),
     composeTicketTakes(pool, access),
     forge.proposalMerges,
+    composeAccessTokens(pool, access),
+    composeProjectConnectors(pool, access),
     appearanceService(postgresAppearance(pool)),
     composeProjectAppearance(pool, access, artifacts),
   );

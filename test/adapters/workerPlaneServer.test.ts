@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+
+import { createLocalJWKSet, jwtVerify } from "jose";
+
+import { jobIdentitySigner } from "../../src/adapters/crypto/jobIdentitySigner.ts";
 
 import { planeBodyBytesDefault } from "../../src/adapters/http/planeRoutes.ts";
 import {
@@ -27,11 +31,13 @@ import {
   runUsageInstantSecsMax,
   runUsageWindows,
   workerCredentialAbsentSchema,
+  workerHeldCredentialsAnswerSchema,
   workerHeldCredentialsMax,
   type WorkerHeldCredentialBundle,
   workerPlaneRoutes,
   type WorkerPlaneRouteName,
 } from "../../src/contract/workerPlane.ts";
+import { connectorCredentialOf } from "../../src/contract/workerEnvironment.ts";
 import { resultManifestTextCharsMax } from "../../src/contract/workerDocuments.ts";
 import {
   nativeHttpPageItemsMax,
@@ -76,8 +82,12 @@ import {
   heldCredentialIssuer,
   type HeldCredential,
 } from "../../src/interpreter/workerPlaneHeldCredentials.ts";
+import { connectorCredentialIssuers } from "../../src/interpreter/connectorCredential.ts";
+import type { JobIdentityIssuing } from "../../src/interpreter/jobIdentityIssuerSettings.ts";
+import type { ProjectConnectorRead } from "../../src/interpreter/projectConnectors.ts";
 import {
   credentialResolver,
+  type CredentialRequester,
   type CredentialsAsk,
 } from "../../src/interpreter/credentialIssuers.ts";
 import { reporterSecretBytes } from "../../src/adapters/reporters/secretFile.ts";
@@ -89,6 +99,7 @@ import {
   workerContractTargetRefs,
   type SessionTaskRead,
   type WorkerTaskRead,
+  type WorkerTaskWorkload,
 } from "../../src/interpreter/workerPlane.ts";
 import {
   sessionTask,
@@ -105,6 +116,7 @@ import { fixtureForgeShapedToken } from "./forgeFixtures.ts";
 import {
   inertRunEvidence,
   inertSessionPlane,
+  attemptTasks,
   inertTasks,
   inertWorkerPlane,
   runContextReadingBody,
@@ -332,23 +344,32 @@ test("an unknown or oversized bearer reaches no attempt act", async () => {
   await app.close();
 });
 
+/** The attempt authority and the task port's attempt reads, each recording every secret it is offered. */
+function attemptPortsRecording(offered: string[]) {
+  const recorded = (secret: string) => {
+    offered.push(secret);
+    return Promise.resolve(undefined);
+  };
+  return {
+    authority: {
+      authenticate: (secret: string) => {
+        offered.push(secret);
+        return Promise.resolve(authority);
+      },
+    },
+    tasks: { work: recorded, workload: recorded },
+  };
+}
+
 test("a bearer written in the session language is never offered to the attempt authority", async () => {
   const offered: string[] = [];
   const app = createWorkerPlaneApp({
     ...projectArtifactsService,
     ...heartbeatService,
     ...runEvidenceService,
-    authority: {
-      authenticate: (secret) => {
-        offered.push(secret);
-        return Promise.resolve(authority);
-      },
-    },
+    authority: attemptPortsRecording(offered).authority,
     tasks: {
-      work: (secret) => {
-        offered.push(secret);
-        return Promise.resolve(undefined);
-      },
+      ...attemptPortsRecording(offered).tasks,
       session: (secret) => {
         offered.push(secret);
         return Promise.resolve(undefined);
@@ -548,17 +569,9 @@ test("a session bearer fetches its task through the session authority, and neith
     ...projectArtifactsService,
     ...heartbeatService,
     ...runEvidenceService,
-    authority: {
-      authenticate: (secret) => {
-        offered.push(secret);
-        return Promise.resolve(authority);
-      },
-    },
+    authority: attemptPortsRecording(offered).authority,
     tasks: {
-      work: (secret) => {
-        offered.push(secret);
-        return Promise.resolve(undefined);
-      },
+      ...attemptPortsRecording(offered).tasks,
       session: (secret) => Promise.resolve(found[secret]),
     },
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
@@ -1374,7 +1387,7 @@ test("every job route takes the heaviest body its caller may send, and refuses a
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
     authority: { authenticate: () => Promise.resolve(authority) },
-    tasks: { ...inertTasks, work: () => Promise.resolve(heldTask()) },
+    tasks: attemptTasks(heldTask()),
   });
   await planeHeaviestTaken(
     app,
@@ -2275,7 +2288,7 @@ function heldPlane(
         ];
   return createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
-    tasks: { ...inertTasks, work: () => Promise.resolve(found) },
+    tasks: attemptTasks(found),
     ...(file === undefined
       ? {}
       : {
@@ -2362,7 +2375,7 @@ test("the resolver is handed the attempt's identity, the one repository its inpu
   ]) {
     const app = createWorkerPlaneApp({
       ...inertWorkerPlane(workerPlaneUploadBytesMax),
-      tasks: { ...inertTasks, work: () => Promise.resolve(found) },
+      tasks: attemptTasks(found),
       heldCredentials: {
         resolve: (ask) => {
           asks.push(ask);
@@ -2382,6 +2395,7 @@ test("the resolver is handed the attempt's identity, the one repository its inpu
     ticket: granted.identity.ticket,
     task: granted.identity.task,
     repository: asRepositoryId("source"),
+    taskKind: "Work",
   };
   const asked = ["track-record", "other"];
   assert.deepEqual(asks, [
@@ -2417,7 +2431,7 @@ test("a release that reads bundles is served every bundle and every absence, and
   const absent = [{ credential: "unheld", reason: "NotHeld" }] as const;
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
-    tasks: { ...inertTasks, work: () => Promise.resolve(heldTask()) },
+    tasks: attemptTasks(heldTask()),
     heldCredentials: {
       resolve: () =>
         Promise.resolve({
@@ -2608,6 +2622,110 @@ test("a bearer that is no live attempt is refused, and one whose grant is not re
   await app.close();
 });
 
+/** A plane whose task port reads `workload` beside a live attempt granted `track-record`, every requester its one issuer is handed recorded. */
+function heldRequesterPlane(
+  workload: WorkerTaskWorkload | undefined,
+  requesters: CredentialRequester[],
+): ReturnType<typeof createWorkerPlaneApp> {
+  return createWorkerPlaneApp({
+    ...inertWorkerPlane(workerPlaneUploadBytesMax),
+    tasks: {
+      ...attemptTasks(heldTask(["track-record"])),
+      workload: () => Promise.resolve(workload),
+    },
+    heldCredentials: credentialResolver([
+      {
+        issue: (requester) => {
+          requesters.push(requester);
+          return Promise.resolve({ issued: "Absent", reason: "NotHeld" });
+        },
+      },
+    ]),
+  });
+}
+
+test("the issuer's requester carries the task's kind, an evaluation's evaluator key and the workload's name where the read names one", async () => {
+  const identity = heldTask().identity;
+  const who = {
+    partition: authority.partition,
+    ticket: identity.ticket,
+    task: identity.task,
+    repository: asRepositoryId("source"),
+  };
+  for (const workload of [
+    { taskKind: "Work", workload: "implement" },
+    { taskKind: "Evaluation", evaluator: 2, workload: "review" },
+    { taskKind: "Work" },
+  ] as const) {
+    const requesters: CredentialRequester[] = [];
+    const app = heldRequesterPlane(workload, requesters);
+    assert.deepEqual(
+      await heldAsked(
+        app,
+        { credentials: ["track-record"] },
+        { ...held, [workerContractHeader]: workerContractRelease },
+      ),
+      {
+        status: 200,
+        body: JSON.stringify({
+          credentials: [],
+          absent: [{ credential: "track-record", reason: "NotHeld" }],
+        }),
+      },
+    );
+    assert.deepEqual(requesters, [{ ...who, ...workload }]);
+    await app.close();
+  }
+});
+
+test("an ask naming a workload, a task kind or an evaluator key is refused, and no issuer is asked", async () => {
+  const requesters: CredentialRequester[] = [];
+  const app = heldRequesterPlane({ taskKind: "Work" }, requesters);
+  for (const extra of [
+    { workload: "review" },
+    { taskKind: "Evaluation" },
+    { evaluator: 2 },
+  ]) {
+    assert.deepEqual(
+      await heldAsked(app, { credentials: ["track-record"], ...extra }),
+      { status: 400, body: JSON.stringify({ action: "stop" }) },
+      JSON.stringify(extra),
+    );
+  }
+  assert.deepEqual(requesters, []);
+  await app.close();
+});
+
+test("an attempt whose workload read finds nothing is refused as an unknown bearer is, and no issuer is asked", async () => {
+  const requesters: CredentialRequester[] = [];
+  const app = heldRequesterPlane(undefined, requesters);
+  assert.deepEqual(await heldAsked(app, { credentials: ["track-record"] }), {
+    status: 401,
+    body: JSON.stringify({ action: "stop" }),
+  });
+  assert.deepEqual(requesters, []);
+  await app.close();
+});
+
+test("a workload read that raises is answered as a task read that raises", async () => {
+  const raised = () => Promise.reject(new Error("unreachable"));
+  const statuses: number[] = [];
+  for (const tasks of [
+    { ...attemptTasks(heldTask(["track-record"])), work: raised },
+    { ...attemptTasks(heldTask(["track-record"])), workload: raised },
+  ]) {
+    const app = createWorkerPlaneApp({
+      ...inertWorkerPlane(workerPlaneUploadBytesMax),
+      tasks,
+    });
+    statuses.push(
+      (await heldAsked(app, { credentials: ["track-record"] })).status,
+    );
+    await app.close();
+  }
+  assert.deepEqual(statuses, [500, 500]);
+});
+
 test("a held file that cannot be read is an outage to wait out, naming no secret", async () => {
   const file = join(heldRoot, "vanishing");
   writeFileSync(file, heldSecret);
@@ -2666,7 +2784,7 @@ function workflowRunsPlane(options: {
   };
   return createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
-    tasks: { ...inertTasks, work: () => Promise.resolve(found) },
+    tasks: attemptTasks(found),
     heldCredentials: credentialResolver([
       workflowRunsCredentialIssuer({
         bindings: {
@@ -2790,4 +2908,195 @@ test("a workflow runs mint the forge refuses is absent, and one it could not ans
     ),
     { status: 503, body: JSON.stringify({ action: "retry" }) },
   );
+});
+
+test("a listed connector credential is weighed against the attempt's own project's connectors, never its grant", async () => {
+  const holding = connectorCredentialOf("deploy");
+  const lacking = connectorCredentialOf("absent");
+  const looked: unknown[] = [];
+  const granted = heldTask([]);
+  assert.ok(granted.invocation !== undefined);
+  const found: WorkerTaskRead = {
+    ...granted,
+    invocation: {
+      ...granted.invocation,
+      credentialsListed: [holding, lacking],
+    },
+  };
+  const app = createWorkerPlaneApp({
+    ...inertWorkerPlane(workerPlaneUploadBytesMax),
+    tasks: attemptTasks(found),
+    heldCredentials: credentialResolver([], {
+      connector: (partition, name) => {
+        looked.push([partition, name]);
+        return Promise.resolve(
+          name === "deploy"
+            ? {
+                connector: {
+                  name,
+                  kind: "Anthropic",
+                  settings: { organizationId: "org", federationRuleId: "rule" },
+                },
+                revision: 1,
+              }
+            : undefined,
+        );
+      },
+    }),
+  });
+  assert.deepEqual(
+    await heldAsked(
+      app,
+      { credentials: [holding, lacking] },
+      { ...held, [workerContractHeader]: workerContractRelease },
+    ),
+    {
+      status: 200,
+      body: JSON.stringify({
+        credentials: [],
+        absent: [
+          { credential: holding, reason: "NotHeld" },
+          { credential: lacking, reason: "NotEnabled" },
+        ],
+      }),
+    },
+  );
+  assert.deepEqual(looked, [
+    [authority.partition, "deploy"],
+    [authority.partition, "absent"],
+  ]);
+  await app.close();
+});
+
+const connectorSigner = await (async () => {
+  const built = await jobIdentitySigner([
+    generateKeyPairSync("rsa", { modulusLength: 2048 })
+      .privateKey.export({ format: "pem", type: "pkcs8" })
+      .toString(),
+  ]);
+  assert.equal(built.result, "Built");
+  return built.signer;
+})();
+
+/** A plane whose attempt lists `deploy` and `absent`, its project holding `deploy` alone, with the connector issuers `identity` composes. */
+function connectorPlane(
+  identity: JobIdentityIssuing | undefined,
+): ReturnType<typeof createWorkerPlaneApp> {
+  const granted = heldTask([]);
+  assert.ok(granted.invocation !== undefined);
+  const found: WorkerTaskRead = {
+    ...granted,
+    invocation: {
+      ...granted.invocation,
+      credentialsListed: [
+        connectorCredentialOf("deploy"),
+        connectorCredentialOf("absent"),
+      ],
+    },
+  };
+  const connectors: ProjectConnectorRead = {
+    connector: (partition, name) =>
+      Promise.resolve(
+        name === "deploy" && partition === authority.partition
+          ? {
+              connector: {
+                name,
+                kind: "Anthropic",
+                settings: { organizationId: "org", federationRuleId: "rule" },
+              },
+              revision: 1,
+            }
+          : undefined,
+      ),
+  };
+  return createWorkerPlaneApp({
+    ...inertWorkerPlane(workerPlaneUploadBytesMax),
+    tasks: {
+      ...attemptTasks(found),
+      workload: () =>
+        Promise.resolve({ taskKind: "Work", workload: "implement" }),
+    },
+    heldCredentials: credentialResolver(
+      connectorCredentialIssuers(identity, {
+        connectors,
+        nowMs: () => 1_800_000_000_000,
+      }),
+      connectors,
+    ),
+  });
+}
+
+const connectorAsk = {
+  credentials: [
+    connectorCredentialOf("deploy"),
+    connectorCredentialOf("absent"),
+  ],
+};
+
+test("a plane holding an identity issuer serves a held connector a fresh token's bundle, and an unheld one is not enabled", async () => {
+  const app = connectorPlane({
+    issuerBaseUrl: "https://identity.example",
+    signer: connectorSigner,
+  });
+  const answered = await heldAsked(app, connectorAsk, {
+    ...held,
+    [workerContractHeader]: workerContractRelease,
+  });
+  await app.close();
+  assert.equal(answered.status, 200);
+  const body = workerHeldCredentialsAnswerSchema.parse(
+    JSON.parse(answered.body),
+  );
+  assert.deepEqual(body.absent, [
+    { credential: connectorCredentialOf("absent"), reason: "NotEnabled" },
+  ]);
+  const [bundle] = body.credentials;
+  assert.ok(bundle !== undefined && "files" in bundle);
+  assert.equal(body.credentials.length, 1);
+  assert.equal(bundle.credential, connectorCredentialOf("deploy"));
+  const token = bundle.files.find((file) => file.file === "token")?.content;
+  assert.ok(token?.kind === "Secret");
+  const { payload } = await jwtVerify(
+    token.secret,
+    createLocalJWKSet({ keys: [...connectorSigner.keySet().keys] }),
+    { currentDate: new Date(1_800_000_000_000) },
+  );
+  assert.equal(payload.iss, "https://identity.example/tenant");
+  assert.equal(payload.sub, "project:project:workload:implement:task:work");
+  assert.equal(bundle.expiresAtMs, (payload.exp ?? 0) * 1000);
+});
+
+test("a plane holding no identity issuer answers a held connector not held, and a release that reads no bundles is answered alike either way", async () => {
+  const unissued = connectorPlane(undefined);
+  assert.deepEqual(
+    await heldAsked(unissued, connectorAsk, {
+      ...held,
+      [workerContractHeader]: workerContractRelease,
+    }),
+    {
+      status: 200,
+      body: JSON.stringify({
+        credentials: [],
+        absent: [
+          { credential: connectorCredentialOf("deploy"), reason: "NotHeld" },
+          { credential: connectorCredentialOf("absent"), reason: "NotEnabled" },
+        ],
+      }),
+    },
+  );
+  const old: unknown[] = [];
+  for (const app of [
+    unissued,
+    connectorPlane({
+      issuerBaseUrl: "https://identity.example",
+      signer: connectorSigner,
+    }),
+  ]) {
+    old.push(await heldAsked(app, connectorAsk));
+    await app.close();
+  }
+  assert.deepEqual(old, [
+    { status: 200, body: JSON.stringify({ credentials: [] }) },
+    { status: 200, body: JSON.stringify({ credentials: [] }) },
+  ]);
 });

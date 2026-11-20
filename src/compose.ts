@@ -98,7 +98,6 @@ import {
 } from "./adapters/postgres/projectInventory.ts";
 import { memberChat, type MemberChat } from "./interpreter/memberChat.ts";
 import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
-import { postgresProjectOwnerFallback } from "./adapters/postgres/projectOwnerFallback.ts";
 import { postgresProjectAppearance } from "./adapters/postgres/projectAppearance.ts";
 import { postgresProjectImages } from "./adapters/postgres/projectImages.ts";
 import {
@@ -109,6 +108,17 @@ import { postgresAppearance } from "./adapters/postgres/appearance.ts";
 import { projectAppearanceService } from "./interpreter/projectAppearance.ts";
 import { postgresTicketTakes } from "./adapters/postgres/ticketTake.ts";
 import { ticketTakes, type TicketTakes } from "./interpreter/ticketTake.ts";
+import { postgresAccessTokens } from "./adapters/postgres/accessToken.ts";
+import { postgresProjectConnectors } from "./adapters/postgres/projectConnectors.ts";
+import {
+  projectConnectorAdministration,
+  type ProjectConnectorAdministration,
+} from "./interpreter/projectConnectors.ts";
+import { accessTokenSecrets } from "./adapters/crypto/accessTokenMint.ts";
+import {
+  accessTokenService,
+  type AccessTokenService,
+} from "./interpreter/accessToken.ts";
 import { postgresTicketProposedLandings } from "./adapters/postgres/ticketProposedLanding.ts";
 import {
   ticketProposalMerges,
@@ -129,10 +139,6 @@ import {
   threadLimitAdministration,
   type ThreadLimitAdministration,
 } from "./interpreter/threadLimit.ts";
-import {
-  projectOwnerFallbackAdministration,
-  type ProjectOwnerFallbackAdministration,
-} from "./interpreter/projectOwnerFallback.ts";
 import {
   postgresSessionPlacement,
   postgresSessionRouteReads,
@@ -283,17 +289,6 @@ export function composeSessionPlacement(
   );
 }
 
-/** Wires whether a project's members' personal runners serve them to API-role credentials and the access that gates choosing it. */
-export function composeProjectOwnerFallback(
-  apiPool: pg.Pool,
-  access: ProjectAccess,
-): ProjectOwnerFallbackAdministration {
-  return projectOwnerFallbackAdministration(
-    access,
-    postgresProjectOwnerFallback(apiPool),
-  );
-}
-
 /** Wires a project's themes and images to API-role credentials, the access that gates them, each person's own themes, and the project-owned artifacts its images name. */
 export function composeProjectAppearance(
   apiPool: pg.Pool,
@@ -320,6 +315,29 @@ export function composeTicketTakes(
   access: ProjectAccess,
 ): TicketTakes {
   return ticketTakes(access, postgresTicketTakes(apiPool));
+}
+
+/** Wires a project's access tokens to API-role credentials, the access that gates them and the secrets they are drawn from. */
+export function composeAccessTokens(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+): AccessTokenService {
+  return accessTokenService({
+    access,
+    store: postgresAccessTokens(apiPool),
+    secrets: accessTokenSecrets(),
+  });
+}
+
+/** Wires a project's connectors to API-role credentials and the access that gates them. */
+export function composeProjectConnectors(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+): ProjectConnectorAdministration {
+  return projectConnectorAdministration({
+    access,
+    store: postgresProjectConnectors(apiPool),
+  });
 }
 
 /**

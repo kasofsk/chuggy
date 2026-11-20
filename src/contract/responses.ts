@@ -77,7 +77,6 @@ import {
   threadTurnRecordedCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
-  workerPoolsAnsweredMax,
   ticketLandingsAnsweredMax,
   ticketLandingStackDepthMax,
   ticketLandingStacksAnsweredMax,
@@ -152,7 +151,6 @@ import {
   operationStates,
   outputContentEncodings,
   outputRenderers,
-  ownerFallbacks,
   personalRunnerWaits,
   personalRunnerPriorities,
   phaseRoster,
@@ -472,7 +470,7 @@ export const agentPauseSchema = z
   );
 export type AgentPause = z.infer<typeof agentPauseSchema>;
 
-/** A runner a job ran on: one of the project's pools by its name, or a member's own runner by the member it is. */
+/** A runner a job ran on: a pool, by the name it had, or a member's own runner by the member it is. */
 export const runnerSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("Pool"), pool: identitySchema }),
   z.strictObject({ kind: z.literal("Personal"), owner: identitySchema }),
@@ -1054,12 +1052,6 @@ export const executionSummarySchema = z.object({
   terminalAt: instantSchema.optional(),
   runTotals: runTotalsSchema.optional(),
   /**
-   * The fallback its owner's personal runner may take it under, absent where no
-   * personal runner may: routed in cluster, owned by nobody, or registered
-   * while its project named no fallback.
-   */
-  ownerFallback: z.enum(ownerFallbacks).optional(),
-  /**
    * Whether the reader is the member who owns it, computed against the
    * request's own principal. Optional for the deployment window, as `request`
    * is.
@@ -1083,14 +1075,6 @@ export const executionSummarySchema = z.object({
    * nothing and below that, and none is paused.
    */
   personalRunnerRoom: z
-    .strictObject({ freeMib: countSchema, neededMib: countSchema })
-    .optional(),
-  /**
-   * The largest memory room, in MiB, of the live pools of its project it waits
-   * on and the memory it needs, present only where every one of them named a
-   * room above nothing and below that.
-   */
-  poolRoom: z
     .strictObject({ freeMib: countSchema, neededMib: countSchema })
     .optional(),
   /**
@@ -2391,9 +2375,10 @@ export type ExecutionPlacementResponse = z.infer<
 /**
  * Where a project's threads run and what decided it, the routes this caller
  * may choose, and the runners a thread would run on: `mine` the caller's chat
- * host for the project's threads, `inquiry` theirs for their own chat's, and
- * `project` whether any of the project's pools is live. `lead`, `leadOffering`
- * and `leadOfferings` are fixed values for older clients: there is no lead.
+ * host for the project's threads and `inquiry` theirs for their own chat's.
+ * `project` is always `Unregistered`, and `lead`, `leadOffering` and
+ * `leadOfferings` fixed values too, for older clients: there is no project
+ * pool and no lead.
  */
 export const sessionPlacementResponseSchema = z.object({
   thread: placementRouteResolvedSchema,
@@ -2409,18 +2394,6 @@ export const sessionPlacementResponseSchema = z.object({
 });
 export type SessionPlacementResponse = z.infer<
   typeof sessionPlacementResponseSchema
->;
-
-/**
- * Whether a project's members' personal runners serve them there, absent where
- * they serve nobody, and whether this caller may change it.
- */
-export const projectOwnerFallbackResponseSchema = z.strictObject({
-  fallback: z.enum(ownerFallbacks).optional(),
-  administers: z.boolean(),
-});
-export type ProjectOwnerFallbackResponse = z.infer<
-  typeof projectOwnerFallbackResponseSchema
 >;
 
 /** What keeps a project from deletion: a released ticket, or work run in it. */
@@ -2607,6 +2580,8 @@ export const projectAbilitiesResponseSchema = z.strictObject({
   skipPlannedEvaluations: z.boolean(),
   /** Whether the reader may have chuggy merge a pull request one of the project's tickets opened. */
   mergeProposals: z.boolean(),
+  /** Whether the reader may make an access token for the project. */
+  makeAccessTokens: z.boolean(),
   administer: z.boolean(),
   /** Whether the reader may create and revise epics, which is the `Mutate` kind. */
   writeEpic: z.boolean(),
@@ -2650,7 +2625,7 @@ export type WorkerPoolTokenResponse = z.infer<
   typeof workerPoolTokenResponseSchema
 >;
 
-/** Whether a runner sends its pool's credential to this URL: https, or http to its own loopback, and carrying no credential of its own. */
+/** Whether a runner sends its credential to this URL: https, or http to its own loopback, and carrying no credential of its own. */
 function workerPoolEndpointAllowed(text: string): boolean {
   let url: URL;
   try {
@@ -2667,7 +2642,7 @@ function workerPoolEndpointAllowed(text: string): boolean {
   return url.protocol === "http:" && loopback;
 }
 
-/** A URL a runner sends its pool's credential to. */
+/** A URL a runner sends its credential to. */
 export const workerPoolEndpointSchema = z
   .string()
   .refine(workerPoolEndpointAllowed, {
@@ -2675,18 +2650,14 @@ export const workerPoolEndpointSchema = z
       "is not an https URL, or an http URL on the loopback, carrying no credentials",
   });
 
-/** A registry a runner presents its pool's token to: a lowercase DNS name, and a port where it names one. */
+/** A registry a runner presents its token to: a lowercase DNS name, and a port where it names one. */
 export const workerPoolRegistryHostSchema = z
   .string()
   .regex(
     /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::[0-9]{1,5})?$/u,
   );
 
-/**
- * What a redemption answers, once: everything a runner needs to serve the pool
- * it registered, which is the file it keeps. `registryHost` is absent where the
- * deployment names no registry of its own.
- */
+/** @deprecated No endpoint answers this. */
 export const workerPoolCredentialsSchema = z.strictObject({
   tenant: identitySchema,
   project: identitySchema,
@@ -2703,40 +2674,17 @@ export type WorkerPoolCredentialsResponse = z.infer<
   typeof workerPoolCredentialsSchema
 >;
 
-/** The runner a pool's or a member's newest poll named, and the version chuggy pins for its package where it pins one. */
+/** The runner a member's runner's or chat host's newest poll named, and the version chuggy pins for its package where it pins one. */
 export const runnerListedSchema = workerRunnerSchema.extend({
   pinned: workerRunnerVersionSchema.optional(),
 });
 export type RunnerListedResponse = z.infer<typeof runnerListedSchema>;
 
 /**
- * A project's registered pools in name order, `truncated` where it holds more
- * than one read answers, each with its runner where its newest poll named one.
- * `polledAt` is a pool's newest poll, absent until it polls, and `live` whether
- * that poll is recent enough for the pool to be taking work, as a member's
- * runner's is.
- */
-export const workerPoolsResponseSchema = z.object({
-  pools: z
-    .array(
-      z.object({
-        pool: identitySchema,
-        capabilities: z.array(z.string().min(1)),
-        registeredAt: instantSchema,
-        polledAt: instantSchema.optional(),
-        live: z.boolean(),
-        runner: runnerListedSchema.optional(),
-      }),
-    )
-    .max(workerPoolsAnsweredMax),
-  truncated: z.boolean(),
-});
-export type WorkerPoolsResponse = z.infer<typeof workerPoolsResponseSchema>;
-
-/**
- * What a personal redemption answers, once: a pool's file with the pool's
- * project and name taken out and the tenant's member it serves put in, `kind`
- * telling it apart from a pool's file, which carries none.
+ * What a personal redemption answers, once: the file a member's runner keeps,
+ * naming its tenant and the member it serves, `kind` telling it apart from a
+ * file of `workerPoolCredentialsSchema`, which carries none. `registryHost` is
+ * absent where the deployment names no registry of its own.
  */
 export const personalRunnerCredentialsSchema = z.strictObject({
   kind: z.literal("Personal"),
@@ -2765,9 +2713,9 @@ const personalRunnerHeldSchema = z.strictObject({
  * One of a member's runners, named by `id`, the client its registration made.
  * `polledAt` is its newest poll, absent until it polls, and `live` whether that
  * poll is recent enough for the runner to be taking work; `executionsLive` is
- * the same of its newest poll for executions alone, which is what a pool's
- * claim defers to under Preferred; `held` is what it holds, the earliest
- * claimed first, and `heldTruncated` says it holds more than one read answers.
+ * the same of its newest poll for executions alone; `held` is what it holds,
+ * the earliest claimed first, and `heldTruncated` says it holds more than one
+ * read answers.
  */
 const personalRunnerListedSchema = z.strictObject({
   id: identitySchema,

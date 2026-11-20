@@ -3,23 +3,21 @@
  * claim, and every call that holds and settles what it claimed, over the pool
  * plane's pool.
  *
- * THE CLAIM IS `workerPoolCanAssign` FOR A PERSONAL RUNNER, DECIDED UNDER THE
- * ROW LOCK as a pool's is in `./workerPool.ts`. The execution is `Launching`
- * with an attempt no runner holds; its project allows a personal runner,
- * which is `owner_fallback` named; its owner is the runner's, which a NULL
+ * THE CLAIM IS `workerPoolCanAssign`, DECIDED UNDER THE ROW LOCK, of an
+ * attempt `./workerPool.ts` says a claim takes. The execution is `Launching`
+ * with an attempt no runner holds; its owner is the runner's, which a NULL
  * owner never is; its project is on the runner's allowlist, which also holds
  * it to the runner's tenant; the runner's row names the poll's principal, so
  * it is enabled and current; its capabilities run the requirement, and the
- * execution's size is at or under its memory ceiling where a poll named one,
- * as a pool's is; and what that registration holds, across every project it
+ * execution's size is at or under its memory ceiling where a poll named one;
+ * and what that registration holds, across every project it
  * serves, is the slot, apart from what any other runner of the owner's holds.
- * The owner's fallback refuses a personal runner nothing. Its permit was asked
- * when its poll was admitted, and its owner's `Read` of each project before
- * the claim, which names only the projects that answered. The claim takes no
+ * Its permit was asked when its poll was admitted, and its owner's `Read` of
+ * each project before the claim, which names only the projects that answered. The claim takes no
  * execution larger than the room the terms name, which chooses among what
  * that allows as the order does rather than being a term of it. Its account
  * is its owner, and it passes over an attempt whose agent that account has
- * paused as a pool's claim does for its registrant: of an agent its newest
+ * paused: of an agent its newest
  * poll named credentials of, the account is paused only while every one of
  * them is, as `agent_account_named_pause` answers, so a credential at its
  * threshold leaves the runner's others to take the job; of any other agent,
@@ -122,7 +120,7 @@ export async function personalExecutionClaimed(
           AND q.project=ANY(${[...claim.projects] as string[]}::text[])
           AND q.state='Placing' AND q.pool IS NULL AND q.invoked
           AND x.placement='Pool' AND x.status='Launching'
-          AND x.owner_fallback IS NOT NULL AND x.owner=r.owner
+          AND x.owner=r.owner
           AND q.recovery_epoch=(SELECT e.epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1)
           AND worker_pool_inventory_matches(x.requirement_value,r.capabilities) AND worker_pool_agent_offered(q.agent,r.capabilities,r.agents_advertised)
           AND (r.memory_ceiling_mib IS NULL
@@ -196,7 +194,7 @@ export async function personalExecutionWaiting(
           AND q.project=ANY(${[...projects] as string[]}::text[])
           AND q.state='Placing' AND q.pool IS NULL AND q.invoked
           AND x.placement='Pool' AND x.status='Launching'
-          AND x.owner_fallback IS NOT NULL AND x.owner=r.owner
+          AND x.owner=r.owner
           AND q.recovery_epoch=(SELECT e.epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1)
           AND worker_pool_inventory_matches(x.requirement_value,r.capabilities) AND worker_pool_agent_offered(q.agent,r.capabilities,r.agents_advertised)
           AND (r.memory_ceiling_mib IS NULL
@@ -270,7 +268,7 @@ function personalExecutionCredentialOutcome(row: {
 }
 
 /** What a claim's returned row says: its execution's requirement and size, and the runtime its attempt kept where it kept one. */
-export function workerPoolClaimedRow(row: {
+function workerPoolClaimedRow(row: {
   readonly requirement: unknown;
   readonly runtime: string | null;
   readonly cpu_millis: number | null;
@@ -284,7 +282,7 @@ export function workerPoolClaimedRow(row: {
 }
 
 /** Every image and runtime the held attempts' rows name, once each. */
-export function workerPoolHeldPulls(
+function workerPoolHeldPulls(
   rows: readonly {
     readonly image: string | null;
     readonly runtime: string | null;

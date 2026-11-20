@@ -5,7 +5,20 @@
  */
 
 import type { z } from "zod";
+import {
+  accessTokenLifetimeDaysMax,
+  accessTokenMintRequestSchema,
+  accessTokenNameCharsMax,
+  accessTokensHeldMax,
+  accessTokensProjectMax,
+} from "./accessToken.ts";
 import { nativeHttpEndpoints } from "./endpoints.ts";
+import {
+  connectorChangesPageMax,
+  connectorKinds,
+  connectorNameCharsMax,
+  connectorsProjectMax,
+} from "./connectors.ts";
 
 import { themesOwnedMax } from "./appearance.ts";
 import {
@@ -44,13 +57,11 @@ import {
   threadLimitSchema,
   personalRunnerProjectSchema,
   personalRunnerRedemptionSchema,
-  projectOwnerFallbackSchema,
   projectThemeSchema,
   projectImageSchema,
   registrationTokenRequestSchema,
 } from "./requests.ts";
 import { epicWriteRequestSchema } from "./epics.ts";
-import { workerPoolRedemptionSchema } from "./workerPool.ts";
 import { actionReportDocumentSchema } from "./actionReport.ts";
 import { contractJsonSchemaInput } from "./jsonSchema.ts";
 
@@ -72,7 +83,6 @@ function nativeHttpContractDocumentSchemas(): unknown {
       executionPlacementSchema,
     ),
     sessionPlacement: nativeHttpContractDocumentInput(sessionPlacementSchema),
-    ownerFallback: nativeHttpContractDocumentInput(projectOwnerFallbackSchema),
     projectTheme: nativeHttpContractDocumentInput(projectThemeSchema),
     projectImage: nativeHttpContractDocumentInput(projectImageSchema),
     personalRunnerProject: nativeHttpContractDocumentInput(
@@ -104,6 +114,12 @@ function nativeHttpContractDocumentSchemas(): unknown {
       nativeHttpEndpoints.openThread.body,
     ),
     threadLimit: nativeHttpContractDocumentInput(threadLimitSchema),
+    connectorWrite: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.writeConnector.body,
+    ),
+    accessTokenMint: nativeHttpContractDocumentInput(
+      accessTokenMintRequestSchema,
+    ),
     ...nativeHttpContractDocumentSchemasPerson(),
     threadMessage: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.sendThreadMessage.body,
@@ -140,14 +156,11 @@ function nativeHttpContractDocumentSchemasPerson(): Record<string, unknown> {
   };
 }
 
-/** The request bodies a runner, a pool or a reporter sends rather than a member. */
+/** The request bodies a runner or a reporter sends rather than a member. */
 function nativeHttpContractDocumentSchemasMachine(): Record<string, unknown> {
   return {
     workerPoolRegistrationToken: nativeHttpContractDocumentInput(
       registrationTokenRequestSchema,
-    ),
-    workerPoolRedemption: nativeHttpContractDocumentInput(
-      workerPoolRedemptionSchema,
     ),
     personalRunnerRedemption: nativeHttpContractDocumentInput(
       personalRunnerRedemptionSchema,
@@ -174,19 +187,24 @@ const appearanceNotes = {
   projectImages: `a project names an image artifact of its own its icon and another its banner, each read by anyone who may read the project and named or cleared by an administrator; naming one is refused ImageNotFound where the project holds no such artifact, ImageTypeNotAdmitted where it is not one of ${projectImageMediaTypes.join(", ")}, and ImageTooLarge past ${String(projectIconBytesMax)} bytes for an icon or ${String(projectBannerBytesMax)} for a banner; the inventory lists each project with the icon it names, and the bytes are read through the artifact route`,
 };
 
+/** The project's writes no session bearer may make: its access tokens, the
+ * merge of a ticket's proposal, and its connectors. */
+const sessionRefusedNotes = {
+  accessTokens: `a caller holding the project's make_access_tokens permit, which its administrators hold and so does a reader the tenant lets register a personal runner, makes an access token that acts as them in the project until it is deleted or expires: it names a name of at most ${String(accessTokenNameCharsMax)} characters on one line and not blank, Read or Write access, and lifetimeDays from 1 to ${String(accessTokenLifetimeDaysMax)}, and is answered 201 with the token and its secret, which no other answer holds; a reader of the project without the permit is refused 403 AccessTokenMintForbidden, a name the caller already holds in the project 409 AccessTokenNameTaken, and a caller holding ${String(accessTokensHeldMax)} tokens in the project, or a project holding ${String(accessTokensProjectMax)}, 409 AccessTokenLimitReached, expired tokens counting until they are deleted; a reader lists their own tokens and an administrator every one, newest first, each with its maker; a token's maker or an administrator deletes it, which answers 204 and revokes it; a caller who may not read the project, or may not see the token, is answered not found, and every session bearer is refused`,
+  ticketProposalMerge:
+    "a caller holding the project's merge_proposals permit, which its administrators hold, has this deployment's portal app merge the pull request the ticket's newest successful landing opened, at the head that landing evaluated; the pull request is read first, and one merged already answers Merged, so a second press changes nothing; one closed unmerged is refused Closed, one conflicting with its base Conflicting, one the forge's own rules block Blocked, one its base has moved past Behind, a head pushed since HeadMoved, one the forge would not merge for a reason it did not name NotMergeable, and a refusal of the app AppDenied, each 409 with the pull request's link; a caller who may read the ticket and not merge is refused 403 ProposalMergeForbidden, a ticket whose newest success opened no pull request is not found, a deployment holding no portal key or a forge that cannot be reached answers 503, and every session bearer is refused; nothing is recorded and no ticket moves, since the merge is the forge's and is read as one a person made there",
+  connectors: `a project's connectors are the integrations its jobs may be issued, each of kind ${connectorKinds.join(", ")} and holding that kind's settings and no secret, named by at most ${String(connectorNameCharsMax)} lower-case letters, digits and inner hyphens; whoever may read the project's repositories lists them, ordered by name, each with its revision, and reads their history, newest first in pages of ${String(connectorChangesPageMax)}, each change with its author, its instant, the connector's name, whether it Created, Changed or Removed it, and the kind and settings it left, resumed by passing a page's next as before; whoever may write a repository's landing writes one whole by its name, creating it where expectedRevision is absent and replacing it where expectedRevision is the revision standing, answered 201 or 200 with the connector as written, and removes one by naming the revision standing as the expectedRevision query parameter, answered 204; any other revision, or none, is refused 409 ConnectorStale with the revision standing as standing, absent where none stands, but a removal of a name the project does not hold, which is 404 ConnectorNotFound; a create into a project holding ${String(connectorsProjectMax)} is refused 409 ConnectorLimitReached; settings that are not their kind's, or a name that is not a connector's, are refused 400; a refusal changes nothing, a caller who may not is answered not found, and every session bearer is refused`,
+};
+
 /** Where a project's work and sessions run, and the runners that take it. */
 const runnerNotes = {
   executionPlacement:
     "where a project's work and evaluations run is decided per kind by the deployment's override for the project, else the project's own placement, else the deployment's default; an administrator writes both routes whole, and choosing InCluster needs the tenant's hosted grant, as a session on that route does",
   sessionPlacement:
-    "where a project's threads run is decided the same way; a turn admitted InCluster spends the tenant's hosted grant and one admitted on Pool is offered to its member's chat host instead, so a member with no chat host is refused NoRunner; a turn runs where it was admitted, so a change moves the next turn and never one already queued, and one offered to a chat host that does not take it within the scheduler's dwell is withdrawn; the read says whether the member's chat host is registered and has polled lately, and whether any of the project's pools has; it answers lead, leadOffering and leadOfferings as fixed values for older clients, and a write's lead and leadOffering are ignored",
-  ownerFallback:
-    "a project names no fallback until an administrator writes one, and while it names none no personal runner takes its work; an execution routed to runners whose ticket a member wrote may then be taken by any of that member's personal runners where they serve the project; under Strict no pool takes it while they have any, and under Preferred a pool takes it while none of theirs offered its agent has polled lately; an execution keeps the fallback it was registered under, and the read says whether the caller may change it",
-  workerPoolRegistration:
-    "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included; a reader of the project reads each pool's newest poll and whether it is live",
+    "where a project's threads run is decided the same way; a turn admitted InCluster spends the tenant's hosted grant and one admitted on Pool is offered to its member's chat host instead, so a member with no chat host is refused NoRunner; a turn runs where it was admitted, so a change moves the next turn and never one already queued, and one offered to a chat host that does not take it within the scheduler's dwell is withdrawn; the read says whether the member's chat host is registered and has polled lately; it answers its runners' project, lead, leadOffering and leadOfferings as fixed values for older clients, and a write's lead and leadOffering are ignored",
   personalRunnerRegistration: `a member the tenant permits to register a personal runner mints a single-use token for the tenant; redeeming it adds one more runner of that member's there, each held to its own bound on the work it takes, refused while they hold ${String(personalRunnersMax)}, and answers once with a file of kind Personal naming the tenant and the member and no project; a member's runners serve one list of projects, and serve none until their owner adds one they may read, each at a priority, High, Normal or Low, Normal where the addition names none; of the work they could take now, a ticket's that a runner has already started is taken first, then a higher project's; a runner is taken off by its owner, by its id or with all of theirs, and every runner of a member by an administrator of the tenant, and the list goes with the last of them; a member reads whether the tenant permits them, each of their runners' newest poll and whether it is live, and each agent their runners are paused for, which is one where every runner of theirs offered it, of those polling now where any is, holds the pause of the credentials it named, or the agent's own where it named none, with the one that ends first`,
   agentAccounts:
-    "a caller reads and sets their own agent accounts alone, the logins their runners spend, and no route names another principal: for each agent, the share of each window a reading at or over pauses it at, a whole percentage held at its default until they write their own, whether their threads pause with it, each window's newest reading across its credentials and when it was read, the newest limit a provider stopped it at across them, and the pause these come to now, which holds only while every credential their live runners name of it is paused and lasts until the earliest of those ends, or, where those runners name none, holds while any credential is paused and lasts until the latest reason holding it ends; and each credential it holds a reading or a limit of, by name, with each window's reading of that credential and the pause holding it alone, which a press of the agent lets one claim through as it does the agent's; a runner, pool or chat host of theirs that named credentials of a paused agent takes its work, a chat host's threads among it, while any of those is free, and one that named none takes none of it; a press tries the agent once past a limit, letting one claim through it and no threshold, and is refused NotHardPaused where no limit holds the agent; retiring a credential by its name drops its readings and its limit, so the account reads it no more until a run reports it again, is not found where none is held under that name, and is refused CredentialInUse while a live runner of theirs names it unless it is off; turning a credential off by its name, which needs no reading or limit of it, holds every runner of theirs off it until they turn it on again, its pause reading off with no end, a thread waiting on it whatever their option, a ticket held only by it reading off rather than a resume time, and an off credential pausing an agent no live runner names credentials of only by its own readings and limit; it is refused OffFull while as many of that agent's credentials are off as the bound admits, and turning on one that is not off is not found",
+    "a caller reads and sets their own agent accounts alone, the logins their runners spend, and no route names another principal: for each agent, the share of each window a reading at or over pauses it at, a whole percentage held at its default until they write their own, whether their threads pause with it, each window's newest reading across its credentials and when it was read, the newest limit a provider stopped it at across them, and the pause these come to now, which holds only while every credential their live runners name of it is paused and lasts until the earliest of those ends, or, where those runners name none, holds while any credential is paused and lasts until the latest reason holding it ends; and each credential it holds a reading or a limit of, by name, with each window's reading of that credential and the pause holding it alone, which a press of the agent lets one claim through as it does the agent's; a runner or chat host of theirs that named credentials of a paused agent takes its work, a chat host's threads among it, while any of those is free, and one that named none takes none of it; a press tries the agent once past a limit, letting one claim through it and no threshold, and is refused NotHardPaused where no limit holds the agent; retiring a credential by its name drops its readings and its limit, so the account reads it no more until a run reports it again, is not found where none is held under that name, and is refused CredentialInUse while a live runner of theirs names it unless it is off; turning a credential off by its name, which needs no reading or limit of it, holds every runner of theirs off it until they turn it on again, its pause reading off with no end, a thread waiting on it whatever their option, a ticket held only by it reading off rather than a resume time, and an off credential pausing an agent no live runner names credentials of only by its own readings and limit; it is refused OffFull while as many of that agent's credentials are off as the bound admits, and turning on one that is not off is not found",
   chatHostRegistration:
     "a member the tenant permits to register a personal runner mints, under the same permit and bound, a single-use token for their chat host in the tenant; redeeming it at the same route a runner's token is redeemed at registers the member's one chat host there, replacing any other and ending every session the replaced one held, and answers once with a file of kind ChatHost naming the tenant and the member and no project or capabilities; a chat host serves its member's threads in every project of the tenant they may read, and needs no list; its owner reads its newest poll and whether it is live, and takes it off, which ends every session it held",
 };
@@ -276,8 +294,7 @@ export function nativeHttpContractDocument(): unknown {
       "a tenant's administrator deletes a project that has never run work, and the site's administrator then a workspace holding no project: GET on the deletion route answers held, what keeps it — for a project a ReleasedTicket, an Execution, a Session, a WorkerPool or an ActionObservation, for a workspace a Project, a PersonalRunner, a ChatHost or a Session — empty where DELETE would delete it, which answers 204, or 409 DeletionHeld with held; a project's deletion removes its drafts, epics, bound repositories, imported configurations, settings and grants, and a workspace's its grants, invite links, forge claims and row, so its name may be taken again; a caller who may not delete it is answered not found",
     ticketTake:
       "a member who may file drafts takes a released ticket that is neither Done nor Revoked, which makes them its owner, the member its next execution is placed for: a take names no member but its caller, replaces a taker before them, and answers AlreadyOwner where the caller owns it already; its taker alone returns it, to its creator; an execution keeps the owner it was registered under; a draft never released is refused Unreleased, a Done or Revoked ticket TicketDone or TicketRevoked, a return by anyone but the taker NotTaker, and every session bearer but a thread's, which takes and returns as its member; every take and return is kept",
-    ticketProposalMerge:
-      "a caller holding the project's merge_proposals permit, which its administrators hold, has this deployment's portal app merge the pull request the ticket's newest successful landing opened, at the head that landing evaluated; the pull request is read first, and one merged already answers Merged, so a second press changes nothing; one closed unmerged is refused Closed, one conflicting with its base Conflicting, one the forge's own rules block Blocked, one its base has moved past Behind, a head pushed since HeadMoved, one the forge would not merge for a reason it did not name NotMergeable, and a refusal of the app AppDenied, each 409 with the pull request's link; a caller who may read the ticket and not merge is refused 403 ProposalMergeForbidden, a ticket whose newest success opened no pull request is not found, a deployment holding no portal key or a forge that cannot be reached answers 503, and every session bearer is refused; nothing is recorded and no ticket moves, since the merge is the forge's and is read as one a person made there",
+    ...sessionRefusedNotes,
     repositoryBinding:
       "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
     repositoryLanding:

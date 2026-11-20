@@ -101,7 +101,10 @@ and permanent, which is what makes a retry find its original rather than
 create a second. It is changed by acceptance, by cancellation and by the
 decision transaction, and a trigger refuses any later change at all to a row
 already terminal. Unfinished work is found by selecting `Pending` operations
-for a partition.
+for a partition. `via_session`, and `via_token` with `via_token_name`, record
+the session or the access token a command came through, never both and outside
+the idempotency scope; the token columns point at nothing, so a deleted
+token's operations keep its identity and name.
 
 WHY NO ROLE MAY WRITE A SETTLEMENT, BY EITHER VERB, AND CANCELLATION IS A
 FUNCTION. 006 lets the API insert authorized operations and decide none of
@@ -353,7 +356,7 @@ unique globally. `holder_kind` names what holds a runner's attempt, `Pool`,
 `session_attempt_personal_is_finished` holds it to, and is NULL exactly where
 `pool` is, the cluster's; `idle_secs` is the idle bound a chat host declared
 for its own attempt. It is changed by opening, placing, ending, the two
-reapers and the fences of the epoch, a pool and a chat host, and
+reapers and the fences of the epoch and a chat host, and
 `session_attempt_is_fenced` refuses a finished attempt any change but its
 cleanup acknowledgement. Unfinished work is found by selecting live attempts
 whose lease has expired by database time, whose epoch is not the current one,
@@ -441,16 +444,12 @@ scheduler, which writes it at boot, and read by the API, which answers a
 project's placement from it. It has no unfinished work: the scheduler decides
 from its own routing, so a row older than the process only misreports.
 
-`project_owner_fallback` — whether one project's members' personal runners
-take the executions of tickets they wrote, under `Strict` or `Preferred`, and
-who set it. Owned by the boundary owner, which is what
-`set_project_owner_fallback` runs as; the API role writes it through that door
-alone, and it and the scheduler read it. Its key and identity are
-`(tenant, project)` and it points at `project`. It is changed by that door
-alone, which answers `Unchanged` where nothing moved; a row naming no fallback
-is a project that took them out. It has no unfinished work: the scheduler
-copies it onto an execution when it registers one, so a change moves only what
-registers after it, and a project with no row places as it did before.
+`project_owner_fallback` — the owner fallback one project's administrators
+named, `Strict` or `Preferred`, and who set it. Owned by the boundary owner;
+the API role is granted SELECT on it. Its key and identity are
+`(tenant, project)` and it points at `project`; a row naming no fallback is a
+project that took it out. Nothing writes or reads it but a project's deletion,
+which empties it, and it has no unfinished work.
 
 `member_thread_limit` — how many threads one member may hold open in one
 project, and who set it. Owned by the boundary owner, which is what
@@ -520,6 +519,19 @@ expired tokens and is refused past a bound on their live ones, and by a
 redemption, which marks it redeemed once and unmarks it where the registration
 it paid for was lost. It has no unfinished work: an unredeemed token expires,
 and the minter's next mint removes it.
+
+`access_token` — a token a member makes to reach one project through the API:
+its name, its access, `Read` or `Write`, its maker, the digest of its secret,
+when it was made and expires, and the newest recovery epoch at its making.
+Written and read by the API role alone; the boundary owner reads and deletes
+it only in the project's deletion. Its identity is the project and a drawn
+token, its name is its maker's once in the project, and its digest is unique.
+It points at `project` and `recovery_epoch`. It is changed by a mint, which
+counts and inserts under one lock and is refused past a bound on the maker's
+tokens and on the project's, and by a delete, its maker's or an
+administrator's; nothing updates it in place. It has no unfinished work: an
+expired token stays listed until it is deleted, and the project's deletion
+empties it.
 
 `chat_host` — a member's chat host in one tenant: its principal, the issuer
 client it is removed by, when it registered and last polled, the runner
@@ -658,8 +670,8 @@ credential is where they name none;
 `agent_account_credential_standing` answers the API each credential's own
 pause, `agent_account_named_pause` of its one name.
 `agent_account_named_pause`, which the pool plane and the API may call, answers
-`agent_account_pause`'s columns for the credentials a runner, a pool or a chat
-host named:
+`agent_account_pause`'s columns for the credentials a runner or a chat host
+named:
 paused only while every one of them is, until the earliest of those ends, a
 name that never reported being free. A credential in
 `agent_account_credential_off` is paused by `off` alone, whatever its readings

@@ -11,10 +11,12 @@ import type { QueryClient } from "@tanstack/query-core";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { apiProjectAuthorities, apiProjectPeople } from "./accessRoutes.ts";
 import {
+  apiAccessTokens,
+  apiConnectorHistory,
+  apiConnectors,
   apiExecutionPlacement,
   apiForgeApps,
   apiHostedRuns,
-  apiOwnerFallback,
   apiProjectAbilities,
   apiProjectArtifact,
   apiProjectDeletion,
@@ -23,7 +25,6 @@ import {
   apiSelectorSettings,
   apiSelectorSettingsHistory,
   apiSessionPlacement,
-  apiWorkerPools,
 } from "./apiRoutes.ts";
 import { consolePartitionQuery } from "./consoleQuery.ts";
 import { sessionPlacementPolledMs } from "./sessionRunners.ts";
@@ -31,6 +32,13 @@ import { sessionPlacementPolledMs } from "./sessionRunners.ts";
 export function projectAbilitiesQuery(partition: PartitionIdentity) {
   return consolePartitionQuery(partition, "abilities", (ports) =>
     apiProjectAbilities(ports, partition),
+  );
+}
+
+/** The project's access tokens the reader may see. */
+export function accessTokensQuery(partition: PartitionIdentity) {
+  return consolePartitionQuery(partition, "access-tokens", (ports) =>
+    apiAccessTokens(ports, partition),
   );
 }
 
@@ -47,12 +55,6 @@ export function executionPlacementQuery(partition: PartitionIdentity) {
   );
 }
 
-export function ownerFallbackQuery(partition: PartitionIdentity) {
-  return consolePartitionQuery(partition, "owner-fallback", (ports) =>
-    apiOwnerFallback(ports, partition),
-  );
-}
-
 /** Polled, since nothing names the placement or a runner's poll. */
 export function sessionPlacementQuery(partition: PartitionIdentity) {
   return consolePartitionQuery(
@@ -60,12 +62,6 @@ export function sessionPlacementQuery(partition: PartitionIdentity) {
     "session-placement",
     (ports) => apiSessionPlacement(ports, partition),
     sessionPlacementPolledMs,
-  );
-}
-
-export function workerPoolsQuery(partition: PartitionIdentity) {
-  return consolePartitionQuery(partition, "worker-pools", (ports) =>
-    apiWorkerPools(ports, partition),
   );
 }
 
@@ -81,6 +77,44 @@ export function selectorSettingsHistoryQuery(partition: PartitionIdentity) {
     "selector-settings-history",
     (ports) => apiSelectorSettingsHistory(ports, partition),
   );
+}
+
+/** The project's connectors. */
+export function connectorsQuery(partition: PartitionIdentity) {
+  return consolePartitionQuery(partition, "connectors", (ports) =>
+    apiConnectors(ports, partition),
+  );
+}
+
+/** One page of the project's connector changes: the newest, or those older than `before`. */
+export function connectorHistoryQuery(
+  partition: PartitionIdentity,
+  before?: number,
+) {
+  return consolePartitionQuery(
+    partition,
+    before === undefined
+      ? "connector-history"
+      : `connector-history/${String(before)}`,
+    (ports) => apiConnectorHistory(ports, partition, before),
+  );
+}
+
+/** The connectors and the newest page of their history, read again after a
+ * write: an older page holds changes that are past, and is never read again. */
+export async function connectorsReread(
+  client: QueryClient,
+  partition: PartitionIdentity,
+): Promise<void> {
+  await Promise.all([
+    client.invalidateQueries({
+      queryKey: connectorsQuery(partition).queryKey,
+    }),
+    client.invalidateQueries({
+      queryKey: connectorHistoryQuery(partition).queryKey,
+      exact: true,
+    }),
+  ]);
 }
 
 export function hostedRunsQuery(partition: PartitionIdentity) {

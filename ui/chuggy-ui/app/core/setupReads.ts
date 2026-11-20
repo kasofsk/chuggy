@@ -36,7 +36,6 @@ import type {
   ForgeAppsResponse,
   ForgeInstallationResponse,
   ForgeRepositoryResponse,
-  ProjectOwnerFallbackResponse,
   ProjectRepositoryListedResponse,
   SelectorProjectSettingsResponse,
   SessionPlacementResponse,
@@ -58,7 +57,6 @@ import {
   apiForgeInstallationPermissions,
   apiForgeInstallationRepositories,
   apiForgeInstallations,
-  apiOwnerFallback,
   apiPersonalRunner,
   apiProject,
   apiProjectInventory,
@@ -233,9 +231,7 @@ export interface SetupReads {
   /** Where the project's work runs, which is what says whether it waits on a runner at all. */
   readonly work: SetupRead<ExecutionPlacementResponse>;
   readonly placement: SetupRead<SessionPlacementResponse>;
-  /** Whether the project lets a member's own runners take their work, which says whether the person's own can be its runner. */
-  readonly fallback: SetupRead<ProjectOwnerFallbackResponse>;
-  /** Whether the person holds personal runners, and how they stand for the project: unregistered where it is not given them; they take the person's work where the fallback lets them. */
+  /** Whether the person holds personal runners, and how they stand for the project: unregistered where it is not given them; they take the person's work where it is. */
   readonly personal: SetupRead<SetupPersonal>;
   /** A ticket that is done, where the project has one: one is all that is asked for. */
   readonly landed: SetupRead<readonly TicketResponse[]>;
@@ -543,7 +539,6 @@ type SetupProjectReads = Pick<
   | "repositories"
   | "work"
   | "placement"
-  | "fallback"
   | "personal"
   | "landed"
   | "moving"
@@ -555,7 +550,6 @@ const setupProjectUnasked: SetupProjectReads = {
   repositories: setupUnasked,
   work: setupUnasked,
   placement: setupUnasked,
-  fallback: setupUnasked,
   personal: setupUnasked,
   landed: setupUnasked,
   moving: setupUnasked,
@@ -572,7 +566,6 @@ async function setupProjectRead(
     repositories,
     work,
     placement,
-    fallback,
     personal,
     landed,
     moving,
@@ -582,7 +575,6 @@ async function setupProjectRead(
     held ?? setupRepositoriesRead(ports, partition),
     apiExecutionPlacement(ports, partition),
     apiSessionPlacement(ports, partition),
-    apiOwnerFallback(ports, partition),
     apiPersonalRunner(ports, partition.tenant),
     apiProject(ports, partition, { phase: ["Done"], limit: 1 }),
     apiProject(ports, partition, {
@@ -597,7 +589,6 @@ async function setupProjectRead(
     repositories,
     work: setupGot(work, (answered) => answered, all),
     placement: setupGot(placement, (answered) => answered, all),
-    fallback: setupGot(fallback, (answered) => answered, all),
     personal:
       personal.outcome === "Absent"
         ? { read: "Got", value: { registered: false }, whole: true }

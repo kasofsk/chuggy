@@ -32,7 +32,6 @@ import {
 } from "../../src/adapters/postgres/workerPlane.ts";
 import {
   postgresWorkerPoolAssignments,
-  postgresWorkerPoolRegistry,
   postgresWorkerPoolRoster,
 } from "../../src/adapters/postgres/workerPool.ts";
 import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
@@ -70,10 +69,7 @@ import {
   taskInvocationBytesMax,
 } from "../../src/interpreter/taskBriefing.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
-import {
-  workerPoolMemoryMibDefault,
-  type WorkerPoolIdentity,
-} from "../../src/interpreter/workerPool.ts";
+import { workerPoolMemoryMibDefault } from "../../src/interpreter/workerPool.ts";
 import {
   inertWorkerPlane,
   taskFetched,
@@ -568,51 +564,7 @@ test("a reported attempt's bearer is answered as stopped, though the read still 
   });
 });
 
-test("a pool's bearer fetches the task the scheduler recorded, and the bearer it replaced fetches nothing", async () => {
-  const { project } = await admittedProject("task-pool");
-  const principal = asPrincipal(`https://issuer.invalid#pool-${randomUUID()}`);
-  assert.equal(
-    await postgresWorkerPoolRegistry(apiPool).register({
-      partition: project.partition,
-      pool: "task-pool",
-      capabilities: ["Platform:Linux:Amd64", "Agent:Claude"],
-      class: "Dedicated",
-      clientId: `chuggy-pool-${randomUUID()}`,
-      principal,
-    }),
-    true,
-  );
-  const identity = (await postgresWorkerPoolRegistry(apiPool).identify(
-    principal,
-  )) as WorkerPoolIdentity;
-  const bearer = `bearer-${randomUUID()}`;
-  const answers: { status: number; body: unknown }[] = [];
-  const placement = await launched(project, async (placing) => {
-    await rig.harness.query(
-      `UPDATE execution SET placement='Pool'
-        WHERE tenant=$1 AND project=$2 AND execution=$3`,
-      [placing.partition.tenant, placing.partition.project, placing.execution],
-    );
-    assert.notEqual(
-      await postgresWorkerPoolAssignments(poolPlanePool).claim(
-        identity,
-        { leaseSecs, heldMax: 1, memoryMibDefault: 4_096 },
-        `assignment-${randomUUID()}`,
-        bearer,
-        [],
-      ),
-      undefined,
-    );
-    answers.push(await fetchedTask(bearer));
-    answers.push(await fetchedTask(placing.capability.secret));
-  });
-  assert.deepEqual(answers, [
-    { status: 200, body: pushedTask(placement) },
-    { status: 401, body: { action: "stop" } },
-  ]);
-});
-
-test("a personal runner's bearer fetches the task of the execution it claimed, as a pool's does", async () => {
+test("a personal runner's bearer fetches the task of the execution it claimed, and the bearer it replaced fetches nothing", async () => {
   const { project } = await admittedProject("task-personal");
   const owner = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
   const principal = asPrincipal(
@@ -634,7 +586,7 @@ test("a personal runner's bearer fetches the task of the execution it claimed, a
   const answers: { status: number; body: unknown }[] = [];
   const placement = await launched(project, async (placing) => {
     await rig.harness.query(
-      `UPDATE execution SET placement='Pool',owner=$4,owner_fallback='Strict'
+      `UPDATE execution SET placement='Pool',owner=$4
         WHERE tenant=$1 AND project=$2 AND execution=$3`,
       [
         placing.partition.tenant,

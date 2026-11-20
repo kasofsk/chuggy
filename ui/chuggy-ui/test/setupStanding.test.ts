@@ -13,18 +13,13 @@ import { expect, test } from "vitest";
 
 import type { TicketLandingResponse } from "../../../src/contract/responses.ts";
 import {
-  ownerFallbacks,
   placementRoutes,
   sessionRunnerStandings,
   ticketLandingStates,
 } from "../../../src/contract/rosters.ts";
-import type {
-  OwnerFallback,
-  SessionRunnerStanding,
-} from "../../../src/contract/rosters.ts";
+import type { SessionRunnerStanding } from "../../../src/contract/rosters.ts";
 import { projectInventoryPagesMax } from "../app/core/apiRoutes.ts";
 import { repositoriesWorkerless } from "../app/core/projectRepositories.ts";
-import { setupNorthStarSkip } from "../app/core/setupArguments.ts";
 import { setupLandingsMax } from "../app/core/setupReads.ts";
 import type { SetupPersonal, SetupRead } from "../app/core/setupReads.ts";
 import { setupSteps } from "../app/core/setupReport.ts";
@@ -38,7 +33,6 @@ import {
   saidDetail,
   saidFailures,
   saidFated,
-  saidFates,
   saidGranted,
   saidLanding,
   saidLandingSite,
@@ -52,7 +46,6 @@ import {
   saidRunnable,
   saidServed,
   saidStages,
-  saidStarred,
   saidStep,
   saidTodo,
   saidUnread,
@@ -70,7 +63,6 @@ import {
   setupSiteProject,
   setupSiteProposed,
   setupSiteRepositoryAddress,
-  setupSitePoolWaiting,
   setupSiteWaiting,
   setupSiteWorkspace,
 } from "./setupSite.ts";
@@ -83,10 +75,6 @@ import type {
 } from "./setupSite.ts";
 import { siteRead, stood } from "./setupStood.ts";
 import type { Asking } from "./setupStood.ts";
-import {
-  workRunnerNoPersonal,
-  workRunnerUnnamed,
-} from "./workRunnerFixture.ts";
 
 /** A step with its few words as the program prints them. */
 function worded(step: SetupStep | undefined) {
@@ -162,15 +150,8 @@ test.each([
   ["Work", setupSiteWaiting(7, "Live"), undefined],
   ["Work", { ...setupSiteWaiting(7, "Offline"), mine: false }, undefined],
   ["Work", { ...setupSiteWaiting(7, "Offline"), status: "Queued" }, undefined],
-  ["Work", setupSitePoolWaiting(7, room), { wait: "PoolRoom", ...room }],
-  ["Work", { ...setupSitePoolWaiting(7, room), status: "Queued" }, undefined],
-  [
-    "Work",
-    { ...setupSiteWaiting(7, "Offline"), poolRoom: room },
-    { wait: "Offline" },
-  ],
 ] as const)(
-  "a ticket in %s carries what its starting execution of the person's waits on of their runners, or else what any starting execution waits on of the project's pools, by the console's own deciders: %j",
+  "a ticket in %s carries what its starting execution of the person's waits on of their runners, by the console's own deciders: %j",
   async (phase, execution, wait) => {
     const step = await runningStep(phase, [execution]);
     expect(step?.state).toBe("waiting");
@@ -376,7 +357,6 @@ test("a member who administers nothing is waiting on an admin, is shown no accou
   expect(await column(joined())).toEqual([
     ["waiting", "acme, where you are a member and not an admin"],
     saidWidgets,
-    saidStarred,
     saidServed,
     shown,
     saidRepository,
@@ -399,7 +379,6 @@ test("a workspace named that the person is not in is to do, and so is everything
     saidTodo,
     saidTodo,
     saidTodo,
-    saidTodo,
   ]);
 });
 
@@ -409,7 +388,6 @@ test("with no workspace, a list of projects that was not got leaves the project 
   expect(await column(site)).toEqual([
     ["todo", "you are in no workspace yet"],
     ["unread", "your projects were not answered (Fault)"],
-    saidTodo,
     saidTodo,
     saidTodo,
     saidTodo,
@@ -440,7 +418,6 @@ test("a workspace list sent only in part is never read as being in no workspace"
 const absent: readonly Said[] = [
   saidAcme,
   ["todo", "acme has no project named gadgets"],
-  saidTodo,
   saidTodo,
   saidOrg,
   saidTodo,
@@ -476,7 +453,6 @@ test("a standing over a list of projects that was not whole never says a workspa
     saidPluginOn,
     saidAcme,
     ["unread", "your projects were sent only in part"],
-    unasked("its chat settings were"),
     saidTodo,
     unasked("its repositories were"),
     unasked("its repositories were"),
@@ -543,7 +519,7 @@ function claimed(
 }
 
 test("GitHub is done where one account holds both apps, and otherwise waits on the app the nearest account lacks", async () => {
-  const github = async (site: SetupSite) => (await column(site))[4];
+  const github = async (site: SetupSite) => (await column(site))[3];
   expect(await github(claimed([[setupSiteAccount, "worker"]]))).toEqual([
     "waiting",
     "acme-org has the worker app, not the portal app",
@@ -568,7 +544,7 @@ test("GitHub is done where one account holds both apps, and otherwise waits on t
 });
 
 test("accounts sent only in part are done where the part holds an account with both apps, and are not read where it does not", async () => {
-  const github = async (site: SetupSite) => (await column(site))[4];
+  const github = async (site: SetupSite) => (await column(site))[3];
   expect(await github(claimed([[setupSiteAccount, "portal"]], "Cut"))).toEqual([
     "unread",
     "its GitHub accounts were sent only in part",
@@ -613,12 +589,12 @@ const personal = [
 
 test("once a repository is added GitHub is held to the account that owns it, whatever another account holds, and waits on the app that account lacks", async () => {
   const github = async (site: SetupSite) =>
-    worded((await stood(site)).steps[5]);
+    worded((await stood(site)).steps[4]);
   const waiting = (detail: string, app: "portal" | "worker") => ({
     step: "github",
     state: "waiting",
     detail: `acme-org, which owns ${repository}, ${detail}`,
-    lacks: { lacks: "App", app, account: setupSiteAccount },
+    lacks: { lacks: "App", app, account: setupSiteAccount, repository },
   });
   expect(
     await github(owned([...personal, [setupSiteAccount, "portal"]])),
@@ -641,7 +617,7 @@ test("once a repository is added GitHub is held to the account that owns it, wha
 });
 
 test("an account is the repository's owner only by its whole name as the address writes it", async () => {
-  const github = async (site: SetupSite) => (await column(site))[4];
+  const github = async (site: SetupSite) => (await column(site))[3];
   for (const near of ["acme-org-2", "acme", "Acme-Org"])
     expect(
       await github(
@@ -657,7 +633,7 @@ test("an account is the repository's owner only by its whole name as the address
 });
 
 test("the owner's accounts sent only in part are done where the part shows it holding both apps, and are not read where it does not", async () => {
-  const github = async (site: SetupSite) => (await column(site))[4];
+  const github = async (site: SetupSite) => (await column(site))[3];
   expect(
     await github(owned([...personal, [setupSiteAccount, "portal"]], "Cut")),
   ).toEqual(["unread", "its GitHub accounts were sent only in part"]);
@@ -700,7 +676,7 @@ const elsewhere = "https://github.com/acme-org/gadgets";
 
 test("with both apps on the owner's account, GitHub waits on whichever is not granted this repository, the portal app said first, and is done only where both are", async () => {
   const github = async (site: SetupSite) =>
-    worded((await stood(site)).steps[5]);
+    worded((await stood(site)).steps[4]);
   const mine = setupSiteRepositoryAddress;
   const waiting = (app: "portal" | "worker") => ({
     step: "github",
@@ -727,7 +703,7 @@ test("with both apps on the owner's account, GitHub waits on whichever is not gr
 });
 
 test("a listing cut short counts where it names the repository and leaves its half not read where it does not, since the rest may name it; it is never a grant that is missing", async () => {
-  const github = async (site: SetupSite) => (await column(site))[4];
+  const github = async (site: SetupSite) => (await column(site))[3];
   const mine = [setupSiteRepositoryAddress];
   const unread = (app: string): Said => [
     "unread",
@@ -783,7 +759,7 @@ test("the worker app is waited on exactly where the console's own decider, over 
           });
           if (portal === undefined || worker === undefined)
             throw new Error("a listing was not asked for");
-          const lacks = setupStanding(reads, true, "On").steps[5]?.lacks;
+          const lacks = setupStanding(reads, true, "On").steps[4]?.lacks;
           const said = lacks?.lacks === "Grant" && lacks.app === "worker";
           expect(said, JSON.stringify(site.grants)).toBe(
             repositoriesWorkerless([portal], [worker]).includes(mine),
@@ -802,7 +778,7 @@ test("a repository the forge lists under another spelling of its address is the 
     repository: "https://GitHub.com/acme-org/widgets.git",
     configured: true,
   });
-  expect((await column(site))[4]).toEqual(saidGranted);
+  expect((await column(site))[3]).toEqual(saidGranted);
 });
 
 /** A site set up to a live runner whose project holds `repositories` and no other, with one account, `personal`, holding both apps. */
@@ -813,7 +789,7 @@ function holding(repositories: SetupSiteProject["repositories"]): SetupSite {
 }
 
 test("the repository GitHub is held to is the one the repository step is said of: the first that is configured, else the first added, and none that is retired", async () => {
-  const steps = async (site: SetupSite) => (await column(site)).slice(4, 6);
+  const steps = async (site: SetupSite) => (await column(site)).slice(3, 5);
   const mine = "https://github.com/personal/notes";
   const theirs = setupSiteRepositoryAddress;
   expect(
@@ -857,7 +833,7 @@ test("the repository GitHub is held to is the one the repository step is said of
 });
 
 test("repositories sent only in part hold GitHub to a configured one among them, and leave it not read where none is, since the one meant may be in the rest", async () => {
-  const github = async (site: SetupSite) => (await column(site))[4];
+  const github = async (site: SetupSite) => (await column(site))[3];
   const cut = (repositories: SetupSiteProject["repositories"]): SetupSite => {
     const site = holding(repositories);
     site.fates.set("repositories", "Cut");
@@ -878,14 +854,14 @@ test("a repository whose address names no one owner, being more than an owner an
   const site = holding([
     { repository: "https://forge.example/group/team/notes", configured: true },
   ]);
-  expect((await column(site)).slice(4, 6)).toEqual([
+  expect((await column(site)).slice(3, 5)).toEqual([
     ["done", "personal"],
     ["done", "team/notes"],
   ]);
   const lone = holding([
     { repository: "https://forge.example/notes", configured: true },
   ]);
-  expect((await column(lone))[4]).toEqual(["done", "personal"]);
+  expect((await column(lone))[3]).toEqual(["done", "personal"]);
 });
 
 /** A read as a screen of the console holds one that came back. */
@@ -910,26 +886,35 @@ function settledPersonal(
   });
 }
 
-test("for every route a project's work can take and every standing its runners can have, the runner step is to do exactly where the console says the work has no runner, and done wherever the cluster runs it", async () => {
+/** The person's own personal runner as `standing` says: none, or one given
+ * the project, live or not. */
+function ownRunner(site: SetupSite, standing: SessionRunnerStanding): void {
+  if (standing === "Unregistered") site.personal.delete("acme");
+  else
+    site.personal.set("acme", {
+      live: [standing === "Live"],
+      projects: ["widgets"],
+    });
+}
+
+test("for every route a project's work can take and every standing the person's own runner can have, the runner step is to do exactly where the console says the work has no runner, and done wherever the cluster runs it", async () => {
   const said: Record<string, Said | undefined> = {};
   for (const route of placementRoutes)
-    for (const runner of sessionRunnerStandings) {
+    for (const own of sessionRunnerStandings) {
       const { site, project } = saidRunnable();
       project.work = route;
-      project.runner = runner;
-      const step = (await column(site))[6];
+      ownRunner(site, own);
+      const step = (await column(site))[5];
       const reads = await siteRead(site);
       const console = workRunner(
         settled(reads.work),
-        settled(reads.placement),
-        workRunnerUnnamed,
-        workRunnerNoPersonal,
+        settledPersonal(reads.personal),
         "Reader",
       );
-      expect(step?.[0] === "todo", `${route} ${runner}`).toBe(
+      expect(step?.[0] === "todo", `${route} ${own}`).toBe(
         console === "NoRunner",
       );
-      said[`${route} ${runner}`] = step;
+      said[`${route} ${own}`] = step;
     }
   const hosted: Said = ["done", "hosted runs take its work"];
   expect(said).toEqual({
@@ -942,84 +927,20 @@ test("for every route a project's work can take and every standing its runners c
   });
 });
 
-test("a project with no pool that names an owner fallback takes the person's own personal runner serving it as its runner, live or offline as a pool is, exactly where the console says the work has a runner", async () => {
-  const said: Record<string, Said | undefined> = {};
-  for (const fallback of [undefined, ...ownerFallbacks])
-    for (const own of sessionRunnerStandings) {
-      const { site, project } = saidRunnable();
-      project.runner = "Unregistered";
-      project.fallback = fallback;
-      if (own !== "Unregistered")
-        site.personal.set("acme", {
-          live: [own === "Live"],
-          projects: [project.project],
-        });
-      const step = (await column(site))[6];
-      const reads = await siteRead(site);
-      const console = workRunner(
-        settled(reads.work),
-        settled(reads.placement),
-        settled(reads.fallback),
-        settledPersonal(reads.personal),
-        "Reader",
-      );
-      expect(step?.[0] === "todo", `${String(fallback)} ${own}`).toBe(
-        console === "NoRunner",
-      );
-      said[`${fallback ?? "None"} ${own}`] = step;
-    }
-  const offline: Said = ["waiting", "registered, not running"];
-  expect(said).toEqual({
-    "None Unregistered": saidTodo,
-    "None Offline": saidTodo,
-    "None Live": saidTodo,
-    "Strict Unregistered": saidTodo,
-    "Strict Offline": offline,
-    "Strict Live": saidLive,
-    "Preferred Unregistered": saidTodo,
-    "Preferred Offline": offline,
-    "Preferred Live": saidLive,
-  });
-});
-
-test("a pool registered and not running beside the person's own runner live, given the project and named its fallback, reads the runner step done, and the same pool beside one not given it, unnamed or offline still waits on the pool", async () => {
-  const step = async (
-    fallback: OwnerFallback | undefined,
-    live: boolean,
-    projects: string[],
-  ) => {
-    const { site, project } = saidRunnable();
-    project.runner = "Offline";
-    project.fallback = fallback;
-    site.personal.set("acme", { live: [live], projects });
-    return (await column(site))[6];
-  };
-  const widgets = saidRunnable().project.project;
-  const offline: Said = ["waiting", "registered, not running"];
-  expect(await step("Preferred", true, [widgets])).toEqual(saidLive);
-  expect(await step("Strict", true, [widgets])).toEqual(saidLive);
-  expect(await step(undefined, true, [widgets])).toEqual(offline);
-  expect(await step("Preferred", true, ["gadgets"])).toEqual(offline);
-  expect(await step("Preferred", false, [widgets])).toEqual(offline);
-});
-
 /** A chat host runs the person's threads and takes no work, and a personal
  * runner takes only the work of the projects it is given. */
-test("a project with no pool that names an owner fallback takes neither the person's chat host nor a personal runner given only another project as its runner", async () => {
+test("neither the person's chat host nor a personal runner given only another project is the project's runner", async () => {
   for (const held of ["chat host", "another project's runner"] as const) {
-    const { site, project } = saidRunnable();
-    project.runner = "Unregistered";
-    project.fallback = "Strict";
+    const { site } = saidRunnable();
+    site.personal.delete("acme");
     site.chat.set("acme", { id: "chuggy-chat-1", live: true });
     if (held === "another project's runner")
       site.personal.set("acme", { live: [true], projects: ["gadgets"] });
-    expect((await column(site))[6], held).toEqual(saidTodo);
+    expect((await column(site))[5], held).toEqual(saidTodo);
     const reads = await siteRead(site);
     expect(
       workRunner(
         settled(reads.work),
-        settled(reads.placement),
-        settled(reads.fallback),
         settledPersonal(reads.personal),
         "Reader",
       ),
@@ -1028,122 +949,75 @@ test("a project with no pool that names an owner fallback takes neither the pers
   }
 });
 
-test("the person's personal runners unread leave the runner step unread wherever the project has no pool, so a person holding one is never told to register one", async () => {
-  const unread: Said = [
+test("the person's personal runners unread leave the runner step unread where the project's work goes to runners, so a person holding one is never told to register one", async () => {
+  const { site } = saidRunnable();
+  site.fates.set("personal", "Failed");
+  expect((await column(site))[5]).toEqual([
     "unread",
     "your personal runners were not answered (Fault)",
-  ];
-  for (const [runner, fallback, said] of [
-    ["Unregistered", "Strict", unread],
-    ["Unregistered", undefined, unread],
-    ["Live", "Strict", saidLive],
-    ["Live", undefined, saidLive],
-  ] as const) {
-    const { site, project } = saidRunnable();
-    project.runner = runner;
-    project.fallback = fallback;
-    site.fates.set("personal", "Failed");
-    expect((await column(site))[6], `${runner} ${String(fallback)}`).toEqual(
-      said,
-    );
-  }
+  ]);
 });
 
-test("a project with no pool lacks a runner where the person holds no personal runner, and where they hold one that does not take its work, lacks that runner serving it, saying whether it is given the project, whether a fallback is named and whether the person may name one", async () => {
+/** Whether the person administers the project does not change what the step
+ * lacks. */
+test("the runner step lacks a runner where the person holds no personal runner and lacks it serving the project where they hold one not given it, whether or not the person administers it", async () => {
   const lacks: Record<string, unknown> = {};
   for (const held of ["none", "another project", "given"] as const)
-    for (const fallback of [undefined, "Preferred"] as const)
-      for (const administer of [true, false]) {
-        const { site, project } = saidRunnable();
-        project.runner = "Unregistered";
-        project.fallback = fallback;
-        project.administer = administer;
-        site.chat.clear();
-        if (held !== "none")
-          site.personal.set("acme", {
-            live: [true],
-            projects: [held === "given" ? project.project : "gadgets"],
-          });
-        lacks[`${held} ${fallback ?? "None"} ${String(administer)}`] = (
-          await stood(site)
-        ).steps[7]?.lacks;
-      }
-  const runner = { lacks: "Runner", chat: true };
-  const serving = (given: boolean, named: boolean, administers: boolean) => ({
-    lacks: "Serving",
-    given,
-    named,
-    administers,
-  });
-  expect(lacks).toEqual({
-    "none None true": runner,
-    "none None false": runner,
-    "none Preferred true": runner,
-    "none Preferred false": runner,
-    "another project None true": serving(false, false, true),
-    "another project None false": serving(false, false, false),
-    "another project Preferred true": serving(false, true, true),
-    "another project Preferred false": serving(false, true, false),
-    "given None true": serving(true, false, true),
-    "given None false": serving(true, false, false),
-    "given Preferred true": undefined,
-    "given Preferred false": undefined,
-  });
-});
-
-test("the owner fallback unread leaves the runner step unread only where the project has no pool", async () => {
-  for (const [runner, said] of [
-    [
-      "Unregistered",
-      [
-        "unread",
-        "whether personal runners take its work was not answered (Fault)",
-      ],
-    ],
-    ["Live", saidLive],
-  ] as const) {
-    const { site, project } = saidRunnable();
-    project.runner = runner;
-    site.fates.set("fallback", "Failed");
-    expect((await column(site))[6], runner).toEqual(said);
+    for (const administer of [true, false]) {
+      const { site, project } = saidRunnable();
+      project.administer = administer;
+      site.chat.clear();
+      site.personal.delete("acme");
+      if (held !== "none")
+        site.personal.set("acme", {
+          live: [true],
+          projects: [held === "given" ? project.project : "gadgets"],
+        });
+      lacks[`${held} ${String(administer)}`] = (await stood(site)).steps[6]
+        ?.lacks;
+    }
+  const expected: Record<string, unknown> = {};
+  for (const administer of ["true", "false"]) {
+    expected[`none ${administer}`] = { lacks: "Runner", chat: true };
+    expected[`another project ${administer}`] = { lacks: "Serving" };
+    expected[`given ${administer}`] = undefined;
   }
+  expect(lacks).toEqual(expected);
 });
 
 test("a project whose work the cluster runs needs no runner of its own, and its step is done saying chat-host where the person's chats in it run on a chat host they lack", async () => {
   const site = setupSiteAt("Landed");
-  for (const held of site.projects) {
-    held.work = "InCluster";
-    held.runner = "Unregistered";
-  }
+  site.personal.delete("acme");
+  for (const held of site.projects) held.work = "InCluster";
   const hosted: Said = ["done", "hosted runs take its work"];
-  expect((await column(site)).slice(6)).toEqual([
+  expect((await column(site)).slice(5)).toEqual([
     hosted,
     ["done", "ticket 1 is done"],
   ]);
   site.chat.clear();
-  expect((await column(site))[6]).toEqual([
+  expect((await column(site))[5]).toEqual([
     "done",
     "hosted runs take its work; you have no chat host, which only your chats in the browser need, and chat-host sets one up",
   ]);
   for (const held of site.projects) held.threads = "InCluster";
-  expect((await column(site))[6]).toEqual(hosted);
+  expect((await column(site))[5]).toEqual(hosted);
   site.fates.set("placement", "Failed");
-  expect((await column(site))[6]).toEqual([
+  expect((await column(site))[5]).toEqual([
     "unread",
     "its runners were not answered (Fault)",
   ]);
 });
 
-test("where the person's chats run on runners the runner step is done once the project's runner is live, and a chat host of theirs that is missing or not running is said on its done line with chat-host, never as what the step lacks", async () => {
+test("where the person's chats run on runners the runner step is done once the person's own runner is live, and a chat host of theirs that is missing or not running is said on its done line with chat-host, never as what the step lacks", async () => {
   const said: Record<string, readonly unknown[]> = {};
   for (const runner of sessionRunnerStandings)
     for (const mine of sessionRunnerStandings) {
-      const { site, project } = saidRunnable();
-      project.runner = runner;
+      const { site } = saidRunnable();
+      ownRunner(site, runner);
       if (mine === "Unregistered") site.chat.clear();
       else
         site.chat.set("acme", { id: "chuggy-chat-1", live: mine === "Live" });
-      const step = (await stood(site)).steps[7];
+      const step = (await stood(site)).steps[6];
       said[`${runner} ${mine}`] = [
         step?.state,
         saidDetail(step?.detail),
@@ -1198,7 +1072,7 @@ function added(
 const other = "https://github.com/acme-org/gadgets";
 
 test("a repository is done where one that is added and not retired is configured, and a retired one is as though it were never added", async () => {
-  const held = async (site: SetupSite) => (await column(site))[5];
+  const held = async (site: SetupSite) => (await column(site))[4];
   const retired = {
     repository: setupSiteRepositoryAddress,
     configured: true,
@@ -1222,7 +1096,7 @@ test("a repository is done where one that is added and not retired is configured
 });
 
 test("repositories sent as many as one answer holds are done where one of them is configured, and are not read where none is", async () => {
-  const held = async (site: SetupSite) => (await column(site))[5];
+  const held = async (site: SetupSite) => (await column(site))[4];
   expect(await held(added([], "Cut"))).toEqual([
     "unread",
     "its repositories were sent only in part",
@@ -1237,11 +1111,11 @@ test("repositories sent as many as one answer holds are done where one of them i
 
 test("with nothing added, the repository to do is said as this folder's remote where the folder has one", async () => {
   const remote = "git@github.com:acme-org/widgets.git";
-  expect((await column(setupSiteAt("Apps"), { remote }))[5]).toEqual([
+  expect((await column(setupSiteAt("Apps"), { remote }))[4]).toEqual([
     "todo",
     "github.com/acme-org/widgets (this folder's remote)",
   ]);
-  expect((await column(setupSiteAt("Configured"), { remote }))[5]).toEqual(
+  expect((await column(setupSiteAt("Configured"), { remote }))[4]).toEqual(
     saidRepository,
   );
 });
@@ -1302,49 +1176,3 @@ test("signed in, the plugin's step comes first and is done where Claude Code her
     lacks: { lacks: "Plugin", off: false },
   });
 });
-
-test("the North Star step is done where the project's settings carry one, and where the step is passed over whatever they carry", async () => {
-  const star = async (site: SetupSite, asking: Asking = {}) =>
-    (await column(site, asking))[2];
-  expect(await star(setupSiteAt("Project"))).toEqual(saidStarred);
-  const site = setupSiteAt("Project");
-  for (const held of site.projects) held.overrides = {};
-  const skip = { answers: { northStar: setupNorthStarSkip } } as const;
-  expect(await star(site, skip)).toEqual([
-    "done",
-    "passed over without a North Star",
-  ]);
-  expect(await star(setupSiteAt("Project"), skip)).toEqual([
-    "done",
-    "passed over without a North Star",
-  ]);
-});
-
-test("a project whose settings carry no North Star has the step to do, lacking it, while every other override it sets leaves it so", async () => {
-  const site = setupSiteAt("Landed");
-  for (const held of site.projects)
-    held.overrides = { threadStandingRules: "Be kind.", threadEffort: "high" };
-  const step = (await stood(site)).steps[3];
-  expect(step?.step).toBe("north-star");
-  expect(worded(step)).toEqual({
-    step: "north-star",
-    state: "todo",
-    detail: "the project has no North Star yet",
-    lacks: { lacks: "NorthStar" },
-  });
-});
-
-test.each(Object.keys(saidFates) as (keyof typeof saidFates)[])(
-  "the project's settings answered as %s leave the North Star step unread, as they leave the project step, and never to do",
-  async (fate) => {
-    const site = setupSiteAt("Project");
-    for (const held of site.projects) held.overrides = {};
-    site.fates.set("settings", fate);
-    const [, project, star] = await column(site);
-    expect(project?.[0]).toBe("unread");
-    expect(star).toEqual([
-      "unread",
-      `its chat settings were ${saidFates[fate]}`,
-    ]);
-  },
-);

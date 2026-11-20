@@ -107,8 +107,8 @@ to start without the required ones.
 | `CHUG_API_OIDC_AUDIENCE` | required | |
 | `CHUG_API_OIDC_ALGORITHMS` | required | comma-separated, surrounding spaces trimmed; every entry must be one `oidcVerifiableAlgorithms` in `src/adapters/http/oidc.ts` admits, and anything else — a shared-secret algorithm, `none`, an empty entry, a name with a typo — refuses to start, naming what it refused |
 | `CHUG_API_KETO_READ_URL` | required | the read API of the authority that answers project access, HTTP or HTTPS and carrying no credentials |
-| `CHUG_API_KETO_WRITE_URL` | optional | the write API of that authority, where a created project's grants and a registered pool's tuple are written; without it, creating a project answers `ProjectCreationNotConfigured` and no pool registers |
-| `CHUG_API_HYDRA_ADMIN_URL` | optional | the issuer's admin API, where a registered runner's OAuth2 client, a pool's or a member's personal one, is minted; without it no runner registers, and naming it without the write URL refuses the start |
+| `CHUG_API_KETO_WRITE_URL` | optional | the write API of that authority, where a created project's grants are written; without it, creating a project answers `ProjectCreationNotConfigured` |
+| `CHUG_API_HYDRA_ADMIN_URL` | optional | the issuer's admin API, where a registered runner's OAuth2 client, a member's personal runner's or chat host's, is minted; without it no runner registers |
 | `CHUG_API_POOL_TOKEN_URL` | with the admin URL | the token endpoint a registered runner's client asks for its bearer, written into the file a redemption answers; https, or http on the loopback, with no credentials in it, or the API refuses to start |
 | `CHUG_API_POOL_PLANE_URL` | with the admin URL | the pool plane's address, written into that file; https, or http on the loopback, with no credentials in it, or the API refuses to start |
 | `CHUG_API_POOL_REGISTRY_HOST` | optional | the registry a runner pulls worker images from, written into that file only where it is named; a lowercase host and an optional port, or the API refuses to start |
@@ -215,9 +215,9 @@ holds, beside what that runner's latest poll named. A report older than
 `workerPoolReportAgeMsMax` in `src/interpreter/workerPoolReports.ts` is
 dropped, and its runner's series with it.
 
-Every series carries `tenant` and `host`; a pool's carries `project` and
-`pool`, and a personal runner's `owner`, its owner's subject under
-`CHUG_POOL_PLANE_OIDC_ISSUER`, and `personal_runner`, its client id.
+Every series carries `tenant`, `host`, `owner`, the runner's owner's subject
+under `CHUG_POOL_PLANE_OIDC_ISSUER`, and `personal_runner`, its client id;
+`project` and `pool` are empty.
 
 | Variable | | |
 |---|---|---|
@@ -267,6 +267,8 @@ positive whole number.
 | `CHUG_WORKER_PLANE_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
 | `CHUG_WORKER_PLANE_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
 | `CHUG_WORKER_PLANE_HELD_CREDENTIALS` | none held | a JSON list of `{credential, tenant, project, variable, file}`, the credentials this deployment holds as files; the plane refuses to start unless the list is well formed, names no credential starting `chuggy.`, and each file can be read |
+| `CHUG_WORKER_PLANE_IDENTITY_ISSUER` | with the key files, or neither | the identity issuer's base URL, `https` with no port, query, fragment, credentials or trailing slash and read exactly; each tenant's issuer is it, `/` and the tenant, and the plane serves that issuer's `/.well-known/openid-configuration` and `/jwks` without a bearer under the base URL's path; the plane refuses to start on one breaking a rule |
+| `CHUG_WORKER_PLANE_IDENTITY_KEY_FILES` | with the issuer, or neither | a JSON list of files each holding an RSA private key in PEM, the first signing and every one published in the key set; each is read once at start, and the plane refuses to start unless each can be read and used |
 | `CHUG_WORKER_PLANE_HOST` | | the default is loopback |
 | `CHUG_WORKER_PLANE_PORT` | 3001 | |
 

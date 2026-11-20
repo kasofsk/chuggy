@@ -20,8 +20,6 @@ export interface MachineKnobs {
   /** What `npm prefix -g` prints. */
   readonly prefix: string;
   readonly version: string;
-  /** The name a registration gives this machine's pool. */
-  readonly pool: string;
   /** Whether each container engine that is installed answers this user. */
   readonly engines: Readonly<Record<string, boolean>>;
   /** The memory, in bytes, an engine that answers says its machine has. */

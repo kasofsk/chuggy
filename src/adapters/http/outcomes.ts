@@ -1,6 +1,38 @@
 import { z } from "zod";
 
+import {
+  accessTokenLimitReachedCode,
+  accessTokenMintForbiddenCode,
+  accessTokenNameTakenCode,
+  type AccessTokenMintedResponse,
+  type AccessTokenResponse,
+  type AccessTokensResponse,
+} from "../../contract/accessToken.ts";
+import {
+  connectorLimitReachedCode,
+  connectorNotFoundCode,
+  connectorStaleCode,
+  type ConnectorChangeResponse,
+  type ConnectorHistoryResponse,
+  type ConnectorStaleResponse,
+  type ConnectorStandingResponse,
+  type ConnectorsResponse,
+} from "../../contract/connectorAdministration.ts";
 import { assertNever } from "../../domain/assertNever.ts";
+import type {
+  ProjectConnectorChange,
+  ProjectConnectorHistoryRead,
+  ProjectConnectorRemoved,
+  ProjectConnectorStanding,
+  ProjectConnectorWritten,
+  ProjectConnectorsListed,
+} from "../../interpreter/projectConnectors.ts";
+import type {
+  AccessTokenDeleted,
+  AccessTokenMinted,
+  AccessTokenRecord,
+  AccessTokensListed,
+} from "../../interpreter/accessToken.ts";
 import type { TicketId } from "../../domain/ids.ts";
 import type {
   ConfigurationPage,
@@ -160,18 +192,13 @@ import {
 } from "./codecs.ts";
 
 import type {
-  WorkerPoolCredentials,
-  WorkerPoolsListed,
-  WorkerPoolTokenMinted,
-  WorkerPoolTokenRedeemed,
-} from "../../interpreter/workerPoolRegistrationToken.ts";
-import type {
   PersonalRunnerAllowed,
   PersonalRunnerCredentials,
   PersonalRunnerDeregistered,
   PersonalRunnerDisallowed,
   PersonalRunnerRead,
   PersonalRunnerTokenRedeemed,
+  WorkerPoolTokenMinted,
 } from "../../interpreter/personalRunnerRegistration.ts";
 import type {
   ChatHostCredentials,
@@ -183,10 +210,10 @@ import type {
   PlacementRead,
   PlacementWritten,
 } from "../../interpreter/placementRoute.ts";
-import type { ProjectOwnerFallbackView } from "../../interpreter/projectOwnerFallback.ts";
 import type { ThreadLimitView } from "../../interpreter/threadLimit.ts";
 import {
   sessionPlacementLeadCompatibility,
+  sessionPlacementProjectRunnersCompatibility,
   type SessionPlacementView,
   type SessionPlacementWritten,
 } from "../../interpreter/sessionPlacement.ts";
@@ -231,12 +258,9 @@ import type {
   PersonalRunnerCredentialsResponse,
   PersonalRunnerPermitResponse,
   PersonalRunnerResponse,
-  ProjectOwnerFallbackResponse,
   ThreadLimitResponse,
   RunnerListedResponse,
   SessionPlacementResponse,
-  WorkerPoolCredentialsResponse,
-  WorkerPoolsResponse,
 } from "../../contract/responses.ts";
 import {
   agentAccountCredentialInUseCode,
@@ -1135,54 +1159,6 @@ export function forgeCredentialResponse(
   }
 }
 
-/**
- * A minted registration token, answered once. A caller the authority does not
- * admit is told nothing more than that there is nothing there, which is what
- * every other project-scoped refusal here answers.
- */
-export function workerPoolTokenResponse(
-  result: WorkerPoolTokenMinted,
-): NativeHttpResponse {
-  switch (result.result) {
-    case "NotFound":
-      return response(404, nativeHttpError("NotFound", "Resource not found."));
-    case "LimitReached":
-      return response(
-        409,
-        nativeHttpError(
-          "TokenLimitReached",
-          "The project already holds its bound of live registration tokens.",
-        ),
-      );
-    case "Minted":
-      return response(201, {
-        token: result.value.token,
-        expiresAtMs: result.value.expiresAtMs,
-      });
-    default:
-      return assertNever(result);
-  }
-}
-
-function workerPoolCredentialsBody(
-  credentials: WorkerPoolCredentials,
-): WorkerPoolCredentialsResponse {
-  return {
-    tenant: credentials.partition.tenant,
-    project: credentials.partition.project,
-    pool: credentials.pool,
-    capabilities: [...credentials.capabilities],
-    tokenUrl: credentials.tokenUrl,
-    audience: credentials.audience,
-    planeUrl: credentials.planeUrl,
-    ...(credentials.registryHost === undefined
-      ? {}
-      : { registryHost: credentials.registryHost }),
-    clientId: credentials.clientId,
-    clientSecret: credentials.clientSecret,
-  };
-}
-
 /** A runner as a read names it, where its newest poll named one. */
 function runnerListedBody(runner: WorkerRunnerListed | undefined): {
   runner?: RunnerListedResponse;
@@ -1196,32 +1172,6 @@ function runnerListedBody(runner: WorkerRunnerListed | undefined): {
           ...(runner.pinned === undefined ? {} : { pinned: runner.pinned }),
         },
       };
-}
-
-/** A project's registered pools, or the same miss as a project the caller may not see. */
-export function workerPoolsResponse(
-  result: WorkerPoolsListed,
-): NativeHttpResponse {
-  switch (result.result) {
-    case "NotFound":
-      return notFound();
-    case "Found":
-      return response(200, {
-        pools: result.value.pools.map((listed) => ({
-          pool: listed.pool,
-          capabilities: [...listed.capabilities],
-          registeredAt: listed.registeredAt,
-          ...(listed.polledAt === undefined
-            ? {}
-            : { polledAt: listed.polledAt }),
-          live: listed.live,
-          ...runnerListedBody(listed.runner),
-        })),
-        truncated: result.value.truncated,
-      } satisfies WorkerPoolsResponse);
-    default:
-      return assertNever(result);
-  }
 }
 
 export function executionPlacementBody(
@@ -1246,7 +1196,7 @@ export function sessionPlacementBody(
     runners: {
       mine: view.runners.mine,
       inquiry: view.runners.inquiry,
-      project: view.runners.project,
+      project: sessionPlacementProjectRunnersCompatibility,
     },
   };
 }
@@ -1316,20 +1266,6 @@ export function sessionPlacementWriteResponse(
   return placementWriteResponse(result, sessionPlacementBody);
 }
 
-/** A redemption, answered with the pool file once, the client's secret in it. */
-export function workerPoolRedemptionResponse(
-  result: WorkerPoolTokenRedeemed,
-): NativeHttpResponse {
-  switch (result.result) {
-    case "NotFound":
-      return response(404, nativeHttpError("NotFound", "Resource not found."));
-    case "Registered":
-      return response(201, workerPoolCredentialsBody(result.value));
-    default:
-      return assertNever(result);
-  }
-}
-
 /** A write that answers nothing but that it was made. */
 function noContent(): NativeHttpResponse {
   return {
@@ -1339,18 +1275,33 @@ function noContent(): NativeHttpResponse {
   };
 }
 
-/** A personal mint, answered as a pool's but bounded per member rather than per project. */
+/**
+ * A minted registration token, answered once and bounded per member. A caller
+ * the authority does not admit is told nothing more than that there is nothing
+ * there, which is what every other scoped refusal here answers.
+ */
 export function personalRunnerTokenResponse(
   result: WorkerPoolTokenMinted,
 ): NativeHttpResponse {
-  if (result.result !== "LimitReached") return workerPoolTokenResponse(result);
-  return response(
-    409,
-    nativeHttpError(
-      "TokenLimitReached",
-      "The caller already holds their bound of live registration tokens in this tenant.",
-    ),
-  );
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "LimitReached":
+      return response(
+        409,
+        nativeHttpError(
+          "TokenLimitReached",
+          "The caller already holds their bound of live registration tokens in this tenant.",
+        ),
+      );
+    case "Minted":
+      return response(201, {
+        token: result.value.token,
+        expiresAtMs: result.value.expiresAtMs,
+      });
+    default:
+      return assertNever(result);
+  }
 }
 
 function personalRunnerCredentialsBody(
@@ -1378,7 +1329,7 @@ export function personalRunnerRedemptionResponse(
 ): NativeHttpResponse {
   switch (result.result) {
     case "NotFound":
-      return workerPoolRedemptionResponse(result);
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "LimitReached":
       return response(
         409,
@@ -1503,15 +1454,6 @@ export function personalRunnerPermitResponse(
 
 export function threadLimitBody(view: ThreadLimitView): ThreadLimitResponse {
   return { threadsMax: view.threadsMax, administers: view.administers };
-}
-
-export function ownerFallbackBody(
-  view: ProjectOwnerFallbackView,
-): ProjectOwnerFallbackResponse {
-  return {
-    ...(view.fallback === undefined ? {} : { fallback: view.fallback }),
-    administers: view.administers,
-  };
 }
 
 /** A credential's pause's copy, or no field where none holds. */
@@ -2104,6 +2046,27 @@ export function sessionBearerRefusedResponse(): NativeHttpResponse {
       "InsufficientScope",
       "A session bearer is not admitted to this route.",
     ),
+    { "www-authenticate": 'Bearer error="insufficient_scope"' },
+  );
+}
+
+/** What an access token is answered on a route no token may reach, RFC 6750's `insufficient_scope`. */
+export function accessTokenRefusedResponse(): NativeHttpResponse {
+  return response(
+    403,
+    nativeHttpError(
+      "InsufficientScope",
+      "An access token is not admitted to this route.",
+    ),
+    { "www-authenticate": 'Bearer error="insufficient_scope"' },
+  );
+}
+
+/** What a token that may only read is answered on a write in its own project. */
+export function accessTokenReadOnlyResponse(): NativeHttpResponse {
+  return response(
+    403,
+    nativeHttpError("InsufficientScope", "This access token may only read."),
     { "www-authenticate": 'Bearer error="insufficient_scope"' },
   );
 }
@@ -3443,6 +3406,210 @@ export function ticketProposalMergeResponse(
         refused: result.refused,
         ...(result.url === undefined ? {} : { url: result.url }),
       });
+    default:
+      return assertNever(result);
+  }
+}
+
+function accessTokenBody(record: AccessTokenRecord): AccessTokenResponse {
+  return {
+    token: record.token,
+    name: record.name,
+    access: record.access,
+    maker: record.maker,
+    createdAt: record.createdAt,
+    expiresAt: record.expiresAt,
+  };
+}
+
+/** A project's tokens the reader may see, none of them with its secret. */
+export function accessTokensResponse(
+  result: AccessTokensListed,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, {
+        tokens: result.value.map(accessTokenBody),
+      } satisfies AccessTokensResponse);
+    default:
+      return assertNever(result);
+  }
+}
+
+/**
+ * A mint: the token and its secret, which no other answer holds, or a refusal
+ * by name. A reader without `make_access_tokens` meets `403`; either bound,
+ * and a name its maker already holds, `409`.
+ */
+export function accessTokenMintedResponse(
+  result: AccessTokenMinted,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Forbidden":
+      return response(
+        403,
+        nativeHttpError(
+          accessTokenMintForbiddenCode,
+          "Making an access token needs the project's make_access_tokens permit, which its administrators hold and so does a reader the tenant lets register a personal runner.",
+        ),
+      );
+    case "LimitReached":
+      return response(
+        409,
+        nativeHttpError(
+          accessTokenLimitReachedCode,
+          result.bound === "Held"
+            ? "The caller holds as many access tokens in the project as they may."
+            : "The project holds as many access tokens as it may.",
+        ),
+      );
+    case "NameTaken":
+      return response(
+        409,
+        nativeHttpError(
+          accessTokenNameTakenCode,
+          "The caller already holds an access token of that name in the project.",
+        ),
+      );
+    case "Minted":
+      return response(201, {
+        ...accessTokenBody(result.value),
+        secret: result.value.secret,
+      } satisfies AccessTokenMintedResponse);
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A token deleted, which revokes it, or one the caller may not see. */
+export function accessTokenDeletedResponse(
+  result: AccessTokenDeleted,
+): NativeHttpResponse {
+  switch (result) {
+    case "Deleted":
+      return noContent();
+    case "NotFound":
+      return notFound();
+    default:
+      return assertNever(result);
+  }
+}
+
+function connectorStandingBody(
+  standing: ProjectConnectorStanding,
+): ConnectorStandingResponse {
+  return { ...standing.connector, revision: standing.revision };
+}
+
+/** A write or removal refused for the revision it named, answering the one that stands. */
+function connectorStale(standing: number | undefined): NativeHttpResponse {
+  const refused = nativeHttpError(
+    connectorStaleCode,
+    "The connector's revision is not the one this request was made against.",
+  );
+  return response(409, {
+    ...refused,
+    ...(standing === undefined ? {} : { standing }),
+  } satisfies ConnectorStaleResponse);
+}
+
+/** A project's connectors, ordered by name, each with the revision a write against it names. */
+export function connectorsResponse(
+  result: ProjectConnectorsListed,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, {
+        connectors: result.connectors.map(connectorStandingBody),
+      } satisfies ConnectorsResponse);
+    default:
+      return assertNever(result);
+  }
+}
+
+/** One connector as written, `201` where the write created it, or a refusal by name. */
+export function connectorWrittenResponse(
+  result: ProjectConnectorWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Created":
+    case "Changed":
+      return response(
+        result.result === "Created" ? 201 : 200,
+        connectorStandingBody(result.standing),
+      );
+    case "Stale":
+      return connectorStale(result.standing);
+    case "LimitReached":
+      return response(
+        409,
+        nativeHttpError(
+          connectorLimitReachedCode,
+          "The project holds as many connectors as it may.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
+/** One connector removed, or a refusal by name. */
+export function connectorRemovedResponse(
+  result: ProjectConnectorRemoved,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Removed":
+      return noContent();
+    case "Absent":
+      return response(
+        404,
+        nativeHttpError(
+          connectorNotFoundCode,
+          "The project holds no connector of that name.",
+        ),
+      );
+    case "Stale":
+      return connectorStale(result.standing);
+    default:
+      return assertNever(result);
+  }
+}
+
+function connectorChangeBody(
+  change: ProjectConnectorChange,
+): ConnectorChangeResponse {
+  const recorded = {
+    change: change.change,
+    changedAt: change.changedAt,
+    author: change.authority,
+  };
+  return change.action === "Removed"
+    ? { ...recorded, name: change.name, action: change.action }
+    : { ...recorded, ...change.connector, action: change.action };
+}
+
+/** One page of a project's connector history, newest first. */
+export function connectorHistoryResponse(
+  result: ProjectConnectorHistoryRead,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, {
+        changes: result.changes.map(connectorChangeBody),
+        ...(result.next === undefined ? {} : { next: result.next }),
+      } satisfies ConnectorHistoryResponse);
     default:
       return assertNever(result);
   }

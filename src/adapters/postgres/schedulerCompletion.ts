@@ -159,7 +159,7 @@ export async function schedulerLockExecution(
 ): Promise<LogicalExecution | undefined> {
   const found = await client.query<ExecutionRow>(
     sql`SELECT
-          e.tenant, e.project, e.execution, e.placement, e.owner, e.owner_fallback, e.ticket::text AS ticket,
+          e.tenant, e.project, e.execution, e.placement, e.owner, e.ticket::text AS ticket,
           e.task::text AS task, t.kind AS task_kind, t.stage::text AS stage, t.evaluator::text AS evaluator,
           e.source_request, q.input_bundle, q.input_bundle_digest,
           q.authorizing_seq::text AS source_seq,

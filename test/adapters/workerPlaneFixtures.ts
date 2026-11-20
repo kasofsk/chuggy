@@ -17,7 +17,10 @@ import {
   workerContractHeader,
 } from "../../src/contract/workerContract.ts";
 import type { SessionPlaneAuthority } from "../../src/interpreter/sessionPlane.ts";
-import type { WorkerTaskPort } from "../../src/interpreter/workerPlane.ts";
+import type {
+  WorkerTaskPort,
+  WorkerTaskRead,
+} from "../../src/interpreter/workerPlane.ts";
 
 /** A lease no fixture case renews and none is about. */
 const workerPlaneFixtureLeaseSecs = 300;
@@ -104,8 +107,21 @@ export const inertRunEvidence: WorkerRunEvidencePorts = {
 /** A task port that finds no attempt, for a case that never fetches one. */
 export const inertTasks: WorkerTaskPort = {
   work: () => Promise.resolve(undefined),
+  workload: () => Promise.resolve(undefined),
   session: () => Promise.resolve(undefined),
 };
+
+/** A task port whose attempt reads find `found`, as a work task naming no workload. */
+export function attemptTasks(
+  found: WorkerTaskRead | undefined,
+): WorkerTaskPort {
+  return {
+    ...inertTasks,
+    work: () => Promise.resolve(found),
+    workload: () =>
+      Promise.resolve(found === undefined ? undefined : { taskKind: "Work" }),
+  };
+}
 
 /**
  * The attempt half of a whole plane, inert throughout, for a case that is about

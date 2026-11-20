@@ -52,11 +52,8 @@ export function useFocusedUnheld<
   return drawn;
 }
 
-/** What the console registers a machine as: a pool is registered from its own machine alone. */
-export type RunnerStepsKind = Exclude<RunnerKind, "Pool">;
-
 /** What the steps' list is called for a machine registered as `kind`. */
-function runnerStepsLabel(kind: RunnerStepsKind): Copy {
+function runnerStepsLabel(kind: RunnerKind): Copy {
   switch (kind) {
     case "Personal":
       return { id: "runners-register" };
@@ -70,7 +67,7 @@ export function RunnerSteps(props: {
   readonly minted: WorkerPoolTokenResponse;
   /** What the reader asked, which the register command declares. */
   readonly ask: RunnerAsk;
-  readonly kind: RunnerStepsKind;
+  readonly kind: RunnerKind;
 }): ReactNode {
   const text = useCopyText();
   const nowMs = useNowMs();

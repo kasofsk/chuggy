@@ -13,7 +13,11 @@ import { expect, test } from "vitest";
 
 import { projectInventoryPagesMax } from "../app/core/apiRoutes.ts";
 import { setupCheckoutTopCommand } from "../app/core/setupAgent.ts";
-import { setupAnswersAsked } from "../app/core/setupArguments.ts";
+import {
+  setupAnswersAsked,
+  setupStartFlag,
+  setupStartYes,
+} from "../app/core/setupArguments.ts";
 import { setupPacing } from "../app/core/setupPacing.ts";
 import { setupPluginListCommand } from "../app/core/setupPlugin.ts";
 import { setupProbeWaitMs } from "../app/core/setupRunnerMachine.ts";
@@ -42,6 +46,7 @@ import {
   setupSiteTwo,
 } from "./setupSite.ts";
 import type { SetupSiteRead } from "./setupSite.ts";
+import { saidMoreOffered, saidMoreRule } from "./setupSaid.ts";
 
 interface Printed {
   readonly lines: readonly string[];
@@ -79,7 +84,6 @@ test("a newcomer with nothing is shown every step to do, and told how a workspac
       pluginOn,
       "step: workspace   todo     you are in no workspace yet",
       "step: project     todo",
-      "step: north-star  todo",
       "step: mcp         todo",
       "step: github      todo",
       "step: repository  todo",
@@ -94,7 +98,7 @@ test("a newcomer with nothing is shown every step to do, and told how a workspac
 
 /** The rule a trip to GitHub names `bind` under, to run at once while the person makes it. */
 const bindNow =
-  "rule: Run the command on the next: line now, without asking the person, and tell them what the tell: line says. It waits until GitHub lets both apps into this folder's repository, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.";
+  "rule: Run the command on the next: line now, without asking the person, and tell them what the tell: line says. It waits until GitHub lets both apps into the repository the tell: line names, and then adds it where it is not added yet. Nothing has failed, so do not tell the person that it did or give them a deadline.";
 
 test("a person part-way is shown what is done, what is waited on and what is to do, and the first of them that is not done is what is next", async () => {
   const machine = await machineSignedIn(setupSiteAt("Portal"));
@@ -105,17 +109,38 @@ test("a person part-way is shown what is done, what is waited on and what is to 
       pluginOn,
       "step: workspace   done     acme",
       "step: project     done     acme/widgets",
-      "step: north-star  done     the project has a North Star",
       "step: mcp         done     Claude Code here runs chuggy's MCP server for acme/widgets",
       "step: github      waiting  acme-org has the portal app, not the worker app",
       "step: repository  todo",
       "step: runner      todo",
       "step: ticket      todo",
-      `tell: Open ${pages}/settings/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them.`,
+      `tell: Which repository is this project for? I could not tell this folder's, so name it on ${pages}/settings/repositories?from=setup#add. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to your repository. That page then shows both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here and add it once both reach it.`,
       bindNow,
       `next: node ${machineScript} bind --workspace acme --project widgets`,
     ],
   });
+});
+
+test("a project whose settings hold a North Star is shown the same checklist as a fresh one, which names no North Star and has mcp next after the project", async () => {
+  const fresh = await printed(await machineSignedIn(setupSiteAt("Project")));
+  const starred = setupSiteAt("Project");
+  for (const project of starred.projects)
+    project.overrides = { northStar: "Widgets for everyone." };
+  expect(await printed(await machineSignedIn(starred))).toEqual(fresh);
+  const steps = fresh.lines
+    .filter((line) => line.startsWith("step: "))
+    .map((line) => line.split(/ +/u)[1]);
+  expect(steps).toEqual([
+    "plugin",
+    "workspace",
+    "project",
+    "mcp",
+    "github",
+    "repository",
+    "runner",
+    "ticket",
+  ]);
+  expect(fresh.lines.join("\n")).not.toMatch(/north.?star/iu);
 });
 
 test("a person fully set up is shown every step done, and nothing is named to run", async () => {
@@ -127,13 +152,13 @@ test("a person fully set up is shown every step done, and nothing is named to ru
       pluginOn,
       "step: workspace   done     acme",
       "step: project     done     acme/widgets",
-      "step: north-star  done     the project has a North Star",
       "step: mcp         done     Claude Code here runs chuggy's MCP server for acme/widgets",
       "step: github      done     acme-org, both apps granted acme-org/widgets",
       "step: repository  done     acme-org/widgets",
       "step: runner      done     live",
       "step: ticket      done     ticket 1 is done",
-      `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
+      `tell: ${saidMoreOffered(`chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`)}`,
+      saidMoreRule(machineScript),
       "next: stop",
     ],
   });
@@ -146,9 +171,10 @@ test("a first ticket that opened a pull request is said to have done that, in th
   const url = "https://github.com/acme-org/widgets/pull/1";
   project?.landings.set(1, [setupSiteProposed(url)]);
   const done = await printed(await machineSignedIn(world));
-  expect(done.lines.slice(-3)).toEqual([
+  expect(done.lines.slice(-4)).toEqual([
     "step: ticket      done     ticket 1 opened a pull request",
-    `tell: chuggy is set up for acme/widgets: ticket 1 opened a pull request. The next ticket is made at ${pages}/tickets/new.`,
+    `tell: ${saidMoreOffered(`chuggy is set up for acme/widgets: ticket 1 opened a pull request. The next ticket is made at ${pages}/tickets/new.`)}`,
+    saidMoreRule(machineScript),
     "next: stop",
   ]);
   expect(done.lines.join("\n")).not.toContain("finalized");
@@ -174,15 +200,13 @@ test("a ticket released before anything could run it is not waited on: the perso
 
 test("a project whose work the cluster runs, with a ticket landed and no runner, is set up, and is sent to no runners page", async () => {
   const world = setupSiteAt("Landed");
-  for (const held of world.projects) {
-    held.work = "InCluster";
-    held.runner = "Unregistered";
-  }
+  for (const held of world.projects) held.work = "InCluster";
   const done = await printed(await machineSignedIn(world));
-  expect(done.lines.slice(-4)).toEqual([
+  expect(done.lines.slice(-5)).toEqual([
     "step: runner      done     hosted runs take its work",
     "step: ticket      done     ticket 1 is done",
-    `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
+    `tell: ${saidMoreOffered(`chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`)}`,
+    saidMoreRule(machineScript),
     "next: stop",
   ]);
   expect(done.lines.join("\n")).not.toContain("/settings/workspace/runner");
@@ -205,12 +229,12 @@ test("a repository whose own account lacks the worker app holds the GitHub step,
     setupSiteClaim("acme-org", "portal"),
   ]);
   const done = await printed(await machineSignedIn(world));
-  expect(done.lines.slice(6, 8)).toEqual([
+  expect(done.lines.slice(5, 7)).toEqual([
     "step: github      waiting  acme-org, which owns acme-org/widgets, has the portal app, not the worker app",
     "step: repository  done     acme-org/widgets",
   ]);
   expect(done.lines.slice(-3)).toEqual([
-    `tell: Open ${pages}/settings/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them.`,
+    `tell: This project's repository is acme-org/widgets. chuggy uses two GitHub apps. The worker app pushes ticket work to branches and opens pull requests. The portal app merges finished work into protected branches such as main. Both need access to acme-org/widgets. Open ${pages}/settings/repositories?repository=acme-org%2Fwidgets&from=setup#add: it opens on acme-org/widgets with both apps, and each app it still lacks has one press there that goes to GitHub for it. I'll wait here until both reach it.`,
     bindNow,
     `next: node ${machineScript} bind --workspace acme --project widgets`,
   ]);
@@ -220,8 +244,8 @@ test("a person whose one project is on a later page of the site's list is asked 
   const later = setupSiteAt("Landed");
   for (const held of later.projects) held.page = 3;
   const found = await printed(await machineSignedIn(later));
-  expect(found.lines.at(-2)).toBe(
-    `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
+  expect(found.lines.at(-3)).toBe(
+    `tell: ${saidMoreOffered(`chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`)}`,
   );
   later.fates.set("inventory", "Cut");
   for (const held of later.projects) held.page = projectInventoryPagesMax;
@@ -232,8 +256,8 @@ test("a person whose one project is on a later page of the site's list is asked 
     "next: stop",
   ]);
   const named = ["--workspace", "acme", "--project", "widgets"];
-  expect((await printed(machine, named)).lines.at(-2)).toBe(
-    `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
+  expect((await printed(machine, named)).lines.at(-3)).toBe(
+    `tell: ${saidMoreOffered(`chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`)}`,
   );
 });
 
@@ -359,10 +383,18 @@ test("a folder whose remote is added to one of two projects proposes it and says
   expect(machine.asked.join("\n")).not.toContain(secret);
 });
 
-test("git is asked for the remote only by a bare run that is signed in: not by one that is not, and not by a sign-in", async () => {
+test("git is asked for the remote only by a bare run that is signed in or that setup has not begun for: not by one signed out after the yes, and not by a sign-in", async () => {
+  const opening = setupMachine();
+  opening.remote = "https://github.com/acme-org/widgets";
+  expect(await opening.command(["--site", machineSite])).toEqual({
+    report: "Opening",
+    site: machineSite,
+    repository: "github.com/acme-org/widgets",
+  });
+  expect(opening.ran).toEqual([setupRemoteCommand]);
   const out = setupMachine();
   out.remote = "https://github.com/acme-org/widgets";
-  await out.command(["--site", machineSite]);
+  await out.command(["--site", machineSite, setupStartFlag, setupStartYes]);
   await out.command(["sign-in", "--wait-secs", "0"]);
   expect(out.ran).toEqual([]);
   const machine = await machineSignedIn();

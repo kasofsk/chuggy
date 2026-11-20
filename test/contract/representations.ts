@@ -241,7 +241,6 @@ export const executionSummary: ExecutionSummary = {
   takenAt: instant,
   carrier: "Agent",
   terminalAt: instant,
-  ownerFallback: "Strict",
   mine: true,
 };
 

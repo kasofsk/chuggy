@@ -88,6 +88,7 @@ import {
   statusBadgeSizes,
   statusBadgeTones,
 } from "../app/browser/ui/StatusBadge.tsx";
+import { Switch } from "../app/browser/ui/Switch.tsx";
 import { TabNav, TabNavLink } from "../app/browser/ui/TabNav.tsx";
 import { Table } from "../app/browser/ui/Table.tsx";
 import { TextLink } from "../app/browser/ui/TextLink.tsx";
@@ -1132,6 +1133,27 @@ const primitiveCases: Readonly<Record<string, readonly PrimitiveCase[]>> = {
         ),
       },
     ]),
+  Switch: [
+    {
+      state: "off",
+      drawn: <Switch label="Notify" checked={false} onChange={nothing} />,
+    },
+    {
+      state: "on, with what it does",
+      drawn: (
+        <Switch
+          label="Notify"
+          checked
+          about="Mails each landing."
+          onChange={nothing}
+        />
+      ),
+    },
+    {
+      state: "disabled",
+      drawn: <Switch label="Notify" checked disabled onChange={nothing} />,
+    },
+  ],
   TabNav: [
     {
       state: "a current tab and a count",

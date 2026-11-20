@@ -98,10 +98,7 @@ import {
   asDraftBrief,
   type DraftBrief,
 } from "../../src/interpreter/ticketBrief.ts";
-import {
-  asPrincipal,
-  type Principal,
-} from "../../src/interpreter/principal.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
   memberAuthority,
   ProjectAccessUnavailable,
@@ -110,8 +107,6 @@ import {
 import {
   workerPoolMemoryMibDefault,
   type PersonalRunnerRegistered,
-  type WorkerPoolRegistered,
-  type WorkerPoolRosterPage,
 } from "../../src/interpreter/workerPool.ts";
 import {
   workerPoolIncompatibility,
@@ -124,23 +119,13 @@ const partition = {
   project: asProjectId("project"),
 };
 
-/** An authority that permits `Execute` to every principal but the ones a case withholds it from, noting each question it is asked. */
-function poolAccess(
-  withheld: ReadonlySet<Principal> = new Set(),
-  asked: string[] = [],
-): ProjectAccess {
-  return {
-    authorize: (principal, where, kind) => {
-      asked.push(`${where.project}:${principal}:${kind}`);
-      return Promise.resolve(
-        withheld.has(principal) ? undefined : memberAuthority(principal),
-      );
-    },
-    authorizeTenant: () =>
-      Promise.reject(new Error("the scheduler asks no tenant question")),
-    authorizeSite: projectAccessSiteRefused,
-  };
-}
+/** An authority answering every project question for whoever asks, and no tenant question. */
+const anyAccess: ProjectAccess = {
+  authorize: (principal) => Promise.resolve(memberAuthority(principal)),
+  authorizeTenant: () =>
+    Promise.reject(new Error("the scheduler asks no tenant question here")),
+  authorizeSite: projectAccessSiteRefused,
+};
 const epoch = asRecoveryEpoch("epoch");
 const cluster = asClusterId("cluster");
 const owner = asSchedulerOwnerId("scheduler-one");
@@ -359,13 +344,12 @@ function serviceWith(
     store: recordingStore(calls),
     placement,
     workerPools: {
-      personal: () => Promise.resolve([]),
-      registered: () => {
-        calls.push("registered");
-        return Promise.resolve({ pools: [], truncated: false });
+      personal: () => {
+        calls.push("personal");
+        return Promise.resolve([]);
       },
     },
-    access: poolAccess(),
+    access: anyAccess,
     policy,
     configurations: { configuration: () => Promise.resolve(read) },
     runtimeFacts: { facts: () => Promise.resolve(facts) },
@@ -2253,305 +2237,6 @@ test("a ticket with no brief is briefed without the sections one would fill", as
   );
 });
 
-/** One of the project's registered pools, declaring what a case gives it. */
-function registeredPool(
-  capabilities: readonly string[],
-  project = partition.project,
-): WorkerPoolRegistered {
-  return {
-    partition: { ...partition, project },
-    pool: "pool-one",
-    capabilities,
-    memoryCeilingMib: undefined,
-    class: "Dedicated",
-    principal: asPrincipal("principal-one"),
-  };
-}
-
-/** A pass over the fixture execution routed to pools, against the registry page and the authority a case supplies. */
-function poolLaunch(
-  calls: string[],
-  page: WorkerPoolRosterPage,
-  seen: string[] = [],
-  access: ProjectAccess = poolAccess(),
-): Promise<number> {
-  const service = serviceWith(calls, runnable, placedOk);
-  return executionSchedulerLaunch(
-    {
-      ...service,
-      store: {
-        ...service.store,
-        unlaunched: () =>
-          Promise.resolve([{ ...execution, route: "Pool" as const }]),
-      },
-      placement: {
-        ...service.placement,
-        place: () => {
-          calls.push("place");
-          return Promise.resolve(placedOk);
-        },
-      },
-      workerPools: {
-        personal: () => Promise.resolve([]),
-        registered: (asked) => {
-          calls.push(`registered:${asked.project}`);
-          return Promise.resolve(page);
-        },
-      },
-      access,
-      metrics: schedulerTelemetry(recordingMetrics(seen)),
-    },
-    epoch,
-  );
-}
-
-test("an execution routed to pools that none is configured to run is blocked, and never placed", async () => {
-  for (const pools of [
-    [],
-    [registeredPool(["Platform:Linux:Arm64", "Agent:Claude"])],
-    [registeredPool(["Platform:Linux:Amd64"], asProjectId("project-two"))],
-  ]) {
-    const calls: string[] = [];
-    const seen: string[] = [];
-    assert.equal(await poolLaunch(calls, { pools, truncated: false }, seen), 0);
-    assert.deepEqual(calls, [
-      "registered:project",
-      "ended:Withdrawn:PlacementIncompatible",
-      "blocked:RequiredCapabilityUnavailable",
-    ]);
-    assert.deepEqual(seen, [
-      "reaping:0",
-      "attemptOpened:Opened",
-      "attemptEnded:Withdrawn:PlacementIncompatible",
-      "blocking:Blocked:RequiredCapabilityUnavailable",
-    ]);
-  }
-});
-
-test("an execution routed to pools that one is configured to run is held on its attempt, neither placed nor blocked", async () => {
-  const calls: string[] = [];
-  assert.equal(
-    await poolLaunch(calls, {
-      pools: [
-        registeredPool(["Platform:Linux:Arm64"]),
-        registeredPool(["Platform:Linux:Amd64"]),
-      ],
-      truncated: false,
-    }),
-    0,
-  );
-  assert.deepEqual(calls, ["registered:project"]);
-});
-
-test("a registry page cut short never blocks, since a pool past it may be configured", async () => {
-  const calls: string[] = [];
-  assert.equal(await poolLaunch(calls, { pools: [], truncated: true }), 0);
-  assert.deepEqual(calls, ["registered:project"]);
-});
-
-test("a pool the authority withholds Execute from is revoked, so an execution only it would run is blocked", async () => {
-  const revoked = {
-    ...registeredPool(["Platform:Linux:Amd64"]),
-    pool: "revoked",
-    principal: asPrincipal("principal-revoked"),
-  };
-  const arm = registeredPool(["Platform:Linux:Arm64"]);
-  const calls: string[] = [];
-  const asked: string[] = [];
-  assert.equal(
-    await poolLaunch(
-      calls,
-      { pools: [revoked, arm], truncated: false },
-      [],
-      poolAccess(new Set([revoked.principal]), asked),
-    ),
-    0,
-  );
-  assert.deepEqual(calls, [
-    "registered:project",
-    "ended:Withdrawn:PlacementIncompatible",
-    "blocked:RequiredCapabilityUnavailable",
-  ]);
-  assert.deepEqual(asked.sort(), [
-    "project:principal-one:Execute",
-    "project:principal-revoked:Execute",
-  ]);
-});
-
-test("a pool of a class the routed demand refuses is not configured, so an execution only it would run is blocked", async () => {
-  const calls: string[] = [];
-  assert.equal(
-    await poolLaunch(calls, {
-      pools: [
-        { ...registeredPool(["Platform:Linux:Amd64"]), class: "Personal" },
-      ],
-      truncated: false,
-    }),
-    0,
-  );
-  assert.deepEqual(calls, [
-    "registered:project",
-    "ended:Withdrawn:PlacementIncompatible",
-    "blocked:RequiredCapabilityUnavailable",
-  ]);
-});
-
-test("an authority that cannot answer decides nothing, so the execution is held and never blocked", async () => {
-  for (const failure of [
-    new ProjectAccessUnavailable("the authority did not answer"),
-    new Error("the authority answered something unreadable"),
-  ]) {
-    const calls: string[] = [];
-    assert.equal(
-      await poolLaunch(
-        calls,
-        { pools: [registeredPool(["Platform:Linux:Arm64"])], truncated: false },
-        [],
-        {
-          authorize: () => Promise.reject(failure),
-          authorizeTenant: () => Promise.reject(failure),
-          authorizeSite: projectAccessSiteRefused,
-        },
-      ),
-      0,
-    );
-    assert.deepEqual(calls, ["registered:project"]);
-  }
-});
-
-/** The fixture's attempt as a pass reads it waiting for a runner. */
-const waitingAttempt: WaitingAttempt = {
-  partition,
-  execution: execution.execution,
-  attempt: attempt.attempt,
-  generation: attempt.generation,
-  projectActive: true,
-};
-
-/**
- * A pass that finds the fixture's attempt waiting for a runner and nothing to
- * open, against the registry page, the policy and the authority a case
- * supplies, answering each withdrawal as `withdrawn` says and noting what an
- * outdated one was compared against.
- */
-async function poolWaitingPass(
-  calls: string[],
-  over: {
-    readonly waiting?: WaitingAttempt;
-    readonly page?: WorkerPoolRosterPage;
-    readonly resolved?: ProfileResolved;
-    readonly access?: ProjectAccess;
-    readonly withdrawn?: boolean;
-    readonly compared?: WaitingAttemptRecord[];
-  } = {},
-): Promise<void> {
-  const service = serviceWith(calls, over.resolved ?? runnable, placedOk);
-  await executionSchedulerLaunch(
-    {
-      ...service,
-      store: {
-        ...service.store,
-        waitingAttempts: () =>
-          Promise.resolve([over.waiting ?? waitingAttempt]),
-        execution: () =>
-          Promise.resolve({
-            ...execution,
-            route: "Pool" as const,
-            status: "Launching" as const,
-          }),
-        waitingAttemptWithdrawn: (_attempt, evidence) => {
-          calls.push(`waiting-withdrawn:${evidence}`);
-          return Promise.resolve(over.withdrawn ?? true);
-        },
-        waitingAttemptOutdated: (_attempt, current) => {
-          calls.push("waiting-outdated");
-          over.compared?.push(current);
-          return Promise.resolve(false);
-        },
-        unlaunched: () => Promise.resolve([]),
-      },
-      workerPools: {
-        personal: () => Promise.resolve([]),
-        registered: () => {
-          calls.push("registered");
-          return Promise.resolve(
-            over.page ?? {
-              pools: [registeredPool(["Platform:Linux:Amd64"])],
-              truncated: false,
-            },
-          );
-        },
-      },
-      access: over.access ?? poolAccess(),
-    },
-    epoch,
-  );
-}
-
-test("a waiting attempt of a project no longer Active is withdrawn without asking the pools", async () => {
-  const calls: string[] = [];
-  await poolWaitingPass(calls, {
-    waiting: { ...waitingAttempt, projectActive: false },
-  });
-  assert.deepEqual(calls, ["waiting-withdrawn:PlacementUnavailable"]);
-});
-
-test("a waiting attempt no configured runner could take now is withdrawn and its execution blocked, and nothing is blocked where a runner took it first", async () => {
-  const none = { pools: [], truncated: false };
-  const calls: string[] = [];
-  await poolWaitingPass(calls, { page: none });
-  assert.deepEqual(calls, [
-    "registered",
-    "waiting-withdrawn:PlacementIncompatible",
-    "blocked:RequiredCapabilityUnavailable",
-  ]);
-  const raced: string[] = [];
-  await poolWaitingPass(raced, { page: none, withdrawn: false });
-  assert.deepEqual(raced, [
-    "registered",
-    "waiting-withdrawn:PlacementIncompatible",
-  ]);
-});
-
-test("a waiting attempt whose policy now denies it is blocked as at opening, and one whose policy cannot answer goes on waiting", async () => {
-  const denied: string[] = [];
-  await poolWaitingPass(denied, {
-    resolved: { resolved: "Denied", reason: "ExecutionPolicyDenied" },
-  });
-  assert.deepEqual(denied, [
-    "registered",
-    "waiting-withdrawn:PolicyDenied",
-    "blocked:ExecutionPolicyDenied",
-  ]);
-  const held: string[] = [];
-  await poolWaitingPass(held, { resolved: { resolved: "Unavailable" } });
-  assert.deepEqual(held, ["registered"]);
-});
-
-test("a waiting attempt whose authority cannot answer is neither prepared again nor ended", async () => {
-  const calls: string[] = [];
-  await poolWaitingPass(calls, {
-    access: {
-      authorize: () =>
-        Promise.reject(new ProjectAccessUnavailable("no answer")),
-      authorizeTenant: () =>
-        Promise.reject(new ProjectAccessUnavailable("no answer")),
-      authorizeSite: projectAccessSiteRefused,
-    },
-  });
-  assert.deepEqual(calls, ["registered"]);
-});
-
-test("a waiting attempt that prepares is compared against what this pass would record, under the runtime the pass opens attempts under", async () => {
-  const calls: string[] = [];
-  const compared: WaitingAttemptRecord[] = [];
-  await poolWaitingPass(calls, { compared });
-  assert.deepEqual(calls, ["registered", "waiting-outdated"]);
-  const [current] = compared;
-  assert.equal(current?.runtime, workerRuntime);
-  assert.deepEqual(current.invocation.profile, runnable.profile);
-});
-
 const member = asPrincipal("member-one");
 
 /** `member`'s personal runner, allowlisting the fixture's project unless a case says otherwise. */
@@ -2582,39 +2267,37 @@ function ownerAccess(permit: boolean, read: boolean): ProjectAccess {
   };
 }
 
-/** A pass over an execution of `member`'s routed to pools, its project allowing a personal runner as `fallback` says, with no pool registered. */
+/** A pass over an execution of `owned`'s owner routed to pools, against their `runners`. */
 function ownedLaunch(
   calls: string[],
-  fallback: "Strict" | "Preferred" | undefined,
   runners: readonly PersonalRunnerRegistered[],
   access: ProjectAccess,
-  failing?: "personal" | "registered",
+  failing = false,
+  seen: string[] = [],
+  owned: LogicalExecution = { ...execution, route: "Pool", owner: member },
 ): Promise<number> {
   const service = serviceWith(calls, runnable, placedOk);
-  const owned: LogicalExecution = {
-    ...execution,
-    route: "Pool",
-    owner: member,
-    ...(fallback === undefined ? {} : { ownerFallback: fallback }),
-  };
   return executionSchedulerLaunch(
     {
       ...service,
       store: { ...service.store, unlaunched: () => Promise.resolve([owned]) },
+      placement: {
+        ...service.placement,
+        place: () => {
+          calls.push("place");
+          return Promise.resolve(placedOk);
+        },
+      },
       workerPools: {
         personal: (_partition, asked) => {
           calls.push(`personal:${asked}`);
-          return failing === "personal"
+          return failing
             ? Promise.reject(new Error("the roster could not be read"))
             : Promise.resolve(runners);
         },
-        registered: () =>
-          failing === "registered"
-            ? Promise.reject(new Error("the roster could not be read"))
-            : Promise.resolve({ pools: [], truncated: false }),
       },
       access,
-      metrics: schedulerTelemetry(recordingMetrics([])),
+      metrics: schedulerTelemetry(recordingMetrics(seen)),
     },
     epoch,
   );
@@ -2625,12 +2308,188 @@ const blocked = [
   "blocked:RequiredCapabilityUnavailable",
 ];
 
-test("an owner's execution no pool runs is held while the owner's runner could run it, under either fallback, rather than blocked", async () => {
-  for (const fallback of ["Strict", "Preferred"] as const) {
+test("an owner's execution none of their runners is configured to run is blocked, and never placed", async () => {
+  for (const [why, runners] of [
+    ["no runner", []],
+    [
+      "an unlike runner",
+      [{ ...memberRunner, capabilities: ["Platform:Linux:Arm64"] }],
+    ],
+  ] as const) {
     const calls: string[] = [];
-    await ownedLaunch(calls, fallback, [memberRunner], ownerAccess(true, true));
-    assert.deepEqual(calls, ["personal:member-one"], fallback);
+    const seen: string[] = [];
+    assert.equal(
+      await ownedLaunch(calls, runners, ownerAccess(true, true), false, seen),
+      0,
+    );
+    assert.deepEqual(calls, ["personal:member-one", ...blocked], why);
+    assert.deepEqual(
+      seen,
+      [
+        "reaping:0",
+        "attemptOpened:Opened",
+        "attemptEnded:Withdrawn:PlacementIncompatible",
+        "blocking:Blocked:RequiredCapabilityUnavailable",
+      ],
+      why,
+    );
   }
+});
+
+test("an execution with no owner is blocked without reading any runner", async () => {
+  const calls: string[] = [];
+  await ownedLaunch(calls, [memberRunner], ownerAccess(true, true), false, [], {
+    ...execution,
+    route: "Pool",
+  });
+  assert.deepEqual(calls, blocked);
+});
+
+test("an authority that cannot answer of the owner decides nothing, so the execution is held and never blocked", async () => {
+  for (const failure of [
+    new ProjectAccessUnavailable("the authority did not answer"),
+    new Error("the authority answered something unreadable"),
+  ]) {
+    const calls: string[] = [];
+    await ownedLaunch(calls, [memberRunner], {
+      authorize: () => Promise.reject(failure),
+      authorizeTenant: () => Promise.reject(failure),
+      authorizeSite: projectAccessSiteRefused,
+    });
+    assert.deepEqual(calls, ["personal:member-one"], failure.message);
+  }
+});
+
+/** The fixture's attempt as a pass reads it waiting for a runner. */
+const waitingAttempt: WaitingAttempt = {
+  partition,
+  execution: execution.execution,
+  attempt: attempt.attempt,
+  generation: attempt.generation,
+  projectActive: true,
+};
+
+/**
+ * A pass that finds the fixture's attempt, of an execution of `member`'s,
+ * waiting for a runner and nothing to open, against their runners, the policy
+ * and the authority a case supplies, answering each withdrawal as `withdrawn`
+ * says and noting what an outdated one was compared against.
+ */
+async function poolWaitingPass(
+  calls: string[],
+  over: {
+    readonly waiting?: WaitingAttempt;
+    readonly runners?: readonly PersonalRunnerRegistered[];
+    readonly resolved?: ProfileResolved;
+    readonly access?: ProjectAccess;
+    readonly withdrawn?: boolean;
+    readonly compared?: WaitingAttemptRecord[];
+  } = {},
+): Promise<void> {
+  const service = serviceWith(calls, over.resolved ?? runnable, placedOk);
+  await executionSchedulerLaunch(
+    {
+      ...service,
+      store: {
+        ...service.store,
+        waitingAttempts: () =>
+          Promise.resolve([over.waiting ?? waitingAttempt]),
+        execution: () =>
+          Promise.resolve({
+            ...execution,
+            route: "Pool" as const,
+            status: "Launching" as const,
+            owner: member,
+          }),
+        waitingAttemptWithdrawn: (_attempt, evidence) => {
+          calls.push(`waiting-withdrawn:${evidence}`);
+          return Promise.resolve(over.withdrawn ?? true);
+        },
+        waitingAttemptOutdated: (_attempt, current) => {
+          calls.push("waiting-outdated");
+          over.compared?.push(current);
+          return Promise.resolve(false);
+        },
+        unlaunched: () => Promise.resolve([]),
+      },
+      workerPools: {
+        personal: (_partition, asked) => {
+          calls.push(`personal:${asked}`);
+          return Promise.resolve(over.runners ?? [memberRunner]);
+        },
+      },
+      access: over.access ?? ownerAccess(true, true),
+    },
+    epoch,
+  );
+}
+
+test("a waiting attempt of a project no longer Active is withdrawn without asking of any runner", async () => {
+  const calls: string[] = [];
+  await poolWaitingPass(calls, {
+    waiting: { ...waitingAttempt, projectActive: false },
+  });
+  assert.deepEqual(calls, ["waiting-withdrawn:PlacementUnavailable"]);
+});
+
+test("a waiting attempt no configured runner could take now is withdrawn and its execution blocked, and nothing is blocked where a runner took it first", async () => {
+  const calls: string[] = [];
+  await poolWaitingPass(calls, { runners: [] });
+  assert.deepEqual(calls, [
+    "personal:member-one",
+    "waiting-withdrawn:PlacementIncompatible",
+    "blocked:RequiredCapabilityUnavailable",
+  ]);
+  const raced: string[] = [];
+  await poolWaitingPass(raced, { runners: [], withdrawn: false });
+  assert.deepEqual(raced, [
+    "personal:member-one",
+    "waiting-withdrawn:PlacementIncompatible",
+  ]);
+});
+
+test("a waiting attempt whose policy now denies it is blocked as at opening, and one whose policy cannot answer goes on waiting", async () => {
+  const denied: string[] = [];
+  await poolWaitingPass(denied, {
+    resolved: { resolved: "Denied", reason: "ExecutionPolicyDenied" },
+  });
+  assert.deepEqual(denied, [
+    "personal:member-one",
+    "waiting-withdrawn:PolicyDenied",
+    "blocked:ExecutionPolicyDenied",
+  ]);
+  const held: string[] = [];
+  await poolWaitingPass(held, { resolved: { resolved: "Unavailable" } });
+  assert.deepEqual(held, ["personal:member-one"]);
+});
+
+test("a waiting attempt whose authority cannot answer is neither prepared again nor ended", async () => {
+  const calls: string[] = [];
+  const failure = new ProjectAccessUnavailable("no answer");
+  await poolWaitingPass(calls, {
+    access: {
+      authorize: () => Promise.reject(failure),
+      authorizeTenant: () => Promise.reject(failure),
+      authorizeSite: projectAccessSiteRefused,
+    },
+  });
+  assert.deepEqual(calls, ["personal:member-one"]);
+});
+
+test("a waiting attempt that prepares is compared against what this pass would record, under the runtime the pass opens attempts under", async () => {
+  const calls: string[] = [];
+  const compared: WaitingAttemptRecord[] = [];
+  await poolWaitingPass(calls, { compared });
+  assert.deepEqual(calls, ["personal:member-one", "waiting-outdated"]);
+  const [current] = compared;
+  assert.equal(current?.runtime, workerRuntime);
+  assert.deepEqual(current.invocation.profile, runnable.profile);
+});
+
+test("an owner's execution is held while the owner's runner could run it, polling or not, rather than blocked", async () => {
+  const calls: string[] = [];
+  await ownedLaunch(calls, [memberRunner], ownerAccess(true, true));
+  assert.deepEqual(calls, ["personal:member-one"]);
 });
 
 test("an owner's execution is held while any one of their runners could run it, and blocked where none of them could", async () => {
@@ -2645,7 +2504,7 @@ test("an owner's execution is held while any one of their runners could run it, 
     [[arm], ["personal:member-one", ...blocked]],
   ] as const) {
     const calls: string[] = [];
-    await ownedLaunch(calls, "Strict", runners, ownerAccess(true, true));
+    await ownedLaunch(calls, runners, ownerAccess(true, true));
     assert.deepEqual(calls, called);
   }
 });
@@ -2669,7 +2528,7 @@ test("an owner's execution is blocked where the runner that alone could run it i
     ],
   ] as const) {
     const calls: string[] = [];
-    await ownedLaunch(calls, "Strict", [runner], access);
+    await ownedLaunch(calls, [runner], access);
     assert.deepEqual(calls, ["personal:member-one", ...blocked], why);
   }
 });
@@ -2702,17 +2561,16 @@ test("an owner's execution is held where the owner's runner takes its size, and 
     ],
   ] as const) {
     const calls: string[] = [];
-    await ownedLaunch(calls, "Strict", [runner], ownerAccess(true, true));
+    await ownedLaunch(calls, [runner], ownerAccess(true, true));
     assert.deepEqual(calls, called, why);
   }
 });
 
-test("an incompatible execution is blocked for its memory exactly where some runner, personal or the project's, would be configured for it but for its ceiling", () => {
+test("an incompatible execution is blocked for its memory exactly where some personal runner would be configured for it but for its ceiling", () => {
   const owned: LogicalExecution = {
     ...execution,
     route: "Pool",
     owner: member,
-    ownerFallback: "Strict",
   };
   const small = workerPoolMemoryMibDefault - 1;
   const arm = ["Platform:Linux:Arm64"];
@@ -2725,19 +2583,8 @@ test("an incompatible execution is blocked for its memory exactly where some run
     principal: memberRunner.principal,
     capabilities,
     memoryCeilingMib,
-    class: "Personal",
-    dedicatedOwner: member,
+    owner: member,
     allowlist: memberRunner.allowlist,
-    revoked: false,
-  });
-  const dedicated = (
-    capabilities: readonly string[],
-    memoryCeilingMib: number,
-  ): WorkerPoolAnswered => ({
-    ...registeredPool(capabilities),
-    memoryCeilingMib,
-    dedicatedOwner: undefined,
-    allowlist: [],
     revoked: false,
   });
   for (const [why, answered, reason] of [
@@ -2752,18 +2599,8 @@ test("an incompatible execution is blocked for its memory exactly where some run
       "RequiredCapabilityUnavailable",
     ],
     [
-      "a pool too small",
-      [dedicated(memberRunner.capabilities, small)],
-      "RequiredMemoryUnavailable",
-    ],
-    [
-      "a pool too small and unlike",
-      [dedicated(arm, small)],
-      "RequiredCapabilityUnavailable",
-    ],
-    [
-      "an unlike pool beside a personal runner too small",
-      [dedicated(arm, small), personal(memberRunner.capabilities, small)],
+      "an unlike runner beside one too small",
+      [personal(arm, small), personal(memberRunner.capabilities, small)],
       "RequiredMemoryUnavailable",
     ],
     ["no runner", [], "RequiredCapabilityUnavailable"],
@@ -2776,28 +2613,13 @@ test("an incompatible execution is blocked for its memory exactly where some run
   }
 });
 
-test("a failed read of the owner's runner fails the pass as a failed read of the project's pools does, rather than holding the execution", async () => {
-  for (const failing of ["registered", "personal"] as const) {
-    const calls: string[] = [];
-    await assert.rejects(
-      ownedLaunch(
-        calls,
-        "Strict",
-        [memberRunner],
-        ownerAccess(true, true),
-        failing,
-      ),
-      /the roster could not be read/u,
-      failing,
-    );
-    assert.ok(!calls.some((call) => call.startsWith("ended:")), failing);
-  }
-});
-
-test("an owner's execution whose project names no fallback never reads the owner's runner, and is blocked as before where no pool runs it", async () => {
+test("a failed read of the owner's runner fails the pass rather than holding the execution", async () => {
   const calls: string[] = [];
-  await ownedLaunch(calls, undefined, [memberRunner], ownerAccess(true, true));
-  assert.deepEqual(calls, blocked);
+  await assert.rejects(
+    ownedLaunch(calls, [memberRunner], ownerAccess(true, true), true),
+    /the roster could not be read/u,
+  );
+  assert.ok(!calls.some((call) => call.startsWith("ended:")));
 });
 
 test("an attempt a pool refused is withdrawn and its execution blocked before any lease is reaped, and the refusal is counted", async () => {
@@ -2900,16 +2722,12 @@ test("a refused attempt something else ended first is not counted as ended", asy
   ]);
 });
 
-/** A pass over the fixture execution routed to pools, one of which is configured to run it, noting each invocation recorded and each placement asked for. */
+/** A pass over an execution of `member`'s routed to pools, which their runner is configured to run, noting each invocation recorded and each placement asked for. */
 function poolOffer(
   calls: string[],
   seen: string[],
   resolved: ProfileResolved = runnable,
-  page: WorkerPoolRosterPage = {
-    pools: [registeredPool(["Platform:Linux:Amd64"])],
-    truncated: false,
-  },
-  access: ProjectAccess = poolAccess(),
+  access: ProjectAccess = ownerAccess(true, true),
 ): Promise<number> {
   const service = serviceWith(calls, resolved, placedOk);
   return executionSchedulerLaunch(
@@ -2918,7 +2736,13 @@ function poolOffer(
       store: {
         ...service.store,
         unlaunched: () =>
-          Promise.resolve([{ ...execution, route: "Pool" as const }]),
+          Promise.resolve([
+            {
+              ...execution,
+              route: "Pool" as const,
+              owner: member,
+            },
+          ]),
         attemptInvoked: (invoked) => {
           calls.push(`invoked:${invoked.attempt}`);
           return Promise.resolve(true);
@@ -2931,10 +2755,7 @@ function poolOffer(
           return Promise.resolve(placedOk);
         },
       },
-      workerPools: {
-        personal: () => Promise.resolve([]),
-        registered: () => Promise.resolve(page),
-      },
+      workerPools: { personal: () => Promise.resolve([memberRunner]) },
       access,
       metrics: schedulerTelemetry(recordingMetrics(seen)),
     },
@@ -2942,21 +2763,16 @@ function poolOffer(
   );
 }
 
-test("an attempt routed to pools is invoked for a pool to claim and observed as offered, and never placed", async () => {
-  for (const page of [
-    { pools: [registeredPool(["Platform:Linux:Amd64"])], truncated: false },
-    { pools: [], truncated: true },
-  ]) {
-    const calls: string[] = [];
-    const seen: string[] = [];
-    assert.equal(await poolOffer(calls, seen, runnable, page), 0);
-    assert.deepEqual(calls, ["invoked:attempt-one"]);
-    assert.deepEqual(seen, [
-      "reaping:0",
-      "attemptOpened:Opened",
-      "attemptOffered",
-    ]);
-  }
+test("an attempt routed to pools is invoked for a runner to claim and observed as offered, and never placed", async () => {
+  const calls: string[] = [];
+  const seen: string[] = [];
+  assert.equal(await poolOffer(calls, seen), 0);
+  assert.deepEqual(calls, ["invoked:attempt-one"]);
+  assert.deepEqual(seen, [
+    "reaping:0",
+    "attemptOpened:Opened",
+    "attemptOffered",
+  ]);
 });
 
 test("a policy denial blocks an attempt routed to pools before any pool is offered it", async () => {
@@ -2981,7 +2797,7 @@ test("an attempt routed to pools is offered to none while the authority cannot a
   const seen: string[] = [];
   const failure = new ProjectAccessUnavailable("the authority did not answer");
   assert.equal(
-    await poolOffer(calls, seen, runnable, undefined, {
+    await poolOffer(calls, seen, runnable, {
       authorize: () => Promise.reject(failure),
       authorizeTenant: () => Promise.reject(failure),
       authorizeSite: projectAccessSiteRefused,

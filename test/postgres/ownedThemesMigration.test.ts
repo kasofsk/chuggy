@@ -1,5 +1,5 @@
 /**
- * 211 adds a person's own themes and their global choice beside every row the
+ * 216 adds a person's own themes and their global choice beside every row the
  * schema already held, and the relations it adds refuse a choice that names
  * two themes, none, a built-in off the contract's roster, or a theme of
  * another person's.
@@ -10,7 +10,7 @@ import { test } from "node:test";
 import type pg from "pg";
 
 import { postgresMigrate } from "../../src/adapters/postgres/pool.ts";
-import { migration211 } from "../../src/adapters/postgres/schema/migrations/211-owned-themes.ts";
+import { migration216 } from "../../src/adapters/postgres/schema/migrations/216-owned-themes.ts";
 import { builtInThemeIds } from "../../src/contract/appearance.ts";
 import { migratedBefore, migrationDatabase } from "./migrationHarness.ts";
 
@@ -27,9 +27,9 @@ async function ownedThemesMigrationTheme(
   return found.rows[0]?.theme ?? "";
 }
 
-test("211 adds the relations, and a choice names one theme of its own person's or a built-in the contract lists", async () => {
+test("216 adds the relations, and a choice names one theme of its own person's or a built-in the contract lists", async () => {
   await migrationDatabase("owned_themes", async (subject) => {
-    await migratedBefore(subject, migration211.version);
+    await migratedBefore(subject, migration216.version);
     assert.equal(
       (
         await subject.query<{ found: string | null }>(
@@ -39,7 +39,7 @@ test("211 adds the relations, and a choice names one theme of its own person's o
       null,
     );
 
-    assert.ok((await postgresMigrate(subject)).includes(migration211.version));
+    assert.ok((await postgresMigrate(subject)).includes(migration216.version));
     for (const builtIn of builtInThemeIds)
       await subject.query(
         `INSERT INTO theme_choice(principal,built_in) VALUES($1,$2)`,
