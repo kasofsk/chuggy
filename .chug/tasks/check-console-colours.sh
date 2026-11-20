@@ -13,9 +13,9 @@
 # literals is judged: quoted strings, the text of a template literal outside
 # its `${}`, and with them every JSX attribute value. Comments are prose and
 # code is names, so `this.#face`, `deadbeef` and `0xfff` are silent. A named
-# colour is a whole word of a string, a hyphenated word staying whole, so
-# `conversation-waiting-gold` and `whitespace` are not colours and `red` and
-# `1px solid red` are. The roster is CSS Color Level 4's named colours, the same
+# colour is a whole lowercase word of a string, a hyphenated word staying whole,
+# so `conversation-waiting-gold`, `whitespace` and the name `Azure` are not
+# colours and `red` and `1px solid red` are. The roster is CSS Color Level 4's named colours, the same
 # one `check-console-sheets.sh` holds the sheets to. `currentColor`,
 # `transparent` and `inherit` name no colour of their own and are not literals.
 #
@@ -37,7 +37,8 @@
 # from a division by the character before it, and an apostrophe in JSX text
 # opens a string to the end of its line. Copy lives in the catalog rather than
 # in JSX text, so the second is rare; either can only misread the one line it
-# is on. An English sentence in a string that names a colour is read as one.
+# is on. An English sentence in a string that names a colour is read as one,
+# and a colour name written with a capital, `Tomato`, is read as a name.
 #
 # Usage:
 #   .chug/tasks/check-console-colours.sh [<file>...]
@@ -149,8 +150,8 @@ function judge(text,    s, tok, n, before, after, w, i) {
 		if (index(ident "-", before) > 0) continue
 		report(tok "()")
 	}
-	s = tolower(text)
-	n = split(s, w, /[^a-z-]+/)
+	s = text
+	n = split(s, w, /[^A-Za-z-]+/)
 	for (i = 1; i <= n; i++)
 		if (w[i] in colour && index(s, w[i] "(") == 0) report(w[i])
 }

@@ -78,9 +78,11 @@ test("every section is a page the router registers, in a project and, where it h
 });
 
 /** Where the router stands once it has followed an address. */
-async function followed(
-  address: string,
-): Promise<{ readonly pathname: string; readonly search: unknown }> {
+async function followed(address: string): Promise<{
+  readonly pathname: string;
+  readonly search: unknown;
+  readonly hash: string;
+}> {
   const router = consoleRouterOver(
     createMemoryHistory({ initialEntries: [address] }),
   );
@@ -88,6 +90,7 @@ async function followed(
   return {
     pathname: router.state.location.pathname,
     search: router.state.location.search,
+    hash: router.state.location.hash,
   };
 }
 
@@ -120,5 +123,18 @@ test("the catalog's old address carries its query to the new one", async () => {
   ).toEqual({
     pathname: "/acme/atlas/settings/catalog",
     search: { configuration: "ci", source: "head" },
+    hash: "",
+  });
+});
+
+test("a setup link to the repositories' old address keeps the repository it names and the picker's anchor", async () => {
+  expect(
+    await followed(
+      "/acme/atlas/repositories?repository=acme%2Fatlas&from=setup#add",
+    ),
+  ).toEqual({
+    pathname: "/acme/atlas/settings/repositories",
+    search: { repository: "acme/atlas", from: "setup" },
+    hash: "add",
   });
 });

@@ -62,7 +62,7 @@ check "a named colour as a style value is a finding" 1 "$RC" "white — a litera
 module_saying 'export const pill = { border: "1px solid rebeccapurple" };'
 check "a named colour inside a shorthand is a finding" 1 "$RC" "rebeccapurple — a literal colour"
 
-module_saying 'export const pill = <circle fill="Tomato" />;'
+module_saying 'export const pill = <circle fill="tomato" />;'
 check "a named colour in a JSX attribute is a finding" 1 "$RC" "tomato — a literal colour"
 
 module_saying 'export const pill = (n: number) => `${n}px solid #b3261e`;'
@@ -97,6 +97,9 @@ check "a token reference is silent" 0 "$RC" "0 finding(s)"
 module_saying 'export const pill = <path className="conversation-waiting-gold" />;' \
 	'export const wrap = { whiteSpace: "nowrap", redraw: "redrawn", label: "goldenrods" };'
 check "a word that merely contains a colour name is silent" 0 "$RC" "0 finding(s)"
+
+module_saying 'export const kind = { Azure: "Azure", Tan: "Tan Studio" };'
+check "a capitalised name is not a colour" 0 "$RC" "0 finding(s)"
 
 module_saying 'export class Pill {' '  #face = 0xfade;' '  #add() { return this.#face; }' '}' \
 	'export const deadbeef = 1;' 'export const anchor = "/tickets#add-ticket";'

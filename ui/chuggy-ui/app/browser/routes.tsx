@@ -297,6 +297,8 @@ const catalogMovedRoute = createRoute({
   },
 });
 
+/** An address a setup program handed out keeps its query and anchor, which
+ * open the picker on the repository it named. */
 const repositoriesMovedRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/repositories",
@@ -304,6 +306,8 @@ const repositoriesMovedRoute = createRoute({
     redirect({
       to: navMoved["/$tenant/$project/repositories"],
       params,
+      search: true,
+      hash: true,
       replace: true,
       throw: true,
     });
@@ -330,6 +334,8 @@ const connectorsMovedRoute = createRoute({
     redirect({
       to: navMoved["/$tenant/$project/connectors"],
       params,
+      search: true,
+      hash: true,
       replace: true,
       throw: true,
     });
