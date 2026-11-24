@@ -213,7 +213,7 @@ test("a failed landing whose result manifest recorded no source still answers, w
   });
 });
 
-test("a failed landing's rework that pins a commit to re-check reads it beside the landing, and one recording no source still answers it", async () => {
+test("a failed landing's rework that pins a commit to re-check reads it into the landing, and one recording no source still answers it", async () => {
   const project = await landingProject("failed-landing-recheck");
   const unsourced = await landingSettled(project, "Fail", "recheck");
   const recheck = "9".repeat(40);
@@ -224,8 +224,7 @@ test("a failed landing's rework that pins a commit to re-check reads it beside t
   ]);
   assert.deepEqual(await landingRead(project), {
     read: "Landing",
-    landing: { targetCommit, conflicted: false },
-    recheck,
+    landing: { targetCommit, conflicted: false, recheck },
   });
 });
 
