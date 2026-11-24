@@ -9,7 +9,11 @@
  * ticket, latest first, bounded; an older one past the bound is not read, and
  * a task that might have carried it launches instead. Whether a work cycle's
  * stack landed is `ticket_cycle_beneath_landed`'s answer, because the scheduler
- * reads neither the stack relations nor the journal.
+ * reads neither the stack relations nor the journal. The work cycle that last
+ * reworked a merge queue's failed checks is the latest, up to the launching
+ * one, whose work request's bundle pins a `FinalizationAttempt` that failed
+ * `QueueChecksFailed`; the attempt is reached through that bundle, because the
+ * scheduler may not read which ticket an attempt is of.
  *
  * THE CARRY IS SETTLED IN ITS OWN TRANSACTION, MODELLED ON
  * `schedulerSettleUnreported`. It takes the request, the execution and the
@@ -54,6 +58,7 @@ import {
 import {
   allVerdictCarryStacks,
   verdictCarryReevaluation,
+  verdictCarryRunsCommands,
   verdictCarrySource,
   type VerdictCarryEarlier,
   type VerdictCarryStack,
@@ -163,6 +168,38 @@ async function schedulerCarryRows(
   return found.rows;
 }
 
+/** The latest work cycle of the ticket, up to the launching evaluation's, that reworked a merge queue's failed checks. */
+async function schedulerCarryQueueChecksFailedCycle(
+  client: pg.PoolClient,
+  row: ExecutionRow,
+): Promise<number | undefined> {
+  const found = await client.query<{ cycle: string | null }>(
+    sql`SELECT max(w.cycle)::text AS cycle
+          FROM execution_request q
+          JOIN execution_request_task w
+            ON w.tenant = q.tenant AND w.project = q.project
+           AND w.request = q.request AND w.kind = 'Work'
+          JOIN execution_request_task c
+            ON c.tenant = q.tenant AND c.project = q.project
+           AND c.request = ${row.source_request} AND c.task = ${row.task}::bigint
+         WHERE q.tenant = ${row.tenant} AND q.project = ${row.project}
+           AND q.ticket = ${row.ticket}::bigint AND q.kind = 'SpawnWork'
+           AND w.cycle <= c.cycle
+           AND EXISTS (SELECT 1 FROM input_bundle_reference a
+                         JOIN finalization_attempt f
+                           ON f.tenant = a.tenant AND f.project = a.project
+                          AND f.attempt = a.reference_id
+                        WHERE a.tenant = q.tenant AND a.project = q.project
+                          AND a.bundle = q.input_bundle
+                          AND a.reference_kind = 'FinalizationAttempt'
+                          AND f.failure_kind = 'QueueChecksFailed')`,
+  );
+  const cycle = found.rows[0]?.cycle ?? null;
+  return cycle === null
+    ? undefined
+    : projectRowCounter(cycle, "carry queue checks failure cycle");
+}
+
 /**
  * The execution whose passing verdict the evaluation `row` names carries, or
  * undefined where it launches. `row` is the launch's, read under its lock.
@@ -173,18 +210,26 @@ export async function schedulerCarrySource(
 ): Promise<ExecutionId | undefined> {
   const kind = executionRowTaskKind(row.task_kind);
   if (kind !== "Evaluation") return undefined;
-  const reevaluate = verdictCarryReevaluation(
-    schedulerRowWorkloadTask(row, kind),
-  );
+  const task = schedulerRowWorkloadTask(row, kind);
+  const reevaluate = verdictCarryReevaluation(task);
   if (reevaluate === "Always") return undefined;
   const rows = await schedulerCarryRows(client, row);
+  const queueChecksFailedCycle = await schedulerCarryQueueChecksFailedCycle(
+    client,
+    row,
+  );
   const [launching, ...earlier] = rows;
   if (launching?.execution !== row.execution)
     throw new Error(
       `postgres scheduler: the carry read did not find execution ${row.execution} itself`,
     );
   return verdictCarrySource(
-    { ...schedulerCarryTask(launching, row.ticket), reevaluate },
+    {
+      ...schedulerCarryTask(launching, row.ticket),
+      reevaluate,
+      runsCommands: verdictCarryRunsCommands(task),
+      queueChecksFailedCycle,
+    },
     earlier.map((each) => schedulerCarryEarlier(each, row.ticket)),
   );
 }
