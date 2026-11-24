@@ -156,8 +156,8 @@ const executionRequestRecheckEvents: readonly Entry["event"]["type"][] = [
  * The bundle a spawn pins, carrying the evidence of the finalization that
  * caused it where one did. A bundle built from evidence pins no source of its
  * own, because the evidence carries the failed attempt's whole bundle forward
- * — target commit and all — and a second one under that kind leaves a worker
- * two answers to what its work is based on.
+ * and names the commit its work starts from, and a second one under that kind
+ * leaves a worker two answers to what its work is based on.
  */
 function executionRequestBundle(
   input: DecisionInput,
@@ -329,11 +329,32 @@ function nativeActions(
 }
 
 /**
- * What a failed finalization's evidence pins: the identities it named, and
- * where the change starts again — the base the proposal failed on where the
- * attempt recorded one, since the rework is told to bring it in, and the
- * target's commit otherwise — and the accepted commit a re-check or a re-stack
- * reports again.
+ * The commit a failed finalization's rework starts from: the attempt's target,
+ * except where a merge queue's failed checks are re-checked, whose head
+ * already contains that target, so the base the queue failed it on is what
+ * the re-check brings in.
+ */
+function inputBundleEvidenceTarget(
+  evidence: NonNullable<ExecutionRequestBundle["evidence"]>,
+): string {
+  if (
+    evidence.failureKind !== "QueueChecksFailed" ||
+    evidence.recheckCommit === undefined
+  )
+    return evidence.targetCommit;
+  if (evidence.proposalBase === undefined)
+    throw new RangeError(
+      "input bundle: a queue's failed checks re-checked name no base",
+    );
+  return evidence.proposalBase;
+}
+
+/**
+ * What a failed finalization's evidence pins: the identities it named, the
+ * commit the rework starts from, where the change starts again — the base the
+ * proposal failed on where the attempt recorded one, since the rework is told
+ * to bring it in, and the target's commit otherwise — and the accepted commit
+ * a re-check, a re-stack or a queue's failed checks report again.
  */
 function inputBundleEvidenceReferences(
   evidence: NonNullable<ExecutionRequestBundle["evidence"]>,
@@ -345,13 +366,14 @@ function inputBundleEvidenceReferences(
       reference: evidence.attempt,
       digest: evidence.attemptDigest,
     },
-    { kind: "TargetCommit", reference: evidence.targetCommit },
+    { kind: "TargetCommit", reference: inputBundleEvidenceTarget(evidence) },
     {
       kind: "ChangeBase",
       reference: evidence.proposalBase ?? evidence.targetCommit,
     },
     ...((evidence.failureKind === "RecheckRequired" ||
-      evidence.failureKind === "Restack") &&
+      evidence.failureKind === "Restack" ||
+      evidence.failureKind === "QueueChecksFailed") &&
     evidence.recheckCommit !== undefined
       ? [{ kind: "Recheck" as const, reference: evidence.recheckCommit }]
       : []),

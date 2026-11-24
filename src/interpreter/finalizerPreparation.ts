@@ -451,7 +451,7 @@ export interface AttemptRecord {
   readonly proposalBase?: Pick<ObservedTarget, "ref" | "commit">;
   /** The commit a merge queue built and whose checks failed. */
   readonly groupCommit?: GitObjectId;
-  /** The accepted commit a `RecheckRequired` or `Restack` failure sends back to be re-reported. */
+  /** The accepted commit a `RecheckRequired` or `Restack` failure sends back to be re-reported, and the removed head a `QueueChecksFailed` one sends back to be re-checked on its base. */
   readonly recheckCommit?: GitObjectId;
   /** Why a `RecheckRequired` failure was sent back, absent on every other attempt. */
   readonly recheckReason?: FinalizationRecheckReason;
@@ -633,7 +633,7 @@ export interface FinalizationEvidence {
   readonly proposalBase?: GitObjectId;
   /** Which failure this was, so a rework can tell a re-check from a conflict by what the attempt recorded. */
   readonly failureKind: FinalizationFailureKind;
-  /** The accepted commit to re-report, present exactly for a `RecheckRequired` or `Restack` failure. */
+  /** The accepted commit to re-report, present for every `RecheckRequired` or `Restack` failure and for a `QueueChecksFailed` one sent back to be re-checked. */
   readonly recheckCommit?: GitObjectId;
   readonly conflictManifest?: ProjectArtifactId;
   readonly conflictManifestDigest?: string;

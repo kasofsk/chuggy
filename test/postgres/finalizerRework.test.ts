@@ -395,14 +395,19 @@ test("a concluded merge conflict returns the ticket to work with a bundle naming
 });
 
 /**
- * A rework sent back for a queue's failed checks, recorded and submitted as the
- * finalizer does, is told to bring in the base its proposal failed on, so its
- * change starts there and every later spawn of the ticket reads that base back.
- * Catches the evidence read dropping the base, and the history reading another
- * attempt's.
+ * The rework bundle of a ticket whose finalization recorded a queue's failed
+ * checks, naming `recheckCommit` where given, and submitted as the finalizer
+ * does, with the attempt's target and the base its proposal failed on.
  */
-test("a queue's failed checks name the base the rework's change starts at", async () => {
-  const label = "rework-queue-base";
+async function reworkQueueChecksFailed(
+  label: string,
+  recheckCommit?: string,
+): Promise<{
+  readonly project: FinalizerProject;
+  readonly bundle: ReworkBundle;
+  readonly target: string;
+  readonly proposalBase: string;
+}> {
   const project = await finalizerProject(rig, label);
   await finalizerClaim(rig, project, finalizerIdentity(`owner-${label}`));
   const proposalBase = "9".repeat(40);
@@ -412,6 +417,7 @@ test("a queue's failed checks name the base the rework's change starts at", asyn
     outcome: "Failed",
     failureKind: "QueueChecksFailed",
     proposalBase: { ref: "refs/heads/main", commit: proposalBase },
+    ...(recheckCommit === undefined ? {} : { recheckCommit }),
   });
   const submitted = (await rig.as(
     `SELECT result FROM ${finalizationFunction}($1,$2,$3,$4,'FinalizationNeedsWork','QueueChecksFailed',$5,$6,$7,'finalizer-subject')`,
@@ -432,8 +438,26 @@ test("a queue's failed checks name the base the rework's change starts at", asyn
     project.memory,
   );
   assert.deepEqual(drained.decided, ["Committed"]);
-  const bundle = await reworkBundleOf(project);
+  return {
+    project,
+    bundle: await reworkBundleOf(project),
+    target,
+    proposalBase,
+  };
+}
+
+/**
+ * A rework sent back for a queue's failed checks, recorded and submitted as the
+ * finalizer does, is told to bring in the base its proposal failed on, so its
+ * change starts there and every later spawn of the ticket reads that base back.
+ * Catches the evidence read dropping the base, and the history reading another
+ * attempt's.
+ */
+test("a queue's failed checks name the base the rework's change starts at", async () => {
+  const { project, bundle, target, proposalBase } =
+    await reworkQueueChecksFailed("rework-queue-base");
   assert.equal(reworkReference(bundle, "TargetCommit")?.reference_id, target);
+  assert.equal(reworkReference(bundle, "Recheck"), undefined);
   assert.deepEqual(reworkReference(bundle, "ChangeBase"), {
     reference_kind: "ChangeBase",
     reference_id: proposalBase,
@@ -443,6 +467,34 @@ test("a queue's failed checks name the base the rework's change starts at", asyn
     await postgresExecutionSourceHistory(
       rig.harness.writerPool,
     ).failedLandingBase(project.partition, project.ticket),
+    proposalBase,
+  );
+});
+
+/**
+ * A queue's failed checks sent back to be re-checked pin the removed head as
+ * `Recheck` and the base its proposal failed on as `TargetCommit`, which the
+ * head does not yet contain. Catches the attempt's target pinned, which the
+ * head already contains, so the core would re-check nothing.
+ */
+test("a queue's failed checks naming a re-check commit pin it over the base their proposal failed on", async () => {
+  const head = finalizerCommit();
+  const { bundle, target, proposalBase } = await reworkQueueChecksFailed(
+    "rework-queue-recheck",
+    head,
+  );
+  assert.notEqual(target, proposalBase);
+  assert.deepEqual(reworkReference(bundle, "Recheck"), {
+    reference_kind: "Recheck",
+    reference_id: head,
+    reference_digest: null,
+  });
+  assert.equal(
+    reworkReference(bundle, "TargetCommit")?.reference_id,
+    proposalBase,
+  );
+  assert.equal(
+    reworkReference(bundle, "ChangeBase")?.reference_id,
     proposalBase,
   );
 });

@@ -2628,7 +2628,7 @@ async function finalizerProposalFailed(
   service: FinalizerService,
   view: FinalizationView,
   base: Pick<ObservedTarget, "ref" | "commit">,
-  failure: Pick<AttemptRecord, "failureKind" | "groupCommit">,
+  failure: Pick<AttemptRecord, "failureKind" | "groupCommit" | "recheckCommit">,
   tally: FinalizerTally,
 ): Promise<void> {
   if (!finalizerPreparationPriced(service, tally)) return;
@@ -2701,10 +2701,11 @@ async function finalizerMergeConflicted(
 }
 
 /**
- * Sends the change back to work for the merge queue's checks failing twice,
- * against the base as it is read now and naming the commit the queue built,
- * unless the ticket has already been sent back for it as often as its bound
- * allows.
+ * Sends the change back to work for the merge queue's checks failing, against
+ * the base as it is read now and naming the commit the queue built: to be
+ * re-checked on that base, naming the removed head, or, where this request
+ * finalizes such a re-check, to an agent, unless the ticket has already been
+ * sent back to one as often as its bound allows.
  */
 async function finalizerQueueChecksFailed(
   service: FinalizerService,
@@ -2723,6 +2724,7 @@ async function finalizerQueueChecksFailed(
     failures,
     config.proposalQueueReworksMax,
     base,
+    decision.head,
   );
   if (rework.rework === "Hold") {
     finalizerHold(service, tally, rework.hold);
@@ -2737,6 +2739,9 @@ async function finalizerQueueChecksFailed(
       ...(decision.groupCommit === undefined
         ? {}
         : { groupCommit: decision.groupCommit }),
+      ...(rework.recheckCommit === undefined
+        ? {}
+        : { recheckCommit: rework.recheckCommit }),
     },
     tally,
   );

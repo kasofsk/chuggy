@@ -213,6 +213,22 @@ test("a failed landing whose result manifest recorded no source still answers, w
   });
 });
 
+test("a failed landing's rework that pins a commit to re-check reads it beside the landing, and one recording no source still answers it", async () => {
+  const project = await landingProject("failed-landing-recheck");
+  const unsourced = await landingSettled(project, "Fail", "recheck");
+  const recheck = "9".repeat(40);
+
+  await landingRework(project, 2, [
+    ...landingReferences(unsourced, false),
+    ["Recheck", recheck],
+  ]);
+  assert.deepEqual(await landingRead(project), {
+    read: "Landing",
+    landing: { targetCommit, conflicted: false },
+    recheck,
+  });
+});
+
 /** The finalization request the project's ticket is landed under, and the repository it binds for it. */
 interface LandingFinalization {
   readonly request: string;

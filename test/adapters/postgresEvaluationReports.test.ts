@@ -135,6 +135,7 @@ test("a failed landing's row is its commits, the change's absent where no source
       proposal_base_ref: null,
       proposal_base_commit: null,
       queue_group_commit: null,
+      recheck_commit: null,
     },
   ];
   const pool = {
@@ -165,6 +166,7 @@ function failedLandingPool(
       proposal_base_ref: null,
       proposal_base_commit: null,
       queue_group_commit: null,
+      recheck_commit: null,
       ...why,
     },
   ];
@@ -191,6 +193,27 @@ test("a failed landing's row says why its attempt failed, and against which base
         proposalBase: { ref: "refs/heads/trunk", commit: "3".repeat(40) },
         groupCommit: "4".repeat(40),
       },
+    },
+  );
+});
+
+test("a failed landing's row carries the commit its bundle pins to re-check beside the landing", async () => {
+  assert.deepEqual(
+    await postgresFailedLanding(
+      failedLandingPool({
+        failure_kind: "QueueChecksFailed",
+        recheck_commit: "5".repeat(40),
+      }),
+    ).landing(partition, asExecutionId("rework")),
+    {
+      read: "Landing",
+      landing: {
+        targetCommit: "1".repeat(40),
+        changeCommit: "2".repeat(40),
+        conflicted: false,
+        failure: "QueueChecksFailed",
+      },
+      recheck: "5".repeat(40),
     },
   );
 });
