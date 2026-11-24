@@ -165,6 +165,11 @@ import {
   type StackStanding,
 } from "../../src/interpreter/stackChoice.ts";
 import { restackRefusals } from "../../src/interpreter/stackRestack.ts";
+import type { QueueFailedChecks } from "../../src/interpreter/queueFailedChecks.ts";
+import type {
+  QueueFailedChecksPort,
+  QueueFailedChecksRequest,
+} from "../../src/interpreter/changeProposal.ts";
 import {
   finalizerLandingBaseRef,
   finalizerRemoteDefaultRef,
@@ -295,6 +300,8 @@ interface FinalizerRecorder
   readonly holds: (FinalizationUnavailableKind | undefined)[];
   /** The files each of those records named, beside it. */
   readonly refusals: (ConflictSummary | undefined)[];
+  /** The failed checks each hold record named, beside `holds`. */
+  readonly holdChecks: (QueueFailedChecks | undefined)[];
   readonly submitted: string[];
   /** The conclusion each of those offers carried, which is what the request ends as. */
   readonly concluded: FinalizationConclusion[];
@@ -860,6 +867,7 @@ function recordingLedgers(): Pick<
   | "settled"
   | "holds"
   | "refusals"
+  | "holdChecks"
   | "heldKind"
   | "heldPasses"
   | "submitted"
@@ -876,6 +884,7 @@ function recordingLedgers(): Pick<
     settled: [],
     holds: [],
     refusals: [],
+    holdChecks: [],
     heldKind: undefined,
     heldPasses: 0,
     submitted: [],
@@ -942,6 +951,7 @@ function recordingHolds(
       const own = store();
       own.holds.push(record.kind);
       own.refusals.push(record.refused);
+      own.holdChecks.push(record.failedChecks);
       own.heldPasses =
         record.kind === undefined
           ? 0
@@ -5903,6 +5913,118 @@ test("a spent bound holds as merges spent and escalates only where a sendback to
     rechecking.forge.enqueues[0]?.headCommit,
     "a removal outside a re-check's cycle re-checks however many sendbacks were spent",
   );
+});
+
+/** A failed-checks reader answering `answer` and noting what it was asked. */
+function failedChecksReading(
+  answer: () => Promise<QueueFailedChecks | undefined>,
+): QueueFailedChecksPort & { readonly asked: QueueFailedChecksRequest[] } {
+  const asked: QueueFailedChecksRequest[] = [];
+  return {
+    asked,
+    read: (request) => {
+      asked.push(request);
+      return answer();
+    },
+  };
+}
+
+test("a removal for failed checks records the names its group commit's read kept, cut or not, and none where it kept none, landing the same in every case", async () => {
+  const answers: readonly (readonly [
+    string,
+    (() => Promise<QueueFailedChecks | undefined>) | undefined,
+    QueueFailedChecks | undefined,
+  ])[] = [
+    [
+      "names",
+      () => Promise.resolve({ names: ["check", "e2e"], truncated: false }),
+      { names: ["check", "e2e"], truncated: false },
+    ],
+    [
+      "cut",
+      () => Promise.resolve({ names: ["check"], truncated: true }),
+      { names: ["check"], truncated: true },
+    ],
+    ["none read", () => Promise.resolve(undefined), undefined],
+    ["a raise", () => Promise.reject(new Error("forge gone")), undefined],
+    ["no reader", undefined, undefined],
+  ];
+  const groupCommit = asGitObjectId(commitOf("9"));
+  for (const [which, answer, kept] of answers) {
+    const { store, forge, service: queued } = queueCase();
+    const reading =
+      answer === undefined ? undefined : failedChecksReading(answer);
+    const service =
+      reading === undefined ? queued : { ...queued, failedChecks: reading };
+    await queueChecksFailed(store, forge, service, groupCommit);
+    await passOver(service);
+
+    assert.equal(store.attempts.length, 1, which);
+    const recorded = store.attempts[0];
+    assert.equal(recorded?.failureKind, "QueueChecksFailed", which);
+    assert.equal(recorded?.groupCommit, groupCommit, which);
+    assert.deepEqual(recorded?.failedChecks, kept, which);
+    assert.equal(forge.enqueues.length, 1, which);
+    if (reading !== undefined) {
+      assert.equal(reading.asked.length, 1, which);
+      assert.equal(reading.asked[0]?.commit, groupCommit, which);
+    }
+  }
+});
+
+test("a removal naming no group commit reads no checks", async () => {
+  const { store, forge, service: queued } = queueCase();
+  const reading = failedChecksReading(() =>
+    Promise.resolve({ names: ["check"], truncated: false }),
+  );
+  const service = { ...queued, failedChecks: reading };
+  await queueChecksFailed(store, forge, service);
+  await passOver(service);
+  assert.deepEqual(reading.asked, []);
+  assert.equal(store.attempts[0]?.failedChecks, undefined);
+});
+
+test("a spent rework's hold names the checks its group commit's read kept, and holds and escalates the same where it kept none", async () => {
+  const groupCommit = asGitObjectId(commitOf("9"));
+  for (const kept of [
+    { names: ["check", "e2e"], truncated: true },
+    undefined,
+  ] as const) {
+    const which = JSON.stringify(kept ?? null);
+    const {
+      store,
+      forge,
+      service: queued,
+      emitted,
+    } = queueCase({
+      holdPassesMax: 2,
+      proposalQueueReworksMax: 2,
+    });
+    const service = {
+      ...queued,
+      failedChecks: failedChecksReading(() => Promise.resolve(kept)),
+    };
+    store.earlierQueueSendbacks = 2;
+    store.queueRechecked = true;
+    await queueChecksFailed(store, forge, service, groupCommit);
+    await passOver(service);
+
+    assert.deepEqual(store.attempts, [], which);
+    assert.equal(emitted.at(-1), "ProposalMergesExhausted", which);
+    assert.equal(store.heldKind, "ProposalMergesExhausted", which);
+    assert.deepEqual(store.holdChecks.at(-1), kept, which);
+    await passOver(service);
+    assert.deepEqual(
+      store.concluded,
+      [
+        {
+          outcome: "FinalizationResultUnavailable",
+          kind: "ProposalMergesExhausted",
+        },
+      ],
+      which,
+    );
+  }
 });
 
 test("a finalization escalating while its proposal is queued asks the queue to give it up before it is escalated", async () => {

@@ -30,6 +30,7 @@ import {
   landingLandedCommit,
   landingMergedElsewhere,
   landingMergedHead,
+  landingQueueChecksFailed,
   landingPullRequest,
   landingRunning,
   landingsRead,
@@ -74,6 +75,23 @@ test("a landing that failed on a conflict says so and how many files it names", 
     caveat: undefined,
   });
   expect(ticketLandingSummary(landing)).toBe("Finalization failed");
+});
+
+test("a landing whose merge queue failed its checks names those it was told of, ending in an ellipsis where they were cut, and its kind alone where none were", () => {
+  const said = (read: Parameters<typeof ticketLandingOf>[0]) =>
+    fragmentWords(ticketLandingOf(read, copyTextEn), nowMs).text;
+  expect(
+    said(
+      landingQueueChecksFailed(2, {
+        names: ["check", "e2e"],
+        truncated: false,
+      }),
+    ),
+  ).toBe("Merge queue checks failed · Failed: check, e2e");
+  expect(
+    said(landingQueueChecksFailed(2, { names: ["check"], truncated: true })),
+  ).toBe("Merge queue checks failed · Failed: check, …");
+  expect(said(landingQueueChecksFailed(2))).toBe("Merge queue checks failed");
 });
 
 test("a held landing says how long it has been held and on what", () => {

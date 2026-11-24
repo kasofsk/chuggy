@@ -478,10 +478,11 @@ test("the unavailable kinds are finalization holds, less the five that stay hold
 
 /**
  * The sets a member may mint through the API are the interpreter's, less the
- * one only a job is issued. A set added to the interpreter lands in the second
+ * one only a job is issued and the one only the finalizer reads a merge
+ * queue's checks with. A set added to the interpreter lands in the second
  * assertion until it is placed on one side or the other.
  */
-test("the credential permissions are the interpreter's sets, less the one only a job is issued", () => {
+test("the credential permissions are the interpreter's sets, less the one only a job is issued and the one only the finalizer reads checks with", () => {
   const roster: readonly string[] = forgeCredentialPermissions;
   assert.deepEqual(
     roster.filter(
@@ -491,7 +492,7 @@ test("the credential permissions are the interpreter's sets, less the one only a
   );
   assert.deepEqual(
     allForgePermissionSets.filter((set) => !roster.includes(set)),
-    ["runPipelines"],
+    ["runPipelines", "readChecks"],
   );
 });
 

@@ -18,6 +18,7 @@ import {
 import { githubChangeProposals } from "./adapters/forge/githubChangeProposals.ts";
 import { githubRepositoryHost } from "./adapters/forge/githubAddress.ts";
 import { githubPipelinePaths } from "./adapters/forge/githubPipelines.ts";
+import { githubQueueFailedChecks } from "./adapters/forge/githubQueueFailedChecks.ts";
 import {
   githubInstallationTokens,
   githubInstallationTokensOptions,
@@ -39,6 +40,7 @@ import {
   type ChangeProposalPort,
   type ForgeCredentialPort,
   type ForgeRepositoryBinding,
+  type QueueFailedChecksPort,
 } from "./interpreter/changeProposal.ts";
 import {
   gitAvailablePrecondition,
@@ -674,6 +676,8 @@ export interface FinalizerServiceRuntime {
   readonly pipelinePaths: readonly string[];
   readonly artifactRoot: string;
   readonly artifacts?: ArtifactStoreOptions;
+  /** Where a merge queue's failed checks are read, absent where this deployment mints nothing. */
+  readonly failedChecks?: QueueFailedChecksPort;
 }
 
 /**
@@ -766,6 +770,9 @@ export function composeFinalizerService(
     handoffs: artifacts,
     artifacts,
     pipelinePaths: runtime.pipelinePaths,
+    ...(runtime.failedChecks === undefined
+      ? {}
+      : { failedChecks: runtime.failedChecks }),
     identities: finalizerIdentities(),
     digestOf: finalizerDigestOf,
     config: checkedFinalizerConfig(config),
@@ -801,6 +808,28 @@ export function composeFinalizerForgeCredentials(
     ],
     files,
   );
+}
+
+/**
+ * Where the finalizer reads a merge queue's failed checks: under a token of
+ * their own set, minted as the portal App the finalizer's other acts mint as,
+ * and nowhere at all where the deployment holds no app key, since a mounted
+ * credential says nothing of what it may read.
+ */
+export function composeFinalizerFailedChecks(
+  forge: ForgeAppKey | undefined,
+  minting: RepositoryCredentialMinting | undefined,
+): QueueFailedChecksPort | undefined {
+  if (forge === undefined || minting === undefined) return undefined;
+  const options = githubInstallationTokensOptions(forge);
+  return githubQueueFailedChecks({
+    fetch: options.fetch,
+    ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
+    ...(options.requestTimeoutMs === undefined
+      ? {}
+      : { requestTimeoutMs: options.requestTimeoutMs }),
+    tokens: minting.tokens,
+  });
 }
 
 /**
@@ -864,7 +893,9 @@ function finalizerServiceRuntime(
     credentialOptions,
     minting,
   );
+  const failedChecks = composeFinalizerFailedChecks(settings.forge, minting);
   return {
+    ...(failedChecks === undefined ? {} : { failedChecks }),
     forges: composeChangeProposalForges(
       settings.forges,
       composeFinalizerForgeCredentials(forgeOptions, minting),

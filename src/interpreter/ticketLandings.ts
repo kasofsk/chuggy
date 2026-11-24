@@ -82,6 +82,7 @@ import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 import type { PublicInstant } from "./publicResource.ts";
+import type { QueueFailedChecks } from "./queueFailedChecks.ts";
 import type { StackMember } from "./stackChoice.ts";
 
 /** How a concluded request's journal event says it concluded. */
@@ -96,7 +97,8 @@ export interface TicketLandingQueueRemoval {
 /**
  * The hold a request was last recorded at, the removal it escalates where it
  * is a queue's, and the files a job may not push that the target changed where
- * it is `TargetPathsRefused`.
+ * it is `TargetPathsRefused`, and the checks a spent rework's queue failed
+ * where it is `ProposalMergesExhausted` and they were read.
  */
 export interface TicketLandingHold {
   readonly kind: FinalizationUnavailableKind;
@@ -104,6 +106,7 @@ export interface TicketLandingHold {
   readonly since: PublicInstant;
   readonly removal?: TicketLandingQueueRemoval;
   readonly refused?: ConflictSummary;
+  readonly failedChecks?: QueueFailedChecks;
 }
 
 /**
@@ -130,11 +133,15 @@ export interface TicketLandingRecheck {
   readonly baseRef?: string;
 }
 
-/** One request's newest attempt, as its row holds it, its re-check present where it recorded one. */
+/**
+ * One request's newest attempt, as its row holds it, its re-check present
+ * where it recorded one and its failed checks where its queue's were read.
+ */
 export interface TicketLandingAttempt {
   readonly outcome: FinalizationAttemptOutcome;
   readonly failureKind?: FinalizationFailureKind;
   readonly recheck?: TicketLandingRecheck;
+  readonly failedChecks?: QueueFailedChecks;
   readonly targetRef: string;
   readonly targetCommit: GitObjectId;
   readonly candidateCommit?: GitObjectId;
@@ -355,12 +362,17 @@ export function ticketLandingState(
   }
 }
 
-/** As many of a conflict's paths as one landing answers, cut where the manifest was or where they stop fitting. */
+/**
+ * As many of a conflict's paths as one landing answers beside the `beside`
+ * bytes its failed checks weigh, cut where the manifest was or where they stop
+ * fitting.
+ */
 export function ticketLandingConflictBounded(
   conflict: ConflictSummary,
+  beside: number,
 ): ConflictSummary {
   const paths: string[] = [];
-  let bytes = 0;
+  let bytes = beside;
   for (const path of conflict.paths) {
     bytes += jsonTextBytes(path);
     if (bytes > ticketLandingConflictBytesMax)
@@ -370,11 +382,29 @@ export function ticketLandingConflictBounded(
   return { paths, truncated: conflict.truncated };
 }
 
+/**
+ * What the failed checks one landing names weigh as the JSON strings they are
+ * sent as, which their bounds hold within `ticketLandingConflictBytesMax`.
+ */
+function ticketLandingFailedChecksBytes(record: TicketLandingRecord): number {
+  const named = [
+    ...(record.attempt?.failedChecks?.names ?? []),
+    ...(record.hold?.failedChecks?.names ?? []),
+  ];
+  const bytes = named.reduce((sum, name) => sum + jsonTextBytes(name), 0);
+  if (bytes > ticketLandingConflictBytesMax)
+    throw new Error(
+      "ticket landings: a landing's failed checks outweigh its paths' bound",
+    );
+  return bytes;
+}
+
 /** The conflict one manifest records, or nothing where it was not found or the store could not be reached. */
 async function ticketLandingConflict(
   ports: TicketLandingPorts,
   partition: Partition,
   artifact: ProjectArtifactId,
+  beside: number,
 ): Promise<ConflictSummary | undefined> {
   const read = await ports.artifacts.readArtifact({ partition, artifact });
   switch (read.read) {
@@ -387,7 +417,7 @@ async function ticketLandingConflict(
         throw new Error(
           "ticket landings: a conflict manifest is not one its writer wrote",
         );
-      return ticketLandingConflictBounded(conflict);
+      return ticketLandingConflictBounded(conflict, beside);
     }
     default:
       return assertNever(read);
@@ -405,6 +435,7 @@ export function ticketLandingProposal(
 /** A standing whose hold names refused files, those files cut as a conflict's are. */
 function ticketLandingRefusedBounded(
   standing: TicketLandingStanding,
+  beside: number,
 ): TicketLandingStanding {
   if (standing.state !== "Held" && standing.state !== "Unavailable")
     return standing;
@@ -412,7 +443,10 @@ function ticketLandingRefusedBounded(
   if (standing.hold === undefined || refused === undefined) return standing;
   return {
     ...standing,
-    hold: { ...standing.hold, refused: ticketLandingConflictBounded(refused) },
+    hold: {
+      ...standing.hold,
+      refused: ticketLandingConflictBounded(refused, beside),
+    },
   };
 }
 
@@ -422,12 +456,13 @@ async function ticketLanding(
   record: TicketLandingRecord,
 ): Promise<TicketLanding> {
   const { attempt, conflictManifest } = record;
+  const beside = ticketLandingFailedChecksBytes(record);
   const conflict =
     conflictManifest === undefined
       ? undefined
-      : await ticketLandingConflict(ports, partition, conflictManifest);
+      : await ticketLandingConflict(ports, partition, conflictManifest, beside);
   return {
-    ...ticketLandingRefusedBounded(ticketLandingState(record)),
+    ...ticketLandingRefusedBounded(ticketLandingState(record), beside),
     cycle: record.cycle,
     generation: record.generation,
     attempts: record.attempts,

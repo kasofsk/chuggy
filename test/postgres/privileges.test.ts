@@ -1398,7 +1398,7 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
   );
   assert.equal(
     read.find((row) => row.relation === "finalization_attempt")?.columns,
-    "attempt,failure_kind,project,proposal_base_commit,proposal_base_ref,queue_group_commit,tenant",
+    "attempt,failure_kind,project,proposal_base_commit,proposal_base_ref,queue_failed_checks,queue_failed_checks_truncated,queue_group_commit,tenant",
   );
   assert.equal(
     read.find((row) => row.relation === "project")?.columns,

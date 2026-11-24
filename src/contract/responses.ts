@@ -35,6 +35,8 @@ import {
   proposalForgeMessageCharsMax,
   proposalMergeStateCharsMax,
   proposalQueueWordCharsMax,
+  queueFailedCheckCharsMax,
+  queueFailedChecksMax,
   forgeRepositoriesAnsweredMax,
   projectRepositoriesAnsweredMax,
   repositoryConfigurationImportRefusalsKeptMax,
@@ -2957,11 +2959,26 @@ const ticketLandingRecheckSchema = z.strictObject({
   baseRef: z.string().min(1).optional(),
 });
 
-/** The newest attempt one landing recorded. */
+/**
+ * The checks a merge queue's group commit failed, as many as one removal
+ * keeps, and `truncated` where that bound or a name no briefing can carry cut
+ * them.
+ */
+const ticketLandingFailedChecksSchema = z.strictObject({
+  names: z
+    .array(z.string().min(1).max(queueFailedCheckCharsMax))
+    .min(1)
+    .max(queueFailedChecksMax)
+    .readonly(),
+  truncated: z.boolean(),
+});
+
+/** The newest attempt one landing recorded, with the checks its queue failed where they were read. */
 const ticketLandingAttemptSchema = z.strictObject({
   outcome: z.enum(finalizationAttemptOutcomes),
   failureKind: z.enum(finalizationFailureKinds).optional(),
   recheck: ticketLandingRecheckSchema.optional(),
+  failedChecks: ticketLandingFailedChecksSchema.optional(),
   targetRef: z.string().min(1),
   targetCommit: landingCommitSchema,
   candidateCommit: landingCommitSchema.optional(),
@@ -3040,8 +3057,10 @@ const ticketLandingFields = {
 
 /**
  * A hold a landing was recorded at, with the forge's reason and the login it
- * names where it escalates a removal from a merge queue, and at
- * `TargetPathsRefused` the files a job may not push that the target changed.
+ * names where it escalates a removal from a merge queue, at
+ * `TargetPathsRefused` the files a job may not push that the target changed,
+ * and at `ProposalMergesExhausted` the checks a spent rework's queue failed
+ * where they were read.
  */
 const ticketLandingHoldSchema = z.strictObject({
   kind: z.enum(finalizationUnavailableKinds),
@@ -3054,6 +3073,7 @@ const ticketLandingHoldSchema = z.strictObject({
     })
     .optional(),
   refused: ticketLandingConflictSchema.optional(),
+  failedChecks: ticketLandingFailedChecksSchema.optional(),
 });
 
 /**

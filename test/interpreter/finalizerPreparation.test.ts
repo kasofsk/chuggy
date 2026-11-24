@@ -387,6 +387,32 @@ test("an attempt's canonical bytes bind the base ref of an unheld target, and ar
   );
 });
 
+test("an attempt's canonical bytes bind the failed checks it names behind their label, and are unchanged without them", () => {
+  const failed: Omit<AttemptRecord, "attemptDigest"> = {
+    ...record,
+    outcome: "Failed",
+    failureKind: "QueueChecksFailed",
+    groupCommit: asGitObjectId(commitOf("9")),
+  };
+  const bytes = canonicalFinalizationAttempt(failed);
+  const named = canonicalFinalizationAttempt({
+    ...failed,
+    failedChecks: { names: ["check", "e2e"], truncated: false },
+  });
+  assert.equal(named, `${bytes}12:failedChecks1:25:check3:e2e5:false`);
+  for (const other of [
+    { names: ["check", "e2e"], truncated: true },
+    { names: ["check"], truncated: false },
+    { names: ["e2e", "check"], truncated: false },
+    { names: ["check:e2e"], truncated: false },
+  ])
+    assert.notEqual(
+      canonicalFinalizationAttempt({ ...failed, failedChecks: other }),
+      named,
+      JSON.stringify(other),
+    );
+});
+
 test("no opaque value can spell out a boundary in a bundle's canonical bytes", () => {
   const spelling = canonicalInputBundle(partition, asInputBundleId("b"), [
     { kind: "Repository", reference: "one:two" },

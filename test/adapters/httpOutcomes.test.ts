@@ -45,6 +45,8 @@ import {
   proposalForgeMessageCharsMax,
   proposalMergeStateCharsMax,
   proposalQueueWordCharsMax,
+  queueFailedCheckCharsMax,
+  queueFailedChecksMax,
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
   runTranscriptPageBatchesMax,
@@ -997,6 +999,21 @@ const landingMergeAnswerHeaviest = {
   messageCut: true as const,
 };
 
+/**
+ * As many failed checks as one removal keeps, each at its bound in the
+ * character a briefing line may carry that weighs most in a JSON string for
+ * each code point, the last telling them apart.
+ */
+const landingFailedChecksHeaviest = {
+  names: Array.from(
+    { length: queueFailedChecksMax },
+    (_none, at) =>
+      "\u{1F600}".repeat(queueFailedCheckCharsMax - 1) +
+      String.fromCodePoint(0x1f601 + at),
+  ),
+  truncated: true,
+};
+
 /** One request's rows as the heaviest of them hold it, in each state that carries a field of its own. */
 function landingRecordsHeaviest(): readonly TicketLandingRecord[] {
   const base = {
@@ -1010,6 +1027,7 @@ function landingRecordsHeaviest(): readonly TicketLandingRecord[] {
         reason: landingCodeHeaviest(allFinalizationRecheckReasons),
         baseRef: landingRefHeaviest,
       },
+      failedChecks: landingFailedChecksHeaviest,
       targetRef: landingRefHeaviest,
       targetCommit: landingCommitHeaviest,
       candidateCommit: landingCommitHeaviest,
@@ -1048,6 +1066,7 @@ function landingRecordsHeaviest(): readonly TicketLandingRecord[] {
           reason: landingQueueWordHeaviest,
           actor: landingQueueWordHeaviest,
         },
+        failedChecks: landingFailedChecksHeaviest,
       },
     },
     {

@@ -1590,6 +1590,10 @@ const landingsRow = {
   proposal_status: null,
   recheck_reason: null,
   recheck_base_ref: null,
+  failed_checks: null,
+  failed_checks_truncated: null,
+  hold_failed_checks: null,
+  hold_failed_checks_truncated: null,
 };
 
 /**

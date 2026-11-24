@@ -9,6 +9,8 @@ import { test } from "node:test";
 
 import {
   jsonTextBytes,
+  queueFailedCheckCharsMax,
+  queueFailedChecksMax,
   ticketLandingConflictBytesMax,
   ticketLandingsAnsweredMax,
   ticketLandingStacksAnsweredMax,
@@ -166,23 +168,38 @@ test("a concluded landing its rows cannot account for fails the read rather than
   );
 });
 
-test("a conflict answers the paths that fit one landing's bound and says where it was cut", () => {
+test("a conflict answers the paths that fit one landing's bound beside its failed checks and says where it was cut", () => {
   const path = "src/".padEnd(100, "x");
-  const fit = Math.floor(ticketLandingConflictBytesMax / jsonTextBytes(path));
-  const many = Array.from({ length: fit + 1 }, () => path);
-  assert.deepEqual(
-    ticketLandingConflictBounded({ paths: many, truncated: false }),
-    {
-      paths: many.slice(0, fit),
-      truncated: true,
-    },
+  for (const beside of [0, jsonTextBytes(path) + 1]) {
+    const fit = Math.floor(
+      (ticketLandingConflictBytesMax - beside) / jsonTextBytes(path),
+    );
+    const many = Array.from({ length: fit + 1 }, () => path);
+    assert.deepEqual(
+      ticketLandingConflictBounded({ paths: many, truncated: false }, beside),
+      { paths: many.slice(0, fit), truncated: true },
+    );
+    const few = many.slice(0, fit);
+    for (const truncated of [false, true])
+      assert.deepEqual(
+        ticketLandingConflictBounded({ paths: few, truncated }, beside),
+        { paths: few, truncated },
+      );
+  }
+});
+
+test("an attempt and a hold naming failed checks at every bound fit the bound a landing's paths are weighed in", () => {
+  const name = "\u{1F600}".repeat(queueFailedCheckCharsMax);
+  const heaviest = Array.from({ length: queueFailedChecksMax }, () => name);
+  assert.ok(
+    2 * heaviest.reduce((sum, one) => sum + jsonTextBytes(one), 0) <=
+      ticketLandingConflictBytesMax,
   );
-  const few = many.slice(0, fit);
-  for (const truncated of [false, true])
-    assert.deepEqual(ticketLandingConflictBounded({ paths: few, truncated }), {
-      paths: few,
-      truncated,
-    });
+  assert.ok(
+    2 * queueFailedChecksMax * (4 * queueFailedCheckCharsMax + 2) <=
+      ticketLandingConflictBytesMax,
+    "a briefing line weighs at most four bytes a code point as a JSON string",
+  );
 });
 
 /** A manifest's stored bytes, naming the paths given. */

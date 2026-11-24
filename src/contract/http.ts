@@ -496,10 +496,25 @@ export const ticketLandingsAnsweredMax = 8;
 
 /**
  * How much of a conflict's paths one landing answers with, weighed as the JSON
- * strings they are sent as. A manifest can hold far more than a response body
- * carries, so a landing answers the paths that fit and says the list was cut.
+ * strings they are sent as, beside the failed checks its attempt and its hold
+ * name, which are answered first. A manifest can hold far more than a response
+ * body carries, so a landing answers the paths that fit and says the list was
+ * cut.
  */
 export const ticketLandingConflictBytesMax = 1_536;
+
+/**
+ * The most failed checks one merge queue removal keeps the names of. The line
+ * a rework's briefing names them on is sized for them, and a landing's attempt
+ * and hold both naming them at their bounds fit `ticketLandingConflictBytesMax`.
+ */
+export const queueFailedChecksMax = 5;
+
+/**
+ * The longest name of a failed check a removal keeps, in code points, a longer
+ * one being left out as a cut.
+ */
+export const queueFailedCheckCharsMax = 36;
 
 /** How many of a ticket's work cycles the landings read answers the stack of, the newest of them, oldest first. */
 export const ticketLandingStacksAnsweredMax = 8;

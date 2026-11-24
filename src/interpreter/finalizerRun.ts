@@ -262,6 +262,7 @@ import {
   type ChangeProposalMerging,
   type ChangeProposalRequest,
   type ForgeBinding,
+  type QueueFailedChecksPort,
 } from "./changeProposal.ts";
 import {
   finalizationProposalBody,
@@ -369,6 +370,7 @@ import {
 } from "./stackRestack.ts";
 import type { StackMember } from "./stackChoice.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
+import type { QueueFailedChecks } from "./queueFailedChecks.ts";
 import {
   finalizerLandingOf,
   finalizerProposalBaseBinding,
@@ -411,6 +413,8 @@ export interface FinalizerService {
   readonly artifacts: ProjectArtifactPort;
   /** The paths the forge says a job's push may not change where its repository's binding withholds pipelines. */
   readonly pipelinePaths: readonly string[];
+  /** Where a merge queue's failed checks are read, absent where none are: their names are evidence, and nothing waits on them. */
+  readonly failedChecks?: QueueFailedChecksPort;
   readonly identities: FinalizerIdentityFactory;
   readonly digestOf: FinalizationDigestFunction;
   readonly config: FinalizerConfig;
@@ -453,6 +457,8 @@ interface FinalizerTally {
   heldReason: FinalizerHoldReason | undefined;
   /** The files a `TargetPathsRefused` hold is over, travelling beside `heldReason` and cleared with it. */
   heldRefused: ConflictSummary | undefined;
+  /** The checks a merge queue failed that a spent rework's `ProposalMergesExhausted` hold names, travelling beside `heldReason` and cleared with it. */
+  heldChecks: QueueFailedChecks | undefined;
   /** How many seconds from now a hold on the forge's cadence falls due to be read again, travelling beside `heldReason` and cleared with it. */
   heldRereadInSecs: number | undefined;
 }
@@ -460,7 +466,7 @@ interface FinalizerTally {
 /** Every count a pass prices a move against, which is every count it keeps. */
 type FinalizerCeiling = Exclude<
   keyof FinalizerTally,
-  "heldReason" | "heldRefused" | "heldRereadInSecs"
+  "heldReason" | "heldRefused" | "heldChecks" | "heldRereadInSecs"
 >;
 
 /**
@@ -505,6 +511,7 @@ function finalizerHold(
   tally.holds += 1;
   tally.heldReason = reason;
   tally.heldRefused = undefined;
+  tally.heldChecks = undefined;
   tally.heldRereadInSecs = undefined;
   recordFinalizer(service.metrics, (metrics) => {
     metrics.holding(reason);
@@ -2628,7 +2635,10 @@ async function finalizerProposalFailed(
   service: FinalizerService,
   view: FinalizationView,
   base: Pick<ObservedTarget, "ref" | "commit">,
-  failure: Pick<AttemptRecord, "failureKind" | "groupCommit" | "recheckCommit">,
+  failure: Pick<
+    AttemptRecord,
+    "failureKind" | "groupCommit" | "failedChecks" | "recheckCommit"
+  >,
   tally: FinalizerTally,
 ): Promise<void> {
   if (!finalizerPreparationPriced(service, tally)) return;
@@ -2701,11 +2711,36 @@ async function finalizerMergeConflicted(
 }
 
 /**
+ * The names of the checks the queue's group commit failed, or nothing where
+ * the removal names no group commit, this deployment reads none, or the read
+ * kept none. A read that raised is one that kept nothing, so no answer of the
+ * forge's holds or delays the landing.
+ */
+async function finalizerQueueFailedChecks(
+  service: FinalizerService,
+  view: FinalizationView,
+  groupCommit: GitObjectId | undefined,
+): Promise<QueueFailedChecks | undefined> {
+  if (groupCommit === undefined || service.failedChecks === undefined)
+    return undefined;
+  const { repository } = finalizerCandidateOf(view);
+  return service.failedChecks
+    .read({
+      repository: repository.repository,
+      partition: view.claim.partition,
+      commit: groupCommit,
+    })
+    .catch(() => undefined);
+}
+
+/**
  * Sends the change back to work for the merge queue's checks failing, against
- * the base as it is read now and naming the commit the queue built: to be
- * re-checked on that base, naming the removed head, or, where this request
- * finalizes such a re-check, to an agent, unless the ticket has already been
- * sent back to one as often as its bound allows.
+ * the base as it is read now and naming the commit the queue built and the
+ * checks that failed on it: to be re-checked on that base, naming the removed
+ * head, or, where this request finalizes such a re-check, to an agent, unless
+ * the ticket has already been sent back to one as often as its bound allows,
+ * where the hold names those checks. The checks are read before either is
+ * written, since an attempt is written once.
  */
 async function finalizerQueueChecksFailed(
   service: FinalizerService,
@@ -2726,8 +2761,18 @@ async function finalizerQueueChecksFailed(
     base,
     decision.head,
   );
+  if (rework.rework === "Hold" && rework.hold !== "ProposalMergesExhausted") {
+    finalizerHold(service, tally, rework.hold);
+    return;
+  }
+  const failedChecks = await finalizerQueueFailedChecks(
+    service,
+    view,
+    decision.groupCommit,
+  );
   if (rework.rework === "Hold") {
     finalizerHold(service, tally, rework.hold);
+    tally.heldChecks = failedChecks;
     return;
   }
   await finalizerProposalFailed(
@@ -2739,6 +2784,7 @@ async function finalizerQueueChecksFailed(
       ...(decision.groupCommit === undefined
         ? {}
         : { groupCommit: decision.groupCommit }),
+      ...(failedChecks === undefined ? {} : { failedChecks }),
       ...(rework.recheckCommit === undefined
         ? {}
         : { recheckCommit: rework.recheckCommit }),
@@ -3137,10 +3183,13 @@ async function finalizerRecordHold(
     throw new Error(
       "finalizer pass: a refused-paths hold and the files it is over travel together",
     );
+  const checks =
+    kind === "ProposalMergesExhausted" ? tally.heldChecks : undefined;
   const held = await service.store.recordHold({
     claim,
     ...(kind === undefined ? {} : { kind }),
     ...(refused === undefined ? {} : { refused }),
+    ...(checks === undefined ? {} : { failedChecks: checks }),
   });
   const config = checkedFinalizerConfig(service.config);
   if (kind === undefined || held.held !== "Recorded") return;
@@ -3199,6 +3248,7 @@ async function finalizerAdvanceStep(
 ): Promise<FinalizerStepped> {
   tally.heldReason = undefined;
   tally.heldRefused = undefined;
+  tally.heldChecks = undefined;
   tally.heldRereadInSecs = undefined;
   const gathered = await finalizerGather(service, claim);
   if (gathered === undefined) return { stepped: "Gone" };
@@ -3647,6 +3697,7 @@ export async function finalizerPass(
     holds: 0,
     heldReason: undefined,
     heldRefused: undefined,
+    heldChecks: undefined,
     heldRereadInSecs: undefined,
   };
   await finalizerReadHolds(service, epoch, tally);

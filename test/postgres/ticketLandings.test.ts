@@ -1337,6 +1337,92 @@ test("merges exhausted answers the failed-check removal its proposal's standing 
   }
 });
 
+test("a landing sent back for its queue's failed checks answers the names its attempt kept, cut or not, and none where it kept none", async () => {
+  for (const [label, failedChecks] of [
+    ["checks-named", { names: ["check", "e2e"], truncated: false }],
+    ["checks-cut", { names: ["check"], truncated: true }],
+    ["checks-none", undefined],
+  ] as const) {
+    const project = await finalizing(label, "PullRequestMerge");
+    const attempt = await finalizerPrepare(rig, project, label, {
+      outcome: "Failed",
+      failureKind: "QueueChecksFailed",
+      proposalBase: { ref: "refs/heads/main", commit: finalizerCommit() },
+      ...(failedChecks === undefined ? {} : { failedChecks }),
+    });
+    await concluded(
+      project,
+      { outcome: "FinalizationNeedsWork", kind: "QueueChecksFailed" },
+      attempt,
+    );
+    const [landing] = (await landingsOf(project))?.landings ?? [];
+    assert.equal(landing?.state, "Failed", label);
+    assert.equal(landing.attempt?.failureKind, "QueueChecksFailed", label);
+    assert.deepEqual(landing.attempt.failedChecks, failedChecks, label);
+    assert.equal(
+      "failedChecks" in landing.attempt,
+      failedChecks !== undefined,
+      label,
+    );
+  }
+});
+
+test("merges exhausted answers the checks its hold names, held or escalated, and none where it names none", async () => {
+  const removal = {
+    kind: "ChecksFailed",
+    reason: "failed_checks",
+    actor: "github-merge-queue",
+  };
+  for (const failedChecks of [
+    { names: ["check", "e2e"], truncated: true },
+    undefined,
+  ] as const)
+    for (const escalate of [false, true]) {
+      const label = `exhausted-checks-${String(failedChecks !== undefined)}-${String(escalate)}`;
+      const project = await finalizing(label, "PullRequestMerge");
+      const promoted = await promotion(project, label);
+      await proposalOver(
+        project,
+        promoted,
+        createdAs(forgeSaid("Open", { url: pullRequest })),
+        queueStoodAs({
+          head: promoted.candidate,
+          enqueuedAtMs: 1,
+          removal: { atMs: 2, ...removal },
+        }),
+      );
+      const claim = await finalizerClaim(
+        rig,
+        project,
+        finalizerIdentity("owner"),
+      );
+      await postgresFinalizer(rig.pool).recordHold({
+        claim,
+        kind: "ProposalMergesExhausted",
+        ...(failedChecks === undefined ? {} : { failedChecks }),
+      });
+      if (escalate)
+        await concluded(
+          project,
+          {
+            outcome: "FinalizationResultUnavailable",
+            kind: "ProposalMergesExhausted",
+          },
+          undefined,
+          claim,
+        );
+      const [landing] = (await landingsOf(project))?.landings ?? [];
+      assert.equal(landing?.state, escalate ? "Unavailable" : "Held", label);
+      assert.equal(landing.hold?.kind, "ProposalMergesExhausted", label);
+      assert.deepEqual(landing.hold.failedChecks, failedChecks, label);
+      assert.deepEqual(
+        landing.hold.removal,
+        { reason: "failed_checks", actor: "github-merge-queue" },
+        label,
+      );
+    }
+});
+
 test("a stored hold at failed merge-queue checks, which no pass reaches now, still answers its removal", async () => {
   const removal = {
     kind: "ChecksFailed",

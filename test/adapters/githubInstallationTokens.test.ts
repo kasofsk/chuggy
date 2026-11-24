@@ -304,6 +304,16 @@ function fixtureInstallationRead(grantsWorkflows: boolean): Response {
   });
 }
 
+/** The installation as the forge describes it to the app, granting what `granted` names at the level it names. */
+function fixtureInstallationGranting(
+  granted: Readonly<Record<string, string>>,
+): Response {
+  return Response.json({
+    id: Number(fixtureInstallationId),
+    permissions: { contents: "write", pull_requests: "write", ...granted },
+  });
+}
+
 test("a set naming no pipelines is the whole of what a body asks for, and reads no installation whatever its binding allows", async (t) => {
   const asked: unknown[] = [];
   for (const permissions of ["read", "runPipelines"] as const)
@@ -364,23 +374,33 @@ test("a mint asking for pipeline runs the installation does not hold is the forg
   }
 });
 
-test("no set asks the forge for more than contents, pull requests, workflows and actions, wherever its binding and the installation allow them", async (t) => {
-  const asked = new Set<string>();
+test("no set asks the forge for more than contents, pull requests, workflows, actions, checks and statuses, and only the checks set for the last two, wherever its binding and the installation allow them", async (t) => {
+  const asked = new Map<string, Set<string>>();
+  let set = "";
   const recorder: ForgeRecorder = {
     calls: [],
     requestFetch: (_input, init) => {
       if (init?.method !== "POST")
-        return Promise.resolve(fixtureInstallationRead(true));
+        return Promise.resolve(
+          fixtureInstallationGranting({
+            workflows: "write",
+            checks: "write",
+            statuses: "write",
+          }),
+        );
       const sent = typeof init.body === "string" ? init.body : "";
       const body = JSON.parse(sent) as { permissions: object };
+      const named = asked.get(set) ?? new Set<string>();
       for (const permission of Object.keys(body.permissions))
-        asked.add(permission);
+        named.add(permission);
+      asked.set(set, named);
       return Promise.resolve(fixtureMinted());
     },
   };
   const tokens = fixtureAdapter(t, recorder);
   for (const permissions of allForgePermissionSets)
     for (const allowed of [false, true]) {
+      set = permissions;
       const minted = await tokens.mint(
         fixtureRequest({
           permissions,
@@ -389,12 +409,105 @@ test("no set asks the forge for more than contents, pull requests, workflows and
       );
       assert.equal(minted.minted, "Token", `${permissions} ${String(allowed)}`);
     }
-  assert.deepEqual([...asked].sort(), [
-    "actions",
-    "contents",
-    "pull_requests",
-    "workflows",
+  assert.deepEqual(
+    [...new Set([...asked.values()].flatMap((named) => [...named]))].sort(),
+    ["actions", "checks", "contents", "pull_requests", "statuses", "workflows"],
+  );
+  for (const [permissions, named] of asked)
+    assert.equal(
+      named.has("checks") || named.has("statuses"),
+      permissions === "readChecks",
+      permissions,
+    );
+});
+
+test("the checks set asks for check runs and statuses each exactly where the installation, read as the app, grants it, and answers which it was given", async (t) => {
+  const cases: readonly (readonly [
+    Readonly<Record<string, string>>,
+    Readonly<Record<string, string>>,
+    readonly string[],
+  ])[] = [
+    [
+      { checks: "read", statuses: "write" },
+      { contents: "read", checks: "read", statuses: "read" },
+      ["checks", "commitStatuses"],
+    ],
+    [{ checks: "write" }, { contents: "read", checks: "read" }, ["checks"]],
+    [
+      { statuses: "read" },
+      { contents: "read", statuses: "read" },
+      ["commitStatuses"],
+    ],
+    [{}, { contents: "read" }, []],
+    [{ checks: "none", statuses: "admin" }, { contents: "read" }, []],
+  ];
+  for (const [grants, expected, granted] of cases)
+    for (const allowed of [false, true]) {
+      const which = `${JSON.stringify(grants)} ${String(allowed)}`;
+      const recorder = fixtureForge([
+        fixtureInstallationGranting(grants),
+        fixtureMinted(),
+      ]);
+      const minted = await fixtureAdapter(t, recorder).mint(
+        fixtureRequest({
+          permissions: "readChecks",
+          ...(allowed ? { pipelinesAllowed: true } : {}),
+        }),
+      );
+      assert.equal(minted.minted, "Token", which);
+      assert.deepEqual(
+        minted.minted === "Token" ? minted.granted : undefined,
+        granted,
+        which,
+      );
+      assert.deepEqual(
+        recorder.calls.map((call) => call.method),
+        ["GET", "POST"],
+        which,
+      );
+      assert.equal(
+        recorder.calls[0]?.url,
+        `${fixtureApiUrl}/app/installations/${fixtureInstallationId}`,
+        which,
+      );
+      assert.deepEqual(fixtureAskedOf(recorder, 1), expected, which);
+    }
+});
+
+test("a token of a set narrowing no read says nothing of what was granted", async (t) => {
+  for (const permissions of allForgePermissionSets.filter(
+    (set) => set !== "readChecks",
+  )) {
+    const recorder = fixtureForge([fixtureMinted()]);
+    const minted = await fixtureAdapter(t, recorder).mint(
+      fixtureRequest({ permissions }),
+    );
+    assert.equal(minted.minted, "Token", permissions);
+    assert.equal(
+      minted.minted === "Token" && "granted" in minted,
+      false,
+      permissions,
+    );
+  }
+});
+
+test("a held token of the checks set answers what was granted when it was minted, and reads no installation", async (t) => {
+  const recorder = fixtureForge([
+    fixtureInstallationGranting({ checks: "read" }),
+    fixtureMinted(),
+    fixtureInstallationGranting({ checks: "read", statuses: "read" }),
+    fixtureMinted(),
   ]);
+  const tokens = fixtureAdapter(t, recorder);
+  const first = await tokens.mint(
+    fixtureRequest({ permissions: "readChecks" }),
+  );
+  const held = await tokens.mint(fixtureRequest({ permissions: "readChecks" }));
+  assert.equal(recorder.calls.length, 2, "a held token makes no request");
+  for (const minted of [first, held])
+    assert.deepEqual(minted.minted === "Token" ? minted.granted : undefined, [
+      "checks",
+    ]);
 });
 
 test("a set naming pipelines its binding does not allow asks for none, and reads no installation", async (t) => {
@@ -487,7 +600,7 @@ test("an installation read refused, failing or unreadable is the mint's own answ
       { minted: "Unavailable", evidence: { mint: "Body" } },
     ],
   ];
-  for (const permissions of ["write", "propose"] as const)
+  for (const permissions of ["write", "propose", "readChecks"] as const)
     for (const [answer, expected] of answers) {
       const recorder = fixtureForge([answer(), fixtureMinted()]);
       const minted = await fixtureAdapter(t, recorder).mint(
@@ -1006,9 +1119,12 @@ test("a token held for pipeline runs answers a mint for that set alone, and no o
     "runPipelines",
   ] as const;
   const recorder = fixtureForge(
-    minting.map((permissions) =>
+    minting.flatMap((permissions) => [
+      ...(permissions === "readChecks"
+        ? [fixtureInstallationGranting({ checks: "read" })]
+        : []),
       fixtureMinted({ token: `ghs-${permissions}-p8o9i0` }),
-    ),
+    ]),
   );
   const tokens = fixtureAdapter(t, recorder);
   const asking = [...minting, ...minting];
@@ -1022,7 +1138,7 @@ test("a token held for pipeline runs answers a mint for that set alone, and no o
     asking.map((permissions) => `ghs-${String(permissions)}-p8o9i0`),
   );
   assert.equal(
-    recorder.calls.length,
+    recorder.calls.filter((call) => call.method === "POST").length,
     allForgePermissionSets.length,
     "each set is minted once and then held",
   );

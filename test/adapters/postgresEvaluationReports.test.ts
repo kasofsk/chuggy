@@ -135,6 +135,8 @@ test("a failed landing's row is its commits, the change's absent where no source
       proposal_base_ref: null,
       proposal_base_commit: null,
       queue_group_commit: null,
+      queue_failed_checks: null,
+      queue_failed_checks_truncated: null,
       recheck_commit: null,
     },
   ];
@@ -155,7 +157,7 @@ test("a failed landing's row is its commits, the change's absent where no source
 
 /** A pool answering one failed-landing row whose attempt recorded the failure columns named. */
 function failedLandingPool(
-  why: Readonly<Record<string, string | null>>,
+  why: Readonly<Record<string, string | boolean | readonly string[] | null>>,
 ): pg.Pool {
   const rows = [
     {
@@ -166,6 +168,8 @@ function failedLandingPool(
       proposal_base_ref: null,
       proposal_base_commit: null,
       queue_group_commit: null,
+      queue_failed_checks: null,
+      queue_failed_checks_truncated: null,
       recheck_commit: null,
       ...why,
     },
@@ -194,6 +198,36 @@ test("a failed landing's row says why its attempt failed, and against which base
         groupCommit: "4".repeat(40),
       },
     },
+  );
+});
+
+test("a failed landing's row carries the checks its queue failed, cut or not, and none where it names none", async () => {
+  for (const [names, truncated] of [
+    [["check", "e2e"], false],
+    [["check"], true],
+  ] as const) {
+    const read = await postgresFailedLanding(
+      failedLandingPool({
+        failure_kind: "QueueChecksFailed",
+        proposal_base_ref: "refs/heads/trunk",
+        proposal_base_commit: "3".repeat(40),
+        queue_failed_checks: names,
+        queue_failed_checks_truncated: truncated,
+      }),
+    ).landing(partition, asExecutionId("rework"));
+    assert.deepEqual(
+      read.read === "Landing" ? read.landing?.failedChecks : undefined,
+      { names, truncated },
+    );
+  }
+  const none = await postgresFailedLanding(
+    failedLandingPool({ failure_kind: "QueueChecksFailed" }),
+  ).landing(partition, asExecutionId("rework"));
+  assert.equal(
+    none.read === "Landing" && none.landing !== undefined
+      ? "failedChecks" in none.landing
+      : undefined,
+    false,
   );
 });
 

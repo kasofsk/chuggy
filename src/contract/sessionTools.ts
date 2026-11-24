@@ -207,8 +207,9 @@ const chuggyToolTicketLandingFieldsBytesMax = 1_280;
  * and login of a removal from a merge queue, and the message and failure
  * the forge answered its newest merge with, each escaping every character;
  * its link, visible ASCII that JSON escapes to at most two bytes a character;
- * its conflict's paths, and the commas between them, fewer than the lightest
- * paths its bound holds; and the rest of it.
+ * its conflict's paths and the checks its attempt and its hold name, weighed
+ * together within the paths' bound, and the commas between them, fewer than
+ * the lightest strings that bound holds; and the rest of it.
  */
 export const chuggyToolTicketLandingBytesMax =
   4 * jsonStringChars(ticketLandingRefCharsMax) +

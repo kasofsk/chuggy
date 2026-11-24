@@ -631,6 +631,45 @@ test("an escalation over a merge queue removal names the forge's reason and who 
     });
 });
 
+test("an escalation over spent merges names the checks the queue failed beside its removal, or alone, ending in an ellipsis where they were cut", () => {
+  const checkedFrom = (
+    failedChecks: { readonly names: string[]; readonly truncated: boolean },
+    removal?: { readonly reason: string; readonly actor?: string },
+  ): SituationReads["landings"] => {
+    const landing = landingEscalated(
+      5,
+      escalatedSince,
+      "ProposalMergesExhausted",
+      removal,
+    );
+    return [
+      ticketLandingOf(
+        landing.state === "Unavailable" && landing.hold !== undefined
+          ? { ...landing, hold: { ...landing.hold, failedChecks } }
+          : landing,
+        copyTextEn,
+      ),
+    ];
+  };
+  expect(
+    parkedOver(
+      "ProposalMergesExhausted",
+      checkedFrom(
+        { names: ["check", "e2e"], truncated: false },
+        { reason: "failed_checks", actor: "github-merge-queue" },
+      ),
+    ),
+  ).toMatchObject({
+    more: "Queue removal: failed_checks by github-merge-queue · Failed: check, e2e",
+  });
+  expect(
+    parkedOver(
+      "ProposalMergesExhausted",
+      checkedFrom({ names: ["check"], truncated: true }),
+    ),
+  ).toMatchObject({ more: "Failed: check, …" });
+});
+
 test("an escalation over a target that changed files no run may push names them and the landing by hand Resume finds, and says the second alone without its landing", () => {
   const parked = (landings: SituationReads["landings"]) =>
     ticketSlot(
