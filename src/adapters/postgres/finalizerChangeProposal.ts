@@ -157,6 +157,7 @@ import type {
   ChangeProposalRecord,
   ChangeProposalResult,
   ChangeProposalWritten,
+  FinalizationQueueChecksFailures,
   StoredChangeProposal,
 } from "../../interpreter/finalizationProposal.ts";
 import {
@@ -860,22 +861,49 @@ export async function finalizerChangeProposalTicket(
   };
 }
 
-/** Counts the attempts of the ticket's requests that recorded a merge queue's checks failing. */
+/**
+ * What the attempts of the ticket's requests that recorded a merge queue's
+ * checks failing say of this request's removal: how many of them sent the
+ * ticket back to an agent, which is those naming no re-check commit, and
+ * whether the newest of them, by its request's work cycle, named one and was
+ * recorded in the cycle just before this request's. A cycle whose core fell
+ * back to the agent is that re-check's cycle all the same, since a request's
+ * bundle is not read here.
+ */
 export async function finalizerChangeProposalQueueChecksFailures(
   client: pg.PoolClient,
   claim: FinalizationClaim,
-): Promise<number> {
-  const found = await client.query<{ failures: string }>(
-    sql`SELECT count(*) AS failures
-         FROM finalization_attempt a
-        WHERE a.tenant = ${claim.partition.tenant} AND a.project = ${claim.partition.project}
-          AND a.ticket = ${claim.ticket}
-          AND a.failure_kind = 'QueueChecksFailed'`,
+): Promise<FinalizationQueueChecksFailures> {
+  const { tenant, project } = claim.partition;
+  const found = await client.query<{ sendbacks: string; rechecked: boolean }>(
+    sql`SELECT (SELECT count(*)
+                  FROM finalization_attempt a
+                 WHERE a.tenant = ${tenant} AND a.project = ${project}
+                   AND a.ticket = ${claim.ticket}
+                   AND a.failure_kind = 'QueueChecksFailed'
+                   AND a.recheck_commit IS NULL) AS sendbacks,
+               COALESCE((SELECT a.recheck_commit IS NOT NULL
+                                AND f.work_cycle + 1 = r.work_cycle
+                           FROM finalization_attempt a
+                           JOIN finalization_request f
+                             ON f.tenant = a.tenant AND f.project = a.project
+                            AND f.request = a.request
+                          WHERE a.tenant = ${tenant} AND a.project = ${project}
+                            AND a.ticket = ${claim.ticket}
+                            AND a.failure_kind = 'QueueChecksFailed'
+                          ORDER BY f.work_cycle DESC, a.prepared_at DESC, a.attempt DESC
+                          LIMIT 1), false) AS rechecked
+          FROM finalization_request r
+         WHERE r.tenant = ${tenant} AND r.project = ${project}
+           AND r.request = ${claim.request}`,
   );
-  return projectRowCounter(
-    found.rows[0]?.failures ?? "0",
-    "ticket queue checks failures",
-  );
+  const row = found.rows[0];
+  if (row === undefined)
+    throw new Error("finalizer row: a claimed request was not found");
+  return {
+    sendbacks: projectRowCounter(row.sendbacks, "ticket queue sendbacks"),
+    rechecked: row.rechecked,
+  };
 }
 
 /**

@@ -1144,7 +1144,7 @@ test("a merge queue's acts are addressed to the proved proposal at the pinned he
   assert.deepEqual(
     finalizationProposalNext(
       merging,
-      provedInQueue(queueRemoval("ChecksFailed", "failed_checks")),
+      provedInQueue(queueRemoval("ChecksTimedOut", "checks_timed_out")),
       bounds,
     ),
     {
@@ -1215,57 +1215,96 @@ function requeuedRemoval(
   );
 }
 
-test("a second removal for failed checks is recorded against the proposal's base, with the commit the queue built", () => {
+test("a first removal for failed checks is recorded against the proposal's base and its pinned head, with the commit the queue built, and is not enqueued again", () => {
   const removed = queueRemoval("ChecksFailed", "failed_checks");
   assert.ok(removed.removal !== undefined);
+  const recorded = {
+    decide: "RecordQueueChecksFailed",
+    base: request.base.ref,
+    head: request.head.commit,
+  } as const;
+  assert.deepEqual(
+    finalizationProposalNext(merging, provedInQueue(removed), bounds),
+    recorded,
+  );
   assert.deepEqual(
     finalizationProposalNext(merging, requeuedRemoval(removed), bounds),
-    { decide: "RecordQueueChecksFailed", base: request.base.ref },
+    recorded,
+    "a failed check after a timed-out one's re-enqueue",
   );
   const groupCommit = asGitObjectId("9".repeat(40));
   assert.deepEqual(
     finalizationProposalNext(
       merging,
-      requeuedRemoval({
+      provedInQueue({
         ...removed,
         removal: { ...removed.removal, groupCommit },
       }),
       bounds,
     ),
-    { decide: "RecordQueueChecksFailed", base: request.base.ref, groupCommit },
+    { ...recorded, groupCommit },
   );
 });
 
-test("a ticket sent back for its queue's checks as often as its bound allows holds as merges spent, and an unread base holds", () => {
+test("a queue's failed checks name the removed head to re-check, except in a re-check's cycle, which is a sendback held once the bound is spent", () => {
   const base = {
     ref: request.base.ref,
     commit: asGitObjectId("8".repeat(40)),
   };
-  assert.deepEqual(finalizationQueueRework(0, 2, base), {
-    rework: "Record",
-    base,
-  });
-  assert.deepEqual(finalizationQueueRework(1, 2, base), {
-    rework: "Record",
-    base,
-  });
+  const head = request.head.commit;
+  for (const sendbacks of [0, 1, 2, 5])
+    assert.deepEqual(
+      finalizationQueueRework({ sendbacks, rechecked: false }, 2, base, head),
+      { rework: "Record", base, recheckCommit: head },
+      `a removal outside a re-check's cycle re-checks after ${String(sendbacks)} sendbacks`,
+    );
+  for (const sendbacks of [0, 1])
+    assert.deepEqual(
+      finalizationQueueRework({ sendbacks, rechecked: true }, 2, base, head),
+      { rework: "Record", base },
+      `a removal in a re-check's cycle is sent back after ${String(sendbacks)}`,
+    );
   for (const read of [base, undefined])
-    assert.deepEqual(finalizationQueueRework(2, 2, read), {
-      rework: "Hold",
-      hold: "ProposalMergesExhausted",
-    });
-  assert.deepEqual(finalizationQueueRework(1, 2, undefined), {
-    rework: "Hold",
-    hold: "ProposalBaseUnreadable",
-  });
+    assert.deepEqual(
+      finalizationQueueRework({ sendbacks: 2, rechecked: true }, 2, read, head),
+      { rework: "Hold", hold: "ProposalMergesExhausted" },
+    );
+  for (const rechecked of [false, true])
+    assert.deepEqual(
+      finalizationQueueRework({ sendbacks: 1, rechecked }, 2, undefined, head),
+      { rework: "Hold", hold: "ProposalBaseUnreadable" },
+    );
+  assert.deepEqual(
+    finalizationQueueRework(
+      { sendbacks: 2, rechecked: false },
+      2,
+      undefined,
+      head,
+    ),
+    { rework: "Hold", hold: "ProposalBaseUnreadable" },
+    "a spent bound holds only where a sendback is due",
+  );
   assert.ok(
     finalizationUnavailableKinds.some(
       (kind) => kind === "ProposalMergesExhausted",
     ),
     "the hold past the bound escalates",
   );
-  assert.throws(() => finalizationQueueRework(-1, 2, base), RangeError);
-  assert.throws(() => finalizationQueueRework(0, 0, base), RangeError);
+  assert.throws(
+    () =>
+      finalizationQueueRework(
+        { sendbacks: -1, rechecked: true },
+        2,
+        base,
+        head,
+      ),
+    RangeError,
+  );
+  assert.throws(
+    () =>
+      finalizationQueueRework({ sendbacks: 0, rechecked: true }, 0, base, head),
+    RangeError,
+  );
 });
 
 test("a removal for a conflict sends the ticket back to work, as a conflicted merge does", () => {

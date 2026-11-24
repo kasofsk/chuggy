@@ -2730,7 +2730,10 @@ test("a queue's failed checks are recorded with the base read and the commit the
   ]);
   const claim = await finalizerClaim(rig, project, "owner-queuechecks");
   const store = postgresFinalizer(rig.pool);
-  assert.equal(await store.ticketQueueChecksFailures(claim), 0);
+  assert.deepEqual(await store.ticketQueueChecksFailures(claim), {
+    sendbacks: 0,
+    rechecked: false,
+  });
   for (const [label, failure] of [
     [
       "queuechecks-one",
@@ -2773,10 +2776,105 @@ test("a queue's failed checks are recorded with the base read and the commit the
       },
     ],
   );
-  assert.equal(
+  assert.deepEqual(
     await store.ticketQueueChecksFailures(claim),
-    1,
+    { sendbacks: 1, rechecked: false },
     "only the queue's failed checks are counted",
+  );
+});
+
+/**
+ * Stands a request of the claim's ticket in the work cycle after the claim's,
+ * fulfilled so it is no live one beside it, and answers its claim.
+ */
+async function queueRecheckCycleClaim(
+  claim: FinalizationClaim,
+  label: string,
+): Promise<FinalizationClaim> {
+  const request = `${claim.request}-${label}`;
+  await rig.harness.query(
+    `INSERT INTO finalization_request
+       (tenant, project, request, authorizing_seq, effect_position, ticket,
+        ticket_version, request_generation, kind, state, work_cycle,
+        finalization_generation)
+     SELECT tenant, project, $4, authorizing_seq, effect_position + 1, ticket,
+            ticket_version, request_generation, kind, 'Fulfilled',
+            work_cycle + 1, finalization_generation
+       FROM finalization_request
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [claim.partition.tenant, claim.partition.project, claim.request, request],
+  );
+  return { ...claim, request };
+}
+
+test("a queue's failed checks naming a re-check commit are no sendback, and the cycle straight after the newest of them is its re-check's", async () => {
+  const { project } = await finalizerSubject(rig, "queuerecheck", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  const claim = await finalizerClaim(rig, project, "owner-queuerecheck");
+  const store = postgresFinalizer(rig.pool);
+  const head = asGitObjectId(finalizerCommit());
+  assert.deepEqual(
+    await store.recordAttempt(
+      attemptFailedRecordOf(claim, project, "queuerecheck-one", {
+        failureKind: "QueueChecksFailed",
+        proposalBase: queueProposalBase,
+        recheckCommit: head,
+      }),
+    ),
+    { recorded: "Attempt" },
+  );
+  assert.deepEqual(
+    await rig.as(
+      `SELECT recheck_commit FROM finalization_attempt
+        WHERE tenant=$1 AND project=$2 AND failure_kind='QueueChecksFailed'`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [{ recheck_commit: head }],
+  );
+  assert.deepEqual(
+    await store.ticketQueueChecksFailures(claim),
+    { sendbacks: 0, rechecked: false },
+    "a re-check is no sendback, and its own cycle is not the one after it",
+  );
+  const next = await queueRecheckCycleClaim(claim, "next");
+  assert.deepEqual(await store.ticketQueueChecksFailures(next), {
+    sendbacks: 0,
+    rechecked: true,
+  });
+  const later = await queueRecheckCycleClaim(next, "later");
+  assert.deepEqual(
+    await store.ticketQueueChecksFailures(later),
+    { sendbacks: 0, rechecked: false },
+    "a cycle further on is not the re-check's",
+  );
+});
+
+test("a sendback recorded after a re-check is counted, and leaves the cycle after it no re-check's", async () => {
+  const { project } = await finalizerSubject(rig, "queuesendback", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  const claim = await finalizerClaim(rig, project, "owner-queuesendback");
+  const store = postgresFinalizer(rig.pool);
+  for (const [label, recheckCommit] of [
+    ["queuesendback-recheck", asGitObjectId(finalizerCommit())],
+    ["queuesendback-agent", undefined],
+  ] as const)
+    assert.deepEqual(
+      await store.recordAttempt(
+        attemptFailedRecordOf(claim, project, label, {
+          failureKind: "QueueChecksFailed",
+          proposalBase: queueProposalBase,
+          ...(recheckCommit === undefined ? {} : { recheckCommit }),
+        }),
+      ),
+      { recorded: "Attempt" },
+    );
+  assert.deepEqual(
+    await store.ticketQueueChecksFailures(
+      await queueRecheckCycleClaim(claim, "next"),
+    ),
+    { sendbacks: 1, rechecked: false },
   );
 });
 

@@ -3229,3 +3229,44 @@ test("a rework after a failed landing merges in the change that landing recorded
     unchanged,
   );
 });
+
+test("a re-check rework whose failed landing recorded no change commit merges in the commit it re-checks as the change, and is told so", async () => {
+  const recheck = "3".repeat(40);
+  const changeCommit = "2".repeat(40);
+  const reworked = (recorded?: string): ExecutionSchedulerService => ({
+    ...landingService(landingBrief, [], []),
+    failedLanding: {
+      landing: () =>
+        Promise.resolve({
+          read: "Landing" as const,
+          landing: {
+            targetCommit: "1".repeat(40),
+            ...(recorded === undefined ? {} : { changeCommit: recorded }),
+            conflicted: false,
+            failure: "QueueChecksFailed" as const,
+          },
+          recheck,
+        }),
+    },
+  });
+  assert.deepEqual(await landingTargetMerge(reworked()), {
+    ref: "refs/heads/release",
+    pipelinesWritable: true,
+    change: recheck,
+  });
+  assert.deepEqual(
+    await landingTargetMerge(reworked(changeCommit)),
+    {
+      ref: "refs/heads/release",
+      pipelinesWritable: true,
+      change: changeCommit,
+    },
+    "a recorded change commit is the change",
+  );
+  const { placed } = await landingLaunched(reworked());
+  const lines =
+    placed.invocation.briefing.sections
+      .find((section) => section.section === "FailedLanding")
+      ?.lines.join("\n") ?? "";
+  assert.ok(lines.includes(`That change ends at commit ${recheck};`));
+});

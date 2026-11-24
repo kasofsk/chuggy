@@ -50,14 +50,22 @@
  * A MERGE ITS BASE'S QUEUE MAKES IS FOLLOWED THERE, AND GIVEN UP ON THE WAY
  * OUT. A proposal waiting its turn holds as `ProposalQueued`, off that list for
  * as long as the queue takes, and the removals only a person can answer are
- * holds on it. A second removal for failed checks is the change's own failure,
- * sent back to work against the base the queue merged it onto as that base is
- * read then, until the ticket has been sent back for it as often as its bound
- * allows, after which it holds as merges spent. A finalization that aborts or
- * escalates while its proposal may be queued asks the queue to give it up
- * first, because a queued proposal merges with nobody asking; the standing
- * read after that request is what is written down, never the request's own
- * answer.
+ * holds on it. A removal for failed checks is the change's own failure,
+ * recorded against the base the queue merged it onto as that base is read
+ * then, and re-checked there by the next work cycle, which merges that base
+ * into the removed head without an agent wherever the merge is clean. A
+ * removal in the cycle that re-check made is sent back to an agent instead,
+ * until the ticket has been sent back to one as often as its bound allows,
+ * after which it holds as merges spent. Each path is bounded: a re-checked
+ * head the queue fails again, and a re-check its core handed to the agent, are
+ * removed in the cycle straight after the failure that named it, so that
+ * removal is a counted sendback; a re-check whose evaluation fails is reworked
+ * under the rework cap (`reworkCap.ts`); and a `TargetMoved` re-check in
+ * between is paid for by the other ticket's landing that moved the target. A
+ * finalization that aborts or escalates while its proposal may be queued asks
+ * the queue to give it up first, because a queued proposal merges with nobody
+ * asking; the standing read after that request is what is written down, never
+ * the request's own answer.
  *
  * THE FINALIZER MERGES ONLY THE HEAD PINNED FOR IT, AND A MERGE ANYBODY MADE
  * LANDS. Its own merge is conditional on the promoted candidate or on a head
@@ -209,6 +217,8 @@ export type FinalizationProposalDecision =
   | {
       readonly decide: "RecordQueueChecksFailed";
       readonly base: GitRefName;
+      /** The head the queue removed, which a re-check merges the base into. */
+      readonly head: GitObjectId;
       readonly groupCommit?: GitObjectId;
     }
   | { readonly decide: "Abort"; readonly dequeue?: ChangeProposalMergeRequest }
@@ -231,32 +241,56 @@ export interface FinalizationProposalBounds {
   readonly merging: ChangeProposalMergingBounds;
 }
 
-/** What a merge queue's second failed-check removal comes to: the failure recorded against the base as read, or a hold. */
+/**
+ * What a ticket's earlier failures of its merge queue's checks say of the
+ * next: how often it has been sent back to an agent for them, its
+ * `QueueChecksFailed` attempts naming no re-check commit, and whether this
+ * request finalizes the work cycle straight after the newest of them, where
+ * that one named a re-check commit.
+ */
+export interface FinalizationQueueChecksFailures {
+  readonly sendbacks: number;
+  readonly rechecked: boolean;
+}
+
+/**
+ * What a merge queue's failed-check removal comes to: the failure recorded
+ * against the base as read, naming the head to re-check where it is
+ * re-checked, or a hold.
+ */
 export type FinalizationQueueRework =
-  | { readonly rework: "Record"; readonly base: ObservedTarget }
+  | {
+      readonly rework: "Record";
+      readonly base: ObservedTarget;
+      readonly recheckCommit?: GitObjectId;
+    }
   | { readonly rework: "Hold"; readonly hold: FinalizationHoldKind };
 
 /**
  * Decides that removal once the ticket's earlier failures of it and its base
- * are read. A ticket already sent back for it `reworksMax` times holds as
- * merges spent, whatever the base reads, and a base that could not be read
- * holds until it can, since a rework told nothing of it could only land the
- * same tree again.
+ * are read: one in a re-check's cycle is sent back to an agent, holding as
+ * merges spent once `reworksMax` sendbacks are, and any other names its head
+ * to be re-checked whatever was spent. A base that could not be read holds
+ * until it can, since a rework told nothing of it could only land the same
+ * tree again.
  */
 export function finalizationQueueRework(
-  failures: number,
+  failures: FinalizationQueueChecksFailures,
   reworksMax: number,
   base: ObservedTarget | undefined,
+  head: GitObjectId,
 ): FinalizationQueueRework {
-  if (!Number.isSafeInteger(failures) || failures < 0)
-    throw new RangeError("queue rework: failures are not a count");
+  if (!Number.isSafeInteger(failures.sendbacks) || failures.sendbacks < 0)
+    throw new RangeError("queue rework: sendbacks are not a count");
   if (!Number.isSafeInteger(reworksMax) || reworksMax < 1)
     throw new RangeError("queue rework: the bound must be positive");
-  if (failures >= reworksMax)
+  if (failures.rechecked && failures.sendbacks >= reworksMax)
     return { rework: "Hold", hold: "ProposalMergesExhausted" };
-  return base === undefined
-    ? { rework: "Hold", hold: "ProposalBaseUnreadable" }
-    : { rework: "Record", base };
+  if (base === undefined)
+    return { rework: "Hold", hold: "ProposalBaseUnreadable" };
+  return failures.rechecked
+    ? { rework: "Record", base }
+    : { rework: "Record", base, recheckCommit: head };
 }
 
 /**
@@ -507,6 +541,7 @@ function finalizationProposalMergeNext(
       return {
         decide: "RecordQueueChecksFailed",
         base: request.base.ref,
+        head: merge.head,
         ...(next.removal.groupCommit === undefined
           ? {}
           : { groupCommit: next.removal.groupCommit }),
@@ -1014,11 +1049,12 @@ export interface FinalizerProposalStore {
   ): Promise<ChangeProposalIdentity | undefined>;
 
   /**
-   * How many attempts of any request of the same ticket recorded its merge
-   * queue's checks failing, which is how often the ticket has been sent back
-   * to work for it.
+   * What the attempts of any request of the same ticket that recorded its
+   * merge queue's checks failing say of this request's removal.
    */
-  ticketQueueChecksFailures(claim: FinalizationClaim): Promise<number>;
+  ticketQueueChecksFailures(
+    claim: FinalizationClaim,
+  ): Promise<FinalizationQueueChecksFailures>;
 
   /** Starts the row as the adoption of a proposal read open, refused where the row already stands. */
   adoptChangeProposal(

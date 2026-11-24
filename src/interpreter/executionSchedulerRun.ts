@@ -772,6 +772,21 @@ async function schedulerPriorEvaluationReports(
 }
 
 /**
+ * A failed landing whose change's commit is not recorded, taking the commit its
+ * bundle pins to be re-checked as where that change ends. A re-check its core
+ * cannot merge falls back to the agent, which otherwise would be handed none
+ * of the change it re-checks.
+ */
+function schedulerFailedLandingChange(
+  landing: FailedLanding,
+  recheck: string | undefined,
+): FailedLanding {
+  return landing.changeCommit !== undefined || recheck === undefined
+    ? landing
+    : { ...landing, changeCommit: recheck };
+}
+
+/**
  * Reads the failed landing a work task follows. Only a work task renders it,
  * so no other kind is asked, and a task that follows none is briefed with none.
  */
@@ -786,7 +801,9 @@ async function schedulerFailedLanding(
   );
   switch (read.read) {
     case "Landing":
-      return read.landing === undefined ? {} : { landing: read.landing };
+      return read.landing === undefined
+        ? {}
+        : { landing: schedulerFailedLandingChange(read.landing, read.recheck) };
     case "Unavailable":
       return { gathered: "Unavailable" };
   }
@@ -845,7 +862,8 @@ async function schedulerLanding(
 /**
  * What a work task's core merges in: the base its landing resolves to, whether
  * its own binding lets pipelines be written as its briefing reads it, and the
- * change commit the failed landing it follows recorded. Nothing where the
+ * change commit the failed landing it follows recorded, or the commit that
+ * landing pins to be re-checked where it recorded none. Nothing where the
  * ticket lands on no base.
  */
 function schedulerTargetMerge(

@@ -55,8 +55,8 @@
  * THE FAILURE KINDS ARE `MergeConflict`, `PreparationFailed`,
  * `QueueChecksFailed`, `RecheckRequired` AND `Restack`. An integration answered by a
  * conflict is the first, a preparation that produced no candidate is the
- * second, a merge queue whose required checks failed twice on the change
- * merged onto its base is the third, a serialized landing whose target
+ * second, a merge queue whose required checks failed on the change merged
+ * onto its base is the third, a serialized landing whose target
  * moved past what was evaluated is the fourth, and a Stacked ticket pending
  * unstacked that could now stack over the queue ahead of it is the fifth; all five reduce to the one priced `FinalizationNeedsWork` the model
  * already has, and no hold is any of them: a hold spends nothing and refunds
@@ -326,11 +326,11 @@ export const allFinalizationAttemptOutcomes: readonly FinalizationAttemptOutcome
 
 /**
  * An integration answered by a conflict, a preparation that produced no
- * candidate, a merge queue's required checks failing twice on the change
- * merged onto its base, a target that moved past the commit a serialized
- * landing evaluated, and a Stacked ticket sent back to evaluate over the queue
- * ahead of it, each of which reduces to the one priced
- * `FinalizationNeedsWork`.
+ * candidate, a merge queue's required checks failing on the change merged
+ * onto its base, re-checked there or sent back to an agent, a target that
+ * moved past the commit a serialized landing evaluated, and a Stacked ticket
+ * sent back to evaluate over the queue ahead of it, each of which reduces to
+ * the one priced `FinalizationNeedsWork`.
  */
 export type FinalizationFailureKind =
   | "MergeConflict"
@@ -1397,7 +1397,7 @@ export interface FinalizerConfig {
   readonly proposalMergesMax: number;
   readonly proposalMergeReadingsMax: number;
   readonly proposalUpdatesMax: number;
-  /** How many times one ticket is sent back to work for its merge queue's checks failing before it holds instead. */
+  /** How many times one ticket is sent back to an agent for its merge queue's checks failing, after a re-check of them, before it holds instead. */
   readonly proposalQueueReworksMax: number;
 }
 

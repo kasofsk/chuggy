@@ -124,6 +124,7 @@ interface FailedLandingRow {
   readonly proposal_base_ref: string | null;
   readonly proposal_base_commit: string | null;
   readonly queue_group_commit: string | null;
+  readonly recheck_commit: string | null;
 }
 
 /** What a row says of why its attempt failed, and nothing where it names a kind this code does not know. */
@@ -150,14 +151,32 @@ function failedLandingWhyOf(
   };
 }
 
+/** What one row says of a failed landing, and an outage where it names a failure kind this code does not know. */
+function failedLandingReadOf(row: FailedLandingRow): FailedLandingRead {
+  const why = failedLandingWhyOf(row);
+  if (why === undefined) return { read: "Unavailable" };
+  return {
+    read: "Landing",
+    landing: {
+      targetCommit: row.target_commit,
+      ...(row.change_commit === null
+        ? {}
+        : { changeCommit: row.change_commit }),
+      conflicted: row.conflicted,
+      ...why,
+    },
+    ...(row.recheck_commit === null ? {} : { recheck: row.recheck_commit }),
+  };
+}
+
 /**
  * Reads the failed landing this work task's own bundle pins: the target it was
  * prepared against, the commit of the one source a pinned result manifest
- * recorded, whether a conflict manifest was pinned beside them, and what the
- * pinned attempt recorded of why it failed. A bundle that pins no
- * `FinalizationAttempt` answers no row, a manifest with no source still answers
- * one, without the change's commit, and an attempt the row does not find
- * answers one with nothing of why.
+ * recorded, whether a conflict manifest was pinned beside them, what the
+ * pinned attempt recorded of why it failed, and the commit it pins to be
+ * re-checked. A bundle that pins no `FinalizationAttempt` answers no row, a
+ * manifest with no source still answers one, without the change's commit, and
+ * an attempt the row does not find answers one with nothing of why.
  */
 export function postgresFailedLanding(pool: pg.Pool): FailedLandingPort {
   return {
@@ -182,7 +201,14 @@ export function postgresFailedLanding(pool: pg.Pool): FailedLandingPort {
                                 AND c.bundle=q.input_bundle
                                 AND c.reference_kind='ConflictManifest') AS conflicted,
                      f.failure_kind, f.proposal_base_ref, f.proposal_base_commit,
-                     f.queue_group_commit
+                     f.queue_group_commit,
+                     (SELECT r.reference_id
+                        FROM input_bundle_reference r
+                       WHERE r.tenant=q.tenant AND r.project=q.project
+                         AND r.bundle=q.input_bundle
+                         AND r.reference_kind='Recheck'
+                       ORDER BY r.ordinal
+                       LIMIT 1) AS recheck_commit
                 FROM execution e
                 JOIN execution_request q
                   ON q.tenant=e.tenant AND q.project=e.project
@@ -206,21 +232,7 @@ export function postgresFailedLanding(pool: pg.Pool): FailedLandingPort {
         return { read: "Unavailable" };
       }
       const row = found.rows[0];
-      if (row === undefined) return { read: "Landing" };
-      const why = failedLandingWhyOf(row);
-      return why === undefined
-        ? { read: "Unavailable" }
-        : {
-            read: "Landing",
-            landing: {
-              targetCommit: row.target_commit,
-              ...(row.change_commit === null
-                ? {}
-                : { changeCommit: row.change_commit }),
-              conflicted: row.conflicted,
-              ...why,
-            },
-          };
+      return row === undefined ? { read: "Landing" } : failedLandingReadOf(row);
     },
   };
 }

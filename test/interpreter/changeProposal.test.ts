@@ -1990,35 +1990,66 @@ test("a removal for a conflict with an entry ahead is the conflict a refused mer
   );
 });
 
-test("a failed or timed-out check enqueues the same head once more, and the removal after that is the change's failure or a hold", () => {
-  for (const kind of ["ChecksFailed", "ChecksTimedOut"] as const) {
-    const reason =
-      kind === "ChecksFailed" ? "failed_checks" : "checks_timed_out";
-    assert.deepEqual(
-      changeProposalMergeNext(
-        request,
-        queuedIdle,
-        queueing(removedBy(kind, reason), { entered: true }),
-        mergeBounds,
-      ),
-      { next: "Enqueue", requeuedAfterMs: removedAt },
-      kind,
-    );
-    const again = removedBy(kind, reason, removedAgainAt);
-    const removal = again.removal;
-    assert.ok(removal !== undefined);
-    assert.deepEqual(
-      changeProposalMergeNext(
-        request,
-        queuedIdle,
-        queueing(again, { entered: true, requeuedAfterMs: removedAt }),
-        mergeBounds,
-      ),
-      kind === "ChecksFailed"
-        ? { next: "ChecksFailed", removal }
-        : { next: "Held", reason: "QueueTimedOut" },
-      kind,
-    );
+test("a timed-out check enqueues the same head once more, and the removal after that holds", () => {
+  const reason = "checks_timed_out";
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      queuedIdle,
+      queueing(removedBy("ChecksTimedOut", reason), { entered: true }),
+      mergeBounds,
+    ),
+    { next: "Enqueue", requeuedAfterMs: removedAt },
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      queuedIdle,
+      queueing(removedBy("ChecksTimedOut", reason, removedAgainAt), {
+        entered: true,
+        requeuedAfterMs: removedAt,
+      }),
+      mergeBounds,
+    ),
+    { next: "Held", reason: "QueueTimedOut" },
+  );
+});
+
+test("a failed check is the change's failure at its first removal, and is never enqueued again", () => {
+  const first = removedBy("ChecksFailed", "failed_checks");
+  assert.ok(first.removal !== undefined);
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      queuedIdle,
+      queueing(first, { entered: true }),
+      mergeBounds,
+    ),
+    { next: "ChecksFailed", removal: first.removal },
+  );
+  const afterTimeout = removedBy(
+    "ChecksFailed",
+    "failed_checks",
+    removedAgainAt,
+  );
+  assert.ok(afterTimeout.removal !== undefined);
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      queuedIdle,
+      queueing(afterTimeout, { entered: true, requeuedAfterMs: removedAt }),
+      mergeBounds,
+    ),
+    { next: "ChecksFailed", removal: afterTimeout.removal },
+    "a failed check after a timed-out one's re-enqueue is the change's failure too",
+  );
+});
+
+test("the removal a re-enqueue answered is that enqueue still waiting to be taken", () => {
+  for (const [kind, reason] of [
+    ["ChecksFailed", "failed_checks"],
+    ["ChecksTimedOut", "checks_timed_out"],
+  ] as const)
     assert.deepEqual(
       changeProposalMergeNext(
         request,
@@ -2035,24 +2066,20 @@ test("a failed or timed-out check enqueues the same head once more, and the remo
         reason: "Blocked",
         rereadInSecs: proposalMergeRereadSecs,
       },
-      "the removal a second enqueue answered is that enqueue still waiting to be taken",
+      kind,
     );
-  }
 });
 
-test("the second failed-check removal carries the commit the queue built, where the forge named one", () => {
+test("a failed-check removal carries the commit the queue built, where the forge named one", () => {
   const groupCommit = asGitObjectId("9".repeat(40));
-  const again = removedBy("ChecksFailed", "failed_checks", removedAgainAt);
-  assert.ok(again.removal !== undefined);
-  const removal = { ...again.removal, groupCommit };
+  const first = removedBy("ChecksFailed", "failed_checks");
+  assert.ok(first.removal !== undefined);
+  const removal = { ...first.removal, groupCommit };
   assert.deepEqual(
     changeProposalMergeNext(
       request,
       queuedIdle,
-      queueing(
-        { ...again, removal },
-        { entered: true, requeuedAfterMs: removedAt },
-      ),
+      queueing({ ...first, removal }, { entered: true }),
       mergeBounds,
     ),
     { next: "ChecksFailed", removal },

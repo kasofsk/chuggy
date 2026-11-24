@@ -773,6 +773,49 @@ test("only a re-check send-back pins the accepted commit to re-report", () => {
   assert.deepEqual(recheckReferences("RecheckRequired"), []);
 });
 
+/** The `Recheck` and `TargetCommit` references a rework after a queue's failed checks pins, naming `recheckCommit` where the attempt recorded one. */
+function queueChecksFailedReferences(
+  recheckCommit?: ReturnType<typeof asGitObjectId>,
+): readonly { readonly kind: string; readonly reference: string }[] {
+  return inputBundleReferencesOf(
+    { configurationRevision: "revision", configurationDigest: "d".repeat(64) },
+    {
+      bundle: "bundle",
+      evidence: {
+        attempt: asFinalizationAttemptId("attempt"),
+        attemptDigest: "e".repeat(64),
+        targetCommit: asGitObjectId("a".repeat(40)),
+        proposalBase: asGitObjectId("9".repeat(40)),
+        failureKind: "QueueChecksFailed",
+        ...(recheckCommit === undefined ? {} : { recheckCommit }),
+        preparation: [{ kind: "Repository", reference: "repository" }],
+      },
+    },
+  )
+    .filter(
+      (reference) =>
+        reference.kind === "Recheck" || reference.kind === "TargetCommit",
+    )
+    .map(({ kind, reference }) => ({ kind, reference }));
+}
+
+/**
+ * A queue's failed checks re-checked on the base start from the base the queue
+ * failed them on, since the removed head already contains the attempt's
+ * target. Catches the target pinned, under which the core finds it contained
+ * and re-checks nothing, and a sendback to an agent pinned as a re-check.
+ */
+test("a queue's failed checks naming a re-check commit pin it as Recheck over their proposal base, and naming none pin the target alone", () => {
+  const head = asGitObjectId("7".repeat(40));
+  assert.deepEqual(queueChecksFailedReferences(head), [
+    { kind: "TargetCommit", reference: "9".repeat(40) },
+    { kind: "Recheck", reference: head },
+  ]);
+  assert.deepEqual(queueChecksFailedReferences(), [
+    { kind: "TargetCommit", reference: "a".repeat(40) },
+  ]);
+});
+
 /** The commit a ticket's first work cycle was accepted at, which a later work spawn's source names. */
 const recheckAcceptedCommit = asGitObjectId("7".repeat(40));
 

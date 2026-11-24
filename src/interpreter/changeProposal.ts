@@ -65,10 +65,10 @@
  * refused unspent, and the pinned head is put on the queue instead and
  * followed there: while it is queued it waits, and once it is removed the
  * forge's reason routes it. A merge concludes as any merge does; a conflict
- * is the conflict a refused merge settles to; a failed or timed-out check puts
- * the same head on the queue once more, and at the second removal a failed
- * check is the change's own to fix while a timed-out one holds; and anything
- * else, a person among it, holds. A refused enqueue waits on the
+ * is the conflict a refused merge settles to; a failed check is the change's
+ * own to answer for against the base; a timed-out one puts the same head on
+ * the queue again a single time and then holds; and anything else, a person
+ * among it, holds. A refused enqueue waits on the
  * forge's rules as a blocked merge does, and no branch on a queue is ever
  * brought up to date from here.
  *
@@ -1725,11 +1725,13 @@ function proposalMergeQueueRemoval(
 
 /**
  * What one removal of the pinned head authorizes, and nothing where it is the
- * removal a second enqueue already answered and that enqueue has not taken. A
- * failed or timed-out check puts the same head on the queue once more; the
- * removal after that one is a failure of the change itself where a check
- * failed, and holds where one never concluded; and a head anybody else
- * dequeued is never put back over them.
+ * removal a re-enqueue already answered and that enqueue has not taken. A
+ * failed check is a failure of the change against its base, which a re-check
+ * there can answer and putting it back on the queue cannot; a timed-out one
+ * puts the same head on the queue again a single time, since no check of the
+ * change's own can answer for a check that never reported, and the removal
+ * after that holds; and a head anybody else dequeued is never put back over
+ * them.
  */
 function proposalMergeQueueRemovedNext(
   queueing: ChangeProposalQueueing,
@@ -1741,13 +1743,14 @@ function proposalMergeQueueRemovedNext(
     case "Conflict":
       return proposalMergeConflicted;
     case "ChecksFailed":
+      return queueing.requeuedAfterMs === removal.atMs
+        ? undefined
+        : { next: "ChecksFailed", removal };
     case "ChecksTimedOut":
       if (queueing.requeuedAfterMs === undefined)
         return { next: "Enqueue", requeuedAfterMs: removal.atMs };
       if (queueing.requeuedAfterMs === removal.atMs) return undefined;
-      return removal.kind === "ChecksFailed"
-        ? { next: "ChecksFailed", removal }
-        : { next: "Held", reason: "QueueTimedOut" };
+      return { next: "Held", reason: "QueueTimedOut" };
     case "Dequeued":
       return { next: "Held", reason: "Dequeued" };
     default:
