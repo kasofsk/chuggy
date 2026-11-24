@@ -164,8 +164,8 @@ function failedLandingReadOf(row: FailedLandingRow): FailedLandingRead {
         : { changeCommit: row.change_commit }),
       conflicted: row.conflicted,
       ...why,
+      ...(row.recheck_commit === null ? {} : { recheck: row.recheck_commit }),
     },
-    ...(row.recheck_commit === null ? {} : { recheck: row.recheck_commit }),
   };
 }
 

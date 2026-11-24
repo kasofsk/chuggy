@@ -70,6 +70,20 @@ const failedLandings: readonly FailedLanding[] = [
     proposalBase: { ref: "refs/heads/base", commit: "3".repeat(40) },
     ...why,
   })),
+  {
+    targetCommit: "1".repeat(40),
+    conflicted: false,
+    failure: "QueueChecksFailed",
+    proposalBase: { ref: "refs/heads/base", commit: "3".repeat(40) },
+  },
+  {
+    targetCommit: "3".repeat(40),
+    changeCommit: "5".repeat(40),
+    conflicted: false,
+    failure: "QueueChecksFailed",
+    proposalBase: { ref: "refs/heads/base", commit: "3".repeat(40) },
+    recheck: "5".repeat(40),
+  },
 ];
 
 /** A pull request in every shape a dependency's is told in, its fields fixed so only the wording moves the digest. */
@@ -229,7 +243,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [23, "c79cc22d1577564cf29574684cc49b5488dc72aaaeb5e227aee17a2769d00771"],
+    [24, "bdd6fb7ff078ac171790b19e7f98f73bfa07c043c856fe33a175678d1d535f77"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });

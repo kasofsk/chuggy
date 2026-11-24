@@ -350,16 +350,11 @@ export interface PriorEvaluationReportsPort {
 }
 
 /**
- * What reading a failed landing found: the landing a work task follows, and
- * the commit its bundle pins as `Recheck` where it pins one; none for a task
- * its bundle pins no `FinalizationAttempt` for; or an outage.
+ * What reading a failed landing found: the landing a work task follows; none
+ * for a task its bundle pins no `FinalizationAttempt` for; or an outage.
  */
 export type FailedLandingRead =
-  | {
-      readonly read: "Landing";
-      readonly landing?: FailedLanding;
-      readonly recheck?: string;
-    }
+  | { readonly read: "Landing"; readonly landing?: FailedLanding }
   | { readonly read: "Unavailable" };
 
 export interface FailedLandingPort {
@@ -824,6 +819,7 @@ function briefingFailedLandingFault(
     [landing.changeCommit === undefined ? [] : [landing.changeCommit], 1],
     [base === undefined ? [] : [base.ref, base.commit], 2],
     [landing.groupCommit === undefined ? [] : [landing.groupCommit], 1],
+    [landing.recheck === undefined ? [] : [landing.recheck], 1],
   ]);
 }
 

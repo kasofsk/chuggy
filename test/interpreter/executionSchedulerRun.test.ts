@@ -3244,8 +3244,8 @@ test("a re-check rework whose failed landing recorded no change commit merges in
             ...(recorded === undefined ? {} : { changeCommit: recorded }),
             conflicted: false,
             failure: "QueueChecksFailed" as const,
+            recheck,
           },
-          recheck,
         }),
     },
   });

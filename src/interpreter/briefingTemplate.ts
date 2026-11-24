@@ -129,7 +129,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 23;
+export const briefingTemplateVersion = 24;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -221,10 +221,11 @@ export const briefingReworkPreface: readonly string[] = [
 /**
  * What a work task following a failed landing is told of it: the commit of the
  * target its workspace is at, the commit the passed change ends at where its
- * source was recorded, whether the landing pinned a conflict manifest, and what
+ * source was recorded, whether the landing pinned a conflict manifest, what
  * the attempt it pinned recorded of why — the kind, and for a failure a pull
  * request's forge reported, the base that proposal was refused onto as it was
- * read then and the commit its merge queue built.
+ * read then and the commit its merge queue built — and the commit its bundle
+ * pins as `Recheck` where it pins one.
  */
 export interface FailedLanding {
   readonly targetCommit: string;
@@ -233,6 +234,7 @@ export interface FailedLanding {
   readonly failure?: FinalizationFailureKind;
   readonly proposalBase?: { readonly ref: string; readonly commit: string };
   readonly groupCommit?: string;
+  readonly recheck?: string;
 }
 
 /**
@@ -242,6 +244,22 @@ export interface FailedLanding {
 const briefingWorkerGit =
   "git -c user.name=worker -c user.email=worker@invalid";
 
+/** What a merge queue's failed checks led to, which a re-check the core handed to the agent tells apart. */
+function briefingFailedLandingQueueLines(
+  landing: FailedLanding,
+): readonly string[] {
+  return [
+    "Its pull request was put on its base's merge queue, which ran the required checks on that change merged onto the base, and they failed.",
+    landing.recheck === undefined
+      ? "It was then checked again on the base, passed its evaluation and went back on the queue, and the queue's checks failed again."
+      : "This task is the check of that change again on the base, which the core could not merge and handed to you.",
+    landing.groupCommit === undefined
+      ? "The commit the queue built to run them on is not recorded."
+      : `The queue ran them on commit ${landing.groupCommit}, which it built.`,
+    "Which check failed is not carried to this task.",
+  ];
+}
+
 /** Why the change failed to land, as far as anything that reached this task says. */
 function briefingFailedLandingReason(
   landing: FailedLanding,
@@ -250,13 +268,7 @@ function briefingFailedLandingReason(
     landing.failure === "QueueChecksFailed" &&
     landing.proposalBase !== undefined
   )
-    return [
-      "Its pull request was put on its base's merge queue, which ran the required checks on that change merged onto the base. They failed, and failed again when it was queued once more.",
-      landing.groupCommit === undefined
-        ? "The commit the queue built to run them on is not recorded."
-        : `The queue ran them on commit ${landing.groupCommit}, which it built.`,
-      "Which check failed is not carried to this task.",
-    ];
+    return briefingFailedLandingQueueLines(landing);
   if (landing.conflicted)
     return ["It failed to land on a merge conflict with the target."];
   if (landing.failure === "MergeConflict" && landing.proposalBase !== undefined)
@@ -266,31 +278,29 @@ function briefingFailedLandingReason(
   return ["Why it failed to land is not carried to this task."];
 }
 
-/** What a failure its pull request's forge reported adds: the base, and the proposal kept open. */
-function briefingFailedLandingBaseLines(
-  base: NonNullable<FailedLanding["proposalBase"]>,
+/** What every failed landing's briefing ends with once the core merged a change: the conflict, what to change, and how to commit it. */
+function briefingFailedLandingClosingLines(
+  landing: FailedLanding,
+  onto: "target" | "base",
 ): readonly string[] {
   return [
-    `The pull request's base is ${base.ref}, which was at commit ${base.commit} when that was read.`,
-    "The pull request stays open, and the change this task makes is adopted onto it.",
+    `A merge that stopped on a conflict is left in progress, with its files listed in the section the core adds. Where the ${onto}'s own merge stopped, the change is not merged yet, and that section says so.`,
+    landing.failure === "QueueChecksFailed" &&
+    landing.proposalBase !== undefined
+      ? "Then run the checks on that tree and reproduce the failure there before changing anything to fix it. A failure that does not reproduce may have come from a change queued ahead of this one that never landed; say so in your report."
+      : `Change nothing but what landing on this base forces, and that can include files git merged without a mark, such as a migration whose number the ${onto} has since used.`,
+    `Commit what you change after the merge on top of it, with \`${briefingWorkerGit} commit -m <message>\` saying why each change was needed.`,
   ];
 }
 
-/**
- * What a work task following a failed landing is told: why it failed, and what
- * the worker's core merged before the agent started, which is the target and,
- * where its commit is recorded, the change after it.
- */
-export function briefingFailedLandingLines(
+/** What a push, or a pull request whose forge reported nothing, is told: the core merged the target and then the change. */
+function briefingFailedLandingTargetLines(
   landing: FailedLanding,
 ): readonly string[] {
   const opening = [
     "The change this ticket already made passed its evaluation and could not be landed on the target.",
     ...briefingFailedLandingReason(landing),
     `This workspace started at the target's commit ${landing.targetCommit}.`,
-    ...(landing.proposalBase === undefined
-      ? []
-      : briefingFailedLandingBaseLines(landing.proposalBase)),
   ];
   const change = landing.changeCommit;
   if (change === undefined) {
@@ -304,13 +314,60 @@ export function briefingFailedLandingLines(
     ...opening,
     `That change ends at commit ${change}; it is everything between the target and that commit, and can be more than one commit.`,
     "Before you started, the core merged the target into this workspace and then that change.",
-    "A merge that stopped on a conflict is left in progress, with its files listed in the section the core adds. Where the target's own merge stopped, the change is not merged yet, and that section says so.",
-    landing.failure === "QueueChecksFailed" &&
-    landing.proposalBase !== undefined
-      ? "Then run the checks on that tree and reproduce the failure there before changing anything to fix it. A failure that does not reproduce may have come from a change queued ahead of this one that never landed; say so in your report."
-      : "Change nothing but what landing on this base forces, and that can include files git merged without a mark, such as a migration whose number the target has since used.",
-    `Commit what you change after the merge on top of it, with \`${briefingWorkerGit} commit -m <message>\` saying why each change was needed.`,
+    ...briefingFailedLandingClosingLines(landing, "target"),
   ];
+}
+
+/**
+ * What a pull request whose forge reported the failure is told: the core
+ * merged the base it opens into and then the change, which is what the change
+ * has that the base lacks. Where the workspace started already holds what an
+ * earlier rework merged in from the base, so it is not where the change starts.
+ */
+function briefingFailedLandingBaseLines(
+  landing: FailedLanding,
+  base: NonNullable<FailedLanding["proposalBase"]>,
+): readonly string[] {
+  const opening = [
+    "The change this ticket already made passed its evaluation and its pull request could not be merged into its base.",
+    ...briefingFailedLandingReason(landing),
+    landing.recheck === undefined
+      ? `This workspace started at commit ${landing.targetCommit}, which the failed landing was prepared against.`
+      : `This workspace started at commit ${base.commit}, the base's commit when the failure was read.`,
+    "The pull request stays open, and the change this task makes is adopted onto it.",
+  ];
+  const baseAt = `When the failure was read, the base was at commit ${base.commit}; it may have moved since.`;
+  const change = landing.changeCommit ?? landing.recheck;
+  if (change === undefined) {
+    return [
+      ...opening,
+      "The commit of that change is not recorded.",
+      `Before you started, the core merged only the base ${base.ref} into this workspace, as it stood when this task started.`,
+      baseAt,
+      `This ticket's change is what the commit this workspace started at has that the base lacks: \`git diff ${base.commit}...${landing.targetCommit}\`.`,
+    ];
+  }
+  return [
+    ...opening,
+    `Before you started, the core merged into this workspace the base ${base.ref} as it stood when this task started, and then the change's commit ${change}.`,
+    baseAt,
+    `This ticket's change is what that commit has that the base lacks: \`git diff ${base.commit}...${change}\`. It is not everything between the commit this workspace started at and that one, which can hold what an earlier rework merged in from the base.`,
+    ...briefingFailedLandingClosingLines(landing, "base"),
+  ];
+}
+
+/**
+ * What a work task following a failed landing is told: why it failed, and what
+ * the worker's core merged before the agent started, which is the target, or
+ * for a pull request whose forge reported the failure the base it opens into,
+ * and where its commit is known, the change after it.
+ */
+export function briefingFailedLandingLines(
+  landing: FailedLanding,
+): readonly string[] {
+  return landing.proposalBase === undefined
+    ? briefingFailedLandingTargetLines(landing)
+    : briefingFailedLandingBaseLines(landing, landing.proposalBase);
 }
 
 /** What opens the section, which is what a reader needs before any one dependency. */
