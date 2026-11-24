@@ -108,6 +108,7 @@ import {
 } from "../contract/brief.ts";
 import {
   projectRepositoriesAnsweredMax,
+  queueFailedChecksMax,
   resultReportCharsMax,
   textCodePointsCount,
 } from "../contract/http.ts";
@@ -177,6 +178,7 @@ import {
   briefingLabels,
   briefingNorthStarPreface,
   briefingNorthStarUncarried,
+  briefingFailedChecksLine,
   briefingPipelinesUnwritable,
   briefingRequiredResult,
   briefingReworkPreface,
@@ -808,7 +810,7 @@ function briefingRuntimeFault(
   ]);
 }
 
-/** What a failed landing's commits and base have to be to render, which is printable lines. */
+/** What a failed landing's commits, base and failed checks have to be to render, which is printable lines. */
 function briefingFailedLandingFault(
   landing: FailedLanding | undefined,
 ): BriefingFault | undefined {
@@ -819,6 +821,8 @@ function briefingFailedLandingFault(
     [landing.changeCommit === undefined ? [] : [landing.changeCommit], 1],
     [base === undefined ? [] : [base.ref, base.commit], 2],
     [landing.groupCommit === undefined ? [] : [landing.groupCommit], 1],
+    [landing.failedChecks?.names ?? [], queueFailedChecksMax],
+    [[briefingFailedChecksLine(landing.failedChecks)], 1],
     [landing.recheck === undefined ? [] : [landing.recheck], 1],
   ]);
 }

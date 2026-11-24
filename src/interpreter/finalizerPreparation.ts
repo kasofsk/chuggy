@@ -60,6 +60,7 @@
 import { z } from "zod";
 
 import { asBoundedText } from "./boundedText.ts";
+import type { QueueFailedChecks } from "./queueFailedChecks.ts";
 import {
   finalizerIdentityCharsMax,
   type CandidateFile,
@@ -451,6 +452,8 @@ export interface AttemptRecord {
   readonly proposalBase?: Pick<ObservedTarget, "ref" | "commit">;
   /** The commit a merge queue built and whose checks failed. */
   readonly groupCommit?: GitObjectId;
+  /** The checks that failed on it, as far as the forge let them be read. */
+  readonly failedChecks?: QueueFailedChecks;
   /** The accepted commit a `RecheckRequired` or `Restack` failure sends back to be re-reported, and the removed head a `QueueChecksFailed` one sends back to be re-checked on its base. */
   readonly recheckCommit?: GitObjectId;
   /** Why a `RecheckRequired` failure was sent back, absent on every other attempt. */
@@ -551,8 +554,9 @@ const attemptApprovalRetiredPart = "false";
 /**
  * The exact bytes one attempt's digest is taken over, binding it to the request
  * it answers. The base ref an unheld target was read from, a proposal's base,
- * a queue's group commit, a re-check's commit, reason and base, and a
- * re-stack's line are last parts only where there is one, all but the first each behind its own label,
+ * a queue's group commit and its failed checks, a re-check's commit, reason
+ * and base, and a re-stack's line are last parts only where there is one, all
+ * but the first each behind its own label,
  * so every attempt without them keeps the bytes it had.
  */
 export function canonicalFinalizationAttempt(
@@ -587,6 +591,14 @@ export function canonicalFinalizationAttempt(
     ...(record.groupCommit === undefined
       ? []
       : ["groupCommit", record.groupCommit]),
+    ...(record.failedChecks === undefined
+      ? []
+      : [
+          "failedChecks",
+          String(record.failedChecks.names.length),
+          ...record.failedChecks.names,
+          String(record.failedChecks.truncated),
+        ]),
     ...(record.recheckCommit === undefined
       ? []
       : ["recheckCommit", record.recheckCommit]),

@@ -101,6 +101,7 @@ import type { TicketId } from "../domain/ids.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type { FinalizationOutcome } from "./projectCommand.ts";
 import type { Lifecycle, Partition, RecoveryEpoch } from "./projectStore.ts";
+import type { QueueFailedChecks } from "./queueFailedChecks.ts";
 import type { CredentialMintEvidence } from "./repositoryReadEvidence.ts";
 
 declare const finalizationAttemptIdBrand: unique symbol;
@@ -1529,6 +1530,11 @@ export interface FinalizationHoldRecord {
   readonly kind?: FinalizationUnavailableKind;
   /** The files a `TargetPathsRefused` hold is over, present at that kind and no other. */
   readonly refused?: ConflictSummary;
+  /**
+   * The checks a merge queue failed that a spent rework holds over, present at
+   * `ProposalMergesExhausted` alone; absent there, the hold keeps any it named.
+   */
+  readonly failedChecks?: QueueFailedChecks;
 }
 
 /**

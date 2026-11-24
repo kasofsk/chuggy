@@ -20,6 +20,11 @@
  */
 
 import assert from "node:assert/strict";
+
+import {
+  queueFailedCheckCharsMax,
+  queueFailedChecksMax,
+} from "../../src/contract/http.ts";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { after, before, test } from "node:test";
@@ -2709,7 +2714,11 @@ function attemptFailedRecordOf(
   label: string,
   failure: Pick<
     AttemptRecord,
-    "failureKind" | "proposalBase" | "groupCommit" | "recheckCommit"
+    | "failureKind"
+    | "proposalBase"
+    | "groupCommit"
+    | "failedChecks"
+    | "recheckCommit"
   >,
 ): AttemptRecord {
   const { candidate, ...unprepared } = attemptRecordOf(claim, project, label);
@@ -2781,6 +2790,134 @@ test("a queue's failed checks are recorded with the base read and the commit the
     { sendbacks: 1, rechecked: false },
     "only the queue's failed checks are counted",
   );
+});
+
+test("a queue's failed checks are recorded with the names its read kept, cut or not, and with none where it kept none", async () => {
+  const { project } = await finalizerSubject(rig, "queuenames", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  const claim = await finalizerClaim(rig, project, "owner-queuenames");
+  const store = postgresFinalizer(rig.pool);
+  for (const [label, failedChecks] of [
+    ["queuenames-named", { names: ["check", "e2e"], truncated: false }],
+    ["queuenames-cut", { names: ["check"], truncated: true }],
+    ["queuenames-none", undefined],
+  ] as const)
+    assert.deepEqual(
+      await store.recordAttempt(
+        attemptFailedRecordOf(claim, project, label, {
+          failureKind: "QueueChecksFailed",
+          proposalBase: queueProposalBase,
+          groupCommit: queueGroupCommit,
+          ...(failedChecks === undefined ? {} : { failedChecks }),
+        }),
+      ),
+      { recorded: "Attempt" },
+      label,
+    );
+  assert.deepEqual(
+    await rig.as(
+      `SELECT split_part(attempt, '-', 3) AS attempt, queue_failed_checks,
+              queue_failed_checks_truncated
+         FROM finalization_attempt WHERE tenant=$1 AND project=$2
+        ORDER BY attempt`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [
+      {
+        attempt: "cut",
+        queue_failed_checks: ["check"],
+        queue_failed_checks_truncated: true,
+      },
+      {
+        attempt: "named",
+        queue_failed_checks: ["check", "e2e"],
+        queue_failed_checks_truncated: false,
+      },
+      {
+        attempt: "none",
+        queue_failed_checks: null,
+        queue_failed_checks_truncated: null,
+      },
+    ],
+  );
+});
+
+const queueNamesNamed = { names: ["check"], truncated: false };
+
+/** A failure naming failed checks the attempt's CHECK refuses, by the label it is recorded under. */
+const queueNamesRefused = [
+  [
+    "queuenamesrefused-conflict",
+    {
+      failureKind: "MergeConflict",
+      proposalBase: queueProposalBase,
+      failedChecks: queueNamesNamed,
+    },
+  ],
+  [
+    "queuenamesrefused-preparation",
+    { failureKind: "PreparationFailed", failedChecks: queueNamesNamed },
+  ],
+  [
+    "queuenamesrefused-empty",
+    {
+      failureKind: "QueueChecksFailed",
+      proposalBase: queueProposalBase,
+      failedChecks: { names: [], truncated: false },
+    },
+  ],
+  [
+    "queuenamesrefused-many",
+    {
+      failureKind: "QueueChecksFailed",
+      proposalBase: queueProposalBase,
+      failedChecks: {
+        names: Array.from(
+          { length: queueFailedChecksMax + 1 },
+          (_none, at) => `check ${String(at)}`,
+        ),
+        truncated: true,
+      },
+    },
+  ],
+  [
+    "queuenamesrefused-long",
+    {
+      failureKind: "QueueChecksFailed",
+      proposalBase: queueProposalBase,
+      failedChecks: {
+        names: ["\u{1F600}".repeat(queueFailedCheckCharsMax + 1)],
+        truncated: true,
+      },
+    },
+  ],
+] as const;
+
+test("failed checks are refused on any failure but a queue's, and refused unbounded or without their cut", async () => {
+  const { project } = await finalizerSubject(rig, "queuenamesrefused", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  const claim = await finalizerClaim(rig, project, "owner-queuenamesrefused");
+  const store = postgresFinalizer(rig.pool);
+  for (const [label, failure] of queueNamesRefused)
+    await assert.rejects(
+      store.recordAttempt(
+        attemptFailedRecordOf(claim, project, label, failure),
+      ),
+      /finalization_attempt_queue_failed_checks_are_whole/u,
+      label,
+    );
+  const prepared = {
+    ...attemptRecordOf(claim, project, "queuenamesrefused-prepared"),
+    failedChecks: queueNamesNamed,
+  };
+  await assert.rejects(
+    store.recordAttempt(prepared),
+    /finalization_attempt_queue_failed_checks_are_whole/u,
+    "a prepared attempt",
+  );
+  assert.deepEqual(await attemptsOf(project), []);
 });
 
 /**

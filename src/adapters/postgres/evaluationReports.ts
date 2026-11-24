@@ -124,13 +124,20 @@ interface FailedLandingRow {
   readonly proposal_base_ref: string | null;
   readonly proposal_base_commit: string | null;
   readonly queue_group_commit: string | null;
+  readonly queue_failed_checks: readonly string[] | null;
+  readonly queue_failed_checks_truncated: boolean | null;
   readonly recheck_commit: string | null;
 }
 
 /** What a row says of why its attempt failed, and nothing where it names a kind this code does not know. */
 function failedLandingWhyOf(
   row: FailedLandingRow,
-): Pick<FailedLanding, "failure" | "proposalBase" | "groupCommit"> | undefined {
+):
+  | Pick<
+      FailedLanding,
+      "failure" | "proposalBase" | "groupCommit" | "failedChecks"
+    >
+  | undefined {
   const failure = allFinalizationFailureKinds.find(
     (kind) => kind === row.failure_kind,
   );
@@ -148,6 +155,15 @@ function failedLandingWhyOf(
     ...(row.queue_group_commit === null
       ? {}
       : { groupCommit: row.queue_group_commit }),
+    ...(row.queue_failed_checks === null ||
+    row.queue_failed_checks_truncated === null
+      ? {}
+      : {
+          failedChecks: {
+            names: row.queue_failed_checks,
+            truncated: row.queue_failed_checks_truncated,
+          },
+        }),
   };
 }
 
@@ -201,7 +217,8 @@ export function postgresFailedLanding(pool: pg.Pool): FailedLandingPort {
                                 AND c.bundle=q.input_bundle
                                 AND c.reference_kind='ConflictManifest') AS conflicted,
                      f.failure_kind, f.proposal_base_ref, f.proposal_base_commit,
-                     f.queue_group_commit,
+                     f.queue_group_commit, f.queue_failed_checks,
+                     f.queue_failed_checks_truncated,
                      (SELECT r.reference_id
                         FROM input_bundle_reference r
                        WHERE r.tenant=q.tenant AND r.project=q.project

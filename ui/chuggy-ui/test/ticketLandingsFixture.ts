@@ -201,6 +201,32 @@ export function landingAwaitingMerge(
   };
 }
 
+/** A landing of `cycle` whose merge queue failed its checks, naming `failedChecks` where given. */
+export function landingQueueChecksFailed(
+  cycle: number,
+  failedChecks?: {
+    readonly names: readonly string[];
+    readonly truncated: boolean;
+  },
+): TicketLandingResponse {
+  return {
+    cycle,
+    generation: 1,
+    attempts: 1,
+    state: "Failed",
+    attempt: {
+      ...landingAttempt,
+      outcome: "Failed",
+      failureKind: "QueueChecksFailed",
+      ...(failedChecks === undefined
+        ? {}
+        : {
+            failedChecks: { ...failedChecks, names: [...failedChecks.names] },
+          }),
+    },
+  };
+}
+
 /** A landing of `cycle` held on an unreadable target since `since`. */
 export function landingHeld(
   cycle: number,

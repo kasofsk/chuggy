@@ -759,7 +759,9 @@ async function finalizerRecordHold(
       ${record.kind ?? null},${claim.owner},${claim.claimGeneration},
       ${claim.requestGeneration},${claim.recoveryEpoch},
       ${record.refused === undefined ? null : [...record.refused.paths]}::text[],
-      ${record.refused?.truncated ?? null}::boolean)`,
+      ${record.refused?.truncated ?? null}::boolean,
+      ${record.failedChecks === undefined ? null : [...record.failedChecks.names]}::text[],
+      ${record.failedChecks?.truncated ?? null}::boolean)`,
   );
   const row = held.rows[0];
   if (row === undefined)

@@ -116,7 +116,8 @@ export interface TicketLandingDetail {
  * The hold a landing waits on or escalated from, and since when, with the
  * forge's reason and who removed its pull request where it escalates a removal
  * from a merge queue, and the files no run may push that the target changed
- * where it names them, a cut list ending in an ellipsis.
+ * where it names them, a cut list ending in an ellipsis, and so the checks a
+ * merge queue failed where a spent rework names them.
  */
 export interface TicketLandingHold {
   readonly kind: FinalizationUnavailableKind;
@@ -124,6 +125,7 @@ export interface TicketLandingHold {
   readonly since: string;
   readonly removal: string | undefined;
   readonly refused: readonly string[] | undefined;
+  readonly failedChecks: string | undefined;
 }
 
 /**
@@ -148,6 +150,8 @@ export interface TicketLanding {
   /** Why it failed, where it is a failure that names one. */
   readonly failure: string | undefined;
   readonly conflictCount: number;
+  /** The checks a merge queue failed, where the attempt names them, a cut list ending in an ellipsis. */
+  readonly failedChecks: string | undefined;
   readonly hold: TicketLandingHold | undefined;
   readonly wait: TicketLandingWait | undefined;
   readonly link: TicketDeliveryLink | undefined;
@@ -233,6 +237,17 @@ type TicketLandingHoldRead = NonNullable<
   Extract<TicketLandingRead, { state: "Held" | "Unavailable" }>["hold"]
 >;
 
+/** The checks a merge queue failed as one list, a cut one ending in an ellipsis. */
+function ticketLandingFailedChecksText(
+  failed:
+    | { readonly names: readonly string[]; readonly truncated: boolean }
+    | undefined,
+): string | undefined {
+  return failed === undefined
+    ? undefined
+    : [...failed.names, ...(failed.truncated ? ["…"] : [])].join(", ");
+}
+
 /** The forge's reason for a removal from a merge queue, and who removed the pull request where it names them. */
 function ticketLandingRemovalText(
   removal: NonNullable<TicketLandingHoldRead["removal"]>,
@@ -284,6 +299,7 @@ function ticketLandingHoldOf(
       hold.refused === undefined
         ? undefined
         : [...hold.refused.paths, ...(hold.refused.truncated ? ["…"] : [])],
+    failedChecks: ticketLandingFailedChecksText(hold.failedChecks),
   };
 }
 
@@ -362,6 +378,7 @@ export function ticketLandingOf(
     tone: ticketLandingTone(read.state),
     failure: ticketLandingFailureOf(read, text),
     conflictCount: read.conflict?.paths.length ?? 0,
+    failedChecks: ticketLandingFailedChecksText(read.attempt?.failedChecks),
     hold: ticketLandingHoldOf(read, text),
     wait:
       read.state === "AwaitingMerge"
@@ -545,6 +562,36 @@ function ticketLandingLandedAt(
       };
 }
 
+/** Why a failed landing failed, with the checks a merge queue failed or the files it conflicted on where it names them. */
+function ticketLandingFailedText(
+  landing: TicketLanding,
+): CopyOrData | undefined {
+  if (landing.failure === undefined) return undefined;
+  if (landing.failedChecks !== undefined)
+    return {
+      id: "ticket-finalization-failure-checks",
+      args: {
+        failure: landing.failure,
+        checks: {
+          id: "ticket-finalization-failed-checks",
+          args: { checks: landing.failedChecks },
+        },
+      },
+    };
+  return landing.conflictCount === 0
+    ? landing.failure
+    : {
+        id: "ticket-finalization-failure-files",
+        args: {
+          failure: landing.failure,
+          files: {
+            id: "ticket-file-count",
+            args: { count: landing.conflictCount },
+          },
+        },
+      };
+}
+
 /** The one short fragment a landing's row carries. */
 export function ticketLandingFragment(
   landing: TicketLanding,
@@ -553,19 +600,7 @@ export function ticketLandingFragment(
   switch (landing.state) {
     case "Failed":
       return {
-        text:
-          landing.failure === undefined || landing.conflictCount === 0
-            ? landing.failure
-            : {
-                id: "ticket-finalization-failure-files",
-                args: {
-                  failure: landing.failure,
-                  files: {
-                    id: "ticket-file-count",
-                    args: { count: landing.conflictCount },
-                  },
-                },
-              },
+        text: ticketLandingFailedText(landing),
         link: undefined,
         commit: undefined,
         caveat: undefined,
@@ -653,9 +688,9 @@ function ticketLandingSummaryLabel(state: TicketLandingState): Copy {
 }
 
 /**
- * Who removed the pull request from its base's merge queue and why, for an
- * escalation at the hold the newest landing escalated from where that hold
- * names a removal.
+ * Who removed the pull request from its base's merge queue and why, and the
+ * checks it failed, for an escalation at the hold the newest landing escalated
+ * from where that hold names either.
  */
 export function ticketLandingEscalatedRemoval(
   landings: readonly TicketLanding[],
@@ -663,11 +698,23 @@ export function ticketLandingEscalatedRemoval(
 ): Copy | undefined {
   const newest = landings.at(-1);
   const hold = newest?.state === "Unavailable" ? newest.hold : undefined;
-  return hold?.removal === undefined || hold.kind !== evidence
-    ? undefined
-    : {
+  if (hold === undefined || hold.kind !== evidence) return undefined;
+  const checks: Copy | undefined =
+    hold.failedChecks === undefined
+      ? undefined
+      : {
+          id: "ticket-finalization-failed-checks",
+          args: { checks: hold.failedChecks },
+        };
+  if (hold.removal === undefined) return checks;
+  return checks === undefined
+    ? {
         id: "ticket-finalization-queue-removal",
         args: { removal: hold.removal },
+      }
+    : {
+        id: "ticket-finalization-queue-removal-checks",
+        args: { removal: hold.removal, checks },
       };
 }
 

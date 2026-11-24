@@ -106,6 +106,7 @@ export const allForgePermissionSets = [
   "write",
   "propose",
   "runPipelines",
+  "readChecks",
 ] as const;
 
 export type ForgePermissionSet = (typeof allForgePermissionSets)[number];
@@ -129,7 +130,21 @@ export interface ForgeRepositoryPermissions {
    * a refused mint, never a token without it.
    */
   readonly pipelineRuns?: "write";
+  /**
+   * Reading a commit's check runs, and its statuses, which a set naming them
+   * asks for only as far as the installation grants each: an owner accepts
+   * each of them apart, and a forge refuses a whole mint asking for one not
+   * accepted. Where it withholds one, the token is minted without it and says
+   * so in `granted`.
+   */
+  readonly checks?: "read";
+  readonly commitStatuses?: "read";
 }
+
+/** The permissions a set asks for only as far as an installation grants them, which a token answers it was minted with. */
+export const allForgeGrantedReads = ["checks", "commitStatuses"] as const;
+
+export type ForgeGrantedRead = (typeof allForgeGrantedReads)[number];
 
 /**
  * What each named set asks for. The record is exhaustive over
@@ -143,6 +158,7 @@ export const forgePermissionSets: Readonly<
   write: { contents: "write", pipelines: "write" },
   propose: { contents: "write", changeProposals: "write", pipelines: "write" },
   runPipelines: { contents: "read", pipelineRuns: "write" },
+  readChecks: { contents: "read", checks: "read", commitStatuses: "read" },
 };
 
 /** The segments a forge addresses an account or a repository by. */
@@ -345,6 +361,12 @@ export type ForgeTokenMinted =
       readonly minted: "Token";
       readonly token: ForgeInstallationToken;
       readonly expiresAtMs: number;
+      /**
+       * Which of the reads its set narrows the installation granted when the
+       * token was minted, present exactly where the set names one. A token
+       * held from before is answered with what was granted then.
+       */
+      readonly granted?: readonly ForgeGrantedRead[];
     }
   | {
       readonly minted: "Denied";

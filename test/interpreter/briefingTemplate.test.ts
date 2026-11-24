@@ -13,11 +13,18 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 
-import { resultReportCharsMax } from "../../src/contract/http.ts";
+import {
+  queueFailedCheckCharsMax,
+  queueFailedChecksMax,
+  resultReportCharsMax,
+  textCodePointsCount,
+} from "../../src/contract/http.ts";
+import { briefingLineCharsMax } from "../../src/contract/workerTask.ts";
 
 import {
   allBriefingCarriers,
   allTaskPurposes,
+  briefingFailedChecksLine,
   briefingFailedLandingLines,
   briefingHeading,
   briefingLabels,
@@ -63,6 +70,11 @@ const failedLandings: readonly FailedLanding[] = [
     { failure: "MergeConflict" as const },
     { failure: "QueueChecksFailed" as const },
     { failure: "QueueChecksFailed" as const, groupCommit: "4".repeat(40) },
+    ...[false, true].map((truncated) => ({
+      failure: "QueueChecksFailed" as const,
+      groupCommit: "4".repeat(40),
+      failedChecks: { names: ["check", "e2e"], truncated },
+    })),
   ].map((why) => ({
     targetCommit: "1".repeat(40),
     changeCommit: "2".repeat(40),
@@ -243,8 +255,33 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [24, "bdd6fb7ff078ac171790b19e7f98f73bfa07c043c856fe33a175678d1d535f77"],
+    [25, "fedb6a83ba3cfa239962b28a9b0cc1e644e9284f627a3505bc98ea48cf15b8b2"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
+  );
+});
+
+test("the line naming a queue's failed checks names each, says where they were cut, and fits a briefing line at every bound", () => {
+  assert.equal(
+    briefingFailedChecksLine(undefined),
+    "Which check failed is not carried to this task.",
+  );
+  assert.equal(
+    briefingFailedChecksLine({ names: ["check", "e2e"], truncated: false }),
+    "The checks that failed are check, e2e.",
+  );
+  assert.equal(
+    briefingFailedChecksLine({ names: ["check"], truncated: true }),
+    "The checks that failed include check, and others this task is not told of.",
+  );
+  const heaviest = {
+    names: Array.from({ length: queueFailedChecksMax }, () =>
+      "\u{1F600}".repeat(queueFailedCheckCharsMax),
+    ),
+    truncated: true,
+  };
+  assert.ok(
+    textCodePointsCount(briefingFailedChecksLine(heaviest)) <=
+      briefingLineCharsMax,
   );
 });
 

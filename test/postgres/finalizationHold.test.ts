@@ -13,6 +13,10 @@ import {
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { allFinalizationHoldKinds } from "../../src/interpreter/finalizer.ts";
 import { finalizationUnavailableKinds } from "../../src/contract/rosters.ts";
+import {
+  queueFailedCheckCharsMax,
+  queueFailedChecksMax,
+} from "../../src/contract/http.ts";
 import type pg from "pg";
 import {
   deletionJournalRow,
@@ -78,7 +82,7 @@ const heldRequest = `${deletionJournalRow(1, journalledRevocation)};
 
 /** The hold door, by the signature a privilege is asked about. */
 const heldFunction =
-  "record_finalization_hold(text,text,text,text,text,bigint,bigint,text,text[],boolean)";
+  "record_finalization_hold(text,text,text,text,text,bigint,bigint,text,text[],boolean,text[],boolean)";
 
 /** The kind the cases below hold a request at, and the one they move it to. */
 const heldKind = "TargetUnreadable";
@@ -110,13 +114,17 @@ async function heldRecord(
     readonly paths: readonly string[];
     readonly truncated: boolean;
   } | null = null,
+  checks: {
+    readonly names: readonly string[];
+    readonly truncated: boolean;
+  } | null = null,
 ): Promise<
   readonly { readonly result: string; readonly hold_passes: number }[]
 > {
   return (
     await subject.query<{ result: string; hold_passes: number }>(
       `SELECT result,hold_passes FROM record_finalization_hold
-         ('tenant-5','project-5',$1,$2,$3,$4,1,'epoch-5',$5,$6)`,
+         ('tenant-5','project-5',$1,$2,$3,$4,1,'epoch-5',$5,$6,$7,$8)`,
       [
         request,
         kind,
@@ -124,6 +132,8 @@ async function heldRecord(
         claim.generation,
         refused === null ? null : [...refused.paths],
         refused?.truncated ?? null,
+        checks === null ? null : [...checks.names],
+        checks?.truncated ?? null,
       ],
     )
   ).rows;
@@ -365,6 +375,148 @@ test("a hold no job can clear records the files it is over, which go with it and
       }),
       /finalization_request_hold_paths_are_whole/u,
       "no file at all",
+    );
+  });
+});
+
+/** The failed checks one removal names, as the hold door is handed them. */
+interface HeldChecks {
+  readonly names: readonly string[];
+  readonly truncated: boolean;
+}
+
+const exhausted = "ProposalMergesExhausted";
+
+/** The failed checks request-5's hold names, as its columns hold them. */
+async function heldChecks(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      "SELECT hold_failed_checks,hold_failed_checks_truncated FROM finalization_request WHERE request='request-5'",
+    )
+  ).rows[0];
+}
+
+/** A pass recording request-5's hold at `kind`, naming `failed`. */
+function heldWithChecks(
+  subject: pg.Pool,
+  kind: string | null,
+  failed: HeldChecks | null = null,
+): ReturnType<typeof heldRecord> {
+  return heldRecord(subject, kind, undefined, "request-5", null, failed);
+}
+
+const heldChecksNone = {
+  hold_failed_checks: null,
+  hold_failed_checks_truncated: null,
+};
+
+test("a spent rework's hold records the checks that failed, keeps them through a pass naming none, and loses them with its kind", async () => {
+  await migratedDatabase("unavailable_checks", async (subject) => {
+    await subject.query(`${deletionPartition}\n${heldRequest}`);
+    const checks = { names: ["check", "e2e"], truncated: true };
+    const record = (kind: string | null, failed: HeldChecks | null = null) =>
+      heldWithChecks(subject, kind, failed);
+    const kept = {
+      hold_failed_checks: checks.names,
+      hold_failed_checks_truncated: true,
+    };
+
+    assert.deepEqual(await record(exhausted), [
+      { result: "Recorded", hold_passes: 1 },
+    ]);
+    assert.deepEqual(
+      await heldChecks(subject),
+      heldChecksNone,
+      "the kind never requires them",
+    );
+    assert.deepEqual(await record(exhausted, checks), [
+      { result: "Recorded", hold_passes: 2 },
+    ]);
+    assert.deepEqual(await heldChecks(subject), kept);
+    assert.deepEqual(await record(exhausted), [
+      { result: "Recorded", hold_passes: 3 },
+    ]);
+    assert.deepEqual(
+      await heldChecks(subject),
+      kept,
+      "a pass naming none keeps them",
+    );
+    const other = { names: ["lint"], truncated: false };
+    await record(exhausted, other);
+    assert.deepEqual(await heldChecks(subject), {
+      hold_failed_checks: other.names,
+      hold_failed_checks_truncated: false,
+    });
+    await record(heldKind);
+    assert.deepEqual(
+      await heldChecks(subject),
+      heldChecksNone,
+      "another kind loses them",
+    );
+    await record(exhausted, checks);
+    await record(null);
+    assert.deepEqual(
+      await heldChecks(subject),
+      heldChecksNone,
+      "no hold at all loses them",
+    );
+    await record(exhausted, checks);
+    await record(heldKind);
+    await record(exhausted);
+    assert.deepEqual(
+      await heldChecks(subject),
+      heldChecksNone,
+      "names lost with their kind are not found again",
+    );
+  });
+});
+
+test("a hold's failed checks are refused beside another kind, empty, or past either bound counted in code points, and kept at both", async () => {
+  await migratedDatabase("unavailable_checks_whole", async (subject) => {
+    await subject.query(`${deletionPartition}\n${heldRequest}`);
+    const checks = { names: ["check"], truncated: false };
+    for (const [which, kind, failed] of [
+      ["beside another kind", heldKind, checks],
+      ["with no kind", null, checks],
+      ["none at all", exhausted, { names: [], truncated: false }],
+      ["an empty name", exhausted, { names: [""], truncated: false }],
+      [
+        "past the count bound",
+        exhausted,
+        {
+          names: Array.from(
+            { length: queueFailedChecksMax + 1 },
+            (_none, at) => `check ${String(at)}`,
+          ),
+          truncated: true,
+        },
+      ],
+      [
+        "a name past its bound",
+        exhausted,
+        {
+          names: ["check", "\u{1F600}".repeat(queueFailedCheckCharsMax + 1)],
+          truncated: true,
+        },
+      ],
+    ] as const)
+      await assert.rejects(
+        heldWithChecks(subject, kind, failed),
+        /finalization_request_hold_failed_checks_are_whole/u,
+        which,
+      );
+    await heldWithChecks(subject, exhausted, {
+      names: Array.from({ length: queueFailedChecksMax }, (_none, at) =>
+        String.fromCodePoint(0x1f600 + at).repeat(queueFailedCheckCharsMax),
+      ),
+      truncated: false,
+    });
+    await assert.rejects(
+      subject.query(
+        "UPDATE finalization_request SET hold_failed_checks_truncated=NULL WHERE request='request-5'",
+      ),
+      /finalization_request_hold_failed_checks_are_whole/u,
+      "names without their cut",
     );
   });
 });

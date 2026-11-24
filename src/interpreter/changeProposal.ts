@@ -100,6 +100,7 @@ import {
   repositoryCredentialCharsMax,
 } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
+import type { QueueFailedChecks } from "./queueFailedChecks.ts";
 declare const forgeBindingIdBrand: unique symbol;
 declare const proposalRemoteIdentityBrand: unique symbol;
 declare const proposalMarkerBrand: unique symbol;
@@ -1161,6 +1162,25 @@ export interface ChangeProposalQueueRemoval {
   readonly reason: ProposalQueueWord;
   readonly actor?: ProposalQueueWord;
   readonly groupCommit?: GitObjectId;
+}
+
+/** Which commit's failed checks to read, and the repository and partition a credential for it is minted under. */
+export interface QueueFailedChecksRequest {
+  readonly repository: RepositoryId;
+  readonly partition: Partition;
+  readonly commit: GitObjectId;
+}
+
+/**
+ * Reads the failed checks of one commit a merge queue built. It answers nothing
+ * for every way of not knowing — a refused credential, a permission not
+ * granted, a forge that failed — because the names are evidence and their
+ * absence holds nothing.
+ */
+export interface QueueFailedChecksPort {
+  read(
+    request: QueueFailedChecksRequest,
+  ): Promise<QueueFailedChecks | undefined>;
 }
 
 /**

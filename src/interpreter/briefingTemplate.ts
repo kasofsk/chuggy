@@ -49,6 +49,7 @@ import { resultReportCharsMax, textCodePointsCount } from "../contract/http.ts";
 import { briefingLineCharsMax } from "../contract/workerTask.ts";
 import type { ChangeProposalStatus } from "./changeProposal.ts";
 import type { FinalizationFailureKind } from "./finalizer.ts";
+import type { QueueFailedChecks } from "./queueFailedChecks.ts";
 import type {
   DependencyChange,
   DependencyDelivery,
@@ -129,7 +130,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 24;
+export const briefingTemplateVersion = 25;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -234,6 +235,7 @@ export interface FailedLanding {
   readonly failure?: FinalizationFailureKind;
   readonly proposalBase?: { readonly ref: string; readonly commit: string };
   readonly groupCommit?: string;
+  readonly failedChecks?: QueueFailedChecks;
   readonly recheck?: string;
 }
 
@@ -243,6 +245,18 @@ export interface FailedLanding {
  */
 const briefingWorkerGit =
   "git -c user.name=worker -c user.email=worker@invalid";
+
+/** Which of the queue's checks failed, as far as the forge let them be read. */
+export function briefingFailedChecksLine(
+  failed: QueueFailedChecks | undefined,
+): string {
+  if (failed === undefined)
+    return "Which check failed is not carried to this task.";
+  const names = failed.names.join(", ");
+  return failed.truncated
+    ? `The checks that failed include ${names}, and others this task is not told of.`
+    : `The checks that failed are ${names}.`;
+}
 
 /** What a merge queue's failed checks led to, which a re-check the core handed to the agent tells apart. */
 function briefingFailedLandingQueueLines(
@@ -256,7 +270,7 @@ function briefingFailedLandingQueueLines(
     landing.groupCommit === undefined
       ? "The commit the queue built to run them on is not recorded."
       : `The queue ran them on commit ${landing.groupCommit}, which it built.`,
-    "Which check failed is not carried to this task.",
+    briefingFailedChecksLine(landing.failedChecks),
   ];
 }
 

@@ -60,6 +60,7 @@ import {
   type TicketLandingsStore,
   type TicketLandingWait,
 } from "../../interpreter/ticketLandings.ts";
+import type { QueueFailedChecks } from "../../interpreter/queueFailedChecks.ts";
 import { finalizerRowPresent, finalizerRowValue } from "./finalizerRows.ts";
 import { projectRowCounter } from "./rows.ts";
 
@@ -106,6 +107,10 @@ interface TicketLandingRow {
   readonly recheck_base_ref: string | null;
   readonly merges_asked: number | null;
   readonly merge_answer: unknown;
+  readonly failed_checks: readonly string[] | null;
+  readonly failed_checks_truncated: boolean | null;
+  readonly hold_failed_checks: readonly string[] | null;
+  readonly hold_failed_checks_truncated: boolean | null;
 }
 
 /** The newest merge answer as its row keeps it, every time already written as the wire's instant. */
@@ -184,6 +189,20 @@ function ticketLandingQueueRemoval(
   };
 }
 
+/** The failed checks one pair of columns names, where it names any. */
+function ticketLandingFailedChecks(
+  names: readonly string[] | null,
+  truncated: boolean | null,
+): { readonly failedChecks?: QueueFailedChecks } {
+  if (names === null) return {};
+  return {
+    failedChecks: {
+      names,
+      truncated: finalizerRowPresent(truncated, "failed checks truncated"),
+    },
+  };
+}
+
 function ticketLandingHold(
   row: TicketLandingRow,
 ): TicketLandingHold | undefined {
@@ -208,6 +227,10 @@ function ticketLandingHold(
             ),
           },
         }),
+    ...ticketLandingFailedChecks(
+      row.hold_failed_checks,
+      row.hold_failed_checks_truncated,
+    ),
   };
 }
 
@@ -252,6 +275,10 @@ function ticketLandingAttempt(
           ),
         }),
     ...(recheck === undefined ? {} : { recheck }),
+    ...ticketLandingFailedChecks(
+      row.failed_checks,
+      row.failed_checks_truncated,
+    ),
     targetRef: finalizerRowPresent(row.target_ref, "target ref"),
     targetCommit: asGitObjectId(
       finalizerRowPresent(row.target_commit, "target commit"),
@@ -425,7 +452,8 @@ async function ticketLandingsRead(
                l.queue_removal_reason,l.queue_removal_actor,
                l.recheck_reason,l.recheck_base_ref,
                l.hold_paths,l.hold_paths_truncated,l.merges_asked,
-               l.merge_answer
+               l.merge_answer,l.failed_checks,l.failed_checks_truncated,
+               l.hold_failed_checks,l.hold_failed_checks_truncated
           FROM ticket_projection t
           LEFT JOIN LATERAL read_ticket_landings(t.tenant,t.project,t.ticket,${count}::integer) l
             ON true

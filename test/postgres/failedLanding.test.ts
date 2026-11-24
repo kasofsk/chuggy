@@ -272,6 +272,10 @@ async function landingAttempt(
     readonly baseRef?: string;
     readonly baseCommit?: string;
     readonly groupCommit?: string;
+    readonly failedChecks?: {
+      readonly names: readonly string[];
+      readonly truncated: boolean;
+    };
   },
 ): Promise<string> {
   const attempt = `attempt-${randomUUID()}`;
@@ -281,10 +285,11 @@ async function landingAttempt(
        (tenant,project,attempt,request,ticket,repository,input_bundle,input_bundle_digest,
         target_ref,target_commit,strategy,configuration_revision,configuration_digest,
         attempt_digest,outcome,failure_kind,proposal_base_ref,
-        proposal_base_commit,queue_group_commit)
+        proposal_base_commit,queue_group_commit,queue_failed_checks,
+        queue_failed_checks_truncated)
      SELECT tenant,project,$4,$5,ticket,$6,input_bundle,input_bundle_digest,
             'refs/heads/head',$7,'Merge',configuration_revision,configuration_digest,
-            repeat('d',64),'Failed',$8,$9,$10,$11
+            repeat('d',64),'Failed',$8,$9,$10,$11,$12,$13
        FROM execution_request WHERE tenant=$1 AND project=$2 AND request=$3`,
     [
       tenant,
@@ -298,6 +303,10 @@ async function landingAttempt(
       failure.baseRef ?? null,
       failure.baseCommit ?? null,
       failure.groupCommit ?? null,
+      failure.failedChecks === undefined
+        ? null
+        : [...failure.failedChecks.names],
+      failure.failedChecks?.truncated ?? null,
     ],
   );
   return attempt;
@@ -350,6 +359,42 @@ test("the scheduler role reads why the attempt a rework pins failed, and against
       proposalBase: { ref: baseRef, commit: baseCommit },
     },
   });
+});
+
+test("the scheduler role reads the checks the attempt a rework pins names, cut or not", async () => {
+  const project = await landingProject("failed-landing-checks");
+  const sourced = await landingSettled(project, "Pass", "checks");
+  const proposalBase = { ref: "refs/heads/trunk", commit: "e".repeat(40) };
+  const finalization = await landingFinalization(project);
+  let cycle = 2;
+  for (const failedChecks of [
+    { names: ["check", "e2e"], truncated: false },
+    { names: ["check"], truncated: true },
+  ]) {
+    const queued = await landingAttempt(project, finalization, {
+      kind: "QueueChecksFailed",
+      baseRef: proposalBase.ref,
+      baseCommit: proposalBase.commit,
+      failedChecks,
+    });
+    await landingRework(
+      project,
+      cycle,
+      landingReferences(sourced, false, queued),
+    );
+    cycle += 1;
+    assert.deepEqual(await landingRead(project), {
+      read: "Landing",
+      landing: {
+        targetCommit,
+        changeCommit: schedulerHarnessCommit,
+        conflicted: false,
+        failure: "QueueChecksFailed",
+        proposalBase,
+        failedChecks,
+      },
+    });
+  }
 });
 
 /**

@@ -1055,6 +1055,11 @@ export interface FinalizerAttempt {
   readonly recheckBaseRef?: string;
   /** The base a failed attempt's proposal failed on, as its ref and commit were read. */
   readonly proposalBase?: { readonly ref: string; readonly commit: string };
+  /** The checks a queue's group commit failed, which only a `QueueChecksFailed` failure keeps. */
+  readonly failedChecks?: {
+    readonly names: readonly string[];
+    readonly truncated: boolean;
+  };
 }
 
 /** Writes one bundle as the finalizer, which is what an attempt has to pin one of. */
@@ -1102,8 +1107,9 @@ export async function finalizerPrepare(
         outcome, candidate_commit, failure_kind, attempt_digest,
         conflict_manifest, conflict_manifest_digest, proposal_base_ref,
         proposal_base_commit, recheck_commit, recheck_reason, recheck_base_ref,
-        restack_tickets, restack_commits)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$21,$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$22,$23,$24,$25)`,
+        restack_tickets, restack_commits, queue_failed_checks,
+        queue_failed_checks_truncated)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$21,$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$22,$23,$24,$25,$26,$27)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -1130,6 +1136,10 @@ export async function finalizerPrepare(
       attempt.recheckBaseRef ?? null,
       attempt.restack?.tickets ?? null,
       attempt.restack?.commits ?? null,
+      attempt.failedChecks === undefined
+        ? null
+        : [...attempt.failedChecks.names],
+      attempt.failedChecks?.truncated ?? null,
     ],
   );
   return identity;

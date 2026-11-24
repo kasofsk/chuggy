@@ -18,6 +18,13 @@
  * so: a set naming them always asks for them, and an installation that does
  * not hold them refuses the mint.
  *
+ * A COMMIT'S CHECK RUNS AND STATUSES ARE NARROWED THE SAME WAY, EACH ALONE, AND
+ * THE ANSWER SAYS WHICH WERE GRANTED. A set naming them reads the installation
+ * and spells `checks` and `statuses` each only where it is granted, and the
+ * token is answered with the reads it was minted with, so a caller skips what
+ * its token cannot read rather than learning it from a refusal. A held token
+ * is answered with what was granted when it was minted.
+ *
  * A TOKEN IS HELD UNTIL ITS OWN EXPIRY, LESS A MARGIN, KEYED BY WHAT IT IS GOOD
  * FOR. Repeated mints for one key are one mint for as long as the held token
  * lasts; anything else is a different key, because a cache keyed more loosely
@@ -25,7 +32,8 @@
  * repository a token good for every repository the installation holds, or hand
  * a binding that allows no pipeline definitions a token that can write them.
  * What an installation grants is not in the key, so a token held from before
- * its owner accepted `workflows` is handed out without it until it expires.
+ * its owner accepted `workflows`, `checks` or `statuses` is handed out without
+ * it until it expires, and says so where its set narrows the reads.
  * Nothing tracks a request in flight, so mints racing on one key each send and
  * each get a valid token, the last of them being the one held.
  *
@@ -71,10 +79,12 @@ import { setTimeout as githubInstallationTokensWait } from "node:timers/promises
 import { z } from "zod";
 
 import {
+  allForgeGrantedReads,
   asForgeInstallationToken,
   forgeAppKeyOf,
   forgePermissionSets,
   type ForgeAppKey,
+  type ForgeGrantedRead,
   type ForgeAppKeyVariables,
   type ForgeInstallationToken,
   type ForgeInstallationTokens,
@@ -171,10 +181,27 @@ const githubAccessTokenSchema = z.object({
   expires_at: z.string().min(1),
 });
 
-/** The one grant of an installation this tree reads, the rest of the answer being the forge's own account of it. */
+/** The grants of an installation this tree reads, the rest of the answer being the forge's own account of it. */
 const githubInstallationGrantSchema = z.object({
-  permissions: z.object({ workflows: z.string().optional() }),
+  permissions: z.object({
+    workflows: z.string().optional(),
+    checks: z.string().optional(),
+    statuses: z.string().optional(),
+  }),
 });
+
+type GithubInstallationGrants = z.infer<
+  typeof githubInstallationGrantSchema
+>["permissions"];
+
+/** The forge's own spelling of each read a set narrows to what the installation grants. */
+const githubGrantedReadPermissions = {
+  checks: "checks",
+  commitStatuses: "statuses",
+} as const satisfies Record<ForgeGrantedRead, keyof GithubInstallationGrants>;
+
+/** The levels at which an installation grants a read. */
+const githubReadGrantedLevels: readonly string[] = ["read", "write"];
 
 /** What the adapter holds across mints: the app's own state, its cache, and how a new token settles. */
 interface GithubInstallationTokensState {
@@ -189,6 +216,7 @@ interface GithubInstallationTokensState {
 interface GithubCachedToken {
   readonly token: ForgeInstallationToken;
   readonly expiresAtMs: number;
+  readonly granted?: readonly ForgeGrantedRead[];
 }
 
 /** A mint that made no token, which is also what a failed read of its installation answers. */
@@ -202,6 +230,8 @@ type GithubInstallationTokensAsked =
   | {
       readonly asked: "Permissions";
       readonly permissions: Readonly<Record<string, string>>;
+      /** The narrowed reads asked for, present exactly where the set names one. */
+      readonly granted?: readonly ForgeGrantedRead[];
     }
   | {
       readonly asked: "Refused";
@@ -243,11 +273,11 @@ function githubInstallationTokensUrl(
   );
 }
 
-/** Whether the installation's owner has granted the app its pipeline definitions, read as the app. */
-async function githubInstallationTokensPipelinesGranted(
+/** What the installation's owner has granted the app, read as the app. */
+async function githubInstallationTokensGrants(
   own: GithubInstallationTokensState,
   request: ForgeTokenRequest,
-): Promise<boolean | GithubInstallationTokensRefused> {
+): Promise<GithubInstallationGrants | GithubInstallationTokensRefused> {
   const answered = await githubAppSend(own.app, {
     url: new URL(githubInstallationTokensPath(request), own.app.apiUrl),
     method: "GET",
@@ -262,7 +292,15 @@ async function githubInstallationTokensPipelinesGranted(
   );
   if (read === undefined)
     return { minted: "Unavailable", evidence: { mint: "Body" } };
-  return read.permissions.workflows === "write";
+  return read.permissions;
+}
+
+/** The reads a set narrows, each as far as the installation grants it. */
+function githubInstallationTokensReadsNarrowed(
+  request: ForgeTokenRequest,
+): readonly ForgeGrantedRead[] {
+  const permissions = forgePermissionSets[request.permissions];
+  return allForgeGrantedReads.filter((read) => permissions[read] === "read");
 }
 
 /** The pipeline definitions a request asks for: what its set names, where its binding allows them. */
@@ -290,14 +328,28 @@ async function githubInstallationTokensPermissions(
       : { actions: permissions.pipelineRuns }),
   };
   const pipelines = githubInstallationTokensPipelinesAsked(request);
-  if (pipelines === undefined)
+  const reads = githubInstallationTokensReadsNarrowed(request);
+  if (pipelines === undefined && reads.length === 0)
     return { asked: "Permissions", permissions: spelled };
-  const granted = await githubInstallationTokensPipelinesGranted(own, request);
-  if (typeof granted !== "boolean")
-    return { asked: "Refused", refused: granted };
+  const grants = await githubInstallationTokensGrants(own, request);
+  if ("minted" in grants) return { asked: "Refused", refused: grants };
+  const granted = reads.filter((read) =>
+    githubReadGrantedLevels.includes(
+      grants[githubGrantedReadPermissions[read]] ?? "",
+    ),
+  );
   return {
     asked: "Permissions",
-    permissions: granted ? { ...spelled, workflows: pipelines } : spelled,
+    permissions: {
+      ...spelled,
+      ...(pipelines !== undefined && grants.workflows === "write"
+        ? { workflows: pipelines }
+        : {}),
+      ...Object.fromEntries(
+        granted.map((read) => [githubGrantedReadPermissions[read], "read"]),
+      ),
+    },
+    ...(reads.length === 0 ? {} : { granted }),
   };
 }
 
@@ -356,6 +408,7 @@ async function githubInstallationTokensSend(
     minted: "Token",
     token: asForgeInstallationToken(granted.token),
     expiresAtMs,
+    ...(asked.granted === undefined ? {} : { granted: asked.granted }),
   };
 }
 
@@ -438,17 +491,13 @@ export function githubInstallationTokens(
         return githubInstallationTokensFresh(own, request);
       const key = githubInstallationTokensCacheKey(request);
       const held = githubInstallationTokensCached(own, key);
-      if (held !== undefined)
-        return {
-          minted: "Token",
-          token: held.token,
-          expiresAtMs: held.expiresAtMs,
-        };
+      if (held !== undefined) return { minted: "Token", ...held };
       const minted = await githubInstallationTokensFresh(own, request);
       if (minted.minted === "Token")
         githubInstallationTokensHold(own, key, {
           token: minted.token,
           expiresAtMs: minted.expiresAtMs,
+          ...(minted.granted === undefined ? {} : { granted: minted.granted }),
         });
       return minted;
     },

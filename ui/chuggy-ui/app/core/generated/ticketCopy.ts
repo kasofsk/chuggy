@@ -328,6 +328,13 @@ export interface TicketCopy {
   readonly "ticket-finalization-queue-removal": {
     readonly removal: unknown;
   };
+  readonly "ticket-finalization-queue-removal-checks": {
+    readonly removal: unknown;
+    readonly checks: unknown;
+  };
+  readonly "ticket-finalization-failed-checks": {
+    readonly checks: unknown;
+  };
   readonly "ticket-finalization-target-paths-refused": {
     readonly paths: unknown;
   };
@@ -366,6 +373,10 @@ export interface TicketCopy {
   readonly "ticket-finalization-failure-files": {
     readonly failure: unknown;
     readonly files: unknown;
+  };
+  readonly "ticket-finalization-failure-checks": {
+    readonly failure: unknown;
+    readonly checks: unknown;
   };
   readonly "ticket-finalization-merged": Record<never, never>;
   readonly "ticket-finalization-unevaluated-head": Record<never, never>;

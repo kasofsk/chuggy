@@ -306,6 +306,8 @@ ticket-finalization-checked = Checked
 ticket-finalization-details-label = Details
 ticket-finalization-details-hide = Hide
 ticket-finalization-queue-removal = Queue removal: { $removal }
+ticket-finalization-queue-removal-checks = Queue removal: { $removal } · { $checks }
+ticket-finalization-failed-checks = Failed: { $checks }
 ticket-finalization-target-paths-refused = The target changed { $paths }, which no { -run } may push: merge its branch into the target yourself, then Resume
 # spells -attempt: tries at the finalization, not at a run
 ticket-finalization-attempts = Attempts
@@ -320,6 +322,7 @@ ticket-finalization-held = Held · { $hold }
 ticket-finalization-wait-state = { $wait } · { $state }
 ticket-finalization-wait-checked = { $wait } · checked { $checked }
 ticket-finalization-failure-files = { $failure } · { $files }
+ticket-finalization-failure-checks = { $failure } · { $checks }
 ticket-finalization-merged = Merged
 ticket-finalization-unevaluated-head = Unevaluated head
 ticket-finalization-pull-number = PR #{ $number }

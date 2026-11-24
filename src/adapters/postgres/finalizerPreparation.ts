@@ -296,6 +296,7 @@ export async function finalizerPreparationRecord(
         configuration_digest, outcome, candidate_commit,
         failure_kind, conflict_manifest, conflict_manifest_digest,
         proposal_base_ref, proposal_base_commit, queue_group_commit,
+        queue_failed_checks, queue_failed_checks_truncated,
         recheck_commit, recheck_reason, recheck_base_ref, restack_tickets,
         restack_commits, attempt_digest)
      VALUES (${claim.partition.tenant},${claim.partition.project},${record.attempt},
@@ -309,6 +310,8 @@ export async function finalizerPreparationRecord(
              ${record.proposalBase?.ref ?? null},
              ${record.proposalBase?.commit ?? null},
              ${record.groupCommit ?? null},
+             ${record.failedChecks === undefined ? null : [...record.failedChecks.names]}::text[],
+             ${record.failedChecks?.truncated ?? null}::boolean,
              ${record.recheckCommit ?? null},
              ${record.recheckReason ?? null},
              ${record.recheckBaseRef ?? null},
