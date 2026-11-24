@@ -197,7 +197,7 @@ test("a failed landing's row says why its attempt failed, and against which base
   );
 });
 
-test("a failed landing's row carries the commit its bundle pins to re-check beside the landing", async () => {
+test("a failed landing carries the commit its bundle pins to re-check", async () => {
   assert.deepEqual(
     await postgresFailedLanding(
       failedLandingPool({
@@ -212,8 +212,8 @@ test("a failed landing's row carries the commit its bundle pins to re-check besi
         changeCommit: "2".repeat(40),
         conflicted: false,
         failure: "QueueChecksFailed",
+        recheck: "5".repeat(40),
       },
-      recheck: "5".repeat(40),
     },
   );
 });

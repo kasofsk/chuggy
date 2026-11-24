@@ -2710,7 +2710,12 @@ test("a rework after a landing that pinned no conflict manifest is told no reaso
 const proposalBase = { ref: "refs/heads/trunk", commit: "3".repeat(40) };
 const groupCommit = "4".repeat(40);
 
-test("a rework after the merge queue's checks failed twice is told the base, the queue's commit, the open pull request and to reproduce there", () => {
+/** What the worker's core is said to have merged before the agent started, for a pull request whose forge reported the failure. */
+function coreMergedBaseAndChange(change: string): string {
+  return `Before you started, the core merged into this workspace the base ${proposalBase.ref} as it stood when this task started, and then the change's commit ${change}.`;
+}
+
+test("a rework after the merge queue's checks failed again once re-checked is told the base, the queue's commit, the open pull request and to reproduce there", () => {
   const text = failedLandingLines(
     viewOf({
       failedLanding: {
@@ -2734,7 +2739,8 @@ test("a rework after the merge queue's checks failed twice is told the base, the
   assert.ok(text.includes("Which check failed is not carried"));
   assert.ok(text.includes("pull request stays open"));
   assert.ok(text.includes("adopted onto it"));
-  assert.ok(text.includes(coreMergedChange));
+  assert.ok(text.includes(coreMergedBaseAndChange(changeCommit)));
+  assert.equal(text.includes(coreMergedChange), false);
   assert.ok(text.includes("reproduce the failure there"));
   assert.equal(text.includes("Change nothing but"), false);
   assert.equal(text.includes("Why it failed to land"), false);
@@ -2772,10 +2778,159 @@ test("a rework after a pull request refused for a conflict is told its base and 
   ).join("\n");
   assert.ok(text.includes("conflict with its base"));
   assert.ok(text.includes(proposalBase.ref));
-  assert.ok(text.includes(coreMergedChange));
+  assert.ok(text.includes(coreMergedBaseAndChange(changeCommit)));
   assert.ok(text.includes("pull request stays open"));
   assert.equal(text.includes("merge queue"), false);
   assert.equal(text.includes("Why it failed to land"), false);
+});
+
+test("a pull request's failed landing names the base by ref and commit, the change's commit, and its change as the diff against the base, never everything since the target", () => {
+  const lines = failedLandingLines(
+    viewOf({
+      failedLanding: {
+        targetCommit,
+        changeCommit,
+        conflicted: false,
+        failure: "QueueChecksFailed",
+        proposalBase,
+      },
+    }),
+  );
+  const text = lines.join("\n");
+  assert.ok(
+    lines.includes(
+      `This workspace started at commit ${targetCommit}, which the failed landing was prepared against.`,
+    ),
+  );
+  assert.ok(lines.includes(coreMergedBaseAndChange(changeCommit)));
+  assert.ok(
+    lines.includes(
+      `When the failure was read, the base was at commit ${proposalBase.commit}; it may have moved since.`,
+    ),
+  );
+  assert.ok(
+    text.includes(`\`git diff ${proposalBase.commit}...${changeCommit}\``),
+  );
+  assert.ok(text.includes("Where the base's own merge stopped"));
+  assert.equal(text.includes("everything between the target"), false);
+  assert.equal(text.includes("the target's"), false);
+});
+
+test("a pull request's failed landing with no change commit says the core merged only the base, and gives the change as the diff to the target's commit", () => {
+  const lines = failedLandingLines(
+    viewOf({
+      failedLanding: {
+        targetCommit,
+        conflicted: false,
+        failure: "QueueChecksFailed",
+        proposalBase,
+      },
+    }),
+  );
+  const text = lines.join("\n");
+  assert.ok(lines.includes("The commit of that change is not recorded."));
+  assert.ok(
+    lines.includes(
+      `Before you started, the core merged only the base ${proposalBase.ref} into this workspace, as it stood when this task started.`,
+    ),
+  );
+  assert.ok(
+    text.includes(`\`git diff ${proposalBase.commit}...${targetCommit}\``),
+  );
+  assert.equal(text.includes("the change's commit"), false);
+});
+
+/** A re-check of a merge queue's failed checks the core could not merge, which starts at the base and pins the commit it re-checks. */
+const recheckCommit = "5".repeat(40);
+const recheckedLanding: FailedLanding = {
+  targetCommit: proposalBase.commit,
+  conflicted: false,
+  failure: "QueueChecksFailed",
+  proposalBase,
+  recheck: recheckCommit,
+};
+
+test("a re-check handed to the agent is told it started at the base's commit and that its change is the diff to the commit re-checked", () => {
+  const lines = failedLandingLines(viewOf({ failedLanding: recheckedLanding }));
+  const text = lines.join("\n");
+  assert.ok(
+    lines.includes(
+      `This workspace started at commit ${proposalBase.commit}, the base's commit when the failure was read.`,
+    ),
+  );
+  assert.ok(lines.includes(coreMergedBaseAndChange(recheckCommit)));
+  assert.ok(
+    text.includes(`\`git diff ${proposalBase.commit}...${recheckCommit}\``),
+  );
+  assert.equal(
+    lines.includes("The commit of that change is not recorded."),
+    false,
+  );
+});
+
+test("a queue's failed checks are told as failing again after a re-check, or as this task being the re-check the core handed over", () => {
+  const queued: FailedLanding = {
+    targetCommit,
+    changeCommit,
+    conflicted: false,
+    failure: "QueueChecksFailed",
+    proposalBase,
+  };
+  const failedOnTheBase =
+    "Its pull request was put on its base's merge queue, which ran the required checks on that change merged onto the base, and they failed.";
+  const failedAgain =
+    "It was then checked again on the base, passed its evaluation and went back on the queue, and the queue's checks failed again.";
+  const handedOver =
+    "This task is the check of that change again on the base, which the core could not merge and handed to you.";
+  const requeued = failedLandingLines(viewOf({ failedLanding: queued }));
+  assert.ok(requeued.includes(failedOnTheBase));
+  assert.ok(requeued.includes(failedAgain));
+  assert.equal(requeued.includes(handedOver), false);
+  const rechecked = failedLandingLines(
+    viewOf({ failedLanding: recheckedLanding }),
+  );
+  assert.ok(rechecked.includes(failedOnTheBase));
+  assert.ok(rechecked.includes(handedOver));
+  assert.equal(rechecked.includes(failedAgain), false);
+  assert.ok(
+    rechecked.includes("Which check failed is not carried to this task."),
+  );
+});
+
+test("a push's failed landing is told the target, everything since it, and that the core merged the target and then the change", () => {
+  assert.deepEqual(
+    failedLandingLines(
+      viewOf({ failedLanding: { ...conflictedLanding, conflicted: false } }),
+    ),
+    [
+      "The change this ticket already made passed its evaluation and could not be landed on the target.",
+      "Why it failed to land is not carried to this task.",
+      `This workspace started at the target's commit ${targetCommit}.`,
+      `That change ends at commit ${changeCommit}; it is everything between the target and that commit, and can be more than one commit.`,
+      coreMergedChange,
+      "A merge that stopped on a conflict is left in progress, with its files listed in the section the core adds. Where the target's own merge stopped, the change is not merged yet, and that section says so.",
+      "Change nothing but what landing on this base forces, and that can include files git merged without a mark, such as a migration whose number the target has since used.",
+      "Commit what you change after the merge on top of it, with `git -c user.name=worker -c user.email=worker@invalid commit -m <message>` saying why each change was needed.",
+    ],
+  );
+});
+
+test("a pull request's failed landing at the longest base ref a finalization attempt stores renders each line within the line bound", () => {
+  const ref = `refs/heads/${"x".repeat(245)}`;
+  for (const landing of [
+    { ...recheckedLanding, proposalBase: { ...proposalBase, ref } },
+    {
+      targetCommit,
+      conflicted: false,
+      failure: "MergeConflict" as const,
+      proposalBase: { ...proposalBase, ref },
+    },
+  ]) {
+    const lines = failedLandingLines(viewOf({ failedLanding: landing }));
+    assert.ok(lines.some((line) => line.includes(ref)));
+    for (const line of lines)
+      assert.ok(textCodePointsCount(line) <= briefingLineCharsMax, line);
+  }
 });
 
 test("a rework after a failed landing names no merge to run, and ends with committing what the landing forced, with its reason", () => {

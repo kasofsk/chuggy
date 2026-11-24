@@ -777,13 +777,10 @@ async function schedulerPriorEvaluationReports(
  * cannot merge falls back to the agent, which otherwise would be handed none
  * of the change it re-checks.
  */
-function schedulerFailedLandingChange(
-  landing: FailedLanding,
-  recheck: string | undefined,
-): FailedLanding {
-  return landing.changeCommit !== undefined || recheck === undefined
+function schedulerFailedLandingChange(landing: FailedLanding): FailedLanding {
+  return landing.changeCommit !== undefined || landing.recheck === undefined
     ? landing
-    : { ...landing, changeCommit: recheck };
+    : { ...landing, changeCommit: landing.recheck };
 }
 
 /**
@@ -803,7 +800,7 @@ async function schedulerFailedLanding(
     case "Landing":
       return read.landing === undefined
         ? {}
-        : { landing: schedulerFailedLandingChange(read.landing, read.recheck) };
+        : { landing: schedulerFailedLandingChange(read.landing) };
     case "Unavailable":
       return { gathered: "Unavailable" };
   }
