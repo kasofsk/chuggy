@@ -14,6 +14,14 @@
  * the same workload, pinned the same change identity, and its stack, if it had
  * one, landed beneath it. Whether the current cycle is stacked is not read.
  * Among the candidates the latest is carried.
+ *
+ * A `Commands` EVALUATOR CARRIES NOTHING EARNED BEFORE A QUEUE'S CHECKS
+ * FAILED. Once a merge queue has failed a landing's checks, the commands have
+ * been seen to fail on the merged tree, so a pass earned on an earlier work
+ * cycle no longer stands for them, whatever the change identity. The newest
+ * work cycle up to the current one that reworked such a failure is the
+ * earliest a `Commands` candidate may come from. An `Agent` review of the same
+ * diff still holds, and carries as before.
  */
 
 import { materialDigest } from "./ticketDefinition.ts";
@@ -56,6 +64,10 @@ export interface VerdictCarryTask {
 /** The task about to launch, and whether its workload may be carried at all. */
 export interface VerdictCarryCurrent extends VerdictCarryTask {
   readonly reevaluate: VerdictCarryReevaluation;
+  /** Whether its workload runs commands rather than an agent. */
+  readonly runsCommands: boolean;
+  /** The newest work cycle up to its own that reworked a landing a merge queue's checks failed, absent where none did. */
+  readonly queueChecksFailedCycle: number | undefined;
 }
 
 /** An earlier task of the ticket, and how it settled. */
@@ -77,12 +89,25 @@ function verdictCarryRequireTask(task: VerdictCarryTask, what: string): void {
       throw new RangeError(`verdict carry: the ${what}'s ${name} is not a key`);
 }
 
-/** Whether `earlier` is a verdict `current` may carry. */
-function verdictCarryCandidate(
-  current: VerdictCarryTask,
+/** Whether `earlier` was earned on a tree a merge queue's checks have since failed, which `current`'s commands do not carry. */
+function verdictCarryCandidateBeforeQueueFailure(
+  current: VerdictCarryCurrent,
   earlier: VerdictCarryEarlier,
 ): boolean {
   return (
+    current.runsCommands &&
+    current.queueChecksFailedCycle !== undefined &&
+    earlier.workCycle < current.queueChecksFailedCycle
+  );
+}
+
+/** Whether `earlier` is a verdict `current` may carry. */
+function verdictCarryCandidate(
+  current: VerdictCarryCurrent,
+  earlier: VerdictCarryEarlier,
+): boolean {
+  return (
+    !verdictCarryCandidateBeforeQueueFailure(current, earlier) &&
     earlier.execution !== current.execution &&
     earlier.ticket === current.ticket &&
     earlier.stage === current.stage &&
@@ -118,6 +143,14 @@ export function verdictCarrySource(
   earlier: readonly VerdictCarryEarlier[],
 ): ExecutionId | undefined {
   verdictCarryRequireTask(current, "current task");
+  const failed = current.queueChecksFailedCycle;
+  if (
+    failed !== undefined &&
+    (!Number.isSafeInteger(failed) || failed < 1 || failed > current.workCycle)
+  )
+    throw new RangeError(
+      "verdict carry: the queue checks failure's work cycle is not one up to the current task's",
+    );
   if (current.reevaluate !== "OnChange") return undefined;
   let latest: VerdictCarryEarlier | undefined;
   for (const task of earlier) {
@@ -129,6 +162,13 @@ export function verdictCarrySource(
   }
   if (latest !== undefined && latest.workCycle >= current.workCycle)
     throw new Error("verdict carry: a carried verdict is not from earlier");
+  if (
+    latest !== undefined &&
+    verdictCarryCandidateBeforeQueueFailure(current, latest)
+  )
+    throw new Error(
+      "verdict carry: a carried command verdict predates a queue checks failure",
+    );
   return latest?.execution;
 }
 
@@ -139,6 +179,13 @@ export function verdictCarryReevaluation(
   if (task === undefined || task.workload.runner === "Approval")
     return "Always";
   return task.workload.reevaluate ?? "Always";
+}
+
+/** Whether a catalog task's workload runs commands. */
+export function verdictCarryRunsCommands(
+  task: WorkloadTask | undefined,
+): boolean {
+  return task?.workload.runner === "Commands";
 }
 
 /**

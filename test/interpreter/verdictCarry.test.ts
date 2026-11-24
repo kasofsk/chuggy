@@ -12,6 +12,7 @@ import { asTicketId } from "../../src/domain/ids.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
 import {
   verdictCarryReevaluation,
+  verdictCarryRunsCommands,
   verdictCarrySource,
   verdictCarryWorkloadDigest,
   type VerdictCarryCurrent,
@@ -33,6 +34,8 @@ function current(over: Partial<VerdictCarryCurrent> = {}): VerdictCarryCurrent {
     changeIdentity: "change-1",
     stack: "Unstacked",
     reevaluate: "OnChange",
+    runsCommands: false,
+    queueChecksFailedCycle: undefined,
     ...over,
   };
 }
@@ -147,6 +150,61 @@ test("the latest candidate is carried, by work cycle and then generation", () =>
   );
 });
 
+test("a Commands evaluator does not carry a pass earned before the work cycle that reworked a queue's failed checks", () => {
+  assert.equal(
+    verdictCarrySource(
+      current({ workCycle: 3, runsCommands: true, queueChecksFailedCycle: 3 }),
+      [earlier({ workCycle: 2 })],
+    ),
+    undefined,
+  );
+});
+
+test("a Commands evaluator carries a pass earned in the queue failure's rework cycle or later", () => {
+  const scene = current({
+    workCycle: 5,
+    runsCommands: true,
+    queueChecksFailedCycle: 3,
+  });
+  for (const workCycle of [3, 4])
+    assert.equal(
+      verdictCarrySource(scene, [
+        earlier({ execution: asExecutionId("before"), workCycle: 2 }),
+        earlier({ workCycle }),
+      ]),
+      "execution-earlier",
+    );
+  assert.equal(
+    verdictCarrySource(scene, [earlier({ workCycle: 2 })]),
+    undefined,
+  );
+});
+
+test("an Agent evaluator carries across a queue's failed checks", () => {
+  assert.equal(
+    verdictCarrySource(
+      current({ workCycle: 3, runsCommands: false, queueChecksFailedCycle: 3 }),
+      [earlier({ workCycle: 2 })],
+    ),
+    "execution-earlier",
+  );
+});
+
+test("a Commands evaluator with no queue failure carries as any other", () => {
+  assert.equal(
+    verdictCarrySource(current({ runsCommands: true }), [earlier()]),
+    "execution-earlier",
+  );
+});
+
+test("a queue failure's work cycle past the current task's is refused", () => {
+  for (const queueChecksFailedCycle of [0, 3])
+    assert.throws(
+      () => verdictCarrySource(current({ queueChecksFailedCycle }), []),
+      RangeError,
+    );
+});
+
 test("a task whose keys are not keys is refused", () => {
   assert.throws(
     () => verdictCarrySource(current({ stage: 0 }), []),
@@ -181,6 +239,18 @@ test("only a placed workload that says OnChange may be carried", () => {
     } as unknown as WorkloadTask),
     "Always",
   );
+});
+
+test("only a Commands workload runs commands", () => {
+  assert.equal(verdictCarryRunsCommands(commands()), true);
+  assert.equal(
+    verdictCarryRunsCommands({
+      workload: { runner: "Agent", prompt: { text: "review" } },
+      ticketChecks: false,
+    } as unknown as WorkloadTask),
+    false,
+  );
+  assert.equal(verdictCarryRunsCommands(undefined), false);
 });
 
 test("a workload's digest leaves out whether it may be carried, and nothing else", () => {

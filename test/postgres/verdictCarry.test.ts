@@ -74,12 +74,13 @@ const worker = {
   files: [],
 };
 
-/** A catalog whose one stage is a review and the tests, the review carried as `reevaluate` says. */
+/** A catalog whose one stage is a review and the tests, each carried as its `reevaluate` says; the tests' is absent unless given. */
 function catalogOf(
   review: {
     readonly prompt?: string;
     readonly reevaluate?: "OnChange" | "Always";
   } = {},
+  tests: { readonly reevaluate?: "OnChange" | "Always" } = {},
 ) {
   return canonicalConfigurationOf({
     version: 2,
@@ -92,7 +93,7 @@ function catalogOf(
         worker,
         reevaluate: review.reevaluate ?? "OnChange",
       },
-      tests: { runner: "Commands", commands: ["npm test"] },
+      tests: { runner: "Commands", commands: ["npm test"], ...tests },
     },
     plans: { checks: [{ name: "checks", evaluators: ["review", "tests"] }] },
     defaults: { work: "build", evaluation: "checks" },
@@ -117,12 +118,13 @@ interface Evaluated {
 async function carrying(
   label: string,
   reevaluate: "OnChange" | "Always" = "OnChange",
+  tests: Parameters<typeof catalogOf>[1] = {},
 ): Promise<Carrying> {
   const project = await schedulerProject(
     rig,
     `carry-${label}`,
     { tasks: 1 },
-    catalogOf({ reevaluate }),
+    catalogOf({ reevaluate }, tests),
     undefined,
     undefined,
     approvalMixedRelease,
@@ -134,10 +136,11 @@ function key(at: Carrying): readonly [string, string] {
   return [at.project.partition.tenant, at.project.partition.project];
 }
 
-/** A bundle of its own for a spawn request, the harness request's references copied and `changeIdentity` pinned where given. */
+/** A bundle of its own for a spawn request, the harness request's references copied and `changeIdentity` and the `reworked` finalization attempt pinned where given. */
 async function bundleOf(
   at: Carrying,
   changeIdentity: string | undefined,
+  reworked?: string,
 ): Promise<{ bundle: string; digest: string }> {
   const bundle = `bundle-${at.label}-${randomUUID()}`;
   const digest = createHash("sha256").update(bundle).digest("hex");
@@ -162,6 +165,14 @@ async function bundleOf(
        SELECT $1,$2,$3,coalesce(max(ordinal),0)+1,'ChangeIdentity',$4
          FROM input_bundle_reference WHERE tenant=$1 AND project=$2 AND bundle=$3`,
       [...key(at), bundle, changeIdentity],
+    );
+  if (reworked !== undefined)
+    await rig.harness.query(
+      `INSERT INTO input_bundle_reference
+         (tenant,project,bundle,ordinal,reference_kind,reference_id)
+       SELECT $1,$2,$3,coalesce(max(ordinal),0)+1,'FinalizationAttempt',$4
+         FROM input_bundle_reference WHERE tenant=$1 AND project=$2 AND bundle=$3`,
+      [...key(at), bundle, reworked],
     );
   return { bundle, digest };
 }
@@ -194,10 +205,15 @@ async function spawned(
   pins: {
     readonly changeIdentity?: string;
     readonly revision?: { revision: string; digest: string };
+    readonly reworked?: string;
   } = {},
 ): Promise<string> {
   const request = `request-${at.label}-${randomUUID()}`;
-  const { bundle, digest } = await bundleOf(at, pins.changeIdentity);
+  const { bundle, digest } = await bundleOf(
+    at,
+    pins.changeIdentity,
+    pins.reworked,
+  );
   at.position += 1;
   await rig.harness.query(
     `INSERT INTO execution_request
@@ -356,20 +372,27 @@ async function executionOf(
 /**
  * Passes one work cycle and registers and admits its evaluations, which pin
  * `changeIdentity` where one is given. Cycle 1's work is the harness ticket's
- * own request.
+ * own request; a later one's pins the `reworked` finalization attempt where
+ * one is given.
  */
 async function cycle(
   at: Carrying,
   number: number,
   changeIdentity: string | undefined,
   revision?: { revision: string; digest: string },
+  reworked?: string,
 ): Promise<Evaluated> {
   let work = at.project.request;
   let workTask = 1;
   if (number > 1) {
     at.task += 1;
     workTask = at.task;
-    work = await spawned(at, "SpawnWork", [{ task: workTask, cycle: number }]);
+    work = await spawned(
+      at,
+      "SpawnWork",
+      [{ task: workTask, cycle: number }],
+      reworked === undefined ? {} : { reworked },
+    );
   }
   await registered(at, work);
   await admitted(at, 1);
@@ -946,4 +969,103 @@ test("a review earned unstacked carries into a cycle re-stacked over the same di
     (await rig.store.openAttempt(openingOf(at, later.tests))).opened,
     "Opened",
   );
+});
+
+/** A finalization attempt of the ticket that failed as `kind`, as the finalizer records one, and its identity. */
+async function failedLanding(
+  at: Carrying,
+  kind: "QueueChecksFailed" | "MergeConflict" = "QueueChecksFailed",
+): Promise<string> {
+  const attempt = `attempt-queue-${randomUUID()}`;
+  const transaction = await rig.harness.begin();
+  try {
+    await transaction.query(`SET LOCAL session_replication_role = replica`);
+    await transaction.query(
+      `INSERT INTO finalization_attempt
+         (tenant,project,attempt,request,ticket,repository,input_bundle,input_bundle_digest,
+          target_ref,target_commit,strategy,configuration_revision,configuration_digest,
+          outcome,attempt_digest,failure_kind,proposal_base_ref,proposal_base_commit)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,repeat('2',64),$8,$9,'Merge','revision','digest',
+               'Failed',repeat('3',64),$10,$8,$9)`,
+      [
+        ...key(at),
+        attempt,
+        `request-queue-${randomUUID()}`,
+        at.project.ticket,
+        postgresHarnessRepository(at.project.partition),
+        `bundle-queue-${randomUUID()}`,
+        landingTarget,
+        "e".repeat(40),
+        kind,
+      ],
+    );
+    await transaction.commit();
+  } catch (failure) {
+    await transaction.rollback();
+    throw failure;
+  }
+  return attempt;
+}
+
+test("an OnChange Commands evaluator over an unchanged diff carries where no queue's checks failed", async () => {
+  const at = await carrying("commands", "OnChange", { reevaluate: "OnChange" });
+  const first = await cycle(at, 1, change);
+  await evaluated(at, first);
+  const later = await cycle(at, 2, change);
+  assert.deepEqual(await rig.store.openAttempt(openingOf(at, later.tests)), {
+    opened: "Carried",
+    source: first.tests,
+  });
+});
+
+test("an OnChange Commands evaluator runs again in the cycle that reworks a queue's failed checks, and the review still carries", async () => {
+  const at = await carrying("queue", "OnChange", { reevaluate: "OnChange" });
+  const first = await cycle(at, 1, change);
+  await evaluated(at, first);
+  const reworked = await failedLanding(at);
+  const later = await cycle(at, 2, change, undefined, reworked);
+  assert.deepEqual(await rig.store.openAttempt(openingOf(at, later.review)), {
+    opened: "Carried",
+    source: first.review,
+  });
+  const tests = await rig.store.openAttempt(openingOf(at, later.tests));
+  assert.equal(tests.opened, "Opened", "the commands run again");
+});
+
+test("a cycle after the queue failure's rework carries the commands that rework ran", async () => {
+  const at = await carrying("after-queue", "OnChange", {
+    reevaluate: "OnChange",
+  });
+  const first = await cycle(at, 1, change);
+  await evaluated(at, first);
+  const reworked = await cycle(
+    at,
+    2,
+    change,
+    undefined,
+    await failedLanding(at),
+  );
+  await settled(at, reworked.tests, "Pass", "npm test passed.");
+  const later = await cycle(at, 3, change);
+  assert.deepEqual(await rig.store.openAttempt(openingOf(at, later.tests)), {
+    opened: "Carried",
+    source: reworked.tests,
+  });
+});
+
+test("a rework of another failure kind leaves the commands carried", async () => {
+  const at = await carrying("conflict", "OnChange", { reevaluate: "OnChange" });
+  const first = await cycle(at, 1, change);
+  await evaluated(at, first);
+  const later = await cycle(
+    at,
+    2,
+    change,
+    undefined,
+    await failedLanding(at, "MergeConflict"),
+  );
+  assert.deepEqual(await rig.store.openAttempt(openingOf(at, later.tests)), {
+    opened: "Carried",
+    source: first.tests,
+  });
 });
