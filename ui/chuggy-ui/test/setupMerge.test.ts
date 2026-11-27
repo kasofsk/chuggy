@@ -281,6 +281,7 @@ test("merge's ports let out the merge of the one ticket's pull request and any r
   const ports = setupWritePorts(
     api,
     "the run's",
+    { asked: false },
     setupMergeWrites({ tenant: "acme", project: "widgets" }, 1),
   );
   const init = (method: string) => ({

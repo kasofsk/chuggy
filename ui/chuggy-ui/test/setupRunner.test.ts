@@ -2988,6 +2988,7 @@ test("the ports the writes go out through pass the mint for the person's runner 
   const ports = setupWritePorts(
     api,
     "the run's",
+    { asked: false },
     setupRunnerWrites(partition, true),
   );
   const tenant = "/api/v1/tenants/two%20words";
@@ -3039,6 +3040,7 @@ test("the ports the writes go out through pass the mint for the person's runner 
   const alone = setupWritePorts(
     api,
     "the run's",
+    { asked: false },
     setupRunnerWrites(partition, false),
   );
   await expect(
@@ -3052,6 +3054,7 @@ test("the ports chat-host's writes go out through pass the mint for the person's
   const ports = setupWritePorts(
     api,
     "the run's",
+    { asked: false },
     setupChatHostWrites("two words"),
   );
   const tenant = "/api/v1/tenants/two%20words";

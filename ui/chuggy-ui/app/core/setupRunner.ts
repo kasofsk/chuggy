@@ -82,8 +82,9 @@ import { settingsRoutes } from "./settingsNav.ts";
 import type { SetupAsked, SetupCredentialGiven } from "./setupArguments.ts";
 import { SetupMachineError, setupPlatformOf } from "./setupPorts.ts";
 import type { SetupPlatform, SetupPorts } from "./setupPorts.ts";
-import { setupGot, setupReadPorts } from "./setupReads.ts";
+import { setupAgreementFetch, setupGot, setupReadPorts } from "./setupReads.ts";
 import type { SetupRead } from "./setupReads.ts";
+import type { SetupAgreement } from "./setupSession.ts";
 import type { SetupReport } from "./setupReport.ts";
 import {
   setupAgentDomain,
@@ -209,6 +210,8 @@ export interface SetupRunnerSession {
   readonly workspaces: readonly AccessCallerTenant[];
   /** The GitHub login the site named the person by, where it named one. */
   readonly login: string | undefined;
+  /** Whether the site has asked the person's agreement of a request sent under this sign-in. */
+  readonly agreement: SetupAgreement;
 }
 
 /** Where a run was for, with its workspace's display name where the sign-in's list names that workspace. */
@@ -249,6 +252,8 @@ interface Run {
   readonly installs: boolean;
   readonly tenant: string;
   readonly writes: readonly string[];
+  /** The command the run was asked as, which a stop names to run again. */
+  readonly asked: "Runner" | "ChatHost";
   readonly waitSecs: number;
   readonly livePollMs: number;
   readonly places: SetupRunnerPlaces;
@@ -324,30 +329,45 @@ export function setupRunnerWrites(
 export function setupWritePorts(
   api: ApiPorts,
   bearer: string,
+  agreement: SetupAgreement,
   writes: readonly string[],
 ): ApiPorts {
-  const reads = setupReadPorts(api, bearer);
+  const reads = setupReadPorts(api, bearer, agreement);
+  const sent = setupAgreementFetch(api, agreement);
   return {
     ...reads,
     fetch: (url, init) =>
       writes.includes(`${init.method} ${url}`)
-        ? api.fetch(url, init)
+        ? sent(url, init)
         : reads.fetch(url, init),
   };
 }
 
 function setupRunnerReads(session: SetupRunnerSession): ApiPorts {
-  return setupReadPorts(session.api, session.bearer);
+  return setupReadPorts(session.api, session.bearer, session.agreement);
 }
 
 function setupRunWrites(run: Run): (session: SetupRunnerSession) => ApiPorts {
-  return (session) => setupWritePorts(session.api, session.bearer, run.writes);
+  return (session) =>
+    setupWritePorts(session.api, session.bearer, session.agreement, run.writes);
+}
+
+/** The site's answer as the run takes it: where it asked the person's agreement, the stop that waits on it. */
+function setupSiteAgreed<T>(
+  run: Run,
+  answer: ApiResult<T>,
+): ApiResult<T> | { readonly reported: SetupReport } {
+  if (!run.session.agreement.asked) return answer;
+  return {
+    reported: { report: "Unagreed", site: run.session.site, asked: run.asked },
+  };
 }
 
 /**
  * Asks the site one thing under the bearer this run holds. Where the site no
  * longer takes that bearer the sign-in is entered again, under the lock as
- * every run enters it, and the thing is asked once more.
+ * every run enters it, and the thing is asked once more, unless the site
+ * asks the person's agreement, where the run goes no further.
  */
 async function setupSiteAsked<T>(
   run: Run,
@@ -355,12 +375,12 @@ async function setupSiteAsked<T>(
   call: (ports: ApiPorts) => Promise<ApiResult<T>>,
 ): Promise<ApiResult<T> | { readonly reported: SetupReport }> {
   const first = await call(portsOf(run.session));
-  if (first.outcome !== "Unauthenticated") return first;
+  if (first.outcome !== "Unauthenticated") return setupSiteAgreed(run, first);
   const again = await run.enter();
   if (again.entered === "Out") return { reported: again.report };
   run.session = again.session;
   run.secrets.push(again.session.bearer);
-  return call(portsOf(again.session));
+  return setupSiteAgreed(run, await call(portsOf(again.session)));
 }
 
 function setupUnread(
@@ -1399,20 +1419,19 @@ function setupChatElsewhere(
 }
 
 /**
- * This machine as the person's chat host, which their chats run on: kept
- * where it holds a file of the one the site holds for them, registered as
- * theirs where they hold none, and where theirs is another machine, as `of`
- * says.
+ * This machine as the person's chat host, which their chats run on, given
+ * the one the site holds for them: kept where it holds a file of that one,
+ * registered as theirs where they hold none, and where theirs is another
+ * machine, as `of` says.
  */
 async function setupChatWalked(
   run: Run,
   machine: Machine,
   packaged: Packaged,
-  of: ChatOf,
-  colima: ColimaHad,
+  of: ChatOf & { readonly colima: ColimaHad },
+  host: { readonly had: ChatHostResponse | undefined },
 ): Promise<SetupRunnerEnded | Halt> {
-  const host = await setupChatHad(run);
-  if (halted(host)) return host;
+  const { colima } = of;
   const held = setupChatFiles(run.ports, run.places, run.tenant);
   const good = setupChatGood(run, host.had, held);
   const elsewhere =
@@ -1460,11 +1479,13 @@ async function setupChatWalked(
   return { ended: "Live" };
 }
 
-/** The person's chat host alone on this machine: the machine looked at, the package and the settings had, and then the chat host's own walk. */
+/** The person's chat host alone on this machine: the site's read of it first, so a refusal finds the machine untouched, then the machine looked at, the package and the settings had, and the chat host's own walk. */
 async function setupChatAlone(
   run: Run,
   of: ChatOf,
 ): Promise<SetupRunnerEnded | Halt> {
+  const host = await setupChatHad(run);
+  if (halted(host)) return host;
   const machine = await setupMachineProbed(
     run,
     setupPackageLeasts[run.platform].chat,
@@ -1472,7 +1493,13 @@ async function setupChatAlone(
   if (halted(machine)) return machine;
   const packaged = await setupMachineShared(run, machine);
   if (halted(packaged)) return packaged;
-  return setupChatWalked(run, machine, packaged, of, { restarted: false });
+  return setupChatWalked(
+    run,
+    machine,
+    packaged,
+    { ...of, colima: { restarted: false } },
+    host,
+  );
 }
 
 /** Where the project's work runs on the cluster: nothing is set up where the person's chats do too, and only their chat host where those run on one. */
@@ -1625,15 +1652,16 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   );
   if (halted(seen)) return seen;
   run.notes.push({ note: "ProjectLive" });
-  return chats
-    ? setupChatWalked(
-        run,
-        machine,
-        packaged,
-        { of: "Runner", pooled: true },
-        colima,
-      )
-    : { ended: "Live" };
+  if (!chats) return { ended: "Live" };
+  const host = await setupChatHad(run);
+  if (halted(host)) return host;
+  return setupChatWalked(
+    run,
+    machine,
+    packaged,
+    { of: "Runner", pooled: true, colima },
+    host,
+  );
 }
 
 /** A run as it is begun, under the sign-in `session` it entered. */
@@ -1642,7 +1670,7 @@ function setupRunMade(
   installs: boolean,
   tenant: string,
   writes: readonly string[],
-  asked: { readonly waitSecs: number },
+  asked: { readonly asked: "Runner" | "ChatHost"; readonly waitSecs: number },
   livePollMs: number,
   enter: () => Promise<SetupRunnerEntered>,
   session: SetupRunnerSession,
@@ -1655,6 +1683,7 @@ function setupRunMade(
     installs,
     tenant,
     writes,
+    asked: asked.asked,
     waitSecs: asked.waitSecs,
     livePollMs,
     places: setupRunnerPlaces(ports.surroundings),
