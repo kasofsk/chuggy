@@ -27,7 +27,7 @@ import {
 } from "./driver.ts";
 import type { Browser } from "@playwright/test";
 
-import { servedOpen } from "./served.ts";
+import { servedWhile } from "./served.ts";
 import type { Served } from "./served.ts";
 import { stubApiRead, stubApiTenant } from "./stubApi.ts";
 
@@ -62,15 +62,9 @@ const creationReads = [
 test("the new-project page fits a phone, each control a finger's height, and focusing a box zooms nothing, on a choice, on a new workspace and with its address open", async ({
   browser,
 }) => {
-  const served = await servedOpen({
-    root: renderedDist,
-    reads: creationReads,
-  });
-  try {
-    await creationOnPhone(browser, served);
-  } finally {
-    await served.close();
-  }
+  await servedWhile({ root: renderedDist, reads: creationReads }, (served) =>
+    creationOnPhone(browser, served),
+  );
 });
 
 async function creationOnPhone(

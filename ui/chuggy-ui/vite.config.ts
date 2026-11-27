@@ -18,8 +18,10 @@
  *
  * `CHUG_UI_UPSTREAM` is what turns this dev server into a console of a running
  * installation, and it names one: the origin serving that installation's
- * `/api/v1` and `/access/v1`. Unset, none of it is installed and `vite` serves the console as it
- * always did. `ui/chuggy-ui/dev/README.md` is the procedure and holds the
+ * `/api/v1`, `/access/v1` and `/agreements/v1`. Unset, none of it is
+ * installed and `vite` serves the console as it always did. Beside it,
+ * `CHUG_UI_AGREEMENTS` set to `true` puts `agreements` in the `/config.json`
+ * served. `ui/chuggy-ui/dev/README.md` is the procedure and holds the
  * installation's values; what is here is only the mechanism.
  */
 
@@ -32,6 +34,7 @@ const upstream = process.env["CHUG_UI_UPSTREAM"];
 const issuer = process.env["CHUG_UI_ISSUER"] ?? "";
 const audience = process.env["CHUG_UI_AUDIENCE"] ?? "";
 const clientId = process.env["CHUG_UI_CLIENT_ID"] ?? "";
+const agreements = process.env["CHUG_UI_AGREEMENTS"] === "true";
 
 /**
  * The markdown parser's reader of named references, as the build that looks a
@@ -84,6 +87,7 @@ function localInstallation(): Plugin {
           audience,
           redirectUri: `${requestOrigin(request)}/auth/callback`,
           scopes: ["openid", "offline_access"],
+          ...(agreements ? { agreements } : {}),
         });
       });
       server.middlewares.use(
@@ -113,7 +117,7 @@ function localInstallation(): Plugin {
 }
 
 /** The prefixes the installation answers on this origin. */
-const upstreamPrefixes = ["/api/v1", "/access/v1"] as const;
+const upstreamPrefixes = ["/api/v1", "/access/v1", "/agreements/v1"] as const;
 
 /** Only `/oauth2` is proxied, so the rewritten discovery is never shadowed. */
 function proxy(): Record<string, ProxyOptions> {
