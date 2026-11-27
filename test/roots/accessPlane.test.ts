@@ -9,11 +9,9 @@
  */
 
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { test } from "node:test";
-import { promisify } from "node:util";
 
-const execute = promisify(execFile);
+import { planeRootRan } from "./harness.ts";
 
 /** Every variable the root refuses to start without, each naming nothing that answers. */
 const required: Readonly<Record<string, string>> = {
@@ -24,45 +22,9 @@ const required: Readonly<Record<string, string>> = {
   CHUG_ACCESS_PLANE_KETO_WRITE_URL: "http://127.0.0.1:2/",
 };
 
-/** The caller's environment with no access plane variable in it but `named`. */
-function environmentOf(
-  named: Readonly<Record<string, string>>,
-): NodeJS.ProcessEnv {
-  return {
-    ...Object.fromEntries(
-      Object.entries(process.env).filter(
-        ([name]) => !name.startsWith("CHUG_ACCESS_PLANE_"),
-      ),
-    ),
-    ...named,
-  };
-}
-
-interface Ran {
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-async function ran(
-  argv: readonly string[],
-  named: Readonly<Record<string, string>>,
-): Promise<Ran> {
-  try {
-    const done = await execute(
-      process.execPath,
-      ["--experimental-strip-types", ...argv],
-      { cwd: process.cwd(), env: environmentOf(named) },
-    );
-    return { code: 0, stdout: done.stdout, stderr: done.stderr };
-  } catch (failure) {
-    const done = failure as { code?: number; stdout?: string; stderr?: string };
-    return {
-      code: done.code ?? 1,
-      stdout: done.stdout ?? "",
-      stderr: done.stderr ?? "",
-    };
-  }
+/** `argv` run to its end with no access plane variable but `named`. */
+function ran(argv: readonly string[], named: Readonly<Record<string, string>>) {
+  return planeRootRan("CHUG_ACCESS_PLANE_", argv, named);
 }
 
 test("a start missing any required variable is refused naming it, before the issuer is asked", async () => {

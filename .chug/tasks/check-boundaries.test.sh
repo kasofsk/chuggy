@@ -366,6 +366,48 @@ printf '%s\n' 'import { wired } from "../compose.ts"' 'export const plane = wire
 seal
 check "the access plane's root may not REACH a database adapter but its link and name stores through a composition helper" 1 "$RC" "access-plane-reaches-only-its-link-and-name-stores:"
 
+# --- agreement-plane-reaches-only-its-agreement-store ------------------------
+
+# The allowed shape first: the agreement plane's root reaches its own store,
+# what opening a pool reaches, and the issuer's adapter, and another plane's
+# root reaches a database and an authority. A red here would mean the rule
+# refuses a module the plane is composed with, or a root it does not name.
+fixture
+mkdir -p "$R/src/roots" "$R/src/adapters/http" "$R/src/adapters/keto" "$R/src/adapters/postgres/schema"
+printf '%s\n' 'export const oidc = 1' > "$R/src/adapters/http/oidc.ts"
+printf '%s\n' 'export const tuples = 1' > "$R/src/adapters/keto/tuples.ts"
+printf '%s\n' 'export const role = 1' > "$R/src/adapters/postgres/schema/shared.ts"
+printf '%s\n' 'import { role } from "./schema/shared.ts"' 'export const schema = role' > "$R/src/adapters/postgres/schema.ts"
+printf '%s\n' 'import { schema } from "./schema.ts"' 'export const pool = schema' > "$R/src/adapters/postgres/pool.ts"
+printf '%s\n' 'import { pool } from "./pool.ts"' 'export const agreements = pool' > "$R/src/adapters/postgres/policyAgreements.ts"
+printf '%s\n' 'export const registry = 1' > "$R/src/adapters/postgres/registry.ts"
+printf '%s\n' 'import { oidc } from "../adapters/http/oidc.ts"' 'import { agreements } from "../adapters/postgres/policyAgreements.ts"' 'import { pool } from "../adapters/postgres/pool.ts"' 'import { role } from "../adapters/postgres/schema/shared.ts"' 'export const plane = oidc + agreements + pool + role' > "$R/src/roots/agreementPlane.ts"
+printf '%s\n' 'import { registry } from "../adapters/postgres/registry.ts"' 'import { tuples } from "../adapters/keto/tuples.ts"' 'export const plane = registry + tuples' > "$R/src/roots/poolPlane.ts"
+seal
+check "the agreement plane's root may reach its store, a pool and the issuer, and another root a database and the authority" 0 "$RC" "graph clean"
+
+# Each adapter the rule refuses, directly and through a composition helper.
+# The helper belongs to neither the root nor the adapter, so no edge leaves
+# src/roots/agreementPlane.ts for it and only reachability sees the second
+# shape: without `reachable: true` on the rule that tree is clean and no other
+# case notices.
+for refused in postgres/registry keto/tuples forge/forge; do
+	fixture
+	mkdir -p "$R/src/roots" "$R/src/adapters/${refused%/*}"
+	printf '%s\n' 'export const refused = 1' > "$R/src/adapters/$refused.ts"
+	printf '%s\n' "import { refused } from \"../adapters/$refused.ts\"" 'export const plane = refused' > "$R/src/roots/agreementPlane.ts"
+	seal
+	check "the agreement plane's root may not import $refused" 1 "$RC" "agreement-plane-reaches-only-its-agreement-store:"
+
+	fixture
+	mkdir -p "$R/src/roots" "$R/src/adapters/${refused%/*}"
+	printf '%s\n' 'export const refused = 1' > "$R/src/adapters/$refused.ts"
+	printf '%s\n' "import { refused } from \"./adapters/$refused.ts\"" 'export const wired = refused' > "$R/src/compose.ts"
+	printf '%s\n' 'import { wired } from "../compose.ts"' 'export const plane = wired' > "$R/src/roots/agreementPlane.ts"
+	seal
+	check "the agreement plane's root may not REACH $refused through a composition helper" 1 "$RC" "agreement-plane-reaches-only-its-agreement-store:"
+done
+
 # --- only-the-access-plane-reaches-the-directory ------------------------------
 
 # The allowed shape first: the access plane's root reaches the directory's

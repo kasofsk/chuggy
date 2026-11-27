@@ -165,6 +165,27 @@ module.exports = {
       },
     },
     {
+      name: "agreement-plane-reaches-only-its-agreement-store",
+      comment:
+        "The agreement plane is the record of who agreed to which policies, " +
+        "and its role can append to that record and read nothing else. A " +
+        "PostgreSQL adapter reached from its root other than its own store " +
+        "and what opening a pool reaches would compose a statement its role " +
+        "is refused, and an authority's or a forge's adapter would give the " +
+        "process reach the deployment admits it nowhere near. Reachability " +
+        "rather than an import, because the shape that breaks it is a " +
+        "shared composition helper that opens a pool and composes some " +
+        "other store beside it.",
+      severity: "error",
+      from: { path: "^src/roots/agreementPlane[.]ts$" },
+      to: {
+        reachable: true,
+        path: "^src/adapters/(postgres|keto|forge)/",
+        pathNot:
+          "^src/adapters/postgres/((policyAgreements|pool|schema)[.]ts$|schema/)",
+      },
+    },
+    {
       name: "only-the-access-plane-reaches-the-directory",
       comment:
         "The directory's admin API has no authentication: whatever reaches " +
