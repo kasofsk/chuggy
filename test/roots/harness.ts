@@ -11,13 +11,18 @@
  * own way, and a fixed marker here would make this harness a second place a
  * command's output format is written down.
  *
+ * A PLANE'S ROOT IS RUN TO ITS END under an environment holding none of its
+ * own variables but the ones a case names, so what the suite's own environment
+ * happens to carry never decides a start.
+ *
  * A PROGRAM WAITS ON ITS OWN STATE. A program in a child is out of the test's
  * reach, so `programUntil` polls an expression over the program's own scope
  * and fails by the name the caller gives once its bound passes.
  */
 
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
+import { promisify } from "node:util";
 
 export interface SignalledRun {
   readonly code: number;
@@ -109,4 +114,42 @@ export function programUntil(reached: string, failure: string): string {
       if (Date.now() > deadline) throw new Error(${JSON.stringify(failure)});
       await new Promise((resolve) => setTimeout(resolve, ${String(programAskMs)}));
     }`;
+}
+
+/** How a run to its end exited, and what it wrote. */
+export interface PlaneRootRun {
+  readonly code: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+const executed = promisify(execFile);
+
+/** Runs `argv` to its end with no variable starting `prefix` in its environment but `named`. */
+export async function planeRootRan(
+  prefix: string,
+  argv: readonly string[],
+  named: Readonly<Record<string, string>>,
+): Promise<PlaneRootRun> {
+  const env = {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(([name]) => !name.startsWith(prefix)),
+    ),
+    ...named,
+  };
+  try {
+    const done = await executed(
+      process.execPath,
+      ["--experimental-strip-types", ...argv],
+      { cwd: process.cwd(), env },
+    );
+    return { code: 0, stdout: done.stdout, stderr: done.stderr };
+  } catch (failure) {
+    const done = failure as { code?: number; stdout?: string; stderr?: string };
+    return {
+      code: done.code ?? 1,
+      stdout: done.stdout ?? "",
+      stderr: done.stderr ?? "",
+    };
+  }
 }

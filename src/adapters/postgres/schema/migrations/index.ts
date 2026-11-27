@@ -218,6 +218,7 @@ import { migration217 } from "./217-project-themes.ts";
 import { migration218 } from "./218-project-images.ts";
 import { migration219 } from "./219-queue-checks-recheck.ts";
 import { migration220 } from "./220-queue-failed-checks.ts";
+import { migration221 } from "./221-policy-agreements.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -441,4 +442,5 @@ export const migrations: readonly Migration[] = [
   migration218,
   migration219,
   migration220,
+  migration221,
 ];

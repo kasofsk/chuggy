@@ -3,6 +3,7 @@ import { after, before, test } from "node:test";
 import {
   acceptanceFunction,
   accessPlaneRole,
+  agreementPlaneRole,
   agentAccountCredentialOffFunction,
   agentAccountCredentialOnFunction,
   agentAccountCredentialRetireFunction,
@@ -105,6 +106,7 @@ test("every runtime role may read only the migration ledger contract", async () 
   for (const role of [
     accessPlaneRole,
     metricsPlaneRole,
+    agreementPlaneRole,
     apiRole,
     ticketServiceRole,
     schedulerRole,

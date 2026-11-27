@@ -25,6 +25,10 @@ const tables = [
     rootPath: "src/roots/accessPlane.ts",
     heading: "## Configuring the access plane",
   },
+  {
+    rootPath: "src/roots/agreementPlane.ts",
+    heading: "## Configuring the agreement plane",
+  },
 ] as const;
 
 /** Every environment variable the root names, which is every one it can read. */
