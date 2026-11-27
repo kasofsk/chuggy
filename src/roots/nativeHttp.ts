@@ -93,9 +93,12 @@ import {
 } from "../interpreter/serviceRuntime.ts";
 import {
   checkedProjectAccessSettings,
+  checkedProjectAccessUrl,
   projectAccessTimeoutMsDefault,
   type ProjectAccessSettings,
 } from "../interpreter/projectAccess.ts";
+import type { AgreementStandings } from "../interpreter/agreementStanding.ts";
+import { agreementPlaneStandings } from "../adapters/agreements/standings.ts";
 import { pathToFileURL } from "node:url";
 import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
 import {
@@ -238,6 +241,13 @@ const ketoTimeoutVariable = "CHUG_API_KETO_TIMEOUT_MS";
 const poolTokenUrlVariable = "CHUG_API_POOL_TOKEN_URL";
 const poolPlaneUrlVariable = "CHUG_API_POOL_PLANE_URL";
 const poolRegistryHostVariable = "CHUG_API_POOL_REGISTRY_HOST";
+/**
+ * The agreement plane's second listener, which every request under the
+ * issuer's bearer is asked about where it is named, and nothing is where it
+ * is not.
+ */
+const agreementPlaneUrlVariable = "CHUG_API_AGREEMENT_PLANE_URL";
+const agreementPlaneTimeoutVariable = "CHUG_API_AGREEMENT_PLANE_TIMEOUT_MS";
 /**
  * The pool plane's size for an execution naming none, read under the plane's
  * own name as the scheduler reads it, so the count of what waits for a
@@ -532,6 +542,31 @@ function ketoConfig(): ProjectAccessSettings {
     readUrl: requiredEnvironment(ketoReadUrlVariable),
     requestTimeoutMs: positiveEnvironment(
       ketoTimeoutVariable,
+      projectAccessTimeoutMsDefault,
+    ),
+  });
+}
+
+/**
+ * Where a person's agreement to the deployment's policies is read, or nowhere
+ * where the deployment names no plane. Every refusal of the address names the
+ * variable and never the value, which may carry a credential.
+ */
+export function nativeAgreementStandings(): AgreementStandings | undefined {
+  const named = process.env[agreementPlaneUrlVariable];
+  if (named === undefined || named.length === 0) return undefined;
+  let url: string;
+  try {
+    url = checkedProjectAccessUrl(named, agreementPlaneUrlVariable);
+  } catch {
+    throw new Error(
+      `${agreementPlaneUrlVariable} must be an HTTP or HTTPS URL carrying no credentials`,
+    );
+  }
+  return agreementPlaneStandings({
+    url,
+    requestTimeoutMs: positiveEnvironment(
+      agreementPlaneTimeoutVariable,
       projectAccessTimeoutMsDefault,
     ),
   });
@@ -1472,6 +1507,7 @@ function nativeListening(
 async function main(): Promise<void> {
   const keying = idempotencyKeying();
   const authenticationConfig = oidcConfig();
+  const agreements = nativeAgreementStandings();
   const reporters = nativeActionReporters();
   const pools = nativePools();
   const { pool } = pools;
@@ -1533,6 +1569,7 @@ async function main(): Promise<void> {
     composeProjectConnectors(pool, access),
     appearanceService(postgresAppearance(pool)),
     composeProjectAppearance(pool, access, artifacts),
+    agreements,
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

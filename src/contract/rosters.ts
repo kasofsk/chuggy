@@ -963,6 +963,13 @@ export const programSkipsPlannedEvaluationsCode =
   "ProgramSkipsPlannedEvaluations";
 
 /**
+ * What a request under the issuer's bearer is refused with, 403, where the
+ * deployment requires agreement to its policies and the person has not agreed
+ * to every current one. A console sends them to agree, so the code is shared.
+ */
+export const agreementRequiredCode = "AgreementRequired";
+
+/**
  * What a resolution of a native action is answered with when nothing is accepted.
  * An agent or a session never answers an evaluation approval, a reader its approvers do not name may not, only that kind takes feedback, and its `Reject` needs some.
  */
