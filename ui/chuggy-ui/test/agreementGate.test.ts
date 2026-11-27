@@ -1,6 +1,8 @@
 /**
  * The agreement gate decided with no renderer: what each standing draws, what
- * a send names, and what each answer of that send is followed by.
+ * a send names, what each answer of that send is followed by, and what an
+ * answer refusing for want of agreement makes of each state and what each
+ * answer of the read it asks for makes of that.
  */
 
 import { expect, test } from "vitest";
@@ -11,7 +13,10 @@ import type { AgreementStanding } from "../../../src/contract/agreementPlane.ts"
 import {
   agreementAnswered,
   agreementGateDrawn,
+  agreementGateOpened,
   agreementGateUnread,
+  agreementHeard,
+  agreementHeardAnswered,
   agreementPending,
   agreementReadable,
   agreementSendable,
@@ -21,6 +26,8 @@ import {
 import type {
   AgreementAsking,
   AgreementGate,
+  AgreementGateDrawn,
+  AgreementPassed,
 } from "../app/core/agreementGate.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import {
@@ -33,6 +40,12 @@ function read(standing: AgreementStanding): ApiResult<AgreementStanding> {
 }
 
 const agreedAt = "2026-11-27T10:00:00Z";
+
+const passed: AgreementGate = {
+  gate: "Passed",
+  by: "Standing",
+  reading: false,
+};
 
 const asking: AgreementAsking = {
   gate: "Asking",
@@ -110,7 +123,7 @@ test("the first read is asked for once, and a retry only from a page that could 
   expect(agreementReadable(agreementGateUnread, "First")).toBe(true);
   expect(agreementReadable({ gate: "Reading" }, "First")).toBe(false);
   expect(agreementReadable(notRead, "First")).toBe(false);
-  expect(agreementReadable({ gate: "Passed" }, "First")).toBe(false);
+  expect(agreementReadable(passed, "First")).toBe(false);
   expect(agreementReadable(notRead, "Retry")).toBe(true);
   expect(agreementReadable(agreementPending(notRead), "Retry")).toBe(false);
   expect(agreementReadable(agreementGateUnread, "Retry")).toBe(false);
@@ -134,13 +147,13 @@ test("a send names exactly the policies listed, each at the version and digest t
   expect(() => agreementSent([])).toThrow();
   expect(agreementSendable(asking)).toBe(true);
   expect(agreementSendable(agreementPending(asking))).toBe(false);
-  expect(agreementSendable({ gate: "Passed" })).toBe(false);
+  expect(agreementSendable(passed)).toBe(false);
 });
 
 test("a send answered with a standing is drawn as that standing", () => {
   expect(
     agreementAnswered(asking, read({ policies: [{ ...terms, agreedAt }] })),
-  ).toStrictEqual({ follows: "Gate", gate: { gate: "Passed" } });
+  ).toStrictEqual({ follows: "Gate", gate: passed });
   expect(
     agreementAnswered(
       asking,
@@ -185,3 +198,122 @@ test("policies that changed are read again, and any other refusal keeps the list
       });
   }
 });
+
+test("a deployment that does not ask stands passed with no read from the first draw, and one that asks opens unread", () => {
+  expect(agreementGateOpened(agreementGateUnread, false)).toStrictEqual({
+    gate: "Passed",
+    by: "Unasked",
+    reading: false,
+  });
+  expect(
+    agreementGateDrawn(agreementGateOpened(agreementGateUnread, false)),
+  ).toStrictEqual({ drawn: "Router" });
+  expect(agreementGateOpened(agreementGateUnread, true)).toBe(
+    agreementGateUnread,
+  );
+  expect(agreementGateOpened(asking, false)).toBe(asking);
+});
+
+const passedUnasked: AgreementPassed = {
+  gate: "Passed",
+  by: "Unasked",
+  reading: false,
+};
+
+test.each<[string, AgreementGate, AgreementPassed | undefined]>([
+  ["unread", agreementGateUnread, undefined],
+  ["reading the first standing", { gate: "Reading" }, undefined],
+  ["asking", asking, undefined],
+  ["asking, busy", { ...asking, busy: true }, undefined],
+  ["not read", { gate: "NotRead", busy: false }, undefined],
+  ["not read, busy", { gate: "NotRead", busy: true }, undefined],
+  [
+    "passed by a standing",
+    passed,
+    { gate: "Passed", by: "Standing", reading: true },
+  ],
+  [
+    "passed unasked",
+    passedUnasked,
+    { gate: "Passed", by: "Unasked", reading: true },
+  ],
+  [
+    "passed by a standing, reading",
+    { ...passedUnasked, by: "Standing", reading: true },
+    undefined,
+  ],
+  ["passed unasked, reading", { ...passedUnasked, reading: true }, undefined],
+])(
+  "an answer refusing for want of agreement, heard %s, makes the gate %o",
+  (_state, gate, made) => {
+    expect(agreementHeard(gate)).toStrictEqual(made);
+    if (made !== undefined)
+      expect(agreementGateDrawn(made)).toStrictEqual({ drawn: "Router" });
+  },
+);
+
+const halfAgreed = read({ policies: [{ ...terms, agreedAt }, privacy] });
+const allAgreed = read({ policies: [{ ...terms, agreedAt }] });
+const unread: ApiResult<AgreementStanding> = {
+  outcome: "Fault",
+  code: "InternalError",
+  status: 500,
+};
+
+test.each<
+  [string, AgreementPassed, ApiResult<AgreementStanding>, AgreementGateDrawn]
+>([
+  [
+    "a standing naming a policy unagreed, after a pass by a standing",
+    { ...passedUnasked, by: "Standing", reading: true },
+    halfAgreed,
+    {
+      drawn: "Page",
+      policies: [privacy],
+      notice: { tone: "info", line: { id: "agreements-changed" } },
+      busy: false,
+    },
+  ],
+  [
+    "a standing naming a policy unagreed, after a pass unasked",
+    { ...passedUnasked, reading: true },
+    halfAgreed,
+    { drawn: "Page", policies: [privacy], notice: undefined, busy: false },
+  ],
+  [
+    "a standing every policy agreed in, after a pass by a standing",
+    { ...passedUnasked, by: "Standing", reading: true },
+    allAgreed,
+    { drawn: "Router" },
+  ],
+  [
+    "a standing every policy agreed in, after a pass unasked",
+    { ...passedUnasked, reading: true },
+    allAgreed,
+    { drawn: "Router" },
+  ],
+  [
+    "a standing not read, after a pass by a standing",
+    { ...passedUnasked, by: "Standing", reading: true },
+    unread,
+    { drawn: "NotRead", busy: false },
+  ],
+  [
+    "a standing not read, after a pass unasked",
+    { ...passedUnasked, reading: true },
+    unread,
+    { drawn: "NotRead", busy: false },
+  ],
+])(
+  "the read a heard answer asks for, answered %s, draws %o",
+  (_answered, passedReading, result, drawn) => {
+    const gate = agreementHeardAnswered(passedReading, result);
+    expect(agreementGateDrawn(gate)).toStrictEqual(drawn);
+    if (gate.gate === "Passed")
+      expect(gate).toStrictEqual({
+        gate: "Passed",
+        by: "Standing",
+        reading: false,
+      });
+  },
+);

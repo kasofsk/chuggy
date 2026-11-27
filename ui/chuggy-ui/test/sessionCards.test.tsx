@@ -32,6 +32,7 @@ import {
   sessionHarnessConfiguration as configuration,
   sessionHarnessDiscovery as discovery,
 } from "./sessionHolderHarness.ts";
+import { ConsoleStoreBareProvided } from "./consoleStoreBare.tsx";
 import { renderCopied } from "./copied.tsx";
 import { centeredPageSaid } from "./centeredPageDrawn.ts";
 
@@ -84,11 +85,13 @@ async function mounted(
   const holder = createSessionHolder({ ...harness.ports, fetchJson, ...ports });
   renderCopied(
     <SessionProvider holder={holder}>
-      <App
-        queryClient={
-          new QueryClient({ defaultOptions: { queries: { retry: false } } })
-        }
-      />
+      <ConsoleStoreBareProvided>
+        <App
+          queryClient={
+            new QueryClient({ defaultOptions: { queries: { retry: false } } })
+          }
+        />
+      </ConsoleStoreBareProvided>
     </SessionProvider>,
   );
   await act(() => sessionBegin(holder));
@@ -259,11 +262,13 @@ test("a load still unanswered is drawn on the same page, with no action", () => 
   const holder = createSessionHolder({ ...sessionHarness().ports, fetchJson });
   renderCopied(
     <SessionProvider holder={holder}>
-      <App
-        queryClient={
-          new QueryClient({ defaultOptions: { queries: { retry: false } } })
-        }
-      />
+      <ConsoleStoreBareProvided>
+        <App
+          queryClient={
+            new QueryClient({ defaultOptions: { queries: { retry: false } } })
+          }
+        />
+      </ConsoleStoreBareProvided>
     </SessionProvider>,
   );
   expect(centeredPageSaid()).toStrictEqual({

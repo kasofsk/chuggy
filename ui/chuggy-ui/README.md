@@ -158,7 +158,9 @@ policies before the console draws anything else, reading and recording that
 under `/agreements/v1` on the console's own origin, and names those policies
 on an invite link's card. A deployment whose API is given
 `CHUG_API_AGREEMENT_PLANE_URL` sets it; one naming no policies leaves it out,
-and its console reads nothing under that path.
+and its console reads nothing under that path until the API refuses a person
+for want of agreement. That refusal, heard by an open console in either case,
+reads the standing again and draws the page where a policy is not agreed.
 
 ## The image
 

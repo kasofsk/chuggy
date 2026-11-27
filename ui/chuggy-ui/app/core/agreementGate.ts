@@ -10,6 +10,12 @@
  * A SEND NAMES WHAT THE PAGE LISTS, each policy at the version and digest the
  * standing gave, so a policy that moved while the page was open is refused
  * whole by the plane and read again here rather than agreed to unseen.
+ *
+ * A PASS STANDS UNTIL THE API SAYS OTHERWISE. A deployment that does not ask
+ * passes the gate with no read, and an answer refusing the person for want of
+ * agreement, heard while the gate is passed, reads the standing again under the
+ * router. A standing that says every policy is agreed leaves the pass as it
+ * was, so an API and a plane that disagree for a moment ask nothing more.
  */
 
 import {
@@ -35,6 +41,17 @@ export interface AgreementAsking {
   readonly busy: boolean;
 }
 
+/** What a pass stands on: a standing read, or a deployment that did not ask. */
+export type AgreementPassedBy = "Standing" | "Unasked";
+
+/** The gate passed, `reading` while a read of the standing an answer asked for
+ * is unanswered. */
+export interface AgreementPassed {
+  readonly gate: "Passed";
+  readonly by: AgreementPassedBy;
+  readonly reading: boolean;
+}
+
 /** Where the gate stands: nothing asked yet, the first read unanswered, the
  * page, a standing not read, or passed. */
 export type AgreementGate =
@@ -42,7 +59,7 @@ export type AgreementGate =
   | { readonly gate: "Reading" }
   | AgreementAsking
   | { readonly gate: "NotRead"; readonly busy: boolean }
-  | { readonly gate: "Passed" };
+  | AgreementPassed;
 
 export const agreementGateUnread: AgreementGate = { gate: "Unread" };
 
@@ -88,7 +105,8 @@ function agreementNoticeDrawn(
   }
 }
 
-/** The opening card until the first read answers, and then what it answered. */
+/** The opening card until the first read answers, and then what it answered:
+ * the router for a pass, a read under it included. */
 export function agreementGateDrawn(gate: AgreementGate): AgreementGateDrawn {
   switch (gate.gate) {
     case "Unread":
@@ -106,6 +124,17 @@ export function agreementGateDrawn(gate: AgreementGate): AgreementGateDrawn {
     case "Passed":
       return { drawn: "Router" };
   }
+}
+
+/** The gate as a signed-in root first stands on it: passed with no read where
+ * the deployment does not ask and nothing has moved it, and as it is
+ * otherwise. */
+export function agreementGateOpened(
+  gate: AgreementGate,
+  asked: boolean,
+): AgreementGate {
+  if (asked || gate.gate !== "Unread") return gate;
+  return { gate: "Passed", by: "Unasked", reading: false };
 }
 
 /** Which read of the standing is asked for: the one at sign-in, or a press
@@ -135,7 +164,8 @@ export function agreementSendable(
 }
 
 /** The gate while a read or a send of it is unanswered: the opening card for
- * the first read, and the page it was asked from, busy, for any other. */
+ * the first read, the pass reading under the router, and the page it was asked
+ * from, busy, for any other. */
 export function agreementPending(gate: AgreementGate): AgreementGate {
   switch (gate.gate) {
     case "Unread":
@@ -145,8 +175,30 @@ export function agreementPending(gate: AgreementGate): AgreementGate {
     case "NotRead":
       return { ...gate, busy: true };
     case "Passed":
-      return gate;
+      return { ...gate, reading: true };
   }
+}
+
+/** What an answer refusing for want of agreement makes of the gate: a pass
+ * with no read out reads the standing, and in any other state nothing
+ * follows. */
+export function agreementHeard(
+  gate: AgreementGate,
+): AgreementPassed | undefined {
+  if (gate.gate !== "Passed" || gate.reading) return undefined;
+  return { ...gate, reading: true };
+}
+
+/** The standing a heard answer asked for, drawn as any read one is, under the
+ * changed notice where the pass stood on a standing the person was shown. */
+export function agreementHeardAnswered(
+  passed: AgreementPassed,
+  result: ApiResult<AgreementStanding>,
+): AgreementGate {
+  return agreementStandingGate(
+    result,
+    passed.by === "Standing" ? "Changed" : "None",
+  );
 }
 
 /** A standing as the gate stands on it: passed where every policy carries
@@ -160,7 +212,8 @@ export function agreementStandingGate(
   const policies = result.value.policies.filter(
     (entry) => entry.agreedAt === undefined,
   );
-  if (policies.length === 0) return { gate: "Passed" };
+  if (policies.length === 0)
+    return { gate: "Passed", by: "Standing", reading: false };
   return { gate: "Asking", policies, notice, busy: false };
 }
 

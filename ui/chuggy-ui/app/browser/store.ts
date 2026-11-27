@@ -19,15 +19,16 @@
  * WHAT NEVER ENTERS IT. A server's answer, which is TanStack Query's, and a
  * held draft's `DraftResponse` is not one: it is the console's own record of
  * its submission, and nothing refreshes it. Nor is the agreement gate's
- * standing, which is read before the router and its queries are drawn, and
- * read again only by the gate's own flow. A token or a one-time secret; a
+ * standing, which is read before the router and its queries are drawn where
+ * the deployment asks, and read again only by the gate's own flow, which an
+ * answer refusing for want of agreement starts. A token or a one-time secret; a
  * function; a DOM node; a promise; bytes; and text that changes per token or
  * per keystroke. What the URL holds stays in the URL, and what only one
  * component draws stays in that component. A cell enters only because
  * something must survive the screen that drew it.
  *
  * THERE IS NO MODULE'S STORE. `consoleStore` is called once by `main.tsx`,
- * beside the query client, and once by each case, so no state crosses from one
+ * beside the query client, through `consoleStoreJoined`, and once by each case, so no state crosses from one
  * case to the next. A write that reports into it takes the dispatch when it
  * mounts, and the store outliving every screen is what keeps that dispatch
  * good after the screen is gone. A thunk reaches the API and the query cache
