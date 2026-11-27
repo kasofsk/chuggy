@@ -50,6 +50,7 @@ configuration-importer-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/'
 pool-plane-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 access-plane-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 metrics-plane-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+agreement-plane-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 EOF
 ```
 
@@ -86,6 +87,7 @@ export CHUG_PG_CONFIGURATION_IMPORTER_PASSWORD="$(secret chuggy-postgres-credent
 export CHUG_PG_POOL_PLANE_PASSWORD="$(secret chuggy-postgres-credentials pool-plane-password)"
 export CHUG_PG_ACCESS_PLANE_PASSWORD="$(secret chuggy-postgres-credentials access-plane-password)"
 export CHUG_PG_METRICS_PLANE_PASSWORD="$(secret chuggy-postgres-credentials metrics-plane-password)"
+export CHUG_PG_AGREEMENT_PLANE_PASSWORD="$(secret chuggy-postgres-credentials agreement-plane-password)"
 
 : "${PGPASSWORD:?the superuser password did not read back}" \
   "${CHUG_PG_OWNER_PASSWORD:?owner-password did not read back}" \
@@ -97,7 +99,8 @@ export CHUG_PG_METRICS_PLANE_PASSWORD="$(secret chuggy-postgres-credentials metr
   "${CHUG_PG_CONFIGURATION_IMPORTER_PASSWORD:?configuration-importer-password did not read back}" \
   "${CHUG_PG_POOL_PLANE_PASSWORD:?pool-plane-password did not read back}" \
   "${CHUG_PG_ACCESS_PLANE_PASSWORD:?access-plane-password did not read back}" \
-  "${CHUG_PG_METRICS_PLANE_PASSWORD:?metrics-plane-password did not read back}" &&
+  "${CHUG_PG_METRICS_PLANE_PASSWORD:?metrics-plane-password did not read back}" \
+  "${CHUG_PG_AGREEMENT_PLANE_PASSWORD:?agreement-plane-password did not read back}" &&
 psql -h 127.0.0.1 -p 55440 -U postgres -d chuggy_rehearsal -f deploy/rig/postgres/postgres-roles.sql
 ```
 
@@ -272,6 +275,9 @@ spec:
         - name: CHUG_PG_METRICS_PLANE_PASSWORD
           valueFrom:
             secretKeyRef: { name: chuggy-postgres-credentials, key: metrics-plane-password }
+        - name: CHUG_PG_AGREEMENT_PLANE_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: chuggy-postgres-credentials, key: agreement-plane-password }
 YAML
 kubectl -n chuggy wait --for=condition=Ready pod/probe
 
@@ -353,6 +359,7 @@ as chuggy_configuration_importer_login CHUG_PG_CONFIGURATION_IMPORTER_PASSWORD c
 as chuggy_pool_plane_login CHUG_PG_POOL_PLANE_PASSWORD chuggy_pool_plane
 as chuggy_access_plane_login CHUG_PG_ACCESS_PLANE_PASSWORD chuggy_access_plane
 as chuggy_metrics_plane_login CHUG_PG_METRICS_PLANE_PASSWORD chuggy_metrics_plane
+as chuggy_agreement_plane_login CHUG_PG_AGREEMENT_PLANE_PASSWORD chuggy_agreement_plane
 ```
 
 The owner's line asks about `chuggy_boundary_owner` rather than a service

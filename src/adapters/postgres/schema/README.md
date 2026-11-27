@@ -611,6 +611,18 @@ takes an advisory lock on the tenant, or for a workspace link on the site,
 drops that set's ended links past the most recently ended it keeps, and counts
 its open ones before it inserts. A link is not a ticket, and the wipe keeps it.
 
+`policy_agreement` — who agreed to which version of the deployment's policies,
+a row to a person's agreement to one version as its text was pinned. The
+agreement plane's role reads it and inserts every column but `agreed_at`, which
+is `now()` by its default, and holds no UPDATE, DELETE or TRUNCATE on it, so
+the process that writes the record cannot alter or remove it. Its key and
+identity are `(principal, policy, version, digest)`, and it points at no row:
+a row copies the url and digest it was agreed under rather than naming the
+configuration, which lives in the deployment's environment. It is changed by
+an insert alone, which skips a key already held, so the first row stands with
+its time and evidence. It has no unfinished work: a request's rows are one
+statement. It is a person's record, not a ticket's, and the wipe keeps it.
+
 `agent_account_usage` — the latest reading of each window of each credential
 of an agent account: how much of the window was used, when it reopens, when it
 was observed, and the attempt whose run reported it. Owned by the boundary

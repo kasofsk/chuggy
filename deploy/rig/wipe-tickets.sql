@@ -30,6 +30,9 @@
 -- record of a repository and names no ticket. Nor is what a person set of
 -- their agent accounts' pauses, or their last press: each is theirs. Nor is
 -- the name a deleted project vacated, which is a name and names no ticket.
+-- Nor is `policy_agreement`, who agreed to which version of the deployment's
+-- policies: each agreement is a person's, and the record of it is never
+-- removed.
 --
 -- WHY THE SEEDED SINGLETON IS NOT IN IT. `thread_wake_cursor` holds one row,
 -- written by the baseline install, and no role holds INSERT on it — a

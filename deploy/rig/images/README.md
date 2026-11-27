@@ -241,6 +241,31 @@ answers 503 to a scrape it cannot answer whole.
 | `CHUG_METRICS_PLANE_HOST` | | the default is loopback |
 | `CHUG_METRICS_PLANE_PORT` | 3004 | |
 
+## Configuring the agreement plane
+
+Every variable here is read by `src/roots/agreementPlane.ts`, and the process
+refuses to start without the required ones. It records who agreed to which
+version of the policies the deployment names, and reaches PostgreSQL and its
+issuer's discovery and nothing else.
+
+The second listener takes no bearer: it answers any principal's standing to
+whoever reaches it, so a deployment admits to it only its own processes that
+may ask.
+
+| Variable | | |
+|---|---|---|
+| `CHUG_AGREEMENT_PLANE_DATABASE_URL` | required | the PostgreSQL agreements are kept in, connecting as `chuggy_agreement_plane_login` with the group named as `?options=-c%20role%3Dchuggy_agreement_plane`; the plane is ready only when it is that role |
+| `CHUG_AGREEMENT_PLANE_OIDC_ISSUER` | required | the issuer people sign in through; a caller whose principal is under any other is answered `NotFound` |
+| `CHUG_AGREEMENT_PLANE_OIDC_AUDIENCE` | required | |
+| `CHUG_AGREEMENT_PLANE_OIDC_ALGORITHMS` | required | comma-separated, read as `CHUG_API_OIDC_ALGORITHMS` is |
+| `CHUG_AGREEMENT_PLANE_OIDC_DISCOVERY_TIMEOUT_MS` | | as the access plane's |
+| `CHUG_AGREEMENT_PLANE_OIDC_JWKS_TIMEOUT_MS` | | as the access plane's |
+| `CHUG_AGREEMENT_PLANE_POLICIES` | | a JSON array of `{policy, title, version, url, digest}`, one entry per `policy` and each its current version, `url` the https address its text is published at and `digest` that text's `sha256:` digest as pinned; at most `agreementPoliciesMax` of `src/contract/agreementPlane.ts`. Neither is fetched or checked. Unset or `[]`, nobody is asked for anything; malformed, the start is refused. Re-pinning a version's digest asks everyone again |
+| `CHUG_AGREEMENT_PLANE_HOST` | | both listeners' host; the default is loopback |
+| `CHUG_AGREEMENT_PLANE_PORT` | 3006 | |
+| `CHUG_AGREEMENT_PLANE_SERVICE_PORT` | | the second listener's port, serving `GET /agreements/v1/people/:principal/standing` and nothing else; unset, there is no second listener and nothing serves that route |
+| `CHUG_AGREEMENT_PLANE_CLIENT_ADDRESS_HEADER` | | the one request header an agreement's client address is taken from, named only behind a proxy the deployment trusts to set it; unset, it is the socket's peer. A value that is not one IP address records none |
+
 ## Configuring the worker plane
 
 Every variable here is read by `src/roots/workerPlane.ts`, and the process
