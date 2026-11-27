@@ -36,6 +36,9 @@ export interface SetupCopy {
   readonly "setup-site-issuer": {
     readonly site: unknown;
   };
+  readonly "setup-site-unagreed": {
+    readonly site: unknown;
+  };
   readonly "setup-start-tell": {
     readonly repository: unknown;
   };
@@ -340,6 +343,12 @@ export interface SetupCopy {
     readonly site: unknown;
     readonly came: unknown;
   };
+  readonly "setup-unagreed-found": Record<never, never>;
+  readonly "setup-unagreed-tell": {
+    readonly site: unknown;
+  };
+  readonly "setup-unagreed-when": Record<never, never>;
+  readonly "setup-unagreed-rule": Record<never, never>;
   readonly "setup-forgotten": Record<never, never>;
   readonly "setup-workspaces-unread-found": {
     readonly outcome: unknown;

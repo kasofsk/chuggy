@@ -27,6 +27,7 @@ setup-site-unconfirmed = { $site }, sign-in not confirmed
 setup-site-unreachable = { $site }, no answer
 setup-site-unconfigured = { $site }, not a { setup-site } this program can read
 setup-site-issuer = { $site }, its sign-in server is not answering
+setup-site-unagreed = { $site }, needs your agreement
 
 ## What setup will do, said before any of it is done, and the yes it waits on.
 
@@ -188,6 +189,14 @@ setup-unreachable-tell = { $site } did not answer, so { setup-program } { $came 
 setup-unconfigured-found = the address answered, and not as a { setup-site }
 # spells -brief-check: to check is a verb here
 setup-unconfigured-tell = What answered at { $site } is not a { setup-site } this program can read, so { setup-program } { $came }. Check the address, and tell me if you want me to try again.
+
+## A site that asks the person's agreement to its policies before it answers.
+
+setup-unagreed-found = the { -site } asks for your agreement to its policies before it answers
+setup-unagreed-tell = The { setup-site } asks you to agree to its policies before { setup-program } can go on. Open { $site } in your browser, sign in and agree there, and tell me once you have.
+setup-unagreed-when = once the person says they have agreed
+# spells -run: to run is a verb here
+setup-unagreed-rule = Until then, run no other { setup-program } command. Agreeing is the person's alone: do not open the { -site } for them and do not agree on their behalf.
 
 ## A read that failed, or that this copy of the program could not read.
 

@@ -12,7 +12,7 @@
  * message could carry, is ever printed.
  */
 
-import type { ApiFailure } from "./apiRequest.ts";
+import type { ApiFailure, ApiPorts } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
 import { operationIdBytesCount } from "./operationFollow.ts";
 import { setupAgentRead, setupMcpPackaged, setupServer } from "./setupAgent.ts";
@@ -247,6 +247,46 @@ function setupBusy(
   return { report: "Busy", asked, site, pid: setupLockHeldBy(ports) };
 }
 
+/** What ends a run once the site has asked the person's agreement, from wherever the run was: the stop that waits on it. */
+class SetupUnagreed extends Error {
+  readonly site: string;
+
+  constructor(site: string) {
+    super("the site waits on the person's agreement");
+    this.name = "SetupUnagreed";
+    this.site = site;
+  }
+}
+
+/** Ends the run where the site has asked the person's agreement of a request sent under `opened`. */
+function setupAgreed(opened: SetupSessionOpened): void {
+  if (opened.agreement.asked) throw new SetupUnagreed(opened.site);
+}
+
+/** The ports a signed-in run reads through. */
+function setupReadsOf(
+  signed: Extract<SetupSigned, { readonly signed: "In" }>,
+): ApiPorts {
+  return setupReadPorts(
+    signed.opened.api,
+    signed.bearer,
+    signed.opened.agreement,
+  );
+}
+
+/** The ports a signed-in run reads and makes `writes` through. */
+function setupWritesOf(
+  signed: Extract<SetupSigned, { readonly signed: "In" }>,
+  writes: readonly string[],
+): ApiPorts {
+  return setupWritePorts(
+    signed.opened.api,
+    signed.bearer,
+    signed.opened.agreement,
+    writes,
+  );
+}
+
 /**
  * The checklist, read once the lock is given up: nothing from here on reads
  * or writes the session file, and no request is sent while the lock is held
@@ -278,11 +318,9 @@ async function setupChecklist(
   const offers =
     filing === undefined
       ? undefined
-      : await setupTicketOffersRead(
-          setupReadPorts(signed.opened.api, signed.bearer),
-          filing,
-        );
+      : await setupTicketOffersRead(setupReadsOf(signed), filing);
   const usage = await setupChecklistUsage(ports, signed, standing);
+  setupAgreed(signed.opened);
   const merge =
     merged ??
     (setupMergeDue(standing) === undefined
@@ -322,29 +360,25 @@ async function setupChecklistUsage(
 ): Promise<SetupUsageRead | undefined> {
   if (setupUsageDue(standing) === undefined) return undefined;
   const nowMs = ports.nowMs();
-  const usage = await setupUsageRead(
-    setupReadPorts(signed.opened.api, signed.bearer),
-    nowMs,
-  );
+  const usage = await setupUsageRead(setupReadsOf(signed), nowMs);
   return usage === undefined ? undefined : { usage, nowMs };
 }
 
-/** Where the person stands, from one bundle of reads sent through ports that can only read. */
+/** Where the person stands, from one bundle of reads sent through ports that can only read, and never drawn where the site asked the person's agreement before or among them. */
 async function setupStandingRead(
   ports: SetupPorts,
   signed: Extract<SetupSigned, { readonly signed: "In" }>,
   answers: SetupAnswers,
   pacing: SetupPacing,
 ): Promise<SetupStanding> {
-  const reads = await readSetup(
-    setupReadPorts(signed.opened.api, signed.bearer),
-    {
-      site: signed.opened.site,
-      answers,
-      remote: await setupRemoteRead(ports.process, pacing.remoteWaitMs),
-      workspaces: signed.workspaces,
-    },
-  );
+  setupAgreed(signed.opened);
+  const reads = await readSetup(setupReadsOf(signed), {
+    site: signed.opened.site,
+    answers,
+    remote: await setupRemoteRead(ports.process, pacing.remoteWaitMs),
+    workspaces: signed.workspaces,
+  });
+  setupAgreed(signed.opened);
   return setupStanding(
     reads,
     await setupChecklistNamed(ports, reads),
@@ -460,11 +494,7 @@ async function setupImport(
     due === undefined
       ? undefined
       : await setupImportAsked(
-          setupWritePorts(
-            held.opened.api,
-            held.bearer,
-            setupImportWrites(due.partition),
-          ),
+          setupWritesOf(held, setupImportWrites(due.partition)),
           due.partition,
           due.repository,
         );
@@ -501,11 +531,7 @@ async function setupBound(
   >
 > {
   const answered = await setupBindAsked(
-    setupWritePorts(
-      held.opened.api,
-      held.bearer,
-      setupBindWrites(due.partition),
-    ),
+    setupWritesOf(held, setupBindWrites(due.partition)),
     due.partition,
     due.url,
     base64urlFromBytes(ports.drawBytes(operationIdBytesCount)),
@@ -626,9 +652,8 @@ async function setupMergeFirst(
     due === undefined
       ? undefined
       : await setupMergeAsked(
-          setupWritePorts(
-            held.opened.api,
-            held.bearer,
+          setupWritesOf(
+            held,
             setupMergeWrites(due.partition, due.unmerged.ticket),
           ),
           due.partition,
@@ -717,10 +742,7 @@ async function setupServe(
   const answered =
     due === undefined
       ? undefined
-      : await setupServeAsked(
-          setupWritePorts(held.opened.api, held.bearer, setupServeWrites(due)),
-          due,
-        );
+      : await setupServeAsked(setupWritesOf(held, setupServeWrites(due)), due);
   return {
     report: "Serve",
     project: due?.partition.project,
@@ -754,7 +776,7 @@ async function setupTicket(
     due === undefined
       ? undefined
       : await setupTicketFiled(
-          setupWritePorts(held.opened.api, held.bearer, setupTicketWrites(due)),
+          setupWritesOf(held, setupTicketWrites(due)),
           due,
           asked,
           { release: drawn(), dispatch: drawn() },
@@ -782,7 +804,7 @@ async function setupUsageRun(
   if (held === undefined) return setupBusy(ports, "Usage", asked.site);
   if (held.signed === "Out") return held.report;
   const answered = await setupUsageRaise(
-    setupWritePorts(held.opened.api, held.bearer, setupUsageWrites()),
+    setupWritesOf(held, setupUsageWrites()),
     asked.raised,
   );
   return {
@@ -847,6 +869,7 @@ async function setupRunnerEntry(
         bearer: held.bearer,
         workspaces: held.workspaces.tenants,
         login: held.login,
+        agreement: held.opened.agreement,
       },
     };
   } catch (failure: unknown) {
@@ -964,14 +987,21 @@ function setupFaultOf(failure: unknown): SetupFault {
     : { fault: "Unexpected" };
 }
 
-/** What a run the machine stopped reports, and is run again as: a listener is run by `sign-in` and by nobody else. */
+/** What a run is run again as: a listener is run by `sign-in` and by nobody else. */
+function setupAskedAs(
+  asked: Exclude<SetupAsked, { readonly asked: "Wrongly" }>,
+): SetupCommand {
+  return asked.asked === "Listen" ? "SignIn" : asked.asked;
+}
+
+/** What a run the machine stopped reports, and is run again as. */
 function setupFaulted(
   asked: Exclude<SetupAsked, { readonly asked: "Wrongly" }>,
   failure: unknown,
 ): SetupReport {
   return {
     report: "Faulted",
-    asked: asked.asked === "Listen" ? "SignIn" : asked.asked,
+    asked: setupAskedAs(asked),
     site: asked.site,
     fault: setupFaultOf(failure),
   };
@@ -1038,6 +1068,8 @@ export async function setupRun(
         return await setupListened(ports, asked.site, asked.lifeSecs);
     }
   } catch (failure: unknown) {
-    return setupFaulted(asked, failure);
+    return failure instanceof SetupUnagreed
+      ? { report: "Unagreed", site: failure.site, asked: setupAskedAs(asked) }
+      : setupFaulted(asked, failure);
   }
 }

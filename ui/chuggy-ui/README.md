@@ -192,8 +192,9 @@ command to run after it, or says to stop. It says to stop where running a
 command again would mend nothing until something else has changed: where the
 Node it was run under is too old, after a sign-in that was declined, left to
 expire or refused, where the site or the sign-in server did not answer, where
-the machine would not keep its files or another run held them, and where a
-step of setup waits on her. A `rule:` line then names the command and what
+the machine would not keep its files or another run held them, where the
+site asks her agreement to its policies, which only she gives, in the
+console, and where a step of setup waits on her. A `rule:` line then names the command and what
 must be so before it is run. How the last
 sign-in ended is said once by whichever command meets it first; from then on
 the bare command goes on saying it, and the next `sign-in` opens a page. It
@@ -213,7 +214,9 @@ one next thing. It sends the site nothing but reads and keeps nothing of what
 they answered: the site is the record. The sign-in server is sent one renewal,
 and where the site refuses the sign-in, one more and then the revocation of the
 token, which is forgotten. Each read stands by itself, so one the site refused,
-failed or sent only part of leaves its own step not read and is said as that.
+failed or sent only part of leaves its own step not read and is said as that,
+except a refusal asking her agreement: that ends every command at once, and
+nothing more is sent.
 Once a repository is added the github step is held to it: done only where both
 apps on the account that owns it are granted that repository, which is read
 from each of the two installations' own listings and from no other.
