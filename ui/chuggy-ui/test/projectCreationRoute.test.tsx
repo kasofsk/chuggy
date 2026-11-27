@@ -13,6 +13,7 @@
 
 import { QueryClient } from "@tanstack/react-query";
 import { cleanup, screen } from "@testing-library/react";
+import { ConsoleStoreBareProvided } from "./consoleStoreBare.tsx";
 import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -50,11 +51,13 @@ async function fieldsAt(address: string): Promise<readonly string[]> {
   renderCopied(
     <SessionProvider holder={session}>
       <InviteProvider holder={holder}>
-        <App
-          queryClient={
-            new QueryClient({ defaultOptions: { queries: { retry: false } } })
-          }
-        />
+        <ConsoleStoreBareProvided>
+          <App
+            queryClient={
+              new QueryClient({ defaultOptions: { queries: { retry: false } } })
+            }
+          />
+        </ConsoleStoreBareProvided>
       </InviteProvider>
     </SessionProvider>,
   );

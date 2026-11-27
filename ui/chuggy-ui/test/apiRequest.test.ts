@@ -3,13 +3,15 @@
  *
  * The two things a browser owns and the contract cannot are checked here: that
  * every request carries a deadline and that `retry-after` is honoured a bounded
- * number of times.
+ * number of times; and that an answer refusing the person for want of
+ * agreement is told to the port that listens for it.
  */
 
 import { expect, test } from "vitest";
 
 import { nativeHttpMediaType } from "../../../src/contract/http.ts";
 import { retryAfterSecondsMax } from "../../../src/contract/outcomes.ts";
+import { agreementRequiredCode } from "../../../src/contract/rosters.ts";
 import { apiAttemptsMax, apiRead, apiSend } from "../app/core/apiRequest.ts";
 import type { ApiFetchInit, ApiPorts } from "../app/core/apiRequest.ts";
 
@@ -339,4 +341,76 @@ test("a fetch that rejects is unreachable", async () => {
     installation,
   );
   expect(result).toEqual({ outcome: "Unreachable", reason: "Failed to fetch" });
+});
+
+/** The ports, and how often an answer asking for agreement was told to them. */
+function agreementListening(ports: ApiPorts): {
+  readonly ports: ApiPorts;
+  readonly told: () => number;
+} {
+  let told = 0;
+  return {
+    told: () => told,
+    ports: {
+      ...ports,
+      agreementRequired: () => {
+        told += 1;
+      },
+    },
+  };
+}
+
+const agreementRequired: Answer = {
+  status: 403,
+  body: { error: { code: agreementRequiredCode, message: "agree first" } },
+};
+
+test("a 403 carrying the agreement code is told to the port once", async () => {
+  const listening = agreementListening(harness([agreementRequired]).ports);
+  await apiSend(listening.ports, installation);
+  expect(listening.told()).toBe(1);
+});
+
+test("a request renewed after a 401 and then refused for want of agreement is told once", async () => {
+  const held = harness([{ status: 401 }, agreementRequired]);
+  const listening = agreementListening(renewing(held, [true]).ports);
+  await apiSend(listening.ports, installation);
+  expect(listening.told()).toBe(1);
+  expect(held.sent).toHaveLength(2);
+});
+
+test.each<[string, Answer]>([
+  [
+    "a 403 carrying another code",
+    { status: 403, body: { error: { code: "Forbidden", message: "no" } } },
+  ],
+  ["a 403 with no envelope", { status: 403 }],
+  ["a 403 whose body is not JSON", { status: 403, text: htmlPage }],
+  ...[400, 409, 500].map((status): [string, Answer] => [
+    `a ${String(status)} carrying the agreement code`,
+    { ...agreementRequired, status },
+  ]),
+])("%s is not told to the port", async (_named, answered) => {
+  const listening = agreementListening(harness([answered]).ports);
+  await apiSend(listening.ports, installation);
+  expect(listening.told()).toBe(0);
+});
+
+test("the answer is handed back unchanged, whether a port listens or not", async () => {
+  const told = await apiSend(
+    agreementListening(harness([agreementRequired]).ports).ports,
+    installation,
+  );
+  const untold = await apiSend(
+    harness([agreementRequired]).ports,
+    installation,
+  );
+  const answered = {
+    outcome: "Rejected",
+    code: agreementRequiredCode,
+    status: 403,
+    body: agreementRequired.body,
+  };
+  expect(told).toStrictEqual(answered);
+  expect(untold).toStrictEqual(answered);
 });

@@ -1,7 +1,8 @@
 /**
  * The agreement gate as the console's root draws it: nothing read under
- * `/agreements/v1` where the deployment does not ask for agreement; the
- * router where every policy is agreed; the page listing what is not, its send
+ * `/agreements/v1` where the deployment does not ask for agreement and the API
+ * has refused nothing for want of it, which `agreementGateHeard.test.tsx`
+ * follows; the router where every policy is agreed; the page listing what is not, its send
  * made once and naming exactly that; what each answer of the send draws; the
  * page drawn where the standing could not be read; and a renewal of the
  * session reading nothing again.

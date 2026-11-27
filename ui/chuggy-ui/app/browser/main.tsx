@@ -1,6 +1,7 @@
 /**
  * The console's one process root: it builds the ports, the session, the cache
- * and the store, mounts the tree, and then completes whatever the redirect brought
+ * and the store, joined to the agreement gate at both doors to the API, mounts
+ * the tree, and then completes whatever the redirect brought
  * back.
  *
  * Loading happens after the first render rather than before it, so a slow or
@@ -25,7 +26,6 @@ import "../styles/utilities.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { Provider } from "react-redux";
 
 import { copyWordingsOf } from "../copy/copyWordings.ts";
 import { copyVernaculars } from "../copy/generated/vernaculars.ts";
@@ -53,7 +53,10 @@ import {
   sessionBegin,
   sessionHolderOpened,
 } from "./session.tsx";
-import { consoleStore } from "./store.ts";
+import {
+  ConsoleStoreJoinedProvider,
+  consoleStoreJoined,
+} from "./storeJoined.tsx";
 import { consoleRouter } from "./routes.tsx";
 import { schemeChoiceApply, schemeChoiceRead } from "./scheme.ts";
 import { themeColorFollow } from "./themeColor.ts";
@@ -64,7 +67,7 @@ const queryClient = consoleQueryClient();
 
 const holder = sessionHolderOpened();
 
-const store = consoleStore({
+const joined = consoleStoreJoined({
   ports: apiPortsOver(holder, apiFetch, sleepMs),
   client: queryClient,
 });
@@ -108,9 +111,9 @@ createRoot(container).render(
     <WordingProvider store={persistentStore} root={document.documentElement}>
       <SessionProvider holder={holder}>
         <InviteProvider holder={invite}>
-          <Provider store={store}>
+          <ConsoleStoreJoinedProvider joined={joined}>
             <App queryClient={queryClient} />
-          </Provider>
+          </ConsoleStoreJoinedProvider>
         </InviteProvider>
       </SessionProvider>
     </WordingProvider>

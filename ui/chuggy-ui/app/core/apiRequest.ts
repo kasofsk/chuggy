@@ -13,6 +13,7 @@
 import { classify } from "../../../../src/contract/outcomes.ts";
 import type { ApiOutcome } from "../../../../src/contract/outcomes.ts";
 import { nativeHttpMediaType } from "../../../../src/contract/http.ts";
+import { agreementRequiredCode } from "../../../../src/contract/rosters.ts";
 
 import type { Copy, CopyOrData } from "./copy.ts";
 
@@ -50,6 +51,12 @@ export interface ApiPorts {
    * the session and not about the request.
    */
   readonly refused?: () => Promise<void>;
+  /**
+   * Told of each answer handed back that refuses the person for want of
+   * agreement to the deployment's policies, and not waited on. Absent where
+   * nothing listens.
+   */
+  readonly agreementRequired?: () => void;
 }
 
 /** A body sent as the bytes it is, under its own media type, rather than as
@@ -262,7 +269,7 @@ async function apiAttempts(
  * renewed again — and a body that goes twice goes under the idempotency key it
  * already carried, repeating a send that was refused before it reached the work.
  */
-export async function apiSend(
+async function apiSendRenewed(
   ports: ApiPorts,
   request: ApiRequest,
 ): Promise<ApiAnswer> {
@@ -273,6 +280,27 @@ export async function apiSend(
   const again = await apiAttempts(ports, request);
   if (again.outcome === "Unauthenticated") await ports.refused?.();
   return again;
+}
+
+/** Whether an answer is the API refusing the person, 403, for want of
+ * agreement to the deployment's policies. */
+export function apiAgreementRequired(answer: ApiAnswer): boolean {
+  return (
+    answer.outcome === "Rejected" &&
+    answer.status === 403 &&
+    answer.code === agreementRequiredCode
+  );
+}
+
+/** A request as `apiSendRenewed` answers it, the ports told where that answer
+ * asks for agreement. */
+export async function apiSend(
+  ports: ApiPorts,
+  request: ApiRequest,
+): Promise<ApiAnswer> {
+  const answered = await apiSendRenewed(ports, request);
+  if (apiAgreementRequired(answered)) ports.agreementRequired?.();
+  return answered;
 }
 
 /** The parser is the wire's; a body it rejects is a server fault, drawn as one. */

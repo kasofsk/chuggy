@@ -1,8 +1,10 @@
 /**
- * The gate a signed-in session passes before the router is drawn, where the
- * deployment asks for agreement to its policies: the opening card while the
- * standing is unread, the page listing what is still to be agreed, the page
- * saying the standing could not be read, or the router.
+ * The gate a signed-in session passes before the router is drawn: the opening
+ * card while the standing is unread where the deployment asks for agreement to
+ * its policies, the page listing what is still to be agreed, the page saying
+ * the standing could not be read, or the router. Where the deployment does not
+ * ask, the gate stands passed from the first draw, and the page takes the
+ * router's place only once the API refuses the person for want of agreement.
  *
  * Which of them is drawn, and what each says, is `core/agreementGate.ts`'s;
  * the read and the send are the store's, in `agreementGate.ts`. It reads no
@@ -15,10 +17,15 @@ import type { ReactNode } from "react";
 import type { AgreementStandingEntry } from "../../../../src/contract/agreementPlane.ts";
 
 import { useCopyText } from "../copy/CopyProvider.tsx";
-import { agreementGateDrawn, agreementWords } from "../core/agreementGate.ts";
+import {
+  agreementGateDrawn,
+  agreementGateOpened,
+  agreementWords,
+} from "../core/agreementGate.ts";
 import type { AgreementNoticeDrawn } from "../core/agreementGate.ts";
 import {
   agreementGateOf,
+  agreementGateOpen,
   agreementSend,
   agreementStandingRead,
 } from "./agreementGate.ts";
@@ -131,16 +138,19 @@ function AgreementNotRead(props: { readonly busy: boolean }): ReactNode {
   );
 }
 
-/** `children`, the router, once the standing says every policy is agreed. */
+/** `children`, the router, once the standing says every policy is agreed, or
+ * at once where the deployment has not `asked`. */
 export function AgreementGate(props: {
+  readonly asked: boolean;
   readonly children: ReactNode;
 }): ReactNode {
   const dispatch = useConsoleDispatch();
   const gate = useConsoleSelector(agreementGateOf);
+  const { asked } = props;
   useEffect(() => {
-    void dispatch(agreementStandingRead("First"));
-  }, [dispatch]);
-  const drawn = agreementGateDrawn(gate);
+    void dispatch(agreementGateOpen(asked));
+  }, [dispatch, asked]);
+  const drawn = agreementGateDrawn(agreementGateOpened(gate, asked));
   switch (drawn.drawn) {
     case "Opening":
       return <SessionOpeningCard />;

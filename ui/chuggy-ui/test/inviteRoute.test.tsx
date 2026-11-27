@@ -24,6 +24,7 @@ import { apiPortsOver } from "../app/core/apiPorts.ts";
 import { inviteRoutePath } from "../app/core/inviteLinks.ts";
 import { createSessionHolder } from "../app/core/sessionHolder.ts";
 import type { SessionHolder } from "../app/core/sessionHolder.ts";
+import { ConsoleStoreBareProvided } from "./consoleStoreBare.tsx";
 import { agreementTerms } from "./agreementPolicies.ts";
 import { inviteBrowser, inviteSession } from "./inviteDouble.ts";
 import { answer, press, scriptedFetch, settled } from "./screenHarness.tsx";
@@ -79,11 +80,13 @@ test("a person returning from sign-in to the invite page is drawn it, and their 
   renderCopied(
     <SessionProvider holder={returned}>
       <InviteProvider holder={holder}>
-        <App
-          queryClient={
-            new QueryClient({ defaultOptions: { queries: { retry: false } } })
-          }
-        />
+        <ConsoleStoreBareProvided>
+          <App
+            queryClient={
+              new QueryClient({ defaultOptions: { queries: { retry: false } } })
+            }
+          />
+        </ConsoleStoreBareProvided>
       </InviteProvider>
     </SessionProvider>,
   );
@@ -164,11 +167,13 @@ test("a browser with no session is drawn the invite page at its address, and the
   const tree = (
     <SessionProvider holder={session}>
       <InviteProvider holder={holder}>
-        <App
-          queryClient={
-            new QueryClient({ defaultOptions: { queries: { retry: false } } })
-          }
-        />
+        <ConsoleStoreBareProvided>
+          <App
+            queryClient={
+              new QueryClient({ defaultOptions: { queries: { retry: false } } })
+            }
+          />
+        </ConsoleStoreBareProvided>
       </InviteProvider>
     </SessionProvider>
   );
