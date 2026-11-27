@@ -113,7 +113,8 @@ function secureUrl(value: string, what: string): URL {
   return url;
 }
 
-function checkedConfiguration(
+/** `config` as given, or the refusal naming what in it cannot verify a bearer. */
+export function oidcConfigurationChecked(
   config: OidcAuthenticationConfig,
 ): OidcAuthenticationConfig {
   const issuer = secureUrl(config.issuer, "OIDC issuer");
@@ -162,7 +163,7 @@ export async function oidcAuthentication(
   input: OidcAuthenticationConfig,
   fetcher: typeof fetch = fetch,
 ): Promise<PrincipalAuthentication> {
-  const config = checkedConfiguration(input);
+  const config = oidcConfigurationChecked(input);
   const jwks = createRemoteJWKSet(await discoverJwks(config, fetcher), {
     timeoutDuration: config.jwksTimeoutMs,
   });

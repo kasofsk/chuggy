@@ -268,6 +268,28 @@ may ask.
 | `CHUG_AGREEMENT_PLANE_SERVICE_PORT` | | the second listener's port, serving `GET /agreements/v1/people/:principal/standing` and nothing else; unset, there is no second listener and nothing serves that route |
 | `CHUG_AGREEMENT_PLANE_CLIENT_ADDRESS_HEADER` | | the one request header an agreement's client address is taken from, named only behind a proxy the deployment trusts to set it; unset, it is the socket's peer. A value that is not one IP address records none |
 
+## Configuring the tool server
+
+Every variable here is read by `src/roots/toolServer.ts`, started by
+`npm run start:tool-server`, and the process refuses to start without the
+required ones. It serves chuggy's tools to a remote MCP client at
+`<origin>/mcp`, calling the API under each caller's own bearer, and holds no
+database. It is ready once it listens: the issuer is discovered at the first
+request that needs it, and while it cannot be, that request is answered 503.
+
+| Variable | | |
+|---|---|---|
+| `CHUG_TOOL_SERVER_PUBLIC_ORIGIN` | required | the HTTPS origin the server is publicly reached at, with nothing after it; the resource a bearer must carry as its audience is `<origin>/mcp` |
+| `CHUG_TOOL_SERVER_API_URL` | required | the API the tools call, HTTP or HTTPS and carrying no credentials, which is also the website the server names to its clients |
+| `CHUG_TOOL_SERVER_API_AUDIENCE` | required | the audience the API verifies its bearers against, which an authorization request is sent to the issuer naming beside the resource |
+| `CHUG_TOOL_SERVER_OIDC_ISSUER` | required | read as `CHUG_API_OIDC_ISSUER` is; its discovery must name an authorization, a token and a revocation endpoint |
+| `CHUG_TOOL_SERVER_OIDC_ALGORITHMS` | required | comma-separated, read as `CHUG_API_OIDC_ALGORITHMS` is |
+| `CHUG_TOOL_SERVER_CLIENTS` | required | comma-separated, surrounding spaces trimmed: the OAuth clients `/authorize` answers, every other answered 400 and never sent to the issuer |
+| `CHUG_TOOL_SERVER_OIDC_DISCOVERY_TIMEOUT_MS` | | |
+| `CHUG_TOOL_SERVER_OIDC_JWKS_TIMEOUT_MS` | | |
+| `CHUG_TOOL_SERVER_HOST` | | the default is loopback |
+| `CHUG_TOOL_SERVER_PORT` | 3007 | |
+
 ## Configuring the worker plane
 
 Every variable here is read by `src/roots/workerPlane.ts`, and the process

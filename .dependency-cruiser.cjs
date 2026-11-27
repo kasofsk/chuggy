@@ -201,6 +201,36 @@ module.exports = {
       to: { reachable: true, path: "^src/adapters/kratos/" },
     },
     {
+      name: "tool-server-reaches-no-database",
+      comment:
+        "The tool server is a client of the API: every tool it serves is the " +
+        "API's to answer under the caller's own bearer, and it is the one " +
+        "process a remote client on the internet reaches with no project " +
+        "named. A PostgreSQL adapter or driver reached from its root would " +
+        "be a second way to the data that skips the API's access checks. " +
+        "Reachability rather than an import, because the shape that breaks " +
+        "it is a shared composition helper that opens a pool.",
+      severity: "error",
+      from: { path: "^src/roots/toolServer[.]ts$" },
+      to: {
+        reachable: true,
+        path: "^src/adapters/postgres/|node_modules/pg/",
+      },
+    },
+    {
+      name: "only-the-tool-server-reaches-the-core",
+      comment:
+        "The core serves the tools under whatever bearer it is handed and " +
+        "binds them to no project, so a process composing it is a tool " +
+        "server, and the tool server is the one root whose bearer is " +
+        "verified for that resource. Reachability rather than an import, " +
+        "because the shape that breaks it is a shared composition helper " +
+        "that builds the tools for several roots.",
+      severity: "error",
+      from: { path: "^src/", pathNot: "^src/roots/toolServer[.]ts$" },
+      to: { reachable: true, path: "node_modules/@chuggy/worker-core/" },
+    },
+    {
       name: "nothing-imports-a-process-root",
       comment:
         "src/roots/ holds the graph's executable roots: they may import " +
