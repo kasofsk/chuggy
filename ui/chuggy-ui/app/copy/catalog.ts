@@ -6,6 +6,7 @@
 
 import type { CopyText } from "../core/copy.ts";
 import { copyBundleOf, copyTextOf } from "./copyBundle.ts";
+import { agreementsFtl } from "./generated/agreementsFtl.ts";
 import { apiFtl } from "./generated/apiFtl.ts";
 import { chatFtl } from "./generated/chatFtl.ts";
 import { codesFtl } from "./generated/codesFtl.ts";
@@ -46,6 +47,7 @@ export const copyLocale = "en";
 
 export const copyCatalogEn: readonly string[] = [
   termsFtl,
+  agreementsFtl,
   apiFtl,
   chatFtl,
   codesFtl,

@@ -24,11 +24,15 @@ import { currentPath, reloadLocation } from "./ports.ts";
 import { useSessionHolder, useSessionSnapshot } from "./session.tsx";
 import { Button } from "./ui/Button.tsx";
 import { CenteredPage } from "./ui/CenteredPage.tsx";
+import { Locomotive } from "./ui/Locomotive.tsx";
 
+/** `notes` are drawn under the detail and what follows it, in the quieter,
+ * smaller ink. */
 export function SessionCard(props: {
   readonly title: string;
   readonly detail: string;
   readonly next?: string | undefined;
+  readonly notes?: ReactNode;
   readonly media?: ReactNode;
   readonly action?: ReactNode;
 }): ReactNode {
@@ -41,7 +45,22 @@ export function SessionCard(props: {
     >
       <p>{props.detail}</p>
       {props.next === undefined ? null : <p>{props.next}</p>}
+      {props.notes === undefined ? null : (
+        <div className="grid gap-1 text-sm text-ink-3">{props.notes}</div>
+      )}
     </CenteredPage>
+  );
+}
+
+/** The card drawn while the console is opening. */
+export function SessionOpeningCard(): ReactNode {
+  const text = useCopyText();
+  return (
+    <SessionCard
+      title={text({ id: "session-opening" })}
+      detail={text({ id: "session-loading" })}
+      media={<Locomotive />}
+    />
   );
 }
 

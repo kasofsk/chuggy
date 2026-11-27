@@ -2,7 +2,8 @@
  * The page an invite link is opened at, decided with no renderer: what a
  * fragment or a cookie holds of a token, the cookie that carries the token
  * across a sign-in, which card the page draws, what a holder signed out is
- * told of the link, and what a redemption came to.
+ * told of the link and of the policies a sign-in asks them to agree to, and
+ * what a redemption came to.
  *
  * THE FRAGMENT IS ANYONE'S TO WRITE, so nothing read from it is trusted to be
  * a token the plane made: it is bounded where it is read, and percent-encoded
@@ -18,6 +19,10 @@ import {
   type AccessInviteLinkRedeemed,
   type AccessInviteLinkSummary,
 } from "../../../../src/contract/accessPlane.ts";
+import type {
+  AgreementPolicies,
+  AgreementPolicyEntry,
+} from "../../../../src/contract/agreementPlane.ts";
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import type { Copy } from "./copy.ts";
@@ -144,7 +149,20 @@ export const invitePageWords = {
   signIn: { id: "settings-invite-sign-in" },
   open: { id: "settings-invite-open" },
   retry: { id: "settings-invite-retry" },
+  agreements: { id: "agreements-invite" },
 } as const satisfies Readonly<Record<string, Copy>>;
+
+/**
+ * The policies an open card names under its line, as the plane's read lists
+ * them. A read unanswered, failed or listing none names none, so the card
+ * draws no line for them and says nothing of the read.
+ */
+export function inviteAgreementPolicies(
+  result: ApiResult<AgreementPolicies> | undefined,
+): readonly AgreementPolicyEntry[] | undefined {
+  if (result?.outcome !== "Ok") return undefined;
+  return result.value.policies.length === 0 ? undefined : result.value.policies;
+}
 
 /** The title of a card whose link no redemption could take. */
 const inviteEndedTitle: Copy = { id: "settings-invite-not-valid-title" };

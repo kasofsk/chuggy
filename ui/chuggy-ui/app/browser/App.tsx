@@ -9,6 +9,10 @@
  *
  * A browser with no session at the invite page's address is drawn that page,
  * which is the one address a person without an account is sent to.
+ *
+ * A deployment whose configuration says `agreements` has a signed-in person
+ * pass the agreement gate, which reads under `/agreements/v1`, before the
+ * router is drawn at whatever address the browser is on.
  */
 
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -19,10 +23,15 @@ import type { ReactNode } from "react";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { copyOrDataText } from "../core/copy.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
+import { AgreementGate } from "./AgreementPage.tsx";
 import { InvitePage } from "./InvitePage.tsx";
 import { currentLocation } from "./ports.ts";
 import { consoleRouter } from "./routes.tsx";
-import { SessionCard, SignedOutCard } from "./SessionCard.tsx";
+import {
+  SessionCard,
+  SessionOpeningCard,
+  SignedOutCard,
+} from "./SessionCard.tsx";
 import {
   sessionBegin,
   useSessionHolder,
@@ -30,21 +39,13 @@ import {
   useSilentRefresh,
 } from "./session.tsx";
 import { Button } from "./ui/Button.tsx";
-import { Locomotive } from "./ui/Locomotive.tsx";
 
 export function App(props: { readonly queryClient: QueryClient }): ReactNode {
   const holder = useSessionHolder();
   const snapshot = useSessionSnapshot();
   const text = useCopyText();
   useSilentRefresh();
-  if (snapshot.phase === "Loading")
-    return (
-      <SessionCard
-        title={text({ id: "session-opening" })}
-        detail={text({ id: "session-loading" })}
-        media={<Locomotive />}
-      />
-    );
+  if (snapshot.phase === "Loading") return <SessionOpeningCard />;
   if (snapshot.phase === "Unconfigured")
     return (
       <SessionCard
@@ -83,9 +84,14 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
     ) : (
       <SignedOutCard />
     );
-  return (
+  const router = (
     <QueryClientProvider client={props.queryClient}>
       <RouterProvider router={consoleRouter} />
     </QueryClientProvider>
+  );
+  return snapshot.configuration?.agreements === true ? (
+    <AgreementGate>{router}</AgreementGate>
+  ) : (
+    router
   );
 }
