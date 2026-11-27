@@ -45,6 +45,11 @@ export const setupRetryDelayMsMax = 5_000;
 const setupRefusalStatusMin = 400;
 const setupRefusalStatusMax = 500;
 
+/** Whether the site has refused a request of a session's until the person agrees to its policies, which they do in the console and nobody does for them. */
+export interface SetupAgreement {
+  asked: boolean;
+}
+
 /** How the issuer's token endpoint answered the last time it was asked. */
 export type SetupTokenAsked = "Unasked" | "Answered" | "Refused" | "Unanswered";
 
@@ -58,6 +63,8 @@ export interface SetupSessionOpened {
   readonly tokenAsked: () => SetupTokenAsked;
   /** The address the last sign-in was sent to. */
   readonly authorize: () => string | undefined;
+  /** Whether the site asked the person's agreement of a request sent under this session. */
+  readonly agreement: SetupAgreement;
 }
 
 interface SetupSessionNotes {
@@ -170,6 +177,7 @@ export function setupSessionOpened(
     configured: () => notes.configured,
     tokenAsked: () => notes.tokenAsked,
     authorize: () => notes.authorize,
+    agreement: { asked: false },
   };
 }
 

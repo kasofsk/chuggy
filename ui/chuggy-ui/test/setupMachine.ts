@@ -53,6 +53,7 @@ import {
   signInStoreText,
   signInStoreTokenRead,
 } from "../../../src/contract/signInStore.ts";
+import { agreementRequiredCode } from "../../../src/contract/rosters.ts";
 import { setupSiteAnswered, setupSiteAt } from "./setupSite.ts";
 import type { SetupSite, SetupSiteProject } from "./setupSite.ts";
 
@@ -119,6 +120,8 @@ export interface SetupMachine {
   answering: () => void;
   /** Whether the API takes each write and its answer never arrives. */
   drops: boolean;
+  /** What the API answers a request of a sign-in it admits with in place of its own answer, chosen by its method and path, where it chooses one; never one under `/access/v1/`, which the access plane answers. */
+  refuses: (sent: string) => MachineRefusal | undefined;
   /** What the site holds, which is what its reads answer. */
   world: SetupSite;
   /** What git prints of the folder's `origin`, or nothing where it has none to print. */
@@ -301,6 +304,26 @@ function fetchJson(
   );
 }
 
+/** Where the access plane answers, which never asks the person's agreement. */
+const machineAccessPrefix = "/access/v1/";
+
+/** An answer a case has the API give a chosen request. */
+export interface MachineRefusal {
+  readonly status: number;
+  readonly text: string;
+}
+
+/** The API's refusal of a person who has not agreed to every policy the deployment names, with a message of the site's own that no line may hold. */
+export const machineUnagreed: MachineRefusal = {
+  status: 403,
+  text: JSON.stringify({
+    error: {
+      code: agreementRequiredCode,
+      message: "machine-unagreed-message",
+    },
+  }),
+};
+
 /** What stands in for the answer to a write that never reached the site: one it does not admit, or one it is not answering. */
 const unreached = { status: 401, body: {} } as const;
 
@@ -317,8 +340,16 @@ function apiFetch(
   const body = typeof init.body === "string" ? init.body : undefined;
   const bearer = (init.headers["authorization"] ?? "").replace("Bearer ", "");
   const admitted = machine.admits && issuer.access.has(bearer);
+  const path = url.startsWith(`${machineSite}/`)
+    ? url.slice(machineSite.length)
+    : undefined;
+  const refusal =
+    admitted && path !== undefined && !path.startsWith(machineAccessPrefix)
+      ? machine.refuses(`${init.method} ${path}`)
+      : undefined;
   const reaches =
-    init.method === "GET" || (admitted && machine.api === "Answers");
+    refusal === undefined &&
+    (init.method === "GET" || (admitted && machine.api === "Answers"));
   const answer = !url.startsWith(`${machineSite}/`)
     ? undefined
     : reaches
@@ -331,6 +362,10 @@ function apiFetch(
     return Promise.reject(new Error("no route to host"));
   if (machine.drops && init.method !== "GET")
     return Promise.reject(new Error("connection reset"));
+  if (refusal !== undefined)
+    return Promise.resolve(
+      new Response(refusal.text, { status: refusal.status }),
+    );
   if (machine.api === "Refuses" || answer === undefined)
     return Promise.resolve(
       new Response("{}", { status: 503, headers: { "retry-after": "300" } }),
@@ -724,6 +759,14 @@ const issuerNew = (): Issuer => ({
   access: new Set(),
 });
 
+/** Every server a machine reaches answering, as each does unless a case says otherwise. */
+const machineAnswering = {
+  site: "Answers",
+  discovery: "Answers",
+  token: "Answers",
+  api: "Answers",
+} as const;
+
 export function setupMachine(): SetupMachine {
   const issuer = issuerNew();
   const machine: SetupMachine = {
@@ -736,15 +779,13 @@ export function setupMachine(): SetupMachine {
     room: () => true,
     takes: () => true,
     nowMs: 1_000_000,
-    site: "Answers",
-    discovery: "Answers",
-    token: "Answers",
-    api: "Answers",
+    ...machineAnswering,
     renewable: true,
     accessSecs: 600,
     admits: true,
     answering: () => undefined,
     drops: false,
+    refuses: () => undefined,
     world: setupSiteAt("Workspace"),
     remote: undefined,
     top: undefined,

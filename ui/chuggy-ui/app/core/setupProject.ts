@@ -9,7 +9,8 @@
  * said in the form's words for it too. The site answers the person who made a
  * project asking for it again with that project, under any operation, so a run
  * tried again after an answer that never arrived makes no second one. The one
- * write its ports let through is that request.
+ * write its ports let through is that request. Where the site asks the
+ * person's agreement of it, that is the report, and not the form's refusal.
  */
 
 import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
@@ -75,7 +76,12 @@ async function setupProjectSent(
   address: string,
 ): Promise<SetupProjectEnded> {
   const result = await apiCreateProject(
-    setupWritePorts(session.api, session.bearer, setupProjectWrites),
+    setupWritePorts(
+      session.api,
+      session.bearer,
+      session.agreement,
+      setupProjectWrites,
+    ),
     { tenant: asked.workspace, project: address, name: asked.name },
     base64urlFromBytes(ports.drawBytes(operationIdBytesCount)),
   );
@@ -107,6 +113,8 @@ export async function setupProject(
     fault === undefined
       ? await setupProjectSent(ports, asked, entered.session, address)
       : { ended: "Refused", refusal: fault, again: false };
+  if (entered.session.agreement.asked)
+    return { report: "Unagreed", site: entered.session.site, asked: "Project" };
   return {
     report: "Project",
     site: entered.session.site,

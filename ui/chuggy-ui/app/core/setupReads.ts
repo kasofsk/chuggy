@@ -42,13 +42,22 @@ import type {
   TicketLandingResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
-import { forgeApps } from "../../../../src/contract/rosters.ts";
+import { classify } from "../../../../src/contract/outcomes.ts";
+import {
+  agreementRequiredCode,
+  forgeApps,
+} from "../../../../src/contract/rosters.ts";
 import type {
   ForgeAppName,
   SessionRunnerStanding,
 } from "../../../../src/contract/rosters.ts";
 
-import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
+import type {
+  ApiFailure,
+  ApiFetchPort,
+  ApiPorts,
+  ApiResult,
+} from "./apiRequest.ts";
 import {
   apiDrafts,
   apiExecutionPlacement,
@@ -69,7 +78,10 @@ import {
 import type { SetupAnswers } from "./setupArguments.ts";
 import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
 import type { SetupRemote } from "./setupRemote.ts";
-import type { SetupWorkspacesAnswered } from "./setupSession.ts";
+import type {
+  SetupAgreement,
+  SetupWorkspacesAnswered,
+} from "./setupSession.ts";
 import { workRunnerPersonal } from "./workRunner.ts";
 
 export type SetupRead<T> =
@@ -83,7 +95,7 @@ const setupUnasked = { read: "Unasked" } as const;
 /** The status a server that says so refuses a caller with; one that hides what it refuses answers not found. */
 const setupForbiddenStatus = 403;
 
-/** What an answer of the site's is as a read: got, refused where the site hides or forbids it, or failed. */
+/** What an answer of the site's is as a read: got, refused where the site hides or forbids it, or failed. A refusal that asks the person's agreement to the site's policies is read as refused too, and no run draws anything from it: the ports it came through noted it, and the run ends on that. */
 export function setupGot<T, V>(
   result: ApiResult<T>,
   value: (answered: T) => V,
@@ -114,17 +126,57 @@ export function setupGot<T, V>(
 
 const setupReadMethod = "GET";
 
+/** Whether an answer is the site's refusal until the person agrees to its policies: its status, and the code its envelope carries. */
+async function setupAgreementAsked(response: Response): Promise<boolean> {
+  if (response.status !== setupForbiddenStatus) return false;
+  let body: unknown;
+  try {
+    body = JSON.parse(await response.clone().text());
+  } catch {
+    return false;
+  }
+  const answer = classify(
+    response.status,
+    (name) => response.headers.get(name),
+    body,
+  );
+  return answer.outcome === "Rejected" && answer.code === agreementRequiredCode;
+}
+
+/**
+ * Every request a session's ports let out goes through here: once the site
+ * has asked the person's agreement, it is noted in `agreement` and nothing
+ * more is sent, so no write follows it and it is not asked again.
+ */
+export function setupAgreementFetch(
+  api: ApiPorts,
+  agreement: SetupAgreement,
+): ApiFetchPort {
+  return async (url, init) => {
+    if (agreement.asked)
+      throw new Error("the site waits on the person's agreement");
+    const response = await api.fetch(url, init);
+    if (await setupAgreementAsked(response)) agreement.asked = true;
+    return response;
+  };
+}
+
 /**
  * The ports the checklist reads through. The bearer is the one the run got
  * while it held the lock, so nothing here renews it or forgets the sign-in,
  * both of which write the session file; and whatever is not a read fails
  * here, having reached nothing.
  */
-export function setupReadPorts(api: ApiPorts, bearer: string): ApiPorts {
+export function setupReadPorts(
+  api: ApiPorts,
+  bearer: string,
+  agreement: SetupAgreement,
+): ApiPorts {
+  const sent = setupAgreementFetch(api, agreement);
   return {
     fetch: (url, init) =>
       init.method === setupReadMethod
-        ? api.fetch(url, init)
+        ? sent(url, init)
         : Promise.reject(new Error("the checklist sends nothing but reads")),
     bearer: () => Promise.resolve(bearer),
     sleepMs: api.sleepMs,

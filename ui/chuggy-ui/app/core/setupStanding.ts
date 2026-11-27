@@ -7,7 +7,8 @@
  * answer makes the step unread, and says which. The one exception is a step
  * whose reads were never asked, or were refused to a project named in full
  * that no list names, because the workspace or project it belongs to is not
- * there for this person; that step is to do. Two steps turn on more than
+ * there for this person; that step is to do. A refusal asking the person's
+ * agreement draws no standing at all. Two steps turn on more than
  * their own read: GitHub is held to the account that owns the project's
  * repository once one is added, and to both apps there being granted that
  * repository, since the portal app's listing is what the console offers a

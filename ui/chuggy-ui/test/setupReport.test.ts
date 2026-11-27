@@ -766,6 +766,7 @@ function outsOf(asked: "Runner" | "ChatHost"): readonly SetupReport[] {
     { report: "Busy", asked, site, pid: 4242 },
     { report: "Faulted", asked, site, fault: faults.Unkept },
     { report: "SignedOut", site, directory, ended: "Declined" },
+    { report: "Unagreed", site, asked },
   ];
 }
 
@@ -827,6 +828,21 @@ const roster: {
     { report: "IssuerUnanswered", site, asked: "SignIn" },
     { report: "IssuerUnanswered", site, asked: "Runner" },
   ],
+  Unagreed: (
+    [
+      "Status",
+      "Project",
+      "Runner",
+      "ChatHost",
+      "Import",
+      "Bind",
+      "Merge",
+      "Serve",
+      "Ticket",
+      "Watch",
+      "Usage",
+    ] as const
+  ).map((asked) => ({ report: "Unagreed", site, asked })),
   SignedOut: [undefined, ...setupSignInEndings].map((ended) => ({
     report: "SignedOut",
     site,
@@ -1069,7 +1085,7 @@ const sessions = every.filter(
     !configuring.has(report.report),
 );
 
-/** The choices a run that made a report can have been given: any, and for a run asked as `mcp` or `runner` only those naming both. */
+/** The choices a run that made a report can have been given: any, and for a run asked as `mcp`, `runner` or `serve` only those naming both. */
 function given(report: SetupReport): readonly SetupAnswers[] {
   const asked =
     report.report === "RunnerOut"
@@ -1085,7 +1101,7 @@ function given(report: SetupReport): readonly SetupAnswers[] {
     return choices
       .filter((held) => held.workspace !== undefined)
       .flatMap((held) => projectNames.map((name) => ({ ...held, name })));
-  if (asked === "Runner" || asked === "Mcp")
+  if (asked === "Runner" || asked === "Mcp" || asked === "Serve")
     return choices.filter(
       (held) => held.workspace !== undefined && held.project !== undefined,
     );
@@ -1323,6 +1339,7 @@ const stopping: ReadonlySet<SetupReport["report"]> = new Set([
   "Faulted",
   "SiteUnusable",
   "IssuerUnanswered",
+  "Unagreed",
 ]);
 
 /** Whether a report is one that stops with nothing for the agent to run: one of those, an ending that stands, or a sign-in the site did not confirm and did not refuse. */
@@ -1343,6 +1360,7 @@ test("every stop says what was found, tells the person, names one command the pr
       roster.Faulted.length +
       roster.SiteUnusable.length +
       roster.IssuerUnanswered.length +
+      roster.Unagreed.length +
       roster.WorkspacesUnread.length -
       1 +
       2 * held.length,
@@ -2052,6 +2070,7 @@ test("a run of runner that a lost sign-in ends says everything it had found and 
     "did nothing",
     undefined,
     "nothing was changed",
+    undefined,
   ]);
   for (const report of roster.RunnerOut) {
     const said = JSON.stringify(report.out);
@@ -2077,7 +2096,7 @@ test("a run of runner that a lost sign-in ends says everything it had found and 
       0,
       outs.length,
     ),
-  ).toEqual([0, 1, 1, 1, 1, 1, 0]);
+  ).toEqual([0, 1, 1, 1, 1, 1, 0, 0]);
 });
 
 test("whichever report an entry makes, the run it ends part-way says it as the report alone does but for where that says the run did nothing or changed nothing, which of the endings of a sign-in that stand only one declined does", () => {

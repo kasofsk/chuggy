@@ -11,7 +11,8 @@
  * mend by itself: a Node too old to run the program, a sign-in that ended any
  * way but signed in, another run holding the lock, a path the machine would
  * not write, a site or a sign-in server that did not answer, a read that
- * failed. Each says what was found,
+ * failed, a site that asks the person's agreement to its policies, which only
+ * she gives, in the console. Each says what was found,
  * tells the person, and names in a `rule:` line the one command and the
  * condition it may be run under. A step the person does by hand is that shape
  * too, so nothing printed is a command an agent could run round and round
@@ -458,6 +459,12 @@ export type SetupReport =
     }
   | {
       readonly report: "IssuerUnanswered";
+      readonly site: string;
+      readonly asked: SetupCommand;
+    }
+  | {
+      /** The site refused a request of the run's until the person agrees to its policies, which is said in place of whatever the run was drawing. */
+      readonly report: "Unagreed";
       readonly site: string;
       readonly asked: SetupCommand;
     }
@@ -969,7 +976,8 @@ function setupSiteSaid(
     | "setup-site-unconfirmed"
     | "setup-site-unreachable"
     | "setup-site-unconfigured"
-    | "setup-site-issuer",
+    | "setup-site-issuer"
+    | "setup-site-unagreed",
 ): SetupLine {
   return ["site", { id, args: { site } }];
 }
@@ -1471,6 +1479,36 @@ function setupSessionLines(
     setupSiteSaid(report.site, said),
     ...setupStopSaid(stop),
     ...setupStopRule(stop, command),
+  ];
+}
+
+/** The command a run the site asked the person's agreement of is named again as: itself, but for `ticket` and `usage`, whose arguments carry what the person said and no report holds, so the checklist that offers each again is. */
+function setupUnagreedAgain(asked: SetupCommand): SetupCommand {
+  return asked === "Ticket" || asked === "Usage" ? "Status" : asked;
+}
+
+/** A site that asks the person's agreement is a stop that waits on her agreeing, and a rule that nothing else is run until then and that nobody agrees for her. */
+function setupUnagreedLines(
+  report: Extract<SetupReport, { readonly report: "Unagreed" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  const stop: SetupStop = {
+    found: { id: "setup-unagreed-found" },
+    tell: { id: "setup-unagreed-tell", args: { site: report.site } },
+    when: { id: "setup-unagreed-when" },
+  };
+  return [
+    setupSiteSaid(report.site, "setup-site-unagreed"),
+    ...setupStopSaid(stop),
+    ["rule", { id: "setup-unagreed-rule" }],
+    ...setupStopRule(
+      stop,
+      setupCommandOf(
+        saying,
+        setupUnagreedAgain(report.asked),
+        setupSiteFlag(report.site),
+      ),
+    ),
   ];
 }
 
@@ -2690,6 +2728,8 @@ function setupLines(
     case "SiteUnusable":
     case "IssuerUnanswered":
       return setupSessionLines(report, saying);
+    case "Unagreed":
+      return setupUnagreedLines(report, saying);
     case "Checklist":
       return setupChecklistLines(report, {
         ...saying,
@@ -2805,6 +2845,7 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
     case "SignedOut":
     case "SignedOutHere":
     case "SignInWaiting":
+    case "Unagreed":
       return 0;
     case "SignInEnded":
       return setupEndedFailures.has(report.ended) ? 1 : 0;

@@ -660,7 +660,7 @@ test.each(["POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "get", ""])(
   "a request with the method %j fails at the ports the checklist reads through, having reached nothing",
   async (method) => {
     const sent: string[] = [];
-    const ports = setupReadPorts(recording(sent), "access");
+    const ports = setupReadPorts(recording(sent), "access", { asked: false });
     const init = { headers: {}, signal: new AbortController().signal };
     await expect(
       ports.fetch("/api/v1/projects", { ...init, method }),
@@ -673,7 +673,7 @@ test.each(["POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "get", ""])(
 
 test("each of the console's writes, sent through the ports the checklist reads through, reaches nothing and is said as unreachable", async () => {
   const sent: string[] = [];
-  const ports = setupReadPorts(recording(sent), "access");
+  const ports = setupReadPorts(recording(sent), "access", { asked: false });
   const partition = { tenant: "acme", project: "widgets" };
   const writes = [
     apiCreateProject(
@@ -694,7 +694,7 @@ test("the ports the checklist reads through hold one bearer, renew nothing and f
     ...recording([]),
     fetch: () => Promise.resolve(new Response("{}", { status: 401 })),
   };
-  const ports = setupReadPorts(refusing, "access");
+  const ports = setupReadPorts(refusing, "access", { asked: false });
   expect(await ports.bearer()).toBe("access");
   expect(Object.keys(ports).toSorted()).toEqual(["bearer", "fetch", "sleepMs"]);
   expect(await apiProjectInventory(ports)).toEqual({
@@ -712,7 +712,7 @@ test("every read goes out under the bearer the run got while it held the lock, a
     },
     bearer: () => Promise.resolve("renewed-since"),
   };
-  const ports = setupReadPorts(later, "got-under-the-lock");
+  const ports = setupReadPorts(later, "got-under-the-lock", { asked: false });
   expect(await ports.bearer()).toBe("got-under-the-lock");
   await apiProjectInventory(ports);
   expect(authorized).toEqual(["Bearer got-under-the-lock"]);
