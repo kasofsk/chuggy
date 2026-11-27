@@ -99,6 +99,7 @@ import type {
 } from "../../interpreter/operationInbox.ts";
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import {
+  agreementRequiredCode,
   artifactUnavailableCode,
   hostedRunsNotGrantedCode,
   noRunnerCode,
@@ -128,6 +129,7 @@ import type {
   ThreadsRead,
 } from "../../interpreter/threadRead.ts";
 import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
+import { AgreementStandingUnavailable } from "../../interpreter/agreementStanding.ts";
 import type { ForgeCredentialMinted } from "../../interpreter/forgeCredentials.ts";
 import type {
   ForgeAppsResult,
@@ -405,12 +407,15 @@ function transportFaultReason(failure: unknown): string | undefined {
 }
 
 /**
- * A project authority this server could not reach is this server failing, and
- * a caller is told to wait rather than told they may not.
+ * A project authority or an agreement record this server could not reach is
+ * this server failing, and a caller is told to wait rather than told they may
+ * not.
  */
 export function failureResponse(failure: unknown): NativeHttpResponse {
   if (failure instanceof ProjectAccessUnavailable)
     return retry(503, authorityRetryAfterSeconds, "AuthorityUnavailable");
+  if (failure instanceof AgreementStandingUnavailable)
+    return agreementUnavailableResponse();
   const status = transportFaultStatus(failure);
   if (status === 413)
     return response(
@@ -2059,6 +2064,29 @@ export function accessTokenRefusedResponse(): NativeHttpResponse {
       "An access token is not admitted to this route.",
     ),
     { "www-authenticate": 'Bearer error="insufficient_scope"' },
+  );
+}
+
+/** What a person is answered who has not agreed to every one of the deployment's current policies. */
+export function agreementRequiredResponse(): NativeHttpResponse {
+  return response(
+    403,
+    nativeHttpError(
+      agreementRequiredCode,
+      "This deployment's policies must be agreed to in the console.",
+    ),
+  );
+}
+
+/** What a request is answered while whether its person has agreed could not be read. */
+function agreementUnavailableResponse(): NativeHttpResponse {
+  return response(
+    503,
+    nativeHttpError(
+      "AuthorityUnavailable",
+      "Agreement to this deployment's policies could not be checked.",
+    ),
+    { "retry-after": String(authorityRetryAfterSeconds) },
   );
 }
 

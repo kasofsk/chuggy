@@ -30,10 +30,11 @@ export function recordedPort(reached: string[], port: string): never {
   ) as never;
 }
 
-/** Every port after the authentication, recorded into `reached`, the member chat being `chat`. */
+/** Every port after the authentication, recorded into `reached`, the member chat being `chat` and the agreement standings `agreements`, none by default. */
 export function recordedPorts(
   reached: string[],
   chat: unknown = recordedPort(reached, "chat"),
+  agreements: unknown = undefined,
 ): NativeHttpPorts {
   const port = (name: string) => recordedPort(reached, name);
   return [
@@ -65,5 +66,6 @@ export function recordedPorts(
     port("connectors"),
     port("appearance"),
     { themes: port("projectAppearance"), images: port("projectImages") },
+    agreements as never,
   ];
 }

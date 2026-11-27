@@ -271,6 +271,7 @@ import {
   sessionPlacementWriteResponse,
   notFound,
   sessionBearerRefusedResponse,
+  agreementRequiredResponse,
   accessTokenReadOnlyResponse,
   accessTokenRefusedResponse,
   actionReportResponse,
@@ -320,6 +321,10 @@ import {
   type SessionBearerConfinement,
 } from "./sessionBearerScope.ts";
 import { accessTokenAdmission } from "./accessTokenScope.ts";
+import {
+  agreementStandingAgreed,
+  type AgreementStandings,
+} from "../../interpreter/agreementStanding.ts";
 
 /** The access token a request came through: the one it records, and the project, access and expiry it is confined to. */
 export type AuthenticatedViaToken = Pick<
@@ -565,6 +570,7 @@ function registerAuthentication(
   app: FastifyInstance,
   authentication: PrincipalAuthentication,
   chat?: MemberChat,
+  agreements?: AgreementStandings,
 ): void {
   app.decorateRequest("principal");
   app.decorateRequest("bearerExpiresAtMs");
@@ -593,12 +599,39 @@ function registerAuthentication(
       !registerAuthenticationToken(request, reply, token)
     )
       return reply;
+    if (
+      session === undefined &&
+      token === undefined &&
+      agreements !== undefined &&
+      !(await registerAuthenticationAgreement(
+        reply,
+        agreements,
+        authenticated.principal,
+      ))
+    )
+      return reply;
     request.principal = authenticated.principal;
     if (authenticated.expiresAtMs !== undefined)
       request.bearerExpiresAtMs = authenticated.expiresAtMs;
     if (session !== undefined) request.viaSession = session.session;
     if (token !== undefined) request.viaToken = token;
   });
+}
+
+/**
+ * Whether the issuer's bearer is of a person who has agreed to every current
+ * policy, having answered it when they have not. A standing that could not be
+ * read is thrown, for the failure handler to answer as a wait.
+ */
+async function registerAuthenticationAgreement(
+  reply: FastifyReply,
+  agreements: AgreementStandings,
+  principal: Principal,
+): Promise<boolean> {
+  if (agreementStandingAgreed(await agreements.standing(principal)))
+    return true;
+  nativeHttpSend(reply, agreementRequiredResponse());
+  return false;
 }
 
 /**
@@ -3740,10 +3773,11 @@ export function createNativeHttpApp(
   connectors?: ProjectConnectorAdministration,
   appearance?: AppearanceService,
   projectAppearance?: ProjectAppearanceServices,
+  agreements?: AgreementStandings,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   registerCapacity(app, limits.concurrentRequestsMax);
-  registerAuthentication(app, authentication, chat);
+  registerAuthentication(app, authentication, chat, agreements);
   registerPublic(app, readiness, authority, runnerReleases);
   registerInventory(app, web);
   registerProjectLifecycle(app, creation, deletions);
