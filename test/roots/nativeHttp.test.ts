@@ -258,6 +258,8 @@ async function rootRead(
     "CHUG_API_ACTION_REPORTERS",
     "CHUG_API_GIT_SCRATCH_ROOT",
     "CHUG_API_PUBLIC_ORIGIN",
+    "CHUG_API_AGREEMENT_PLANE_URL",
+    "CHUG_API_AGREEMENT_PLANE_TIMEOUT_MS",
     ...Object.keys(threadLiveNamed),
   ])
     if (named[variable] === undefined) delete environment[variable];
@@ -669,6 +671,60 @@ test("a pool address a runner would refuse is a refusal to start", async () => {
     );
     assert.equal(ran.code, 1, `${variable}=${value}`);
     assert.match(ran.out, new RegExp(`${variable} must be an https URL`, "u"));
+    assert.doesNotMatch(ran.out, /pw-fixture/u);
+  }
+});
+
+/** Whether the root composes agreement standings, and where one ask of them is sent. */
+const agreementStandingsProgram = `
+  const asked = [];
+  globalThis.fetch = async (url) => {
+    asked.push(String(url));
+    return new Response(JSON.stringify({ policies: [] }), { status: 200 });
+  };
+  const root = await import('./src/roots/nativeHttp.ts');
+  const standings = root.nativeAgreementStandings();
+  if (standings !== undefined) await standings.standing('5:alice');
+  process.stdout.write(JSON.stringify({ composed: standings !== undefined, asked }));
+`;
+
+test("a deployment naming no agreement plane asks nobody, and one naming it asks its address for the person's standing", async () => {
+  for (const named of [{}, { CHUG_API_AGREEMENT_PLANE_URL: "" }]) {
+    const ran = await rootRead(named, agreementStandingsProgram);
+    assert.equal(ran.code, 0, ran.out);
+    assert.deepEqual(JSON.parse(ran.out), { composed: false, asked: [] });
+  }
+  const ran = await rootRead(
+    {
+      CHUG_API_AGREEMENT_PLANE_URL: "http://agreements.chuggy.test:4002",
+      CHUG_API_AGREEMENT_PLANE_TIMEOUT_MS: "250",
+    },
+    agreementStandingsProgram,
+  );
+  assert.equal(ran.code, 0, ran.out);
+  assert.deepEqual(JSON.parse(ran.out), {
+    composed: true,
+    asked: [
+      "http://agreements.chuggy.test:4002/agreements/v1/people/5%3Aalice/standing",
+    ],
+  });
+});
+
+test("an agreement plane address that is no URL, of another scheme or carrying credentials refuses the start by its variable's name and never echoes it", async () => {
+  for (const value of [
+    "not a url pw-fixture",
+    "ftp://agreements.chuggy.test/pw-fixture",
+    "https://op:pw-fixture@agreements.chuggy.test/",
+  ]) {
+    const ran = await rootRead(
+      { CHUG_API_AGREEMENT_PLANE_URL: value },
+      agreementStandingsProgram,
+    );
+    assert.equal(ran.code, 1, value);
+    assert.match(
+      ran.out,
+      /CHUG_API_AGREEMENT_PLANE_URL must be an HTTP or HTTPS URL carrying no credentials/u,
+    );
     assert.doesNotMatch(ran.out, /pw-fixture/u);
   }
 });
