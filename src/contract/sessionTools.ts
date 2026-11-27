@@ -590,6 +590,7 @@ export const dependentRelationsAdmitted = ["FollowUp"] as const;
 
 /** The public API routes the chuggy tools call; each is the route table's own entry. */
 export const chuggyToolRoutes = {
+  projects: nativeHttpRoutes.projects,
   project: nativeHttpRoutes.project,
   ticket: nativeHttpRoutes.ticket,
   draft: nativeHttpRoutes.draft,
