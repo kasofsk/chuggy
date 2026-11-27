@@ -12,7 +12,8 @@
  * names so the service is sent the cookie; without it the cookie is this
  * console's host's own. The second, true, asks a signed-in person to agree to
  * the deployment's policies before anything else is drawn; without it the
- * console reads nothing under `/agreements/v1`.
+ * console reads nothing under `/agreements/v1` until the API refuses the
+ * person for want of agreement.
  */
 
 import { z } from "zod";

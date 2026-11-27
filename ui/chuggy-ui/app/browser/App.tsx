@@ -10,9 +10,11 @@
  * A browser with no session at the invite page's address is drawn that page,
  * which is the one address a person without an account is sent to.
  *
- * A deployment whose configuration says `agreements` has a signed-in person
- * pass the agreement gate, which reads under `/agreements/v1`, before the
- * router is drawn at whatever address the browser is on.
+ * A signed-in person is drawn the router, at whatever address the browser is
+ * on, through the agreement gate. Where the configuration says `agreements`
+ * the gate reads under `/agreements/v1` before the router is drawn; where it
+ * does not, the router is drawn at once, and the gate reads there only once
+ * the API refuses the person for want of agreement.
  */
 
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -89,9 +91,9 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
       <RouterProvider router={consoleRouter} />
     </QueryClientProvider>
   );
-  return snapshot.configuration?.agreements === true ? (
-    <AgreementGate>{router}</AgreementGate>
-  ) : (
-    router
+  return (
+    <AgreementGate asked={snapshot.configuration?.agreements === true}>
+      {router}
+    </AgreementGate>
   );
 }

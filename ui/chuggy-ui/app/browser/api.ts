@@ -22,7 +22,13 @@ import type {
   UseQueryResult,
   keepPreviousData,
 } from "@tanstack/react-query";
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { apiPortsOver } from "../core/apiPorts.ts";
 import { apiOrThrow } from "../core/apiRequest.ts";
@@ -30,6 +36,7 @@ import type { ApiPorts } from "../core/apiRequest.ts";
 import type { ConsoleQuery } from "../core/consoleQuery.ts";
 import { panelStateFromQuery } from "../core/freshness.ts";
 import type { PanelState } from "../core/freshness.ts";
+import { AgreementRequiredHeard } from "./agreementGate.ts";
 import { apiFetch, sleepMs } from "./ports.ts";
 import { useSessionHolder } from "./session.tsx";
 import {
@@ -40,16 +47,20 @@ import {
 
 /**
  * The ports every read runs on, where a refusal the session could not see
- * coming ends it. Believing in a session the API refuses draws every screen as
- * a failed read while `Sign out`, the only control that could clear it, sits on
- * a bar the landing page never draws.
+ * coming ends it, and one refusing for want of agreement is told to the gate
+ * of the store joined above, where one is. Believing in a session the API
+ * refuses draws every screen as a failed read while `Sign out`, the only
+ * control that could clear it, sits on a bar the landing page never draws.
  */
 export function useApiPorts(): ApiPorts {
   const holder = useSessionHolder();
-  return useMemo<ApiPorts>(
-    () => apiPortsOver(holder, apiFetch, sleepMs),
-    [holder],
-  );
+  const agreementRequired = useContext(AgreementRequiredHeard);
+  return useMemo<ApiPorts>(() => {
+    const ports = apiPortsOver(holder, apiFetch, sleepMs);
+    return agreementRequired === undefined
+      ? ports
+      : { ...ports, agreementRequired };
+  }, [holder, agreementRequired]);
 }
 
 /** Whether this tab reaches the network, as the cache's own reads and writes

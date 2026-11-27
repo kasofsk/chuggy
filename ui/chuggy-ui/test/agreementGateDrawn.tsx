@@ -1,8 +1,9 @@
 /**
  * The console's root as `main.tsx` mounts it, under a real session holder
- * over the harness' ports and the store made over that holder, signed in by
- * the refresh token the harness stores, against an API a case scripts: what
- * it sent under `/agreements/v1`, and the holder a case renews or reads.
+ * over the harness' ports and the store made over that holder and joined to
+ * its gate by `consoleStoreJoined`, signed in by the refresh token the harness
+ * stores, against an API a case scripts: what it sent under `/agreements/v1`,
+ * and the holder and the store a case renews, reads or dispatches to.
  *
  * The configuration is the harness' with a case's own keys over it, and the
  * router is whatever the case's own mock of it draws.
@@ -10,13 +11,16 @@
 
 import { QueryClient } from "@tanstack/react-query";
 import { act } from "@testing-library/react";
-import { Provider } from "react-redux";
 import { vi } from "vitest";
 
 import { App } from "../app/browser/App.tsx";
 import { apiFetch, sleepMs } from "../app/browser/ports.ts";
 import { SessionProvider, sessionBegin } from "../app/browser/session.tsx";
-import { consoleStore } from "../app/browser/store.ts";
+import type { ConsoleStore } from "../app/browser/store.ts";
+import {
+  ConsoleStoreJoinedProvider,
+  consoleStoreJoined,
+} from "../app/browser/storeJoined.tsx";
 import { apiPortsOver } from "../app/core/apiPorts.ts";
 import {
   createSessionHolder,
@@ -38,6 +42,7 @@ export const agreementSendPath = "/agreements/v1/agreements";
 export interface AgreementMounted {
   readonly holder: SessionHolder;
   readonly harness: SessionHarness;
+  readonly store: ConsoleStore;
   readonly sent: readonly SentRequest[];
 }
 
@@ -60,20 +65,20 @@ export async function agreementMounted(
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const store = consoleStore({
+  const joined = consoleStoreJoined({
     ports: apiPortsOver(holder, apiFetch, sleepMs),
     client,
   });
   renderCopied(
     <SessionProvider holder={holder}>
-      <Provider store={store}>
+      <ConsoleStoreJoinedProvider joined={joined}>
         <App queryClient={client} />
-      </Provider>
+      </ConsoleStoreJoinedProvider>
     </SessionProvider>,
   );
   await act(() => sessionBegin(holder));
   await settled();
-  return { holder, harness, sent: scripted.sent };
+  return { holder, harness, store: joined.store, sent: scripted.sent };
 }
 
 /** Every request sent under `/agreements/v1`, as its method and path. */
