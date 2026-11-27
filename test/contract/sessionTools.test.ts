@@ -515,6 +515,10 @@ test("an epic view of the heaviest epic the domain saves is under the bound the 
   assert.ok(bytes <= chuggyToolEpicViewResponseBytesMax);
 });
 
+test("the tools reach the route table's own project inventory", () => {
+  assert.equal(chuggyToolRoutes.projects, nativeHttpRoutes.projects);
+});
+
 test("the settings tools reach the route table's own selector-settings and placement routes", () => {
   assert.equal(
     chuggyToolRoutes.selectorSettings,
