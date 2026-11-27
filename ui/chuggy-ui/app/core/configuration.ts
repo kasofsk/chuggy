@@ -6,10 +6,13 @@
  * audience is the API's identity and not this console's host: without it the
  * access token comes back with an empty audience and every read is refused.
  *
- * `inviteCookieDomain` is the one key a deployment may leave out. It is the
- * domain the invite cookie is written for, which a deployment whose sign-in
- * service answers on another host of that domain names so the service is sent
- * the cookie; without it the cookie is this console's host's own.
+ * `inviteCookieDomain` and `agreements` are the two keys a deployment may
+ * leave out. The first is the domain the invite cookie is written for, which a
+ * deployment whose sign-in service answers on another host of that domain
+ * names so the service is sent the cookie; without it the cookie is this
+ * console's host's own. The second, true, asks a signed-in person to agree to
+ * the deployment's policies before anything else is drawn; without it the
+ * console reads nothing under `/agreements/v1`.
  */
 
 import { z } from "zod";
@@ -36,6 +39,7 @@ export const consoleConfigurationSchema = z.object({
     .regex(consoleCookieDomainPattern)
     .max(consoleCookieDomainCharsMax)
     .optional(),
+  agreements: z.boolean().optional(),
 });
 
 export type ConsoleConfiguration = Readonly<

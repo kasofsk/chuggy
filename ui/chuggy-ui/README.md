@@ -124,8 +124,11 @@ does not print and exit as a first run does.
 names, which the worker image ships: `ui/chuggy-ui/tools/rendered/served.ts`
 serves `dist` on a loopback port under the headers it reads from
 `images/chuggy-ui/nginx.conf`, with `/config.json`, an issuer and the API
-answered on the same origin. It exits 2 with its remedy where there is no build
-or no browser, and the gate then exits 2. A route's stubs are rows of
+answered on the same origin. A case may hand it keys of its own for the
+`/config.json` it serves, and a read under `/api/`, `/access/` or
+`/agreements/` that no row answers is counted in its `unanswered`. It exits 2
+with its remedy where there is no build or no browser, and the gate then exits
+2. A route's stubs are rows of
 `ui/chuggy-ui/tools/rendered/stubApi.ts`, one `stubApiRead` per read, each body
 parsed by the schema `src/contract/` gives that route; a case is a `test` in a
 `*.spec.ts` beside it, opening its route with `renderedOpen` and holding it to
@@ -142,12 +145,20 @@ blank page.
 `audience` is the API's own identity and not this console's host: without it the
 access token comes back with an empty audience and every read is refused.
 
-`inviteCookieDomain` is the one key a deployment may leave out. An invite link
+`inviteCookieDomain` and `agreements` are the two keys a deployment may leave
+out. An invite link
 is opened at `/invite`, and its token crosses the sign-in in a cookie,
 `chuggy_invite`, which the deployment's sign-in hook reads to admit a person
 with no account. Name the domain the console and the sign-in service share, so
 that service is sent the cookie. Without the key the cookie is the console
 host's own, which still carries a person who has an account.
+
+`agreements`, true, asks a person who signs in to agree to the deployment's
+policies before the console draws anything else, reading and recording that
+under `/agreements/v1` on the console's own origin, and names those policies
+on an invite link's card. A deployment whose API is given
+`CHUG_API_AGREEMENT_PLANE_URL` sets it; one naming no policies leaves it out,
+and its console reads nothing under that path.
 
 ## The image
 

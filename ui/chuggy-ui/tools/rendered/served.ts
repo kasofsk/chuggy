@@ -5,8 +5,9 @@
  * behind it.
  *
  * WHAT THE IMAGE LEAVES TO AN INSTALLATION IS ANSWERED HERE, ON THE SAME
- * ORIGIN: the deployment's `/config.json`, an issuer under `/issuer`, and the
- * API the Ingress routes. `stubApi.ts` is that API. The issuer answers
+ * ORIGIN: the deployment's `/config.json`, with a case's own keys over it, an
+ * issuer under `/issuer`, and the API and the planes the Ingress routes.
+ * `stubApi.ts` is that API. The issuer answers
  * discovery and a refresh-token grant with an opaque access token, and refuses
  * anything else: the console's own session code runs, and a case signs in by
  * the refresh token it stores, which is the narrowest seam the flow has.
@@ -52,12 +53,15 @@ export interface ServedOptions {
   /** Reads a case answers beyond the stub's own, checked ahead of them. */
   readonly reads?: readonly StubApiRead[];
   readonly headers?: ServedHeaders;
+  /** Keys the case's `/config.json` carries beyond the installation's. */
+  readonly configuration?: Readonly<Record<string, unknown>>;
 }
 
 interface ServedSite {
   readonly root: string;
   readonly headers: ServedHeaders;
   readonly reads: readonly StubApiRead[];
+  readonly configuration: Readonly<Record<string, unknown>>;
   readonly unanswered: string[];
   origin: string;
 }
@@ -100,6 +104,7 @@ function servedConfiguration(site: ServedSite): unknown {
     audience: servedAudience,
     redirectUri: `${site.origin}/auth/callback`,
     scopes: ["openid", "offline_access"],
+    ...site.configuration,
   };
 }
 
@@ -204,7 +209,11 @@ async function servedAnswer(
     const form = new URLSearchParams(await servedBody(request));
     const answer = servedIssuer(site, pathname, form);
     servedJson(response, [], answer.status, answer.body);
-  } else if (pathname.startsWith("/api/") || pathname.startsWith("/access/"))
+  } else if (
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/access/") ||
+    pathname.startsWith("/agreements/")
+  )
     servedApi(site, response, request.method ?? "GET", url);
   else servedStatic(site, response, pathname);
 }
@@ -214,6 +223,7 @@ export async function servedOpen(options: ServedOptions): Promise<Served> {
     root: normalize(options.root),
     headers: options.headers ?? servedHeadersRead(),
     reads: options.reads ?? [],
+    configuration: options.configuration ?? {},
     unanswered: [],
     origin: "",
   };
@@ -241,4 +251,18 @@ export async function servedOpen(options: ServedOptions): Promise<Served> {
         });
       }),
   };
+}
+
+/** `body` run against a site served with `options`, which is closed once it
+ * has run, whether or not it passed. */
+export async function servedWhile(
+  options: ServedOptions,
+  body: (served: Served) => Promise<void>,
+): Promise<void> {
+  const served = await servedOpen(options);
+  try {
+    await body(served);
+  } finally {
+    await served.close();
+  }
 }

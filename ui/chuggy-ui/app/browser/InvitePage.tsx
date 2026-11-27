@@ -3,7 +3,9 @@
  * without one: a title for the state the link is in, one line, what to do next
  * where a send was refused, and at most one action. Without one, the card is
  * what the plane's summary of the link says it gives and from whom, read as
- * the card is drawn and again at a retry.
+ * the card is drawn and again at a retry, and, where the deployment asks for
+ * agreement, the policies signing in asks for, read once beside it and drawn
+ * only where that read lists any.
  *
  * It reads no router, because the tree's root draws it for a browser that
  * holds no session and has no router, and the route draws it for a reader.
@@ -21,13 +23,19 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { AccessInviteLinkSummary } from "../../../../src/contract/accessPlane.ts";
+import {
+  agreementPlaneRoutes,
+  type AgreementPolicies,
+  type AgreementPolicyEntry,
+} from "../../../../src/contract/agreementPlane.ts";
 
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import {
   apiInviteLinkSummary,
   apiRedeemInviteLink,
 } from "../core/accessRoutes.ts";
-import type { ApiResult } from "../core/apiRequest.ts";
+import { apiAgreementPolicies } from "../core/agreementRoutes.ts";
+import type { ApiPorts, ApiResult } from "../core/apiRequest.ts";
 import { ConsoleWriteRefused, consoleWriteKey } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import { copyOrDataText } from "../core/copy.ts";
@@ -35,6 +43,7 @@ import type { Copy, CopyOrData, CopyText } from "../core/copy.ts";
 import type { InviteHolder } from "../core/inviteHolder.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
 import {
+  inviteAgreementPolicies,
   inviteElsewherePath,
   invitePageWords,
   inviteSummaryCard,
@@ -46,6 +55,7 @@ import { useConsoleWrite } from "./consoleWrite.tsx";
 import { SessionCard, SignedOutCard } from "./SessionCard.tsx";
 import { useSessionHolder, useSessionSnapshot } from "./session.tsx";
 import { Button } from "./ui/Button.tsx";
+import { ExternalLink } from "./ui/ExternalLink.tsx";
 import { Locomotive } from "./ui/Locomotive.tsx";
 
 /** What each state of the page is for, said as its title. */
@@ -86,6 +96,7 @@ function InviteCard(props: {
   readonly action?: Copy;
   readonly onAction?: () => void;
   readonly media?: ReactNode;
+  readonly notes?: ReactNode;
 }): ReactNode {
   const { action, onAction } = props;
   const text = useCopyText();
@@ -94,6 +105,7 @@ function InviteCard(props: {
       title={text(props.title)}
       detail={copyOrDataText(text, props.line)}
       next={props.next === undefined ? undefined : text(props.next)}
+      notes={props.notes}
       media={props.media}
       action={
         action === undefined || onAction === undefined ? undefined : (
@@ -221,37 +233,83 @@ function useInviteRedemption(
   };
 }
 
-/** The plane's summary of `token`, undefined while the latest read of it is
- * unanswered, and the retry that reads it again. */
-function useInviteSummary(token: string): {
-  readonly summary: ApiResult<AccessInviteLinkSummary> | undefined;
+/** What `read` answers for `key`, held as the page's own state: undefined
+ * where there is no key or while the latest read of it is unanswered, and the
+ * retry that reads it again. `read` is a module's function, so a draw does
+ * not read again. */
+function useInviteRead<T>(
+  key: string | undefined,
+  read: (ports: ApiPorts, key: string) => Promise<ApiResult<T>>,
+): {
+  readonly answer: ApiResult<T> | undefined;
   readonly retry: () => void;
 } {
   const ports = useApiPorts();
   const [attempt, setAttempt] = useState(0);
   const [answered, setAnswered] = useState<{
-    readonly token: string;
+    readonly key: string;
     readonly attempt: number;
-    readonly result: ApiResult<AccessInviteLinkSummary>;
+    readonly result: ApiResult<T>;
   }>();
   useEffect(() => {
+    if (key === undefined) return;
     let current = true;
-    void apiInviteLinkSummary(ports, token).then((result) => {
-      if (current) setAnswered({ token, attempt, result });
+    void read(ports, key).then((result) => {
+      if (current) setAnswered({ key, attempt, result });
     });
     return () => {
       current = false;
     };
-  }, [ports, token, attempt]);
+  }, [ports, key, attempt, read]);
   return {
-    summary:
-      answered?.token === token && answered.attempt === attempt
+    answer:
+      key !== undefined && answered?.key === key && answered.attempt === attempt
         ? answered.result
         : undefined,
     retry: () => {
       setAttempt((last) => last + 1);
     },
   };
+}
+
+/** The plane's summary of `token`, undefined while the latest read of it is
+ * unanswered, and the retry that reads it again. */
+function useInviteSummary(token: string): {
+  readonly summary: ApiResult<AccessInviteLinkSummary> | undefined;
+  readonly retry: () => void;
+} {
+  const { answer, retry } = useInviteRead(token, apiInviteLinkSummary);
+  return { summary: answer, retry };
+}
+
+/** The deployment's policies where its configuration asks for agreement,
+ * read once with the card and never retried. */
+function useInviteAgreements(
+  agreements: boolean,
+): ApiResult<AgreementPolicies> | undefined {
+  return useInviteRead(
+    agreements ? agreementPlaneRoutes.policies.path : undefined,
+    apiAgreementPolicies,
+  ).answer;
+}
+
+/** The lines an open card names the policies in, each a link to its text. */
+function InviteAgreements(props: {
+  readonly policies: readonly AgreementPolicyEntry[];
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <>
+      <p>{text(invitePageWords.agreements)}</p>
+      <p className="flex flex-wrap gap-x-4">
+        {props.policies.map((entry) => (
+          <ExternalLink key={entry.policy} href={entry.url}>
+            {entry.title}
+          </ExternalLink>
+        ))}
+      </p>
+    </>
+  );
 }
 
 /** A link opened with no session: what it gives and from whom, and the
@@ -264,6 +322,8 @@ function InviteInvited(props: {
   const session = useSessionHolder();
   const { token, domain } = props;
   const { summary, retry } = useInviteSummary(token);
+  const agreements = useSessionSnapshot().configuration?.agreements === true;
+  const policies = inviteAgreementPolicies(useInviteAgreements(agreements));
   const drawn = inviteSummaryCard(summary);
   switch (drawn.card) {
     case "Reading":
@@ -279,6 +339,11 @@ function InviteInvited(props: {
         <InviteCard
           title={drawn.title}
           line={drawn.line}
+          notes={
+            policies === undefined ? undefined : (
+              <InviteAgreements policies={policies} />
+            )
+          }
           action={invitePageWords.signInGithub}
           onAction={() => {
             invite.leave(token, domain);
