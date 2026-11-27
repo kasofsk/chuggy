@@ -253,6 +253,17 @@ function toolServerRpc(body: unknown): ToolServerLogged {
   };
 }
 
+/**
+ * The SDK's transport as the SDK's own `Transport`: the class types the
+ * callbacks that interface declares optional with `undefined`, which
+ * `exactOptionalPropertyTypes` tells apart. They are the same object.
+ */
+function toolServerTransport(
+  transport: StreamableHTTPServerTransport,
+): Transport {
+  return transport as Transport;
+}
+
 /** One request served statelessly, by a server and a transport that both end with it. */
 async function toolServerMcpServed(
   options: ToolServerAppOptions,
@@ -273,10 +284,7 @@ async function toolServerMcpServed(
     });
   });
   try {
-    // The SDK's class leaves the callbacks its own `Transport` declares
-    // optional typed with `undefined`, which `exactOptionalPropertyTypes`
-    // tells apart; they are the same object either way.
-    await server.connect(transport as Transport);
+    await server.connect(toolServerTransport(transport));
     await transport.handleRequest(request.raw, reply.raw, request.body);
   } catch (failure) {
     options.log(
