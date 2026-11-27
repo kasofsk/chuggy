@@ -85,9 +85,12 @@
     "provision:access-defaults": "node --experimental-strip-types src/roots/provisionAccessDefaults.ts",
     "provision:session": "node --experimental-strip-types src/roots/provisionAgentSession.ts",
     "bind:project-repository": "node --experimental-strip-types src/roots/bindProjectRepository.ts",
-    "import:repository-configurations": "node --experimental-strip-types src/roots/configurationImporter.ts"
+    "import:repository-configurations": "node --experimental-strip-types src/roots/configurationImporter.ts",
+    "start:tool-server": "node --experimental-strip-types src/roots/toolServer.ts"
   },
   "dependencies": {
+    "@chuggy/worker-core": "https://github.com/kasofsk/chuggy-common/archive/675d4414102635c352986d53180483ab19ec0101.tar.gz",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@ts-safeql/sql-tag": "^0.2.2",
     "fastify": "^5.12.1",
     "jose": "^6.2.10",

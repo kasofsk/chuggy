@@ -441,6 +441,63 @@ for directory_root in nativeHttp poolPlane; do
 	check "the $directory_root root may not REACH the directory's adapter through a composition helper" 1 "$RC" "only-the-access-plane-reaches-the-directory:"
 done
 
+# --- tool-server-reaches-no-database ------------------------------------------
+
+# The allowed shape first: the tool server's root reaches the issuer's adapter
+# and the core, and another root reaches a database adapter and the driver. A
+# red here would mean the rule refuses what the server is composed with, or a
+# root it does not name.
+fixture
+mkdir -p "$R/src/roots" "$R/src/adapters/http" "$R/src/adapters/postgres"
+printf '%s\n' 'export const oidc = 1' > "$R/src/adapters/http/oidc.ts"
+printf '%s\n' 'export const pool = 1' > "$R/src/adapters/postgres/pool.ts"
+printf '%s\n' 'import { oidc } from "../adapters/http/oidc.ts"' 'import { hostedToolServer } from "@chuggy/worker-core/hostedTools.mjs"' 'export const root = [oidc, hostedToolServer]' > "$R/src/roots/toolServer.ts"
+printf '%s\n' 'import pg from "pg"' 'import { pool } from "../adapters/postgres/pool.ts"' 'export const root = [pg, pool]' > "$R/src/roots/nativeHttp.ts"
+seal
+check "the tool server's root may reach the issuer and the core, and another root a database" 0 "$RC" "graph clean"
+
+# The driver and an adapter, each directly and through a composition helper.
+# The helper belongs to neither the root nor what it reaches, so only
+# reachability sees the second shape.
+for database in pg adapters/postgres/pool.ts; do
+	case "$database" in
+	pg) from_root=pg from_compose=pg ;;
+	*) from_root="../$database" from_compose="./$database" ;;
+	esac
+	fixture
+	mkdir -p "$R/src/roots" "$R/src/adapters/postgres"
+	printf '%s\n' 'export const pool = 1' > "$R/src/adapters/postgres/pool.ts"
+	printf '%s\n' "import * as database from \"$from_root\"" 'export const root = database' > "$R/src/roots/toolServer.ts"
+	seal
+	check "the tool server's root may not import $database" 1 "$RC" "tool-server-reaches-no-database:"
+
+	fixture
+	mkdir -p "$R/src/roots" "$R/src/adapters/postgres"
+	printf '%s\n' 'export const pool = 1' > "$R/src/adapters/postgres/pool.ts"
+	printf '%s\n' "import * as database from \"$from_compose\"" 'export const wired = database' > "$R/src/compose.ts"
+	printf '%s\n' 'import { wired } from "../compose.ts"' 'export const root = wired' > "$R/src/roots/toolServer.ts"
+	seal
+	check "the tool server's root may not REACH $database through a composition helper" 1 "$RC" "tool-server-reaches-no-database:"
+done
+
+# --- only-the-tool-server-reaches-the-core ------------------------------------
+
+# The allowed shape is the clean case above, where the tool server's root
+# imports the core. Every other root is refused, directly and through a
+# composition helper, which only reachability sees.
+fixture
+mkdir -p "$R/src/roots"
+printf '%s\n' 'import { hostedToolServer } from "@chuggy/worker-core/hostedTools.mjs"' 'export const root = hostedToolServer' > "$R/src/roots/nativeHttp.ts"
+seal
+check "another root may not import the core" 1 "$RC" "only-the-tool-server-reaches-the-core:"
+
+fixture
+mkdir -p "$R/src/roots"
+printf '%s\n' 'import { hostedToolServer } from "@chuggy/worker-core/hostedTools.mjs"' 'export const wired = hostedToolServer' > "$R/src/compose.ts"
+printf '%s\n' 'import { wired } from "../compose.ts"' 'export const root = wired' > "$R/src/roots/nativeHttp.ts"
+seal
+check "another root may not REACH the core through a composition helper" 1 "$RC" "only-the-tool-server-reaches-the-core:"
+
 # --- no-source-reaches-a-suite, under its own name ----------------------------
 
 # From the domain the broader purity rule catches this first, which is why the
