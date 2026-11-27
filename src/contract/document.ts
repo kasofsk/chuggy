@@ -255,6 +255,8 @@ export function nativeHttpContractDocument(): unknown {
       principal: "length-prefixed issuer and subject",
       session:
         "a session bearer authorizes as the session's principal within the session's own tenant and project only, and is recorded on the operation; another project is not found, and a route no session may reach answers 403 insufficient_scope",
+      agreement:
+        "a deployment may require agreement to its policies, which a person gives in the console; there, a request under the issuer's bearer whose principal has not agreed to every current policy answers 403 AgreementRequired before its route runs, and one under a session bearer or an access token, or to a public route, is never asked; while agreement cannot be checked the request answers 503 AuthorityUnavailable with retry-after",
     },
     notifications: "bounded-polling",
     events: "sse",
