@@ -5,10 +5,11 @@ just ui-local
 ```
 
 Then open the address it prints. The console is served from this checkout with
-its sources watched, so an edit is a reload; everything behind `/api/v1` and `/access/v1` is the
-installation `compose.yaml` names, which by default is the rig. **Every action
-taken here is taken there.** A dispatch is a dispatch, a revoke is a revoke,
-and there is no local database to reset.
+its sources watched, so an edit is a reload; everything behind `/api/v1`,
+`/access/v1` and `/agreements/v1` is the installation `compose.yaml` names,
+which by default is the rig. **Every action taken here is taken there.** A
+dispatch is a dispatch, a revoke is a revoke, and there is no local database to
+reset.
 
 ## Why an installation and not a fixture
 
@@ -57,3 +58,9 @@ CHUG_UI_CLIENT_ID=<a client that installation registered for this port> \
 
 `CHUG_UI_ISSUER` and `CHUG_UI_AUDIENCE` are the other two, and every one of
 them has the rig's value as its default.
+
+`CHUG_UI_AGREEMENTS=true`, passed through by `compose.yaml`, serves
+`/config.json` with `agreements`, so a signed-in session is asked to agree
+before anything else is drawn. The installation behind it then has to route
+`/agreements/v1` to its agreement plane, or every sign-in is drawn
+`Agreements not read`.

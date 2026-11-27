@@ -1,4 +1,5 @@
-/* TextLink: a link in a line of text, a finger's size on a narrow screen. */
+/* TextLink and ExternalLink: a link in a line of text, a finger's size on a
+   narrow screen. */
 
 @layer ui {
   @media (max-width: 40em) {

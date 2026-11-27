@@ -18,7 +18,9 @@
  *
  * WHAT NEVER ENTERS IT. A server's answer, which is TanStack Query's, and a
  * held draft's `DraftResponse` is not one: it is the console's own record of
- * its submission, and nothing refreshes it. A token or a one-time secret; a
+ * its submission, and nothing refreshes it. Nor is the agreement gate's
+ * standing, which is read before the router and its queries are drawn, and
+ * read again only by the gate's own flow. A token or a one-time secret; a
  * function; a DOM node; a promise; bytes; and text that changes per token or
  * per keystroke. What the URL holds stays in the URL, and what only one
  * component draws stays in that component. A cell enters only because
@@ -41,6 +43,7 @@
 import { combineSlices, configureStore } from "@reduxjs/toolkit";
 import { useDispatch, useSelector } from "react-redux";
 
+import { agreementGate } from "./agreementGate.ts";
 import {
   consoleOutdated,
   consoleOutdatedHeardFrom,
@@ -63,6 +66,7 @@ const consoleReducer = combineSlices(
   threadSends,
   consoleWriteUnseen,
   consoleOutdated,
+  agreementGate,
 );
 
 export type ConsoleState = ReturnType<typeof consoleReducer>;

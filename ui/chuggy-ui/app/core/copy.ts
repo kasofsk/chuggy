@@ -9,6 +9,7 @@
  * own, does not compile.
  */
 
+import type { AgreementsCopy } from "./generated/agreementsCopy.ts";
 import type { ApiCopy } from "./generated/apiCopy.ts";
 import type { ChatCopy } from "./generated/chatCopy.ts";
 import type { CodesCopy } from "./generated/codesCopy.ts";
@@ -45,7 +46,8 @@ import type { UiCopy } from "./generated/uiCopy.ts";
 import type { UsageCopy } from "./generated/usageCopy.ts";
 
 /** Each message's variables by name, as its section's module names them. */
-type CopyVariables = ApiCopy &
+type CopyVariables = AgreementsCopy &
+  ApiCopy &
   ChatCopy &
   CodesCopy &
   ConfigurationCatalogCopy &

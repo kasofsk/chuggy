@@ -39,6 +39,7 @@ import {
   emptyHeadingLevels,
   emptyVariants,
 } from "../app/browser/ui/EmptyState.tsx";
+import { ExternalLink } from "../app/browser/ui/ExternalLink.tsx";
 import { Field, Fields, fieldsVariants } from "../app/browser/ui/Fields.tsx";
 import { Figure } from "../app/browser/ui/Figure.tsx";
 import { FormField } from "../app/browser/ui/FormField.tsx";
@@ -462,6 +463,18 @@ const primitiveCases: Readonly<Record<string, readonly PrimitiveCase[]>> = {
       </Fields>
     ),
   })),
+  ExternalLink: [
+    {
+      state: "a link",
+      drawn: (
+        <p>
+          <ExternalLink href="https://policies.example/terms">
+            Terms of Service
+          </ExternalLink>
+        </p>
+      ),
+    },
+  ],
   Figure: [
     { state: "a cost", drawn: <Figure figure={spent.cost} /> },
     { state: "tokens", drawn: <Figure figure={spent.tokens} /> },

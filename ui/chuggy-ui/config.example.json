@@ -4,5 +4,6 @@
   "audience": "https://chuggy.vteng.io/api",
   "redirectUri": "https://chuggy.vteng.io/auth/callback",
   "scopes": ["openid", "offline_access"],
-  "inviteCookieDomain": "vteng.io"
+  "inviteCookieDomain": "vteng.io",
+  "agreements": false
 }
